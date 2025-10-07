@@ -1,0 +1,27 @@
+{
+  "name": "aws-mediaconvert-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p .",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start": "node dist/index.js",
+    "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
+    "mc:create": "ts-node src/tools/mediaconvert/create-job.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-mediaconvert": "^3.645.0",
+    "@aws-sdk/credential-providers": "^3.645.0",
+    "dotenv": "^16.4.5",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/yargs": "^17.0.33",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.6.3"
+  }
+}
+
