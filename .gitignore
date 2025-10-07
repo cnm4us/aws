@@ -1,6 +1,11 @@
 node_modules/
+videos/
 dist/
 .env
 .mc-endpoint.json
 .DS_Store
+.tmp_awscli/
+*.mp4
+*.m3u8
+*.ts
 
