@@ -6,14 +6,20 @@
   "scripts": {
     "build": "tsc -p .",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "serve": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/index.js",
     "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
     "mc:create": "ts-node src/tools/mediaconvert/create-job.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",
+    "@aws-sdk/client-s3": "^3.645.0",
+    "@aws-sdk/s3-presigned-post": "^3.645.0",
     "@aws-sdk/credential-providers": "^3.645.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mysql2": "^3.11.3",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
@@ -24,4 +30,3 @@
     "typescript": "^5.6.3"
   }
 }
-

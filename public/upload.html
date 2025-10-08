@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upload to S3</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; }
+      .box { border: 1px solid #ddd; padding: 1rem; border-radius: 8px; max-width: 640px; }
+      progress { width: 100%; height: 20px; }
+      .row { margin: 0.5rem 0; }
+      label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+      input[type=file] { padding: 0.5rem; }
+      button { padding: 0.5rem 1rem; }
+      .log { white-space: pre-wrap; background: #fafafa; border: 1px dashed #ddd; padding: 0.5rem; margin-top: 1rem; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Direct Upload to S3</h2>
+      <div class="row">
+        <label for="file">Choose a video file</label>
+        <input id="file" type="file" accept="video/*" />
+      </div>
+      <div class="row">
+        <button id="start">Upload</button>
+      </div>
+      <div class="row">
+        <progress id="prog" value="0" max="100"></progress>
+      </div>
+      <div id="msg" class="row"></div>
+      <div class="log" id="log"></div>
+    </div>
+
+    <script>
+      const elFile = document.getElementById('file');
+      const elStart = document.getElementById('start');
+      const elProg = document.getElementById('prog');
+      const elMsg = document.getElementById('msg');
+      const elLog = document.getElementById('log');
+
+      function log(msg, data) {
+        const line = typeof data !== 'undefined' ? `${msg} ${JSON.stringify(data)}` : msg;
+        elLog.textContent += `\n${line}`;
+      }
+
+      elStart.addEventListener('click', async () => {
+        const file = elFile.files && elFile.files[0];
+        if (!file) { alert('Choose a file first'); return; }
+        elProg.value = 0; elMsg.textContent = '';
+
+        try {
+          // 1) Ask server for a presigned POST
+          const body = {
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+            sizeBytes: file.size
+          };
+          log('sign body', body);
+          const signRes = await fetch('/api/sign-upload', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+          });
+          if (!signRes.ok) throw new Error('Failed to sign upload');
+          const { id, post } = await signRes.json();
+          log('signed', { id, url: post.url, key: post.fields.key });
+
+          // 2) Build form data for S3
+          const formData = new FormData();
+          Object.entries(post.fields).forEach(([k, v]) => formData.append(k, v));
+          formData.append('file', file);
+
+          // 3) Upload with progress via XHR
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', post.url, true);
+            xhr.upload.addEventListener('progress', (e) => {
+              if (e.lengthComputable) {
+                const pct = Math.round((e.loaded / e.total) * 100);
+                elProg.value = pct;
+              }
+            });
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) resolve();
+              else reject(new Error(`S3 upload failed: ${xhr.status}`));
+            };
+            xhr.onerror = () => reject(new Error('Network error uploading to S3'));
+            xhr.send(formData);
+          });
+
+          // 4) Mark complete on server
+          const completeRes = await fetch('/api/mark-complete', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, sizeBytes: file.size })
+          });
+          if (!completeRes.ok) throw new Error('Failed to mark complete');
+
+          elMsg.textContent = 'Upload complete!';
+          log('complete', {});
+        } catch (err) {
+          console.error(err);
+          elMsg.textContent = 'Upload failed: ' + err.message;
+          log('error', err.message);
+        }
+      });
+    </script>
+  </body>
+  </html>
+
