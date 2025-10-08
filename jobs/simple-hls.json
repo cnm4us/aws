@@ -1,0 +1,54 @@
+{
+  "TimecodeConfig": { "Source": "ZEROBASED" },
+  "Inputs": [
+    {
+      "FileInput": "INPUT_URI",
+      "AudioSelectors": { "Audio Selector 1": { "DefaultSelection": "DEFAULT" } },
+      "VideoSelector": {}
+    }
+  ],
+  "OutputGroups": [
+    {
+      "Name": "HLS Simple",
+      "OutputGroupSettings": {
+        "Type": "HLS_GROUP_SETTINGS",
+        "HlsGroupSettings": {
+          "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/",
+          "ManifestCompression": "NONE",
+          "ManifestDurationFormat": "INTEGER",
+          "StreamInfResolution": "INCLUDE",
+          "SegmentLength": 6,
+          "MinSegmentLength": 0,
+          "DirectoryStructure": "SINGLE_DIRECTORY"
+        }
+      },
+      "Outputs": [
+        {
+          "NameModifier": "v1",
+          "ContainerSettings": { "Container": "M3U8" },
+          "VideoDescription": {
+            "CodecSettings": {
+              "Codec": "H_264",
+              "H264Settings": {
+                "RateControlMode": "QVBR",
+                "QvbrSettings": { "QvbrQualityLevel": 7 },
+                "GopSizeUnits": "SECONDS",
+                "GopSize": 2,
+                "MaxBitrate": 5000000
+              }
+            }
+          },
+          "AudioDescriptions": [
+            {
+              "AudioSourceName": "Audio Selector 1",
+              "CodecSettings": {
+                "Codec": "AAC",
+                "AacSettings": { "Bitrate": 96000, "CodingMode": "CODING_MODE_2_0", "SampleRate": 48000 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

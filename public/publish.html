@@ -15,6 +15,15 @@
   </head>
   <body>
     <h2>Uploaded Videos</h2>
+    <div style="margin: 0 0 1rem 0;">
+      <label for="profile">Profile:</label>
+      <select id="profile">
+        <option value="auto" selected>Auto (by orientation)</option>
+        <option value="portrait-hls">portrait-hls</option>
+        <option value="landscape-both-hls">landscape-both-hls</option>
+        <option value="simple-hls">simple-hls</option>
+      </select>
+    </div>
     <p class="muted">Only showing latest 50 by default.</p>
     <table>
       <thead>
@@ -64,13 +73,16 @@
           rows.appendChild(tr);
         });
 
+        const profileSel = document.getElementById('profile');
         rows.querySelectorAll('button[data-id]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             const id = e.currentTarget.getAttribute('data-id');
             e.currentTarget.disabled = true;
             e.currentTarget.textContent = 'Publishing...';
             try {
-              const resp = await fetch('/api/publish', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: Number(id) }) });
+              const prof = profileSel.value;
+              const body = prof && prof !== 'auto' ? { id: Number(id), profile: prof } : { id: Number(id) };
+              const resp = await fetch('/api/publish', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
               const json = await resp.json();
               if (!resp.ok) throw new Error(json.error || 'Failed');
             } catch (err) {
@@ -86,4 +98,3 @@
     </script>
   </body>
   </html>
-

@@ -1,0 +1,145 @@
+{
+  "TimecodeConfig": { "Source": "ZEROBASED" },
+  "Inputs": [
+    {
+      "FileInput": "INPUT_URI",
+      "AudioSelectors": {
+        "Audio Selector 1": { "DefaultSelection": "DEFAULT" }
+      },
+      "VideoSelector": { "Rotate": "AUTO" }
+    }
+  ],
+  "OutputGroups": [
+    {
+      "Name": "HLS Portrait",
+      "OutputGroupSettings": {
+        "Type": "HLS_GROUP_SETTINGS",
+        "HlsGroupSettings": {
+          "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/portrait/",
+          "ManifestCompression": "NONE",
+          "ManifestDurationFormat": "INTEGER",
+          "StreamInfResolution": "INCLUDE",
+          "SegmentLength": 4,
+          "MinSegmentLength": 0,
+          "DirectoryStructure": "SUBDIRECTORY_PER_STREAM",
+          "SegmentsPerSubdirectory": 1000,
+          "ClientCache": "ENABLED",
+          "ProgramDateTime": "EXCLUDE",
+          "AdditionalManifests": [
+            {
+              "ManifestNameModifier": "_master",
+              "SelectedOutputs": ["1080p", "720p", "540p"]
+            }
+          ]
+        }
+      },
+      "Outputs": [
+        {
+          "NameModifier": "1080p",
+          "ContainerSettings": { "Container": "M3U8" },
+          "VideoDescription": {
+            "Width": 1080,
+            "Height": 1920,
+            "ScalingBehavior": "DEFAULT",
+            "Sharpness": 50,
+            "CodecSettings": {
+              "Codec": "H_264",
+              "H264Settings": {
+                "RateControlMode": "VBR",
+                "Bitrate": 4000000,
+                "GopSize": 2,
+                "GopSizeUnits": "SECONDS",
+                "GopClosedCadence": 1,
+                "SceneChangeDetect": "ENABLED",
+                "NumberBFramesBetweenReferenceFrames": 2
+              }
+            }
+          },
+          "AudioDescriptions": [
+            {
+              "AudioSourceName": "Audio Selector 1",
+              "CodecSettings": {
+                "Codec": "AAC",
+                "AacSettings": {
+                  "Bitrate": 128000,
+                  "CodingMode": "CODING_MODE_2_0",
+                  "SampleRate": 48000
+                }
+              }
+            }
+          ]
+        },
+        {
+          "NameModifier": "720p",
+          "ContainerSettings": { "Container": "M3U8" },
+          "VideoDescription": {
+            "Width": 720,
+            "Height": 1280,
+            "ScalingBehavior": "DEFAULT",
+            "Sharpness": 50,
+            "CodecSettings": {
+              "Codec": "H_264",
+              "H264Settings": {
+                "RateControlMode": "VBR",
+                "Bitrate": 2400000,
+                "GopSize": 2,
+                "GopSizeUnits": "SECONDS",
+                "GopClosedCadence": 1,
+                "SceneChangeDetect": "ENABLED",
+                "NumberBFramesBetweenReferenceFrames": 2
+              }
+            }
+          },
+          "AudioDescriptions": [
+            {
+              "AudioSourceName": "Audio Selector 1",
+              "CodecSettings": {
+                "Codec": "AAC",
+                "AacSettings": {
+                  "Bitrate": 128000,
+                  "CodingMode": "CODING_MODE_2_0",
+                  "SampleRate": 48000
+                }
+              }
+            }
+          ]
+        },
+        {
+          "NameModifier": "540p",
+          "ContainerSettings": { "Container": "M3U8" },
+          "VideoDescription": {
+            "Width": 540,
+            "Height": 960,
+            "ScalingBehavior": "DEFAULT",
+            "Sharpness": 50,
+            "CodecSettings": {
+              "Codec": "H_264",
+              "H264Settings": {
+                "RateControlMode": "VBR",
+                "Bitrate": 1500000,
+                "GopSize": 2,
+                "GopSizeUnits": "SECONDS",
+                "GopClosedCadence": 1,
+                "SceneChangeDetect": "ENABLED",
+                "NumberBFramesBetweenReferenceFrames": 2
+              }
+            }
+          },
+          "AudioDescriptions": [
+            {
+              "AudioSourceName": "Audio Selector 1",
+              "CodecSettings": {
+                "Codec": "AAC",
+                "AacSettings": {
+                  "Bitrate": 96000,
+                  "CodingMode": "CODING_MODE_2_0",
+                  "SampleRate": 48000
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
