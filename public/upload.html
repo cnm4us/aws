@@ -70,9 +70,12 @@
           formData.append('file', file);
 
           // 3) Upload with progress via XHR
+          let etag = null;
           await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', post.url, true);
+            // S3 returns XML on 201; allow parsing
+            xhr.responseType = 'document';
             xhr.upload.addEventListener('progress', (e) => {
               if (e.lengthComputable) {
                 const pct = Math.round((e.loaded / e.total) * 100);
@@ -80,7 +83,20 @@
               }
             });
             xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) resolve();
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  // Prefer parsed XML if available
+                  const xmlDoc = xhr.responseXML || new DOMParser().parseFromString(xhr.responseText || '', 'application/xml');
+                  const tag = xmlDoc && xmlDoc.getElementsByTagName('ETag')[0];
+                  if (tag && tag.textContent) {
+                    etag = tag.textContent.replace(/^\"|\"$/g, '');
+                    log('s3 etag', etag);
+                  }
+                } catch (e) {
+                  // ignore parse issues; ETag is optional for our flow
+                }
+                resolve();
+              }
               else reject(new Error(`S3 upload failed: ${xhr.status}`));
             };
             xhr.onerror = () => reject(new Error('Network error uploading to S3'));
@@ -89,7 +105,7 @@
 
           // 4) Mark complete on server
           const completeRes = await fetch('/api/mark-complete', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, sizeBytes: file.size })
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, sizeBytes: file.size, etag })
           });
           if (!completeRes.ok) throw new Error('Failed to mark complete');
 
@@ -104,4 +120,3 @@
     </script>
   </body>
   </html>
-
