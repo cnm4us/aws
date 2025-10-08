@@ -44,17 +44,36 @@
         elLog.textContent += `\n${line}`;
       }
 
+      async function probeVideo(file) {
+        return new Promise((resolve) => {
+          try {
+            const url = URL.createObjectURL(file);
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.src = url;
+            v.onloadedmetadata = () => {
+              const meta = { width: v.videoWidth || null, height: v.videoHeight || null, durationSeconds: v.duration ? Math.round(v.duration) : null };
+              URL.revokeObjectURL(url);
+              resolve(meta);
+            };
+            v.onerror = () => resolve({ width: null, height: null, durationSeconds: null });
+          } catch { resolve({ width: null, height: null, durationSeconds: null }); }
+        });
+      }
+
       elStart.addEventListener('click', async () => {
         const file = elFile.files && elFile.files[0];
         if (!file) { alert('Choose a file first'); return; }
         elProg.value = 0; elMsg.textContent = '';
 
         try {
+          const meta = await probeVideo(file);
           // 1) Ask server for a presigned POST
           const body = {
             filename: file.name,
             contentType: file.type || 'application/octet-stream',
-            sizeBytes: file.size
+            sizeBytes: file.size,
+            ...meta
           };
           log('sign body', body);
           const signRes = await fetch('/api/sign-upload', {

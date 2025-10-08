@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Publish Videos</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; }
+      table { border-collapse: collapse; width: 100%; max-width: 960px; }
+      th, td { border: 1px solid #ddd; padding: 8px; }
+      th { background: #f5f5f5; text-align: left; }
+      button { padding: 0.3rem 0.6rem; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h2>Uploaded Videos</h2>
+    <p class="muted">Only showing latest 50 by default.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Filename</th>
+          <th>Size</th>
+          <th>WxH</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <script>
+      const rows = document.getElementById('rows');
+
+      function fmtBytes(n){
+        if (!n && n !== 0) return '';
+        const units = ['B','KB','MB','GB','TB'];
+        let i=0, v = n;
+        while (v >= 1024 && i < units.length-1) { v/=1024; i++; }
+        return v.toFixed(1)+' '+units[i];
+      }
+
+      async function load(){
+        const res = await fetch('/api/uploads?limit=50');
+        const data = await res.json();
+        rows.innerHTML = '';
+        data.forEach((u) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>
+              ${u.id}
+            </td>
+            <td title="${u.s3_key}">
+              ${u.original_filename}
+            </td>
+            <td>${fmtBytes(u.size_bytes)}</td>
+            <td>${u.width||''}x${u.height||''}</td>
+            <td>${u.status}</td>
+            <td>
+              ${u.status === 'uploaded' ? `<button data-id="${u.id}">Publish</button>` : `<span class="muted">-</span>`}
+            </td>
+          `;
+          rows.appendChild(tr);
+        });
+
+        rows.querySelectorAll('button[data-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const id = e.currentTarget.getAttribute('data-id');
+            e.currentTarget.disabled = true;
+            e.currentTarget.textContent = 'Publishing...';
+            try {
+              const resp = await fetch('/api/publish', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: Number(id) }) });
+              const json = await resp.json();
+              if (!resp.ok) throw new Error(json.error || 'Failed');
+            } catch (err) {
+              alert('Publish failed: ' + err.message);
+            } finally {
+              await load();
+            }
+          });
+        });
+      }
+
+      load();
+    </script>
+  </body>
+  </html>
+
