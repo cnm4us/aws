@@ -43,7 +43,6 @@
         const row = await res.json();
         if (!res.ok) { status.textContent = 'Error: ' + (row.error || 'not found'); return; }
 
-        const base = (row.original_filename||'video').replace(/\.[^.]+$/,'');
         const master = row.cdn_master || row.s3_master;
         if (!master) { status.textContent = 'No output prefix yet; job may be queued.'; return; }
 
@@ -68,4 +67,3 @@
     </script>
   </body>
   </html>
-

@@ -24,13 +24,7 @@
           "DirectoryStructure": "SUBDIRECTORY_PER_STREAM",
           "SegmentsPerSubdirectory": 1000,
           "ClientCache": "ENABLED",
-          "ProgramDateTime": "EXCLUDE",
-          "AdditionalManifests": [
-            {
-              "ManifestNameModifier": "_master",
-              "SelectedOutputs": ["1080p", "720p", "540p"]
-            }
-          ]
+          "ProgramDateTime": "EXCLUDE"
         }
       },
       "Outputs": [
