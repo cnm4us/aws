@@ -1,0 +1,9 @@
+{
+  "$extends": [
+    "templates/base-hls",
+    "mixins/output/landscape-1080-720-480",
+    "mixins/quality/h264-qvbr-hq",
+    "mixins/audio/normalize-lufs-16"
+  ]
+}
+

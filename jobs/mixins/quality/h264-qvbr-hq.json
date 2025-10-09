@@ -1,0 +1,34 @@
+{
+  "Settings": {
+    "OutputGroups": [
+      {
+        "Outputs": [
+          {
+            "VideoDescription": {
+              "CodecSettings": {
+                "Codec": "H_264",
+                "H264Settings": {
+                  "RateControlMode": "QVBR",
+                  "QvbrSettings": { "QvbrQualityLevel": 9 },
+                  "QualityTuningLevel": "SINGLE_PASS_HQ",
+                  "AdaptiveQuantization": "HIGH",
+                  "SpatialAdaptiveQuantization": "ENABLED",
+                  "TemporalAdaptiveQuantization": "ENABLED",
+                  "FlickerAdaptiveQuantization": "ENABLED",
+                  "GopSizeUnits": "SECONDS",
+                  "GopSize": 2,
+                  "GopClosedCadence": 1,
+                  "NumberBFramesBetweenReferenceFrames": 2,
+                  "CodecProfile": "HIGH",
+                  "CodecLevel": "AUTO",
+                  "FramerateControl": "INITIALIZE_FROM_SOURCE"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+

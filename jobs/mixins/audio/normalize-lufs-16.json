@@ -1,0 +1,27 @@
+{
+  "Settings": {
+    "OutputGroups": [
+      {
+        "Outputs": [
+          {
+            "AudioDescriptions": [
+              {
+                "CodecSettings": {
+                  "Codec": "AAC",
+                  "AacSettings": { "Bitrate": 160000, "CodingMode": "CODING_MODE_2_0", "SampleRate": 48000, "CodecProfile": "LC" }
+                },
+                "AudioNormalizationSettings": {
+                  "Algorithm": "ITU_BS_1770_4",
+                  "AlgorithmControl": "CORRECT_AUDIO",
+                  "LoudnessLogging": "LOG",
+                  "PeakCalculation": "TRUE_PEAK",
+                  "TargetLkfs": -16.0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -22,9 +22,16 @@
         <option value="portrait-hls">portrait-hls</option>
         <option value="landscape-both-hls">landscape-both-hls</option>
         <option value="simple-hls">simple-hls</option>
-        <option value="portrait-hls-hq">portrait-hls-hq</option>
-        <option value="landscape-both-hls-hq">landscape-both-hls-hq</option>
-        <option value="simple-hls-hq">simple-hls-hq</option>
+      </select>
+      <label for="quality" style="margin-left:12px;">Quality:</label>
+      <select id="quality">
+        <option value="standard" selected>Standard</option>
+        <option value="hq">High Quality</option>
+      </select>
+      <label for="sound" style="margin-left:12px;">Sound:</label>
+      <select id="sound">
+        <option value="original" selected>Original</option>
+        <option value="normalize">Normalize (-16 LUFS)</option>
       </select>
     </div>
     <p class="muted">Only showing latest 50 by default.</p>
@@ -77,6 +84,8 @@
         });
 
         const profileSel = document.getElementById('profile');
+        const qualitySel = document.getElementById('quality');
+        const soundSel = document.getElementById('sound');
         rows.querySelectorAll('button[data-id]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             const id = e.currentTarget.getAttribute('data-id');
@@ -84,7 +93,9 @@
             e.currentTarget.textContent = 'Publishing...';
             try {
               const prof = profileSel.value;
-              const body = prof && prof !== 'auto' ? { id: Number(id), profile: prof } : { id: Number(id) };
+              const quality = qualitySel.value;
+              const sound = soundSel.value;
+              const body = prof && prof !== 'auto' ? { id: Number(id), profile: prof, quality, sound } : { id: Number(id), quality, sound };
               const resp = await fetch('/api/publish', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
               const json = await resp.json();
               if (!resp.ok) throw new Error(json.error || 'Failed');

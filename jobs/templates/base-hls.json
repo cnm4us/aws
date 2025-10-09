@@ -1,0 +1,11 @@
+{
+  "TimecodeConfig": { "Source": "ZEROBASED" },
+  "Inputs": [
+    {
+      "FileInput": "INPUT_URI",
+      "AudioSelectors": { "Audio Selector 1": { "DefaultSelection": "DEFAULT" } },
+      "VideoSelector": { "Rotate": "AUTO" }
+    }
+  ]
+}
+
