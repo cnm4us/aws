@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Video Player</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#000; color:#fff; }
+      header { padding: 12px 16px; background: #111; border-bottom: 1px solid #222; }
+      main { padding: 12px 16px; }
+      .meta { color:#bbb; font-size: 14px; margin: 8px 0 16px; word-break: break-all; }
+      .player { position: relative; width: 100%; max-width: 720px; aspect-ratio: 9/16; background:#000; margin: 0 auto; }
+      video { position:absolute; inset:0; width:100%; height:100%; object-fit: cover; background:#000; }
+      .links a { color:#7ec8ff; text-decoration: none; margin-right: 12px; }
+      .links a:hover { text-decoration: underline; }
+      .warn { color:#ffc107 }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  </head>
+  <body>
+    <header>
+      <strong>Video Test Player</strong>
+    </header>
+    <main>
+      <div id="status" class="meta">Loading…</div>
+      <div class="player">
+        <video id="v" controls playsinline preload="metadata"></video>
+      </div>
+      <div id="info" class="meta"></div>
+      <div id="links" class="links"></div>
+    </main>
+    <script>
+      function qs(name){ const u = new URL(location.href); return u.searchParams.get(name); }
+      async function run(){
+        const id = qs('id');
+        const status = document.getElementById('status');
+        const info = document.getElementById('info');
+        const links = document.getElementById('links');
+        if (!id) { status.textContent = 'Add ?id=<upload id> to the URL'; return; }
+
+        status.textContent = 'Fetching upload ' + id + '…';
+        const res = await fetch('/api/uploads/' + encodeURIComponent(id));
+        const row = await res.json();
+        if (!res.ok) { status.textContent = 'Error: ' + (row.error || 'not found'); return; }
+
+        const base = (row.original_filename||'video').replace(/\.[^.]+$/,'');
+        const master = row.cdn_master || row.s3_master;
+        if (!master) { status.textContent = 'No output prefix yet; job may be queued.'; return; }
+
+        status.textContent = 'Ready';
+        info.textContent = `Master: ${master}`;
+        links.innerHTML = '';
+        const a = document.createElement('a'); a.href = master; a.target = '_blank'; a.textContent = 'Open master.m3u8'; links.appendChild(a);
+
+        const video = document.getElementById('v');
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = master; // Safari
+        } else if (window.Hls && Hls.isSupported()) {
+          const hls = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0 });
+          hls.loadSource(master);
+          hls.attachMedia(video);
+        } else {
+          status.innerHTML = 'HLS not supported in this browser';
+          status.classList.add('warn');
+        }
+      }
+      run();
+    </script>
+  </body>
+  </html>
+
