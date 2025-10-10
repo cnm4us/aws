@@ -14,3 +14,4 @@ logs/
 # Keep TypeScript source tracked
 !src/**/*.ts
 !src/**/*.d.ts
+!scripts/**/*.ts

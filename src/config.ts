@@ -27,4 +27,4 @@ export const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || '';
 // Request logs
 import path from 'path';
 export const REQUEST_LOGS_DIR = process.env.REQUEST_LOGS_DIR || path.join(process.cwd(), 'logs', 'request');
-
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || undefined;

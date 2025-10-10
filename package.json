@@ -9,7 +9,8 @@
     "serve": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/index.js",
     "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
-    "mc:create": "ts-node src/tools/mediaconvert/create-job.ts"
+    "mc:create": "ts-node src/tools/mediaconvert/create-job.ts",
+    "test:naming": "ts-node scripts/test-naming.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

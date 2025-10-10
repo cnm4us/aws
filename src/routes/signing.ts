@@ -5,12 +5,10 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getPool } from '../db';
 import { s3 } from '../services/s3';
 import { MAX_UPLOAD_MB, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../config';
+import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../utils/naming';
+import { adminGuard } from '../security/admin';
 
 export const signingRouter = Router();
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 200);
-}
 
 const signSchema = z.object({
   filename: z.string().min(1),
@@ -21,27 +19,17 @@ const signSchema = z.object({
   durationSeconds: z.number().int().positive().nullable().optional(),
 });
 
-signingRouter.post('/api/sign-upload', async (req, res) => {
+signingRouter.post('/api/sign-upload', adminGuard, async (req, res) => {
   try {
     const parsed = signSchema.parse(req.body || {});
     const { filename, contentType, sizeBytes, width, height, durationSeconds } = parsed;
     const safe = sanitizeFilename(filename);
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const dateYmd = `${y}-${m}-${d}`;
-    const datePrefix = `${y}-${m}/${d}`; // YYYY-MM/DD
+    const { ymd: dateYmd, folder: datePrefix } = nowDateYmd();
     const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : '';
     const assetUuid = randomUUID();
 
-    const lowerCt = String(contentType || '').toLowerCase();
-    const extFromName = (safe.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-    const ext = lowerCt.includes('mp4') ? '.mp4'
-      : lowerCt.includes('webm') ? '.webm'
-      : lowerCt.includes('quicktime') || lowerCt.includes('mov') ? '.mov'
-      : (extFromName || '.mp4');
-    const key = `${basePrefix}${datePrefix}/${assetUuid}/video${ext}`;
+    const ext = pickExtension(contentType, safe);
+    const key = buildUploadKey(basePrefix, datePrefix, assetUuid, ext);
 
     const db = getPool();
     const [result] = await db.query(
@@ -82,7 +70,7 @@ const completeSchema = z.object({
   sizeBytes: z.number().int().positive().optional(),
 });
 
-signingRouter.post('/api/mark-complete', async (req, res) => {
+signingRouter.post('/api/mark-complete', adminGuard, async (req, res) => {
   try {
     const { id, etag, sizeBytes } = completeSchema.parse(req.body || {});
     const db = getPool();
@@ -99,4 +87,3 @@ signingRouter.post('/api/mark-complete', async (req, res) => {
     res.status(400).json({ error: 'failed_to_mark', detail: String(err?.message || err) });
   }
 });
-
