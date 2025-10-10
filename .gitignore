@@ -10,3 +10,7 @@ dist/
 *.ts
 
 logs/
+
+# Keep TypeScript source tracked
+!src/**/*.ts
+!src/**/*.d.ts
