@@ -28,3 +28,4 @@ export const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || '';
 import path from 'path';
 export const REQUEST_LOGS_DIR = process.env.REQUEST_LOGS_DIR || path.join(process.cwd(), 'logs', 'request');
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || undefined;
+export const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;

@@ -12,6 +12,7 @@ import { uploadsRouter } from './routes/uploads';
 import { signingRouter } from './routes/signing';
 import { publishRouter } from './routes/publish';
 import { profilesRouter } from './routes/profiles';
+import { BUILD_TAG, getVersionInfo } from './utils/version';
 
 const app = express();
 app.use(cors());
@@ -28,26 +29,45 @@ ensureSchema(db).catch((e) => {
 app.get('/health', (_req: ExpressRequest, res: ExpressResponse) => {
   res.json({ ok: true });
 });
+
+// Version endpoint
+app.get('/version', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.json(getVersionInfo());
+});
 // Mount routes
 app.use(signingRouter);
 app.use(uploadsRouter);
 app.use(profilesRouter);
 app.use(publishRouter);
 
-// Serve simple uploader page
+// Serve static with no-store for HTML and X-Build header
 const publicDir = path.join(process.cwd(), 'public');
-app.use(express.static(publicDir));
+const staticOpts = {
+  setHeaders: (res: any, filePath: string) => {
+    res.setHeader('X-Build', BUILD_TAG);
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+  },
+};
+app.use(express.static(publicDir, staticOpts as any));
+// Experimental scoped route: /exp/:tag/* maps to public/*
+app.use('/exp/:tag', express.static(publicDir, staticOpts as any));
 app.get('/', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'upload.html'));
 });
 
 // Simple video player page: /videos?id=123
 app.get('/videos', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'videos.html'));
 });
 
 // Mobile edge-to-edge player: /mobile?id=123
 app.get('/mobile', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'mobile.html'));
 });
 

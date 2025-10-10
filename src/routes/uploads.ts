@@ -7,14 +7,18 @@ export const uploadsRouter = Router();
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
     const db = getPool();
-    const { status, limit } = req.query as any;
+    const { status, limit, cursor } = req.query as any;
     const lim = Math.min(Number(limit || 50), 500);
-    if (status) {
-      const [rows] = await db.query(`SELECT * FROM uploads WHERE status = ? ORDER BY id DESC LIMIT ?`, [String(status), lim]);
+    const curId = cursor ? Number(cursor) : undefined;
+    const where: string[] = [];
+    const params: any[] = [];
+    if (status) { where.push('status = ?'); params.push(String(status)); }
+    if (curId && Number.isFinite(curId)) { where.push('id < ?'); params.push(curId); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    if (true) {
+      const [rows] = await db.query(`SELECT * FROM uploads ${whereSql} ORDER BY id DESC LIMIT ?`, [...params, lim]);
       return res.json((rows as any[]).map(enhanceUploadRow));
     }
-    const [rows] = await db.query(`SELECT * FROM uploads ORDER BY id DESC LIMIT ?`, [lim]);
-    res.json((rows as any[]).map(enhanceUploadRow));
   } catch (err: any) {
     console.error('list uploads error', err);
     res.status(500).json({ error: 'failed_to_list', detail: String(err?.message || err) });
@@ -35,4 +39,3 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
     res.status(500).json({ error: 'failed_to_get', detail: String(err?.message || err) });
   }
 });
-
