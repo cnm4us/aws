@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Video</title>
+    <style>
+      html, body { height: 100%; }
+      body { margin: 0; background: #000; overflow: hidden; }
+      .stage { position: fixed; inset: 0; background: #000; }
+      video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+      .tap { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color:#fff; background: rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.3); padding: 10px 14px; border-radius: 24px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 14px; }
+      .hidden { display: none; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  </head>
+  <body>
+    <div class="stage">
+      <video id="v" playsinline muted preload="metadata"></video>
+      <div id="tap" class="tap hidden">Tap for sound</div>
+    </div>
+    <script>
+      function qs(name){ const u=new URL(location.href); return u.searchParams.get(name); }
+      const video = document.getElementById('v');
+      const tap = document.getElementById('tap');
+      let unlocked = false;
+
+      async function load(){
+        const id = qs('id');
+        if (!id) return;
+        const res = await fetch('/api/uploads/' + encodeURIComponent(id));
+        const row = await res.json();
+        if (!res.ok) return;
+        const master = row.cdn_master || row.s3_master;
+        if (!master) return;
+
+        // Attach source
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = master;
+        } else if (window.Hls && Hls.isSupported()) {
+          const hls = new Hls({ capLevelToPlayerSize:true, startLevel:-1, maxBufferLength: 15, backBufferLength: 0 });
+          hls.loadSource(master);
+          hls.attachMedia(video);
+        } else {
+          // fallback: navigate to file
+          location.href = master;
+          return;
+        }
+
+        // Try autoplay muted; show tap hint to unmute
+        try { await video.play(); } catch {}
+        tap.classList.remove('hidden');
+      }
+
+      function unlock(){
+        if (unlocked) return;
+        unlocked = true;
+        tap.classList.add('hidden');
+        video.muted = false;
+        video.play().catch(()=>{});
+      }
+
+      // Gesture handlers (must be synchronous)
+      document.addEventListener('touchend', unlock, { passive:true });
+      document.addEventListener('click', unlock);
+
+      // Keep screen awake on supported browsers
+      if ('wakeLock' in navigator) {
+        let lock;
+        const req = async ()=>{ try{ lock = await navigator.wakeLock.request('screen'); }catch{} };
+        req();
+        document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') req(); });
+      }
+
+      load();
+    </script>
+  </body>
+  </html>
+
