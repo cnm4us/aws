@@ -3,23 +3,37 @@ import mysql from 'mysql2/promise';
 
 export type DB = mysql.Pool;
 
+let pool: mysql.Pool | undefined;
+
 export function getPool(): DB {
+  if (pool) return pool;
+
   const host = process.env.DB_HOST || '127.0.0.1';
   const port = Number(process.env.DB_PORT || 3306);
   const user = process.env.DB_USER || 'root';
   const password = process.env.DB_PASSWORD || '';
   const database = process.env.DB_NAME || 'aws';
 
-  return mysql.createPool({
+  pool = mysql.createPool({
     host,
     port,
     user,
     password,
     database,
-    connectionLimit: 5,
+    connectionLimit: Number(process.env.DB_POOL_LIMIT || 10),
+    waitForConnections: true,
+    queueLimit: 0,
     // Helpful defaults for MariaDB
     dateStrings: true,
   });
+
+  const close = async () => {
+    try { await pool!.end(); } catch {}
+  };
+  process.on('SIGINT', close);
+  process.on('SIGTERM', close);
+
+  return pool;
 }
 
 export async function ensureSchema(db: DB) {

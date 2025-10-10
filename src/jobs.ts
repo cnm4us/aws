@@ -18,7 +18,8 @@ export function loadProfileJson(name: string): any {
   const file = candidates.find((p) => fs.existsSync(p));
   if (!file) throw new Error(`Profile not found: ${name}`);
   const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as any;
-  return resolveExtends(raw, jobsRoot);
+  const resolved = resolveExtends(raw, jobsRoot);
+  return flattenSettings(resolved);
 }
 
 function isPlainObject(v: any): v is Record<string, any> {
@@ -112,12 +113,20 @@ export function applyHqTuning(settings: any) {
     const groups = settings?.OutputGroups;
     if (!Array.isArray(groups)) return;
     for (const g of groups) {
+      // Only tune HLS groups
+      const ogType = g?.OutputGroupSettings?.Type;
+      if (ogType && ogType !== 'HLS_GROUP_SETTINGS') continue;
       const outs = g?.Outputs;
       if (!Array.isArray(outs)) continue;
       for (const o of outs) {
+        // Skip non-HLS/non-MP4 file groups (e.g., FRAME_CAPTURE for posters)
+        const container = o?.ContainerSettings?.Container;
+        if (container && container !== 'M3U8' && container !== 'MP4') continue;
         const vd = o?.VideoDescription;
         const cs = vd?.CodecSettings;
         const h264 = cs?.H264Settings;
+        // Skip frame capture outputs explicitly
+        if (cs && cs.Codec === 'FRAME_CAPTURE') continue;
         if (!vd || !cs) continue;
         if (!h264) {
           // force H.264 settings block if missing
@@ -230,6 +239,18 @@ function resolveExtends(json: any, jobsRoot: string): any {
   const { $extends, ...rest } = json;
   merged = deepMerge(merged, rest);
   return merged;
+}
+
+// Some mixins place content under Settings. Flatten Settings into root so the result
+// is a valid MediaConvert Settings object (TimecodeConfig, Inputs, OutputGroups at top-level).
+export function flattenSettings(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (obj.Settings && typeof obj.Settings === 'object') {
+    const merged = deepMerge(obj, obj.Settings);
+    delete merged.Settings;
+    return merged;
+  }
+  return obj;
 }
 
 export function applyAudioNormalization(settings: any, opts?: { targetLkfs?: number; aacBitrate?: number }) {

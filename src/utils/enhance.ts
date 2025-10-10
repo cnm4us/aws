@@ -14,11 +14,13 @@ export function enhanceUploadRow(u: any) {
     const cdnPrefix = `https://${CLOUDFRONT_DOMAIN}/${u.output_prefix}`;
     out.cdn_prefix = cdnPrefix;
     out.cdn_master = `${cdnPrefix}${baseFromKey}.m3u8`;
+    out.poster_cdn = `${cdnPrefix}${baseFromKey}_poster.0000000.jpg`;
   }
   if (u.output_prefix) {
     const base = baseFromKey;
     const region = AWS_REGION;
     out.s3_master = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${u.output_prefix}${base}.m3u8`;
+    out.poster_s3 = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${u.output_prefix}${base}_poster.0000000.jpg`;
   }
   return out;
 }
@@ -49,4 +51,3 @@ export function parseFromKey(key: string): { date: string; uuid: string } | null
   } catch {}
   return null;
 }
-

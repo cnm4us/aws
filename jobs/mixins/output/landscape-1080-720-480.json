@@ -71,8 +71,34 @@
             ]
           }
         ]
+      },
+      {
+        "Name": "Posters Landscape",
+        "OutputGroupSettings": {
+          "Type": "FILE_GROUP_SETTINGS",
+          "FileGroupSettings": {
+            "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/landscape/"
+          }
+        },
+        "Outputs": [
+          {
+            "NameModifier": "_poster",
+            "ContainerSettings": { "Container": "RAW" },
+            "VideoDescription": {
+              "CodecSettings": {
+                "Codec": "FRAME_CAPTURE",
+                "FrameCaptureSettings": {
+                  "CaptureInterval": 1,
+                  "CaptureIntervalUnits": "FRAMES",
+                  "MaxCaptures": 1,
+                  "Quality": 80
+                }
+              }
+            },
+            "Extension": "jpg"
+          }
+        ]
       }
     ]
   }
 }
-

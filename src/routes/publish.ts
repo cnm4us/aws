@@ -39,9 +39,15 @@ publishRouter.post('/api/publish', async (req, res) => {
       }
     }
     const isHq = chosenProfile.endsWith('-hq');
-    const baseProfile = isHq ? chosenProfile.replace(/-hq$/, '') : chosenProfile;
-
-    const raw = loadProfileJson(baseProfile);
+    // Load chosen profile if it exists; loader already searches profiles/ then root
+    let raw: any;
+    try {
+      raw = loadProfileJson(chosenProfile);
+    } catch {
+      // fallback to base name
+      const baseProfile = isHq ? chosenProfile.replace(/-hq$/, '') : chosenProfile;
+      raw = loadProfileJson(baseProfile);
+    }
     const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
     const keyParts = String(upload.s3_key || '').split('/');
     let assetUuid: string = String(upload.id);
@@ -58,6 +64,63 @@ publishRouter.post('/api/publish', async (req, res) => {
     if (typeof sound === 'string' && sound.toLowerCase().startsWith('norm')) {
       applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 160000 });
     }
+
+    // Ensure poster file group exists (FRAME_CAPTURE) for the computed destination
+    try {
+      const outPrefix = getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET);
+      if (outPrefix) {
+        const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : [];
+        const hasPoster = groups.some((g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS');
+        if (!hasPoster) {
+          groups.push({
+            Name: 'Posters',
+            OutputGroupSettings: {
+              Type: 'FILE_GROUP_SETTINGS',
+              FileGroupSettings: { Destination: `s3://${OUTPUT_BUCKET}/${outPrefix}` },
+            },
+            Outputs: [
+              {
+                NameModifier: '_poster',
+                ContainerSettings: { Container: 'RAW' },
+                Extension: 'jpg',
+                VideoDescription: {
+                  CodecSettings: {
+                    Codec: 'FRAME_CAPTURE',
+                    FrameCaptureSettings: {
+                      CaptureIntervalUnits: 'FRAMES',
+                      CaptureInterval: 1,
+                      MaxCaptures: 1,
+                      Quality: 80,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+          (settings as any).OutputGroups = groups;
+        }
+      }
+    } catch {}
+
+    // Final normalization: drop malformed groups and ensure required fields
+    try {
+      const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : [];
+      const cleaned: any[] = [];
+      for (const g of groups) {
+        const t = g?.OutputGroupSettings?.Type;
+        if (t === 'HLS_GROUP_SETTINGS' || t === 'FILE_GROUP_SETTINGS') {
+          if (!Array.isArray(g.Outputs)) g.Outputs = [];
+          for (const o of g.Outputs) {
+            if (!o.ContainerSettings) {
+              if (t === 'FILE_GROUP_SETTINGS') o.ContainerSettings = { Container: 'RAW' };
+              if (t === 'HLS_GROUP_SETTINGS') o.ContainerSettings = { Container: 'M3U8' } as any;
+            }
+          }
+          cleaned.push(g);
+        }
+      }
+      (settings as any).OutputGroups = cleaned;
+    } catch {}
 
     const mc = await getMediaConvertClient(AWS_REGION);
     const params: any = {
@@ -83,4 +146,3 @@ publishRouter.post('/api/publish', async (req, res) => {
     res.status(400).json({ error: 'failed_to_publish', detail: String(err?.message || err) });
   }
 });
-

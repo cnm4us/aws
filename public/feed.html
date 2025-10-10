@@ -10,10 +10,10 @@
       body { margin: 0; background: #000; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
       .splash { position: fixed; inset: 0; display: grid; place-items: center; background: linear-gradient(180deg, #000, #111); z-index: 10; }
       .splash .btn { color:#fff; background:#0a84ff; border:none; padding:14px 20px; border-radius:12px; font-size: 16px; }
-      .rail { position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden; display: block; scroll-snap-type: y mandatory; scroll-behavior: smooth; }
-      .slide { position: relative; width: 100vw; height: 100dvh; scroll-snap-align: center; background:#000; }
+      .rail { position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden; display: block; scroll-snap-type: y mandatory; overscroll-behavior: contain; scroll-behavior: smooth; }
+      .slide { position: relative; width: 100vw; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; background:#000; background-size: cover; background-position: center; background-repeat: no-repeat; }
       .slide .holder { position:absolute; inset:0; }
-      video { position:absolute; inset:0; width:100%; height:100%; object-fit: cover; background:#000; }
+      video { position:absolute; inset:0; width:100%; height:100%; object-fit: cover; background: transparent; opacity: 0; transition: opacity .12s linear; }
       .hint { position:absolute; bottom: 12px; right: 12px; color:#fff9; font-size: 12px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
@@ -37,8 +37,8 @@
       // Player pool
       function createPlayer(){
         const v = document.createElement('video');
-        v.playsInline = true; v.muted = true; v.preload = 'metadata'; v.controls = false; v.setAttribute('webkit-playsinline','');
-        return { video: v, hls: null, url: null, idx: -999 };
+        v.playsInline = true; v.muted = true; v.preload = 'auto'; v.controls = false; v.setAttribute('webkit-playsinline','');
+        return { video: v, hls: null, url: null, idx: -999, warming: false, warmTimer: null };
       }
       const pool = [createPlayer(), createPlayer(), createPlayer()];
 
@@ -52,7 +52,7 @@
         if (player.video.canPlayType('application/vnd.apple.mpegurl')){
           player.video.src = url;
         } else if (window.Hls && Hls.isSupported()){
-          const hls = new Hls({ capLevelToPlayerSize:true, startLevel:-1, maxBufferLength:15, backBufferLength:0 });
+          const hls = new Hls({ capLevelToPlayerSize:true, startLevel:-1, maxBufferLength:30, backBufferLength:10, startFragPrefetch: true });
           hls.loadSource(url);
           hls.attachMedia(player.video);
           player.hls = hls;
@@ -82,15 +82,35 @@
         player.idx = slideIndex;
       }
 
-      async function setCurrentPlayback(){
+      async function setCurrentPlayback(options){
+        const muteAll = options && options.muteAll;
         for (let p=0;p<3;p++){
           const player = pool[p];
           if (player.idx === currentIndex){
-            player.video.muted = false; try { await player.video.play(); } catch {}
+            player.video.muted = !!muteAll; try { await player.video.play(); } catch {}
           } else {
             player.video.muted = true; try { player.video.pause(); } catch {}
           }
         }
+      }
+
+      function warmNext(player){
+        if (!player || player.warming) return;
+        player.warming = true;
+        if (player.warmTimer) { clearTimeout(player.warmTimer); player.warmTimer = null; }
+        try {
+          player.video.muted = true;
+          // Play ~1200ms while hidden to accumulate buffer, then pause and reset to start
+          const pr = player.video.play();
+          if (pr && pr.then) pr.then(()=>{
+            player.warmTimer = setTimeout(()=>{
+              // If this player became current meanwhile, don't pause it
+              if (player.idx === currentIndex) { player.warming = false; player.warmTimer = null; return; }
+              try { player.video.pause(); player.video.currentTime = 0.01; } catch{}
+              player.warming = false; player.warmTimer = null;
+            }, 1200);
+          }).catch(()=>{ player.warming = false; });
+        } catch { player.warming = false; }
       }
 
       async function mapPool(idx){
@@ -118,10 +138,24 @@
           const url = items[targetIdx].url;
           mountPlayerToSlide(player, targetIdx);
           attachSource(player, url);
-          // Preload non-current players
-          if (p !== 1) { try { await player.video.play(); player.video.pause(); } catch {} }
+          // Set slide background to poster for approach
+          const slideNode = rail.children[targetIdx];
+          if (slideNode && items[targetIdx].poster) (slideNode).style.backgroundImage = `url('${items[targetIdx].poster}')`;
+          // Prewarm NEXT offscreen
+          if (p === 2) { warmNext(player); }
+          // Keep PREV paused
+          if (p === 0) { try { player.video.pause(); } catch {} }
+          // Ensure CURRENT video is visible and not subject to warm timers
+          // Set baseline opacity: current=1, others=0
+          if (p === 1) {
+            if (player.warmTimer){ clearTimeout(player.warmTimer); player.warmTimer = null; }
+            player.warming = false;
+            player.video.style.opacity = '1';
+          } else {
+            player.video.style.opacity = '0';
+          }
         }
-        await setCurrentPlayback();
+        await setCurrentPlayback({ muteAll: splash.style.display !== 'none' });
       }
 
       async function fetchPage(cursor){
@@ -129,7 +163,7 @@
         if (cursor) q.set('cursor', String(cursor));
         const res = await fetch('/api/uploads?'+q.toString());
         const data = await res.json();
-        return data.map(r => ({ id: r.id, url: r.cdn_master || r.s3_master }));
+        return data.map(r => ({ id: r.id, url: r.cdn_master || r.s3_master, poster: r.poster_cdn || r.poster_s3 }));
       }
 
       function setupObserver(){
@@ -138,11 +172,18 @@
           for (const e of entries){
             const el = e.target; const idx = Array.prototype.indexOf.call(rail.children, el);
             if (e.intersectionRatio > best.ratio){ best = { idx, ratio: e.intersectionRatio }; }
+            if (idx === currentIndex + 1){
+              if (e.intersectionRatio > 0.5){
+                const nextP = pool.find(p => p.idx === idx);
+                if (nextP) { warmNext(nextP); /* keep next video fully transparent to avoid dimming poster */ }
+              }
+            }
           }
-          if (best.ratio > 0.7 && best.idx !== currentIndex){ mapPool(best.idx); }
+          // Switch when slide is ~85% in place for quicker start
+          if (best.ratio > 0.85 && best.idx !== currentIndex){ mapPool(best.idx); }
           // paginate when near end
           if (rail.children.length - currentIndex < 5) maybeLoadMore();
-        }, { root: rail, threshold: [0,0.25,0.5,0.7,0.9,1] });
+        }, { root: rail, threshold: [0,0.25,0.5,0.7,0.85,0.9,1] });
         Array.from(rail.children).forEach(ch => io.observe(ch));
         return io;
       }
@@ -171,6 +212,9 @@
         ensureSlides(items.length);
         observer = setupObserver();
         await mapPool(0);
+        // Prewarm first video under splash (muted) so audio starts immediately upon unlock
+        const cur0 = pool.find(p => p.idx === 0) || pool[1];
+        if (cur0){ try { cur0.video.muted = true; await cur0.video.play(); cur0.video.pause(); cur0.video.currentTime = 0.01; } catch{} }
       }
 
       function unlockGesture(){
