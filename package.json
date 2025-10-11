@@ -11,9 +11,9 @@
     "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
     "mc:create": "ts-node src/tools/mediaconvert/create-job.ts",
     "test:naming": "ts-node scripts/test-naming.ts",
-    "web:build": "npm run build",
+    "web:build": "npm run build && vite build --config frontend/vite.config.ts",
     "web:deploy": "node scripts/web-deploy.js root",
-    "web:build:scoped": "npm run build",
+    "web:build:scoped": "npm run build && vite build --config frontend/vite.config.ts",
     "web:deploy:scoped": "node scripts/web-deploy.js scoped"
   },
   "dependencies": {
@@ -21,20 +21,32 @@
     "@aws-sdk/client-s3": "^3.645.0",
     "@aws-sdk/credential-providers": "^3.645.0",
     "@aws-sdk/s3-presigned-post": "^3.645.0",
+    "bowser": "^2.12.1",
+    "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "hls.js": "^1.6.13",
     "mysql2": "^3.11.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-intersection-observer": "^9.16.0",
     "yargs": "^17.7.2",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.23",
     "@types/node": "^22.7.5",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
     "@types/yargs": "^17.0.33",
+    "@vitejs/plugin-react": "^5.0.4",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "workbox-build": "^7.3.0"
   }
 }

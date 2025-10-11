@@ -51,7 +51,16 @@ const staticOpts = {
 app.use(express.static(publicDir, staticOpts as any));
 // Experimental scoped route: /exp/:tag/* maps to public/*
 app.use('/exp/:tag', express.static(publicDir, staticOpts as any));
+// Home -> Vite React app (if present)
 app.get('/', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
+  const reactIndex = path.join(publicDir, 'app', 'index.html');
+  res.sendFile(reactIndex);
+});
+
+// Upload page moved to /uploads
+app.get('/uploads', (_req: ExpressRequest, res: ExpressResponse) => {
   res.set('X-Build', BUILD_TAG);
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'upload.html'));
