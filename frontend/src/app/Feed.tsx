@@ -53,7 +53,7 @@ export default function Feed() {
   }, [index, items])
 
   // Attach and play current item
-  const attachAndPlay = async (i: number) => {
+  const attachAndPlay = async (i: number, opts?: { unmute?: boolean }) => {
     const v = videoRef.current
     const r = railRef.current
     if (!v || !r) return
@@ -66,25 +66,37 @@ export default function Feed() {
       holder.appendChild(v)
     }
     v.style.opacity = '0'
-    try {
-      v.src = items[i].url
-      v.preload = 'auto'
-      v.playsInline = true
-      v.muted = !unlocked
-      await v.play().catch(() => {})
-    } catch {}
+    // Prepare event before play to avoid missing it
     const onLoaded = () => {
       v.style.opacity = '1'
       v.removeEventListener('loadeddata', onLoaded)
     }
     v.addEventListener('loadeddata', onLoaded)
+    try {
+      v.playsInline = true
+      v.preload = 'auto'
+      // For iOS unlock, ensure unmuted on first user gesture
+      v.muted = opts?.unmute ? false : !unlocked
+      if (v.src !== items[i].url) {
+        v.src = items[i].url
+      }
+      // Kick the pipeline. Call load() first for Safari reliability
+      try { v.load() } catch {}
+      await v.play().catch(() => {})
+      if (opts?.unmute && v.muted) {
+        // If somehow still muted, try unmute + play again
+        v.muted = false
+        await v.play().catch(() => {})
+      }
+    } catch {}
   }
 
   // On unlock
   const unlock = () => {
     if (unlocked) return
     setUnlocked(true)
-    attachAndPlay(index)
+    // Start current immediately with sound on (within gesture handler)
+    attachAndPlay(index, { unmute: true })
   }
 
   // Compute active index on scroll (snap to nearest)
@@ -167,4 +179,3 @@ export default function Feed() {
     </div>
   )
 }
-
