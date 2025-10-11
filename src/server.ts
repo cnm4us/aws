@@ -80,14 +80,20 @@ app.get('/mobile', (_req: ExpressRequest, res: ExpressResponse) => {
   res.sendFile(path.join(publicDir, 'mobile.html'));
 });
 
-app.listen(PORT, () => {
+import http from 'http';
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+const server: http.Server = app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Uploader server listening on http://localhost:${PORT}`);
+  if (!pollTimer) pollTimer = setInterval(pollStatuses, STATUS_POLL_MS);
+  backfill();
 });
 
 // Background poller to sync MediaConvert job status into DB
 let polling = false;
+let shuttingDown = false;
 async function pollStatuses() {
+  if (shuttingDown) return;
   if (polling) return; // avoid overlap
   polling = true;
   try {
@@ -113,19 +119,36 @@ async function pollStatuses() {
         } else if (s === 'CANCELED' || s === 'ERROR') {
           await db.query(`UPDATE uploads SET status = 'failed' WHERE id = ?`, [r.id]);
         }
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('poll job failed', jobId, e);
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        if (msg.includes('Pool is closed')) {
+          // Ignore during shutdown
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn('poll job failed', jobId, msg);
+        }
       }
     }
   } finally {
     polling = false;
   }
 }
-setInterval(pollStatuses, STATUS_POLL_MS);
+function gracefulStop() {
+  try {
+    shuttingDown = true;
+    if (pollTimer) clearInterval(pollTimer);
+    server.close(() => {
+      // eslint-disable-next-line no-console
+      console.log('Server closed. Bye!')
+      process.exit(0)
+    })
+  } catch {}
+}
+process.once('SIGINT', gracefulStop);
+process.once('SIGTERM', gracefulStop);
 
 // Backfill asset_uuid and date_ymd from s3_key for legacy rows
-(async function backfill() {
+async function backfill() {
   try {
     const [rows] = await db.query(`SELECT id, s3_key, asset_uuid, date_ymd FROM uploads WHERE (asset_uuid IS NULL OR date_ymd IS NULL) ORDER BY id ASC LIMIT 500`);
     for (const r of rows as any[]) {
@@ -137,7 +160,7 @@ setInterval(pollStatuses, STATUS_POLL_MS);
   } catch (e) {
     console.warn('backfill skipped/failed', e);
   }
-})();
+}
 
 function parseFromKey(key: string): { date: string; uuid: string } | null {
   try {

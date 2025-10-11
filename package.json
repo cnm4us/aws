@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p .",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "serve": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "serve": "ts-node-dev --respawn --exit-child --transpile-only --ignore-watch public,frontend src/server.ts",
     "start": "node dist/index.js",
     "mc:describe": "ts-node src/tools/mediaconvert/describe-endpoints.ts",
     "mc:create": "ts-node src/tools/mediaconvert/create-job.ts",
