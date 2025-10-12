@@ -65,19 +65,29 @@ publishRouter.post('/api/publish', async (req, res) => {
       applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 160000 });
     }
 
-    // Ensure poster file group exists (FRAME_CAPTURE) for the computed destination
+    // Ensure poster file groups (FRAME_CAPTURE) exist for each HLS destination
     try {
-      const outPrefix = getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET);
-      if (outPrefix) {
-        const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : [];
-        const hasPoster = groups.some((g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS');
-        if (!hasPoster) {
+      const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : [];
+      const hlsDests: string[] = [];
+      for (const g of groups) {
+        const t = g?.OutputGroupSettings?.Type;
+        if (t === 'HLS_GROUP_SETTINGS') {
+          const d = g?.OutputGroupSettings?.HlsGroupSettings?.Destination;
+          if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
+            hlsDests.push(d);
+          }
+        }
+      }
+      const uniqueDests = Array.from(new Set(hlsDests));
+      for (const dest of uniqueDests) {
+        const hasPosterForDest = groups.some(
+          (g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS' && g?.OutputGroupSettings?.FileGroupSettings?.Destination === dest
+        );
+        if (!hasPosterForDest) {
+          const name = dest.includes('/portrait/') ? 'Posters Portrait' : dest.includes('/landscape/') ? 'Posters Landscape' : 'Posters';
           groups.push({
-            Name: 'Posters',
-            OutputGroupSettings: {
-              Type: 'FILE_GROUP_SETTINGS',
-              FileGroupSettings: { Destination: `s3://${OUTPUT_BUCKET}/${outPrefix}` },
-            },
+            Name: name,
+            OutputGroupSettings: { Type: 'FILE_GROUP_SETTINGS', FileGroupSettings: { Destination: dest } },
             Outputs: [
               {
                 NameModifier: '_poster',
@@ -97,9 +107,9 @@ publishRouter.post('/api/publish', async (req, res) => {
               },
             ],
           });
-          (settings as any).OutputGroups = groups;
         }
       }
+      (settings as any).OutputGroups = groups;
     } catch {}
 
     // Final normalization: drop malformed groups and ensure required fields

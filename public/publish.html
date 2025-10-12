@@ -16,10 +16,6 @@
   <body>
     <h2>Uploaded Videos</h2>
     <div style="margin: 0 0 1rem 0;">
-      <label for="profile">Profile:</label>
-      <select id="profile">
-        <option value="auto" selected>Auto (by orientation)</option>
-      </select>
       <label for="quality" style="margin-left:12px;">Quality:</label>
       <select id="quality">
         <option value="standard" selected>Standard</option>
@@ -59,19 +55,6 @@
       }
 
       async function load(){
-        // Populate profiles from server
-        try {
-          const pres = await fetch('/api/profiles');
-          const pj = await pres.json();
-          const sel = document.getElementById('profile');
-          // Keep Auto option
-          Array.from(sel.options).forEach((o, i) => { if (i>0) sel.removeChild(o); });
-          (pj.profiles || []).forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name; opt.textContent = name; sel.appendChild(opt);
-          });
-        } catch {}
-
         const res = await fetch('/api/uploads?limit=50');
         const data = await res.json();
         rows.innerHTML = '';
@@ -93,8 +76,6 @@
           `;
           rows.appendChild(tr);
         });
-
-        const profileSel = document.getElementById('profile');
         const qualitySel = document.getElementById('quality');
         const soundSel = document.getElementById('sound');
         const adminToken = document.getElementById('admintoken');
@@ -104,10 +85,9 @@
             e.currentTarget.disabled = true;
             e.currentTarget.textContent = 'Publishing...';
             try {
-              const prof = profileSel.value;
               const quality = qualitySel.value;
               const sound = soundSel.value;
-              const body = prof && prof !== 'auto' ? { id: Number(id), profile: prof, quality, sound } : { id: Number(id), quality, sound };
+              const body = { id: Number(id), quality, sound };
               const headers = {'Content-Type':'application/json'};
               if (adminToken.value) headers['x-admin-token'] = adminToken.value;
               const resp = await fetch('/api/publish', { method:'POST', headers, body: JSON.stringify(body) });
