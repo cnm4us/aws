@@ -80,6 +80,11 @@ publishRouter.post('/api/publish', async (req, res) => {
       }
       const uniqueDests = Array.from(new Set(hlsDests));
       for (const dest of uniqueDests) {
+        // Choose poster canvas size per orientation to visually match HLS outputs
+        let posterWidth: number | undefined;
+        let posterHeight: number | undefined;
+        if (dest.includes('/portrait/')) { posterWidth = 720; posterHeight = 1280; }
+        else if (dest.includes('/landscape/')) { posterWidth = 1280; posterHeight = 720; }
         const hasPosterForDest = groups.some(
           (g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS' && g?.OutputGroupSettings?.FileGroupSettings?.Destination === dest
         );
@@ -94,6 +99,7 @@ publishRouter.post('/api/publish', async (req, res) => {
                 ContainerSettings: { Container: 'RAW' },
                 Extension: 'jpg',
                 VideoDescription: {
+                  ...(posterWidth && posterHeight ? { Width: posterWidth, Height: posterHeight, ScalingBehavior: 'DEFAULT' as const, Sharpness: 50 } : {}),
                   CodecSettings: {
                     Codec: 'FRAME_CAPTURE',
                     FrameCaptureSettings: {
