@@ -3,7 +3,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 type UploadItem = {
   id: number
   url: string
-  poster?: string
+  // Orientation-aware posters
+  posterPortrait?: string
+  posterLandscape?: string
+}
+
+function swapOrientation(url: string): { portrait?: string; landscape?: string } {
+  if (!url) return {};
+  if (url.includes('/portrait/')) {
+    return { portrait: url, landscape: url.replace('/portrait/', '/landscape/') };
+  }
+  if (url.includes('/landscape/')) {
+    return { landscape: url, portrait: url.replace('/landscape/', '/portrait/') };
+  }
+  return { portrait: url };
 }
 
 async function fetchUploads(cursor?: number): Promise<UploadItem[]> {
@@ -12,7 +25,16 @@ async function fetchUploads(cursor?: number): Promise<UploadItem[]> {
   const res = await fetch(`/api/uploads?${params.toString()}`)
   if (!res.ok) throw new Error('failed to fetch uploads')
   const data = await res.json()
-  return (data as any[]).map((r) => ({ id: r.id, url: r.cdn_master || r.s3_master, poster: r.poster_cdn || r.poster_s3 }))
+  return (data as any[]).map((r) => {
+    const poster = r.poster_cdn || r.poster_s3 || ''
+    const { portrait, landscape } = swapOrientation(poster)
+    return {
+      id: r.id,
+      url: r.cdn_master || r.s3_master,
+      posterPortrait: portrait,
+      posterLandscape: landscape,
+    }
+  })
 }
 
 export default function Feed() {
@@ -23,6 +45,8 @@ export default function Feed() {
   const [unlocked, setUnlocked] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
+  const [posterAvail, setPosterAvail] = useState<Record<string, boolean>>({})
 
   // initial load
   useEffect(() => {
@@ -40,17 +64,30 @@ export default function Feed() {
     }
   }, [])
 
-  // Preload next posters
+  // Orientation change listener
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mql = window.matchMedia('(orientation: portrait)')
+    const onChange = () => setIsPortrait(mql.matches)
+    try { mql.addEventListener('change', onChange) } catch { mql.addListener(onChange) }
+    return () => { try { mql.removeEventListener('change', onChange) } catch { mql.removeListener(onChange) } }
+  }, [])
+
+  // Preload next posters (both orientations if present)
   useEffect(() => {
     const nexts = [index + 1, index + 2]
     nexts.forEach((i) => {
-      const p = items[i]?.poster
-      if (p) {
+      const pi = items[i]
+      const urls = [pi?.posterPortrait, pi?.posterLandscape].filter(Boolean) as string[]
+      urls.forEach((u) => {
+        if (!u || posterAvail.hasOwnProperty(u)) return
         const img = new Image()
-        img.src = p
-      }
+        img.onload = () => setPosterAvail((prev) => ({ ...prev, [u]: true }))
+        img.onerror = () => setPosterAvail((prev) => ({ ...prev, [u]: false }))
+        img.src = u
+      })
     })
-  }, [index, items])
+  }, [index, items, posterAvail])
 
   // Attach and play current item
   const attachAndPlay = async (i: number, opts?: { unmute?: boolean }) => {
@@ -127,18 +164,21 @@ export default function Feed() {
   // Render cards
   const slides = useMemo(
     () =>
-      items.map((it, i) => (
-        <div
-          key={it.id}
-          className="slide"
-          style={{
-            backgroundImage: it.poster ? `url('${it.poster}')` : undefined,
-          }}
-        >
-          <div className="holder" />
-        </div>
-      )),
-    [items]
+      items.map((it) => {
+        const desired = isPortrait ? it.posterPortrait : it.posterLandscape
+        const fallback = isPortrait ? it.posterLandscape : it.posterPortrait
+        const useUrl = (desired && posterAvail[desired] !== false ? desired : undefined) || (fallback && posterAvail[fallback] !== false ? fallback : undefined)
+        return (
+          <div
+            key={it.id}
+            className="slide"
+            style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined }}
+          >
+            <div className="holder" />
+          </div>
+        )
+      }),
+    [items, isPortrait, posterAvail]
   )
 
   return (
