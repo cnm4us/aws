@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Client Logs</title>
+    <style>
+      body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin: 1rem; }
+      textarea { width: 100%; height: 70vh; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      input, button { padding: 6px 8px; margin-right: 8px; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h2>Client Logs</h2>
+    <div>
+      <label>Session ID:</label>
+      <input id="sid" placeholder="optional (auto from device)" style="width: 360px;" />
+      <button id="copy">Copy My Session</button>
+      <button id="refresh">Refresh</button>
+      <span class="muted">Open this page on desktop; browse the PWA on iOS. Paste session id to filter.</span>
+    </div>
+    <div style="margin-top:10px;">
+      <textarea id="out" readonly></textarea>
+    </div>
+    <script>
+      const out = document.getElementById('out');
+      const sid = document.getElementById('sid');
+      const copy = document.getElementById('copy');
+      const refresh = document.getElementById('refresh');
+      function mySid(){ try{ return window.opener && window.opener.__swipeSessionId || window.__swipeSessionId || localStorage.getItem('swipe_sid') || '' }catch{ return '' } }
+      copy.onclick = ()=>{ const v = mySid(); sid.value = v; navigator.clipboard && navigator.clipboard.writeText(v).catch(()=>{}); };
+      async function load(){
+        const p = new URLSearchParams({ limit: '500' });
+        if (sid.value) p.set('session', sid.value);
+        const res = await fetch('/api/client-log?'+p.toString());
+        const json = await res.json();
+        const lines = (json.entries||[]).map((e)=>{
+          const ts = new Date(e.ts||Date.now()).toISOString();
+          const lvl = (e.level||'log').toUpperCase().padEnd(5,' ');
+          const args = Array.isArray(e.args)? e.args.join(' ') : '';
+          return `${ts} ${lvl} [${e.sessionId||''}] ${args}`;
+        });
+        out.value = lines.join('\n');
+        out.scrollTop = out.scrollHeight;
+      }
+      refresh.onclick = load;
+      load();
+      setInterval(load, 2000);
+    </script>
+  </body>
+  </html>
+

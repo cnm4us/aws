@@ -80,6 +80,55 @@ app.get('/mobile', (_req: ExpressRequest, res: ExpressResponse) => {
   res.sendFile(path.join(publicDir, 'mobile.html'));
 });
 
+// PWA swipe prototype
+app.get('/pwa-swipe', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(publicDir, 'pwa-swipe.html'));
+});
+
+// --- Client log collection (dev utility) ---
+type ClientLogEntry = {
+  ts: number;
+  level: string;
+  args: any[];
+  url?: string;
+  sessionId?: string;
+};
+
+const CLIENT_LOG_MAX = 1000;
+const clientLogRing: ClientLogEntry[] = [];
+function pushClientLogs(entries: ClientLogEntry[], ua?: string) {
+  for (const e of entries) {
+    const rec = { ...e } as any;
+    if (ua) rec.ua = ua;
+    clientLogRing.push(rec);
+    if (clientLogRing.length > CLIENT_LOG_MAX) clientLogRing.shift();
+  }
+}
+
+app.post('/api/client-log', express.json({ limit: '128kb' }), (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const body = req.body as any;
+    const ua = String(req.headers['user-agent'] || '');
+    if (Array.isArray(body?.entries)) pushClientLogs(body.entries, ua);
+    else if (Array.isArray(body)) pushClientLogs(body, ua);
+    else if (body && typeof body === 'object') pushClientLogs([body], ua);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: 'bad_payload', detail: String(e?.message || e) });
+  }
+});
+
+app.get('/api/client-log', (req: ExpressRequest, res: ExpressResponse) => {
+  const { session, limit } = req.query as any;
+  const lim = Math.min(Number(limit || 200), 1000);
+  const items = clientLogRing
+    .filter((e) => (session ? e.sessionId === String(session) : true))
+    .slice(-lim);
+  res.json({ entries: items });
+});
+
 import http from 'http';
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 const server: http.Server = app.listen(PORT, () => {
@@ -192,3 +241,9 @@ function parseFromKey(key: string): { date: string; uuid: string } | null {
 // (request log helpers moved to utils)
 
 // (HLS aliasing code removed per request)
+// Debug logs viewer
+app.get('/debug/logs', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(publicDir, 'debug-logs.html'));
+});

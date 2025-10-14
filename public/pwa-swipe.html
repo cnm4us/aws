@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>PWA Swipe Feed</title>
+    <style>
+      html, body { height: 100%; }
+      body { margin: 0; background: #000; overflow: hidden; touch-action: pan-y; overscroll-behavior: none; }
+      .stage { position: fixed; inset: 0; background: #000; }
+      .track { position: absolute; inset: 0; display: flex; width: 300%; height: 100%; will-change: transform; transition: transform 240ms cubic-bezier(.2,.8,.2,1); }
+      .panel { width: 100vw; height: 100dvh; position: relative; background: #000 center/cover no-repeat; }
+      .holder { position: absolute; inset: 0; }
+      video.feed { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; transition: opacity .12s linear; }
+      .chrome { position: fixed; inset: 0; display: grid; place-items: center; z-index: 10; }
+      .btn { background: rgba(0,0,0,.5); color: #fff; border: 1px solid rgba(255,255,255,.4); border-radius: 16px; padding: 8px 12px; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+      .expand { position: absolute; right: 12px; bottom: 12px; z-index: 2; }
+      .modal { position: fixed; inset: 0; background: rgba(0,0,0,.96); z-index: 50; display: grid; place-items: center; }
+      .hidden { display: none; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <div id="track" class="track" style="transform: translateX(-100%);"></div>
+
+      <div id="unlock" class="chrome">
+        <button class="btn">Tap to start</button>
+      </div>
+
+      <div id="modal" class="modal hidden">
+        <video id="mv" playsinline controls style="width:100%; height:100%; object-fit: contain; background:#000"></video>
+        <button id="close" class="btn" style="position: fixed; top: 14px; right: 14px; z-index: 51;">Close</button>
+      </div>
+    </div>
+
+    <script>
+      // Debug + remote logger
+      (function(){
+        const orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+        const sidKey = 'swipe_sid';
+        let sid = localStorage.getItem(sidKey);
+        if (!sid) { sid = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); localStorage.setItem(sidKey, sid); }
+        const q = [];
+        let flushTimer = null;
+        function enqueue(level, args) {
+          try {
+            const entry = { ts: Date.now(), level, args: args.map(a => { try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); } }), url: location.pathname + location.search, sessionId: sid };
+            q.push(entry);
+            if (!flushTimer) flushTimer = setTimeout(flush, 800);
+          } catch {}
+        }
+        function flush(){
+          flushTimer = null;
+          if (!q.length) return;
+          const batch = q.splice(0, Math.min(q.length, 50));
+          try {
+            const blob = new Blob([JSON.stringify({ entries: batch })], { type: 'application/json' });
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon('/api/client-log', blob);
+            } else {
+              fetch('/api/client-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: batch }) }).catch(()=>{});
+            }
+          } catch {}
+        }
+        console.log = function(...args){ enqueue('log', args); try { orig.log.apply(console, ['[SWIPE]', ...args]); } catch {} };
+        console.info = function(...args){ enqueue('info', args); try { orig.info.apply(console, ['[SWIPE]', ...args]); } catch {} };
+        console.warn = function(...args){ enqueue('warn', args); try { orig.warn.apply(console, ['[SWIPE]', ...args]); } catch {} };
+        console.error = function(...args){ enqueue('error', args); try { orig.error.apply(console, ['[SWIPE]', ...args]); } catch {} };
+        try { window.__swipeSessionId = sid; } catch (e) { window['__swipeSessionId'] = sid; }
+      })();
+      const log = (...args)=>{ try{ console.log(...args) }catch{} };
+      const state = {
+        items: [],
+        index: 0,
+        cursor: undefined,
+        unlocked: false,
+        dragging: false,
+        dragAxis: null,
+        startX: 0, startY: 0, dx: 0,
+      };
+
+      const track = document.getElementById('track');
+      const stageEl = document.getElementById('stage');
+      const unlock = document.getElementById('unlock');
+      const modal = document.getElementById('modal');
+      const mv = document.getElementById('mv');
+      const closeBtn = document.getElementById('close');
+
+      const video = document.createElement('video');
+      video.className = 'feed';
+      video.playsInline = true;
+      video.muted = true;
+      video.preload = 'auto';
+      let hls = null;
+      let currentSrc = '';
+      let waitingTimer = null;
+
+      function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+      function isSafari(){ const ua = navigator.userAgent; return /Safari/.test(ua) && !/Chrome|CriOS|Android/.test(ua); }
+      function shouldUseNativeHls(){ return isIOS() || isSafari(); }
+
+      function qs(name){ const u=new URL(location.href); return u.searchParams.get(name); }
+
+      function swapOrientation(url){
+        if (!url) return {};
+        if (url.includes('/portrait/')) return { portrait: url, landscape: url.replace('/portrait/','/landscape/') };
+        if (url.includes('/landscape/')) return { landscape: url, portrait: url.replace('/landscape/','/portrait/') };
+        return { portrait: url };
+      }
+
+      async function fetchUploads(cursor){
+        const params = new URLSearchParams({ status:'completed', limit:'20' });
+        if (cursor) params.set('cursor', String(cursor));
+        const url = '/api/uploads?'+params.toString();
+        log('fetch uploads', url);
+        const res = await fetch(url);
+        const data = await res.json().catch((e)=>{ log('uploads json parse failed', e); return []; });
+        log('uploads fetched', Array.isArray(data)?data.length:-1);
+        const mapped = (data||[]).map(r=>{
+          const poster = r.poster_cdn || r.poster_s3 || '';
+          const {portrait:posterPortrait, landscape:posterLandscape} = swapOrientation(poster);
+          const master = r.cdn_master || r.s3_master || '';
+          const {portrait:masterPortrait, landscape:masterLandscape} = swapOrientation(master);
+          return { id:r.id, posterPortrait, posterLandscape, masterPortrait: masterPortrait||master, masterLandscape };
+        });
+        if (mapped.length) log('first item', mapped[0]);
+        return mapped;
+      }
+
+      function ensurePanels(){
+        // Keep exactly 3 panels in DOM
+        while (track.children.length < 3) {
+          const p = document.createElement('div'); p.className = 'panel';
+          const h = document.createElement('div'); h.className = 'holder'; p.appendChild(h);
+          track.appendChild(p);
+        }
+        while (track.children.length > 3) track.removeChild(track.lastChild);
+      }
+
+      function itemHasLandscape(it){ return !!(it && it.masterLandscape && it.masterLandscape !== it.masterPortrait); }
+
+      function setPanel(el, it){
+        if (!it) { el.style.backgroundImage = ''; el.querySelector('.holder').innerHTML = ''; return; }
+        const poster = it.posterPortrait || it.posterLandscape || '';
+        el.style.backgroundImage = poster ? `url('${poster}')` : '';
+        log('setPanel', it.id, 'poster?', !!poster);
+        const holder = el.querySelector('.holder');
+        // controls layer
+        let btn = el.querySelector('button.expand');
+        if (itemHasLandscape(it)){
+          if (!btn){ btn = document.createElement('button'); btn.className='btn expand'; btn.textContent='Expand'; holder.appendChild(btn); }
+          btn.onclick = (e)=>{ e.stopPropagation(); openModal(it); };
+        } else if (btn) { btn.remove(); }
+      }
+
+      function layoutPanels(){
+        ensurePanels();
+        const [p0,p1,p2] = track.children;
+        const items = state.items;
+        const i = state.index;
+        log('layoutPanels index', i, 'items', items.length);
+        setPanel(p0, items[i-1] || null);
+        setPanel(p1, items[i] || null);
+        setPanel(p2, items[i+1] || null);
+        // Keep video outside transformed track to avoid iOS HLS stalls
+        const stage = document.getElementById('stage');
+        if (stage && video.parentElement !== stage){ stage.appendChild(video); }
+        // Align track
+        track.style.transition = 'transform 240ms cubic-bezier(.2,.8,.2,1)';
+        track.style.transform = 'translateX(-100%)';
+        log('track children', track.children.length);
+      }
+
+      async function loadInitial(){
+        try{
+          const page = await fetchUploads();
+          state.items = page;
+          state.cursor = page.length ? page[page.length-1].id : undefined;
+          state.index = 0;
+          log('initial items', page.length);
+          layoutPanels();
+          // start muted until unlocked
+          playCurrent();
+        } catch(e){
+          log('loadInitial failed', e);
+        }
+      }
+
+      function playCurrent(){
+        const it = state.items[state.index]; if (!it) return;
+        const src = it.masterPortrait || it.masterLandscape || '';
+        if (!src){ log('no src for item', it.id); return; }
+        const needSrc = !currentSrc || currentSrc !== src;
+        log('playCurrent', { index: state.index, id: it.id, needSrc, src });
+        if (needSrc){
+          video.style.opacity = '0';
+          const onLoaded = ()=>{ video.style.opacity = '1'; video.removeEventListener('loadeddata', onLoaded); };
+          video.addEventListener('loadeddata', onLoaded);
+          // Prefer native HLS on iOS/Safari; fall back to hls.js elsewhere
+          if (shouldUseNativeHls()){
+            if (hls && hls.detachMedia) { try { hls.detachMedia(); hls.destroy(); } catch {} hls = null; }
+            // Some WebKit builds prefer a <source> with type
+            try { while (video.firstChild) video.removeChild(video.firstChild); } catch {}
+            const source = document.createElement('source');
+            source.src = src; source.type = 'application/vnd.apple.mpegurl';
+            video.appendChild(source);
+            // Assigning src on the video can be skipped when using <source>
+            // video.src = src;
+            log('native HLS path');
+            currentSrc = src;
+          } else if (window.Hls && Hls.isSupported && Hls.isSupported()){
+            if (hls && hls.detachMedia) { try { hls.detachMedia(); hls.destroy(); } catch {} }
+            try { while (video.firstChild) video.removeChild(video.firstChild); } catch {}
+            hls = new Hls({ capLevelToPlayerSize:true, startLevel:-1, maxBufferLength: 15, backBufferLength: 0 });
+            hls.loadSource(src); hls.attachMedia(video);
+            log('hls.js path');
+            currentSrc = src;
+          } else {
+            // Fallback: navigate to file
+            log('no HLS support, navigating');
+            location.href = src; return;
+          }
+          // For native HLS, avoid explicit load(); play() after setting source is enough on iOS
+        } else { video.style.opacity = '1'; }
+        try {
+          video.play();
+        } catch (e){
+          log('video.play() error', e);
+          // Fallback: if native attempt failed on a non-iOS/Non-Safari, try hls.js once
+          if (!shouldUseNativeHls() && window.Hls && Hls.isSupported && Hls.isSupported()){
+            try { while (video.firstChild) video.removeChild(video.firstChild); } catch {}
+            if (hls && hls.detachMedia) { try { hls.detachMedia(); hls.destroy(); } catch {} }
+            hls = new Hls({ capLevelToPlayerSize:true, startLevel:-1, maxBufferLength: 15, backBufferLength: 0 });
+            hls.loadSource(src); hls.attachMedia(video);
+            setTimeout(()=>{ try{ video.play(); }catch(err){ log('fallback play error', err); } }, 0);
+            currentSrc = src;
+          }
+        }
+      }
+
+      function shiftIndex(dir){
+        const ni = state.index + dir;
+        if (ni < 0) return;
+        if (ni >= state.items.length) return;
+        state.index = ni;
+        // Shift panels without rebuilding entire track
+        if (dir === 1){
+          // move first -> end
+          const first = track.firstElementChild; track.appendChild(first);
+        } else if (dir === -1){
+          const last = track.lastElementChild; track.insertBefore(last, track.firstElementChild);
+        }
+        layoutPanels();
+        playCurrent();
+        // pagination near end
+        if (state.items.length - state.index < 5 && state.cursor){
+          fetchUploads(state.cursor).then((page)=>{
+            if (page.length){ state.items = state.items.concat(page); state.cursor = page[page.length-1].id; }
+          }).catch(()=>{});
+        }
+      }
+
+      // Unlock handling
+      function doUnlock(){
+        if (state.unlocked) return;
+        state.unlocked = true;
+        unlock.classList.add('hidden');
+        video.muted = false;
+        // Kick playback only if source not set yet
+        if (currentSrc) {
+          try { video.play(); } catch (e){ log('unlock play error', e); }
+        } else {
+          try { playCurrent(); } catch (e){ log('unlock playCurrent error', e); }
+        }
+      }
+      unlock.addEventListener('click', doUnlock);
+      unlock.addEventListener('touchend', doUnlock, { passive:true });
+
+      // Pointer swipe
+      function onPointerDown(e){
+        state.dragging = true; state.dragAxis = null; state.dx = 0;
+        state.startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+        state.startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+        track.style.transition = 'none';
+        log('pointer down');
+      }
+      function onPointerMove(e){
+        if (!state.dragging) return;
+        const x = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+        const y = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+        const dx = x - state.startX; const dy = y - state.startY;
+        if (!state.dragAxis){ state.dragAxis = Math.abs(dx) > Math.abs(dy) + 12 ? 'x' : (Math.abs(dy) > Math.abs(dx) + 12 ? 'y' : null); }
+        if (state.dragAxis === 'x'){
+          e.preventDefault();
+          state.dx = dx;
+          const w = window.innerWidth;
+          const pct = (-100 + (dx / Math.max(1,w))*100);
+          track.style.transform = `translateX(${pct}%)`;
+        }
+      }
+      function onPointerUp(e){
+        if (!state.dragging) return;
+        state.dragging = false;
+        const w = window.innerWidth; const dx = state.dx;
+        const threshold = Math.min(120, Math.max(60, w*0.15));
+        if (dx <= -threshold) shiftIndex(1);
+        else if (dx >= threshold) shiftIndex(-1);
+        else { track.style.transition = 'transform 240ms cubic-bezier(.2,.8,.2,1)'; track.style.transform = 'translateX(-100%)'; }
+        state.dx = 0; state.dragAxis = null;
+        log('pointer up');
+      }
+      // Mouse + touch listeners (bind to stage so overlay video doesn't block)
+      ;(stageEl || track).addEventListener('mousedown', onPointerDown);
+      window.addEventListener('mousemove', onPointerMove, { passive:false });
+      window.addEventListener('mouseup', onPointerUp);
+      ;(stageEl || track).addEventListener('touchstart', onPointerDown, { passive:true });
+      window.addEventListener('touchmove', onPointerMove, { passive:false });
+      window.addEventListener('touchend', onPointerUp);
+
+      // Keyboard for testing
+      window.addEventListener('keydown', (e)=>{ if (e.key==='ArrowRight') shiftIndex(1); if (e.key==='ArrowLeft') shiftIndex(-1); });
+
+      function openModal(it){
+        if (!it) return;
+        const t = video.currentTime || 0;
+        const src = it.masterLandscape || (it.masterPortrait||'').replace('/portrait/','/landscape/');
+        modal.classList.remove('hidden');
+        // Pause inline
+        try { video.pause(); } catch {}
+        const onLoaded = ()=>{ try{ mv.currentTime = t; }catch{}; try{ mv.play(); }catch{}; mv.removeEventListener('loadedmetadata', onLoaded); };
+        mv.addEventListener('loadedmetadata', onLoaded);
+        mv.src = src; try { mv.load(); } catch {}
+        document.body.style.overflow='hidden';
+      }
+      function closeModal(){
+        const t = mv.currentTime || 0;
+        modal.classList.add('hidden');
+        try { mv.pause(); } catch {}
+        document.body.style.overflow='';
+        try { video.currentTime = t; } catch {}
+        try { video.play(); } catch {}
+      }
+      closeBtn.addEventListener('click', (e)=>{ e.stopPropagation(); closeModal(); });
+      modal.addEventListener('click', closeModal);
+
+      // Append video to fixed stage (avoid being inside transformed parents)
+      ensurePanels(); log('panels ensured');
+      const stage = document.getElementById('stage'); if (stage) stage.appendChild(video);
+      // Video error diagnostics
+      video.addEventListener('error', (e)=>{ log('video error', video.error && video.error.code, video.error); });
+      video.addEventListener('stalled', ()=>{ log('video stalled'); try { video.play(); } catch {} try { video.currentTime = Math.max(0, (video.currentTime||0) + 0.01); } catch {} });
+      video.addEventListener('waiting', ()=>{ log('video waiting'); if (waitingTimer) clearTimeout(waitingTimer); waitingTimer = setTimeout(()=>{ try { video.play(); } catch {} }, 400); });
+      video.addEventListener('loadedmetadata', ()=>log('video loadedmetadata'));
+      video.addEventListener('loadeddata', ()=>log('video loadeddata'));
+      video.addEventListener('playing', ()=>log('video playing'));
+      loadInitial();
+    </script>
+  </body>
+  </html>
