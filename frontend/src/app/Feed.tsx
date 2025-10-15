@@ -367,9 +367,8 @@ export default function Feed() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', opacity: (playingIndex === i || startedMap[i]) ? 1 : 0, transition: 'opacity .12s linear' }}
               />
               {playingIndex !== i && (
-                <button
-                  aria-label="Play"
-                  onClick={(e) => { e.stopPropagation(); playSlide(i) }}
+                <div
+                  aria-hidden
                   style={{
                     position: 'absolute',
                     left: '50%',
@@ -379,44 +378,18 @@ export default function Feed() {
                     height: '22vmin',
                     minWidth: 72,
                     minHeight: 72,
-                    background: 'transparent',
-                    border: 'none',
-                    padding: 0,
-                    margin: 0,
-                    cursor: 'pointer',
+                    pointerEvents: 'none',
                     display: 'grid',
                     placeItems: 'center',
                     zIndex: 2,
                   }}
                 >
-                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-                    <polygon points="38,28 38,72 72,50" fill="#ffffff" fillOpacity="0.2" />
+                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                    <polygon points="38,28 38,72 72,50" fill="#ffffff" fillOpacity="0.4" />
                   </svg>
-                </button>
+                </div>
               )}
-              {itemHasLandscape(it) && (
-                <button
-                  aria-label="Expand"
-                  onClick={(e) => { e.stopPropagation(); openModal() }}
-                  style={{
-                    position: 'absolute',
-                    right: 12,
-                    bottom: 12,
-                    zIndex: 2,
-                    background: 'transparent',
-                    color: '#fff',
-                    border: 'none',
-                    padding: 0,
-                    fontSize: 28,
-                    fontWeight: 600,
-                    lineHeight: 1,
-                    cursor: 'pointer',
-                    textShadow: '0 0 2px rgba(0,0,0,0.3)',
-                  }}
-                >
-                  [ ]
-                </button>
-              )}
+              {/* Expand control removed per PWA full-bleed design */}
             </div>
           </div>
         )
