@@ -1,0 +1,9 @@
+{
+  "name": "AWS Media App",
+  "short_name": "Media",
+  "scope": "/app/",
+  "start_url": "/app/index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

@@ -136,6 +136,7 @@ const server: http.Server = app.listen(PORT, () => {
   console.log(`Uploader server listening on http://localhost:${PORT}`);
   if (!pollTimer) pollTimer = setInterval(pollStatuses, STATUS_POLL_MS);
   backfill();
+  backfillOrientation();
 });
 
 // Background poller to sync MediaConvert job status into DB
@@ -208,6 +209,32 @@ async function backfill() {
     }
   } catch (e) {
     console.warn('backfill skipped/failed', e);
+  }
+}
+
+// Backfill missing orientation based on dimensions or profile
+async function backfillOrientation() {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, width, height, profile, orientation FROM uploads WHERE orientation IS NULL ORDER BY id ASC LIMIT 1000`
+    );
+    for (const r of rows as any[]) {
+      const w = Number(r.width || 0);
+      const h = Number(r.height || 0);
+      let ori: 'portrait' | 'landscape' | null = null;
+      if (w > 0 && h > 0) {
+        ori = h > w ? 'portrait' : 'landscape';
+      } else if (typeof r.profile === 'string') {
+        const p = r.profile.toLowerCase();
+        if (p.includes('portrait')) ori = 'portrait';
+        else if (p.includes('landscape')) ori = 'landscape';
+      }
+      if (ori) {
+        await db.query(`UPDATE uploads SET orientation = ? WHERE id = ?`, [ori, r.id]);
+      }
+    }
+  } catch (e) {
+    console.warn('orientation backfill skipped/failed', e);
   }
 }
 

@@ -55,6 +55,7 @@ export async function ensureSchema(db: DB) {
       asset_uuid CHAR(36) NULL,
       date_ymd CHAR(10) NULL,
       profile VARCHAR(128) NULL,
+      orientation ENUM('portrait','landscape') NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       uploaded_at TIMESTAMP NULL DEFAULT NULL,
       UNIQUE KEY uniq_bucket_key (s3_bucket, s3_key)
@@ -70,6 +71,7 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS profile VARCHAR(128) NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS asset_uuid CHAR(36) NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS date_ymd CHAR(10) NULL`);
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS orientation ENUM('portrait','landscape') NULL`);
 }
 
 export type UploadRow = {
@@ -89,6 +91,7 @@ export type UploadRow = {
   asset_uuid: string | null;
   date_ymd: string | null;
   profile: string | null;
+  orientation: 'portrait' | 'landscape' | null;
   created_at: string;
   uploaded_at: string | null;
 };

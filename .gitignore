@@ -15,3 +15,7 @@ logs/
 !src/**/*.ts
 !src/**/*.d.ts
 !scripts/**/*.ts
+
+# Ignore built web assets (output of `npm run web:build`)
+public/app/assets/
+public/app/index.html

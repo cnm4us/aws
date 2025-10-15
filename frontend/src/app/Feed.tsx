@@ -30,15 +30,15 @@ async function fetchUploads(cursor?: number): Promise<UploadItem[]> {
   if (!res.ok) throw new Error('failed to fetch uploads')
   const data = await res.json()
   return (data as any[]).map((r) => {
-    const poster = r.poster_cdn || r.poster_s3 || ''
-    const { portrait, landscape } = swapOrientation(poster)
+    const posterPortrait = r.poster_portrait_cdn || r.poster_portrait_s3 || r.poster_cdn || r.poster_s3 || ''
+    const posterLandscape = r.poster_landscape_cdn || r.poster_landscape_s3 || ''
     const master = r.cdn_master || r.s3_master || ''
     const { portrait: masterPortrait, landscape: masterLandscape } = swapOrientation(master)
     return {
       id: r.id,
       url: masterPortrait || master,
-      posterPortrait: portrait,
-      posterLandscape: landscape,
+      posterPortrait: posterPortrait,
+      posterLandscape: posterLandscape,
       masterPortrait,
       masterLandscape,
     }
@@ -120,7 +120,7 @@ export default function Feed() {
       }
     }
     v.playsInline = true
-    v.preload = 'none'
+    v.preload = 'auto'
     v.muted = false
     // Wire basic events (use addEventListener to avoid clobbering)
     const onPlaying = () => {
@@ -354,7 +354,8 @@ export default function Feed() {
             <div className="holder">
               <video
                 playsInline
-                preload="none"
+                autoPlay
+                preload="auto"
                 poster={useUrl}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -367,18 +368,53 @@ export default function Feed() {
               />
               {playingIndex !== i && (
                 <button
+                  aria-label="Play"
                   onClick={(e) => { e.stopPropagation(); playSlide(i) }}
-                  style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 24, padding: '10px 14px' }}
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%,-50%)',
+                    width: '22vmin',
+                    height: '22vmin',
+                    minWidth: 72,
+                    minHeight: 72,
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    margin: 0,
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                    zIndex: 2,
+                  }}
                 >
-                  Play
+                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                    <polygon points="38,28 38,72 72,50" fill="#ffffff" fillOpacity="0.2" />
+                  </svg>
                 </button>
               )}
               {itemHasLandscape(it) && (
                 <button
+                  aria-label="Expand"
                   onClick={(e) => { e.stopPropagation(); openModal() }}
-                  style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 2, background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 16, padding: '6px 10px' }}
+                  style={{
+                    position: 'absolute',
+                    right: 12,
+                    bottom: 12,
+                    zIndex: 2,
+                    background: 'transparent',
+                    color: '#fff',
+                    border: 'none',
+                    padding: 0,
+                    fontSize: 28,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    textShadow: '0 0 2px rgba(0,0,0,0.3)',
+                  }}
                 >
-                  Expand
+                  [ ]
                 </button>
               )}
             </div>
@@ -522,6 +558,8 @@ export default function Feed() {
             ref={modalVideoRef}
             playsInline
             controls
+            autoPlay
+            preload="auto"
             style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
           />
           <button

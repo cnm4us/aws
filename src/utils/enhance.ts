@@ -10,17 +10,56 @@ export function enhanceUploadRow(u: any) {
   // Derive base from the sanitized S3 key filename to avoid spaces/mismatch
   const leaf = String(u.s3_key || '').split('/').pop() || '';
   const baseFromKey = baseNameWithoutExt(leaf) || baseNameWithoutExt(u.original_filename || 'video');
+  // Orientation heuristic: prefer dimensions, fallback to profile keyword
+  let orientation: 'portrait' | 'landscape' | null = null;
+  const w = Number(u.width || 0);
+  const h = Number(u.height || 0);
+  if (w > 0 && h > 0) {
+    orientation = h > w ? 'portrait' : 'landscape';
+  } else if (typeof u.profile === 'string') {
+    const p = u.profile.toLowerCase();
+    if (p.includes('portrait')) orientation = 'portrait';
+    else if (p.includes('landscape')) orientation = 'landscape';
+  }
+  out.orientation = orientation;
   if (CLOUDFRONT_DOMAIN && u.output_prefix) {
     const cdnPrefix = `https://${CLOUDFRONT_DOMAIN}/${u.output_prefix}`;
     out.cdn_prefix = cdnPrefix;
     out.cdn_master = `${cdnPrefix}${baseFromKey}.m3u8`;
     out.poster_cdn = `${cdnPrefix}${baseFromKey}_poster.0000000.jpg`;
+    // Explicit portrait/landscape poster URLs
+    try {
+      const hasPortraitSeg = String(u.output_prefix).includes('/portrait/');
+      const portraitPrefix = hasPortraitSeg
+        ? `https://${CLOUDFRONT_DOMAIN}/${String(u.output_prefix)}`
+        : `https://${CLOUDFRONT_DOMAIN}/${String(u.output_prefix).replace('/landscape/', '/portrait/')}`;
+      const landscapePrefix = hasPortraitSeg
+        ? `https://${CLOUDFRONT_DOMAIN}/${String(u.output_prefix).replace('/portrait/', '/landscape/')}`
+        : `https://${CLOUDFRONT_DOMAIN}/${String(u.output_prefix)}`;
+      out.poster_portrait_cdn = `${portraitPrefix}${baseFromKey}_poster.0000000.jpg`;
+      if (orientation === 'landscape') {
+        out.poster_landscape_cdn = `${landscapePrefix}${baseFromKey}_poster.0000000.jpg`;
+      }
+    } catch {}
   }
   if (u.output_prefix) {
     const base = baseFromKey;
     const region = AWS_REGION;
     out.s3_master = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${u.output_prefix}${base}.m3u8`;
     out.poster_s3 = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${u.output_prefix}${base}_poster.0000000.jpg`;
+    try {
+      const hasPortraitSeg = String(u.output_prefix).includes('/portrait/');
+      const portraitPrefix = hasPortraitSeg
+        ? `${String(u.output_prefix)}`
+        : `${String(u.output_prefix).replace('/landscape/', '/portrait/')}`;
+      const landscapePrefix = hasPortraitSeg
+        ? `${String(u.output_prefix).replace('/portrait/', '/landscape/')}`
+        : `${String(u.output_prefix)}`;
+      out.poster_portrait_s3 = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${portraitPrefix}${base}_poster.0000000.jpg`;
+      if (orientation === 'landscape') {
+        out.poster_landscape_s3 = `https://${OUTPUT_BUCKET}.s3.${region}.amazonaws.com/${landscapePrefix}${base}_poster.0000000.jpg`;
+      }
+    } catch {}
   }
   return out;
 }
