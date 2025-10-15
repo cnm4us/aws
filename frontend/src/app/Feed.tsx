@@ -122,6 +122,7 @@ export default function Feed() {
     }
     v.playsInline = true
     v.preload = 'auto'
+    v.loop = true
     v.muted = false
     // Wire basic events (use addEventListener to avoid clobbering)
     const onPlaying = () => {
@@ -218,6 +219,7 @@ export default function Feed() {
     }
     try {
       v.playsInline = true
+      v.loop = true
       // Keep preload light; avoid load() if source unchanged
       v.preload = 'auto'
       // For iOS unlock, ensure unmuted on first user gesture
