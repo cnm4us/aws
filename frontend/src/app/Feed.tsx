@@ -67,6 +67,7 @@ export default function Feed() {
   const hlsByIndexRef = useRef<Record<number, Hls | null>>({})
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
+  const lastTouchTsRef = useRef<number>(0)
 
   function getSlide(i: number): HTMLDivElement | null {
     const r = railRef.current
@@ -308,7 +309,7 @@ export default function Feed() {
   const unlock = () => {
     if (unlocked) return
     setUnlocked(true)
-    // Poster-first: user will tap play per video
+    // First real tap on the video surface will handle play
   }
 
   // Compute active index on scroll (snap to nearest)
@@ -354,17 +355,20 @@ export default function Feed() {
             <div className="holder">
               <video
                 playsInline
-                autoPlay
                 preload="auto"
                 poster={useUrl}
-                onClick={(e) => {
+                onTouchEnd={(e) => {
                   e.stopPropagation();
+                  try { e.preventDefault() } catch {}
+                  const now = Date.now();
+                  if (now - lastTouchTsRef.current < 300) return;
+                  lastTouchTsRef.current = now;
                   const v = getVideoEl(i);
                   if (!v) return;
                   if (!v.src) { playSlide(i); return; }
                   if (v.paused) playSlide(i); else { try { v.pause() } catch {} }
                 }}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', opacity: (playingIndex === i || startedMap[i]) ? 1 : 0, transition: 'opacity .12s linear' }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', opacity: (playingIndex === i || startedMap[i]) ? 1 : 0, transition: 'opacity .12s linear', touchAction: 'manipulation' as any }}
               />
               {playingIndex !== i && (
                 <div
@@ -459,12 +463,12 @@ export default function Feed() {
         if (idx >= 0 && idx !== index) {
           setIndex(idx)
         }
-        // Pause offscreen videos and unload far slides
+        // Pause offscreen videos (not the center) and unload far slides
         entries.forEach((e) => {
           const i = slides.indexOf(e.target as HTMLElement)
           const v = getVideoEl(i)
           if (!v) return
-          if (e.intersectionRatio < 0.5) {
+          if (e.intersectionRatio < 0.5 && i !== index) {
             try { v.pause() } catch {}
             if (Math.abs(i - index) > 2) {
               try { v.removeAttribute('src'); v.load() } catch {}
@@ -483,6 +487,26 @@ export default function Feed() {
     slides.forEach((el) => io.observe(el))
     return () => io.disconnect()
   }, [items, unlocked])
+
+  // Eagerly attach source for the active slide so first tap is lighter (iOS)
+  useEffect(() => {
+    const v = getVideoEl(index)
+    const it = items[index]
+    if (!v || !it) return
+    if (!v.src) {
+      try {
+        v.playsInline = true
+        v.preload = 'auto'
+        // Prefer native HLS on iOS; otherwise wait for explicit play to attach hls.js
+        const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
+        if (canNative) {
+          const src = it.masterPortrait || it.url
+          v.src = src
+          try { v.load() } catch {}
+        }
+      } catch {}
+    }
+  }, [index, items])
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: '#000' }}>
