@@ -16,7 +16,8 @@
     "port-clear": "node scripts/port-clear.js",
     "web:deploy": "node scripts/web-deploy.js root",
     "web:build:scoped": "npm run build && vite build --config frontend/vite.config.ts",
-    "web:deploy:scoped": "node scripts/web-deploy.js scoped"
+    "web:deploy:scoped": "node scripts/web-deploy.js scoped",
+    "admin:own-uploads": "ts-node scripts/admin-own-uploads.ts"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",

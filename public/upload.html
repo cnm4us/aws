@@ -69,12 +69,14 @@
         try {
           const meta = await probeVideo(file);
           // 1) Ask server for a presigned POST
+          let uid = null; try { uid = localStorage.getItem('userId') } catch {}
           const body = {
             filename: file.name,
             contentType: file.type || 'application/octet-stream',
             sizeBytes: file.size,
             ...meta
           };
+          if (uid) body.userId = Number(uid);
           log('sign body', body);
           const signRes = await fetch('/api/sign-upload', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)

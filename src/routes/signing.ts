@@ -17,12 +17,13 @@ const signSchema = z.object({
   width: z.number().int().positive().nullable().optional(),
   height: z.number().int().positive().nullable().optional(),
   durationSeconds: z.number().int().positive().nullable().optional(),
+  userId: z.number().int().positive().optional(),
 });
 
 signingRouter.post('/api/sign-upload', adminGuard, async (req, res) => {
   try {
     const parsed = signSchema.parse(req.body || {});
-    const { filename, contentType, sizeBytes, width, height, durationSeconds } = parsed;
+    const { filename, contentType, sizeBytes, width, height, durationSeconds, userId } = parsed;
     const safe = sanitizeFilename(filename);
     const { ymd: dateYmd, folder: datePrefix } = nowDateYmd();
     const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : '';
@@ -38,6 +39,15 @@ signingRouter.post('/api/sign-upload', adminGuard, async (req, res) => {
       [UPLOAD_BUCKET, key, filename, contentType ?? null, sizeBytes ?? null, width ?? null, height ?? null, durationSeconds ?? null, assetUuid, dateYmd]
     );
     const id = (result as any).insertId as number;
+
+    // Optional: associate owner and personal space if userId provided
+    if (userId) {
+      try {
+        const [sp] = await db.query(`SELECT id FROM spaces WHERE type='personal' AND owner_user_id = ? LIMIT 1`, [userId]);
+        const spaceId = (sp as any[]).length ? Number((sp as any[])[0].id) : null;
+        await db.query(`UPDATE uploads SET user_id = ?, space_id = COALESCE(?, space_id) WHERE id = ?`, [userId, spaceId, id]);
+      } catch {}
+    }
 
     const maxBytes = MAX_UPLOAD_MB * 1024 * 1024;
     const basePrefixCond = basePrefix || '';

@@ -94,13 +94,34 @@ app.post('/api/register', async (req: ExpressRequest, res: ExpressResponse) => {
     const hash = crypto.scryptSync(pw, salt, 64, { N }).toString('hex');
     const stored = `s2$${N}$${salt}$${hash}`;
     const db = getPool();
-    await db.query(
+    const [ins] = await db.query(
       `INSERT INTO users (email, password_hash, display_name, phone_number) VALUES (?,?,?,?)`,
       [e, stored, dn || null, ph || null]
     );
+    const userId = (ins as any).insertId as number;
+    // Create a personal space for the user
+    const baseSlug = (dn || e.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
+    let slug = `u-${baseSlug}`;
+    // ensure unique slug
+    let n = 1;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const [exists] = await db.query(`SELECT id FROM spaces WHERE slug = ? LIMIT 1`, [slug]);
+      if ((exists as any[]).length === 0) break;
+      n += 1; slug = `u-${baseSlug}-${n}`;
+    }
+    const settings = { visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true };
+    const [insSpace] = await db.query(
+      `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES ('personal', ?, ?, ?, ?)`,
+      [userId, dn || e, slug, JSON.stringify(settings)]
+    );
+    const spaceId = (insSpace as any).insertId as number;
+    // Assign baseline roles: global uploader, space publisher
+    await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('uploader')`, [userId]);
+    await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('publisher','member')`, [userId, spaceId]);
     // For demo UX, set a light indicator so the menu shows LOGOUT (replace with real session later)
     res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
-    res.json({ ok: true });
+    res.json({ ok: true, userId, space: { id: spaceId, slug } });
   } catch (err: any) {
     const msg = String(err?.message || err);
     if (msg.includes('ER_DUP_ENTRY')) return res.status(409).json({ error: 'email_taken' });
@@ -154,7 +175,7 @@ app.get('/logout', (_req: ExpressRequest, res: ExpressResponse) => {
   <title>Logged out</title>
   <body style="background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;display:grid;place-items:center;height:100vh;">
   <div>Logging you out…</div>
-  <script>try{localStorage.removeItem('auth');}catch(e){} setTimeout(function(){location.href='/'},400);</script>
+  <script>try{localStorage.removeItem('auth');localStorage.removeItem('userId');}catch(e){} setTimeout(function(){location.href='/'},400);</script>
   </body>`);
 });
 

@@ -28,7 +28,7 @@
       </select>
       <input id="admintoken" type="password" placeholder="Admin token (optional)" style="margin-left:12px; padding:3px 6px;" />
     </div>
-    <p class="muted">Only showing latest 50 by default.</p>
+    <p class="muted" id="hint">Only showing latest 50 by default.</p>
     <table>
       <thead>
         <tr>
@@ -55,7 +55,20 @@
       }
 
       async function load(){
-        const res = await fetch('/api/uploads?limit=50');
+        let uid = null, authed = null;
+        try { uid = localStorage.getItem('userId'); authed = localStorage.getItem('auth'); } catch {}
+        // Require login to view/publish your uploads
+        if (authed !== '1' || !uid) {
+          rows.innerHTML = '';
+          const hint = document.getElementById('hint');
+          if (hint) hint.textContent = 'Please login to see and publish your uploads.';
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td colspan="6" class="muted">Not logged in. <a href="/login">Login</a> or <a href="/register">Register</a>.</td>`;
+          rows.appendChild(tr);
+          return;
+        }
+        let url = '/api/uploads?limit=50&user_id=' + encodeURIComponent(uid);
+        const res = await fetch(url);
         const data = await res.json();
         rows.innerHTML = '';
         data.forEach((u) => {

@@ -7,12 +7,14 @@ export const uploadsRouter = Router();
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
     const db = getPool();
-    const { status, limit, cursor } = req.query as any;
+    const { status, limit, cursor, user_id, space_id } = req.query as any;
     const lim = Math.min(Number(limit || 50), 500);
     const curId = cursor ? Number(cursor) : undefined;
     const where: string[] = [];
     const params: any[] = [];
     if (status) { where.push('status = ?'); params.push(String(status)); }
+    if (user_id) { where.push('user_id = ?'); params.push(Number(user_id)); }
+    if (space_id) { where.push('space_id = ?'); params.push(Number(space_id)); }
     if (curId && Number.isFinite(curId)) { where.push('id < ?'); params.push(curId); }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     if (true) {

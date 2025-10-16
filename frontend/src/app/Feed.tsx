@@ -23,9 +23,10 @@ function swapOrientation(url: string): { portrait?: string; landscape?: string }
   return { portrait: url };
 }
 
-async function fetchUploads(cursor?: number): Promise<UploadItem[]> {
+async function fetchUploads(opts?: { cursor?: number; userId?: number }): Promise<UploadItem[]> {
   const params = new URLSearchParams({ status: 'completed', limit: '20' })
-  if (cursor) params.set('cursor', String(cursor))
+  if (opts?.cursor) params.set('cursor', String(opts.cursor))
+  if (opts?.userId) params.set('user_id', String(opts.userId))
   const res = await fetch(`/api/uploads?${params.toString()}`)
   if (!res.ok) throw new Error('failed to fetch uploads')
   const data = await res.json()
@@ -62,6 +63,8 @@ export default function Feed() {
   const [snapEnabled, setSnapEnabled] = useState(true)
   const [smoothEnabled, setSmoothEnabled] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [mineOnly, setMineOnly] = useState(false)
+  const [myUserId, setMyUserId] = useState<number | null>(null)
   const modalVideoRef = useRef<HTMLVideoElement>(null)
   const [modalTime, setModalTime] = useState<number | null>(null)
   const [modalSrc, setModalSrc] = useState<string | null>(null)
@@ -155,7 +158,9 @@ export default function Feed() {
     let canceled = false
     ;(async () => {
       try {
-        const page = await fetchUploads()
+        const uidStr = (() => { try { return localStorage.getItem('userId') } catch { return null } })()
+        setMyUserId(uidStr ? Number(uidStr) : null)
+        const page = await fetchUploads(mineOnly && uidStr ? { userId: Number(uidStr) } : undefined)
         if (canceled) return
         setItems(page)
         if (page.length) setCursor(page[page.length - 1].id)
@@ -165,6 +170,23 @@ export default function Feed() {
       canceled = true
     }
   }, [])
+
+  // reload when mineOnly toggles
+  useEffect(() => {
+    let canceled = false
+    ;(async () => {
+      try {
+        const uid = mineOnly ? myUserId : null
+        const page = await fetchUploads(uid ? { userId: uid } : undefined)
+        if (canceled) return
+        setItems(page)
+        setCursor(page.length ? page[page.length - 1].id : undefined)
+        setIndex(0)
+        railRef.current && (railRef.current.scrollTop = 0)
+      } catch {}
+    })()
+    return () => { canceled = true }
+  }, [mineOnly, myUserId])
 
   // Detect simple auth presence (stub): localStorage key 'auth' === '1'
   useEffect(() => {
@@ -342,7 +364,8 @@ export default function Feed() {
       // pagination
       if (!loadingMore && items.length - i < 5 && cursor) {
         setLoadingMore(true)
-        fetchUploads(cursor)
+        const uid = mineOnly ? myUserId : null
+        fetchUploads({ cursor, userId: uid ?? undefined })
           .then((page) => {
             if (page.length) {
               setItems((prev) => prev.concat(page))
@@ -611,6 +634,15 @@ export default function Feed() {
         >
           {isAuthed ? 'LOGOUT' : 'LOGIN'}
         </a>
+        {/* My Videos toggle (only when logged in) */}
+        {isAuthed && (
+          <div style={{ marginTop: 10, marginBottom: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <input type="checkbox" checked={mineOnly} onChange={(e)=> setMineOnly(e.target.checked)} style={{ transform: 'scale(1.2)' }} />
+              Show only my videos
+            </label>
+          </div>
+        )}
         {/* Register link (only when logged out) */}
         {!isAuthed && (
           <a href="/register" style={{ display: 'block', color: '#fff', textDecoration: 'none', fontSize: 16 }}>

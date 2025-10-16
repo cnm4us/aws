@@ -53,7 +53,7 @@
           const res = await fetch('/api/register', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ email, password, displayName, phone }) });
           const data = await res.json().catch(()=>({}));
           if (!res.ok) { err.textContent = data && data.error ? data.error : 'Registration failed'; return; }
-          try { localStorage.setItem('auth','1'); } catch {}
+          try { localStorage.setItem('auth','1'); if (data && data.userId) localStorage.setItem('userId', String(data.userId)); } catch {}
           ok.textContent = 'Registered! You can close this and continue.';
           setTimeout(()=>{ window.location.href = '/' }, 800);
         } catch (e) {
