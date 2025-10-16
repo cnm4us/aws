@@ -88,10 +88,21 @@ export async function ensureSchema(db: DB) {
       password_hash VARCHAR(255) NULL,
       display_name VARCHAR(255) NULL,
       org_id BIGINT UNSIGNED NULL,
+      email_verified_at DATETIME NULL,
+      phone_number VARCHAR(32) NULL,
+      phone_verified_at DATETIME NULL,
+      verification_level TINYINT UNSIGNED NULL DEFAULT 0,
+      kyc_status ENUM('none','pending','verified','rejected') NOT NULL DEFAULT 'none',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  // Ensure new user columns exist for older schemas
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at DATETIME NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(32) NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at DATETIME NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_level TINYINT UNSIGNED NULL DEFAULT 0`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status ENUM('none','pending','verified','rejected') NOT NULL DEFAULT 'none'`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS roles (

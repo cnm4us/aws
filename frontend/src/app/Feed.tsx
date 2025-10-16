@@ -611,10 +611,12 @@ export default function Feed() {
         >
           {isAuthed ? 'LOGOUT' : 'LOGIN'}
         </a>
-        {/* Register link */}
-        <a href="/register" style={{ display: 'block', color: '#fff', textDecoration: 'none', fontSize: 16 }}>
-          Register
-        </a>
+        {/* Register link (only when logged out) */}
+        {!isAuthed && (
+          <a href="/register" style={{ display: 'block', color: '#fff', textDecoration: 'none', fontSize: 16 }}>
+            Register
+          </a>
+        )}
       </div>
       {!unlocked && (
         <div

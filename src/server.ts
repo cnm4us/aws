@@ -13,6 +13,7 @@ import { signingRouter } from './routes/signing';
 import { publishRouter } from './routes/publish';
 import { profilesRouter } from './routes/profiles';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
+import crypto from 'crypto';
 
 const app = express();
 app.use(cors());
@@ -69,6 +70,92 @@ app.get('/uploads', (_req: ExpressRequest, res: ExpressResponse) => {
   res.set('X-Build', BUILD_TAG);
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(publicDir, 'upload.html'));
+});
+
+// Registration page
+app.get('/register', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(publicDir, 'register.html'));
+});
+
+// Minimal register API (no email verification yet)
+app.post('/api/register', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const { email, password, displayName, phone } = (req.body || {}) as any;
+    const e = String(email || '').trim().toLowerCase();
+    const pw = String(password || '');
+    const dn = (displayName ? String(displayName) : '').trim().slice(0, 120);
+    const ph = (phone ? String(phone) : '').trim().slice(0, 32);
+    if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return res.status(400).json({ error: 'invalid_email' });
+    if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    const N = 16384; // scrypt cost
+    const hash = crypto.scryptSync(pw, salt, 64, { N }).toString('hex');
+    const stored = `s2$${N}$${salt}$${hash}`;
+    const db = getPool();
+    await db.query(
+      `INSERT INTO users (email, password_hash, display_name, phone_number) VALUES (?,?,?,?)`,
+      [e, stored, dn || null, ph || null]
+    );
+    // For demo UX, set a light indicator so the menu shows LOGOUT (replace with real session later)
+    res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    if (msg.includes('ER_DUP_ENTRY')) return res.status(409).json({ error: 'email_taken' });
+    console.error('register error', err);
+    res.status(500).json({ error: 'register_failed' });
+  }
+});
+
+// Login page
+app.get('/login', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.set('X-Build', BUILD_TAG);
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(publicDir, 'login.html'));
+});
+
+// Basic login (scrypt verification)
+app.post('/api/login', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const { email, password } = (req.body || {}) as any;
+    const e = String(email || '').trim().toLowerCase();
+    const pw = String(password || '');
+    if (!e || !pw) return res.status(400).json({ error: 'missing_fields' });
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, password_hash FROM users WHERE email = ? LIMIT 1`, [e]);
+    const row = (rows as any[])[0];
+    if (!row || !row.password_hash) return res.status(401).json({ error: 'invalid_credentials' });
+    const stored: string = String(row.password_hash);
+    // Expect format: s2$N$salt$hash
+    const parts = stored.split('$');
+    if (parts.length < 4 || parts[0] !== 's2') return res.status(500).json({ error: 'bad_hash_format' });
+    const N = Number(parts[1]);
+    const salt = parts[2];
+    const hashHex = parts[3];
+    const calc = crypto.scryptSync(pw, salt, 64, { N }).toString('hex');
+    if (calc !== hashHex) return res.status(401).json({ error: 'invalid_credentials' });
+    // Lightweight cookie marker (non-auth) for UX; real session to be added later
+    res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
+    res.json({ ok: true, userId: row.id });
+  } catch (err) {
+    console.error('login error', err);
+    res.status(500).json({ error: 'login_failed' });
+  }
+});
+
+// Logout page: clear simple cookie; client will clear localStorage
+app.get('/logout', (_req: ExpressRequest, res: ExpressResponse) => {
+  res.clearCookie('reg');
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logged out</title>
+  <body style="background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;display:grid;place-items:center;height:100vh;">
+  <div>Logging you out…</div>
+  <script>try{localStorage.removeItem('auth');}catch(e){} setTimeout(function(){location.href='/'},400);</script>
+  </body>`);
 });
 
 // Simple video player page: /videos?id=123
