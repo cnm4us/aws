@@ -84,7 +84,8 @@
             <td>${u.width||''}x${u.height||''}</td>
             <td>${u.status}</td>
             <td>
-              ${u.status === 'uploaded' ? `<button data-id="${u.id}">Publish</button>` : `<span class="muted">-</span>`}
+              ${u.status === 'uploaded' ? `<button data-id="${u.id}" data-action="publish">Publish</button>` : `<span class="muted">-</span>`}
+              <button data-id="${u.id}" data-action="delete" style="margin-left:6px;">Delete</button>
             </td>
           `;
           rows.appendChild(tr);
@@ -95,21 +96,38 @@
         rows.querySelectorAll('button[data-id]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             const id = e.currentTarget.getAttribute('data-id');
-            e.currentTarget.disabled = true;
-            e.currentTarget.textContent = 'Publishing...';
-            try {
-              const quality = qualitySel.value;
-              const sound = soundSel.value;
-              const body = { id: Number(id), quality, sound };
-              const headers = {'Content-Type':'application/json'};
-              if (adminToken.value) headers['x-admin-token'] = adminToken.value;
-              const resp = await fetch('/api/publish', { method:'POST', headers, body: JSON.stringify(body) });
-              const json = await resp.json();
-              if (!resp.ok) throw new Error(json.error || 'Failed');
-            } catch (err) {
-              alert('Publish failed: ' + err.message);
-            } finally {
-              await load();
+            const action = e.currentTarget.getAttribute('data-action');
+            if (action === 'publish') {
+              e.currentTarget.disabled = true;
+              e.currentTarget.textContent = 'Publishing...';
+              try {
+                const quality = qualitySel.value;
+                const sound = soundSel.value;
+                const body = { id: Number(id), quality, sound };
+                const headers = {'Content-Type':'application/json'};
+                if (adminToken.value) headers['x-admin-token'] = adminToken.value;
+                const resp = await fetch('/api/publish', { method:'POST', headers, body: JSON.stringify(body) });
+                const json = await resp.json();
+                if (!resp.ok) throw new Error(json.error || 'Failed');
+              } catch (err) {
+                alert('Publish failed: ' + err.message);
+              } finally {
+                await load();
+              }
+            } else if (action === 'delete') {
+              if (!confirm('Delete this upload and all derived files? This cannot be undone.')) return;
+              try {
+                let uid = null; try { uid = localStorage.getItem('userId') } catch {}
+                const headers = {'Content-Type':'application/json'};
+                if (adminToken.value) headers['x-admin-token'] = adminToken.value;
+                const resp = await fetch(`/api/uploads/${id}`, { method:'DELETE', headers, body: JSON.stringify({ userId: uid ? Number(uid) : null }) });
+                const json = await resp.json().catch(()=>({}));
+                if (!resp.ok) throw new Error(json && json.error || 'Failed');
+              } catch (err) {
+                alert('Delete failed: ' + err.message);
+              } finally {
+                await load();
+              }
             }
           });
         });

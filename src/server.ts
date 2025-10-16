@@ -242,6 +242,26 @@ app.get('/api/client-log', (req: ExpressRequest, res: ExpressResponse) => {
   res.json({ entries: items });
 });
 
+// Action log: simple list for debugging (admin UI later)
+app.get('/api/action-log', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const db = getPool();
+    const { user_id, action, resource_type, resource_id, limit } = req.query as any;
+    const lim = Math.min(Number(limit || 200), 1000);
+    const where: string[] = [];
+    const params: any[] = [];
+    if (user_id) { where.push('user_id = ?'); params.push(Number(user_id)); }
+    if (action) { where.push('action = ?'); params.push(String(action)); }
+    if (resource_type) { where.push('resource_type = ?'); params.push(String(resource_type)); }
+    if (resource_id) { where.push('resource_id = ?'); params.push(Number(resource_id)); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [rows] = await db.query(`SELECT id, user_id, action, resource_type, resource_id, detail, created_at FROM action_log ${whereSql} ORDER BY id DESC LIMIT ?`, [...params, lim]);
+    res.json({ entries: rows });
+  } catch (e: any) {
+    res.status(500).json({ error: 'failed_to_fetch_action_log', detail: String(e?.message || e) });
+  }
+});
+
 import http from 'http';
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 const server: http.Server = app.listen(PORT, () => {
