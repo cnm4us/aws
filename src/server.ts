@@ -25,6 +25,11 @@ ensureSchema(db).catch((e) => {
   // eslint-disable-next-line no-console
   console.error('Failed ensuring DB schema', e);
 });
+// Seed RBAC roles/permissions at startup (idempotent)
+import { seedRbac } from './db';
+seedRbac(db).catch((e) => {
+  console.warn('RBAC seed skipped/failed', e);
+});
 
 app.get('/health', (_req: ExpressRequest, res: ExpressResponse) => {
   res.json({ ok: true });
