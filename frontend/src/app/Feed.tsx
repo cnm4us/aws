@@ -51,6 +51,8 @@ export default function Feed() {
   const [index, setIndex] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [isAuthed, setIsAuthed] = useState(false)
   const railRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
@@ -162,6 +164,17 @@ export default function Feed() {
     return () => {
       canceled = true
     }
+  }, [])
+
+  // Detect simple auth presence (stub): localStorage key 'auth' === '1'
+  useEffect(() => {
+    const read = () => {
+      try { setIsAuthed(localStorage.getItem('auth') === '1') } catch { setIsAuthed(false) }
+    }
+    read()
+    const onStorage = (e: StorageEvent) => { if (e.key === 'auth') read() }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   // Orientation change listener
@@ -512,6 +525,97 @@ export default function Feed() {
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: '#000' }}>
+      {/* Scrim behind drawer */}
+      <div
+        onPointerUp={(e) => { e.stopPropagation(); if (menuOpen) setMenuOpen(false) }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.35)',
+          opacity: menuOpen ? 1 : 0,
+          transition: 'opacity 200ms ease',
+          zIndex: 1000,
+          pointerEvents: menuOpen ? 'auto' : 'none',
+        }}
+      />
+      {/* Hamburger */}
+      <button
+        aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+        onPointerUp={(e) => { e.stopPropagation(); setMenuOpen((s) => !s) }}
+        style={{
+          position: 'fixed',
+          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+          left: 8,
+          zIndex: 1002,
+          background: 'transparent',
+          border: 'none',
+          padding: 8,
+          opacity: 0.9,
+          touchAction: 'manipulation' as any,
+        }}
+      >
+        {/* Icon: hamburger or X */}
+        {menuOpen ? (
+          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
+          </svg>
+        )}
+      </button>
+      {/* Slide-out menu (left) */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          width: '78vw',
+          maxWidth: 340,
+          background: 'rgba(0,0,0,0.8)',
+          color: '#fff',
+          zIndex: 1001,
+          transform: menuOpen ? 'translate3d(0,0,0)' : 'translate3d(-100%,0,0)',
+          transition: 'transform 260ms cubic-bezier(0.25,1,0.5,1)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          paddingLeft: 12,
+          paddingRight: 12,
+          boxShadow: menuOpen ? '2px 0 12px rgba(0,0,0,0.5)' : 'none',
+          pointerEvents: menuOpen ? 'auto' : 'none',
+          WebkitBackdropFilter: menuOpen ? 'saturate(120%) blur(6px)' : undefined,
+          backdropFilter: menuOpen ? 'saturate(120%) blur(6px)' : undefined,
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >
+        {/* Login/Logout primary button */}
+        <a
+          href={isAuthed ? '/logout' : '/login'}
+          style={{
+            display: 'inline-block',
+            textDecoration: 'none',
+            textAlign: 'center' as const,
+            color: '#fff',
+            background: isAuthed ? '#d32f2f' : '#2e7d32',
+            padding: '12px 20px',
+            borderRadius: 10,
+            fontWeight: 600,
+            fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            marginBottom: 14,
+          }}
+        >
+          {isAuthed ? 'LOGOUT' : 'LOGIN'}
+        </a>
+        {/* Register link */}
+        <a href="/register" style={{ display: 'block', color: '#fff', textDecoration: 'none', fontSize: 16 }}>
+          Register
+        </a>
+      </div>
       {!unlocked && (
         <div
           onClick={unlock}
