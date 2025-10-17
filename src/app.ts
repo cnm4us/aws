@@ -9,6 +9,8 @@ import { profilesRouter } from './routes/profiles';
 import { pagesRouter } from './routes/pages';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { sessionParse } from './middleware/sessionParse';
+import { csrfProtect } from './middleware/csrf';
+import { requireAuth } from './middleware/auth';
 import { getPool } from './db';
 import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
 
@@ -28,6 +30,7 @@ export function buildServer(): express.Application {
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '2mb' }));
   app.use(sessionParse);
+  app.use(csrfProtect);
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -147,7 +150,6 @@ export function buildServer(): express.Application {
       const spaceId = (insSpace as any).insertId as number;
       await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('uploader')`, [userId]);
       await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('publisher','member')`, [userId, spaceId]);
-      res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
       res.json({ ok: true, userId, space: { id: spaceId, slug } });
     } catch (err: any) {
       const msg = String(err?.message || err);
@@ -205,7 +207,6 @@ export function buildServer(): express.Application {
         maxAge,
         path: '/',
       });
-      res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
       res.json({ ok: true, userId: row.id });
     } catch (err) {
       console.error('login error', err);
@@ -222,7 +223,6 @@ export function buildServer(): express.Application {
         console.warn('logout revoke failed', err);
       }
     }
-    res.clearCookie('reg');
     res.clearCookie('sid');
     res.clearCookie('csrf');
     res.set('Cache-Control', 'no-store');
@@ -254,7 +254,7 @@ export function buildServer(): express.Application {
     }
   };
 
-  app.post('/api/client-log', express.json({ limit: '128kb' }), (req, res) => {
+  app.post('/api/client-log', requireAuth, express.json({ limit: '128kb' }), (req, res) => {
     try {
       const body = req.body as any;
       const ua = String(req.headers['user-agent'] || '');
@@ -267,7 +267,7 @@ export function buildServer(): express.Application {
     }
   });
 
-  app.get('/api/client-log', (req, res) => {
+  app.get('/api/client-log', requireAuth, (req, res) => {
     const { session, limit } = req.query as any;
     const lim = Math.min(Number(limit || 200), 1000);
     const items = clientLogRing

@@ -6,7 +6,7 @@ import { getPool } from '../db';
 import { s3 } from '../services/s3';
 import { MAX_UPLOAD_MB, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../config';
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../utils/naming';
-import { adminGuard } from '../security/admin';
+import { requireAuthOrAdminToken } from '../middleware/auth';
 
 export const signingRouter = Router();
 
@@ -20,7 +20,7 @@ const signSchema = z.object({
   userId: z.number().int().positive().optional(),
 });
 
-signingRouter.post('/api/sign-upload', adminGuard, async (req, res) => {
+signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res) => {
   try {
     const parsed = signSchema.parse(req.body || {});
     const { filename, contentType, sizeBytes, width, height, durationSeconds, userId } = parsed;
@@ -40,12 +40,13 @@ signingRouter.post('/api/sign-upload', adminGuard, async (req, res) => {
     );
     const id = (result as any).insertId as number;
 
-    // Optional: associate owner and personal space if userId provided
-    if (userId) {
+    // Associate owner with current session user when present, otherwise allow explicit userId (admin token flow)
+    const ownerId = req.user ? Number(req.user.id) : userId ?? null;
+    if (ownerId) {
       try {
-        const [sp] = await db.query(`SELECT id FROM spaces WHERE type='personal' AND owner_user_id = ? LIMIT 1`, [userId]);
+        const [sp] = await db.query(`SELECT id FROM spaces WHERE type='personal' AND owner_user_id = ? LIMIT 1`, [ownerId]);
         const spaceId = (sp as any[]).length ? Number((sp as any[])[0].id) : null;
-        await db.query(`UPDATE uploads SET user_id = ?, space_id = COALESCE(?, space_id) WHERE id = ?`, [userId, spaceId, id]);
+        await db.query(`UPDATE uploads SET user_id = ?, space_id = COALESCE(?, space_id) WHERE id = ?`, [ownerId, spaceId, id]);
       } catch {}
     }
 
@@ -80,7 +81,7 @@ const completeSchema = z.object({
   sizeBytes: z.number().int().positive().optional(),
 });
 
-signingRouter.post('/api/mark-complete', adminGuard, async (req, res) => {
+signingRouter.post('/api/mark-complete', requireAuthOrAdminToken, async (req, res) => {
   try {
     const { id, etag, sizeBytes } = completeSchema.parse(req.body || {});
     const db = getPool();

@@ -44,6 +44,25 @@
         elLog.textContent += `\n${line}`;
       }
 
+      function getCsrfToken() {
+        const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : null;
+      }
+
+      async function ensureLoggedIn() {
+        try {
+          const res = await fetch('/api/me');
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          if (!data || !data.userId) throw new Error();
+          return data;
+        } catch {
+          elStart.disabled = true;
+          elMsg.textContent = 'Please log in first.';
+          return null;
+        }
+      }
+
       async function probeVideo(file) {
         return new Promise((resolve) => {
           try {
@@ -67,19 +86,22 @@
         elProg.value = 0; elMsg.textContent = '';
 
         try {
+          const me = await ensureLoggedIn();
+          if (!me) return;
           const meta = await probeVideo(file);
           // 1) Ask server for a presigned POST
-          let uid = null; try { uid = localStorage.getItem('userId') } catch {}
           const body = {
             filename: file.name,
             contentType: file.type || 'application/octet-stream',
             sizeBytes: file.size,
             ...meta
           };
-          if (uid) body.userId = Number(uid);
           log('sign body', body);
+          const headers = { 'Content-Type': 'application/json' };
+          const csrf = getCsrfToken();
+          if (csrf) headers['x-csrf-token'] = csrf;
           const signRes = await fetch('/api/sign-upload', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            method: 'POST', headers, body: JSON.stringify(body)
           });
           if (!signRes.ok) throw new Error('Failed to sign upload');
           const { id, post } = await signRes.json();
@@ -125,8 +147,11 @@
           });
 
           // 4) Mark complete on server
+          const headersComplete = { 'Content-Type': 'application/json' };
+          const csrfComplete = getCsrfToken();
+          if (csrfComplete) headersComplete['x-csrf-token'] = csrfComplete;
           const completeRes = await fetch('/api/mark-complete', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, sizeBytes: file.size, etag })
+            method: 'POST', headers: headersComplete, body: JSON.stringify({ id, sizeBytes: file.size, etag })
           });
           if (!completeRes.ok) throw new Error('Failed to mark complete');
 

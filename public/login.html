@@ -35,6 +35,10 @@
       </form>
     </div>
     <script>
+      function getCsrfToken() {
+        const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : null;
+      }
       const f = document.getElementById('f');
       const err = document.getElementById('err');
       const ok = document.getElementById('ok');
@@ -43,10 +47,12 @@
         const email = f.email.value.trim();
         const password = f.password.value;
         try {
-          const res = await fetch('/api/login', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ email, password }) });
+          const headers = { 'content-type': 'application/json' };
+          const csrf = getCsrfToken();
+          if (csrf) headers['x-csrf-token'] = csrf;
+          const res = await fetch('/api/login', { method:'POST', headers, body: JSON.stringify({ email, password }) });
           const data = await res.json().catch(()=>({}));
           if (!res.ok) { err.textContent = data && data.error ? data.error : 'Login failed'; return; }
-          try { localStorage.setItem('auth','1'); if (data && data.userId) localStorage.setItem('userId', String(data.userId)); } catch {}
           ok.textContent = 'Logged in!';
           setTimeout(()=>{ window.location.href = '/' }, 500);
         } catch (e) {

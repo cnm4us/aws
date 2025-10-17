@@ -257,6 +257,9 @@ export async function seedRbac(db: DB) {
     'video:delete_own',
     'video:publish_own',
     'video:unpublish_own',
+    'video:publish_space',
+    'video:unpublish_space',
+    'video:approve_space',
     'video:moderate',
     'video:delete_any',
     'video:approve',
@@ -302,7 +305,17 @@ export async function seedRbac(db: DB) {
   await give('contributor', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
   await give('publisher', ['video:upload', 'video:edit_own', 'video:delete_own', 'video:publish_own', 'video:unpublish_own']);
   await give('moderator', ['video:moderate', 'video:approve']);
-  await give('channel_admin', ['space:manage', 'space:invite', 'space:kick', 'space:assign_roles', 'video:moderate', 'video:approve']);
+  await give('channel_admin', [
+    'space:manage',
+    'space:invite',
+    'space:kick',
+    'space:assign_roles',
+    'video:moderate',
+    'video:approve',
+    'video:publish_space',
+    'video:unpublish_space',
+    'video:approve_space',
+  ]);
   // Admin gets all permissions
   await give('admin', perms);
 }

@@ -4,6 +4,8 @@ import { enhanceUploadRow } from '../utils/enhance';
 import { OUTPUT_BUCKET, UPLOAD_BUCKET } from '../config';
 import { s3 } from '../services/s3';
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3';
+import { requireAuth } from '../middleware/auth';
+import { can } from '../security/permissions';
 
 export const uploadsRouter = Router();
 
@@ -44,19 +46,6 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
     res.status(500).json({ error: 'failed_to_get', detail: String(err?.message || err) });
   }
 });
-
-// Helper: check if user is admin
-async function isAdmin(db: any, userId: number): Promise<boolean> {
-  const [rows] = await db.query(`SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=? AND r.name='admin' LIMIT 1`, [userId]);
-  return (rows as any[]).length > 0;
-}
-
-// Helper: check if user is space admin for a given space
-async function isSpaceAdmin(db: any, userId: number, spaceId: number | null): Promise<boolean> {
-  if (!spaceId) return false;
-  const [rows] = await db.query(`SELECT 1 FROM user_space_roles usr JOIN roles r ON r.id=usr.role_id WHERE usr.user_id=? AND usr.space_id=? AND r.name='channel_admin' LIMIT 1`, [userId, spaceId]);
-  return (rows as any[]).length > 0;
-}
 
 type DeleteSummary = { bucket: string; prefix: string; deleted: number; batches: number; samples: string[]; errors: string[] };
 
@@ -107,19 +96,22 @@ function extractUuidDirPrefix(pathStr: string): string | null {
   } catch { return null; }
 }
 
-uploadsRouter.delete('/api/uploads/:id', async (req, res) => {
+uploadsRouter.delete('/api/uploads/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const userId = Number((req.body as any)?.userId || 0);
-    if (!id || !userId) return res.status(400).json({ error: 'bad_request' });
+    if (!id) return res.status(400).json({ error: 'bad_request' });
     const db = getPool();
     const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [id]);
     const u = (rows as any[])[0];
     if (!u) return res.status(404).json({ error: 'not_found' });
-    const admin = await isAdmin(db, userId);
-    const owner = u.user_id && Number(u.user_id) === userId;
-    const spaceAdmin = await isSpaceAdmin(db, userId, u.space_id ? Number(u.space_id) : null);
-    if (!admin && !owner && !spaceAdmin) return res.status(403).json({ error: 'forbidden' });
+    const currentUserId = Number(req.user!.id);
+    const ownerId = u.user_id ? Number(u.user_id) : null;
+    const spaceId = u.space_id ? Number(u.space_id) : null;
+    const allowed =
+      (ownerId && (await can(currentUserId, 'video:delete_own', { ownerId }))) ||
+      (await can(currentUserId, 'video:delete_any')) ||
+      (spaceId && (await can(currentUserId, 'video:unpublish_space', { spaceId })));
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
 
     // Delete S3 objects
     let delUp: DeleteSummary | null = null;
@@ -159,7 +151,7 @@ uploadsRouter.delete('/api/uploads/:id', async (req, res) => {
           size_bytes: u.size_bytes,
           s3_ops: [ delUp, delOut ].filter(Boolean),
         };
-        await db.query(`INSERT INTO action_log (user_id, action, resource_type, resource_id, detail) VALUES (?, 'delete_error', 'upload', ?, ?)`, [userId, id, JSON.stringify(detail)]);
+        await db.query(`INSERT INTO action_log (user_id, action, resource_type, resource_id, detail) VALUES (?, 'delete_error', 'upload', ?, ?)`, [currentUserId, id, JSON.stringify(detail)]);
       } catch {}
       return res.status(502).json({ error: 's3_delete_failed', detail: { up: delUp, out: delOut } });
     }
@@ -174,7 +166,7 @@ uploadsRouter.delete('/api/uploads/:id', async (req, res) => {
         size_bytes: u.size_bytes,
         s3_ops: [ delUp, delOut ].filter(Boolean),
       };
-      await db.query(`INSERT INTO action_log (user_id, action, resource_type, resource_id, detail) VALUES (?, 'delete', 'upload', ?, ?)`, [userId, id, JSON.stringify(detail)]);
+      await db.query(`INSERT INTO action_log (user_id, action, resource_type, resource_id, detail) VALUES (?, 'delete', 'upload', ?, ?)`, [currentUserId, id, JSON.stringify(detail)]);
     } catch {}
     res.json({ ok: true });
   } catch (err: any) {

@@ -40,6 +40,10 @@
       </form>
     </div>
     <script>
+      function getCsrfToken() {
+        const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : null;
+      }
       const f = document.getElementById('f');
       const err = document.getElementById('err');
       const ok = document.getElementById('ok');
@@ -50,10 +54,12 @@
         const displayName = f.display.value.trim();
         const phone = f.phone.value.trim();
         try {
-          const res = await fetch('/api/register', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ email, password, displayName, phone }) });
+          const headers = { 'content-type': 'application/json' };
+          const csrf = getCsrfToken();
+          if (csrf) headers['x-csrf-token'] = csrf;
+          const res = await fetch('/api/register', { method:'POST', headers, body: JSON.stringify({ email, password, displayName, phone }) });
           const data = await res.json().catch(()=>({}));
           if (!res.ok) { err.textContent = data && data.error ? data.error : 'Registration failed'; return; }
-          try { localStorage.setItem('auth','1'); if (data && data.userId) localStorage.setItem('userId', String(data.userId)); } catch {}
           ok.textContent = 'Registered! You can close this and continue.';
           setTimeout(()=>{ window.location.href = '/' }, 800);
         } catch (e) {

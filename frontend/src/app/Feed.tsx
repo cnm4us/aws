@@ -12,6 +12,15 @@ type UploadItem = {
   masterLandscape?: string
 }
 
+type MeResponse = {
+  userId: number | null
+  email: string | null
+  displayName: string | null
+  roles: string[]
+  spaceRoles: Record<string, string[]>
+  personalSpace: { id: number; slug: string } | null
+}
+
 function swapOrientation(url: string): { portrait?: string; landscape?: string } {
   if (!url) return {};
   if (url.includes('/portrait/')) {
@@ -54,6 +63,7 @@ export default function Feed() {
   const [unlocked, setUnlocked] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isAuthed, setIsAuthed] = useState(false)
+  const [me, setMe] = useState<MeResponse | null>(null)
   const railRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
@@ -153,18 +163,23 @@ export default function Feed() {
     return Math.max(1, h)
   }
 
-  // initial load
   useEffect(() => {
     let canceled = false
     ;(async () => {
       try {
-        const uidStr = (() => { try { return localStorage.getItem('userId') } catch { return null } })()
-        setMyUserId(uidStr ? Number(uidStr) : null)
-        const page = await fetchUploads(mineOnly && uidStr ? { userId: Number(uidStr) } : undefined)
+        const res = await fetch('/api/me')
+        if (!res.ok) throw new Error('me_failed')
+        const data: MeResponse = await res.json()
         if (canceled) return
-        setItems(page)
-        if (page.length) setCursor(page[page.length - 1].id)
-      } catch {}
+        setMe(data)
+        setIsAuthed(Boolean(data.userId))
+        setMyUserId(data.userId ?? null)
+      } catch {
+        if (canceled) return
+        setMe(null)
+        setIsAuthed(false)
+        setMyUserId(null)
+      }
     })()
     return () => {
       canceled = true
@@ -188,16 +203,6 @@ export default function Feed() {
     return () => { canceled = true }
   }, [mineOnly, myUserId])
 
-  // Detect simple auth presence (stub): localStorage key 'auth' === '1'
-  useEffect(() => {
-    const read = () => {
-      try { setIsAuthed(localStorage.getItem('auth') === '1') } catch { setIsAuthed(false) }
-    }
-    read()
-    const onStorage = (e: StorageEvent) => { if (e.key === 'auth') read() }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
 
   // Orientation change listener
   useEffect(() => {

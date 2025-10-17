@@ -6,6 +6,8 @@ import { getMediaConvertClient } from '../aws/mediaconvert';
 import { CreateJobCommand, GetJobCommand } from '@aws-sdk/client-mediaconvert';
 import { applyHqTuning, getFirstHlsDestinationPrefix, loadProfileJson, transformSettings, applyAudioNormalization } from '../jobs';
 import { writeRequestLog } from '../utils/requestLog';
+import { requireAuth } from '../middleware/auth';
+import { can } from '../security/permissions';
 
 export const publishRouter = Router();
 
@@ -16,7 +18,7 @@ const publishSchema = z.object({
   sound: z.string().optional(),
 });
 
-publishRouter.post('/api/publish', async (req, res) => {
+publishRouter.post('/api/publish', requireAuth, async (req, res) => {
   try {
     const { id, profile, quality, sound } = publishSchema.parse(req.body || {});
     if (!MC_ROLE_ARN) return res.status(500).json({ error: 'server_not_configured', detail: 'MC_ROLE_ARN not set' });
@@ -26,6 +28,16 @@ publishRouter.post('/api/publish', async (req, res) => {
     const upload = (rows as any)[0];
     if (!upload) return res.status(404).json({ error: 'not_found' });
     if (upload.status !== 'uploaded') return res.status(400).json({ error: 'invalid_state', detail: 'status must be uploaded' });
+
+    const currentUserId = Number(req.user!.id);
+    const ownerId = upload.user_id ? Number(upload.user_id) : null;
+    const spaceId = upload.space_id ? Number(upload.space_id) : null;
+    const allowed =
+      (ownerId && (await can(currentUserId, 'video:publish_own', { ownerId }))) ||
+      (spaceId && (await can(currentUserId, 'video:publish_space', { spaceId }))) ||
+      (await can(currentUserId, 'video:publish_space')) ||
+      (await can(currentUserId, 'video:approve'));
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
 
     const inputUrl = `s3://${upload.s3_bucket}/${upload.s3_key}`;
     let chosenProfile: string = profile || (

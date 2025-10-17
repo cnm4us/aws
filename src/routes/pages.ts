@@ -20,6 +20,10 @@ pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, 'upload.html');
 });
 
+pagesRouter.get('/publish', (_req, res) => {
+  serveHtml(res, 'publish.html');
+});
+
 pagesRouter.get('/register', (_req, res) => {
   serveHtml(res, 'register.html');
 });

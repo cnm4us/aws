@@ -45,6 +45,12 @@
 
     <script>
       const rows = document.getElementById('rows');
+      const hint = document.getElementById('hint');
+
+      function getCsrfToken() {
+        const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : null;
+      }
 
       function fmtBytes(n){
         if (!n && n !== 0) return '';
@@ -55,19 +61,24 @@
       }
 
       async function load(){
-        let uid = null, authed = null;
-        try { uid = localStorage.getItem('userId'); authed = localStorage.getItem('auth'); } catch {}
-        // Require login to view/publish your uploads
-        if (authed !== '1' || !uid) {
+        let me;
+        try {
+          const res = await fetch('/api/me');
+          if (!res.ok) throw new Error();
+          me = await res.json();
+        } catch {
+          me = null;
+        }
+        const userId = me && me.userId;
+        if (!userId) {
           rows.innerHTML = '';
-          const hint = document.getElementById('hint');
           if (hint) hint.textContent = 'Please login to see and publish your uploads.';
           const tr = document.createElement('tr');
           tr.innerHTML = `<td colspan="6" class="muted">Not logged in. <a href="/login">Login</a> or <a href="/register">Register</a>.</td>`;
           rows.appendChild(tr);
           return;
         }
-        let url = '/api/uploads?limit=50&user_id=' + encodeURIComponent(uid);
+        const url = '/api/uploads?limit=50&user_id=' + encodeURIComponent(userId);
         const res = await fetch(url);
         const data = await res.json();
         rows.innerHTML = '';
@@ -105,6 +116,8 @@
                 const sound = soundSel.value;
                 const body = { id: Number(id), quality, sound };
                 const headers = {'Content-Type':'application/json'};
+                const csrf = getCsrfToken();
+                if (csrf) headers['x-csrf-token'] = csrf;
                 if (adminToken.value) headers['x-admin-token'] = adminToken.value;
                 const resp = await fetch('/api/publish', { method:'POST', headers, body: JSON.stringify(body) });
                 const json = await resp.json();
@@ -117,10 +130,11 @@
             } else if (action === 'delete') {
               if (!confirm('Delete this upload and all derived files? This cannot be undone.')) return;
               try {
-                let uid = null; try { uid = localStorage.getItem('userId') } catch {}
                 const headers = {'Content-Type':'application/json'};
+                const csrf = getCsrfToken();
+                if (csrf) headers['x-csrf-token'] = csrf;
                 if (adminToken.value) headers['x-admin-token'] = adminToken.value;
-                const resp = await fetch(`/api/uploads/${id}`, { method:'DELETE', headers, body: JSON.stringify({ userId: uid ? Number(uid) : null }) });
+                const resp = await fetch(`/api/uploads/${id}`, { method:'DELETE', headers });
                 const json = await resp.json().catch(()=>({}));
                 if (!resp.ok) throw new Error(json && json.error || 'Failed');
               } catch (err) {

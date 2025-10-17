@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getPool } from '../db';
+import { parseCookies } from '../utils/cookies';
 
 declare global {
   namespace Express {
@@ -24,20 +25,6 @@ declare global {
 }
 
 const SID_COOKIE = 'sid';
-
-function parseCookies(cookieHeader: string | undefined): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  if (!cookieHeader) return cookies;
-  for (const part of cookieHeader.split(';')) {
-    const index = part.indexOf('=');
-    if (index < 0) continue;
-    const name = part.slice(0, index).trim();
-    if (!name) continue;
-    const value = decodeURIComponent(part.slice(index + 1).trim());
-    cookies[name] = value;
-  }
-  return cookies;
-}
 
 export async function sessionParse(req: Request, _res: Response, next: NextFunction) {
   try {
