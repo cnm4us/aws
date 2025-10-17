@@ -231,7 +231,7 @@ export function buildServer(): express.Application {
   <title>Logged out</title>
   <body style="background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;display:grid;place-items:center;height:100vh;">
   <div>Logging you out…</div>
-  <script>try{localStorage.removeItem('auth');localStorage.removeItem('userId');}catch(e){} setTimeout(function(){location.href='/'},400);</script>
+  <script>setTimeout(function(){location.href='/'},400);</script>
   </body>`);
   });
 
