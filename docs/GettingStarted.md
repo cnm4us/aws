@@ -24,11 +24,11 @@ Setup
 - Add behaviors: *.m3u8 (short TTL), *.ts/*.m4s (long TTL), attach CORS policy.
 
 First run
-- Upload: open / (upload.html), select a video, upload
-- Publish: open /publish.html, pick a profile/quality/sound, click Publish
+- Register/login via `/register` or `/login` (API issues session & CSRF cookies)
+- Upload: open /upload, select a video, upload (requires session)
+- Publish: open /publish, pick profile/quality/sound, click Publish (CSRF header auto-included)
 - Play: open /videos?id=<upload_id> or /mobile?id=<upload_id>
 
 Troubleshooting
 - Check logs/request for the final MediaConvert payload submitted.
 - Use `aws mediaconvert get-job --id <id> --endpoint-url <account endpoint>` to inspect job errors.
-

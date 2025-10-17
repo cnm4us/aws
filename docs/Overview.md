@@ -4,10 +4,11 @@ This service enables direct browser uploads to S3 and one‑click publishing to 
 
 Key features
 - Direct S3 uploads (presigned POST) with size/type guardrails
+- Cookie-based sessions (10-digit `sessions` table), httpOnly `sid` + CSRF cookie, `/api/me` for auth state
 - Upload tracking in `uploads` table (size, etag, dimensions, profile, job id)
 - MediaConvert job profiles with composable JSON mixins and tokens
 - CloudFront delivery for HLS manifests/segments
-- Simple players: desktop (/videos) and edge‑to‑edge mobile (/mobile)
+- Simple players: desktop (/videos) and edge‑to-edge mobile (/mobile)
 - Background poller to sync job status (queued → processing → completed)
 - Request logs for each submitted job
 
@@ -19,4 +20,3 @@ Path conventions
 - Upload key: `uploads/YYYY-MM/DD/<uuid>/video.<ext>`
 - Output prefix: `YYYY-MM/DD/<uuid>/<orientation>/`
 - Master: `video.m3u8` (child playlists include resolution in name)
-

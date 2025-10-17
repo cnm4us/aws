@@ -1,8 +1,12 @@
 # API
 
-Auth: none (dev). Add a simple token before production.
+Auth: cookie session in development (httpOnly `sid` + `csrf` cookie). `x-admin-token` still allowed for automation.
 
 - GET /health → { ok: true }
+- GET /api/me → `{ userId, email, displayName, roles, spaceRoles, personalSpace }`
+- POST /api/login { email, password } → `{ ok, userId }` (+ sets `sid`/`csrf` cookies)
+- GET /logout → HTML (revokes session, clears cookies)
+- POST /api/register { email, password, displayName?, phone? } → `{ ok, userId, space }`
 - POST /api/sign-upload { filename, contentType?, sizeBytes?, width?, height?, durationSeconds? }
   - → { id, key, bucket, post: { url, fields } }
 - POST /api/mark-complete { id, etag?, sizeBytes? } → { ok: true }
@@ -19,4 +23,3 @@ UploadRow (selected fields)
 - width, height, duration_seconds
 - status, etag, mediaconvert_job_id, output_prefix, profile, asset_uuid, date_ymd
 - cdn_prefix, cdn_master, s3_master (computed)
-
