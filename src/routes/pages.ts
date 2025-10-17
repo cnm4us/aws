@@ -43,4 +43,3 @@ pagesRouter.get('/pwa-swipe', (_req, res) => {
 pagesRouter.get('/debug/logs', (_req, res) => {
   serveHtml(res, 'debug-logs.html');
 });
-

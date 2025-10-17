@@ -8,7 +8,9 @@ import { publishRouter } from './routes/publish';
 import { profilesRouter } from './routes/profiles';
 import { pagesRouter } from './routes/pages';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
+import { sessionParse } from './middleware/sessionParse';
 import { getPool } from './db';
+import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
 
 export function buildServer(): express.Application {
   const app = express();
@@ -25,6 +27,7 @@ export function buildServer(): express.Application {
   };
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '2mb' }));
+  app.use(sessionParse);
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -38,6 +41,64 @@ export function buildServer(): express.Application {
   app.use(uploadsRouter);
   app.use(profilesRouter);
   app.use(publishRouter);
+
+  app.get('/api/me', async (req, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.json({
+          userId: null,
+          email: null,
+          displayName: null,
+          roles: [],
+          spaceRoles: {},
+          personalSpace: null,
+        });
+      }
+
+      const db = getPool();
+      const [roleRows] = await db.query(
+        `SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?`,
+        [user.id]
+      );
+      const roles = (roleRows as any[]).map((r) => String(r.name));
+
+      const [spaceRoleRows] = await db.query(
+        `SELECT usr.space_id, r.name
+           FROM user_space_roles usr
+           JOIN roles r ON r.id = usr.role_id
+          WHERE usr.user_id = ?`,
+        [user.id]
+      );
+      const spaceRoles: Record<string, string[]> = {};
+      for (const row of spaceRoleRows as any[]) {
+        const sid = String(row.space_id);
+        if (!spaceRoles[sid]) spaceRoles[sid] = [];
+        spaceRoles[sid].push(String(row.name));
+      }
+
+      const [personal] = await db.query(
+        `SELECT id, slug FROM spaces WHERE type = 'personal' AND owner_user_id = ? LIMIT 1`,
+        [user.id]
+      );
+      const personalSpaceRow = (personal as any[])[0];
+      const personalSpace = personalSpaceRow
+        ? { id: Number(personalSpaceRow.id), slug: String(personalSpaceRow.slug) }
+        : null;
+
+      res.json({
+        userId: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        roles,
+        spaceRoles,
+        personalSpace,
+      });
+    } catch (err: any) {
+      console.error('me endpoint error', err);
+      res.status(500).json({ error: 'me_failed', detail: String(err?.message || err) });
+    }
+  });
 
   const publicDir = path.join(process.cwd(), 'public');
   const staticOpts = {
@@ -113,6 +174,37 @@ export function buildServer(): express.Application {
       const hashHex = parts[3];
       const calc = crypto.scryptSync(pw, salt, 64, { N }).toString('hex');
       if (calc !== hashHex) return res.status(401).json({ error: 'invalid_credentials' });
+      const expiresMs = 30 * 24 * 60 * 60 * 1000;
+      const expiresAt = new Date(Date.now() + expiresMs);
+      const forwarded = req.headers['x-forwarded-for'];
+      const ip = Array.isArray(forwarded)
+        ? forwarded[0]
+        : (forwarded ? forwarded.split(',')[0] : '') || req.ip;
+      const ua = String(req.headers['user-agent'] || '');
+      const session = await createSession({
+        userId: Number(row.id),
+        ip: ip ? String(ip) : null,
+        ua: ua || null,
+        expiresAt,
+      });
+      const protoHeader = String(req.headers['x-forwarded-proto'] || '');
+      const secure = protoHeader.toLowerCase() === 'https' || req.secure;
+      const maxAge = expiresMs;
+      res.cookie('sid', session.token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure,
+        maxAge,
+        path: '/',
+      });
+      const csrfToken = crypto.randomBytes(16).toString('hex');
+      res.cookie('csrf', csrfToken, {
+        httpOnly: false,
+        sameSite: 'lax',
+        secure,
+        maxAge,
+        path: '/',
+      });
       res.cookie('reg', '1', { httpOnly: false, sameSite: 'lax' });
       res.json({ ok: true, userId: row.id });
     } catch (err) {
@@ -121,8 +213,18 @@ export function buildServer(): express.Application {
     }
   });
 
-  app.get('/logout', (_req, res) => {
+  app.get('/logout', async (req, res) => {
+    const token = req.session?.token || parseSidCookie(req.headers.cookie);
+    if (token) {
+      try {
+        await revokeSession(token);
+      } catch (err) {
+        console.warn('logout revoke failed', err);
+      }
+    }
     res.clearCookie('reg');
+    res.clearCookie('sid');
+    res.clearCookie('csrf');
     res.set('Cache-Control', 'no-store');
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
