@@ -12,6 +12,10 @@ export type Permission =
   | 'video:approve'
   | 'video:moderate'
   | 'video:delete_any'
+  | 'space:create_group'
+  | 'space:create_channel'
+  | 'space:manage_members'
+  | 'space:invite_members'
   | 'space:manage'
   | 'space:invite'
   | 'space:kick'
@@ -101,6 +105,14 @@ export async function can(userId: number, permission: Permission, options: CanOp
     }
     if (permission === 'video:approve_space') {
       return checker.hasSpacePermission(spaceId, 'video:approve_space');
+    }
+    if (permission === 'space:manage' ||
+        permission === 'space:invite' ||
+        permission === 'space:kick' ||
+        permission === 'space:assign_roles' ||
+        permission === 'space:manage_members' ||
+        permission === 'space:invite_members') {
+      return checker.hasSpacePermission(spaceId, permission);
     }
   }
 

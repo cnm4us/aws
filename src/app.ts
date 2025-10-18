@@ -7,6 +7,8 @@ import { signingRouter } from './routes/signing';
 import { publishRouter } from './routes/publish';
 import { profilesRouter } from './routes/profiles';
 import { pagesRouter } from './routes/pages';
+import adminRouter from './routes/admin';
+import spacesRouter from './routes/spaces';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { sessionParse } from './middleware/sessionParse';
 import { csrfProtect } from './middleware/csrf';
@@ -41,9 +43,11 @@ export function buildServer(): express.Application {
   });
 
   app.use(signingRouter);
-  app.use(uploadsRouter);
+ 	app.use(uploadsRouter);
   app.use(profilesRouter);
   app.use(publishRouter);
+  app.use('/api/admin', adminRouter);
+  app.use(spacesRouter);
 
   app.get('/api/me', async (req, res) => {
     try {
@@ -113,6 +117,65 @@ export function buildServer(): express.Application {
   app.use('/exp/:tag', express.static(publicDir, staticOpts as any));
   app.use(pagesRouter);
   app.use(express.static(publicDir, staticOpts as any));
+  app.get('/admin', (_req, res) => {
+    res.set('X-Build', BUILD_TAG);
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(path.join(publicDir, 'admin.html'));
+  });
+  app.get('/members/:slug', async (req, res) => {
+    try {
+      const slug = String(req.params.slug || '').trim().toLowerCase();
+      const db = getPool();
+      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'personal' AND slug = ? LIMIT 1`, [slug]);
+      const space = (rows as any[])[0];
+      if (!space) return res.status(404).send('Member space not found');
+      res.json({
+        type: 'personal',
+        id: Number(space.id),
+        name: space.name,
+        slug,
+        settings: space.settings,
+      });
+    } catch (err) {
+      res.status(500).send('Failed to load member space');
+    }
+  });
+  app.get('/groups/:slug', async (req, res) => {
+    try {
+      const slug = String(req.params.slug || '').trim().toLowerCase();
+      const db = getPool();
+      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'group' AND slug = ? LIMIT 1`, [slug]);
+      const space = (rows as any[])[0];
+      if (!space) return res.status(404).send('Group not found');
+      res.json({
+        type: 'group',
+        id: Number(space.id),
+        name: space.name,
+        slug,
+        settings: space.settings,
+      });
+    } catch (err) {
+      res.status(500).send('Failed to load group');
+    }
+  });
+  app.get('/channels/:slug', async (req, res) => {
+    try {
+      const slug = String(req.params.slug || '').trim().toLowerCase();
+      const db = getPool();
+      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'channel' AND slug = ? LIMIT 1`, [slug]);
+      const space = (rows as any[])[0];
+      if (!space) return res.status(404).send('Channel not found');
+      res.json({
+        type: 'channel',
+        id: Number(space.id),
+        name: space.name,
+        slug,
+        settings: space.settings,
+      });
+    } catch (err) {
+      res.status(500).send('Failed to load channel');
+    }
+  });
 
   app.post('/api/register', async (req, res) => {
     try {
@@ -134,13 +197,13 @@ export function buildServer(): express.Application {
       );
       const userId = (ins as any).insertId as number;
       const baseSlug = (dn || e.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
-      let slug = `u-${baseSlug}`;
+      let slug = baseSlug;
       let n = 1;
       while (true) {
-        const [exists] = await db.query(`SELECT id FROM spaces WHERE slug = ? LIMIT 1`, [slug]);
+        const [exists] = await db.query(`SELECT id FROM spaces WHERE type = 'personal' AND slug = ? LIMIT 1`, [slug]);
         if ((exists as any[]).length === 0) break;
         n += 1;
-        slug = `u-${baseSlug}-${n}`;
+        slug = `${baseSlug}-${n}`;
       }
       const settings = { visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true };
       const [insSpace] = await db.query(

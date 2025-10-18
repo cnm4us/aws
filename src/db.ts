@@ -103,6 +103,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at DATETIME NULL`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_level TINYINT UNSIGNED NULL DEFAULT 0`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status ENUM('none','pending','verified','rejected') NOT NULL DEFAULT 'none'`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_group TINYINT(1) NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_channel TINYINT(1) NULL`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS roles (
@@ -180,13 +182,19 @@ export async function ensureSchema(db: DB) {
       org_id BIGINT UNSIGNED NULL,
       owner_user_id BIGINT UNSIGNED NULL,
       name VARCHAR(128) NOT NULL,
-      slug VARCHAR(128) NOT NULL UNIQUE,
+      slug VARCHAR(128) NOT NULL,
       settings JSON NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY idx_spaces_type (type),
       KEY idx_spaces_owner (owner_user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  try {
+    await db.query(`ALTER TABLE spaces DROP INDEX slug`);
+  } catch {}
+  try {
+    await db.query(`ALTER TABLE spaces ADD UNIQUE INDEX idx_spaces_type_slug (type, slug)`);
+  } catch {}
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS user_space_roles (
@@ -222,6 +230,31 @@ export async function ensureSchema(db: DB) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_invitations (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      space_id BIGINT UNSIGNED NOT NULL,
+      inviter_user_id BIGINT UNSIGNED NOT NULL,
+      invitee_user_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('pending','accepted','declined','revoked') NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      responded_at TIMESTAMP NULL DEFAULT NULL,
+      UNIQUE KEY uniq_space_invitee (space_id, invitee_user_id),
+      KEY idx_space_status (space_id, status),
+      KEY idx_invitee_status (invitee_user_id, status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+      allow_group_creation TINYINT(1) NOT NULL DEFAULT 1,
+      allow_channel_creation TINYINT(1) NOT NULL DEFAULT 1,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await db.query(`INSERT IGNORE INTO site_settings (id) VALUES (1)`);
+
   // Action log (auditing)
   await db.query(`
     CREATE TABLE IF NOT EXISTS action_log (
@@ -247,7 +280,10 @@ export async function seedRbac(db: DB) {
     'contributor',
     'member',
     'moderator',
+    'group_admin',
+    'group_member',
     'channel_admin',
+    'channel_member',
     'admin',
     'subscriber',
   ];
@@ -269,6 +305,10 @@ export async function seedRbac(db: DB) {
     'space:assign_roles',
     'space:view_private',
     'space:post',
+    'space:create_group',
+    'space:create_channel',
+    'space:manage_members',
+    'space:invite_members',
   ];
 
   // Insert roles/permissions
@@ -301,21 +341,36 @@ export async function seedRbac(db: DB) {
   await give('viewer', []);
   await give('member', ['space:view_private']);
   await give('subscriber', ['space:view_private']);
-  await give('uploader', ['video:upload', 'video:edit_own', 'video:delete_own']);
+  await give('uploader', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:create_group', 'space:create_channel']);
   await give('contributor', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
   await give('publisher', ['video:upload', 'video:edit_own', 'video:delete_own', 'video:publish_own', 'video:unpublish_own']);
   await give('moderator', ['video:moderate', 'video:approve']);
+  await give('group_admin', [
+    'space:manage',
+    'space:invite',
+    'space:kick',
+    'space:assign_roles',
+    'space:manage_members',
+    'space:invite_members',
+    'video:publish_space',
+    'video:unpublish_space',
+    'video:approve_space',
+  ]);
+  await give('group_member', ['video:publish_space']);
   await give('channel_admin', [
     'space:manage',
     'space:invite',
     'space:kick',
     'space:assign_roles',
+    'space:manage_members',
+    'space:invite_members',
     'video:moderate',
     'video:approve',
     'video:publish_space',
     'video:unpublish_space',
     'video:approve_space',
   ]);
+  await give('channel_member', ['video:publish_space']);
   // Admin gets all permissions
   await give('admin', perms);
 }
