@@ -57,34 +57,149 @@ async function pollStatuses() {
   if (polling) return;
   polling = true;
   try {
-    const [rows] = await db.query(
-      `SELECT id, mediaconvert_job_id FROM uploads WHERE mediaconvert_job_id IS NOT NULL AND status IN ('queued','processing') ORDER BY id DESC LIMIT 25`
+    const [uploadRows] = await db.query(
+      `SELECT id, mediaconvert_job_id, status
+         FROM uploads
+        WHERE mediaconvert_job_id IS NOT NULL
+          AND status IN ('queued','processing')
+        ORDER BY id DESC
+        LIMIT 200`
     );
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    const [productionRows] = await db.query(
+      `SELECT id, mediaconvert_job_id, status, started_at, completed_at
+         FROM productions
+        WHERE mediaconvert_job_id IS NOT NULL
+          AND status IN ('pending','queued','processing')
+        ORDER BY id DESC
+        LIMIT 200`
+    );
 
-    const mc = await getMediaConvertClient(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-west-1');
-    for (const r of rows as any[]) {
-      const jobId = r.mediaconvert_job_id as string;
+    if ((!Array.isArray(uploadRows) || uploadRows.length === 0) && (!Array.isArray(productionRows) || productionRows.length === 0)) {
+      return;
+    }
+
+    type JobBucket = { uploads: any[]; productions: any[] };
+    const jobs = new Map<string, JobBucket>();
+
+    for (const row of uploadRows as any[]) {
+      const jobId = row.mediaconvert_job_id as string | null;
       if (!jobId) continue;
+      if (!jobs.has(jobId)) jobs.set(jobId, { uploads: [], productions: [] });
+      jobs.get(jobId)!.uploads.push(row);
+    }
+
+    for (const row of productionRows as any[]) {
+      const jobId = row.mediaconvert_job_id as string | null;
+      if (!jobId) continue;
+      if (!jobs.has(jobId)) jobs.set(jobId, { uploads: [], productions: [] });
+      jobs.get(jobId)!.productions.push(row);
+    }
+
+    if (!jobs.size) return;
+
+    const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-west-1';
+    const mc = await getMediaConvertClient(region);
+
+    for (const [jobId, bucket] of jobs.entries()) {
+      let status: string | undefined;
+      let errorMessage: string | undefined;
+      let timing: {
+        StartTime?: Date;
+        FinishTime?: Date;
+      } | undefined;
+
       try {
         const resp = await mc.send(new GetJobCommand({ Id: jobId }));
-        const s = resp.Job?.Status;
-        if (!s) continue;
-        if (s === 'SUBMITTED') {
-          // keep as queued
-        } else if (s === 'PROGRESSING') {
-          await db.query(`UPDATE uploads SET status = 'processing' WHERE id = ?`, [r.id]);
-        } else if (s === 'COMPLETE') {
-          await db.query(`UPDATE uploads SET status = 'completed' WHERE id = ?`, [r.id]);
-        } else if (s === 'CANCELED' || s === 'ERROR') {
-          await db.query(`UPDATE uploads SET status = 'failed' WHERE id = ?`, [r.id]);
+        status = resp.Job?.Status;
+        errorMessage = resp.Job?.ErrorMessage || undefined;
+        const timingRaw: any = resp.Job?.Timing;
+        if (timingRaw) {
+          timing = {
+            StartTime: timingRaw.StartTime ? new Date(timingRaw.StartTime) : undefined,
+            FinishTime: timingRaw.FinishTime ? new Date(timingRaw.FinishTime) : undefined,
+          };
         }
       } catch (e: any) {
         const msg = String(e?.message || e);
         if (msg.includes('Pool is closed')) {
-          // Ignore during shutdown
+          continue;
+        }
+        if (msg.includes('NotFound')) {
+          status = 'ERROR';
+          errorMessage = 'mediaconvert_job_not_found';
         } else {
           console.warn('poll job failed', jobId, msg);
+          continue;
+        }
+      }
+
+      if (!status) continue;
+
+      // Update uploads table based on job status
+      for (const row of bucket.uploads) {
+        const uploadId = row.id;
+        if (status === 'PROGRESSING' && row.status !== 'processing') {
+          await db.query(`UPDATE uploads SET status = 'processing' WHERE id = ?`, [uploadId]);
+        } else if (status === 'COMPLETE' && row.status !== 'completed') {
+          await db.query(`UPDATE uploads SET status = 'completed' WHERE id = ?`, [uploadId]);
+        } else if ((status === 'CANCELED' || status === 'ERROR') && row.status !== 'failed') {
+          await db.query(`UPDATE uploads SET status = 'failed' WHERE id = ?`, [uploadId]);
+        }
+      }
+
+      // Update productions table based on job status
+      for (const row of bucket.productions) {
+        const productionId = row.id;
+        const startTime = timing?.StartTime ?? undefined;
+        const finishTime = timing?.FinishTime ?? undefined;
+
+        if (status === 'SUBMITTED') {
+          if (row.status !== 'queued' && row.status !== 'pending') {
+            await db.query(
+              `UPDATE productions SET status = 'queued', error_message = NULL WHERE id = ?`,
+              [productionId]
+            );
+          }
+        } else if (status === 'PROGRESSING') {
+          if (row.status !== 'processing') {
+            const effectiveStart = startTime ?? new Date();
+            await db.query(
+              `UPDATE productions
+                  SET status = 'processing',
+                      started_at = IFNULL(started_at, ?),
+                      completed_at = NULL,
+                      error_message = NULL
+                WHERE id = ?`,
+              [effectiveStart, productionId]
+            );
+          }
+        } else if (status === 'COMPLETE') {
+          if (row.status !== 'completed') {
+            const effectiveStart = startTime ?? new Date();
+            const effectiveFinish = finishTime ?? new Date();
+            await db.query(
+              `UPDATE productions
+                  SET status = 'completed',
+                      started_at = IFNULL(started_at, ?),
+                      completed_at = IFNULL(completed_at, ?),
+                      error_message = NULL
+                WHERE id = ?`,
+              [effectiveStart, effectiveFinish, productionId]
+            );
+          }
+        } else if (status === 'CANCELED' || status === 'ERROR') {
+          if (row.status !== 'failed') {
+            const effectiveFinish = finishTime ?? new Date();
+            const detail = (errorMessage || status || 'failed').slice(0, 500);
+            await db.query(
+              `UPDATE productions
+                  SET status = 'failed',
+                      completed_at = IFNULL(completed_at, ?),
+                      error_message = ?
+                WHERE id = ?`,
+              [effectiveFinish, detail, productionId]
+            );
+          }
         }
       }
     }
