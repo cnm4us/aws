@@ -6,6 +6,7 @@ import { uploadsRouter } from './routes/uploads';
 import { signingRouter } from './routes/signing';
 import { publishRouter } from './routes/publish';
 import { publicationsRouter } from './routes/publications';
+import publishSingleRouter from './routes/publish-single';
 import { profilesRouter } from './routes/profiles';
 import { pagesRouter } from './routes/pages';
 import adminRouter from './routes/admin';
@@ -47,6 +48,7 @@ export function buildServer(): express.Application {
   app.use(uploadsRouter);
   app.use(profilesRouter);
   app.use(publishRouter);
+  app.use(publishSingleRouter);
   app.use(publicationsRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);

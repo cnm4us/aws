@@ -17,11 +17,15 @@ pagesRouter.get('/', (_req, res) => {
 });
 
 pagesRouter.get('/uploads', (_req, res) => {
-  serveHtml(res, 'upload.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/publish', (_req, res) => {
-  serveHtml(res, 'publish.html');
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
+pagesRouter.get('/publish/:id', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/register', (_req, res) => {

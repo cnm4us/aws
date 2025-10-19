@@ -12,7 +12,7 @@ export const uploadsRouter = Router();
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
     const db = getPool();
-    const { status, limit, cursor, user_id, space_id } = req.query as any;
+    const { status, limit, cursor, user_id, space_id, include_publications } = req.query as any;
     const lim = Math.min(Number(limit || 50), 500);
     const curId = cursor ? Number(cursor) : undefined;
     const where: string[] = [];
@@ -22,10 +22,54 @@ uploadsRouter.get('/api/uploads', async (req, res) => {
     if (space_id) { where.push('space_id = ?'); params.push(Number(space_id)); }
     if (curId && Number.isFinite(curId)) { where.push('id < ?'); params.push(curId); }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    if (true) {
-      const [rows] = await db.query(`SELECT * FROM uploads ${whereSql} ORDER BY id DESC LIMIT ?`, [...params, lim]);
-      return res.json((rows as any[]).map(enhanceUploadRow));
+    const [rows] = await db.query(`SELECT * FROM uploads ${whereSql} ORDER BY id DESC LIMIT ?`, [...params, lim]);
+    const rawUploads = (rows as any[]);
+
+    let publicationsByUpload: Record<number, any[]> | null = null;
+    const includePubs = include_publications === '1' || include_publications === 'true';
+    if (includePubs && rawUploads.length) {
+      const ids = rawUploads.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+      if (ids.length) {
+        try {
+          const placeholders = ids.map(() => '?').join(',');
+          const [pubRows] = await db.query(
+            `SELECT sp.upload_id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at,
+                    s.name AS space_name, s.type AS space_type
+               FROM space_publications sp
+               JOIN spaces s ON s.id = sp.space_id
+              WHERE sp.upload_id IN (${placeholders})
+              ORDER BY sp.published_at DESC, sp.id DESC`,
+            ids
+          );
+          publicationsByUpload = {};
+          for (const row of pubRows as any[]) {
+            const uploadId = Number(row.upload_id);
+            if (!publicationsByUpload[uploadId]) publicationsByUpload[uploadId] = [];
+            publicationsByUpload[uploadId].push({
+              spaceId: Number(row.space_id),
+              spaceName: row.space_name,
+              spaceType: row.space_type,
+              status: row.status,
+              publishedAt: row.published_at,
+              unpublishedAt: row.unpublished_at,
+            });
+          }
+        } catch (err) {
+          console.warn('fetch upload publications failed', err);
+        }
+      }
     }
+
+    const result = rawUploads.map((row) => {
+      const enhanced = enhanceUploadRow(row);
+      if (publicationsByUpload) {
+        const list = publicationsByUpload[Number(row.id)] || [];
+        enhanced.publications = list;
+      }
+      return enhanced;
+    });
+
+    return res.json(result);
   } catch (err: any) {
     console.error('list uploads error', err);
     res.status(500).json({ error: 'failed_to_list', detail: String(err?.message || err) });
@@ -40,10 +84,117 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
     const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ?`, [id]);
     const row = (rows as any[])[0];
     if (!row) return res.status(404).json({ error: 'not_found' });
-    return res.json(enhanceUploadRow(row));
+    const enhanced = enhanceUploadRow(row);
+
+    const includePublications = req.query?.include_publications === '1' || req.query?.include_publications === 'true';
+    if (includePublications) {
+      try {
+        const [pubRows] = await db.query(
+          `SELECT sp.space_id, sp.status, sp.published_at, sp.unpublished_at,
+                  s.name AS space_name, s.type AS space_type
+             FROM space_publications sp
+             JOIN spaces s ON s.id = sp.space_id
+            WHERE sp.upload_id = ?
+            ORDER BY sp.published_at DESC, sp.id DESC`,
+          [id]
+        );
+        enhanced.publications = (pubRows as any[]).map((r) => ({
+          spaceId: Number(r.space_id),
+          spaceName: r.space_name,
+          spaceType: r.space_type,
+          status: r.status,
+          publishedAt: r.published_at,
+          unpublishedAt: r.unpublished_at,
+        }));
+      } catch (err) {
+        console.warn('fetch upload publications failed', err);
+      }
+    }
+
+    return res.json(enhanced);
   } catch (err: any) {
     console.error('get upload error', err);
     res.status(500).json({ error: 'failed_to_get', detail: String(err?.message || err) });
+  }
+});
+
+uploadsRouter.get('/api/uploads/:id/publish-options', requireAuth, async (req, res) => {
+  try {
+    const db = getPool();
+    const uploadId = Number(req.params.id);
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return res.status(400).json({ error: 'bad_id' });
+
+    const [rows] = await db.query(`SELECT id, user_id, origin_space_id FROM uploads WHERE id = ?`, [uploadId]);
+    const upload = (rows as any[])[0];
+    if (!upload) return res.status(404).json({ error: 'not_found' });
+
+    const currentUserId = Number(req.user!.id);
+    const ownerId = upload.user_id != null ? Number(upload.user_id) : null;
+
+    const allowedOwner = ownerId != null && (await can(currentUserId, 'video:publish_own', { ownerId }));
+    const originSpaceId = upload.origin_space_id != null ? Number(upload.origin_space_id) : null;
+    const allowedOrigin = originSpaceId ? await can(currentUserId, 'video:publish_space', { spaceId: originSpaceId }) : false;
+    const allowedAdmin = await can(currentUserId, 'video:publish_space');
+    if (!allowedOwner && !allowedOrigin && !allowedAdmin) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const spaces: { id: number; name: string; slug: string; type: string }[] = [];
+
+    // Personal space for owner
+    if (ownerId != null) {
+      const [personalRows] = await db.query(
+        `SELECT id, name, slug, type FROM spaces WHERE type = 'personal' AND owner_user_id = ? LIMIT 1`,
+        [ownerId]
+      );
+      const personal = (personalRows as any[])[0];
+      if (personal) {
+        spaces.push({
+          id: Number(personal.id),
+          name: String(personal.name || ''),
+          slug: String(personal.slug || ''),
+          type: String(personal.type || ''),
+        });
+      }
+    }
+
+    // Spaces where user has publish permissions
+    const [spaceRows] = await db.query(
+      `SELECT s.id, s.name, s.slug, s.type
+         FROM spaces s
+         JOIN user_space_roles usr ON usr.space_id = s.id
+         JOIN roles r ON r.id = usr.role_id
+         JOIN role_permissions rp ON rp.role_id = r.id
+         JOIN permissions p ON p.id = rp.permission_id
+        WHERE usr.user_id = ? AND p.name IN ('video:publish_space', 'video:approve_space')
+        GROUP BY s.id, s.name, s.slug, s.type
+        ORDER BY s.type, s.name`,
+      [currentUserId]
+    );
+
+    for (const row of spaceRows as any[]) {
+      const spaceId = Number(row.id);
+      if (spaces.some((s) => s.id === spaceId)) continue;
+      spaces.push({
+        id: spaceId,
+        name: String(row.name || ''),
+        slug: String(row.slug || ''),
+        type: String(row.type || ''),
+      });
+    }
+
+    res.json({
+      uploadId,
+      spaces: spaces.map((s) => ({
+        id: Number(s.id),
+        name: String(s.name || ''),
+        slug: String(s.slug || ''),
+        type: String(s.type || ''),
+      })),
+    });
+  } catch (err: any) {
+    console.error('publish options failed', err);
+    res.status(500).json({ error: 'failed_to_fetch_options', detail: String(err?.message || err) });
   }
 });
 
