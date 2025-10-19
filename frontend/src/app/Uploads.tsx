@@ -310,7 +310,7 @@ const UploadsPage: React.FC = () => {
     ))
   }, [])
 
-  const tableRows = useMemo(() => {
+const tableRows = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
       const image = poster ? (
@@ -323,6 +323,7 @@ const UploadsPage: React.FC = () => {
         <div style={{ width: 96, height: 96, borderRadius: 8, background: '#1c1c1c' }} />
       )
 
+      const productionHref = `/productions?upload=${encodeURIComponent(String(upload.id))}`
       const titleHref = `/publish?id=${encodeURIComponent(String(upload.id))}`
       const displayName = upload.original_filename || `Upload ${upload.id}`
 
@@ -330,10 +331,31 @@ const UploadsPage: React.FC = () => {
         <tr key={upload.id}>
           <td style={{ padding: '12px', width: 110 }}>{image}</td>
           <td style={{ padding: '12px', verticalAlign: 'top' }}>
-            <a href={titleHref} style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none' }}>{displayName}</a>
-            <div style={{ color: '#666', marginTop: 4 }}>{formatBytes(upload.size_bytes)}</div>
-            <div style={{ color: '#666' }}>{upload.width || 0}×{upload.height || 0}</div>
-            <div style={{ color: '#666' }}>{formatDate(upload.created_at)}</div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <a
+                href={productionHref}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  background: 'rgba(255,255,255,0.05)',
+                }}
+              >
+                Open Production
+              </a>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <a href={titleHref} style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none' }}>{displayName}</a>
+              <div style={{ color: '#666', marginTop: 4 }}>{formatBytes(upload.size_bytes)}</div>
+              <div style={{ color: '#666' }}>{upload.width || 0}×{upload.height || 0}</div>
+              <div style={{ color: '#666' }}>{formatDate(upload.created_at)}</div>
+            </div>
           </td>
           <td style={{ padding: '12px', verticalAlign: 'top' }}>
             {renderPublishedTo(upload)}
@@ -362,7 +384,7 @@ const UploadsPage: React.FC = () => {
             <h1 style={{ margin: 0, fontSize: 28 }}>My Uploads</h1>
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Upload new videos and manage where they’re published.</p>
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button
               onClick={handleFileChoose}
               style={{
@@ -379,6 +401,23 @@ const UploadsPage: React.FC = () => {
             >
               {uploading ? 'Uploading…' : 'Upload New Video'}
             </button>
+            <a
+              href="/productions"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '10px 18px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fff',
+                textDecoration: 'none',
+                fontWeight: 600,
+                background: 'rgba(255,255,255,0.06)',
+              }}
+            >
+              View Productions
+            </a>
             <input
               ref={fileInputRef}
               type="file"

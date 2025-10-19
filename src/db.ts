@@ -82,6 +82,26 @@ export async function ensureSchema(db: DB) {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_space_id ON uploads (space_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS productions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      upload_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending',
+      config JSON NULL,
+      output_prefix VARCHAR(1024) NULL,
+      mediaconvert_job_id VARCHAR(128) NULL,
+      error_message TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      started_at TIMESTAMP NULL DEFAULT NULL,
+      completed_at TIMESTAMP NULL DEFAULT NULL,
+      updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_productions_upload (upload_id),
+      KEY idx_productions_user (user_id),
+      KEY idx_productions_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
   // --- RBAC+ core tables ---
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -465,4 +485,21 @@ export type SpacePublicationEventRow = {
   action: string;
   detail: any | null;
   created_at: string;
+};
+
+export type ProductionStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
+
+export type ProductionRow = {
+  id: number;
+  upload_id: number;
+  user_id: number;
+  status: ProductionStatus;
+  config: any;
+  output_prefix: string | null;
+  mediaconvert_job_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
 };
