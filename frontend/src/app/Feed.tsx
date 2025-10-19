@@ -162,13 +162,16 @@ export default function Feed() {
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
   const lastTouchTsRef = useRef<number>(0)
 
+  const spacesStatusRef = useRef<{ loading: boolean; loaded: boolean }>({ loading: false, loaded: false })
+
   const loadSpaces = useCallback(async (force = false) => {
     if (!isAuthed) return
-    if (spacesLoading) return
-    if (spacesLoaded && !force) return
+    if (spacesStatusRef.current.loading) return
+    if (!force && spacesStatusRef.current.loaded) return
+    spacesStatusRef.current.loading = true
     setSpacesLoading(true)
     try {
-      const res = await fetch('/api/me/spaces')
+      const res = await fetch('/api/me/spaces', { credentials: 'same-origin' })
       if (!res.ok) throw new Error('failed_to_fetch_spaces')
       const data: MySpacesResponse = await res.json()
       setSpaceList({
@@ -178,15 +181,18 @@ export default function Feed() {
         channels: Array.isArray(data.channels) ? data.channels : [],
       })
       setSpacesError(null)
+      spacesStatusRef.current.loaded = true
       setSpacesLoaded(true)
     } catch (err: any) {
       console.error('load spaces failed', err)
       setSpacesError(err?.message ? String(err.message) : 'failed_to_fetch_spaces')
-      setSpacesLoaded(true)
+      spacesStatusRef.current.loaded = false
+      setSpacesLoaded(false)
     } finally {
+      spacesStatusRef.current.loading = false
       setSpacesLoading(false)
     }
-  }, [isAuthed, spacesLoaded, spacesLoading])
+  }, [isAuthed])
 
   useEffect(() => {
     let canceled = false
@@ -212,11 +218,6 @@ export default function Feed() {
     })()
     return () => { canceled = true }
   }, [])
-
-  useEffect(() => {
-    if (!isAuthed) return
-    loadSpaces(true).catch(() => {})
-  }, [isAuthed, loadSpaces])
 
   useEffect(() => {
     if (!isAuthed) return
@@ -690,16 +691,17 @@ export default function Feed() {
   }, [index])
 
   const closeDrawer = () => {
-    console.log('[feed] closeDrawer')
     setDrawerOpen(false)
   }
   const openDrawer = (mode: 'nav' | 'spaces') => {
-    console.log('[feed] openDrawer', mode)
     setDrawerMode(mode)
     if (typeof window !== 'undefined' && window.requestAnimationFrame) {
       window.requestAnimationFrame(() => setDrawerOpen(true))
     } else {
       setDrawerOpen(true)
+    }
+    if (mode === 'spaces') {
+      loadSpaces(false)
     }
   }
 
@@ -838,7 +840,6 @@ export default function Feed() {
       <div
         onClick={(e) => {
           e.stopPropagation()
-          console.log('[feed] scrim click')
           if (drawerOpen) closeDrawer()
         }}
         style={{
