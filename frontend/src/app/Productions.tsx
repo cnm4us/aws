@@ -15,6 +15,8 @@ type ProductionRow = {
   upload?: {
     id: number
     original_filename: string
+    modified_filename: string
+    description: string | null
     status: string
     size_bytes: number | null
     width: number | null
@@ -36,6 +38,8 @@ type MeResponse = {
 type UploadSummary = {
   id: number
   original_filename: string
+  modified_filename?: string | null
+  description?: string | null
   status: string
   size_bytes: number | null
   width: number | null
@@ -240,6 +244,7 @@ const ProductionsPage: React.FC = () => {
       const upload = prod.upload
       const detailHref = `/productions?id=${prod.id}`
       const publishHref = upload ? `/publish?id=${upload.id}` : '#'
+      const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`
       return (
         <tr key={prod.id}>
           <td style={{ padding: 12 }}>{prod.id}</td>
@@ -251,7 +256,7 @@ const ProductionsPage: React.FC = () => {
               <div style={{ color: '#777', marginTop: 4 }}>
                 Source:{' '}
                 <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
-                  {upload.original_filename || `Upload ${upload.id}`}
+                  {displayName}
                 </a>
                 <div style={{ marginTop: 2 }}>
                   {upload.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
@@ -341,6 +346,7 @@ const ProductionsPage: React.FC = () => {
     }
     const upload = uploadDetail
     const poster = pickPoster(upload)
+    const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : null
 
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -351,7 +357,7 @@ const ProductionsPage: React.FC = () => {
               <h1 style={{ margin: 0, fontSize: 28 }}>Produce Video</h1>
               {upload && (
                 <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
-                  {upload.original_filename || `Upload ${upload.id}`} • {upload.status}
+                  {displayName} • {upload.status}
                 </p>
               )}
             </div>

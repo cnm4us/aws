@@ -20,6 +20,8 @@ type ProductionRecord = ProductionRow & {
   upload?: {
     id: number
     original_filename: string
+    modified_filename: string
+    description: string | null
     status: string
     size_bytes: number | null
     width: number | null
@@ -46,6 +48,12 @@ function mapProduction(row: any): ProductionRecord {
       ? {
           id: Number(row.upload_id),
           original_filename: row.original_filename ? String(row.original_filename) : '',
+          modified_filename: row.modified_filename
+            ? String(row.modified_filename)
+            : row.original_filename
+              ? String(row.original_filename)
+              : '',
+          description: row.upload_description != null ? String(row.upload_description) : null,
           status: row.upload_status ? String(row.upload_status) : '',
           size_bytes: row.size_bytes != null ? Number(row.size_bytes) : null,
           width: row.width != null ? Number(row.width) : null,
@@ -76,7 +84,8 @@ productionsRouter.get('/api/productions', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden' })
     }
     const [rows] = await db.query(
-      `SELECT p.*, u.original_filename, u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
+      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
+              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
          FROM productions p
          JOIN uploads u ON u.id = p.upload_id
         WHERE p.user_id = ?
@@ -98,7 +107,8 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res) => {
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT p.*, u.original_filename, u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
+      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
+              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
          FROM productions p
          JOIN uploads u ON u.id = p.upload_id
         WHERE p.id = ?
@@ -145,7 +155,8 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res) => {
     })
 
     const [detailRows] = await db.query(
-      `SELECT p.*, u.original_filename, u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
+      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
+              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
          FROM productions p
          JOIN uploads u ON u.id = p.upload_id
         WHERE p.id = ?

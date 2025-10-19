@@ -43,6 +43,8 @@ export async function ensureSchema(db: DB) {
       s3_bucket VARCHAR(255) NOT NULL,
       s3_key VARCHAR(1024) NOT NULL,
       original_filename VARCHAR(512) NOT NULL,
+      modified_filename VARCHAR(512) NULL,
+      description TEXT NULL,
       content_type VARCHAR(255) NULL,
       size_bytes BIGINT UNSIGNED NULL,
       width INT NULL,
@@ -72,6 +74,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS asset_uuid CHAR(36) NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS date_ymd CHAR(10) NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS orientation ENUM('portrait','landscape') NULL`);
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS modified_filename VARCHAR(512) NULL`);
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS description TEXT NULL`);
   // Ownership/scoping (optional; supports RBAC+ checks)
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS channel_id BIGINT UNSIGNED NULL`);
@@ -437,6 +441,8 @@ export type UploadRow = {
   s3_bucket: string;
   s3_key: string;
   original_filename: string;
+  modified_filename: string | null;
+  description: string | null;
   content_type: string | null;
   size_bytes: number | null;
   width: number | null;

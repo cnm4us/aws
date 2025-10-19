@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 type PublicationSummary = {
   spaceId: number
@@ -12,6 +12,8 @@ type PublicationSummary = {
 type UploadListItem = {
   id: number
   original_filename: string
+  modified_filename: string | null
+  description: string | null
   size_bytes: number | null
   width: number | null
   height: number | null
@@ -97,49 +99,11 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
   }
 }
 
-async function probeVideo(file: File): Promise<{ width: number | null; height: number | null; durationSeconds: number | null }> {
-  return new Promise((resolve) => {
-    try {
-      const url = URL.createObjectURL(file)
-      const video = document.createElement('video')
-      video.preload = 'metadata'
-      video.src = url
-      video.onloadedmetadata = () => {
-        const meta = {
-          width: video.videoWidth || null,
-          height: video.videoHeight || null,
-          durationSeconds: video.duration ? Math.round(video.duration) : null,
-        }
-        URL.revokeObjectURL(url)
-        resolve(meta)
-      }
-      video.onerror = () => {
-        URL.revokeObjectURL(url)
-        resolve({ width: null, height: null, durationSeconds: null })
-      }
-    } catch {
-      resolve({ width: null, height: null, durationSeconds: null })
-    }
-  })
-}
-
-function getCsrfToken(): string | null {
-  const match = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : null
-}
-
 const UploadsPage: React.FC = () => {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [uploads, setUploads] = useState<UploadListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
-  const [uploadError, setUploadError] = useState<string | null>(null)
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadUploads = useCallback(
     async (userId: number) => {
@@ -179,115 +143,6 @@ const UploadsPage: React.FC = () => {
     }
   }, [loadUploads])
 
-  const handleRefresh = useCallback(async () => {
-    if (me?.userId) {
-      await loadUploads(me.userId)
-    }
-  }, [me, loadUploads])
-
-  const handleFileChoose = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
-
-  const handleFileSelected = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files && event.target.files[0]
-      if (!file) return
-      if (!me || !me.userId) {
-        setUploadError('Please sign in to upload videos.')
-        return
-      }
-      setUploadError(null)
-      setUploadMessage(null)
-      setUploadProgress(0)
-      setUploading(true)
-
-      try {
-        const meta = await probeVideo(file)
-        const body = {
-          filename: file.name,
-          contentType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          ...meta,
-        }
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        const csrf = getCsrfToken()
-        if (csrf) headers['x-csrf-token'] = csrf
-
-        const signRes = await fetch('/api/sign-upload', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers,
-          body: JSON.stringify(body),
-        })
-        if (!signRes.ok) throw new Error('Failed to sign upload')
-        const signJson = await signRes.json()
-        const { id, post } = signJson
-
-        const etag = await new Promise<string | null>((resolve, reject) => {
-          const formData = new FormData()
-          Object.entries(post.fields || {}).forEach(([key, value]) => {
-            formData.append(key, value as string)
-          })
-          formData.append('file', file)
-
-          const xhr = new XMLHttpRequest()
-          xhr.open('POST', post.url, true)
-          xhr.responseType = 'document'
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              const pct = Math.round((e.loaded / e.total) * 100)
-              setUploadProgress(pct)
-            }
-          })
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const doc = xhr.responseXML
-                const tag = doc?.getElementsByTagName('ETag')[0]
-                if (tag && tag.textContent) {
-                  resolve(tag.textContent.replace(/^"|"$/g, ''))
-                  return
-                }
-              } catch {}
-              resolve(null)
-            } else {
-              reject(new Error(`S3 upload failed (${xhr.status})`))
-            }
-          }
-          xhr.onerror = () => reject(new Error('Network error uploading to S3'))
-          xhr.send(formData)
-        })
-
-        await completeUpload(id, file.size, etag)
-        setUploadMessage('Upload complete! Video will appear once processing finishes.')
-        setUploadProgress(100)
-        await handleRefresh()
-      } catch (err: any) {
-        console.error('upload failed', err)
-        setUploadError(err?.message || 'Upload failed')
-      } finally {
-        setUploading(false)
-        if (fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-      }
-    },
-    [me, handleRefresh]
-  )
-
-  const completeUpload = async (id: number, sizeBytes: number, etag: string | null) => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    const csrf = getCsrfToken()
-    if (csrf) headers['x-csrf-token'] = csrf
-    await fetch('/api/mark-complete', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers,
-      body: JSON.stringify({ id, sizeBytes, etag }),
-    })
-  }
-
   const renderPublishedTo = useCallback((upload: UploadListItem) => {
     const buckets = partitionPublications(upload.publications)
     const lines: string[] = []
@@ -325,7 +180,8 @@ const tableRows = useMemo(() => {
 
       const productionHref = `/productions?upload=${encodeURIComponent(String(upload.id))}`
       const titleHref = `/publish?id=${encodeURIComponent(String(upload.id))}`
-      const displayName = upload.original_filename || `Upload ${upload.id}`
+      const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
+      const description = upload.description && upload.description.trim().length > 0 ? upload.description.trim() : null
 
       return (
         <tr key={upload.id}>
@@ -352,6 +208,7 @@ const tableRows = useMemo(() => {
             </div>
             <div style={{ marginTop: 12 }}>
               <a href={titleHref} style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none' }}>{displayName}</a>
+              {description && <div style={{ color: '#bbb', marginTop: 6, whiteSpace: 'pre-wrap' }}>{description}</div>}
               <div style={{ color: '#666', marginTop: 4 }}>{formatBytes(upload.size_bytes)}</div>
               <div style={{ color: '#666' }}>{upload.width || 0}×{upload.height || 0}</div>
               <div style={{ color: '#666' }}>{formatDate(upload.created_at)}</div>
@@ -385,22 +242,24 @@ const tableRows = useMemo(() => {
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Upload new videos and manage where they’re published.</p>
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <button
-              onClick={handleFileChoose}
+            <a
+              href="/uploads/new"
               style={{
-                background: '#0a84ff',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 padding: '10px 18px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fff',
+                textDecoration: 'none',
                 fontWeight: 600,
-                cursor: 'pointer',
+                background: '#0a84ff',
                 boxShadow: '0 6px 16px rgba(10,132,255,0.35)',
               }}
-              disabled={uploading}
             >
-              {uploading ? 'Uploading…' : 'Upload New Video'}
-            </button>
+              Upload Files
+            </a>
             <a
               href="/productions"
               style={{
@@ -418,43 +277,8 @@ const tableRows = useMemo(() => {
             >
               View Productions
             </a>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              style={{ display: 'none' }}
-              onChange={handleFileSelected}
-            />
           </div>
         </header>
-
-        {(uploadError || uploadMessage || uploading) && (
-          <div style={{
-            padding: '12px 16px',
-            borderRadius: 12,
-            marginBottom: 20,
-            background: '#111',
-            border: '1px solid #222',
-          }}>
-            {uploadError && <div style={{ color: '#ff6b6b' }}>{uploadError}</div>}
-            {uploadMessage && <div style={{ color: '#70ff9d' }}>{uploadMessage}</div>}
-            {uploading && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ height: 6, background: '#1f1f1f', borderRadius: 999 }}>
-                  <div
-                    style={{
-                      width: `${uploadProgress ?? 0}%`,
-                      transition: 'width 120ms linear',
-                      height: '100%',
-                      background: '#0a84ff',
-                      borderRadius: 999,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {loading ? (
           <div style={{ color: '#888', padding: '12px 0' }}>Loading uploads…</div>

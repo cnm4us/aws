@@ -12,6 +12,8 @@ type PublicationSummary = {
 type UploadDetail = {
   id: number
   original_filename: string
+  modified_filename?: string | null
+  description?: string | null
   status: string
   size_bytes: number | null
   width: number | null
@@ -262,13 +264,19 @@ const PublishPage: React.FC = () => {
   }
 
   const poster = pickPoster(upload)
+  const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <header style={{ marginBottom: 24 }}>
           <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
-          <h1 style={{ margin: '12px 0 4px', fontSize: 28 }}>{upload.original_filename}</h1>
+          <h1 style={{ margin: '12px 0 4px', fontSize: 28 }}>{displayName}</h1>
+          {upload.description && (
+            <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', margin: '4px 0 8px 0' }}>
+              {upload.description}
+            </div>
+          )}
           <div style={{ color: '#888' }}>
             {upload.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0} • Uploaded {formatDate(upload.created_at)}
           </div>

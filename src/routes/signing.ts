@@ -18,12 +18,18 @@ const signSchema = z.object({
   height: z.number().int().positive().nullable().optional(),
   durationSeconds: z.number().int().positive().nullable().optional(),
   userId: z.number().int().positive().optional(),
+  modifiedFilename: z.string().max(512).optional(),
+  description: z.string().max(4000).optional(),
 });
 
 signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res) => {
   try {
     const parsed = signSchema.parse(req.body || {});
     const { filename, contentType, sizeBytes, width, height, durationSeconds, userId } = parsed;
+    const providedModified = parsed.modifiedFilename ? parsed.modifiedFilename.trim() : '';
+    const modifiedFilename = providedModified.length ? providedModified : filename;
+    const rawDescription = parsed.description ? parsed.description.trim() : '';
+    const description = rawDescription.length ? rawDescription : null;
     const safe = sanitizeFilename(filename);
     const { ymd: dateYmd, folder: datePrefix } = nowDateYmd();
     const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : '';
@@ -34,9 +40,22 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
 
     const db = getPool();
     const [result] = await db.query(
-      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`,
-      [UPLOAD_BUCKET, key, filename, contentType ?? null, sizeBytes ?? null, width ?? null, height ?? null, durationSeconds ?? null, assetUuid, dateYmd]
+      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`,
+      [
+        UPLOAD_BUCKET,
+        key,
+        filename,
+        modifiedFilename,
+        description,
+        contentType ?? null,
+        sizeBytes ?? null,
+        width ?? null,
+        height ?? null,
+        durationSeconds ?? null,
+        assetUuid,
+        dateYmd,
+      ]
     );
     const id = (result as any).insertId as number;
 

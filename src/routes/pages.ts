@@ -20,6 +20,10 @@ pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/uploads/new', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/publish', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
