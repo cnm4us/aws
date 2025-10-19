@@ -76,9 +76,11 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS channel_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS space_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS origin_space_id BIGINT UNSIGNED NULL`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads (user_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_channel_id ON uploads (channel_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_space_id ON uploads (space_id)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
 
   // --- RBAC+ core tables ---
   await db.query(`
@@ -269,6 +271,41 @@ export async function ensureSchema(db: DB) {
       KEY idx_al_resource (resource_type, resource_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_publications (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      upload_id BIGINT UNSIGNED NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('draft','pending','approved','published','unpublished','rejected') NOT NULL DEFAULT 'draft',
+      requested_by BIGINT UNSIGNED NULL,
+      approved_by BIGINT UNSIGNED NULL,
+      is_primary TINYINT(1) NOT NULL DEFAULT 0,
+      visibility ENUM('inherit','members','public') NOT NULL DEFAULT 'inherit',
+      distribution_flags JSON NULL,
+      published_at DATETIME NULL,
+      unpublished_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_space_publications_upload_space (upload_id, space_id),
+      KEY idx_space_publications_space_status (space_id, status, published_at, id),
+      KEY idx_space_publications_upload (upload_id),
+      KEY idx_space_publications_primary (is_primary)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_publication_events (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      publication_id BIGINT UNSIGNED NOT NULL,
+      actor_user_id BIGINT UNSIGNED NULL,
+      action VARCHAR(64) NOT NULL,
+      detail JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_space_publication_events_pub (publication_id),
+      KEY idx_space_publication_events_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
 }
 
 // Seed baseline roles/permissions mappings for RBAC+
@@ -395,4 +432,37 @@ export type UploadRow = {
   orientation: 'portrait' | 'landscape' | null;
   created_at: string;
   uploaded_at: string | null;
+  user_id?: number | null;
+  channel_id?: number | null;
+  space_id?: number | null;
+  origin_space_id?: number | null;
+};
+
+export type SpacePublicationStatus = 'draft' | 'pending' | 'approved' | 'published' | 'unpublished' | 'rejected';
+
+export type SpacePublicationVisibility = 'inherit' | 'members' | 'public';
+
+export type SpacePublicationRow = {
+  id: number;
+  upload_id: number;
+  space_id: number;
+  status: SpacePublicationStatus;
+  requested_by: number | null;
+  approved_by: number | null;
+  is_primary: boolean;
+  visibility: SpacePublicationVisibility;
+  distribution_flags: any | null;
+  published_at: string | null;
+  unpublished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SpacePublicationEventRow = {
+  id: number;
+  publication_id: number;
+  actor_user_id: number | null;
+  action: string;
+  detail: any | null;
+  created_at: string;
 };

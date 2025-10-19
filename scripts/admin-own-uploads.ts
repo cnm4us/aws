@@ -44,9 +44,9 @@ async function main() {
   // Own all uploads with no owner
   await db.query(`UPDATE uploads SET user_id = ? WHERE user_id IS NULL`, [userId]);
   await db.query(`UPDATE uploads SET space_id = ? WHERE space_id IS NULL`, [spaceId]);
+  await db.query(`UPDATE uploads SET origin_space_id = ? WHERE origin_space_id IS NULL`, [spaceId]);
   console.log('Backfill complete. User', email, 'now admin and owns unassigned uploads in space', spaceId);
   process.exit(0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
-

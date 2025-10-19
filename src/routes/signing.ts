@@ -46,7 +46,14 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
       try {
         const [sp] = await db.query(`SELECT id FROM spaces WHERE type='personal' AND owner_user_id = ? LIMIT 1`, [ownerId]);
         const spaceId = (sp as any[]).length ? Number((sp as any[])[0].id) : null;
-        await db.query(`UPDATE uploads SET user_id = ?, space_id = COALESCE(?, space_id) WHERE id = ?`, [ownerId, spaceId, id]);
+        await db.query(
+          `UPDATE uploads
+              SET user_id = ?,
+                  space_id = COALESCE(?, space_id),
+                  origin_space_id = COALESCE(?, origin_space_id)
+            WHERE id = ?`,
+          [ownerId, spaceId, spaceId, id]
+        );
       } catch {}
     }
 

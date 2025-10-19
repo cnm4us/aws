@@ -1,15 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Hls from 'hls.js'
 
 type UploadItem = {
   id: number
   url: string
-  // Orientation-aware posters
   posterPortrait?: string
   posterLandscape?: string
-  // Orientation-aware masters (derived)
   masterPortrait?: string
   masterLandscape?: string
+  ownerId?: number | null
+  ownerName?: string | null
+  ownerEmail?: string | null
+  publicationId?: number | null
+  spaceId?: number | null
+  publishedAt?: string | null
 }
 
 type MeResponse = {
@@ -21,49 +25,123 @@ type MeResponse = {
   personalSpace: { id: number; slug: string } | null
 }
 
-function swapOrientation(url: string): { portrait?: string; landscape?: string } {
-  if (!url) return {};
-  if (url.includes('/portrait/')) {
-    return { portrait: url, landscape: url.replace('/portrait/', '/landscape/') };
-  }
-  if (url.includes('/landscape/')) {
-    return { landscape: url, portrait: url.replace('/landscape/', '/portrait/') };
-  }
-  return { portrait: url };
+type SpaceSummary = {
+  id: number
+  name: string
+  slug: string
+  type: 'personal' | 'group' | 'channel'
+  relationship: 'owner' | 'admin' | 'member' | 'subscriber'
+  subscribed: boolean
 }
 
-async function fetchUploads(opts?: { cursor?: number; userId?: number }): Promise<UploadItem[]> {
-  const params = new URLSearchParams({ status: 'completed', limit: '20' })
-  if (opts?.cursor) params.set('cursor', String(opts.cursor))
-  if (opts?.userId) params.set('user_id', String(opts.userId))
+type MySpacesResponse = {
+  personal: SpaceSummary | null
+  global: SpaceSummary | null
+  groups: SpaceSummary[]
+  channels: SpaceSummary[]
+}
+
+type FeedMode =
+  | { kind: 'legacy' }
+  | { kind: 'space'; spaceId: number }
+
+function swapOrientation(url: string): { portrait?: string; landscape?: string } {
+  if (!url) return {}
+  if (url.includes('/portrait/')) {
+    return { portrait: url, landscape: url.replace('/portrait/', '/landscape/') }
+  }
+  if (url.includes('/landscape/')) {
+    return { landscape: url, portrait: url.replace('/landscape/', '/portrait/') }
+  }
+  return { portrait: url }
+}
+
+function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: string | null; email?: string | null } | null, publication?: any | null): UploadItem {
+  const posterPortrait = raw.poster_portrait_cdn || raw.poster_portrait_s3 || raw.poster_cdn || raw.poster_s3 || ''
+  const posterLandscape = raw.poster_landscape_cdn || raw.poster_landscape_s3 || ''
+  const master = raw.cdn_master || raw.s3_master || ''
+  const { portrait: masterPortrait, landscape: masterLandscape } = swapOrientation(master)
+  const ownerId = owner?.id != null ? Number(owner.id) : (raw.user_id != null ? Number(raw.user_id) : null)
+  const ownerName = owner?.displayName ?? null
+  const ownerEmail = owner?.email ?? null
+  const publicationId = publication?.id != null ? Number(publication.id) : null
+  const spaceId = publication?.space_id != null ? Number(publication.space_id) : (raw.space_id != null ? Number(raw.space_id) : null)
+  const publishedAt = publication?.published_at ? String(publication.published_at) : null
+  return {
+    id: Number(raw.id),
+    url: masterPortrait || master,
+    posterPortrait,
+    posterLandscape,
+    masterPortrait,
+    masterLandscape,
+    ownerId,
+    ownerName,
+    ownerEmail,
+    publicationId,
+    spaceId,
+    publishedAt,
+  }
+}
+
+async function fetchLegacyFeed(opts: { cursor?: number; userId?: number; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: number | null }> {
+  const params = new URLSearchParams({ status: 'completed', limit: String(opts.limit ?? 20) })
+  if (opts.cursor) params.set('cursor', String(opts.cursor))
+  if (opts.userId) params.set('user_id', String(opts.userId))
   const res = await fetch(`/api/uploads?${params.toString()}`)
   if (!res.ok) throw new Error('failed to fetch uploads')
   const data = await res.json()
-  return (data as any[]).map((r) => {
-    const posterPortrait = r.poster_portrait_cdn || r.poster_portrait_s3 || r.poster_cdn || r.poster_s3 || ''
-    const posterLandscape = r.poster_landscape_cdn || r.poster_landscape_s3 || ''
-    const master = r.cdn_master || r.s3_master || ''
-    const { portrait: masterPortrait, landscape: masterLandscape } = swapOrientation(master)
-    return {
-      id: r.id,
-      url: masterPortrait || master,
-      posterPortrait: posterPortrait,
-      posterLandscape: posterLandscape,
-      masterPortrait,
-      masterLandscape,
-    }
-  })
+  const items = (Array.isArray(data) ? data : []).map((row) => buildUploadItem(row, null, null))
+  const nextCursor = items.length ? Number(items[items.length - 1].id) : null
+  return { items, nextCursor }
+}
+
+async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
+  if (opts.cursor) params.set('cursor', opts.cursor)
+  const res = await fetch(`/api/spaces/${spaceId}/feed?${params.toString()}`)
+  if (!res.ok) throw new Error('failed to fetch space feed')
+  const payload = await res.json()
+  const items = Array.isArray(payload?.items)
+    ? payload.items.map((entry: any) =>
+        buildUploadItem(entry.upload, entry.owner ? { id: entry.owner.id ?? null, displayName: entry.owner.displayName ?? null, email: entry.owner.email ?? null } : null, entry.publication ?? null)
+      )
+    : []
+  const nextCursor = typeof payload?.nextCursor === 'string' && payload.nextCursor.length ? payload.nextCursor : null
+  return { items, nextCursor }
+}
+
+function applyMineFilter(items: UploadItem[], mineOnly: boolean, myUserId: number | null): UploadItem[] {
+  if (!mineOnly) return items
+  if (myUserId == null) return []
+  return items.filter((it) => it.ownerId === myUserId)
+}
+
+function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
+  if (!list) return []
+  const merged: SpaceSummary[] = []
+  if (list.global) merged.push(list.global)
+  if (list.personal) merged.push(list.personal)
+  merged.push(...(list.groups || []))
+  merged.push(...(list.channels || []))
+  return merged
 }
 
 export default function Feed() {
   const [items, setItems] = useState<UploadItem[]>([])
-  const [cursor, setCursor] = useState<number | undefined>(undefined)
+  const [cursor, setCursor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [unlocked, setUnlocked] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerMode, setDrawerMode] = useState<'nav' | 'spaces'>('nav')
   const [isAuthed, setIsAuthed] = useState(false)
   const [me, setMe] = useState<MeResponse | null>(null)
+  const [spaceList, setSpaceList] = useState<MySpacesResponse | null>(null)
+  const [spacesLoaded, setSpacesLoaded] = useState(false)
+  const [spacesLoading, setSpacesLoading] = useState(false)
+  const [spacesError, setSpacesError] = useState<string | null>(null)
+  const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'legacy' })
   const railRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
@@ -84,84 +162,31 @@ export default function Feed() {
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
   const lastTouchTsRef = useRef<number>(0)
 
-  function getSlide(i: number): HTMLDivElement | null {
-    const r = railRef.current
-    if (!r) return null
-    return (r.children[i] as HTMLDivElement) || null
-  }
-  function getVideoEl(i: number): HTMLVideoElement | null {
-    const slide = getSlide(i)
-    if (!slide) return null
-    const v = slide.querySelector('video') as HTMLVideoElement | null
-    return v
-  }
-
-  // Play a given slide's video on user gesture; pause others
-  const playSlide = async (i: number) => {
-    const it = items[i]
-    if (!it) return
-    const v = getVideoEl(i)
-    if (!v) return
-    // Pause all other videos and detach any hls instances
+  const loadSpaces = useCallback(async (force = false) => {
+    if (!isAuthed) return
+    if (spacesLoading) return
+    if (spacesLoaded && !force) return
+    setSpacesLoading(true)
     try {
-      const r = railRef.current
-      if (r) {
-        Array.from(r.querySelectorAll('video')).forEach((other, idx) => {
-          if (other !== v) {
-            try { (other as HTMLVideoElement).pause() } catch {}
-          }
-        })
-      }
-    } catch {}
-    // Set source if missing
-    const src = it.masterPortrait || it.url
-    const needSrc = !v.src
-    if (needSrc) {
-      // Native HLS first
-      const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
-      if (canNative) {
-        v.src = src
-      } else if (Hls.isSupported()) {
-        // Clean any previous instance for this index
-        const prev = hlsByIndexRef.current[i]
-        if (prev) { try { prev.detachMedia(); prev.destroy(); } catch {} }
-        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0 })
-        h.loadSource(src)
-        h.attachMedia(v)
-        hlsByIndexRef.current[i] = h
-      } else {
-        // Fallback: navigate
-        location.href = src
-        return
-      }
+      const res = await fetch('/api/me/spaces')
+      if (!res.ok) throw new Error('failed_to_fetch_spaces')
+      const data: MySpacesResponse = await res.json()
+      setSpaceList({
+        personal: data.personal || null,
+        global: data.global || null,
+        groups: Array.isArray(data.groups) ? data.groups : [],
+        channels: Array.isArray(data.channels) ? data.channels : [],
+      })
+      setSpacesError(null)
+      setSpacesLoaded(true)
+    } catch (err: any) {
+      console.error('load spaces failed', err)
+      setSpacesError(err?.message ? String(err.message) : 'failed_to_fetch_spaces')
+      setSpacesLoaded(true)
+    } finally {
+      setSpacesLoading(false)
     }
-    v.playsInline = true
-    v.preload = 'auto'
-    v.loop = true
-    v.muted = false
-    // Wire basic events (use addEventListener to avoid clobbering)
-    const onPlaying = () => {
-      playingIndexRef.current = i
-      setPlayingIndex(i)
-      setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
-    }
-    const onPause = () => { if (playingIndexRef.current === i) setPlayingIndex(null) }
-    const onEnded = () => { if (playingIndexRef.current === i) setPlayingIndex(null) }
-    try {
-      v.addEventListener('playing', onPlaying)
-      v.addEventListener('pause', onPause)
-      v.addEventListener('ended', onEnded)
-    } catch {}
-    try { await v.play() } catch {}
-    // Cleanup handlers on next source change or unmount via IO cleanup
-  }
-
-  function getSlideHeight(): number {
-    const r = railRef.current
-    const slide = r?.firstElementChild as HTMLElement | null
-    const h = slide?.clientHeight || r?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 0)
-    return Math.max(1, h)
-  }
+  }, [isAuthed, spacesLoaded, spacesLoading])
 
   useEffect(() => {
     let canceled = false
@@ -179,32 +204,65 @@ export default function Feed() {
         setMe(null)
         setIsAuthed(false)
         setMyUserId(null)
+        setSpaceList(null)
+        setSpacesLoaded(false)
+        setSpacesError(null)
+        setFeedMode((prev) => (prev.kind === 'space' ? { kind: 'legacy' } : prev))
       }
     })()
-    return () => {
-      canceled = true
-    }
+    return () => { canceled = true }
   }, [])
 
-  // reload when mineOnly toggles
+  useEffect(() => {
+    if (!isAuthed) return
+    loadSpaces(true).catch(() => {})
+  }, [isAuthed, loadSpaces])
+
+  useEffect(() => {
+    if (!isAuthed) return
+    loadSpaces(true).catch(() => {})
+  }, [isAuthed, loadSpaces])
+
   useEffect(() => {
     let canceled = false
-    ;(async () => {
+    const load = async () => {
       try {
-        const uid = mineOnly ? myUserId : null
-        const page = await fetchUploads(uid ? { userId: uid } : undefined)
+        setInitialLoading(true)
+        setLoadingMore(false)
+        let nextCursor: string | null = null
+        let fetchedItems: UploadItem[] = []
+        if (feedMode.kind === 'space') {
+          const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId)
+          fetchedItems = applyMineFilter(page, mineOnly, myUserId)
+          nextCursor = cursorStr
+        } else {
+          const { items: page, nextCursor: next } = await fetchLegacyFeed({
+            userId: mineOnly && myUserId != null ? myUserId : undefined,
+          })
+          fetchedItems = mineOnly && myUserId == null ? [] : page
+          nextCursor = next != null ? String(next) : null
+          if (mineOnly && myUserId != null) {
+            fetchedItems = applyMineFilter(page, mineOnly, myUserId)
+          }
+        }
         if (canceled) return
-        setItems(page)
-        setCursor(page.length ? page[page.length - 1].id : undefined)
+        setItems(fetchedItems)
+        setCursor(nextCursor)
         setIndex(0)
         railRef.current && (railRef.current.scrollTop = 0)
-      } catch {}
-    })()
+      } catch (err) {
+        if (canceled) return
+        console.error('initial feed load failed', err)
+        setItems([])
+        setCursor(null)
+      } finally {
+        if (!canceled) setInitialLoading(false)
+      }
+    }
+    load()
     return () => { canceled = true }
-  }, [mineOnly, myUserId])
+  }, [feedMode, mineOnly, myUserId])
 
-
-  // Orientation change listener
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
     const mql = window.matchMedia('(orientation: portrait)')
@@ -213,7 +271,6 @@ export default function Feed() {
     return () => { try { mql.removeEventListener('change', onChange) } catch { mql.removeListener(onChange) } }
   }, [])
 
-  // Preload next posters (both orientations if present)
   useEffect(() => {
     const nexts = [index + 1, index + 2]
     nexts.forEach((i) => {
@@ -229,20 +286,106 @@ export default function Feed() {
     })
   }, [index, items, posterAvail])
 
-  // Attach and play current item
+  function getSlide(i: number): HTMLDivElement | null {
+    const r = railRef.current
+    if (!r) return null
+    return (r.children[i] as HTMLDivElement) || null
+  }
+
+  function getVideoEl(i: number): HTMLVideoElement | null {
+    const slide = getSlide(i)
+    if (!slide) return null
+    const v = slide.querySelector('video') as HTMLVideoElement | null
+    return v
+  }
+
+  const playSlide = async (i: number) => {
+    const it = items[i]
+    if (!it) return
+    const v = getVideoEl(i)
+    if (!v) return
+    try {
+      const r = railRef.current
+      if (r) {
+        Array.from(r.querySelectorAll('video')).forEach((other) => {
+          if (other !== v) {
+            try { (other as HTMLVideoElement).pause() } catch {}
+          }
+        })
+      }
+    } catch {}
+    const src = it.masterPortrait || it.url
+    const needSrc = !v.src
+    if (needSrc) {
+      const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
+      if (canNative) {
+        v.src = src
+      } else if (Hls.isSupported()) {
+        const prev = hlsByIndexRef.current[i]
+        if (prev) { try { prev.detachMedia(); prev.destroy(); } catch {} }
+        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0 })
+        h.loadSource(src)
+        h.attachMedia(v)
+        hlsByIndexRef.current[i] = h
+      } else {
+        location.href = src
+        return
+      }
+    }
+    v.playsInline = true
+    v.preload = 'auto'
+    v.loop = true
+    v.muted = false
+    const onPlaying = () => {
+      playingIndexRef.current = i
+      setPlayingIndex(i)
+      setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+    }
+    const onPause = () => { if (playingIndexRef.current === i) setPlayingIndex(null) }
+    const onEnded = () => { if (playingIndexRef.current === i) setPlayingIndex(null) }
+    try {
+      v.addEventListener('playing', onPlaying)
+      v.addEventListener('pause', onPause)
+      v.addEventListener('ended', onEnded)
+    } catch {}
+    try { await v.play() } catch {}
+  }
+
+  function getSlideHeight(): number {
+    const r = railRef.current
+    const slide = r?.firstElementChild as HTMLElement | null
+    const h = slide?.clientHeight || r?.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 0)
+    return Math.max(1, h)
+  }
+
+  useEffect(() => {
+    const v = getVideoEl(index)
+    const it = items[index]
+    if (!v || !it) return
+    if (!v.src) {
+      try {
+        v.playsInline = true
+        v.preload = 'auto'
+        const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
+        if (canNative) {
+          const src = it.masterPortrait || it.url
+          v.src = src
+          try { v.load() } catch {}
+        }
+      } catch {}
+    }
+  }, [index, items])
+
   const attachAndPlay = async (i: number, opts?: { unmute?: boolean }) => {
     const v = videoRef.current
     const r = railRef.current
     if (!v || !r) return
-    // Ensure the single video element lives inside the active slide holder for iOS scrollability
     const slide = r.children[i] as HTMLDivElement | undefined
     const holder = slide?.querySelector('.holder') as HTMLDivElement | null
     if (!slide || !holder) return
     if (v.parentElement !== holder) {
-      // Place video as first child; keep existing controls (e.g., Expand button)
       try { holder.insertBefore(v, holder.firstChild) } catch { holder.appendChild(v) }
     }
-    // Ensure video sits visually below overlay controls
     try { (v.style as any).zIndex = '0' } catch {}
     const targetUrl = items[i].url
     const srcChanged = v.src !== targetUrl
@@ -254,54 +397,50 @@ export default function Feed() {
       }
       v.addEventListener('loadeddata', onLoaded)
     } else {
-      // Keep visible if source unchanged
       v.style.opacity = '1'
     }
     try {
       v.playsInline = true
       v.loop = true
-      // Keep preload light; avoid load() if source unchanged
       v.preload = 'auto'
-      // For iOS unlock, ensure unmuted on first user gesture
       v.muted = opts?.unmute ? false : !unlocked
       if (srcChanged) {
         v.src = targetUrl
-        // Kick pipeline only when the source actually changed
         try { v.load() } catch {}
       }
       await v.play().catch(() => {})
       if (opts?.unmute && v.muted) {
-        // If somehow still muted, try unmute + play again
         v.muted = false
         await v.play().catch(() => {})
       }
     } catch {}
   }
 
+  useEffect(() => {
+    if (!items.length) return
+    attachAndPlay(index, { unmute: unlocked }).catch(() => {})
+  }, [index, items, unlocked])
+
   function itemHasLandscape(it?: UploadItem): boolean {
     if (!it) return false
-    // If we have a distinct landscape poster and it hasn't been marked as 404
     const lp = it.posterLandscape
     if (lp && posterAvail[lp] !== false) return true
-    // Otherwise, if we have a derived landscape master URL distinct from portrait
     if (it.masterLandscape && it.masterLandscape !== it.masterPortrait) return true
     return false
   }
 
   const openModal = () => {
-    const v = playingIndexRef.current != null ? getVideoEl(playingIndexRef.current) : null
-    const it = items[index]
+    const currentIndex = playingIndexRef.current != null ? playingIndexRef.current : index
+    const v = currentIndex != null ? getVideoEl(currentIndex) : null
+    const it = items[currentIndex]
     if (!it) return
     if (!unlocked) setUnlocked(true)
     const t = v ? v.currentTime || 0 : 0
     setModalTime(t)
-    // Prefer explicit landscape master, fallback by swap
     const src = it.masterLandscape || (it.url.includes('/portrait/') ? it.url.replace('/portrait/', '/landscape/') : it.url)
     setModalSrc(src)
-    // Pause inline to save resources
     try { v?.pause() } catch {}
     setModalOpen(true)
-    // Prevent background scroll
     try { document.body.style.overflow = 'hidden' } catch {}
   }
 
@@ -310,7 +449,6 @@ export default function Feed() {
     const cur = mv ? mv.currentTime : modalTime || 0
     setModalOpen(false)
     try { document.body.style.overflow = '' } catch {}
-    // Resume inline at captured time
     const v = playingIndexRef.current != null ? getVideoEl(playingIndexRef.current) : null
     if (v) {
       try {
@@ -320,7 +458,6 @@ export default function Feed() {
     }
   }
 
-  // Drive modal video when open
   useEffect(() => {
     const mv = modalVideoRef.current
     if (!modalOpen || !mv || !modalSrc) return
@@ -347,14 +484,11 @@ export default function Feed() {
     }
   }, [modalOpen, modalSrc])
 
-  // On unlock
   const unlock = () => {
     if (unlocked) return
     setUnlocked(true)
-    // First real tap on the video surface will handle play
   }
 
-  // Compute active index on scroll (snap to nearest)
   const onScroll = () => {
     const r = railRef.current
     if (!r) return
@@ -362,36 +496,54 @@ export default function Feed() {
     if (now < ignoreScrollUntil.current) return
     const y = r.scrollTop
     const h = getSlideHeight()
-    // center-based index to reduce boundary sensitivity
     const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h / 2) / h)))
     if (i !== index) {
       setIndex(i)
-      // pagination
       if (!loadingMore && items.length - i < 5 && cursor) {
         setLoadingMore(true)
-        const uid = mineOnly ? myUserId : null
-        fetchUploads({ cursor, userId: uid ?? undefined })
-          .then((page) => {
-            if (page.length) {
-              setItems((prev) => prev.concat(page))
-              setCursor(page[page.length - 1].id)
+        const loadMore = async () => {
+          try {
+            if (feedMode.kind === 'space') {
+              const { items: page, nextCursor } = await fetchSpaceFeed(feedMode.spaceId, { cursor })
+              const filtered = applyMineFilter(page, mineOnly, myUserId)
+              setItems((prev) => prev.concat(filtered))
+              setCursor(nextCursor)
+            } else {
+              const nextCursorNum = Number(cursor)
+              if (!Number.isFinite(nextCursorNum) || nextCursorNum <= 0) {
+                setCursor(null)
+                return
+              }
+              const { items: page, nextCursor } = await fetchLegacyFeed({
+                cursor: nextCursorNum,
+                userId: mineOnly && myUserId != null ? myUserId : undefined,
+              })
+              const filtered = mineOnly && myUserId != null ? applyMineFilter(page, mineOnly, myUserId) : (mineOnly && myUserId == null ? [] : page)
+              setItems((prev) => prev.concat(filtered))
+              setCursor(nextCursor != null ? String(nextCursor) : null)
             }
-          })
-          .finally(() => setLoadingMore(false))
+          } catch (err) {
+            console.error('load more failed', err)
+          } finally {
+            setLoadingMore(false)
+          }
+        }
+        loadMore().catch(() => setLoadingMore(false))
       }
     }
   }
 
-  // Render cards
   const slides = useMemo(
     () =>
       items.map((it, i) => {
         const desired = isPortrait ? it.posterPortrait : it.posterLandscape
         const fallback = isPortrait ? it.posterLandscape : it.posterPortrait
-        const useUrl = (desired && posterAvail[desired] !== false ? desired : undefined) || (fallback && posterAvail[fallback] !== false ? fallback : undefined)
+        const useUrl =
+          (desired && posterAvail[desired] !== false ? desired : undefined) ||
+          (fallback && posterAvail[fallback] !== false ? fallback : undefined)
         return (
           <div
-            key={it.id}
+            key={`${it.id}-${it.publicationId ?? 'upload'}`}
             className="slide"
             style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
@@ -401,17 +553,27 @@ export default function Feed() {
                 preload="auto"
                 poster={useUrl}
                 onTouchEnd={(e) => {
-                  e.stopPropagation();
+                  e.stopPropagation()
                   try { e.preventDefault() } catch {}
-                  const now = Date.now();
-                  if (now - lastTouchTsRef.current < 300) return;
-                  lastTouchTsRef.current = now;
-                  const v = getVideoEl(i);
-                  if (!v) return;
-                  if (!v.src) { playSlide(i); return; }
+                  const now = Date.now()
+                  if (now - lastTouchTsRef.current < 300) return
+                  lastTouchTsRef.current = now
+                  const v = getVideoEl(i)
+                  if (!v) return
+                  if (!v.src) { playSlide(i); return }
                   if (v.paused) playSlide(i); else { try { v.pause() } catch {} }
                 }}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', opacity: (playingIndex === i || startedMap[i]) ? 1 : 0, transition: 'opacity .12s linear', touchAction: 'manipulation' as any }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  background: 'transparent',
+                  opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
+                  transition: 'opacity .12s linear',
+                  touchAction: 'manipulation' as any,
+                }}
               />
               {playingIndex !== i && (
                 <div
@@ -436,7 +598,6 @@ export default function Feed() {
                   </svg>
                 </div>
               )}
-              {/* Expand control removed per PWA full-bleed design */}
             </div>
           </div>
         )
@@ -449,22 +610,18 @@ export default function Feed() {
     if (!r) return
     const slideEl = r.children[curIndex] as HTMLElement | undefined
     const targetTop = slideEl ? slideEl.offsetTop : curIndex * getSlideHeight()
-    // Extend lock window to outlast iOS reflow/snap
     const lockMs = 700
     setSmoothEnabled(false)
     setSnapEnabled(false)
     const until = Date.now() + lockMs
     ignoreScrollUntil.current = until
     ignoreIoUntil.current = until
-    // Phase 1: next frame
     const id1 = requestAnimationFrame(() => {
       try { r.scrollTo({ top: targetTop, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop }
-      // Phase 2: after additional delay, re-assert position and restore snap
       setTimeout(() => {
         const slideEl2 = r.children[curIndex] as HTMLElement | undefined
         const targetTop2 = slideEl2 ? slideEl2.offsetTop : curIndex * getSlideHeight()
         try { r.scrollTo({ top: targetTop2, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop2 }
-        // Restore behaviors after the lock window
         setTimeout(() => {
           setSmoothEnabled(true)
           setSnapEnabled(true)
@@ -474,41 +631,36 @@ export default function Feed() {
     return () => cancelAnimationFrame(id1)
   }
 
-  // Re-anchor on orientation change to prevent index jumps
   useEffect(() => {
     return reanchorToIndex(index) || undefined
   }, [isPortrait])
 
-  // Also listen to native orientationchange as a backstop (iOS Safari)
   useEffect(() => {
     const handler = () => { reanchorToIndex(index) }
     window.addEventListener('orientationchange', handler)
     return () => window.removeEventListener('orientationchange', handler)
   }, [index])
 
-  // IntersectionObserver to robustly pick slide nearest center
   useEffect(() => {
     const r = railRef.current
     if (!r) return
-    const slides = Array.from(r.children) as HTMLElement[]
-    if (!slides.length) return
+    const slidesEl = Array.from(r.children) as HTMLElement[]
+    if (!slidesEl.length) return
     const io = new IntersectionObserver(
       (entries) => {
         const now = Date.now()
         if (now < ignoreIoUntil.current) return
-        // choose the entry with maximum intersection ratio
         let best: IntersectionObserverEntry | null = null
         for (const e of entries) {
           if (!best || e.intersectionRatio > best.intersectionRatio) best = e
         }
         if (!best || best.target == null) return
-        const idx = slides.indexOf(best.target as HTMLElement)
+        const idx = slidesEl.indexOf(best.target as HTMLElement)
         if (idx >= 0 && idx !== index) {
           setIndex(idx)
         }
-        // Pause offscreen videos (not the center) and unload far slides
         entries.forEach((e) => {
-          const i = slides.indexOf(e.target as HTMLElement)
+          const i = slidesEl.indexOf(e.target as HTMLElement)
           const v = getVideoEl(i)
           if (!v) return
           if (e.intersectionRatio < 0.5 && i !== index) {
@@ -527,49 +679,181 @@ export default function Feed() {
       },
       { root: r, threshold: Array.from({ length: 11 }, (_, i) => i / 10) }
     )
-    slides.forEach((el) => io.observe(el))
+    slidesEl.forEach((el) => io.observe(el))
     return () => io.disconnect()
   }, [items, unlocked])
 
-  // Eagerly attach source for the active slide so first tap is lighter (iOS)
   useEffect(() => {
     const v = getVideoEl(index)
-    const it = items[index]
-    if (!v || !it) return
-    if (!v.src) {
-      try {
-        v.playsInline = true
-        v.preload = 'auto'
-        // Prefer native HLS on iOS; otherwise wait for explicit play to attach hls.js
-        const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
-        if (canNative) {
-          const src = it.masterPortrait || it.url
-          v.src = src
-          try { v.load() } catch {}
-        }
-      } catch {}
+    if (!v) return
+    attachAndPlay(index).catch(() => {})
+  }, [index])
+
+  const closeDrawer = () => {
+    console.log('[feed] closeDrawer')
+    setDrawerOpen(false)
+  }
+  const openDrawer = (mode: 'nav' | 'spaces') => {
+    console.log('[feed] openDrawer', mode)
+    setDrawerMode(mode)
+    if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => setDrawerOpen(true))
+    } else {
+      setDrawerOpen(true)
     }
-  }, [index, items])
+  }
+
+  const handleSelectSpace = (spaceId: number) => {
+    setFeedMode({ kind: 'space', spaceId })
+    setDrawerOpen(false)
+  }
+
+  const handleSelectLegacy = () => {
+    setFeedMode({ kind: 'legacy' })
+    setDrawerOpen(false)
+  }
+
+  const currentFeedLabel = useMemo(() => {
+    if (feedMode.kind === 'space') {
+      const match = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId)
+      return match ? match.name : 'Selected Space'
+    }
+    return mineOnly ? 'My Completed Videos' : 'All Completed Videos'
+  }, [feedMode, mineOnly, spaceList])
+
+  const activeSpaceId = feedMode.kind === 'space' ? feedMode.spaceId : null
+
+  const renderSpaceButton = (space: SpaceSummary, accent?: string) => {
+    const active = activeSpaceId === space.id
+    const badge =
+      space.relationship === 'owner'
+        ? 'Owner'
+        : space.relationship === 'admin'
+        ? 'Admin'
+        : space.relationship === 'subscriber'
+        ? 'Subscriber'
+        : undefined
+    return (
+      <button
+        key={space.id}
+        onClick={() => handleSelectSpace(space.id)}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          padding: '12px 14px',
+          borderRadius: 10,
+          marginBottom: 8,
+          border: active ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
+          background: active ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
+          color: '#fff',
+          fontSize: 15,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <span>
+          {space.name}
+          {accent ? <span style={{ marginLeft: 6, fontSize: 12, color: accent }}>{accent}</span> : null}
+        </span>
+        <span style={{ fontSize: 12, opacity: 0.8 }}>
+          {badge}
+          {space.subscribed && badge !== 'Subscriber' ? ' · Subscriber' : ''}
+        </span>
+      </button>
+    )
+  }
+
+  const renderSpacesPanel = () => {
+    if (!isAuthed) {
+      return <div style={{ color: '#fff', fontSize: 15 }}>Login to switch spaces.</div>
+    }
+    const entries: JSX.Element[] = []
+    entries.push(
+      <button
+        key="legacy"
+        onClick={handleSelectLegacy}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          padding: '12px 14px',
+          borderRadius: 10,
+          marginBottom: 12,
+          border: feedMode.kind === 'legacy' ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
+          background: feedMode.kind === 'legacy' ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
+          color: '#fff',
+          fontSize: 15,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        Global Archive
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Legacy</span>
+      </button>
+    )
+    if (spaceList?.global) entries.push(renderSpaceButton(spaceList.global, 'Global'))
+    if (spaceList?.personal) entries.push(renderSpaceButton(spaceList.personal, 'Personal'))
+    if (spaceList?.groups?.length) {
+      entries.push(
+        <div key="groups-header" style={{ marginTop: 18, marginBottom: 6, fontWeight: 600, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.7 }}>
+          Groups
+        </div>
+      )
+      spaceList.groups.forEach((g) => entries.push(renderSpaceButton(g)))
+    }
+    if (spaceList?.channels?.length) {
+      entries.push(
+        <div key="channels-header" style={{ marginTop: 18, marginBottom: 6, fontWeight: 600, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.7 }}>
+          Channels
+        </div>
+      )
+      spaceList.channels.forEach((c) => entries.push(renderSpaceButton(c)))
+    }
+    if (!entries.length) {
+      return <div style={{ color: '#fff', fontSize: 15 }}>No spaces yet.</div>
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {spacesLoading && <div style={{ color: '#fff', fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Loading…</div>}
+        {spacesError && <div style={{ color: '#ffb3b3', fontSize: 13, marginBottom: 8 }}>Failed to load spaces.</div>}
+        {entries}
+      </div>
+    )
+  }
+
+  const navLinks = [
+    { label: 'My Uploads', href: '/videos', enabled: true },
+  ]
+
+  const upcomingLinks = [
+    { label: 'My Groups', note: 'Coming soon' },
+    { label: 'My Channels', note: 'Coming soon' },
+    { label: 'My Messages', note: 'Coming soon' },
+  ]
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: '#000' }}>
-      {/* Scrim behind drawer */}
       <div
-        onPointerUp={(e) => { e.stopPropagation(); if (menuOpen) setMenuOpen(false) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          console.log('[feed] scrim click')
+          if (drawerOpen) closeDrawer()
+        }}
         style={{
           position: 'fixed',
           inset: 0,
           background: 'rgba(0,0,0,0.35)',
-          opacity: menuOpen ? 1 : 0,
+          opacity: drawerOpen ? 1 : 0,
           transition: 'opacity 200ms ease',
           zIndex: 1000,
-          pointerEvents: menuOpen ? 'auto' : 'none',
+          pointerEvents: drawerOpen ? 'auto' : 'none',
         }}
       />
-      {/* Hamburger */}
       <button
-        aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-        onPointerUp={(e) => { e.stopPropagation(); setMenuOpen((s) => !s) }}
+        aria-label={drawerOpen && drawerMode === 'nav' ? 'Close menu' : 'Open menu'}
+        onClick={(e) => { e.stopPropagation(); drawerOpen && drawerMode === 'nav' ? closeDrawer() : openDrawer('nav') }}
         style={{
           position: 'fixed',
           top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
@@ -582,8 +866,7 @@ export default function Feed() {
           touchAction: 'manipulation' as any,
         }}
       >
-        {/* Icon: hamburger or X */}
-        {menuOpen ? (
+        {drawerOpen && drawerMode === 'nav' ? (
           <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
           </svg>
@@ -593,7 +876,51 @@ export default function Feed() {
           </svg>
         )}
       </button>
-      {/* Slide-out menu (left) */}
+      <button
+        aria-label={drawerOpen && drawerMode === 'spaces' ? 'Close space switcher' : 'Open space switcher'}
+        onClick={(e) => { e.stopPropagation(); drawerOpen && drawerMode === 'spaces' ? closeDrawer() : openDrawer('spaces') }}
+        style={{
+          position: 'fixed',
+          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+          right: 8,
+          zIndex: 1002,
+          background: 'transparent',
+          border: 'none',
+          padding: 8,
+          opacity: 0.9,
+          touchAction: 'manipulation' as any,
+        }}
+      >
+        {drawerOpen && drawerMode === 'spaces' ? (
+          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4" y="4" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
+            <rect x="14" y="4" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
+            <rect x="4" y="14" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
+            <rect x="14" y="14" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
+          </svg>
+        )}
+      </button>
+      <div
+        style={{
+          position: 'fixed',
+          top: 'calc(env(safe-area-inset-top, 0px) + 10px)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          color: '#fff',
+          zIndex: 1001,
+          fontSize: 14,
+          padding: '6px 12px',
+          borderRadius: 999,
+          background: 'rgba(0,0,0,0.4)',
+          border: '1px solid rgba(255,255,255,0.2)',
+        }}
+      >
+        {currentFeedLabel}
+      </div>
       <div
         style={{
           position: 'fixed',
@@ -605,54 +932,88 @@ export default function Feed() {
           background: 'rgba(0,0,0,0.8)',
           color: '#fff',
           zIndex: 1001,
-          transform: menuOpen ? 'translate3d(0,0,0)' : 'translate3d(-100%,0,0)',
+          transform: drawerOpen ? 'translate3d(0,0,0)' : 'translate3d(-100%,0,0)',
           transition: 'transform 260ms cubic-bezier(0.25,1,0.5,1)',
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
           paddingLeft: 12,
           paddingRight: 12,
-          boxShadow: menuOpen ? '2px 0 12px rgba(0,0,0,0.5)' : 'none',
-          pointerEvents: menuOpen ? 'auto' : 'none',
-          WebkitBackdropFilter: menuOpen ? 'saturate(120%) blur(6px)' : undefined,
-          backdropFilter: menuOpen ? 'saturate(120%) blur(6px)' : undefined,
+          boxShadow: drawerOpen ? '2px 0 12px rgba(0,0,0,0.5)' : 'none',
+          pointerEvents: drawerOpen ? 'auto' : 'none',
+          WebkitBackdropFilter: drawerOpen ? 'saturate(120%) blur(6px)' : undefined,
+          backdropFilter: drawerOpen ? 'saturate(120%) blur(6px)' : undefined,
+          overflowY: 'auto',
         }}
         onClick={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
       >
-        {/* Login/Logout primary button */}
-        <a
-          href={isAuthed ? '/logout' : '/login'}
-          style={{
-            display: 'inline-block',
-            textDecoration: 'none',
-            textAlign: 'center' as const,
-            color: '#fff',
-            background: isAuthed ? '#d32f2f' : '#2e7d32',
-            padding: '12px 20px',
-            borderRadius: 10,
-            fontWeight: 600,
-            fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            marginBottom: 14,
-          }}
-        >
-          {isAuthed ? 'LOGOUT' : 'LOGIN'}
-        </a>
-        {/* My Videos toggle (only when logged in) */}
-        {isAuthed && (
-          <div style={{ marginTop: 10, marginBottom: 10 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
-              <input type="checkbox" checked={mineOnly} onChange={(e)=> setMineOnly(e.target.checked)} style={{ transform: 'scale(1.2)' }} />
-              Show only my videos
-            </label>
-          </div>
-        )}
-        {/* Register link (only when logged out) */}
-        {!isAuthed && (
-          <a href="/register" style={{ display: 'block', color: '#fff', textDecoration: 'none', fontSize: 16 }}>
-            Register
-          </a>
+        {drawerMode === 'nav' ? (
+          <>
+            <a
+              href={isAuthed ? '/logout' : '/login'}
+              style={{
+                display: 'inline-block',
+                textDecoration: 'none',
+                textAlign: 'center' as const,
+                color: '#fff',
+                background: isAuthed ? '#d32f2f' : '#2e7d32',
+                padding: '12px 20px',
+                borderRadius: 10,
+                fontWeight: 600,
+                fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                marginBottom: 14,
+              }}
+            >
+              {isAuthed ? 'LOGOUT' : 'LOGIN'}
+            </a>
+            {isAuthed && (
+              <div style={{ marginTop: 10, marginBottom: 16 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                  <input type="checkbox" checked={mineOnly} onChange={(e)=> setMineOnly(e.target.checked)} style={{ transform: 'scale(1.2)' }} />
+                  Show only my videos
+                </label>
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {navLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  style={{
+                    color: '#fff',
+                    textDecoration: 'none',
+                    fontSize: 16,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'rgba(255,255,255,0.04)',
+                  }}
+                >
+                  {link.label}
+                </a>
+              ))}
+              {upcomingLinks.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    fontSize: 15,
+                    color: 'rgba(255,255,255,0.6)',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px dashed rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.02)',
+                  }}
+                >
+                  {item.label}
+                  <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>({item.note})</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          renderSpacesPanel()
         )}
       </div>
       {!unlocked && (
@@ -680,7 +1041,6 @@ export default function Feed() {
           position: 'fixed',
           inset: 0,
           overflowY: 'auto',
-          // Improve iOS touch scrolling reliability
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
           overscrollBehavior: 'contain',
@@ -688,9 +1048,12 @@ export default function Feed() {
           scrollBehavior: smoothEnabled ? 'smooth' as const : 'auto' as const,
         }}
       >
-        {slides.length ? slides : <div style={{ color: '#fff', padding: 20 }}>Loading…</div>}
+        {slides.length ? slides : (
+          <div style={{ color: '#fff', padding: 20 }}>
+            {initialLoading ? 'Loading…' : 'No videos yet.'}
+          </div>
+        )}
       </div>
-      {/* Per-slide videos handle playback; no global video element */}
       {modalOpen && (
         <div
           onClick={closeModal}

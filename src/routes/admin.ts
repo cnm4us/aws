@@ -1,6 +1,15 @@
 import { Router } from 'express';
 import { getPool } from '../db';
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
+import {
+  assignDefaultMemberRoles,
+  assignRoles,
+  getDefaultMemberRoles,
+  listSpaceInvitations,
+  listSpaceMembers,
+  loadSpace,
+  removeAllRoles,
+} from '../services/spaceMembership';
 
 type NullableBool = boolean | null;
 
@@ -189,6 +198,171 @@ adminRouter.get('/spaces', async (req, res) => {
     res.json({ spaces });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.get('/spaces/:id/members', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) {
+      return res.status(400).json({ error: 'bad_space_id' });
+    }
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+    const members = await listSpaceMembers(db, spaceId);
+    res.json({ spaceId, members });
+  } catch (err: any) {
+    console.error('admin list space members failed', err);
+    res.status(500).json({ error: 'failed_to_list_members', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.delete('/spaces/:id/members/:userId', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+
+    await removeAllRoles(db, spaceId, userId);
+    await db.query(
+      `UPDATE space_invitations SET status = 'revoked', responded_at = NOW()
+        WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`,
+      [spaceId, userId]
+    );
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('admin remove member failed', err);
+    res.status(500).json({ error: 'failed_to_remove_member', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.get('/spaces/:id/invitations', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) {
+      return res.status(400).json({ error: 'bad_space_id' });
+    }
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+    const invitations = await listSpaceInvitations(db, spaceId);
+    res.json({ spaceId, invitations });
+  } catch (err: any) {
+    console.error('admin list invitations failed', err);
+    res.status(500).json({ error: 'failed_to_list_invitations', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.delete('/spaces/:id/invitations/:userId', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+
+    await db.query(
+      `UPDATE space_invitations SET status = 'revoked', responded_at = NOW()
+        WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`,
+      [spaceId, userId]
+    );
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('admin revoke invitation failed', err);
+    res.status(500).json({ error: 'failed_to_revoke_invitation', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.post('/spaces/:id/members', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const { userId, roles } = req.body || {};
+    if (!Number.isFinite(spaceId) || spaceId <= 0) {
+      return res.status(400).json({ error: 'bad_space_id' });
+    }
+    const parsedUserId = Number(userId);
+    if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) {
+      return res.status(400).json({ error: 'bad_user_id' });
+    }
+
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+
+    if (space.type !== 'group' && space.type !== 'channel') {
+      return res.status(400).json({ error: 'unsupported_space_type' });
+    }
+
+    const [userRows] = await db.query(
+      `SELECT id, email, display_name FROM users WHERE id = ? LIMIT 1`,
+      [parsedUserId]
+    );
+    const user = (userRows as any[])[0];
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+    let roleNames: string[] | null = null;
+    if (Array.isArray(roles)) {
+      roleNames = roles
+        .map((r: any) => (typeof r === 'string' ? r.trim() : String(r || '')).toLowerCase())
+        .filter((r: string) => r.length > 0);
+      if (!roleNames.length) roleNames = null;
+    }
+
+    if (roleNames && roleNames.length) {
+      await assignRoles(db, space, parsedUserId, roleNames);
+    } else {
+      roleNames = getDefaultMemberRoles(space.type);
+      if (!roleNames.length) {
+        return res.status(400).json({ error: 'no_default_roles' });
+      }
+      await assignDefaultMemberRoles(db, space, parsedUserId);
+    }
+
+    await db.query(
+      `UPDATE space_invitations
+          SET status = 'accepted', responded_at = NOW()
+        WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`,
+      [spaceId, parsedUserId]
+    );
+
+    const [roleRows] = await db.query(
+      `SELECT r.name
+         FROM user_space_roles usr
+         JOIN roles r ON r.id = usr.role_id
+        WHERE usr.space_id = ? AND usr.user_id = ?
+        ORDER BY r.name`,
+      [spaceId, parsedUserId]
+    );
+    const assignedRoles = (roleRows as any[]).map((row) => String(row.name));
+
+    if (!assignedRoles.length) {
+      return res.status(400).json({ error: 'roles_not_assigned' });
+    }
+
+    res.json({
+      ok: true,
+      spaceId,
+      user: {
+        id: Number(user.id),
+        email: user.email,
+        displayName: user.display_name,
+      },
+      roles: assignedRoles,
+    });
+  } catch (err: any) {
+    console.error('admin add member failed', err);
+    res.status(500).json({ error: 'failed_to_add_member', detail: String(err?.message || err) });
   }
 });
 

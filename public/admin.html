@@ -104,7 +104,6 @@
         <input type="number" id="spaceId" placeholder="Enter space ID" />
       </div>
       <button id="loadMembers">Load Members</button>
-      </div>
       <div class="status" id="spaceStatus"></div>
 
       <div id="spaceDetails" style="display:none;">
@@ -121,6 +120,18 @@
           </thead>
           <tbody id="memberRows"></tbody>
         </table>
+
+        <h3 style="margin-top:1.5rem;">Add Member</h3>
+        <div class="row">
+          <label for="addUserId">User ID to add</label>
+          <input type="number" id="addUserId" placeholder="Enter user ID" />
+        </div>
+        <div class="row">
+          <label for="addRoles">Roles (optional, comma separated)</label>
+          <input type="text" id="addRoles" placeholder="e.g., group_member,group_admin" />
+        </div>
+        <button id="addMember">Add Member</button>
+        <div class="status" id="addMemberStatus"></div>
 
         <h3 style="margin-top:1.5rem;">Invite Member</h3>
         <div class="row">
@@ -194,6 +205,7 @@
     </section>
 
     <script>
+      console.log('[admin] script bootstrap');
       const csrfToken = () => {
         const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
         return m ? decodeURIComponent(m[1]) : null;
@@ -206,22 +218,49 @@
         return headers;
       };
 
+      const apiRequest = async (input, init = {}) => {
+        const opts = { credentials: 'same-origin', ...init };
+        const res = await fetch(input, opts);
+        if (!res.ok) {
+          let message = `Request failed (${res.status})`;
+          try {
+            const data = await res.json();
+            if (data && typeof data === 'object') {
+              if (data.detail) message = data.detail;
+              else if (data.error) message = data.error;
+              else message = JSON.stringify(data);
+            }
+          } catch {
+            try {
+              const text = await res.text();
+              if (text) message = text;
+            } catch {}
+          }
+          throw new Error(message);
+        }
+        return res;
+      };
+
       const siteSettingsStatus = document.getElementById('siteSettingsStatus');
       const userStatus = document.getElementById('userStatus');
       const overrideStatus = document.getElementById('overrideStatus');
       const spaceStatus = document.getElementById('spaceStatus');
+      const addMemberStatus = document.getElementById('addMemberStatus');
       const inviteStatus = document.getElementById('inviteStatus');
       const spacesStatus = document.getElementById('spacesStatus');
 
       async function loadSiteSettings(){
+        console.log('[admin] loadSiteSettings');
+        console.log("[admin] loadSiteSettings start");
         try {
-          const res = await fetch('/api/admin/site-settings');
-          if (!res.ok) throw new Error('failed to load');
+          const res = await apiRequest('/api/admin/site-settings');
           const data = await res.json();
+          console.log('[admin] site settings', data);
           document.getElementById('allowGroupCreation').checked = data.allowGroupCreation;
           document.getElementById('allowChannelCreation').checked = data.allowChannelCreation;
         } catch (err){
-          siteSettingsStatus.textContent = 'Failed to load site settings.';
+          console.error('[admin] loadSiteSettings error', err);
+          siteSettingsStatus.textContent = `Failed to load site settings. ${err?.message || ''}`;
           siteSettingsStatus.className = 'status error';
         }
       }
@@ -233,38 +272,43 @@
             allowGroupCreation: document.getElementById('allowGroupCreation').checked,
             allowChannelCreation: document.getElementById('allowChannelCreation').checked,
           };
-          const res = await fetch('/api/admin/site-settings', {
+          console.log('[admin] saveSiteSettings submit', body);
+          await apiRequest('/api/admin/site-settings', {
             method: 'PUT',
             headers: authHeaders(),
             body: JSON.stringify(body),
           });
-          if (!res.ok) throw new Error('failed');
+          console.log('[admin] saveSiteSettings success');
           siteSettingsStatus.textContent = 'Saved.';
           siteSettingsStatus.className = 'status ok';
         } catch (err){
-          siteSettingsStatus.textContent = 'Failed to save site settings.';
+          console.error('[admin] saveSiteSettings error', err);
+          siteSettingsStatus.textContent = `Failed to save site settings. ${err?.message || ''}`;
           siteSettingsStatus.className = 'status error';
         }
       }
 
       document.getElementById('saveSiteSettings').addEventListener('click', saveSiteSettings);
+      console.log('[admin] saveSiteSettings handler ready');
 
       let currentUserId = null;
       let currentOverrides = null;
 
       async function loadUser(){
+        console.log('[admin] loadUser click');
         userStatus.textContent = '';
         overrideStatus.textContent = '';
         const id = Number(document.getElementById('userId').value);
         if (!Number.isFinite(id) || id <= 0) {
+          console.warn('[admin] loadUser invalid id', id);
           userStatus.textContent = 'Enter a valid user ID.';
           userStatus.className = 'status error';
           return;
         }
         try {
-          const res = await fetch(`/api/admin/users/${id}/capabilities`);
-          if (!res.ok) throw new Error('failed');
+          const res = await apiRequest(`/api/admin/users/${id}/capabilities`);
           const data = await res.json();
+          console.log('[admin] loadUser response', data);
           currentUserId = id;
           currentOverrides = data.overrides;
           document.getElementById('userDetails').style.display = 'block';
@@ -286,16 +330,19 @@
           userStatus.textContent = 'Loaded.';
           userStatus.className = 'status ok';
         } catch (err){
+          console.error('[admin] loadUser error', err);
           currentUserId = null;
           document.getElementById('userDetails').style.display = 'none';
-          userStatus.textContent = 'Failed to load user.';
+          userStatus.textContent = `Failed to load user. ${err?.message || ''}`;
           userStatus.className = 'status error';
         }
       }
 
       document.getElementById('loadUser').addEventListener('click', loadUser);
+      console.log('[admin] loadUser handler ready');
 
       async function saveOverrides(){
+        console.log('[admin] saveOverrides click');
         overrideStatus.textContent = '';
         if (!currentUserId) {
           overrideStatus.textContent = 'Load a user first.';
@@ -307,61 +354,69 @@
           const og = document.getElementById('overrideGroup');
           const ogv = document.getElementById('overrideGroupValue');
           body.canCreateGroup = og.checked ? (ogv.value === 'null' ? null : ogv.value === 'true') : null;
+          console.log('[admin] saveOverrides payload start', body);
 
           const oc = document.getElementById('overrideChannel');
           const ocv = document.getElementById('overrideChannelValue');
           body.canCreateChannel = oc.checked ? (ocv.value === 'null' ? null : ocv.value === 'true') : null;
+          console.log('[admin] saveOverrides payload final', body);
 
-          const res = await fetch(`/api/admin/users/${currentUserId}/capabilities`, {
+          const res = await apiRequest(`/api/admin/users/${currentUserId}/capabilities`, {
             method: 'PUT',
             headers: authHeaders(),
             body: JSON.stringify(body),
           });
-          if (!res.ok) throw new Error('failed');
           const data = await res.json();
+          console.log('[admin] saveOverrides success', data);
           overrideStatus.textContent = 'Overrides saved.';
           overrideStatus.className = 'status ok';
           document.getElementById('effectiveGroup').textContent = data.effective.canCreateGroup ? 'Yes' : 'No';
           document.getElementById('effectiveChannel').textContent = data.effective.canCreateChannel ? 'Yes' : 'No';
         } catch (err){
-          overrideStatus.textContent = 'Failed to save overrides.';
+          overrideStatus.textContent = `Failed to save overrides. ${err?.message || ''}`;
           overrideStatus.className = 'status error';
         }
       }
 
       document.getElementById('saveOverrides').addEventListener('click', saveOverrides);
+      console.log('[admin] saveOverrides handler ready');
 
       let currentSpaceId = null;
 
       async function loadMembers(){
+        console.log('[admin] loadMembers click');
         spaceStatus.textContent = '';
         const id = Number(document.getElementById('spaceId').value);
         if (!Number.isFinite(id) || id <= 0) {
+          console.warn('[admin] loadMembers invalid id', id);
           spaceStatus.textContent = 'Enter a valid space ID.';
           spaceStatus.className = 'status error';
           return;
         }
         try {
-          const res = await fetch(`/api/spaces/${id}/members`);
-          if (!res.ok) throw new Error('failed');
+          const res = await apiRequest(`/api/admin/spaces/${id}/members`);
           const data = await res.json();
+          console.log('[admin] loadMembers response', data);
           currentSpaceId = id;
           document.getElementById('spaceDetails').style.display = 'block';
-          renderMembers(data.members);
+          renderMembers(data.members || []);
           await loadInvitations();
           spaceStatus.textContent = 'Loaded members.';
           spaceStatus.className = 'status ok';
         } catch (err){
+          console.error('[admin] loadMembers error', err);
           currentSpaceId = null;
           document.getElementById('spaceDetails').style.display = 'none';
-          spaceStatus.textContent = 'Failed to load members.';
+          spaceStatus.textContent = `Failed to load members. ${err?.message || ''}`;
           spaceStatus.className = 'status error';
         }
       }
 
       document.getElementById('loadMembers').addEventListener('click', loadMembers);
+      console.log('[admin] loadMembers handler ready');
 
       function renderMembers(members){
+        console.log('[admin] renderMembers', members?.length || 0);
         const tbody = document.getElementById('memberRows');
         tbody.innerHTML = '';
         members.forEach((m) => {
@@ -383,14 +438,13 @@
             if (!currentSpaceId) return;
             if (!confirm('Remove member from space?')) return;
             try {
-              const res = await fetch(`/api/spaces/${currentSpaceId}/members/${uid}`, {
+              await apiRequest(`/api/admin/spaces/${currentSpaceId}/members/${uid}`, {
                 method: 'DELETE',
                 headers: authHeaders(),
               });
-              if (!res.ok) throw new Error('failed');
               await loadMembers();
             } catch (err){
-              alert('Failed to remove member.');
+              alert(`Failed to remove member: ${err?.message || ''}`);
             }
           });
         });
@@ -398,13 +452,14 @@
 
       async function loadInvitations(){
         if (!currentSpaceId) return;
+        console.log('[admin] loadInvitations for space', currentSpaceId);
         try {
-          const res = await fetch(`/api/spaces/${currentSpaceId}/invitations`);
-          if (!res.ok) throw new Error('failed');
+          const res = await apiRequest(`/api/admin/spaces/${currentSpaceId}/invitations`);
           const data = await res.json();
+          console.log('[admin] loadInvitations response', data);
           const tbody = document.getElementById('invitationRows');
           tbody.innerHTML = '';
-          data.invitations.forEach((inv) => {
+          (data.invitations || []).forEach((inv) => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
               <td>${inv.userId}</td>
@@ -420,22 +475,65 @@
             btn.addEventListener('click', async (e) => {
               const uid = Number(e.currentTarget.getAttribute('data-user'));
               try {
-                const res = await fetch(`/api/spaces/${currentSpaceId}/invitations/${uid}`, {
-                  method: 'DELETE', headers: authHeaders()
+                await apiRequest(`/api/admin/spaces/${currentSpaceId}/invitations/${uid}`, {
+                  method: 'DELETE',
+                  headers: authHeaders()
                 });
-                if (!res.ok) throw new Error('failed');
                 await loadInvitations();
               } catch (err){
-                alert('Failed to revoke invitation.');
+                alert(`Failed to revoke invitation: ${err?.message || ''}`);
               }
             });
           });
         } catch (err){
+          console.error('[admin] loadInvitations error', err);
           document.getElementById('invitationRows').innerHTML = '<tr><td colspan="4">Failed to load invitations.</td></tr>';
         }
       }
 
+      document.getElementById('addMember').addEventListener('click', async () => {
+        console.log('[admin] addMember click');
+        addMemberStatus.textContent = '';
+        addMemberStatus.className = 'status';
+        if (!currentSpaceId) {
+          addMemberStatus.textContent = 'Load a space first.';
+          addMemberStatus.className = 'status error';
+          return;
+        }
+        const uid = Number(document.getElementById('addUserId').value);
+        if (!Number.isFinite(uid) || uid <= 0) {
+          addMemberStatus.textContent = 'Enter a valid user ID.';
+          addMemberStatus.className = 'status error';
+          return;
+        }
+        const rolesInput = document.getElementById('addRoles').value;
+        const roles = rolesInput
+          .split(',')
+          .map((r) => r.trim())
+          .filter((r) => r.length > 0);
+        try {
+          const body = { userId: uid };
+          if (roles.length) body.roles = roles;
+          await apiRequest(`/api/admin/spaces/${currentSpaceId}/members`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify(body),
+          });
+          addMemberStatus.textContent = 'Member added to space.';
+          addMemberStatus.className = 'status ok';
+          document.getElementById('addUserId').value = '';
+          document.getElementById('addRoles').value = '';
+          await loadMembers();
+        } catch (err){
+          console.error('[admin] addMember error', err);
+          const message = err?.message || 'Failed to add member.';
+          addMemberStatus.textContent = message;
+          addMemberStatus.className = 'status error';
+        }
+      });
+
       document.getElementById('inviteMember').addEventListener('click', async () => {
+        console.log('[admin] inviteMember click');
         inviteStatus.textContent = '';
         if (!currentSpaceId) {
           inviteStatus.textContent = 'Load a space first.';
@@ -449,28 +547,29 @@
           return;
         }
         try {
-          const res = await fetch(`/api/spaces/${currentSpaceId}/invitations`, {
+          await apiRequest(`/api/admin/spaces/${currentSpaceId}/invitations`, {
             method: 'POST',
             headers: authHeaders(),
             body: JSON.stringify({ userId: uid })
           });
-          if (!res.ok) throw new Error('failed');
           inviteStatus.textContent = 'Invitation sent.';
           inviteStatus.className = 'status ok';
           document.getElementById('inviteUserId').value = '';
           await loadInvitations();
         } catch (err){
-          inviteStatus.textContent = 'Failed to send invitation.';
+          console.error('[admin] inviteMember error', err);
+          inviteStatus.textContent = `Failed to send invitation. ${err?.message || ''}`;
           inviteStatus.className = 'status error';
         }
       });
 
       async function loadSpaces(){
+        console.log('[admin] loadSpaces start');
         spacesStatus.textContent = '';
         try {
-          const res = await fetch('/api/admin/spaces');
-          if (!res.ok) throw new Error('failed');
+          const res = await apiRequest('/api/admin/spaces');
           const data = await res.json();
+          console.log('[admin] loadSpaces response', data);
           const groupsTbody = document.getElementById('groupsTable');
           const channelsTbody = document.getElementById('channelsTable');
           groupsTbody.innerHTML = '';
@@ -489,7 +588,8 @@
             else channelsTbody.appendChild(tr);
           });
         } catch (err){
-          spacesStatus.textContent = 'Failed to load spaces.';
+          console.error('[admin] loadSpaces error', err);
+          spacesStatus.textContent = `Failed to load spaces. ${err?.message || ''}`;
           spacesStatus.className = 'status error';
         }
       }
@@ -498,29 +598,32 @@
       loadSpaces();
 
       document.getElementById('createSpaceBtn').addEventListener('click', async () => {
+        console.log('[admin] createSpace click');
         const statusEl = document.getElementById('createSpaceStatus');
         statusEl.textContent = '';
         const type = document.getElementById('newSpaceType').value;
         const name = document.getElementById('newSpaceName').value.trim();
+        console.log('[admin] createSpace values', { type, name });
         if (!name) {
           statusEl.textContent = 'Enter a name.';
           statusEl.className = 'status error';
           return;
         }
         try {
-          const res = await fetch('/api/spaces', {
+          const res = await apiRequest('/api/spaces', {
             method: 'POST',
             headers: authHeaders(),
             body: JSON.stringify({ type, name })
           });
-          if (!res.ok) throw new Error('failed');
           const data = await res.json();
+          console.log('[admin] createSpace response', data);
           statusEl.textContent = `Created ${type} space with id ${data.space.id} (slug: ${data.space.slug}).`;
           statusEl.className = 'status ok';
           document.getElementById('newSpaceName').value = '';
           await loadSpaces();
         } catch (err){
-          statusEl.textContent = 'Failed to create space.';
+          console.error('[admin] createSpace error', err);
+          statusEl.textContent = `Failed to create space. ${err?.message || ''}`;
           statusEl.className = 'status error';
         }
       });

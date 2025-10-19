@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { uploadsRouter } from './routes/uploads';
 import { signingRouter } from './routes/signing';
 import { publishRouter } from './routes/publish';
+import { publicationsRouter } from './routes/publications';
 import { profilesRouter } from './routes/profiles';
 import { pagesRouter } from './routes/pages';
 import adminRouter from './routes/admin';
@@ -43,9 +44,10 @@ export function buildServer(): express.Application {
   });
 
   app.use(signingRouter);
- 	app.use(uploadsRouter);
+  app.use(uploadsRouter);
   app.use(profilesRouter);
   app.use(publishRouter);
+  app.use(publicationsRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 
