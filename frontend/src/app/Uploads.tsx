@@ -143,29 +143,44 @@ const UploadsPage: React.FC = () => {
     }
   }, [loadUploads])
 
-  const renderPublishedTo = useCallback((upload: UploadListItem) => {
+  const renderPublicationLines = useCallback((upload: UploadListItem) => {
     const buckets = partitionPublications(upload.publications)
-    const lines: string[] = []
-    if (buckets.personal.length) lines.push('Personal Space')
-    if (buckets.channels.length) {
-      const names = buckets.channels.map((p) => p.spaceName || `Channel ${p.spaceId}`)
-      lines.push(`Channels: ${names.join(', ')}`)
+    const nodes: React.ReactNode[] = []
+    if (buckets.personal.length) {
+      nodes.push(
+        <div key="personal" style={{ color: '#888' }}>
+          Personal Space
+        </div>
+      )
     }
     if (buckets.groups.length) {
       const names = buckets.groups.map((p) => p.spaceName || `Group ${p.spaceId}`)
-      lines.push(`Groups: ${names.join(', ')}`)
+      nodes.push(
+        <div key="groups" style={{ color: '#888' }}>
+          Groups: {names.join(', ')}
+        </div>
+      )
+    }
+    if (buckets.channels.length) {
+      const names = buckets.channels.map((p) => p.spaceName || `Channel ${p.spaceId}`)
+      nodes.push(
+        <div key="channels" style={{ color: '#888' }}>
+          Channels: {names.join(', ')}
+        </div>
+      )
     }
     if (buckets.other.length) {
       const names = buckets.other.map((p) => p.spaceName || `Space ${p.spaceId}`)
-      lines.push(names.join(', '))
+      nodes.push(
+        <div key="other" style={{ color: '#888' }}>
+          {names.join(', ')}
+        </div>
+      )
     }
-    if (!lines.length) return <span style={{ color: '#888' }}>—</span>
-    return lines.map((line, idx) => (
-      <div key={idx}>{line}</div>
-    ))
+    return nodes
   }, [])
 
-const tableRows = useMemo(() => {
+const uploadCards = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
       const image = poster ? (
@@ -179,48 +194,60 @@ const tableRows = useMemo(() => {
       )
 
       const productionHref = `/productions?upload=${encodeURIComponent(String(upload.id))}`
-      const titleHref = `/publish?id=${encodeURIComponent(String(upload.id))}`
       const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
       const description = upload.description && upload.description.trim().length > 0 ? upload.description.trim() : null
+      const date = formatDate(upload.created_at)
+      const size = formatBytes(upload.size_bytes)
+      const dimensions = upload.width && upload.height ? `${upload.width}×${upload.height}` : null
+      const metaPieces = [date, size, dimensions].filter((value) => value && value.length)
+      const metaLine = metaPieces.join(' / ')
+      const publicationLines = renderPublicationLines(upload)
 
       return (
-        <tr key={upload.id}>
-          <td style={{ padding: '12px', width: 110 }}>{image}</td>
-          <td style={{ padding: '12px', verticalAlign: 'top' }}>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <a
-                href={productionHref}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  textDecoration: 'none',
-                  fontWeight: 600,
-                  background: 'rgba(255,255,255,0.05)',
-                }}
-              >
-                Open Production
-              </a>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <a href={titleHref} style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none' }}>{displayName}</a>
-              {description && <div style={{ color: '#bbb', marginTop: 6, whiteSpace: 'pre-wrap' }}>{description}</div>}
-              <div style={{ color: '#666', marginTop: 4 }}>{formatBytes(upload.size_bytes)}</div>
-              <div style={{ color: '#666' }}>{upload.width || 0}×{upload.height || 0}</div>
-              <div style={{ color: '#666' }}>{formatDate(upload.created_at)}</div>
-            </div>
-          </td>
-          <td style={{ padding: '12px', verticalAlign: 'top' }}>
-            {renderPublishedTo(upload)}
-          </td>
-        </tr>
+        <div
+          key={upload.id}
+          style={{
+            display: 'flex',
+            gap: 16,
+            padding: '16px 12px',
+            borderBottom: '1px solid #191919',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+          }}
+        >
+          <div style={{ flex: '0 0 auto' }}>{image}</div>
+          <div
+            style={{
+              flex: '1 1 240px',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              wordBreak: 'break-word',
+            }}
+          >
+            <a
+              href={productionHref}
+              style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none', lineHeight: 1.3 }}
+            >
+              {displayName}
+            </a>
+            {description && (
+              <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                {description}
+              </div>
+            )}
+            {metaLine && (
+              <div style={{ color: '#666', lineHeight: 1.35 }}>
+                {metaLine}
+              </div>
+            )}
+            {publicationLines.length > 0 && publicationLines}
+          </div>
+        </div>
       )
     })
-  }, [uploads, renderPublishedTo])
+  }, [uploads, renderPublicationLines])
 
   if (me === null) {
     return (
@@ -287,17 +314,15 @@ const tableRows = useMemo(() => {
         ) : uploads.length === 0 ? (
           <div style={{ color: '#bbb', padding: '12px 0' }}>No uploads yet. Get started by uploading your first video.</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#aaa', fontWeight: 600 }}>Video</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#aaa', fontWeight: 600 }}>Details</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#aaa', fontWeight: 600 }}>Published To</th>
-                </tr>
-              </thead>
-              <tbody>{tableRows}</tbody>
-            </table>
+          <div
+            style={{
+              background: '#080808',
+              borderRadius: 16,
+              border: '1px solid #161616',
+              overflow: 'hidden',
+            }}
+          >
+            {uploadCards}
           </div>
         )}
       </div>
