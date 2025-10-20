@@ -20,6 +20,41 @@ pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+// Split admin pages
+pagesRouter.get('/admin/settings', (_req, res) => {
+  serveHtml(res, 'admin-settings.html');
+});
+
+pagesRouter.get('/admin/users', (_req, res) => {
+  serveHtml(res, 'admin-users.html');
+});
+pagesRouter.get('/admin/users/new', (_req, res) => {
+  serveHtml(res, 'admin-user-new.html');
+});
+pagesRouter.get('/admin/users/:id', (_req, res) => {
+  serveHtml(res, 'admin-user.html');
+});
+
+pagesRouter.get('/admin/groups', (_req, res) => {
+  serveHtml(res, 'admin-groups.html');
+});
+pagesRouter.get('/admin/groups/:id', (_req, res) => {
+  serveHtml(res, 'admin-group.html');
+});
+pagesRouter.get('/admin/groups/:id/user/:userId', (_req, res) => {
+  serveHtml(res, 'admin-group-user.html');
+});
+
+pagesRouter.get('/admin/channels', (_req, res) => {
+  serveHtml(res, 'admin-channels.html');
+});
+pagesRouter.get('/admin/channels/:id', (_req, res) => {
+  serveHtml(res, 'admin-channel.html');
+});
+pagesRouter.get('/admin/channels/:id/user/:userId', (_req, res) => {
+  serveHtml(res, 'admin-channel-user.html');
+});
+
 pagesRouter.get('/uploads/new', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

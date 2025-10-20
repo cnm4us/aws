@@ -119,6 +119,7 @@ export async function ensureSchema(db: DB) {
       phone_verified_at DATETIME NULL,
       verification_level TINYINT UNSIGNED NULL DEFAULT 0,
       kyc_status ENUM('none','pending','verified','rejected') NOT NULL DEFAULT 'none',
+      deleted_at DATETIME NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -131,6 +132,7 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS kyc_status ENUM('none','pending','verified','rejected') NOT NULL DEFAULT 'none'`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_group TINYINT(1) NULL`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_channel TINYINT(1) NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at DATETIME NULL`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS roles (

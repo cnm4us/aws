@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin • Channel</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1>Admin</h1>
+      <a href="/admin/settings">Site Settings</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/groups">Groups</a>
+      <a href="/admin/channels">Channels</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <h2 id="title">Channel</h2>
+        <div><label>Name</label><input id="name" type="text" /></div>
+        <div style="margin-top:12px; display:flex; gap:8px;"><button class="btn" id="saveBtn">Save Settings</button><a class="btn" href="/admin/channels">Back</a></div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="section">
+        <h3>Members</h3>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <input type="number" id="addUserId" placeholder="User ID" />
+          <div id="rolesBox" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+          <button class="btn" id="addBtn">Add Member</button>
+        </div>
+        <table>
+          <thead><tr><th>User ID</th><th>Display Name</th><th>Email</th><th>Roles</th><th>Actions</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      const idMatch = location.pathname.match(/\/admin\/channels\/(\d+)/); const spaceId = idMatch? Number(idMatch[1]) : null;
+      const csrf=()=>{const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);return m?decodeURIComponent(m[1]):null};
+      const headers=()=>{const h={'Content-Type':'application/json'};const t=csrf();if(t)h['x-csrf-token']=t;return h};
+      let allRoles=[];
+      function renderRoleChecks(containerId){
+        const c=document.getElementById(containerId); c.innerHTML='';
+        allRoles.forEach(r=>{
+          const id=`role_${r.name}`; const label=document.createElement('label'); label.style.display='flex'; label.style.gap='6px'; label.style.alignItems='center';
+          label.innerHTML = `<input type=\"checkbox\" id=\"${id}\" data-role=\"${r.name}\"/> ${r.name}`;
+          c.appendChild(label);
+        })
+      }
+      async function loadRoles(){ const res=await fetch('/api/admin/roles', { credentials:'same-origin' }); const data=await res.json(); allRoles=data.roles||[]; renderRoleChecks('rolesBox'); }
+      async function load(){
+        if(!spaceId) return;
+        try{
+          const sres = await fetch(`/api/admin/spaces/${spaceId}`, { credentials:'same-origin' }); const s = await sres.json();
+          document.getElementById('title').textContent = `Channel #${s.id}`; document.getElementById('name').value = s.name||'';
+        }catch(e){ document.getElementById('status').textContent='Failed to load channel'; document.getElementById('status').className='status error' }
+        try{
+          const mres = await fetch(`/api/admin/spaces/${spaceId}/members`, { credentials:'same-origin' }); const data = await mres.json();
+          const tbody=document.getElementById('rows'); tbody.innerHTML='';
+          (data.members||[]).forEach(m=>{
+            const tr=document.createElement('tr'); const path=`/admin/channels/${spaceId}/user/${m.userId}`;
+            tr.innerHTML = `<td>${m.userId}</td><td><a href=\"${path}\">${m.displayName||''}</a></td><td>${m.email||''}</td><td>${(m.roles||[]).join(', ')}</td><td><button class=\"btn danger\" data-action=\"remove\" data-user=\"${m.userId}\">Remove</button></td>`;
+            tbody.appendChild(tr);
+          });
+          tbody.querySelectorAll('button[data-action="remove"]').forEach(btn=>{
+            btn.addEventListener('click', async (e)=>{ const uid=Number(e.currentTarget.getAttribute('data-user')); if(!confirm('Remove member?')) return; await fetch(`/api/admin/spaces/${spaceId}/members/${uid}`, { method:'DELETE', headers: headers(), credentials:'same-origin' }); load(); })
+          })
+        }catch(e){
+          const s=document.getElementById('status'); s.textContent='Failed to load members'; s.className='status error'
+        }
+      }
+      async function save(){ try{ await fetch(`/api/admin/spaces/${spaceId}`, { method:'PUT', headers: headers(), credentials:'same-origin', body: JSON.stringify({ name: document.getElementById('name').value.trim() }) }); const s=document.getElementById('status'); s.textContent='Saved'; s.className='status ok' } catch(e){ const s=document.getElementById('status'); s.textContent='Failed to save'; s.className='status error' } }
+      async function addMember(){ const uid=Number(document.getElementById('addUserId').value); const roles=[...document.querySelectorAll('#rolesBox input[type=checkbox]')].filter(b=>b.checked).map(b=>b.getAttribute('data-role')); try{ await fetch(`/api/admin/spaces/${spaceId}/members`, { method:'POST', headers: headers(), credentials:'same-origin', body: JSON.stringify({ userId: uid, roles }) }); load(); }catch(e){ alert('Failed to add member') } }
+      document.getElementById('saveBtn').addEventListener('click', save);
+      document.getElementById('addBtn').addEventListener('click', addMember);
+      loadRoles().then(load);
+    </script>
+  </body>
+  </html>
+

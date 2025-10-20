@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getPool } from '../db';
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
+import crypto from 'crypto';
 import {
   assignDefaultMemberRoles,
   assignRoles,
@@ -40,6 +41,298 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth);
 adminRouter.use(requireSiteAdmin);
+
+// ---------- Roles ----------
+adminRouter.get('/roles', async (_req, res) => {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, name FROM roles ORDER BY name`);
+    res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name) })) });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_roles', detail: String(err?.message || err) });
+  }
+});
+
+// ---------- Users ----------
+function scryptHash(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const N = 16384; // Align with register implementation
+  const hash = crypto.scryptSync(password, salt, 64, { N }).toString('hex');
+  return `s2$${N}$${salt}$${hash}`;
+}
+
+adminRouter.get('/users', async (req, res) => {
+  try {
+    const db = getPool();
+    const search = (req.query.search ? String(req.query.search) : '').trim();
+    const includeDeleted = String(req.query.include_deleted || '') === '1';
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+    const offset = Math.max(Number(req.query.offset || 0), 0);
+    const where: string[] = [];
+    const params: any[] = [];
+    if (!includeDeleted) where.push('deleted_at IS NULL');
+    if (search) {
+      where.push('(email LIKE ? OR display_name LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [rows] = await db.query(
+      `SELECT id, email, display_name, created_at, updated_at, deleted_at
+         FROM users
+         ${whereSql}
+         ORDER BY id DESC
+         LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+    const users = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      email: r.email,
+      displayName: r.display_name,
+      createdAt: String(r.created_at),
+      updatedAt: r.updated_at ? String(r.updated_at) : null,
+      deletedAt: r.deleted_at ? String(r.deleted_at) : null,
+    }));
+    res.json({ users, limit, offset });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_users', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.post('/users', async (req, res) => {
+  try {
+    const { email, displayName, password } = (req.body || {}) as any;
+    const e = String(email || '').trim().toLowerCase();
+    const dn = (displayName ? String(displayName) : '').trim().slice(0, 255);
+    const pw = String(password || '');
+    if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return res.status(400).json({ error: 'invalid_email' });
+    if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
+    const passwordHash = scryptHash(pw);
+    const db = getPool();
+    const [ins] = await db.query(
+      `INSERT INTO users (email, password_hash, display_name)
+       VALUES (?, ?, ?)`,
+      [e, passwordHash, dn || e]
+    );
+    const userId = Number((ins as any).insertId);
+    // Create personal space for the user to align with register route
+    const slug = e.split('@')[0].replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || `user-${userId}`;
+    const settings = { visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true };
+    try {
+      await db.query(
+        `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES ('personal', ?, ?, ?, ?)`,
+        [userId, dn || e, slug, JSON.stringify(settings)]
+      );
+    } catch {}
+    res.status(201).json({ id: userId, email: e, displayName: dn || e });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_create_user', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.get('/users/:id', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT id, email, display_name, org_id, email_verified_at, phone_number, phone_verified_at,
+              verification_level, kyc_status, can_create_group, can_create_channel, created_at, updated_at, deleted_at
+         FROM users WHERE id = ? LIMIT 1`,
+      [userId]
+    );
+    const u = (rows as any[])[0];
+    if (!u) return res.status(404).json({ error: 'not_found' });
+    res.json({
+      id: Number(u.id),
+      email: u.email,
+      displayName: u.display_name,
+      orgId: u.org_id != null ? Number(u.org_id) : null,
+      emailVerifiedAt: u.email_verified_at ? String(u.email_verified_at) : null,
+      phoneNumber: u.phone_number || null,
+      phoneVerifiedAt: u.phone_verified_at ? String(u.phone_verified_at) : null,
+      verificationLevel: u.verification_level != null ? Number(u.verification_level) : 0,
+      kycStatus: u.kyc_status,
+      canCreateGroup: u.can_create_group == null ? null : Boolean(Number(u.can_create_group)),
+      canCreateChannel: u.can_create_channel == null ? null : Boolean(Number(u.can_create_channel)),
+      createdAt: String(u.created_at),
+      updatedAt: u.updated_at ? String(u.updated_at) : null,
+      deletedAt: u.deleted_at ? String(u.deleted_at) : null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_get_user', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.put('/users/:id', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const {
+      email,
+      displayName,
+      password,
+      orgId,
+      phoneNumber,
+      verificationLevel,
+      kycStatus,
+      canCreateGroup,
+      canCreateChannel,
+    } = (req.body || {}) as any;
+
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (email !== undefined) {
+      const e = String(email || '').trim().toLowerCase();
+      if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return res.status(400).json({ error: 'invalid_email' });
+      sets.push('email = ?'); params.push(e);
+    }
+    if (displayName !== undefined) { sets.push('display_name = ?'); params.push(String(displayName || '').slice(0, 255)); }
+    if (password !== undefined) {
+      const pw = String(password || '');
+      if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
+      sets.push('password_hash = ?'); params.push(scryptHash(pw));
+    }
+    if (orgId !== undefined) { sets.push('org_id = ?'); params.push(orgId == null ? null : Number(orgId)); }
+    if (phoneNumber !== undefined) { sets.push('phone_number = ?'); params.push(phoneNumber == null ? null : String(phoneNumber)); }
+    if (verificationLevel !== undefined) { sets.push('verification_level = ?'); params.push(verificationLevel == null ? null : Number(verificationLevel)); }
+    if (kycStatus !== undefined) { sets.push('kyc_status = ?'); params.push(kycStatus == null ? null : String(kycStatus)); }
+    if (canCreateGroup !== undefined) { sets.push('can_create_group = ?'); params.push(canCreateGroup == null ? null : (canCreateGroup ? 1 : 0)); }
+    if (canCreateChannel !== undefined) { sets.push('can_create_channel = ?'); params.push(canCreateChannel == null ? null : (canCreateChannel ? 1 : 0)); }
+
+    if (!sets.length) return res.status(400).json({ error: 'no_fields_to_update' });
+    const db = getPool();
+    const [result] = await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, [...params, userId]);
+    if ((result as any).affectedRows === 0) return res.status(404).json({ error: 'not_found' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_update_user', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.delete('/users/:id', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    await db.query(`UPDATE users SET deleted_at = NOW() WHERE id = ?`, [userId]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_delete_user', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.get('/users/:id/spaces', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT s.id AS space_id, s.type, s.name, s.slug, r.name AS role_name
+         FROM user_space_roles usr
+         JOIN roles r ON r.id = usr.role_id
+         JOIN spaces s ON s.id = usr.space_id
+        WHERE usr.user_id = ?
+        ORDER BY s.type, s.name, r.name`,
+      [userId]
+    );
+    const map: Record<number, { id: number; type: string; name: string; slug: string; roles: string[] }> = {};
+    for (const row of rows as any[]) {
+      const sid = Number(row.space_id);
+      if (!map[sid]) map[sid] = { id: sid, type: String(row.type), name: row.name, slug: row.slug, roles: [] };
+      map[sid].roles.push(String(row.role_name));
+    }
+    res.json({ spaces: Object.values(map) });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_user_spaces', detail: String(err?.message || err) });
+  }
+});
+
+// ---------- Spaces ----------
+adminRouter.get('/spaces/:id', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
+    const s = (rows as any[])[0];
+    if (!s) return res.status(404).json({ error: 'space_not_found' });
+    res.json({
+      id: Number(s.id),
+      type: String(s.type),
+      ownerUserId: s.owner_user_id != null ? Number(s.owner_user_id) : null,
+      name: s.name,
+      slug: s.slug,
+      settings: typeof s.settings === 'string' ? JSON.parse(s.settings) : s.settings,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_get_space', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.put('/spaces/:id', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const { name } = (req.body || {}) as any;
+    const title = (name ? String(name) : '').trim();
+    if (!title) return res.status(400).json({ error: 'invalid_name' });
+    const db = getPool();
+    const [result] = await db.query(`UPDATE spaces SET name = ? WHERE id = ?`, [title, spaceId]);
+    if ((result as any).affectedRows === 0) return res.status(404).json({ error: 'space_not_found' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_update_space', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.get('/spaces/:id/users/:userId/roles', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT r.name
+         FROM user_space_roles usr
+         JOIN roles r ON r.id = usr.role_id
+        WHERE usr.space_id = ? AND usr.user_id = ?
+        ORDER BY r.name`,
+      [spaceId, userId]
+    );
+    res.json({ roles: (rows as any[]).map((r) => String(r.name)) });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_get_user_roles', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.put('/spaces/:id/users/:userId/roles', async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const roles = Array.isArray((req.body || {}).roles) ? (req.body as any).roles : [];
+    const normalized = roles
+      .map((r: any) => (typeof r === 'string' ? r.trim() : String(r || '')).toLowerCase())
+      .filter((r: string) => r.length > 0);
+    const db = getPool();
+    // Replace-all strategy
+    await db.query(`DELETE FROM user_space_roles WHERE space_id = ? AND user_id = ?`, [spaceId, userId]);
+    if (normalized.length) {
+      // Map role names to ids
+      const placeholders = normalized.map(() => '?').join(',');
+      const [roleRows] = await db.query(`SELECT id, name FROM roles WHERE name IN (${placeholders})`, normalized);
+      const ids = (roleRows as any[]).map((r) => Number(r.id));
+      for (const rid of ids) {
+        await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) VALUES (?, ?, ?)`, [userId, spaceId, rid]);
+      }
+    }
+    res.json({ ok: true, roles: normalized });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
+  }
+});
 
 adminRouter.get('/site-settings', async (_req, res) => {
   try {

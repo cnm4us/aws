@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin • Channels</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1>Admin</h1>
+      <a href="/admin/settings">Site Settings</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/groups">Groups</a>
+      <a href="/admin/channels">Channels</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <a class="btn" href="/admin/settings">Add Channel (use Create Space)</a>
+        </div>
+        <div id="status" class="status"></div>
+        <table style="margin-top:12px;">
+          <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Owner</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      async function load(){
+        try{
+          const res = await fetch('/api/admin/spaces?type=channel', { credentials:'same-origin' });
+          const data = await res.json();
+          const tbody = document.getElementById('rows'); tbody.innerHTML='';
+          (data.spaces||[]).forEach(s=>{
+            const tr=document.createElement('tr');
+            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/channels/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${s.ownerUserId||''}</td>`;
+            tbody.appendChild(tr);
+          })
+        }catch(e){ document.getElementById('status').textContent='Failed to load channels'; document.getElementById('status').className='status error'; }
+      }
+      load();
+    </script>
+  </body>
+  </html>
+

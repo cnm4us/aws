@@ -1,0 +1,17 @@
+/* Simple left navigation shared by admin pages */
+body { font-family: system-ui, sans-serif; margin: 0; display: flex; min-height: 100vh; color: #222; background: #f5f7fa; }
+.sidebar { width: 220px; background:#0e1730; color:#fff; padding: 20px 16px; box-shadow: 2px 0 18px rgba(0,0,0,0.15); position: sticky; top: 0; align-self: flex-start; min-height: 100vh; }
+.sidebar h1 { font-size: 18px; margin: 0 0 12px; }
+.sidebar a { display:block; color:#cfe0ff; text-decoration:none; padding:8px 10px; border-radius:8px; margin:4px 0; }
+.sidebar a:hover { background: rgba(255,255,255,0.08); }
+.main { flex: 1; padding: 24px; }
+.section { background:#fff; border:1px solid #dce1eb; border-radius:10px; padding:16px; margin-bottom:16px; box-shadow:0 4px 18px rgba(0,0,0,0.08); }
+.btn { border:none; background:#0059d6; color:#fff; padding:8px 14px; border-radius:8px; font-weight:600; cursor:pointer; box-shadow:0 3px 12px rgba(0,89,214,0.25); }
+.btn.danger { background:#c62828; }
+.status { margin-top:8px; font-size: 14px; }
+.status.ok { color:#2e7d32; }
+.status.error { color:#c62828; }
+table { width:100%; border-collapse:collapse; }
+th, td { border:1px solid #e3e8f3; padding:8px; font-size:14px; text-align:left; }
+th { background:#f0f3fa; }
+input[type=text], input[type=email], input[type=password], input[type=number], textarea, select { width: 100%; max-width: 360px; border:1px solid #c5ccda; border-radius:8px; padding:8px 10px; background:#fafbff; }
