@@ -15,3 +15,7 @@ table { width:100%; border-collapse:collapse; }
 th, td { border:1px solid #e3e8f3; padding:8px; font-size:14px; text-align:left; }
 th { background:#f0f3fa; }
 input[type=text], input[type=email], input[type=password], input[type=number], textarea, select { width: 100%; max-width: 360px; border:1px solid #c5ccda; border-radius:8px; padding:8px 10px; background:#fafbff; }
+/* Form layout helpers */
+.field { margin-top: 10px; }
+.field:first-of-type { margin-top: 0; }
+.field label { display: block; font-weight: 600; margin-bottom: 6px; }

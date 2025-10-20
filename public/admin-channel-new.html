@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin • Add Channel</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1>Admin</h1>
+      <a href="/admin/settings">Site Settings</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/groups">Groups</a>
+      <a href="/admin/channels">Channels</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <h2>Add Channel</h2>
+        <div class="field"><label for="name">Name</label><input id="name" type="text" placeholder="Channel name" /></div>
+        <div class="field"><label for="slug">Slug</label><input id="slug" type="text" placeholder="channel-slug" /></div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button class="btn" id="createBtn">Create Channel</button>
+          <a class="btn" href="/admin/channels">Cancel</a>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+    </main>
+    <script>
+      const csrf=()=>{const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);return m?decodeURIComponent(m[1]):null};
+      const headers=()=>{const h={'Content-Type':'application/json'};const t=csrf();if(t)h['x-csrf-token']=t;return h};
+      async function create(){
+        const name=document.getElementById('name').value.trim();
+        const slug=document.getElementById('slug').value.trim();
+        const body={ type:'channel', name, slug };
+        try{
+          const res = await fetch('/api/admin/spaces', { method:'POST', headers: headers(), credentials:'same-origin', body: JSON.stringify(body) });
+          if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed'); }
+          const s=document.getElementById('status'); s.textContent='Created'; s.className='status ok';
+          window.location.href = '/admin/channels';
+        }catch(e){ const s=document.getElementById('status'); s.textContent=e?.message||'Failed to create channel'; s.className='status error' }
+      }
+      document.getElementById('createBtn').addEventListener('click', create);
+    </script>
+  </body>
+  </html>
+

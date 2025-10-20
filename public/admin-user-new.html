@@ -17,17 +17,50 @@
     <main class="main">
       <div class="section">
         <h2>Add User</h2>
-        <div>
-          <label>Email</label>
+        <div class="field">
+          <label for="email">Email</label>
           <input id="email" type="email" placeholder="email@example.com" />
         </div>
-        <div style="margin-top:8px;">
-          <label>Display Name</label>
+        <div class="field">
+          <label for="displayName">Display Name</label>
           <input id="displayName" type="text" placeholder="Display name" />
         </div>
-        <div style="margin-top:8px;">
-          <label>Password</label>
+        <div class="field">
+          <label for="password">Password</label>
           <input id="password" type="password" placeholder="Set initial password" />
+        </div>
+        <div class="field">
+          <label for="phoneNumber">Phone</label>
+          <input id="phoneNumber" type="text" placeholder="Optional" />
+        </div>
+        <div class="field">
+          <label for="verificationLevel">Verification Level</label>
+          <input id="verificationLevel" type="number" min="0" />
+        </div>
+        <div class="field">
+          <label for="kycStatus">KYC Status</label>
+          <select id="kycStatus">
+            <option value="none">none</option>
+            <option value="pending">pending</option>
+            <option value="verified">verified</option>
+            <option value="rejected">rejected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="canCreateGroup">Can Create Group (override)</label>
+          <select id="canCreateGroup">
+            <option value="">inherit</option>
+            <option value="true">allow</option>
+            <option value="false">deny</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="canCreateChannel">Can Create Channel (override)</label>
+          <select id="canCreateChannel">
+            <option value="">inherit</option>
+            <option value="true">allow</option>
+            <option value="false">deny</option>
+          </select>
         </div>
         <div style="margin-top:12px; display:flex; gap:8px;">
           <button class="btn" id="createBtn">Add User</button>
@@ -43,7 +76,12 @@
         const email=document.getElementById('email').value.trim();
         const displayName=document.getElementById('displayName').value.trim();
         const password=document.getElementById('password').value;
-        const body={ email, displayName, password };
+        const phoneNumber=document.getElementById('phoneNumber').value.trim();
+        const verificationLevel=Number(document.getElementById('verificationLevel').value||0);
+        const kycStatus=document.getElementById('kycStatus').value;
+        const cgg=document.getElementById('canCreateGroup').value; const canCreateGroup = cgg===''? null : cgg==='true';
+        const cgc=document.getElementById('canCreateChannel').value; const canCreateChannel = cgc===''? null : cgc==='true';
+        const body={ email, displayName, password, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel };
         try{
           const res = await fetch('/api/admin/users', { method:'POST', headers: headers(), credentials:'same-origin', body: JSON.stringify(body) });
           if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed'); }
@@ -55,4 +93,3 @@
     </script>
   </body>
   </html>
-

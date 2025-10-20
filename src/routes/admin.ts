@@ -3,6 +3,7 @@ import { getPool } from '../db';
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
 import crypto from 'crypto';
 import {
+  assignDefaultAdminRoles,
   assignDefaultMemberRoles,
   assignRoles,
   getDefaultMemberRoles,
@@ -10,6 +11,7 @@ import {
   listSpaceMembers,
   loadSpace,
   removeAllRoles,
+  type SpaceRow,
 } from '../services/spaceMembership';
 
 type NullableBool = boolean | null;
@@ -50,6 +52,35 @@ adminRouter.get('/roles', async (_req, res) => {
     res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name) })) });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_roles', detail: String(err?.message || err) });
+  }
+});
+
+// Create Group / Channel (admin)
+adminRouter.post('/spaces', async (req, res) => {
+  try {
+    const { type, name, slug } = (req.body || {}) as any;
+    const kind = String(type || '').trim().toLowerCase();
+    if (kind !== 'group' && kind !== 'channel') return res.status(400).json({ error: 'invalid_space_type' });
+    const title = String(name || '').trim(); if (!title) return res.status(400).json({ error: 'invalid_name' });
+    const rawSlug = String(slug || '').trim(); if (!rawSlug) return res.status(400).json({ error: 'invalid_slug' });
+    const normalizedSlug = slugify(rawSlug); if (!normalizedSlug) return res.status(400).json({ error: 'invalid_slug' });
+
+    const db = getPool();
+    // enforce uniqueness across all spaces (table uses unique slug)
+    const [exists] = await db.query(`SELECT id FROM spaces WHERE slug = ? LIMIT 1`, [normalizedSlug]);
+    if ((exists as any[]).length) return res.status(409).json({ error: 'slug_taken' });
+
+    const settings = JSON.stringify(defaultSettings(kind));
+    const [ins] = await db.query(
+      `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
+      [kind, req.user!.id, title, normalizedSlug, settings]
+    );
+    const spaceId = Number((ins as any).insertId);
+    const space: SpaceRow = { id: spaceId, type: kind as any, owner_user_id: req.user!.id };
+    await assignDefaultAdminRoles(db, space, req.user!.id);
+    res.status(201).json({ id: spaceId, type: kind, name: title, slug: normalizedSlug });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_create_space', detail: String(err?.message || err) });
   }
 });
 
@@ -100,7 +131,16 @@ adminRouter.get('/users', async (req, res) => {
 
 adminRouter.post('/users', async (req, res) => {
   try {
-    const { email, displayName, password } = (req.body || {}) as any;
+    const {
+      email,
+      displayName,
+      password,
+      phoneNumber,
+      verificationLevel,
+      kycStatus,
+      canCreateGroup,
+      canCreateChannel,
+    } = (req.body || {}) as any;
     const e = String(email || '').trim().toLowerCase();
     const dn = (displayName ? String(displayName) : '').trim().slice(0, 255);
     const pw = String(password || '');
@@ -108,10 +148,19 @@ adminRouter.post('/users', async (req, res) => {
     if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
     const passwordHash = scryptHash(pw);
     const db = getPool();
+    // Optional fields
+    const phone = phoneNumber == null || phoneNumber === '' ? null : String(phoneNumber);
+    const verLevel = verificationLevel == null || verificationLevel === '' ? null : Number(verificationLevel);
+    const allowedKyc = new Set(['none','pending','verified','rejected']);
+    const kyc = kycStatus && allowedKyc.has(String(kycStatus)) ? String(kycStatus) : 'none';
+    let cg: number | null = null; let cc: number | null = null;
+    try { if (canCreateGroup !== undefined) cg = toDbValue(toNullableBool(canCreateGroup as any)); } catch {}
+    try { if (canCreateChannel !== undefined) cc = toDbValue(toNullableBool(canCreateChannel as any)); } catch {}
+
     const [ins] = await db.query(
-      `INSERT INTO users (email, password_hash, display_name)
-       VALUES (?, ?, ?)`,
-      [e, passwordHash, dn || e]
+      `INSERT INTO users (email, password_hash, display_name, phone_number, verification_level, kyc_status, can_create_group, can_create_channel)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [e, passwordHash, dn || e, phone, verLevel, kyc, cg, cc]
     );
     const userId = Number((ins as any).insertId);
     // Create personal space for the user to align with register route
@@ -473,13 +522,16 @@ adminRouter.get('/spaces', async (req, res) => {
     const { type } = req.query as { type?: string };
     const db = getPool();
     const types = ['group', 'channel'];
-    let sql = `SELECT id, type, name, slug, owner_user_id FROM spaces WHERE type IN ('group','channel')`;
+    let sql = `SELECT s.id, s.type, s.name, s.slug, s.owner_user_id, u.display_name AS owner_display_name
+                 FROM spaces s
+                 LEFT JOIN users u ON u.id = s.owner_user_id
+                WHERE s.type IN ('group','channel')`;
     const params: any[] = [];
     if (type && types.includes(type.toLowerCase())) {
-      sql += ` AND type = ?`;
+      sql += ` AND s.type = ?`;
       params.push(type.toLowerCase());
     }
-    sql += ` ORDER BY type, name`;
+    sql += ` ORDER BY s.type, s.name`;
     const [rows] = await db.query(sql, params);
     const spaces = (rows as any[]).map((row) => ({
       id: Number(row.id),
@@ -487,6 +539,7 @@ adminRouter.get('/spaces', async (req, res) => {
       name: row.name,
       slug: row.slug,
       ownerUserId: row.owner_user_id ? Number(row.owner_user_id) : null,
+      ownerDisplayName: row.owner_display_name || null,
     }));
     res.json({ spaces });
   } catch (err: any) {
@@ -660,3 +713,18 @@ adminRouter.post('/spaces/:id/members', async (req, res) => {
 });
 
 export default adminRouter;
+function slugify(input: string): string {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+}
+
+function defaultSettings(type: 'group' | 'channel'): any {
+  if (type === 'group') {
+    return { visibility: 'private', membership: 'invite', publishing: { requireApproval: false, targets: ['space'] }, limits: {} };
+  }
+  return { visibility: 'members_only', membership: 'invite', publishing: { requireApproval: false, targets: ['channel'] }, limits: {} };
+}

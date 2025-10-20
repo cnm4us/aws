@@ -16,9 +16,7 @@
     </nav>
     <main class="main">
       <div class="section">
-        <div style="display:flex; gap:8px; align-items:center;">
-          <a class="btn" href="/admin/settings">Add Channel (use Create Space)</a>
-        </div>
+        <div style="display:flex; gap:8px; align-items:center;"><a class="btn" href="/admin/channels/new">Add Channel</a></div>
         <div id="status" class="status"></div>
         <table style="margin-top:12px;">
           <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Owner</th></tr></thead>
@@ -34,7 +32,8 @@
           const tbody = document.getElementById('rows'); tbody.innerHTML='';
           (data.spaces||[]).forEach(s=>{
             const tr=document.createElement('tr');
-            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/channels/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${s.ownerUserId||''}</td>`;
+            const owner = s.ownerDisplayName || s.ownerUserId || '';
+            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/channels/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${owner}</td>`;
             tbody.appendChild(tr);
           })
         }catch(e){ document.getElementById('status').textContent='Failed to load channels'; document.getElementById('status').className='status error'; }
@@ -43,4 +42,3 @@
     </script>
   </body>
   </html>
-
