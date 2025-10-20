@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin • Dev Tools</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1>Admin</h1>
+      <a href="/admin/settings">Site Settings</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/groups">Groups</a>
+      <a href="/admin/channels">Channels</a>
+      <a href="/admin/dev">Dev Tools</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <h2>Content Stats</h2>
+        <div id="statsBox">Loading…</div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button class="btn" id="refreshBtn">Refresh</button>
+          <button class="btn danger" id="truncateBtn">Truncate Content</button>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+    </main>
+    <script>
+      function headers(){ const h={'Content-Type':'application/json'}; const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); if(m) h['x-csrf-token']=decodeURIComponent(m[1]); return h }
+      async function loadStats(){
+        try{
+          const res = await fetch('/api/admin/dev/stats', { credentials:'same-origin' });
+          if(!res.ok) throw new Error('Failed to load stats');
+          const data = await res.json();
+          const box = document.getElementById('statsBox');
+          box.innerHTML = `<ul>
+            <li>Uploads: <strong>${data.uploads}</strong></li>
+            <li>Productions: <strong>${data.productions}</strong></li>
+            <li>Space Publications: <strong>${data.spacePublications}</strong></li>
+            <li>Publication Events: <strong>${data.spacePublicationEvents}</strong></li>
+          </ul>`;
+        }catch(e){ document.getElementById('status').textContent = e?.message || 'Failed'; document.getElementById('status').className='status error'; }
+      }
+      async function truncate(){
+        if(!confirm('This will delete uploads, productions and publications in the database. Continue?')) return;
+        try{
+          const res = await fetch('/api/admin/dev/truncate-content', { method:'POST', headers: headers(), credentials:'same-origin' });
+          if(!res.ok) throw new Error('Failed to truncate');
+          const data = await res.json();
+          document.getElementById('status').textContent='Truncated. Remaining: ' + JSON.stringify(data.remaining);
+          document.getElementById('status').className='status ok';
+          await loadStats();
+        }catch(e){ document.getElementById('status').textContent = e?.message || 'Failed'; document.getElementById('status').className='status error'; }
+      }
+      document.getElementById('refreshBtn').addEventListener('click', loadStats);
+      document.getElementById('truncateBtn').addEventListener('click', truncate);
+      loadStats();
+    </script>
+  </body>
+  </html>
+

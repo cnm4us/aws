@@ -38,10 +38,17 @@ pagesRouter.get('/admin/users/:id', (_req, res) => {
 pagesRouter.get('/admin/groups', (_req, res) => {
   serveHtml(res, 'admin-groups.html');
 });
+// Singular fallbacks for convenience
+pagesRouter.get('/admin/group', (_req, res) => {
+  serveHtml(res, 'admin-groups.html');
+});
 pagesRouter.get('/admin/groups/new', (_req, res) => {
   serveHtml(res, 'admin-group-new.html');
 });
 pagesRouter.get('/admin/groups/:id', (_req, res) => {
+  serveHtml(res, 'admin-group.html');
+});
+pagesRouter.get('/admin/group/:id', (_req, res) => {
   serveHtml(res, 'admin-group.html');
 });
 pagesRouter.get('/admin/groups/:id/user/:userId', (_req, res) => {
@@ -51,14 +58,25 @@ pagesRouter.get('/admin/groups/:id/user/:userId', (_req, res) => {
 pagesRouter.get('/admin/channels', (_req, res) => {
   serveHtml(res, 'admin-channels.html');
 });
+pagesRouter.get('/admin/channel', (_req, res) => {
+  serveHtml(res, 'admin-channels.html');
+});
 pagesRouter.get('/admin/channels/new', (_req, res) => {
   serveHtml(res, 'admin-channel-new.html');
 });
 pagesRouter.get('/admin/channels/:id', (_req, res) => {
   serveHtml(res, 'admin-channel.html');
 });
+pagesRouter.get('/admin/channel/:id', (_req, res) => {
+  serveHtml(res, 'admin-channel.html');
+});
 pagesRouter.get('/admin/channels/:id/user/:userId', (_req, res) => {
   serveHtml(res, 'admin-channel-user.html');
+});
+
+// Dev utilities page
+pagesRouter.get('/admin/dev', (_req, res) => {
+  serveHtml(res, 'admin-dev.html');
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {

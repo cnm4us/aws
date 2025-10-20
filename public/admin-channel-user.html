@@ -28,7 +28,11 @@
       let allRoles=[]; let currentRoles=new Set();
       function render() {
         const c=document.getElementById('rolesBox'); c.innerHTML='';
-        allRoles.forEach(r=>{
+        const spaceRoles = allRoles.filter(ro => {
+          const n = String(ro.name||'');
+          return /^space_/.test(n);
+        });
+        spaceRoles.forEach(r=>{
           const id=`role_${r.name}`; const label=document.createElement('label'); label.style.display='flex'; label.style.gap='6px'; label.style.alignItems='center';
           const checked = currentRoles.has(r.name) ? 'checked' : '';
           label.innerHTML = `<input type=\"checkbox\" data-role=\"${r.name}\" ${checked}/> ${r.name}`;
@@ -57,4 +61,3 @@
     </script>
   </body>
   </html>
-

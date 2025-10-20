@@ -60,6 +60,23 @@ async function main() {
     }
   }
 
+  console.log('--- RBAC migrate: correcting legacy role scopes ---');
+  // Move legacy generic roles to site scope so they don't appear in space role pickers
+  const legacySiteNames = ['admin','moderator','publisher','viewer','member','subscriber','uploader','contributor'];
+  try {
+    if (legacySiteNames.length) {
+      await exec(`UPDATE roles SET scope='site', space_type=NULL WHERE name IN (${legacySiteNames.map(()=>'?').join(',')})`, legacySiteNames);
+    }
+  } catch (e) {
+    console.warn('[warn] failed to update legacy role scopes', e);
+  }
+
+  // Ensure new catalog has correct scopes
+  try {
+    await exec(`UPDATE roles SET scope='site', space_type=NULL WHERE name IN ('site_admin','site_moderator','site_member')`);
+    await exec(`UPDATE roles SET scope='space', space_type='any' WHERE name IN ('space_admin','space_moderator','space_member','space_poster','space_subscriber')`);
+  } catch {}
+
   console.log('RBAC migration complete.', dry ? '(dry run)' : '');
   if (!dry) process.exit(0);
 }
@@ -68,4 +85,3 @@ main().catch((err) => {
   console.error('RBAC migration failed', err);
   process.exit(1);
 });
-

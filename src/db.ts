@@ -133,6 +133,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_group TINYINT(1) NULL`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_channel TINYINT(1) NULL`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at DATETIME NULL`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credibility_score INT DEFAULT 0`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS require_review_global TINYINT(1) NOT NULL DEFAULT 0`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS roles (
@@ -283,6 +285,26 @@ export async function ensureSchema(db: DB) {
   `);
   await db.query(`INSERT IGNORE INTO site_settings (id) VALUES (1)`);
 
+  // Suspensions (posting only for now)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS suspensions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      target_type ENUM('site','space') NOT NULL,
+      target_id BIGINT UNSIGNED NULL,
+      kind ENUM('posting') NOT NULL DEFAULT 'posting',
+      degree TINYINT UNSIGNED NOT NULL,
+      starts_at DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
+      ends_at DATETIME NULL,
+      reason VARCHAR(255) NULL,
+      created_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_susp_user (user_id),
+      KEY idx_susp_target (target_type, target_id),
+      KEY idx_susp_active (user_id, kind, ends_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
   // Action log (auditing)
   await db.query(`
     CREATE TABLE IF NOT EXISTS action_log (
@@ -309,6 +331,7 @@ export async function ensureSchema(db: DB) {
       is_primary TINYINT(1) NOT NULL DEFAULT 0,
       visibility ENUM('inherit','members','public') NOT NULL DEFAULT 'inherit',
       distribution_flags JSON NULL,
+      comments_enabled TINYINT(1) NULL,
       published_at DATETIME NULL,
       unpublished_at DATETIME NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -319,6 +342,10 @@ export async function ensureSchema(db: DB) {
       KEY idx_space_publications_primary (is_primary)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+
+  // Comments policy related columns
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS default_comments_enabled TINYINT(1) NOT NULL DEFAULT 1`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_enabled TINYINT(1) NULL`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS space_publication_events (

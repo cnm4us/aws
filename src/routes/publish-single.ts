@@ -63,10 +63,21 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
         const requireApproval = Boolean(settings?.publishing?.requireApproval)
         const status = requireApproval ? 'pending' : 'published'
         const publishedAt = requireApproval ? null : new Date()
+        // Determine comments_enabled default based on space policy
+        let commentsEnabled: number | null = null
+        try {
+          const cp = (settings && settings.comments) ? String(settings.comments).toLowerCase() : 'on'
+          if (cp === 'off') commentsEnabled = 0
+          else {
+            const [uRows] = await db.query(`SELECT default_comments_enabled FROM users WHERE id = ? LIMIT 1`, [currentUserId])
+            const u = (uRows as any[])[0]
+            commentsEnabled = u && u.default_comments_enabled != null ? Number(u.default_comments_enabled) : 1
+          }
+        } catch { commentsEnabled = 1 }
         await db.query(
-          `INSERT INTO space_publications (upload_id, space_id, status, requested_by, approved_by, published_at)
-           VALUES (?, ?, ?, ?, ?, ?)` ,
-          [uploadId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt]
+          `INSERT INTO space_publications (upload_id, space_id, status, requested_by, approved_by, published_at, comments_enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?)` ,
+          [uploadId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt, commentsEnabled]
         )
         created.push(spaceId)
         continue

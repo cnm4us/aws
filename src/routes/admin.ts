@@ -48,10 +48,211 @@ adminRouter.use(requireSiteAdmin);
 adminRouter.get('/roles', async (_req, res) => {
   try {
     const db = getPool();
-    const [rows] = await db.query(`SELECT id, name FROM roles ORDER BY name`);
-    res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name) })) });
+    try {
+      const [rows] = await db.query(`SELECT id, name, scope, space_type FROM roles ORDER BY name`);
+      return res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name), scope: r.scope || null, spaceType: r.space_type || null })) });
+    } catch {
+      const [rows] = await db.query(`SELECT id, name FROM roles ORDER BY name`);
+      return res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name), scope: null, spaceType: null })) });
+    }
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_roles', detail: String(err?.message || err) });
+  }
+});
+
+// ---- Moderation: per-user global hold + suspensions ----
+adminRouter.get('/users/:id/moderation', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    const [uRows] = await db.query(`SELECT require_review_global, credibility_score FROM users WHERE id = ? LIMIT 1`, [userId]);
+    const u = (uRows as any[])[0];
+    if (!u) return res.status(404).json({ error: 'user_not_found' });
+    const [sRows] = await db.query(
+      `SELECT id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by, created_at
+         FROM suspensions
+        WHERE user_id = ? AND (ends_at IS NULL OR ends_at >= NOW())
+        ORDER BY created_at DESC`,
+      [userId]
+    );
+    res.json({
+      userId,
+      requireReviewGlobal: Boolean(Number(u.require_review_global)),
+      credibilityScore: u.credibility_score != null ? Number(u.credibility_score) : 0,
+      activeSuspensions: (sRows as any[]).map((r) => ({
+        id: Number(r.id),
+        targetType: r.target_type,
+        targetId: r.target_id != null ? Number(r.target_id) : null,
+        kind: r.kind,
+        degree: Number(r.degree),
+        startsAt: r.starts_at ? String(r.starts_at) : null,
+        endsAt: r.ends_at ? String(r.ends_at) : null,
+        reason: r.reason || null,
+        createdBy: r.created_by != null ? Number(r.created_by) : null,
+        createdAt: String(r.created_at),
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_get_moderation', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.put('/users/:id/moderation', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const { requireReviewGlobal } = (req.body || {}) as any;
+    const db = getPool();
+    if (requireReviewGlobal !== undefined) {
+      const flag = requireReviewGlobal ? 1 : 0;
+      await db.query(`UPDATE users SET require_review_global = ? WHERE id = ?`, [flag, userId]);
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_update_moderation', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.post('/users/:id/suspensions', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const { scope, spaceId, degree, reason } = (req.body || {}) as any;
+    const deg = Number(degree || 1);
+    if (!['site','space'].includes(String(scope))) return res.status(400).json({ error: 'bad_scope' });
+    if (String(scope) === 'space') {
+      const sid = Number(spaceId);
+      if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    }
+    if (![1,2,3].includes(deg)) return res.status(400).json({ error: 'bad_degree' });
+    // Compute end time based on degrees: 1d, 7d, 30d
+    const days = deg === 1 ? 1 : deg === 2 ? 7 : 30;
+    const db = getPool();
+    const ends = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    await db.query(
+      `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
+       VALUES (?, ?, ?, 'posting', ?, NOW(), ?, ?, ?)`,
+      [userId, String(scope), String(scope) === 'space' ? Number(spaceId) : null, deg, ends, reason ? String(reason).slice(0,255) : null, req.user ? Number(req.user.id) : null]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_create_suspension', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.delete('/users/:id/suspensions/:sid', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const sid = Number(req.params.sid);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ error: 'bad_suspension_id' });
+    const db = getPool();
+    await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ? AND user_id = ?`, [sid, userId]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_revoke_suspension', detail: String(err?.message || err) });
+  }
+});
+
+// ---- Dev utilities: content stats + truncate (admin only) ----
+adminRouter.get('/dev/stats', async (_req, res) => {
+  try {
+    const db = getPool();
+    const [u] = await db.query(`SELECT COUNT(*) AS c FROM uploads`);
+    const [p] = await db.query(`SELECT COUNT(*) AS c FROM productions`);
+    const [sp] = await db.query(`SELECT COUNT(*) AS c FROM space_publications`);
+    const [spe] = await db.query(`SELECT COUNT(*) AS c FROM space_publication_events`);
+    res.json({
+      uploads: Number((u as any[])[0]?.c || 0),
+      productions: Number((p as any[])[0]?.c || 0),
+      spacePublications: Number((sp as any[])[0]?.c || 0),
+      spacePublicationEvents: Number((spe as any[])[0]?.c || 0),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_fetch_stats', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.post('/dev/truncate-content', async (_req, res) => {
+  try {
+    const db = getPool();
+    const tables = ['space_publication_events', 'space_publications', 'productions', 'uploads', 'action_log'];
+    for (const t of tables) {
+      try { await db.query(`DELETE FROM ${t}`); } catch {}
+    }
+    const [u] = await db.query(`SELECT COUNT(*) AS c FROM uploads`);
+    const [p] = await db.query(`SELECT COUNT(*) AS c FROM productions`);
+    const [sp] = await db.query(`SELECT COUNT(*) AS c FROM space_publications`);
+    const [spe] = await db.query(`SELECT COUNT(*) AS c FROM space_publication_events`);
+    res.json({ ok: true, remaining: {
+      uploads: Number((u as any[])[0]?.c || 0),
+      productions: Number((p as any[])[0]?.c || 0),
+      spacePublications: Number((sp as any[])[0]?.c || 0),
+      spacePublicationEvents: Number((spe as any[])[0]?.c || 0),
+    }});
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_truncate', detail: String(err?.message || err) });
+  }
+});
+// Site role assignments for a user (user_roles)
+adminRouter.get('/users/:id/roles', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT r.name
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = ?
+        ORDER BY r.name`,
+      [userId]
+    );
+    const roleNames = (rows as any[]).map((r) => String(r.name));
+    res.json({ roles: roleNames });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_get_user_roles', detail: String(err?.message || err) });
+  }
+});
+
+adminRouter.put('/users/:id/roles', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const rolesIn = Array.isArray((req.body || {}).roles) ? (req.body.roles as any[]) : [];
+    const normalized = rolesIn.map((r: any) => String(r || '').trim()).filter((r) => r.length > 0);
+    const db = getPool();
+    // Fetch site-scoped roles (or infer by name prefix 'site_')
+    let siteRoleRows: any[] = [];
+    try {
+      const [rows] = await db.query(`SELECT id, name FROM roles WHERE scope = 'site'`);
+      siteRoleRows = rows as any[];
+    } catch {
+      const [rows] = await db.query(`SELECT id, name FROM roles WHERE name LIKE 'site\\_%'`);
+      siteRoleRows = rows as any[];
+    }
+    const idByName = new Map<string, number>();
+    siteRoleRows.forEach((r) => idByName.set(String(r.name), Number(r.id)));
+
+    // Build target set of role ids
+    const targetIds = new Set<number>();
+    for (const name of normalized) {
+      const rid = idByName.get(name);
+      if (rid) targetIds.add(rid);
+    }
+
+    // Remove current site roles and re-insert target set (replace-all strategy)
+    const roleIdsCsv = [...idByName.values()].join(',');
+    if (roleIdsCsv.length) {
+      await db.query(`DELETE ur FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? AND r.id IN (${roleIdsCsv})`, [userId]);
+    }
+    for (const rid of targetIds) {
+      await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, [userId, rid]);
+    }
+    res.json({ ok: true, roles: normalized.filter((n) => idByName.has(n)) });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
   }
 });
 
@@ -285,10 +486,26 @@ adminRouter.get('/users/:id/spaces', async (req, res) => {
       [userId]
     );
     const map: Record<number, { id: number; type: string; name: string; slug: string; roles: string[] }> = {};
+    const normalizeRole = (n: string): string | null => {
+      const name = String(n || '').toLowerCase();
+      if (name === 'group_admin' || name === 'channel_admin' || name === 'space_admin') return 'space_admin';
+      if (name === 'group_member' || name === 'channel_member' || name === 'member' || name === 'viewer' || name === 'subscriber' || name === 'uploader' || name === 'space_member') return 'space_member';
+      if (name === 'publisher' || name === 'contributor' || name === 'space_poster') return 'space_poster';
+      if (name === 'space_moderator' || name === 'moderator') return 'space_moderator';
+      if (name === 'space_subscriber') return 'space_subscriber';
+      return null; // drop anything else
+    };
     for (const row of rows as any[]) {
       const sid = Number(row.space_id);
       if (!map[sid]) map[sid] = { id: sid, type: String(row.type), name: row.name, slug: row.slug, roles: [] };
-      map[sid].roles.push(String(row.role_name));
+      const norm = normalizeRole(String(row.role_name));
+      if (norm) map[sid].roles.push(norm);
+    }
+    // De-duplicate and order roles sensibly
+    for (const sid of Object.keys(map)) {
+      const set = new Set<string>(map[Number(sid)].roles);
+      const order = ['space_admin','space_moderator','space_member','space_poster','space_subscriber'];
+      map[Number(sid)].roles = order.filter((r) => set.has(r));
     }
     res.json({ spaces: Object.values(map) });
   } catch (err: any) {
@@ -322,11 +539,30 @@ adminRouter.put('/spaces/:id', async (req, res) => {
   try {
     const spaceId = Number(req.params.id);
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const { name } = (req.body || {}) as any;
+    const { name, commentsPolicy } = (req.body || {}) as any;
     const title = (name ? String(name) : '').trim();
-    if (!title) return res.status(400).json({ error: 'invalid_name' });
     const db = getPool();
-    const [result] = await db.query(`UPDATE spaces SET name = ? WHERE id = ?`, [title, spaceId]);
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (title) { updates.push('name = ?'); params.push(title); }
+
+    if (commentsPolicy !== undefined) {
+      // Update JSON settings -> settings.comments = 'on'|'off'|'inherit'
+      const [rows] = await db.query(`SELECT settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
+      const srow = (rows as any[])[0];
+      if (!srow) return res.status(404).json({ error: 'space_not_found' });
+      let settings: any = {};
+      try { settings = typeof srow.settings === 'string' ? JSON.parse(srow.settings) : (srow.settings || {}); } catch { settings = {}; }
+      const cp = String(commentsPolicy || '').toLowerCase();
+      if (!['on','off','inherit'].includes(cp)) return res.status(400).json({ error: 'bad_comments_policy' });
+      settings = { ...(settings || {}), comments: cp };
+      updates.push('settings = ?'); params.push(JSON.stringify(settings));
+    }
+
+    if (!updates.length) return res.status(400).json({ error: 'no_fields_to_update' });
+    params.push(spaceId);
+    const [result] = await db.query(`UPDATE spaces SET ${updates.join(', ')} WHERE id = ?`, params);
     if ((result as any).affectedRows === 0) return res.status(404).json({ error: 'space_not_found' });
     res.json({ ok: true });
   } catch (err: any) {

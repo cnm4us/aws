@@ -48,6 +48,41 @@
         <h3>Memberships</h3>
         <div id="spaces"></div>
       </div>
+
+      <div class="section">
+        <h3>Site Roles</h3>
+        <div id="siteRolesBox" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <button class="btn" id="saveSiteRoles">Save Site Roles</button>
+        </div>
+        <div class="status" id="rolesStatus"></div>
+      </div>
+
+      <div class="section">
+        <h3>Moderation</h3>
+        <div class="field" style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="requireReviewGlobal" />
+          <label for="requireReviewGlobal">Require review for this member's posts to global feed</label>
+        </div>
+        <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label>Apply posting suspension:</label>
+          <select id="suspScope">
+            <option value="site">Site-wide</option>
+            <option value="space">Specific space</option>
+          </select>
+          <input type="number" id="suspSpaceId" placeholder="Space ID" style="width:140px;" />
+          <select id="suspDegree">
+            <option value="1">1st Degree (1 day)</option>
+            <option value="2">2nd Degree (7 days)</option>
+            <option value="3">3rd Degree (30 days)</option>
+          </select>
+          <input type="text" id="suspReason" placeholder="Reason (optional)" />
+          <button class="btn" id="applySusp">Apply</button>
+        </div>
+        <div class="status" id="moderationStatus"></div>
+        <h4 style="margin-top:14px;">Active Suspensions</h4>
+        <table><thead><tr><th>ID</th><th>Scope</th><th>Target</th><th>Degree</th><th>Ends</th><th>Reason</th><th>Actions</th></tr></thead><tbody id="suspRows"></tbody></table>
+      </div>
     </main>
     <script>
       const params = new URLSearchParams(location.search);
@@ -56,19 +91,96 @@
       const csrf=()=>{const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);return m?decodeURIComponent(m[1]):null};
       const headers=()=>{const h={'Content-Type':'application/json'};const t=csrf();if(t)h['x-csrf-token']=t;return h};
 
+      let allRoles = [];
+      let assignedSiteRoles = new Set();
+
+      function filterSiteRoles(roles){
+        return roles.filter(r => /^site_/.test(String(r.name||'')))
+      }
+
+      function renderSiteRoles(){
+        const box = document.getElementById('siteRolesBox');
+        box.innerHTML = '';
+        const siteRoles = filterSiteRoles(allRoles);
+        siteRoles.forEach(r => {
+          const id = `site_role_${r.name}`;
+          const label = document.createElement('label');
+          label.style.display = 'flex';
+          label.style.gap = '6px';
+          label.style.alignItems = 'center';
+          const checked = assignedSiteRoles.has(r.name) ? 'checked' : '';
+          label.innerHTML = `<input type="checkbox" data-role="${r.name}" ${checked}/> ${r.name}`;
+          box.appendChild(label);
+        })
+      }
+
+      function renderSuspensions(list){
+        const tbody = document.getElementById('suspRows');
+        tbody.innerHTML='';
+        (list||[]).forEach(s => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${s.id}</td><td>${s.targetType}</td><td>${s.targetId || ''}</td><td>${s.degree}</td><td>${s.endsAt || ''}</td><td>${s.reason || ''}</td><td><button class="btn danger" data-sid="${s.id}">Revoke</button></td>`;
+          tbody.appendChild(tr);
+        });
+        tbody.querySelectorAll('button[data-sid]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const sid = Number(e.currentTarget.getAttribute('data-sid'));
+            const headers = (()=>{ const h={'Content-Type':'application/json'}; const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); if(m) h['x-csrf-token']=decodeURIComponent(m[1]); return h; })();
+            try {
+              const res = await fetch(`/api/admin/users/${userId}/suspensions/${sid}`, { method:'DELETE', headers, credentials:'same-origin' });
+              if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed') }
+              document.getElementById('moderationStatus').textContent='Revoked';
+              document.getElementById('moderationStatus').className='status ok';
+              await loadModeration();
+            } catch(e){ const s=document.getElementById('moderationStatus'); s.textContent=e?.message||'Failed to revoke'; s.className='status error'; }
+          });
+        });
+      }
+
+      async function loadModeration(){
+        try{
+          const res = await fetch(`/api/admin/users/${userId}/moderation`, { credentials:'same-origin' });
+          const data = await res.json();
+          document.getElementById('requireReviewGlobal').checked = !!data.requireReviewGlobal;
+          renderSuspensions(data.activeSuspensions || []);
+        } catch (e){ /* ignore */ }
+      }
+
       async function load(){
         if(!userId) { document.getElementById('status').textContent='Bad user id'; return }
         try{
+          // Load role catalog first
+          const rolesRes = await fetch('/api/admin/roles', { credentials:'same-origin' });
+          const rolesJson = await rolesRes.json();
+          allRoles = rolesJson.roles || [];
+
           const res = await fetch(`/api/admin/users/${userId}`, { credentials:'same-origin' });
           const u = await res.json();
-          document.getElementById('title').textContent = `User #${u.id}`;
-          document.getElementById('email').value = u.email||'';
-          document.getElementById('displayName').value = u.displayName||'';
-          document.getElementById('phoneNumber').value = u.phoneNumber||'';
-          document.getElementById('verificationLevel').value = u.verificationLevel||0;
-          document.getElementById('kycStatus').value = u.kycStatus||'none';
-          document.getElementById('canCreateGroup').value = u.canCreateGroup===true ? 'true' : u.canCreateGroup===false ? 'false' : '';
-          document.getElementById('canCreateChannel').value = u.canCreateChannel===true ? 'true' : u.canCreateChannel===false ? 'false' : '';
+          const titleEl = document.getElementById('title');
+          const emailEl = document.getElementById('email');
+          const dnEl = document.getElementById('displayName');
+          const phoneEl = document.getElementById('phoneNumber');
+          const verEl = document.getElementById('verificationLevel');
+          const kycEl = document.getElementById('kycStatus');
+          const cgEl = document.getElementById('canCreateGroup');
+          const ccEl = document.getElementById('canCreateChannel');
+
+          const email = (u && (u.email || u.user_email)) || '';
+          const displayName = (u && (u.displayName || u.display_name)) || '';
+          const phoneNumber = (u && (u.phoneNumber || u.phone_number)) || '';
+          const verificationLevel = (u && (u.verificationLevel != null ? u.verificationLevel : u.verification_level)) || 0;
+          const kycStatus = (u && (u.kycStatus || u.kyc_status)) || 'none';
+          const canCreateGroup = (u && (u.canCreateGroup != null ? u.canCreateGroup : u.can_create_group))
+          const canCreateChannel = (u && (u.canCreateChannel != null ? u.canCreateChannel : u.can_create_channel))
+
+          if (titleEl) titleEl.textContent = `User #${u.id}`;
+          if (emailEl) emailEl.value = email;
+          if (dnEl) dnEl.value = displayName;
+          if (phoneEl) phoneEl.value = phoneNumber;
+          if (verEl) verEl.value = verificationLevel;
+          if (kycEl) kycEl.value = kycStatus;
+          if (cgEl) cgEl.value = canCreateGroup===true ? 'true' : canCreateGroup===false ? 'false' : '';
+          if (ccEl) ccEl.value = canCreateChannel===true ? 'true' : canCreateChannel===false ? 'false' : '';
 
           const sres = await fetch(`/api/admin/users/${userId}/spaces`, { credentials:'same-origin' });
           const sj = await sres.json();
@@ -81,6 +193,13 @@
             div.innerHTML = `<strong>${sp.type.toUpperCase()}</strong> • <a href="${path}">${sp.name}</a> <span style="color:#666; margin-left:8px;">Roles: ${(sp.roles||[]).join(', ')}</span>`;
             container.appendChild(div);
           })
+
+          // Load user's site roles
+          const urRes = await fetch(`/api/admin/users/${userId}/roles`, { credentials:'same-origin' });
+          const ur = await urRes.json();
+          assignedSiteRoles = new Set(ur.roles || []);
+          renderSiteRoles();
+          await loadModeration();
         }catch(e){ const s=document.getElementById('status'); s.textContent='Failed to load user'; s.className='status error' }
       }
 
@@ -111,6 +230,45 @@
       }
       document.getElementById('saveBtn').addEventListener('click', save);
       document.getElementById('deleteBtn').addEventListener('click', softDelete);
+      document.getElementById('saveSiteRoles').addEventListener('click', async () => {
+        const roles = [...document.querySelectorAll('#siteRolesBox input[type=checkbox]')].filter(b => b.checked).map(b => b.getAttribute('data-role'));
+        const headers = (()=>{ const h={'Content-Type':'application/json'}; const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); if(m) h['x-csrf-token']=decodeURIComponent(m[1]); return h; })();
+        try{
+          const res = await fetch(`/api/admin/users/${userId}/roles`, { method:'PUT', headers, credentials:'same-origin', body: JSON.stringify({ roles }) });
+          if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed') }
+          document.getElementById('rolesStatus').textContent='Saved';
+          document.getElementById('rolesStatus').className='status ok';
+        }catch(e){ const s=document.getElementById('rolesStatus'); s.textContent=e?.message||'Failed to save roles'; s.className='status error' }
+      });
+      document.getElementById('requireReviewGlobal').addEventListener('change', async (e) => {
+        const headers = (()=>{ const h={'Content-Type':'application/json'}; const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); if(m) h['x-csrf-token']=decodeURIComponent(m[1]); return h; })();
+        try{
+          const res = await fetch(`/api/admin/users/${userId}/moderation`, { method:'PUT', headers, credentials:'same-origin', body: JSON.stringify({ requireReviewGlobal: (e && e.target) ? e.target.checked : false }) });
+          if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed') }
+          document.getElementById('moderationStatus').textContent='Updated';
+          document.getElementById('moderationStatus').className='status ok';
+        }catch(err){ const s=document.getElementById('moderationStatus'); s.textContent=err?.message||'Failed to update'; s.className='status error'; }
+      });
+      document.getElementById('applySusp').addEventListener('click', async () => {
+        const scopeEl = document.getElementById('suspScope');
+        const spaceEl = document.getElementById('suspSpaceId');
+        const degreeEl = document.getElementById('suspDegree');
+        const reasonEl = document.getElementById('suspReason');
+        const scope = scopeEl ? scopeEl.value : 'site';
+        const spaceIdRaw = spaceEl ? spaceEl.value : '';
+        const degree = Number(degreeEl ? degreeEl.value : 1);
+        const reason = reasonEl ? reasonEl.value : '';
+        const payload = { scope, degree, reason };
+        if (scope === 'space') payload.spaceId = Number(spaceIdRaw);
+        const headers = (()=>{ const h={'Content-Type':'application/json'}; const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); if(m) h['x-csrf-token']=decodeURIComponent(m[1]); return h; })();
+        try{
+          const res = await fetch(`/api/admin/users/${userId}/suspensions`, { method:'POST', headers, credentials:'same-origin', body: JSON.stringify(payload) });
+          if(!res.ok){ const err=await res.json().catch(()=>({})); throw new Error(err?.detail||err?.error||'Failed') }
+          document.getElementById('moderationStatus').textContent='Suspension applied';
+          document.getElementById('moderationStatus').className='status ok';
+          await loadModeration();
+        }catch(err){ const s=document.getElementById('moderationStatus'); s.textContent=err?.message||'Failed to apply'; s.className='status error'; }
+      });
       load();
     </script>
   </body>

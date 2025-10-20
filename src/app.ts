@@ -83,11 +83,27 @@ export function buildServer(): express.Application {
           WHERE usr.user_id = ?`,
         [user.id]
       );
+      const normalizeRole = (n: string): string | null => {
+        const name = String(n || '').toLowerCase();
+        if (name === 'group_admin' || name === 'channel_admin' || name === 'space_admin') return 'space_admin';
+        if (name === 'group_member' || name === 'channel_member' || name === 'member' || name === 'viewer' || name === 'subscriber' || name === 'uploader' || name === 'space_member') return 'space_member';
+        if (name === 'publisher' || name === 'contributor' || name === 'space_poster') return 'space_poster';
+        if (name === 'space_moderator' || name === 'moderator') return 'space_moderator';
+        if (name === 'space_subscriber') return 'space_subscriber';
+        return null;
+      };
       const spaceRoles: Record<string, string[]> = {};
       for (const row of spaceRoleRows as any[]) {
         const sid = String(row.space_id);
         if (!spaceRoles[sid]) spaceRoles[sid] = [];
-        spaceRoles[sid].push(String(row.name));
+        const norm = normalizeRole(String(row.name));
+        if (norm) spaceRoles[sid].push(norm);
+      }
+      // Deduplicate and order
+      for (const sid of Object.keys(spaceRoles)) {
+        const set = new Set<string>(spaceRoles[sid]);
+        const order = ['space_admin','space_moderator','space_member','space_poster','space_subscriber'];
+        spaceRoles[sid] = order.filter((r) => set.has(r));
       }
 
       const [personal] = await db.query(
@@ -103,7 +119,7 @@ export function buildServer(): express.Application {
         userId: user.id,
         email: user.email,
         displayName: user.display_name,
-        roles,
+        roles: roles.filter((r: string) => /^site_/.test(String(r))),
         spaceRoles,
         personalSpace,
       });
@@ -217,8 +233,9 @@ export function buildServer(): express.Application {
         [userId, dn || e, slug, JSON.stringify(settings)]
       );
       const spaceId = (insSpace as any).insertId as number;
-      await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('uploader')`, [userId]);
-      await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('publisher','member')`, [userId, spaceId]);
+      // Assign default roles using new catalog
+      await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name IN ('site_member')`, [userId]);
+      await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) SELECT ?, ?, id FROM roles WHERE name IN ('space_member','space_poster')`, [userId, spaceId]);
       res.json({ ok: true, userId, space: { id: spaceId, slug } });
     } catch (err: any) {
       const msg = String(err?.message || err);
