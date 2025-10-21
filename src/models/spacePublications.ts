@@ -4,6 +4,7 @@ type JsonValue = Record<string, any> | Array<any> | string | number | boolean | 
 
 export type SpacePublicationCreateInput = {
   uploadId: number;
+  productionId?: number | null;
   spaceId: number;
   status?: SpacePublicationStatus;
   requestedBy?: number | null;
@@ -11,6 +12,9 @@ export type SpacePublicationCreateInput = {
   isPrimary?: boolean;
   visibility?: SpacePublicationVisibility;
   distributionFlags?: JsonValue;
+  ownerUserId?: number | null;
+  visibleInSpace?: boolean;
+  visibleInGlobal?: boolean;
   publishedAt?: Date | string | null;
   unpublishedAt?: Date | string | null;
 };
@@ -83,14 +87,32 @@ export async function createSpacePublication(input: SpacePublicationCreateInput,
   const isPrimary = input.isPrimary ? 1 : 0;
   const visibility = input.visibility ?? 'inherit';
   const distribution = input.distributionFlags == null ? null : JSON.stringify(input.distributionFlags);
+  const ownerUserId = input.ownerUserId ?? null;
+  const visibleInSpace = input.visibleInSpace === undefined ? 1 : (input.visibleInSpace ? 1 : 0);
+  const visibleInGlobal = input.visibleInGlobal === undefined ? 0 : (input.visibleInGlobal ? 1 : 0);
   const publishedAt = input.publishedAt ? new Date(input.publishedAt).toISOString().slice(0, 19).replace('T', ' ') : null;
   const unpublishedAt = input.unpublishedAt ? new Date(input.unpublishedAt).toISOString().slice(0, 19).replace('T', ' ') : null;
 
   const [result] = await conn.query(
     `INSERT INTO space_publications
-       (upload_id, space_id, status, requested_by, approved_by, is_primary, visibility, distribution_flags, published_at, unpublished_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [input.uploadId, input.spaceId, status, requestedBy, approvedBy, isPrimary, visibility, distribution, publishedAt, unpublishedAt]
+       (upload_id, production_id, space_id, status, requested_by, approved_by, is_primary, visibility, distribution_flags, owner_user_id, visible_in_space, visible_in_global, published_at, unpublished_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.uploadId,
+      input.productionId ?? null,
+      input.spaceId,
+      status,
+      requestedBy,
+      approvedBy,
+      isPrimary,
+      visibility,
+      distribution,
+      ownerUserId,
+      visibleInSpace,
+      visibleInGlobal,
+      publishedAt,
+      unpublishedAt,
+    ]
   );
 
   const insertId = Number((result as any).insertId);

@@ -43,6 +43,7 @@ type MySpacesResponse = {
 
 type FeedMode =
   | { kind: 'legacy' }
+  | { kind: 'global' }
   | { kind: 'space'; spaceId: number }
 
 function swapOrientation(url: string): { portrait?: string; landscape?: string } {
@@ -100,6 +101,21 @@ async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; l
   if (opts.cursor) params.set('cursor', opts.cursor)
   const res = await fetch(`/api/spaces/${spaceId}/feed?${params.toString()}`)
   if (!res.ok) throw new Error('failed to fetch space feed')
+  const payload = await res.json()
+  const items = Array.isArray(payload?.items)
+    ? payload.items.map((entry: any) =>
+        buildUploadItem(entry.upload, entry.owner ? { id: entry.owner.id ?? null, displayName: entry.owner.displayName ?? null, email: entry.owner.email ?? null } : null, entry.publication ?? null)
+      )
+    : []
+  const nextCursor = typeof payload?.nextCursor === 'string' && payload.nextCursor.length ? payload.nextCursor : null
+  return { items, nextCursor }
+}
+
+async function fetchGlobalFeed(opts: { cursor?: string | null; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
+  if (opts.cursor) params.set('cursor', opts.cursor)
+  const res = await fetch(`/api/feed/global?${params.toString()}`)
+  if (!res.ok) throw new Error('failed to fetch global feed')
   const payload = await res.json()
   const items = Array.isArray(payload?.items)
     ? payload.items.map((entry: any) =>
@@ -234,6 +250,10 @@ export default function Feed() {
         let fetchedItems: UploadItem[] = []
         if (feedMode.kind === 'space') {
           const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId)
+          fetchedItems = applyMineFilter(page, mineOnly, myUserId)
+          nextCursor = cursorStr
+        } else if (feedMode.kind === 'global') {
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed()
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else {
@@ -509,6 +529,11 @@ export default function Feed() {
               const filtered = applyMineFilter(page, mineOnly, myUserId)
               setItems((prev) => prev.concat(filtered))
               setCursor(nextCursor)
+            } else if (feedMode.kind === 'global') {
+              const { items: page, nextCursor } = await fetchGlobalFeed({ cursor })
+              const filtered = applyMineFilter(page, mineOnly, myUserId)
+              setItems((prev) => prev.concat(filtered))
+              setCursor(nextCursor)
             } else {
               const nextCursorNum = Number(cursor)
               if (!Number.isFinite(nextCursorNum) || nextCursorNum <= 0) {
@@ -715,10 +740,18 @@ export default function Feed() {
     setDrawerOpen(false)
   }
 
+  const handleSelectGlobal = () => {
+    setFeedMode({ kind: 'global' })
+    setDrawerOpen(false)
+  }
+
   const currentFeedLabel = useMemo(() => {
     if (feedMode.kind === 'space') {
       const match = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId)
       return match ? match.name : 'Selected Space'
+    }
+    if (feedMode.kind === 'global') {
+      return mineOnly ? 'My Global Feed' : 'Global Feed'
     }
     return mineOnly ? 'My Completed Videos' : 'All Completed Videos'
   }, [feedMode, mineOnly, spaceList])
@@ -772,18 +805,19 @@ export default function Feed() {
       return <div style={{ color: '#fff', fontSize: 15 }}>Login to switch spaces.</div>
     }
     const entries: JSX.Element[] = []
+    // Global aggregator button
     entries.push(
       <button
-        key="legacy"
-        onClick={handleSelectLegacy}
+        key="global"
+        onClick={handleSelectGlobal}
         style={{
           width: '100%',
           textAlign: 'left',
           padding: '12px 14px',
           borderRadius: 10,
           marginBottom: 12,
-          border: feedMode.kind === 'legacy' ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
-          background: feedMode.kind === 'legacy' ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
+          border: feedMode.kind === 'global' ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
+          background: feedMode.kind === 'global' ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
           color: '#fff',
           fontSize: 15,
           display: 'flex',
@@ -791,10 +825,14 @@ export default function Feed() {
           justifyContent: 'space-between',
         }}
       >
-        Global Archive
-        <span style={{ fontSize: 12, opacity: 0.8 }}>Legacy</span>
+        Global
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Feed</span>
       </button>
     )
+    // Optionally keep legacy archive for dev
+    // entries.push(
+    //   <button key="legacy" onClick={handleSelectLegacy} ...>Global Archive<span>Legacy</span></button>
+    // )
     if (spaceList?.global) entries.push(renderSpaceButton(spaceList.global, 'Global'))
     if (spaceList?.personal) entries.push(renderSpaceButton(spaceList.personal, 'Personal'))
     if (spaceList?.groups?.length) {

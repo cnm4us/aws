@@ -79,6 +79,20 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
         const requireApproval = (String(space.type) === 'group' ? siteRequireGroup : String(space.type) === 'channel' ? siteRequireChannel : false) || spaceReq
         const status = requireApproval ? 'pending' : 'published'
         const publishedAt = requireApproval ? null : new Date()
+        // Visibility flags
+        const isPersonal = String(space.type) === 'personal'
+        const visibleInSpace = 1
+        const visibleInGlobal = isPersonal ? 1 : 0
+        // Best-effort: pick latest completed production for this upload (optional)
+        let productionId: number | null = null
+        try {
+          const [pRows] = await db.query(
+            `SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`,
+            [uploadId]
+          )
+          const prow = (pRows as any[])[0]
+          if (prow) productionId = Number(prow.id)
+        } catch {}
         // Determine comments_enabled default based on space policy
         let commentsEnabled: number | null = null
         try {
@@ -91,9 +105,9 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
           }
         } catch { commentsEnabled = 1 }
         await db.query(
-          `INSERT INTO space_publications (upload_id, space_id, status, requested_by, approved_by, published_at, comments_enabled)
-           VALUES (?, ?, ?, ?, ?, ?, ?)` ,
-          [uploadId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt, commentsEnabled]
+          `INSERT INTO space_publications (upload_id, production_id, space_id, status, requested_by, approved_by, published_at, comments_enabled, owner_user_id, visible_in_space, visible_in_global)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+          [uploadId, productionId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt, commentsEnabled, ownerId, visibleInSpace, visibleInGlobal]
         )
         created.push(spaceId)
         continue
@@ -104,12 +118,43 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
         activated.push(spaceId)
         continue
       }
-      await db.query(
-        `UPDATE space_publications
-            SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
-          WHERE upload_id = ? AND space_id = ?`,
-        [currentUserId, uploadId, spaceId]
-      )
+      // For existing rows, ensure ownership and visibility flags are sane for personal spaces
+      try {
+        const [spaceRows] = await db.query(`SELECT id, type FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+        const space = (spaceRows as any[])[0]
+        const isPersonal = space && String(space.type) === 'personal'
+        const promoteGlobal = isPersonal ? 1 : 0
+        // Best-effort fill production_id if missing
+        let productionId: number | null = null
+        try {
+          const [pRows] = await db.query(
+            `SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`,
+            [uploadId]
+          )
+          const prow = (pRows as any[])[0]
+          if (prow) productionId = Number(prow.id)
+        } catch {}
+        await db.query(
+          `UPDATE space_publications
+              SET status = 'published',
+                  approved_by = ?,
+                  published_at = NOW(),
+                  unpublished_at = NULL,
+                  owner_user_id = COALESCE(owner_user_id, ?),
+                  visible_in_space = 1,
+                  visible_in_global = CASE WHEN ? = 1 THEN 1 ELSE visible_in_global END,
+                  production_id = COALESCE(production_id, ?)
+            WHERE upload_id = ? AND space_id = ?`,
+          [currentUserId, ownerId, promoteGlobal, productionId, uploadId, spaceId]
+        )
+      } catch {
+        await db.query(
+          `UPDATE space_publications
+              SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
+            WHERE upload_id = ? AND space_id = ?`,
+          [currentUserId, uploadId, spaceId]
+        )
+      }
       activated.push(spaceId)
     }
 

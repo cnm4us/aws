@@ -329,6 +329,7 @@ export async function ensureSchema(db: DB) {
     CREATE TABLE IF NOT EXISTS space_publications (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       upload_id BIGINT UNSIGNED NOT NULL,
+      production_id BIGINT UNSIGNED NULL,
       space_id BIGINT UNSIGNED NOT NULL,
       status ENUM('draft','pending','approved','published','unpublished','rejected') NOT NULL DEFAULT 'draft',
       requested_by BIGINT UNSIGNED NULL,
@@ -336,13 +337,20 @@ export async function ensureSchema(db: DB) {
       is_primary TINYINT(1) NOT NULL DEFAULT 0,
       visibility ENUM('inherit','members','public') NOT NULL DEFAULT 'inherit',
       distribution_flags JSON NULL,
+      owner_user_id BIGINT UNSIGNED NULL,
+      visible_in_space TINYINT(1) NOT NULL DEFAULT 1,
+      visible_in_global TINYINT(1) NOT NULL DEFAULT 0,
       comments_enabled TINYINT(1) NULL,
       published_at DATETIME NULL,
       unpublished_at DATETIME NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_space_publications_upload_space (upload_id, space_id),
+      UNIQUE KEY uniq_space_publications_production_space (production_id, space_id),
       KEY idx_space_publications_space_status (space_id, status, published_at, id),
+      KEY idx_space_publications_space_feed (space_id, status, visible_in_space, published_at, id),
+      KEY idx_space_publications_global_feed (visible_in_global, status, published_at, id),
+      KEY idx_space_publications_owner_feed (owner_user_id, status, published_at, id),
       KEY idx_space_publications_upload (upload_id),
       KEY idx_space_publications_primary (is_primary)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -351,6 +359,16 @@ export async function ensureSchema(db: DB) {
   // Comments policy related columns
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS default_comments_enabled TINYINT(1) NOT NULL DEFAULT 1`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_enabled TINYINT(1) NULL`);
+  // Publication-centric + visibility columns for upgrades (idempotent)
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS production_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_space TINYINT(1) NOT NULL DEFAULT 1`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
+  // Supporting indexes (best-effort)
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_space_publications_production_space ON space_publications (production_id, space_id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publications_space_feed ON space_publications (space_id, status, visible_in_space, published_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publications_global_feed ON space_publications (visible_in_global, status, published_at, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publications_owner_feed ON space_publications (owner_user_id, status, published_at, id)`); } catch {}
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS space_publication_events (
