@@ -54,7 +54,7 @@ function defaultSettings(type: 'group' | 'channel'): any {
   return {
     visibility: 'members_only',
     membership: 'invite',
-    publishing: { requireApproval: false, targets: ['channel'] },
+    publishing: { requireApproval: true, targets: ['channel'] },
     limits: {},
   };
 }

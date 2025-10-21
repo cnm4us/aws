@@ -53,6 +53,18 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
     const created: number[] = []
     const activated: number[] = []
 
+    // Fetch site review requirements once for efficiency
+    let siteRequireGroup = false
+    let siteRequireChannel = false
+    try {
+      const [siteRows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`)
+      const site = (siteRows as any[])[0]
+      if (site) {
+        siteRequireGroup = Boolean(Number(site.require_group_review))
+        siteRequireChannel = Boolean(Number(site.require_channel_review))
+      }
+    } catch {}
+
     for (const spaceId of spaces) {
       const existing = existingMap.get(spaceId)
       if (!existing) {
@@ -60,7 +72,11 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
         const space = (spaceRows as any[])[0]
         if (!space) continue
         const settings = typeof space.settings === 'string' ? JSON.parse(space.settings) : space.settings
-        const requireApproval = Boolean(settings?.publishing?.requireApproval)
+        // Effective require = site(type) OR space.publishing.requireApproval (fallback: group=false, channel=true)
+        const spaceReq = settings?.publishing && typeof settings.publishing === 'object' && typeof settings.publishing.requireApproval === 'boolean'
+          ? Boolean(settings.publishing.requireApproval)
+          : (String(space.type) === 'channel')
+        const requireApproval = (String(space.type) === 'group' ? siteRequireGroup : String(space.type) === 'channel' ? siteRequireChannel : false) || spaceReq
         const status = requireApproval ? 'pending' : 'published'
         const publishedAt = requireApproval ? null : new Date()
         // Determine comments_enabled default based on space policy

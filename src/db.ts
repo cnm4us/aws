@@ -280,10 +280,15 @@ export async function ensureSchema(db: DB) {
       id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
       allow_group_creation TINYINT(1) NOT NULL DEFAULT 1,
       allow_channel_creation TINYINT(1) NOT NULL DEFAULT 1,
+      require_group_review TINYINT(1) NOT NULL DEFAULT 0,
+      require_channel_review TINYINT(1) NOT NULL DEFAULT 0,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await db.query(`INSERT IGNORE INTO site_settings (id) VALUES (1)`);
+  // Ensure new columns exist for older schemas
+  await db.query(`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS require_group_review TINYINT(1) NOT NULL DEFAULT 0`);
+  await db.query(`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS require_channel_review TINYINT(1) NOT NULL DEFAULT 0`);
 
   // Suspensions (posting only for now)
   await db.query(`

@@ -25,6 +25,15 @@
           <input type="checkbox" id="allowChannelCreation" />
           Allow members to create channels
         </label>
+        <div style="height:8px"></div>
+        <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+          <input type="checkbox" id="requireGroupReview" />
+          Require Group Review/Approval
+        </label>
+        <label style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+          <input type="checkbox" id="requireChannelReview" />
+          Require Channel Review/Approval
+        </label>
         <button class="btn" id="saveBtn">Save Settings</button>
         <div class="status" id="status"></div>
       </div>
@@ -38,6 +47,8 @@
           const data = await res.json();
           document.getElementById('allowGroupCreation').checked = !!data.allowGroupCreation;
           document.getElementById('allowChannelCreation').checked = !!data.allowChannelCreation;
+          if ('requireGroupReview' in data) document.getElementById('requireGroupReview').checked = !!data.requireGroupReview;
+          if ('requireChannelReview' in data) document.getElementById('requireChannelReview').checked = !!data.requireChannelReview;
         } catch (e) {
           document.getElementById('status').textContent = 'Failed to load settings';
           document.getElementById('status').className = 'status error';
@@ -47,6 +58,8 @@
         const body = {
           allowGroupCreation: document.getElementById('allowGroupCreation').checked,
           allowChannelCreation: document.getElementById('allowChannelCreation').checked,
+          requireGroupReview: document.getElementById('requireGroupReview').checked,
+          requireChannelReview: document.getElementById('requireChannelReview').checked,
         };
         try {
           await fetch('/api/admin/site-settings', { method:'PUT', headers: headers(), credentials:'same-origin', body: JSON.stringify(body) });
@@ -60,4 +73,3 @@
     </script>
   </body>
   </html>
-

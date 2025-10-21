@@ -539,26 +539,47 @@ adminRouter.put('/spaces/:id', async (req, res) => {
   try {
     const spaceId = Number(req.params.id);
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const { name, commentsPolicy } = (req.body || {}) as any;
+    const { name, commentsPolicy, requireReview } = (req.body || {}) as any;
     const title = (name ? String(name) : '').trim();
     const db = getPool();
+
+    // Load current space to get type + settings
+    const [srows] = await db.query(`SELECT type, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
+    const srow = (srows as any[])[0];
+    if (!srow) return res.status(404).json({ error: 'space_not_found' });
+    let settings: any = {};
+    try { settings = typeof srow.settings === 'string' ? JSON.parse(srow.settings) : (srow.settings || {}); } catch { settings = {}; }
+    const spaceType = String(srow.type || '');
 
     const updates: string[] = [];
     const params: any[] = [];
     if (title) { updates.push('name = ?'); params.push(title); }
 
+    let settingsChanged = false;
     if (commentsPolicy !== undefined) {
-      // Update JSON settings -> settings.comments = 'on'|'off'|'inherit'
-      const [rows] = await db.query(`SELECT settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
-      const srow = (rows as any[])[0];
-      if (!srow) return res.status(404).json({ error: 'space_not_found' });
-      let settings: any = {};
-      try { settings = typeof srow.settings === 'string' ? JSON.parse(srow.settings) : (srow.settings || {}); } catch { settings = {}; }
       const cp = String(commentsPolicy || '').toLowerCase();
       if (!['on','off','inherit'].includes(cp)) return res.status(400).json({ error: 'bad_comments_policy' });
       settings = { ...(settings || {}), comments: cp };
-      updates.push('settings = ?'); params.push(JSON.stringify(settings));
+      settingsChanged = true;
     }
+
+    if (requireReview !== undefined) {
+      const rr = Boolean(requireReview);
+      // Enforce site-level requirement precedence
+      const [siteRows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
+      const site = (siteRows as any[])[0];
+      if (!site) return res.status(500).json({ error: 'missing_site_settings' });
+      const siteRequires = spaceType === 'group' ? dbBool(site.require_group_review) : spaceType === 'channel' ? dbBool(site.require_channel_review) : false;
+      if (siteRequires && rr === false) {
+        return res.status(400).json({ error: 'cannot_override_site_policy' });
+      }
+      const pub = { ...(settings?.publishing || {}) };
+      pub.requireApproval = rr;
+      settings = { ...(settings || {}), publishing: pub };
+      settingsChanged = true;
+    }
+
+    if (settingsChanged) { updates.push('settings = ?'); params.push(JSON.stringify(settings)); }
 
     if (!updates.length) return res.status(400).json({ error: 'no_fields_to_update' });
     params.push(spaceId);
@@ -622,12 +643,14 @@ adminRouter.put('/spaces/:id/users/:userId/roles', async (req, res) => {
 adminRouter.get('/site-settings', async (_req, res) => {
   try {
     const db = getPool();
-    const [rows] = await db.query(`SELECT allow_group_creation, allow_channel_creation FROM site_settings WHERE id = 1 LIMIT 1`);
+    const [rows] = await db.query(`SELECT allow_group_creation, allow_channel_creation, require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
     const row = (rows as any[])[0];
     if (!row) return res.status(500).json({ error: 'missing_site_settings' });
     res.json({
       allowGroupCreation: dbBool(row.allow_group_creation),
       allowChannelCreation: dbBool(row.allow_channel_creation),
+      requireGroupReview: dbBool(row.require_group_review),
+      requireChannelReview: dbBool(row.require_channel_review),
     });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_fetch_site_settings', detail: String(err?.message || err) });
@@ -636,16 +659,21 @@ adminRouter.get('/site-settings', async (_req, res) => {
 
 adminRouter.put('/site-settings', async (req, res) => {
   try {
-    const { allowGroupCreation, allowChannelCreation } = req.body || {};
-    if (typeof allowGroupCreation !== 'boolean' || typeof allowChannelCreation !== 'boolean') {
+    const { allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview } = req.body || {};
+    if (
+      typeof allowGroupCreation !== 'boolean' ||
+      typeof allowChannelCreation !== 'boolean' ||
+      typeof requireGroupReview !== 'boolean' ||
+      typeof requireChannelReview !== 'boolean'
+    ) {
       return res.status(400).json({ error: 'invalid_payload' });
     }
     const db = getPool();
     await db.query(
-      `UPDATE site_settings SET allow_group_creation = ?, allow_channel_creation = ? WHERE id = 1`,
-      [allowGroupCreation ? 1 : 0, allowChannelCreation ? 1 : 0]
+      `UPDATE site_settings SET allow_group_creation = ?, allow_channel_creation = ?, require_group_review = ?, require_channel_review = ? WHERE id = 1`,
+      [allowGroupCreation ? 1 : 0, allowChannelCreation ? 1 : 0, requireGroupReview ? 1 : 0, requireChannelReview ? 1 : 0]
     );
-    res.json({ ok: true, allowGroupCreation, allowChannelCreation });
+    res.json({ ok: true, allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_update_site_settings', detail: String(err?.message || err) });
   }
@@ -962,5 +990,5 @@ function defaultSettings(type: 'group' | 'channel'): any {
   if (type === 'group') {
     return { visibility: 'private', membership: 'invite', publishing: { requireApproval: false, targets: ['space'] }, limits: {} };
   }
-  return { visibility: 'members_only', membership: 'invite', publishing: { requireApproval: false, targets: ['channel'] }, limits: {} };
+  return { visibility: 'members_only', membership: 'invite', publishing: { requireApproval: true, targets: ['channel'] }, limits: {} };
 }

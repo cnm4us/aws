@@ -37,8 +37,24 @@ function parseSettings(raw: any): any {
   }
 }
 
-function publishingRequiresApproval(space: SpaceRow | null): boolean {
+async function effectiveRequiresApproval(db: any, space: SpaceRow | null): Promise<boolean> {
   if (!space) return false;
+  // Site-level precedence
+  try {
+    const [rows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
+    const site = (rows as any[])[0];
+    if (site) {
+      const siteRequires = space.type === 'group'
+        ? Boolean(Number(site.require_group_review))
+        : space.type === 'channel'
+          ? Boolean(Number(site.require_channel_review))
+          : false;
+      if (siteRequires) return true;
+    }
+  } catch {
+    // ignore
+  }
+  // Space-level setting
   const settings = parseSettings(space.settings);
   if (settings && typeof settings === 'object') {
     const publishing = settings.publishing;
@@ -46,7 +62,8 @@ function publishingRequiresApproval(space: SpaceRow | null): boolean {
       return publishing.requireApproval;
     }
   }
-  // Default channels to require explicit opt-in? For now default false unless flag set
+  // Fallback to profile defaults: group=false, channel=true
+  if (space.type === 'channel') return true;
   return false;
 }
 
@@ -167,7 +184,7 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    const requireApproval = publishingRequiresApproval(space);
+    const requireApproval = await effectiveRequiresApproval(db, space);
     const now = new Date();
     let status: SpacePublicationStatus = requireApproval ? 'pending' : 'published';
     let approvedBy: number | null = null;
@@ -440,4 +457,3 @@ publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req,
     res.status(500).json({ error: 'failed_to_reject_publication', detail: String(err?.message || err) });
   }
 });
-
