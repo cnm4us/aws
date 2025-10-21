@@ -207,3 +207,8 @@ Open Items to Clarify (blockers for final M1/M2 seeds)
 - Final list of permission keys (dictionary) and their scope mapping.
 - Whether to use generic role names in DB (space_admin) and render profile‑specific labels in UI, or store both variations.
 - Where to store comment‑moderation features (permission keys and UI locations).
+
+Post‑M1 Notes (2025-10-21)
+- Implemented site/space review toggles with precedence (site can enforce per type; space cannot override). Admin UI updated for Settings, Group, Channel pages.
+- Effective review helper applied to publication flows; channels default to require approval.
+- Feeds initiative kicked off; see docs/Feeds_Implementation_Plan.md for the new publication-centric feed plan and rollout steps. Decisions and schema details are in docs/FeedsRBAC_DB.md.
