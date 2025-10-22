@@ -4,6 +4,7 @@ import { getPool } from '../db'
 import { applyAudioNormalization, applyHqTuning, getFirstHlsDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
 import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, OUTPUT_BUCKET, OUTPUT_PREFIX } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
+import { ulid as genUlid } from '../utils/ulid'
 
 export type RenderOptions = {
   upload: any
@@ -44,11 +45,27 @@ export async function startProductionRender(options: RenderOptions) {
   if (keyParts.length >= 3) {
     assetUuid = keyParts[keyParts.length - 2]
   }
+  // Create a production row first to get ULID
+  const configPayload = {
+    ...(config && typeof config === 'object' ? config : {}),
+    profile: profile ?? null,
+    quality: quality ?? null,
+    sound: sound ?? null,
+  }
+  const prodUlid = genUlid()
+  const [preIns] = await db.query(
+    `INSERT INTO productions (upload_id, user_id, status, config, ulid)
+     VALUES (?, ?, 'queued', ?, ?)`,
+    [upload.id, userId, JSON.stringify(configPayload), prodUlid]
+  )
+  const productionId = Number((preIns as any).insertId)
+
   const settings = transformSettings(raw, {
     inputUrl,
     outputBucket: OUTPUT_BUCKET,
     assetId: assetUuid,
     dateYMD: createdDate,
+    productionUlid: prodUlid,
   })
   if (isHq) applyHqTuning(settings)
   if (typeof sound === 'string' && sound.toLowerCase().startsWith('norm')) {
@@ -138,25 +155,14 @@ export async function startProductionRender(options: RenderOptions) {
   const jobId = resp.Job?.Id || null
   const outPrefix = getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${upload.id}/`
 
-  const configPayload = {
-    ...(config && typeof config === 'object' ? config : {}),
-    profile: profile ?? null,
-    quality: quality ?? null,
-    sound: sound ?? null,
-  }
-
   await db.query(
     `UPDATE uploads SET status = 'queued', mediaconvert_job_id = ?, output_prefix = ?, profile = ? WHERE id = ?`,
     [jobId, outPrefix, profile ?? null, upload.id]
   )
-
-  const [insert] = await db.query(
-    `INSERT INTO productions (upload_id, user_id, status, config, mediaconvert_job_id, output_prefix)
-     VALUES (?, ?, 'queued', ?, ?, ?)`,
-    [upload.id, userId, JSON.stringify(configPayload), jobId, outPrefix]
+  await db.query(
+    `UPDATE productions SET mediaconvert_job_id = ?, output_prefix = ? WHERE id = ?`,
+    [jobId, outPrefix, productionId]
   )
-
-  const productionId = Number((insert as any).insertId)
 
   return { jobId, outPrefix, productionId, profile: profile ?? null }
 }

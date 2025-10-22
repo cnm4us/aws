@@ -91,6 +91,7 @@ export async function ensureSchema(db: DB) {
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
+      ulid CHAR(26) NULL,
       status ENUM('pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending',
       config JSON NULL,
       output_prefix VARCHAR(1024) NULL,
@@ -100,11 +101,15 @@ export async function ensureSchema(db: DB) {
       started_at TIMESTAMP NULL DEFAULT NULL,
       completed_at TIMESTAMP NULL DEFAULT NULL,
       updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_productions_ulid (ulid),
       KEY idx_productions_upload (upload_id),
       KEY idx_productions_user (user_id),
       KEY idx_productions_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  // Add new columns/indexes for productions table if upgrading
+  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
 
   // --- RBAC+ core tables ---
   await db.query(`
@@ -345,7 +350,6 @@ export async function ensureSchema(db: DB) {
       unpublished_at DATETIME NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uniq_space_publications_upload_space (upload_id, space_id),
       UNIQUE KEY uniq_space_publications_production_space (production_id, space_id),
       KEY idx_space_publications_space_status (space_id, status, published_at, id),
       KEY idx_space_publications_space_feed (space_id, status, visible_in_space, published_at, id),
@@ -364,6 +368,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_space TINYINT(1) NOT NULL DEFAULT 1`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
+  // Drop legacy unique (upload_id, space_id) if present
+  try { await db.query(`DROP INDEX uniq_space_publications_upload_space ON space_publications`); } catch {}
   // Supporting indexes (best-effort)
   try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_space_publications_production_space ON space_publications (production_id, space_id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_space_publications_space_feed ON space_publications (space_id, status, visible_in_space, published_at, id)`); } catch {}
@@ -523,6 +529,7 @@ export type SpacePublicationVisibility = 'inherit' | 'members' | 'public';
 export type SpacePublicationRow = {
   id: number;
   upload_id: number;
+  production_id?: number | null;
   space_id: number;
   status: SpacePublicationStatus;
   requested_by: number | null;

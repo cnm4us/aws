@@ -621,7 +621,7 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
         u.status AS upload_status,
         u.etag,
         u.mediaconvert_job_id,
-        u.output_prefix,
+        COALESCE(p.output_prefix, u.output_prefix) AS output_prefix,
         u.asset_uuid,
         u.date_ymd,
         u.profile,
@@ -636,6 +636,7 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
         owner.email AS owner_email
       FROM space_publications sp
       JOIN uploads u ON u.id = sp.upload_id
+      LEFT JOIN productions p ON p.id = sp.production_id
       LEFT JOIN users owner ON owner.id = u.user_id
       WHERE ${where.join(' AND ')}
       ORDER BY sp.published_at DESC, sp.id DESC
@@ -779,7 +780,7 @@ spacesRouter.get('/api/feed/global', requireAuth, async (req, res) => {
         u.status AS upload_status,
         u.etag,
         u.mediaconvert_job_id,
-        u.output_prefix,
+        COALESCE(p.output_prefix, u.output_prefix) AS output_prefix,
         u.asset_uuid,
         u.date_ymd,
         u.profile,
@@ -794,6 +795,7 @@ spacesRouter.get('/api/feed/global', requireAuth, async (req, res) => {
         owner.email AS owner_email
       FROM space_publications sp
       JOIN uploads u ON u.id = sp.upload_id
+      LEFT JOIN productions p ON p.id = sp.production_id
       LEFT JOIN users owner ON owner.id = u.user_id
       WHERE ${where.join(' AND ')}
       ORDER BY sp.published_at DESC, sp.id DESC

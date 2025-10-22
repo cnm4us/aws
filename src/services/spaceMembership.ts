@@ -11,16 +11,17 @@ export type SpaceRow = {
   settings?: any;
 };
 
+// Canonical role names use the space_* prefix
 export const MEMBER_ROLES: Record<SpaceType, string[]> = {
-  personal: ['publisher', 'member'],
-  group: ['group_member'],
-  channel: ['channel_member'],
+  personal: ['space_member', 'space_poster'],
+  group: ['space_member'],
+  channel: ['space_member'],
 };
 
 export const ADMIN_ROLES: Record<SpaceType, string[]> = {
-  personal: ['publisher', 'member'],
-  group: ['group_admin', 'group_member'],
-  channel: ['channel_admin', 'channel_member'],
+  personal: ['space_member', 'space_poster'],
+  group: ['space_admin', 'space_member'],
+  channel: ['space_admin', 'space_member'],
 };
 
 export function getDefaultMemberRoles(type: SpaceType): string[] {
@@ -103,12 +104,29 @@ export async function listSpaceMembers(db: DB, spaceId: number): Promise<SpaceMe
       ORDER BY u.display_name IS NULL, u.display_name`,
     [spaceId]
   );
-  return (rows as any[]).map((row) => ({
-    userId: Number(row.id),
-    email: row.email ? String(row.email) : null,
-    displayName: row.display_name ? String(row.display_name) : null,
-    roles: typeof row.roles === 'string' ? row.roles.split(',') : [],
-  }));
+  // Normalize legacy role names to canonical space_* names for display
+  const normalizeRole = (name: string): string | null => {
+    const n = String(name || '').toLowerCase();
+    if (n === 'group_admin' || n === 'channel_admin' || n === 'space_admin') return 'space_admin';
+    if (n === 'group_member' || n === 'channel_member' || n === 'member' || n === 'viewer' || n === 'subscriber' || n === 'uploader' || n === 'space_member') return 'space_member';
+    if (n === 'publisher' || n === 'contributor' || n === 'space_poster') return 'space_poster';
+    if (n === 'space_moderator' || n === 'moderator') return 'space_moderator';
+    if (n === 'space_subscriber') return 'space_subscriber';
+    return null;
+  };
+  const order = ['space_admin','space_moderator','space_member','space_poster','space_subscriber'];
+  return (rows as any[]).map((row) => {
+    const raw = typeof row.roles === 'string' ? row.roles.split(',') : [];
+    const set = new Set<string>();
+    raw.forEach((r: string) => { const norm = normalizeRole(r); if (norm) set.add(norm); });
+    const roles = order.filter((r) => set.has(r));
+    return {
+      userId: Number(row.id),
+      email: row.email ? String(row.email) : null,
+      displayName: row.display_name ? String(row.display_name) : null,
+      roles,
+    };
+  });
 }
 
 export type SpaceInvitationRow = {

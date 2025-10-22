@@ -135,7 +135,11 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res) => {
     const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
     const upload = (rows as any[])[0]
     if (!upload) return res.status(404).json({ error: 'upload_not_found' })
-    if (String(upload.status) !== 'uploaded') return res.status(400).json({ error: 'invalid_state', detail: 'upload not ready for production' })
+    // Allow producing from fresh uploads and from previously completed uploads
+    const upStatus = String(upload.status || '').toLowerCase()
+    if (upStatus !== 'uploaded' && upStatus !== 'completed') {
+      return res.status(400).json({ error: 'invalid_state', detail: 'upload not ready for production' })
+    }
 
     const currentUserId = req.user!.id
     const ownerId = upload.user_id != null ? Number(upload.user_id) : null

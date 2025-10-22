@@ -40,16 +40,6 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
       if (!allowed) return res.status(403).json({ error: 'forbidden' })
     }
 
-    const placeholders = spaces.map(() => '?').join(',')
-    const [existingRows] = await db.query(
-      `SELECT space_id, status FROM space_publications WHERE upload_id = ? AND space_id IN (${placeholders})`,
-      [uploadId, ...spaces]
-    )
-    const existingMap = new Map<number, any>()
-    for (const row of existingRows as any[]) {
-      existingMap.set(Number(row.space_id), row)
-    }
-
     const created: number[] = []
     const activated: number[] = []
 
@@ -66,8 +56,6 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
     } catch {}
 
     for (const spaceId of spaces) {
-      const existing = existingMap.get(spaceId)
-      if (!existing) {
         const [spaceRows] = await db.query(`SELECT id, type, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
         const space = (spaceRows as any[])[0]
         if (!space) continue
@@ -104,58 +92,32 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
             commentsEnabled = u && u.default_comments_enabled != null ? Number(u.default_comments_enabled) : 1
           }
         } catch { commentsEnabled = 1 }
-        await db.query(
-          `INSERT INTO space_publications (upload_id, production_id, space_id, status, requested_by, approved_by, published_at, comments_enabled, owner_user_id, visible_in_space, visible_in_global)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
-          [uploadId, productionId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt, commentsEnabled, ownerId, visibleInSpace, visibleInGlobal]
-        )
-        created.push(spaceId)
-        continue
-      }
-
-      const currentStatus = String(existing.status || '')
-      if (currentStatus === 'published') {
-        activated.push(spaceId)
-        continue
-      }
-      // For existing rows, ensure ownership and visibility flags are sane for personal spaces
-      try {
-        const [spaceRows] = await db.query(`SELECT id, type FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
-        const space = (spaceRows as any[])[0]
-        const isPersonal = space && String(space.type) === 'personal'
-        const promoteGlobal = isPersonal ? 1 : 0
-        // Best-effort fill production_id if missing
-        let productionId: number | null = null
-        try {
-          const [pRows] = await db.query(
-            `SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`,
-            [uploadId]
+        // If the same production is already published in this space, activate it; otherwise insert new
+        let existsForProduction: any = null
+        if (productionId != null) {
+          const [eRows] = await db.query(`SELECT id, status FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`, [productionId, spaceId])
+          existsForProduction = (eRows as any[])[0] || null
+        }
+        if (!existsForProduction) {
+          await db.query(
+            `INSERT INTO space_publications (upload_id, production_id, space_id, status, requested_by, approved_by, published_at, comments_enabled, owner_user_id, visible_in_space, visible_in_global)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+            [uploadId, productionId, spaceId, status, currentUserId, requireApproval ? null : currentUserId, publishedAt, commentsEnabled, ownerId, visibleInSpace, visibleInGlobal]
           )
-          const prow = (pRows as any[])[0]
-          if (prow) productionId = Number(prow.id)
-        } catch {}
-        await db.query(
-          `UPDATE space_publications
-              SET status = 'published',
-                  approved_by = ?,
-                  published_at = NOW(),
-                  unpublished_at = NULL,
-                  owner_user_id = COALESCE(owner_user_id, ?),
-                  visible_in_space = 1,
-                  visible_in_global = CASE WHEN ? = 1 THEN 1 ELSE visible_in_global END,
-                  production_id = COALESCE(production_id, ?)
-            WHERE upload_id = ? AND space_id = ?`,
-          [currentUserId, ownerId, promoteGlobal, productionId, uploadId, spaceId]
-        )
-      } catch {
-        await db.query(
-          `UPDATE space_publications
-              SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
-            WHERE upload_id = ? AND space_id = ?`,
-          [currentUserId, uploadId, spaceId]
-        )
-      }
-      activated.push(spaceId)
+          created.push(spaceId)
+        } else {
+          if (String(existsForProduction.status || '') === 'published') {
+            activated.push(spaceId)
+          } else {
+            await db.query(
+              `UPDATE space_publications
+                  SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
+                WHERE id = ?`,
+              [currentUserId, Number(existsForProduction.id)]
+            )
+            activated.push(spaceId)
+          }
+        }
     }
 
     res.json({ ok: true, uploadId, created, activated })

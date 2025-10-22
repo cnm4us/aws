@@ -49,6 +49,14 @@ function parseUploadId(): number | null {
   return Number.isFinite(num) ? num : null
 }
 
+function parseProductionId(): number | null {
+  const params = new URLSearchParams(window.location.search)
+  const idParam = params.get('production')
+  if (!idParam) return null
+  const num = Number(idParam)
+  return Number.isFinite(num) ? num : null
+}
+
 function pickPoster(upload: UploadDetail): string | undefined {
   return (
     upload.poster_portrait_cdn ||
@@ -86,6 +94,7 @@ function getCsrfToken(): string | null {
 
 const PublishPage: React.FC = () => {
   const uploadId = useMemo(() => parseUploadId(), [])
+  const productionId = useMemo(() => parseProductionId(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
   const [selection, setSelection] = useState<'all' | 'custom'>('custom')
@@ -99,8 +108,8 @@ const PublishPage: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false
-    if (!uploadId) {
-      setError('Missing upload id.')
+    if (!uploadId && !productionId) {
+      setError('Missing upload or production id.')
       setLoading(false)
       return
     }
@@ -108,18 +117,45 @@ const PublishPage: React.FC = () => {
       setLoading(true)
       setError(null)
       try {
-        const [uploadRes, optionsRes] = await Promise.all([
-          fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' }),
-          fetch(`/api/uploads/${uploadId}/publish-options`, { credentials: 'same-origin' }),
-        ])
-        if (!uploadRes.ok) throw new Error('Failed to load upload')
+        let uploadJson: UploadDetail | null = null
+        let pubs: PublicationSummary[] = []
+        if (productionId) {
+          // Load production, then list its publications, and options from its upload
+          const prodRes = await fetch(`/api/productions/${productionId}`, { credentials: 'same-origin' })
+          const prodJson = await prodRes.json().catch(() => ({}))
+          if (!prodRes.ok) throw new Error(prodJson?.error || 'Failed to load production')
+          const up = (prodJson?.production?.upload || null) as any
+          if (!up) throw new Error('Production missing upload context')
+          uploadJson = {
+            id: Number(up.id),
+            original_filename: String(up.original_filename || ''),
+            modified_filename: up.modified_filename || null,
+            description: up.description || null,
+            status: String(up.status || ''),
+            size_bytes: up.size_bytes ?? null,
+            width: up.width ?? null,
+            height: up.height ?? null,
+            created_at: up.created_at || '',
+            uploaded_at: null,
+            publications: [],
+          }
+          const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
+          const pubsJson = await pubsRes.json().catch(() => ({}))
+          if (!pubsRes.ok) throw new Error(pubsJson?.error || 'Failed to load publications')
+          pubs = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
+        } else {
+          const uploadRes = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
+          if (!uploadRes.ok) throw new Error('Failed to load upload')
+          uploadJson = (await uploadRes.json()) as UploadDetail
+          pubs = Array.isArray(uploadJson?.publications) ? uploadJson.publications : []
+        }
+        const optionsRes = await fetch(`/api/uploads/${uploadJson!.id}/publish-options`, { credentials: 'same-origin' })
         if (!optionsRes.ok) throw new Error('Failed to load publish options')
-        const uploadJson = (await uploadRes.json()) as UploadDetail
         const optionsJson = (await optionsRes.json()) as PublishOptionsResponse
         if (cancelled) return
         setUpload(uploadJson)
         setOptions(optionsJson.spaces || [])
-        const published = (uploadJson.publications || [])
+        const published = pubs
           .filter((p) => p.status === 'published' || p.status === 'approved')
           .reduce<Record<number, boolean>>((acc, p) => {
             acc[p.spaceId] = true
@@ -138,7 +174,7 @@ const PublishPage: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [uploadId])
+  }, [uploadId, productionId])
 
   const toggleSpace = useCallback((spaceId: number) => {
     setSelectedSpaces((prev) => ({ ...prev, [spaceId]: !prev[spaceId] }))
@@ -146,19 +182,26 @@ const PublishPage: React.FC = () => {
   }, [])
 
   const refreshUpload = useCallback(async () => {
-    if (!uploadId) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
-      if (!res.ok) throw new Error('Failed to refresh upload')
-      const json = await res.json()
-      setUpload(json)
+      if (productionId) {
+        const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
+        if (!pubsRes.ok) throw new Error('Failed to refresh publications')
+        const pubsJson = await pubsRes.json()
+        const pubList: PublicationSummary[] = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
+        setUpload((prev) => prev ? { ...prev, publications: pubList } : prev)
+      } else if (uploadId) {
+        const res = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
+        if (!res.ok) throw new Error('Failed to refresh upload')
+        const json = await res.json()
+        setUpload(json)
+      }
     } catch (err) {
       console.error('refresh upload failed', err)
     } finally {
       setSaving(false)
     }
-  }, [uploadId])
+  }, [uploadId, productionId])
 
   const selectedSpaceIds = useMemo(() => {
     if (selection === 'all') {
@@ -170,7 +213,7 @@ const PublishPage: React.FC = () => {
   }, [selection, options, selectedSpaces])
 
   const handlePublish = useCallback(async () => {
-    if (!uploadId) return
+    if (!uploadId && !productionId) return
     const spaces = selectedSpaceIds
     if (!spaces.length) {
       setSaveError('Select at least one space')
@@ -183,15 +226,27 @@ const PublishPage: React.FC = () => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/uploads/${uploadId}/publish`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ spaces }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error || 'Publish failed')
+      if (productionId) {
+        // Publish this production to each selected space
+        for (const sid of spaces) {
+          await fetch(`/api/productions/${productionId}/publications`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({ spaceId: sid }),
+          })
+        }
+      } else if (uploadId) {
+        const res = await fetch(`/api/uploads/${uploadId}/publish`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ spaces }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data?.error || 'Publish failed')
+        }
       }
       setSaveMessage('Publish request sent.')
       await refreshUpload()
@@ -200,10 +255,10 @@ const PublishPage: React.FC = () => {
     } finally {
       setSaving(false)
     }
-  }, [uploadId, selectedSpaceIds, refreshUpload])
+  }, [uploadId, productionId, selectedSpaceIds, refreshUpload])
 
   const handleUnpublish = useCallback(async () => {
-    if (!uploadId) return
+    if (!uploadId && !productionId) return
     const spaces = selectedSpaceIds
     if (!spaces.length) {
       setSaveError('Select at least one space')
@@ -216,15 +271,33 @@ const PublishPage: React.FC = () => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/uploads/${uploadId}/unpublish`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ spaces }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error || 'Unpublish failed')
+      if (productionId) {
+        // Fetch current publications for this production and unpublish those in selected spaces
+        const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
+        const pubsJson = await pubsRes.json().catch(() => ({}))
+        const pubs: Array<PublicationSummary & { id?: number }> = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
+        for (const sid of spaces) {
+          const match = pubs.find((p) => Number(p.spaceId) === sid)
+          if (match && match.id) {
+            await fetch(`/api/publications/${Number(match.id)}/unpublish`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers,
+              body: JSON.stringify({}),
+            })
+          }
+        }
+      } else if (uploadId) {
+        const res = await fetch(`/api/uploads/${uploadId}/unpublish`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ spaces }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data?.error || 'Unpublish failed')
+        }
       }
       setSaveMessage('Unpublish request sent.')
       await refreshUpload()
@@ -233,13 +306,13 @@ const PublishPage: React.FC = () => {
     } finally {
       setSaving(false)
     }
-  }, [uploadId, selectedSpaceIds, refreshUpload])
+  }, [uploadId, productionId, selectedSpaceIds, refreshUpload])
 
-  if (!uploadId) {
+  if (!uploadId && !productionId) {
     return (
       <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', color: '#fff', background: '#050505', minHeight: '100vh' }}>
         <h1>Publish</h1>
-        <p>No upload selected. Return to <a href="/uploads" style={{ color: '#0a84ff' }}>Uploads</a>.</p>
+        <p>No upload or production selected. Return to <a href="/uploads" style={{ color: '#0a84ff' }}>Uploads</a>.</p>
       </div>
     )
   }
@@ -266,11 +339,13 @@ const PublishPage: React.FC = () => {
   const poster = pickPoster(upload)
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
 
+  const backHref = productionId ? `/productions?id=${productionId}` : '/uploads'
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <header style={{ marginBottom: 24 }}>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
+          <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back</a>
           <h1 style={{ margin: '12px 0 4px', fontSize: 28 }}>{displayName}</h1>
           {upload.description && (
             <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', margin: '4px 0 8px 0' }}>

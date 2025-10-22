@@ -6,6 +6,7 @@ export type TransformCtx = {
   outputBucket: string;
   assetId: string;
   dateYMD: string;
+  productionUlid?: string;
 };
 
 export function loadProfileJson(name: string): any {
@@ -44,6 +45,9 @@ function replaceString(val: string, ctx: TransformCtx): string {
     const m = ctx.dateYMD.match(/^(\d{4}-\d{2})-(\d{2})$/);
     const ymdFolder = m ? `${m[1]}/${m[2]}` : ctx.dateYMD; // convert to YYYY-MM/DD
     out = out.split('DATE_YYYY_MM_DD').join(ymdFolder);
+  }
+  if (ctx.productionUlid && out.includes('PRODUCTION_ULID')) {
+    out = out.split('PRODUCTION_ULID').join(ctx.productionUlid);
   }
 
   return out;

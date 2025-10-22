@@ -19,23 +19,45 @@
         <div style="display:flex; gap:8px; align-items:center;"><a class="btn" href="/admin/channels/new">Add Channel</a></div>
         <div id="status" class="status"></div>
         <table style="margin-top:12px;">
-          <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Owner</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Owner</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
     </main>
     <script>
+      const csrf=()=>{const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);return m?decodeURIComponent(m[1]):null};
+      const headers=()=>{const h={'Content-Type':'application/json'};const t=csrf(); if(t) h['x-csrf-token']=t; return h};
       async function load(){
         try{
           const res = await fetch('/api/admin/spaces?type=channel', { credentials:'same-origin' });
           const data = await res.json();
           const tbody = document.getElementById('rows'); tbody.innerHTML='';
-          (data.spaces||[]).forEach(s=>{
+          for (const s of (data.spaces||[])){
             const tr=document.createElement('tr');
             const owner = s.ownerDisplayName || s.ownerUserId || '';
-            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/channels/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${owner}</td>`;
+            const btnId = `del_${s.id}`;
+            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/channels/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${owner}</td><td><button class=\"btn danger\" id=\"${btnId}\">Delete</button></td>`;
             tbody.appendChild(tr);
-          })
+            // Fetch members to decide if delete can be enabled
+            try{
+              const mres = await fetch(`/api/admin/spaces/${s.id}/members`, { credentials:'same-origin' });
+              const mjson = await mres.json();
+              const members = Array.isArray(mjson.members) ? mjson.members : [];
+              const btn = document.getElementById(btnId);
+              if (members.length > 0) {
+                btn.disabled = true; btn.title = 'Remove all members first';
+              } else {
+                btn.addEventListener('click', async ()=>{
+                  if (!confirm('Delete this channel? This cannot be undone.')) return;
+                  try{
+                    const del = await fetch(`/api/spaces/${s.id}`, { method:'DELETE', headers: headers(), credentials:'same-origin' });
+                    if (!del.ok) throw new Error('failed');
+                    load();
+                  }catch{ alert('Failed to delete channel'); }
+                });
+              }
+            }catch{}
+          }
         }catch(e){ document.getElementById('status').textContent='Failed to load channels'; document.getElementById('status').className='status error'; }
       }
       load();

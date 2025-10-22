@@ -54,6 +54,7 @@ function mapPublication(row: any): SpacePublicationRow {
   return {
     id: Number(row.id),
     upload_id: Number(row.upload_id),
+    production_id: row.production_id == null ? null : Number(row.production_id),
     space_id: Number(row.space_id),
     status: row.status as SpacePublicationStatus,
     requested_by: row.requested_by == null ? null : Number(row.requested_by),

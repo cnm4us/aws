@@ -13,7 +13,7 @@
       "OutputGroupSettings": {
         "Type": "HLS_GROUP_SETTINGS",
         "HlsGroupSettings": {
-          "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/",
+          "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/PRODUCTION_ULID/",
           "ManifestCompression": "NONE",
           "ManifestDurationFormat": "INTEGER",
           "StreamInfResolution": "INCLUDE",

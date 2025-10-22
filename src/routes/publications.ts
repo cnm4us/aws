@@ -178,17 +178,25 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
     const space = await loadSpace(db, spaceId);
     if (!space) return res.status(404).json({ error: 'space_not_found' });
 
-    const [existingRows] = await db.query(
-      `SELECT id, status FROM space_publications WHERE upload_id = ? AND space_id = ? LIMIT 1`,
-      [uploadId, spaceId]
-    );
-    const existing = (existingRows as any[])[0];
-    if (existing) {
-      return res.status(409).json({
-        error: 'publication_exists',
-        publicationId: Number(existing.id),
-        status: String(existing.status),
-      });
+    // Prefer binding to the latest completed production for this upload
+    let boundProductionId: number | null = null;
+    try {
+      const [pRows] = await db.query(
+        `SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`,
+        [uploadId]
+      );
+      const prow = (pRows as any[])[0];
+      if (prow) boundProductionId = Number(prow.id);
+    } catch {}
+    if (boundProductionId != null) {
+      const [existsRows] = await db.query(
+        `SELECT id, status FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`,
+        [boundProductionId, spaceId]
+      );
+      const ex = (existsRows as any[])[0];
+      if (ex) {
+        return res.status(409).json({ error: 'publication_exists', publicationId: Number(ex.id), status: String(ex.status) });
+      }
     }
 
     const userId = Number(req.user!.id);
@@ -227,6 +235,7 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
 
     const publication = await createSpacePublication({
       uploadId,
+      productionId: boundProductionId ?? undefined,
       spaceId,
       status,
       requestedBy: userId,
@@ -393,6 +402,52 @@ publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async
     res.json({ publications });
   } catch (err: any) {
     console.error('list publications failed', err);
+    res.status(500).json({ error: 'failed_to_list_publications', detail: String(err?.message || err) });
+  }
+});
+
+// List publications for a specific production (for production-centric publish page)
+publicationsRouter.get('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
+  try {
+    const productionId = Number(req.params.productionId);
+    if (!Number.isFinite(productionId) || productionId <= 0) {
+      return res.status(400).json({ error: 'bad_production_id' });
+    }
+    const db = getPool();
+    // Load production to validate ownership/permissions
+    const [pRows] = await db.query(`SELECT id, upload_id, user_id FROM productions WHERE id = ? LIMIT 1`, [productionId]);
+    const p = (pRows as any[])[0];
+    if (!p) return res.status(404).json({ error: 'production_not_found' });
+
+    const userId = Number(req.user!.id);
+    const ownerId = p.user_id != null ? Number(p.user_id) : null;
+    const checker = await resolveChecker(userId);
+    const isAdmin = await can(userId, 'video:delete_any', { checker });
+    const isOwner = ownerId === userId;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const [rows] = await db.query(
+      `SELECT sp.id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at, s.name AS space_name, s.type AS space_type
+         FROM space_publications sp
+         JOIN spaces s ON s.id = sp.space_id
+        WHERE sp.production_id = ?
+        ORDER BY sp.published_at DESC, sp.id DESC`,
+      [productionId]
+    );
+    const publications = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      spaceId: Number(r.space_id),
+      spaceName: String(r.space_name || ''),
+      spaceType: String(r.space_type || ''),
+      status: String(r.status || ''),
+      publishedAt: r.published_at ? String(r.published_at) : null,
+      unpublishedAt: r.unpublished_at ? String(r.unpublished_at) : null,
+    }));
+    res.json({ publications });
+  } catch (err: any) {
+    console.error('list production publications failed', err);
     res.status(500).json({ error: 'failed_to_list_publications', detail: String(err?.message || err) });
   }
 });

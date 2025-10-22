@@ -6,7 +6,7 @@
         "OutputGroupSettings": {
           "Type": "HLS_GROUP_SETTINGS",
           "HlsGroupSettings": {
-            "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/portrait/",
+            "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/PRODUCTION_ULID/portrait/",
             "ManifestCompression": "NONE",
             "ManifestDurationFormat": "INTEGER",
             "StreamInfResolution": "INCLUDE",
@@ -77,7 +77,7 @@
         "OutputGroupSettings": {
           "Type": "FILE_GROUP_SETTINGS",
           "FileGroupSettings": {
-            "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/portrait/"
+            "Destination": "s3://OUTPUT_BUCKET/DATE_YYYY_MM_DD/ASSET_ID/PRODUCTION_ULID/portrait/"
           }
         },
         "Outputs": [

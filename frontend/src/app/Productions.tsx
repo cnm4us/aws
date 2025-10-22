@@ -243,7 +243,7 @@ const ProductionsPage: React.FC = () => {
     return productions.map((prod) => {
       const upload = prod.upload
       const detailHref = `/productions?id=${prod.id}`
-      const publishHref = upload ? `/publish?id=${upload.id}` : '#'
+      const publishHref = `/publish?production=${prod.id}`
       const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`
       return (
         <tr key={prod.id}>
@@ -478,7 +478,7 @@ const ProductionsPage: React.FC = () => {
             <div style={{ color: '#bbb' }}>Completed: {formatDate(selectedProduction.completed_at)}</div>
             <div style={{ marginTop: 12 }}>
               {upload ? (
-                <a href={`/publish?id=${upload.id}`} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>Open publish page</a>
+                <a href={`/publish?production=${selectedProduction.id}`} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>Open publish page</a>
               ) : (
                 <span style={{ color: '#777' }}>Source upload #{selectedProduction.upload_id}</span>
               )}
