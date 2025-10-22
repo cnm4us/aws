@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import { BUILD_TAG } from '../utils/version';
-import { requireSiteAdminPage } from '../middleware/auth';
+import { requireSiteAdminPage, requireSpaceAdminPage, requireSpaceModeratorPage } from '../middleware/auth';
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -86,6 +86,27 @@ pagesRouter.get('/admin/channels/:id/user/:userId', (_req, res) => {
 // Dev utilities page
 pagesRouter.get('/admin/dev', (_req, res) => {
   serveHtml(res, 'admin-dev.html');
+});
+
+// -------- Space-level Admin & Moderation UI --------
+pagesRouter.get('/spaces/:id/admin', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin.html');
+});
+pagesRouter.get('/spaces/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
+  serveHtml(res, 'space-moderation.html');
+});
+// Aliases for readability (same underlying pages)
+pagesRouter.get('/groups/:id/admin', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin.html');
+});
+pagesRouter.get('/channels/:id/admin', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin.html');
+});
+pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
+  serveHtml(res, 'space-moderation.html');
+});
+pagesRouter.get('/channels/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
+  serveHtml(res, 'space-moderation.html');
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {

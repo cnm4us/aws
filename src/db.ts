@@ -399,6 +399,11 @@ export async function seedRbac(db: DB) {
     'contributor',
     'member',
     'moderator',
+    'space_admin',
+    'space_member',
+    'space_poster',
+    'space_moderator',
+    'space_subscriber',
     'group_admin',
     'group_member',
     'channel_admin',
@@ -459,11 +464,31 @@ export async function seedRbac(db: DB) {
   // Role permission mappings
   await give('viewer', []);
   await give('member', ['space:view_private']);
+  await give('space_member', ['space:view_private']);
   await give('subscriber', ['space:view_private']);
   await give('uploader', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:create_group', 'space:create_channel']);
   await give('contributor', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
+  await give('space_poster', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
   await give('publisher', ['video:upload', 'video:edit_own', 'video:delete_own', 'video:publish_own', 'video:unpublish_own']);
   await give('moderator', ['video:moderate', 'video:approve']);
+  await give('space_moderator', [
+    'space:view_private',
+    'video:publish_space',
+    'video:unpublish_space',
+    'video:approve_space',
+  ]);
+  await give('space_admin', [
+    'space:manage',
+    'space:invite',
+    'space:kick',
+    'space:assign_roles',
+    'space:manage_members',
+    'space:invite_members',
+    'space:view_private',
+    'video:publish_space',
+    'video:unpublish_space',
+    'video:approve_space',
+  ]);
   await give('group_admin', [
     'space:manage',
     'space:invite',

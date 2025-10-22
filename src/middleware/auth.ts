@@ -46,3 +46,44 @@ export async function requireSiteAdminPage(req: Request, res: Response, next: Ne
     return res.redirect(`/forbidden?from=${from}`);
   }
 }
+
+// Page-level guard for space admin pages
+export async function requireSpaceAdminPage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    const sid = Number((req.params as any).id);
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
+    if (!Number.isFinite(sid) || sid <= 0) return res.redirect(`/forbidden?from=${from}`);
+    // Site admin always allowed
+    if (await can(req.user.id, 'video:delete_any')) return next();
+    // Allow space admins/managers and membership managers
+    const ok = (await can(req.user.id, 'space:manage', { spaceId: sid }))
+      || (await can(req.user.id, 'space:manage_members', { spaceId: sid }))
+      || (await can(req.user.id, 'space:assign_roles', { spaceId: sid }));
+    if (!ok) return res.redirect(`/forbidden?from=${from}`);
+    return next();
+  } catch {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`/forbidden?from=${from}`);
+  }
+}
+
+// Page-level guard for space moderation pages
+export async function requireSpaceModeratorPage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    const sid = Number((req.params as any).id);
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
+    if (!Number.isFinite(sid) || sid <= 0) return res.redirect(`/forbidden?from=${from}`);
+    // Site admin or site moderator-like powers: allow via video:delete_any shortcut
+    if (await can(req.user.id, 'video:delete_any')) return next();
+    // Moderation/publish permissions in the space
+    const ok = (await can(req.user.id, 'video:approve_space', { spaceId: sid }))
+      || (await can(req.user.id, 'video:publish_space', { spaceId: sid }));
+    if (!ok) return res.redirect(`/forbidden?from=${from}`);
+    return next();
+  } catch {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`/forbidden?from=${from}`);
+  }
+}
