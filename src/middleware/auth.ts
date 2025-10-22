@@ -31,3 +31,18 @@ export async function requireSiteAdmin(req: Request, res: Response, next: NextFu
     return res.status(500).json({ error: 'auth_check_failed', detail: String((err as any)?.message || err) });
   }
 }
+
+// Page-level guard: redirect to /forbidden when not a site admin
+export async function requireSiteAdminPage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
+    const allowed = await can(req.user.id, 'video:delete_any');
+    if (!allowed) return res.redirect(`/forbidden?from=${from}`);
+    return next();
+  } catch (_err) {
+    // On error, fail closed to forbidden page for safety
+    const from = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`/forbidden?from=${from}`);
+  }
+}

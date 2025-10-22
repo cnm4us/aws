@@ -18,6 +18,7 @@ import { csrfProtect } from './middleware/csrf';
 import { requireAuth } from './middleware/auth';
 import { getPool } from './db';
 import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
+import { requireSiteAdminPage } from './middleware/auth';
 
 export function buildServer(): express.Application {
   const app = express();
@@ -136,14 +137,12 @@ export function buildServer(): express.Application {
       if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
     },
   };
+  // Guard direct access to admin static HTML files before static middleware
+  app.get(/^\/admin-.*\.html$/, requireSiteAdminPage);
+  app.get(/^\/exp\/[^/]+\/admin-.*\.html$/, requireSiteAdminPage);
   app.use('/exp/:tag', express.static(publicDir, staticOpts as any));
   app.use(pagesRouter);
   app.use(express.static(publicDir, staticOpts as any));
-  app.get('/admin', (_req, res) => {
-    res.set('X-Build', BUILD_TAG);
-    res.set('Cache-Control', 'no-store');
-    res.sendFile(path.join(publicDir, 'admin.html'));
-  });
   app.get('/members/:slug', async (req, res) => {
     try {
       const slug = String(req.params.slug || '').trim().toLowerCase();

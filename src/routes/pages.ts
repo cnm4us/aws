@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import { BUILD_TAG } from '../utils/version';
+import { requireSiteAdminPage } from '../middleware/auth';
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -19,6 +20,14 @@ pagesRouter.get('/', (_req, res) => {
 pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
+
+// Forbidden page (shows message and requested URL via querystring)
+pagesRouter.get('/forbidden', (_req, res) => {
+  serveHtml(res, 'forbidden.html');
+});
+
+// Guard all /admin/* UI routes for site admin only
+pagesRouter.use('/admin', requireSiteAdminPage);
 
 // Split admin pages
 pagesRouter.get('/admin/settings', (_req, res) => {

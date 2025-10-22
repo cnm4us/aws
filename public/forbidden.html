@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Access Denied</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; margin: 2rem; background: #f7f9fc; color: #222; }
+      .card { max-width: 720px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; box-shadow: 0 6px 24px rgba(0,0,0,0.08); }
+      h1 { margin-top: 0; font-size: 1.5rem; }
+      p { line-height: 1.5; }
+      code { background: #f3f6fb; border: 1px solid #e2e8f0; padding: 0.15rem 0.35rem; border-radius: 6px; }
+      .meta { margin-top: 0.75rem; color: #555; font-size: 0.95rem; }
+      .actions { margin-top: 1rem; display: flex; gap: 0.75rem; }
+      .btn { appearance: none; text-decoration: none; display: inline-block; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #111; font-weight: 600; }
+      .btn.primary { background: #0b5cff; color: #fff; border-color: #0b5cff; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>You don't have permission to access this page</h1>
+      <p>
+        Access to this location is restricted. If you believe this is an error, contact an administrator.
+      </p>
+      <div class="meta">
+        Requested URL: <code id="requestedUrl">(unknown)</code>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/">Go Home</a>
+        <a class="btn primary" href="/login">Login</a>
+      </div>
+    </div>
+    <script>
+      (function() {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          var from = params.get('from');
+          var display = from || document.referrer || '';
+          var el = document.getElementById('requestedUrl');
+          if (el) { el.textContent = display || '(unknown)'; }
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
+  </body>
+  </html>
+
