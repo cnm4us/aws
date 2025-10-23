@@ -15,7 +15,7 @@ export type SpaceRow = {
 export const MEMBER_ROLES: Record<SpaceType, string[]> = {
   personal: ['space_member', 'space_poster'],
   group: ['space_member'],
-  channel: ['space_member'],
+  channel: ['space_member', 'space_poster'],
 };
 
 export const ADMIN_ROLES: Record<SpaceType, string[]> = {

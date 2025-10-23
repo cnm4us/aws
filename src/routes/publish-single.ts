@@ -92,7 +92,7 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
             commentsEnabled = u && u.default_comments_enabled != null ? Number(u.default_comments_enabled) : 1
           }
         } catch { commentsEnabled = 1 }
-        // If the same production is already published in this space, activate it; otherwise insert new
+        // If the same production is already present in this space, apply republish rules; otherwise insert new
         let existsForProduction: any = null
         if (productionId != null) {
           const [eRows] = await db.query(`SELECT id, status FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`, [productionId, spaceId])
@@ -106,15 +106,74 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
           )
           created.push(spaceId)
         } else {
-          if (String(existsForProduction.status || '') === 'published') {
+          const pubId = Number(existsForProduction.id)
+          const curStatus = String(existsForProduction.status || '')
+          if (curStatus === 'published' || curStatus === 'approved' || curStatus === 'pending') {
+            // Already active or in review — treat as activated
             activated.push(spaceId)
-          } else {
+          } else if (curStatus === 'unpublished') {
+            // Republish path
+            const allowedAny = await can(currentUserId, 'video:delete_any')
+            const allowedSpace = await can(currentUserId, 'video:publish_space', { spaceId })
+            if (allowedAny || allowedSpace) {
+              await db.query(
+                `UPDATE space_publications
+                    SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
+                  WHERE id = ?`,
+                [currentUserId, pubId]
+              )
+              // Log event
+              try { await db.query(`INSERT INTO space_publication_events (publication_id, actor_user_id, action) VALUES (?, ?, 'moderator_republish_published')`, [pubId, currentUserId]) } catch {}
+              activated.push(spaceId)
+            } else if (ownerId != null && ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId }))) {
+              // Owner path requires last-actor owner unpublish
+              let lastOwner = false
+              try {
+                const [ev] = await db.query(`SELECT actor_user_id FROM space_publication_events WHERE publication_id = ? AND action = 'unpublish_publication' ORDER BY id DESC LIMIT 1`, [pubId])
+                const row = (ev as any[])[0]
+                lastOwner = row && row.actor_user_id != null && Number(row.actor_user_id) === currentUserId
+              } catch {}
+              if (!lastOwner) {
+                return res.status(403).json({ error: 'forbidden' })
+              }
+              if (requireApproval) {
+                await db.query(
+                  `UPDATE space_publications
+                      SET status = 'pending', approved_by = NULL, published_at = NULL, unpublished_at = NULL
+                    WHERE id = ?`,
+                  [pubId]
+                )
+                try { await db.query(`INSERT INTO space_publication_events (publication_id, actor_user_id, action) VALUES (?, ?, 'owner_republish_requested')`, [pubId, currentUserId]) } catch {}
+              } else {
+                await db.query(
+                  `UPDATE space_publications
+                      SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
+                    WHERE id = ?`,
+                  [currentUserId, pubId]
+                )
+                try { await db.query(`INSERT INTO space_publication_events (publication_id, actor_user_id, action) VALUES (?, ?, 'owner_republish_published')`, [pubId, currentUserId]) } catch {}
+              }
+              activated.push(spaceId)
+            } else {
+              return res.status(403).json({ error: 'forbidden' })
+            }
+          } else if (curStatus === 'rejected') {
+            // Owner cannot republish rejected; moderators/admins can
+            const allowedAny = await can(currentUserId, 'video:delete_any')
+            const allowedSpace = await can(currentUserId, 'video:publish_space', { spaceId })
+            if (!allowedAny && !allowedSpace) {
+              return res.status(403).json({ error: 'forbidden' })
+            }
             await db.query(
               `UPDATE space_publications
                   SET status = 'published', approved_by = ?, published_at = NOW(), unpublished_at = NULL
                 WHERE id = ?`,
-              [currentUserId, Number(existsForProduction.id)]
+              [currentUserId, pubId]
             )
+            try { await db.query(`INSERT INTO space_publication_events (publication_id, actor_user_id, action) VALUES (?, ?, 'moderator_republish_published')`, [pubId, currentUserId]) } catch {}
+            activated.push(spaceId)
+          } else {
+            // Unknown state: do nothing
             activated.push(spaceId)
           }
         }

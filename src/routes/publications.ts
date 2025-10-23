@@ -195,7 +195,48 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
       );
       const ex = (existsRows as any[])[0];
       if (ex) {
-        return res.status(409).json({ error: 'publication_exists', publicationId: Number(ex.id), status: String(ex.status) });
+        // Attempt republish semantics for existing record to avoid frontend 409 handling
+        const existingId = Number(ex.id);
+        const curStatus = String(ex.status || '');
+        if (curStatus === 'published' || curStatus === 'approved' || curStatus === 'pending') {
+          const existingPub = await getSpacePublicationById(existingId, db);
+          return res.json({ publication: existingPub });
+        }
+        const userId = Number(req.user!.id);
+        const checker = await resolveChecker(userId);
+        const isAdmin = await can(userId, 'video:delete_any', { checker });
+        const canPublishSpace = await can(userId, 'video:publish_space', { spaceId, checker });
+        if (curStatus === 'unpublished') {
+          if (isAdmin || canPublishSpace) {
+            const now = new Date();
+            const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
+            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'moderator_republish_published' }, db);
+            return res.json({ publication: updated });
+          }
+          const ownerId = upload.user_id;
+          const isOwner = ownerId != null && Number(ownerId) === userId && (await can(userId, 'video:publish_own', { ownerId, checker }));
+          if (!isOwner) return res.status(403).json({ error: 'forbidden' });
+          const ev = await listSpacePublicationEvents(existingId, db);
+          const lastUnpub = [...ev].reverse().find((e) => e.action === 'unpublish_publication');
+          if (!lastUnpub || lastUnpub.actor_user_id !== userId) return res.status(403).json({ error: 'forbidden' });
+          const requiresApproval = await effectiveRequiresApproval(db, space);
+          if (requiresApproval) {
+            const updated = await updateSpacePublicationStatus(existingId, { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null }, db);
+            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'owner_republish_requested' }, db);
+            return res.json({ publication: updated });
+          } else {
+            const now = new Date();
+            const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
+            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'owner_republish_published' }, db);
+            return res.json({ publication: updated });
+          }
+        } else if (curStatus === 'rejected') {
+          if (!(isAdmin || canPublishSpace)) return res.status(403).json({ error: 'forbidden' });
+          const now = new Date();
+          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
+          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'moderator_republish_published' }, db);
+          return res.json({ publication: updated });
+        }
       }
     }
 
@@ -302,11 +343,48 @@ publicationsRouter.post('/api/productions/:productionId/publications', requireAu
     );
     const existing = (existingRows as any[])[0];
     if (existing) {
-      return res.status(409).json({
-        error: 'publication_exists',
-        publicationId: Number(existing.id),
-        status: String(existing.status),
-      });
+      // Apply republish semantics for production-centric route
+      const existingId = Number(existing.id);
+      const curStatus = String(existing.status || '');
+      if (curStatus === 'published' || curStatus === 'approved' || curStatus === 'pending') {
+        const existingPub = await getSpacePublicationById(existingId, db);
+        return res.json({ publication: existingPub });
+      }
+      const currentUserId = Number(req.user!.id);
+      const checker = await resolveChecker(currentUserId);
+      const isAdmin = await can(currentUserId, 'video:delete_any', { checker });
+      const canPublishSpace = await can(currentUserId, 'video:publish_space', { spaceId, checker });
+      if (curStatus === 'unpublished') {
+        if (isAdmin || canPublishSpace) {
+          const now = new Date();
+          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
+          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'moderator_republish_published' }, db);
+          return res.json({ publication: updated });
+        }
+        const ownerId = production.user_id;
+        const isOwner = ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId, checker }));
+        if (!isOwner) return res.status(403).json({ error: 'forbidden' });
+        const ev = await listSpacePublicationEvents(existingId, db);
+        const lastUnpub = [...ev].reverse().find((e) => e.action === 'unpublish_publication');
+        if (!lastUnpub || lastUnpub.actor_user_id !== currentUserId) return res.status(403).json({ error: 'forbidden' });
+        const requiresApproval = await effectiveRequiresApproval(db, space);
+        if (requiresApproval) {
+          const updated = await updateSpacePublicationStatus(existingId, { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null }, db);
+          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'owner_republish_requested' }, db);
+          return res.json({ publication: updated });
+        } else {
+          const now = new Date();
+          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
+          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'owner_republish_published' }, db);
+          return res.json({ publication: updated });
+        }
+      } else if (curStatus === 'rejected') {
+        if (!(isAdmin || canPublishSpace)) return res.status(403).json({ error: 'forbidden' });
+        const now = new Date();
+        const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
+        await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'moderator_republish_published' }, db);
+        return res.json({ publication: updated });
+      }
     }
 
     const currentUserId = Number(req.user!.id);
@@ -485,7 +563,13 @@ publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) =>
     }
 
     const events = await listSpacePublicationEvents(publicationId, db);
-    res.json({ publication: pub, events });
+    // Owner republish is allowed only when last unpublish was performed by the owner and status is 'unpublished'
+    let canRepublishOwner = false;
+    if (pub.status === 'unpublished' && isOwner) {
+      const lastUnpub = [...events].reverse().find((e) => e.action === 'unpublish_publication');
+      if (lastUnpub && lastUnpub.actor_user_id === userId) canRepublishOwner = true;
+    }
+    res.json({ publication: pub, events, canRepublishOwner });
   } catch (err: any) {
     console.error('get publication failed', err);
     res.status(500).json({ error: 'failed_to_get_publication', detail: String(err?.message || err) });
@@ -652,5 +736,96 @@ publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req,
   } catch (err: any) {
     console.error('reject publication failed', err);
     res.status(500).json({ error: 'failed_to_reject_publication', detail: String(err?.message || err) });
+  }
+});
+
+// Republish endpoint
+// Rules:
+// - Owner may republish only if status is 'unpublished' AND the last unpublish was performed by the owner (last-actor rule).
+//   - If space requires review, set to 'pending' (requested_by=owner), otherwise publish immediately.
+// - Moderators/admins with video:publish_space (or site admin) may republish immediately regardless of review requirement.
+// - When status is 'rejected', owner may NOT republish; moderators may republish.
+publicationsRouter.post('/api/publications/:id/republish', requireAuth, async (req, res) => {
+  try {
+    const publicationId = Number(req.params.id);
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' });
+    }
+    const db = getPool();
+    const row = await loadPublicationContext(db, publicationId);
+    if (!row) return res.status(404).json({ error: 'publication_not_found' });
+
+    const userId = Number(req.user!.id);
+    const checker = await resolveChecker(userId);
+    const ownerId = row.upload_owner_id == null ? null : Number(row.upload_owner_id);
+    const spaceId = Number(row.space_id);
+    const status = String(row.status || '');
+
+    if (status === 'published' || status === 'pending' || status === 'approved') {
+      return res.status(400).json({ error: 'invalid_status' });
+    }
+
+    const isAdmin = await can(userId, 'video:delete_any', { checker });
+    const canPublishSpace = await can(userId, 'video:publish_space', { spaceId, checker });
+    const isOwner = ownerId != null && ownerId === userId && (await can(userId, 'video:publish_own', { ownerId, checker }));
+
+    // Moderators/admins: publish immediately
+    if (isAdmin || canPublishSpace) {
+      const now = new Date();
+      const updated = await updateSpacePublicationStatus(
+        publicationId,
+        { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null },
+        db
+      );
+      if (!updated) return res.status(404).json({ error: 'publication_not_found' });
+      await recordSpacePublicationEvent(
+        { publicationId, actorUserId: userId, action: 'moderator_republish_published' },
+        db
+      );
+      return res.json({ publication: updated });
+    }
+
+    // Owners: rejected blocks republish; require last-actor owner unpublish
+    if (!isOwner) return res.status(403).json({ error: 'forbidden' });
+    if (status === 'rejected') return res.status(403).json({ error: 'forbidden' });
+
+    const events = await listSpacePublicationEvents(publicationId, db);
+    const lastUnpub = [...events].reverse().find((e) => e.action === 'unpublish_publication');
+    if (!lastUnpub || lastUnpub.actor_user_id !== userId) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    // Respect review policy
+    const space = await loadSpace(db, spaceId);
+    const requiresApproval = await effectiveRequiresApproval(db, space);
+    if (requiresApproval) {
+      const updated = await updateSpacePublicationStatus(
+        publicationId,
+        { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null },
+        db
+      );
+      if (!updated) return res.status(404).json({ error: 'publication_not_found' });
+      await recordSpacePublicationEvent(
+        { publicationId, actorUserId: userId, action: 'owner_republish_requested' },
+        db
+      );
+      return res.json({ publication: updated });
+    } else {
+      const now = new Date();
+      const updated = await updateSpacePublicationStatus(
+        publicationId,
+        { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null },
+        db
+      );
+      if (!updated) return res.status(404).json({ error: 'publication_not_found' });
+      await recordSpacePublicationEvent(
+        { publicationId, actorUserId: userId, action: 'owner_republish_published' },
+        db
+      );
+      return res.json({ publication: updated });
+    }
+  } catch (err: any) {
+    console.error('republish publication failed', err);
+    res.status(500).json({ error: 'failed_to_republish_publication', detail: String(err?.message || err) });
   }
 });

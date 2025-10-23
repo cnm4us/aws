@@ -74,3 +74,8 @@ Decisions (2025-10-23)
 - Permissions UX: Show sections disabled with a note when lacking permissions.
 - Subscribers: Keep; included under Settings page.
 - Group/Channel aliases: Yes — added for settings, members, per‑member pages.
+
+Republish Policy
+- Owner may unpublish and republish their own publication. If review is required, republish becomes a pending request; otherwise it republishes immediately.
+- If a moderator/admin unpublishes or rejects, the owner may not republish (last‑actor rule + rejected blocks owner). Moderators/admins may republish immediately.
+- API: POST `/api/publications/:id/republish` implements these rules. GET `/api/publications/:id` now includes `canRepublishOwner` to drive UI.

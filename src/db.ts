@@ -557,6 +557,23 @@ export async function seedRbac(db: DB) {
   } catch (e) {
     // ignore
   }
+
+  // Idempotent backfill: ensure all channel members also have space_poster so they can post (with review policy enforced)
+  try {
+    await db.query(
+      `INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id)
+         SELECT usr.user_id, usr.space_id, rposter.id
+           FROM user_space_roles usr
+           JOIN spaces s ON s.id = usr.space_id AND s.type = 'channel'
+           JOIN roles rposter ON rposter.name = 'space_poster'
+          WHERE NOT EXISTS (
+                  SELECT 1 FROM user_space_roles x
+                   WHERE x.user_id = usr.user_id AND x.space_id = usr.space_id AND x.role_id = rposter.id
+                )`
+    );
+  } catch (e) {
+    // ignore
+  }
 }
 
 export type UploadRow = {
