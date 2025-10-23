@@ -400,6 +400,7 @@ export async function seedRbac(db: DB) {
     'viewer',
     'uploader',
     'publisher',
+    'site_member',
     'contributor',
     'member',
     'moderator',
@@ -417,6 +418,7 @@ export async function seedRbac(db: DB) {
   ];
   const perms = [
     'video:upload',
+    // site_member baseline own-permissions
     'video:edit_own',
     'video:delete_own',
     'video:publish_own',
@@ -481,6 +483,14 @@ export async function seedRbac(db: DB) {
   await give('contributor', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
   await give('space_poster', ['video:upload', 'video:edit_own', 'video:delete_own', 'space:post']);
   await give('publisher', ['video:upload', 'video:edit_own', 'video:delete_own', 'video:publish_own', 'video:unpublish_own']);
+  // New: baseline permissions for all users (site_member)
+  await give('site_member', [
+    'video:upload',
+    'video:edit_own',
+    'video:delete_own',
+    'video:publish_own',
+    'video:unpublish_own',
+  ]);
   await give('moderator', ['video:moderate', 'video:approve']);
   await give('space_moderator', [
     'space:view_private',
@@ -535,6 +545,18 @@ export async function seedRbac(db: DB) {
   await give('channel_member', ['video:publish_space']);
   // Admin gets all permissions
   await give('admin', perms);
+
+  // Idempotent backfill: ensure every user has the site_member role
+  try {
+    await db.query(
+      `INSERT IGNORE INTO user_roles (user_id, role_id)
+       SELECT u.id, r.id
+         FROM users u
+         JOIN roles r ON r.name = 'site_member'`
+    );
+  } catch (e) {
+    // ignore
+  }
 }
 
 export type UploadRow = {

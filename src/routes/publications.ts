@@ -208,7 +208,8 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
       ownerId === userId &&
       (await can(userId, 'video:publish_own', { ownerId, checker }));
     const canPublishSpacePerm = await can(userId, 'video:publish_space', { spaceId, checker });
-    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm) {
+    const canPostSpace = await can(userId, 'space:post', { spaceId, checker });
+    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
       return res.status(403).json({ error: 'forbidden' });
     }
 
@@ -314,7 +315,8 @@ publicationsRouter.post('/api/productions/:productionId/publications', requireAu
     const isAdmin = await can(currentUserId, 'video:delete_any', { checker });
     const canPublishOwn = ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId, checker }));
     const canPublishSpacePerm = await can(currentUserId, 'video:publish_space', { spaceId, checker });
-    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm) {
+    const canPostSpace = await can(currentUserId, 'space:post', { spaceId, checker });
+    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
       return res.status(403).json({ error: 'forbidden' });
     }
 

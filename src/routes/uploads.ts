@@ -166,7 +166,7 @@ uploadsRouter.get('/api/uploads/:id/publish-options', requireAuth, async (req, r
          JOIN roles r ON r.id = usr.role_id
          JOIN role_permissions rp ON rp.role_id = r.id
          JOIN permissions p ON p.id = rp.permission_id
-        WHERE usr.user_id = ? AND p.name IN ('video:publish_space', 'video:approve_space')
+        WHERE usr.user_id = ? AND p.name IN ('video:publish_space', 'video:approve_space', 'space:post')
         GROUP BY s.id, s.name, s.slug, s.type
         ORDER BY s.type, s.name`,
       [currentUserId]
