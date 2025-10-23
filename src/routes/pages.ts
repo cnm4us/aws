@@ -89,18 +89,74 @@ pagesRouter.get('/admin/dev', (_req, res) => {
 });
 
 // -------- Space-level Admin & Moderation UI --------
+// Redirect space root to per-member admin page for current user
+pagesRouter.get('/spaces/:id', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  const currentUserId = req.user && req.user.id ? String(req.user.id) : '';
+  if (!currentUserId) {
+    return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '')}`);
+  }
+  res.redirect(`/spaces/${id}/admin/users/${currentUserId}`);
+});
+
+// Members default and explicit route
 pagesRouter.get('/spaces/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin.html');
+  serveHtml(res, 'space-members.html');
+});
+pagesRouter.get('/spaces/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-members.html');
+});
+// Per-member admin page
+pagesRouter.get('/spaces/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin-user.html');
+});
+// Space settings
+pagesRouter.get('/spaces/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-settings.html');
 });
 pagesRouter.get('/spaces/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
   serveHtml(res, 'space-moderation.html');
 });
 // Aliases for readability (same underlying pages)
+pagesRouter.get('/groups/:id', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  const currentUserId = req.user && req.user.id ? String(req.user.id) : '';
+  if (!currentUserId) {
+    return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '')}`);
+  }
+  res.redirect(`/groups/${id}/admin/users/${currentUserId}`);
+});
+pagesRouter.get('/channels/:id', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  const currentUserId = req.user && req.user.id ? String(req.user.id) : '';
+  if (!currentUserId) {
+    return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '')}`);
+  }
+  res.redirect(`/channels/${id}/admin/users/${currentUserId}`);
+});
 pagesRouter.get('/groups/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin.html');
+  serveHtml(res, 'space-members.html');
+});
+pagesRouter.get('/groups/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-members.html');
+});
+pagesRouter.get('/groups/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin-user.html');
+});
+pagesRouter.get('/groups/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-settings.html');
 });
 pagesRouter.get('/channels/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin.html');
+  serveHtml(res, 'space-members.html');
+});
+pagesRouter.get('/channels/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-members.html');
+});
+pagesRouter.get('/channels/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-admin-user.html');
+});
+pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
+  serveHtml(res, 'space-settings.html');
 });
 pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
   serveHtml(res, 'space-moderation.html');

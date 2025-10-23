@@ -69,6 +69,16 @@ async function fetchSiteSettings(db: any): Promise<SiteSettings> {
   };
 }
 
+async function fetchSiteReviewFlags(db: any): Promise<{ requireGroupReview: boolean; requireChannelReview: boolean }>{
+  const [rows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
+  const row = (rows as any[])[0];
+  if (!row) throw new Error('missing_site_settings');
+  return {
+    requireGroupReview: Boolean(Number(row.require_group_review)),
+    requireChannelReview: Boolean(Number(row.require_channel_review)),
+  };
+}
+
 async function ensurePermission(userId: number, spaceId: number, permission: string): Promise<boolean> {
   return can(userId, permission as any, { spaceId });
 }
@@ -103,6 +113,14 @@ async function hasActiveSubscription(db: any, spaceId: number, userId: number): 
 }
 
 async function canViewSpaceFeed(db: any, space: SpaceRow, userId: number): Promise<boolean> {
+  // Banned users cannot view the space at all
+  try {
+    const [bRows] = await db.query(
+      `SELECT 1 FROM suspensions WHERE user_id = ? AND kind = 'ban' AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) AND (target_type = 'site' OR (target_type = 'space' AND target_id = ?)) LIMIT 1`,
+      [userId, space.id]
+    );
+    if ((bRows as any[]).length > 0) return false;
+  } catch {}
   const siteAdmin = await can(userId, 'video:delete_any');
   if (siteAdmin) return true;
   if (space.owner_user_id != null && space.owner_user_id === userId) return true;
@@ -248,6 +266,162 @@ spacesRouter.get('/api/me/spaces', requireAuth, async (req, res) => {
   }
 });
 
+// List subscribers for a space (active and recent)
+spacesRouter.get('/api/spaces/:id/subscribers', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const db = getPool();
+    const userId = Number(req.user!.id);
+    const isSiteAdmin = await can(userId, 'video:delete_any');
+    const canView = isSiteAdmin || (await can(userId, 'subscription:view_subscribers', { spaceId }));
+    if (!canView) return res.status(403).json({ error: 'forbidden' });
+
+    const [rows] = await db.query(
+      `SELECT sub.user_id, sub.tier, sub.status, sub.started_at, sub.ended_at, u.email, u.display_name
+         FROM space_subscriptions sub
+         JOIN users u ON u.id = sub.user_id
+        WHERE sub.space_id = ?
+        ORDER BY sub.status = 'active' DESC, sub.started_at DESC`,
+      [spaceId]
+    );
+    const subscribers = (rows as any[]).map((r) => ({
+      userId: Number(r.user_id),
+      email: r.email || null,
+      displayName: r.display_name || null,
+      tier: r.tier || null,
+      status: String(r.status),
+      startedAt: r.started_at ? String(r.started_at) : null,
+      endedAt: r.ended_at ? String(r.ended_at) : null,
+    }));
+    res.json({ subscribers });
+  } catch (err: any) {
+    console.error('list subscribers failed', err);
+    res.status(500).json({ error: 'failed_to_list_subscribers', detail: String(err?.message || err) });
+  }
+});
+
+// List suspensions for a space (optionally only active)
+spacesRouter.get('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const db = getPool();
+    const userId = Number(req.user!.id);
+    const isSiteAdmin = await can(userId, 'video:delete_any');
+    const canView = isSiteAdmin || (await can(userId, 'moderation:suspend_posting', { spaceId })) || (await can(userId, 'moderation:ban', { spaceId }));
+    if (!canView) return res.status(403).json({ error: 'forbidden' });
+
+    const activeOnly = String(req.query.active || '') === '1' || String(req.query.active || '').toLowerCase() === 'true';
+    const where: string[] = [
+      `target_type = 'space'`,
+      `target_id = ?`,
+    ];
+    const params: any[] = [spaceId];
+    if (activeOnly) {
+      where.push(`(starts_at IS NULL OR starts_at <= NOW())`);
+      where.push(`(ends_at IS NULL OR ends_at >= NOW())`);
+    }
+    const sql = `
+      SELECT id, user_id, kind, degree, starts_at, ends_at, reason, created_by, created_at
+        FROM suspensions
+       WHERE ${where.join(' AND ')}
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1000`;
+    const [rows] = await db.query(sql, params);
+    const items = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      userId: Number(r.user_id),
+      kind: String(r.kind),
+      degree: r.degree != null ? Number(r.degree) : null,
+      startsAt: r.starts_at ? String(r.starts_at) : null,
+      endsAt: r.ends_at ? String(r.ends_at) : null,
+      reason: r.reason || null,
+      createdBy: r.created_by != null ? Number(r.created_by) : null,
+      createdAt: String(r.created_at),
+    }));
+    res.json({ suspensions: items });
+  } catch (err: any) {
+    console.error('list space suspensions failed', err);
+    res.status(500).json({ error: 'failed_to_list_suspensions', detail: String(err?.message || err) });
+  }
+});
+
+// Create a suspension (posting or ban) scoped to a space
+spacesRouter.post('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const { userId, kind, degree, reason, days } = (req.body || {}) as any;
+    const targetUserId = Number(userId);
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
+    const k = String(kind || '').toLowerCase();
+    if (k !== 'posting' && k !== 'ban') return res.status(400).json({ error: 'bad_kind' });
+    const actorId = Number(req.user!.id);
+    const isSiteAdmin = await can(actorId, 'video:delete_any');
+    if (!isSiteAdmin) {
+      if (k === 'posting') {
+        const ok = await can(actorId, 'moderation:suspend_posting', { spaceId });
+        if (!ok) return res.status(403).json({ error: 'forbidden' });
+      } else {
+        const ok = await can(actorId, 'moderation:ban', { spaceId });
+        if (!ok) return res.status(403).json({ error: 'forbidden' });
+      }
+    }
+    let endsAt: Date | null = null;
+    if (k === 'posting') {
+      const d = Number(degree || 1);
+      const daysMap = d === 1 ? 1 : d === 2 ? 7 : 30;
+      endsAt = new Date(Date.now() + daysMap * 24 * 60 * 60 * 1000);
+    } else if (k === 'ban') {
+      // Optional limited ban in days
+      const d = days != null ? Number(days) : NaN;
+      if (Number.isFinite(d) && d > 0) {
+        endsAt = new Date(Date.now() + d * 24 * 60 * 60 * 1000);
+      }
+    }
+    const db = getPool();
+    await db.query(
+      `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
+       VALUES (?, 'space', ?, ?, ?, NOW(), ?, ?, ?)`,
+      [targetUserId, spaceId, k, Number(degree || (k === 'posting' ? 1 : 1)), endsAt, reason ? String(reason).slice(0, 255) : null, actorId]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err: any) {
+    console.error('create space suspension failed', err);
+    res.status(500).json({ error: 'failed_to_create_suspension', detail: String(err?.message || err) });
+  }
+});
+
+// Revoke a suspension by id (space scoped)
+spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    const sid = Number(req.params.sid);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ error: 'bad_suspension_id' });
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, user_id, kind FROM suspensions WHERE id = ? AND target_type = 'space' AND target_id = ? LIMIT 1`, [sid, spaceId]);
+    const row = (rows as any[])[0];
+    if (!row) return res.status(404).json({ error: 'suspension_not_found' });
+    const actorId = Number(req.user!.id);
+    const isSiteAdmin = await can(actorId, 'video:delete_any');
+    if (!isSiteAdmin) {
+      if (String(row.kind) === 'posting') {
+        const ok = await can(actorId, 'moderation:suspend_posting', { spaceId });
+        if (!ok) return res.status(403).json({ error: 'forbidden' });
+      } else {
+        const ok = await can(actorId, 'moderation:ban', { spaceId });
+        if (!ok) return res.status(403).json({ error: 'forbidden' });
+      }
+    }
+    await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ?`, [sid]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('revoke space suspension failed', err);
+    res.status(500).json({ error: 'failed_to_revoke_suspension', detail: String(err?.message || err) });
+  }
+});
 // Moderation queue for a space (pending publications)
 spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, res) => {
   try {
@@ -445,7 +619,7 @@ spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res) => {
     const db = getPool();
     const space = await loadSpace(spaceId, db);
     if (!space) return res.status(404).json({ error: 'space_not_found' });
-
+    
     const currentUserId = req.user!.id;
     const siteAdmin = await can(currentUserId, 'video:delete_any');
     const member = await isMember(db, spaceId, currentUserId);
@@ -458,6 +632,80 @@ spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error('list members failed', err);
     res.status(500).json({ error: 'failed_to_list_members', detail: String(err?.message || err) });
+  }
+});
+
+// Read space settings (space-admin scope)
+spacesRouter.get('/api/spaces/:id/settings', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+
+    const currentUserId = req.user!.id;
+    const siteAdmin = await can(currentUserId, 'video:delete_any');
+    const allowed = siteAdmin || (await ensurePermission(currentUserId, spaceId, 'space:manage'));
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+
+    const settings = parseSpaceSettings(space);
+    const review = await fetchSiteReviewFlags(db);
+    const siteEnforced = space.type === 'group' ? review.requireGroupReview : space.type === 'channel' ? review.requireChannelReview : false;
+
+    res.json({
+      id: space.id,
+      name: space.name ?? null,
+      type: space.type,
+      settings,
+      site: { requireGroupReview: review.requireGroupReview, requireChannelReview: review.requireChannelReview, siteEnforced },
+    });
+  } catch (err: any) {
+    console.error('get space settings failed', err);
+    res.status(500).json({ error: 'failed_to_get_space_settings', detail: String(err?.message || err) });
+  }
+});
+
+// Update space settings (space-admin scope)
+spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res) => {
+  try {
+    const spaceId = Number(req.params.id);
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
+    const db = getPool();
+    const space = await loadSpace(spaceId, db);
+    if (!space) return res.status(404).json({ error: 'space_not_found' });
+
+    const currentUserId = req.user!.id;
+    const siteAdmin = await can(currentUserId, 'video:delete_any');
+    const allowed = siteAdmin || (await ensurePermission(currentUserId, spaceId, 'space:manage'));
+    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+
+    const body = (req.body || {}) as any;
+    const wantComments = body.commentsPolicy;
+    const wantRequire = body.requireReview;
+    const settings = parseSpaceSettings(space);
+    if (!settings.publishing || typeof settings.publishing !== 'object') settings.publishing = {};
+
+    // Apply comments policy
+    if (wantComments !== undefined) {
+      const allowed = new Set(['on', 'off', 'inherit']);
+      const val = String(wantComments || '').toLowerCase();
+      if (!allowed.has(val)) return res.status(400).json({ error: 'bad_comments_policy' });
+      settings.comments = val;
+    }
+
+    // Apply require review unless site enforces it
+    const review = await fetchSiteReviewFlags(db);
+    const siteEnforced = space.type === 'group' ? review.requireGroupReview : space.type === 'channel' ? review.requireChannelReview : false;
+    if (!siteEnforced && wantRequire !== undefined) {
+      settings.publishing.requireApproval = !!wantRequire;
+    }
+
+    await db.query(`UPDATE spaces SET settings = ? WHERE id = ?`, [JSON.stringify(settings), spaceId]);
+    res.json({ ok: true, id: spaceId, settings });
+  } catch (err: any) {
+    console.error('update space settings failed', err);
+    res.status(500).json({ error: 'failed_to_update_space_settings', detail: String(err?.message || err) });
   }
 });
 

@@ -9,9 +9,18 @@
       body { font-family: system-ui, sans-serif; margin: 1.5rem; }
       h1 { margin: 0 0 0.5rem 0; }
       .muted { color: #666; }
-      .card { max-width: 900px; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; }
+      .card { max-width: 1100px; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; }
       .row { margin: 0.6rem 0; }
       a.btn { display:inline-block; padding:0.45rem 0.7rem; border:1px solid #cbd5e1; border-radius:8px; text-decoration:none; font-weight:600; color:#111; background:#fff; }
+      .btn { appearance:none; border:1px solid #cbd5e1; background:#fff; color:#111; padding:0.35rem 0.6rem; border-radius:6px; cursor:pointer; font-weight:600; }
+      .btn[data-state="inactive"] { background:#0b5cff; border-color:#0b5cff; color:#fff; }
+      .btn[data-state="active"] { background:#ef4444; border-color:#ef4444; color:#fff; }
+      .btn[data-state="pending"], .btn[disabled] { opacity:.7; cursor:wait; }
+      .badge { display:inline-block; padding:0.15rem 0.45rem; border-radius:10px; font-size:12px; margin-left:6px; }
+      .badge.susp { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
+      .badge.ban { background:#ffe4e6; color:#9f1239; border:1px solid #fecdd3; }
+      table { width:100%; border-collapse:collapse; }
+      th, td { border-bottom:1px solid #e5e7eb; padding:6px; text-align:left; vertical-align:top; }
     </style>
   </head>
   <body>
@@ -20,32 +29,38 @@
       <div class="muted">Manage membership and settings for this space.</div>
     </header>
     <section class="card">
+      <div class="row"><strong>Links</strong></div>
+      <div class="row"><a id="modLink" class="btn" href="#">Open Moderation Queue</a></div>
+      <div class="row muted" style="margin-bottom:1rem;">Actions below are interactive.</div>
       <div class="row">
-        <strong>Links</strong>
+        <h3 style="margin:0.5rem 0">Members</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Roles</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="membersBody"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+        </table>
       </div>
-      <div class="row">
-        <a id="modLink" class="btn" href="#">Open Moderation Queue</a>
-      </div>
-      <div class="row muted">
-        More tools (members, invites, settings) can be added here.
+      <div class="row" style="margin-top:1.25rem;">
+        <h3 style="margin:0.5rem 0">Subscribers</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Tier</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="subsBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+        </table>
       </div>
     </section>
-    <script>
-      (function() {
-        function parseContext() {
-          var p = location.pathname;
-          var m = p.match(/^\/(spaces|groups|channels)\/(\d+)\/(admin|moderation)/);
-          if (!m) return { type: 'spaces', id: null };
-          return { type: m[1], id: Number(m[2]) };
-        }
-        var ctx = parseContext();
-        var sid = ctx.id;
-        var label = document.getElementById('spaceLabel');
-        if (label && sid) label.textContent = '(space #' + sid + ')';
-        var link = document.getElementById('modLink');
-        if (link && sid) link.href = '/spaces/' + sid + '/moderation';
-      })();
-    </script>
+    <script defer src="/js/space-admin.js"></script>
   </body>
   </html>
 

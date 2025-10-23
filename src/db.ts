@@ -314,6 +314,10 @@ export async function ensureSchema(db: DB) {
       KEY idx_susp_active (user_id, kind, ends_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  // Expand suspensions.kind to support 'ban' (idempotent best-effort)
+  try {
+    await db.query(`ALTER TABLE suspensions MODIFY COLUMN kind ENUM('posting','ban') NOT NULL DEFAULT 'posting'`);
+  } catch {}
 
   // Action log (auditing)
   await db.query(`
@@ -433,6 +437,13 @@ export async function seedRbac(db: DB) {
     'space:create_channel',
     'space:manage_members',
     'space:invite_members',
+    // Moderation & subscriptions (space scope)
+    'moderation:suspend_posting',
+    'moderation:ban',
+    'subscription:manage_plans',
+    'subscription:view_subscribers',
+    'subscription:grant_comp',
+    'subscription:gate_content',
   ];
 
   // Insert roles/permissions
@@ -476,6 +487,8 @@ export async function seedRbac(db: DB) {
     'video:publish_space',
     'video:unpublish_space',
     'video:approve_space',
+    'moderation:suspend_posting',
+    'subscription:view_subscribers',
   ]);
   await give('space_admin', [
     'space:manage',
@@ -488,6 +501,11 @@ export async function seedRbac(db: DB) {
     'video:publish_space',
     'video:unpublish_space',
     'video:approve_space',
+    'moderation:suspend_posting',
+    'moderation:ban',
+    'subscription:view_subscribers',
+    'subscription:manage_plans',
+    'subscription:grant_comp',
   ]);
   await give('group_admin', [
     'space:manage',

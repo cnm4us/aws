@@ -6,7 +6,7 @@
     <title>Space Moderation</title>
     <link rel="stylesheet" href="/admin-nav.css" />
     <style>
-      body { font-family: system-ui, sans-serif; margin: 1.5rem; }
+      body { font-family: system-ui, sans-serif; margin: 0; }
       h1 { margin: 0 0 0.5rem 0; }
       .muted { color: #666; }
       table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
@@ -20,6 +20,16 @@
     </style>
   </head>
   <body>
+    <nav class="sidebar">
+      <h1 id="navTitle">Space</h1>
+      <a id="navSettings" href="#">Settings</a>
+      <a id="navMembers" href="#">Members</a>
+      <a id="navModeration" href="#">Moderation</a>
+    </nav>
+    <main class="main">
+    <div class="section">
+      <h2 id="spaceNameTitle">Space</h2>
+    </div>
     <header>
       <h1>Moderation Queue <span id="spaceLabel" class="muted"></span></h1>
       <div class="muted">Pending publications requiring approval</div>
@@ -54,6 +64,24 @@
         var sid = ctx.id;
         var label = document.getElementById('spaceLabel');
         if (label && sid) label.textContent = '(space #' + sid + ')';
+        // Nav
+        (function setNav(){
+          var base = '/' + ctx.type + '/' + sid;
+          var label = ctx.type === 'spaces' ? 'Space' : ctx.type === 'groups' ? 'Group' : 'Channel';
+          var title = document.getElementById('navTitle'); if (title) title.textContent = label + ' Admin';
+          var s = document.getElementById('navSettings'); if (s) s.href = base + '/admin/settings';
+          var m = document.getElementById('navMembers'); if (m) m.href = base + '/admin/members';
+          var mod = document.getElementById('navModeration'); if (mod) mod.href = base + '/moderation';
+        })();
+        // Load space name
+        (async function loadSpaceTitle(){
+          try{
+            const r = await fetch('/api/spaces/' + sid + '/settings', { credentials:'same-origin' });
+            if (!r.ok) return;
+            const d = await r.json();
+            var t = document.getElementById('spaceNameTitle'); if (t) t.textContent = d && d.name ? d.name : (ctx.type === 'groups' ? 'Group' : ctx.type === 'channels' ? 'Channel' : 'Space');
+          }catch(e){}
+        })();
 
         async function fetchQueue() {
           const res = await fetch('/api/spaces/' + sid + '/moderation/queue', { credentials: 'include' });
@@ -135,5 +163,6 @@
         render();
       })();
     </script>
+    </main>
   </body>
   </html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Space • Members</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1 id="navTitle">Space</h1>
+      <a id="navSettings" href="#">Settings</a>
+      <a id="navMembers" href="#">Members</a>
+      <a id="navModeration" href="#">Moderation</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <h2 id="spaceNameTitle">Space</h2>
+      </div>
+      <div class="section">
+        <h2>Members</h2>
+        <div class="status" id="status"></div>
+        <table style="margin-top:12px;">
+          <thead>
+            <tr><th>ID</th><th>Display Name</th><th>Email</th><th>Role</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </main>
+    <script defer src="/js/space-members.js"></script>
+  </body>
+  </html>

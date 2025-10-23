@@ -5,6 +5,7 @@ Overview
 - Removed legacy `/admin` page and its unused HTML file.
 - Added guards to block direct access to `admin-*.html` files, including via the `/exp/:tag` pinned assets path.
 - Implemented initial space-level admin and moderation UI with unified routes and a moderation queue API.
+- Implemented subscriber listing and space-scoped suspensions (posting and ban). Bans block viewing feeds and accepting invites.
 
 Changes
 - public/forbidden.html
@@ -36,6 +37,10 @@ Changes
 - src/routes/spaces.ts
   - Added `GET /api/spaces/:id/moderation/queue` (auth required). Permission: site_admin, or `video:approve_space`/`video:publish_space` in that space.
   - Returns items with publication (pending), upload (basic fields), and requester display info.
+  - Added `GET /api/spaces/:id/subscribers` (auth). Permission: site_admin or `subscription:view_subscribers`.
+  - Added `POST /api/spaces/:id/suspensions` with `{ userId, kind: 'posting'|'ban', degree? }` (CSRF). Permissions: `moderation:suspend_posting` for posting; `moderation:ban` for ban.
+  - Added `DELETE /api/spaces/:id/suspensions/:sid` to revoke a given suspension (CSRF). Same permission gates as create.
+  - `canViewSpaceFeed` now denies access when user has an active `ban` (site or that space). Invite acceptance also checks and blocks banned users.
 
 Removed
 - public/admin.html (legacy dev-only shell; superseded by the split admin pages)
@@ -52,6 +57,11 @@ Validation Notes
 
 Operational
 - The RBAC seeding now includes canonical `space_*` roles. Restarting the server triggers `seedRbac()` to add any missing `role_permissions` (idempotent), e.g., `space_admin` now includes `video:approve_space`.
+  - space_admin now also includes: `moderation:suspend_posting`, `moderation:ban`, `subscription:view_subscribers`, `subscription:manage_plans`, `subscription:grant_comp`.
+  - space_moderator includes: `moderation:suspend_posting`, `subscription:view_subscribers`.
+
+Schema Backup
+- Latest schema dump saved to `schema_backups/aws_schema_YYYYMMDD_HHMMSS.sql` (see the most recent timestamped file in that folder).
 
 Follow-ups / Options
 - Later, we can change the guard for unauthenticated visitors to redirect to `/login?next=<originalUrl>` before showing forbidden (per your preference).

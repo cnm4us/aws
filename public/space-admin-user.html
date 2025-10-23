@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Space • Member</title>
+    <link rel="stylesheet" href="/admin-nav.css" />
+  </head>
+  <body>
+    <nav class="sidebar">
+      <h1 id="navTitle">Space</h1>
+      <a id="navSettings" href="#">Settings</a>
+      <a id="navMembers" href="#">Members</a>
+      <a id="navModeration" href="#">Moderation</a>
+    </nav>
+    <main class="main">
+      <div class="section">
+        <h2 id="spaceNameTitle">Space</h2>
+      </div>
+      <div class="section">
+        <h2 id="memberTitle">Member</h2>
+        <div class="muted" id="memberMeta"></div>
+      </div>
+
+      <div class="section" id="suspensionSection">
+        <h3>Suspension</h3>
+        <div class="muted" id="permNoteSuspend" style="display:none;">You don’t have permission to suspend; controls are disabled.</div>
+        <div class="field">
+          <label>Duration</label>
+          <label style="display:inline-flex; gap:6px; align-items:center; margin-right:10px;"><input type="radio" name="suspDegree" value="1"/> 1 day (Degree 1)</label>
+          <label style="display:inline-flex; gap:6px; align-items:center; margin-right:10px;"><input type="radio" name="suspDegree" value="2"/> 7 day (Degree 2)</label>
+          <label style="display:inline-flex; gap:6px; align-items:center;"><input type="radio" name="suspDegree" value="3"/> 30 day (Degree 3)</label>
+        </div>
+        <div class="field"><label for="suspReason">Comments</label><textarea id="suspReason" rows="2" placeholder="Optional comment"></textarea></div>
+        <button class="btn" id="issueSusp">Issue</button>
+        <div class="status" id="suspStatus"></div>
+      </div>
+
+      <div class="section" id="liftSection">
+        <h3>Lift Suspension</h3>
+        <div class="muted">Lift comment capture — Coming soon</div>
+        <div class="field"><label for="liftReason">Comment</label><textarea id="liftReason" rows="2" placeholder="Not stored yet" disabled></textarea></div>
+        <button class="btn" id="liftSusp">Lift Suspension</button>
+        <div class="status" id="liftStatus"></div>
+      </div>
+
+      <div class="section" id="banSection">
+        <h3>Ban</h3>
+        <div class="muted" id="permNoteBan" style="display:none;">You don’t have permission to ban; controls are disabled.</div>
+        <div class="field"><label for="banReason">Comment</label><textarea id="banReason" rows="2" placeholder="Optional comment"></textarea></div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="banUser">Ban User</button>
+          <button class="btn" id="liftBan">Lift Ban</button>
+        </div>
+        <div class="status" id="banStatus"></div>
+      </div>
+
+      <div class="section">
+        <h3>Message Member</h3>
+        <div class="muted">Messaging — Coming soon</div>
+        <div class="field"><label for="messageText">Message</label><textarea id="messageText" rows="4" placeholder="Coming soon" disabled></textarea></div>
+        <button class="btn" id="sendMsg" disabled>Send Message</button>
+      </div>
+
+      <div class="section">
+        <h3>Credibility Points</h3>
+        <div class="muted">Coming soon</div>
+      </div>
+
+      <div class="section">
+        <h3>Suspension Log</h3>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Kind</th><th>Degree</th><th>Starts</th><th>Ends</th><th>Reason</th></tr>
+          </thead>
+          <tbody id="logRows"></tbody>
+        </table>
+      </div>
+    </main>
+    <script defer src="/js/space-admin-user.js"></script>
+  </body>
+  </html>
