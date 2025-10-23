@@ -35,28 +35,9 @@
           for (const s of (data.spaces||[])){
             const tr=document.createElement('tr');
             const owner = s.ownerDisplayName || s.ownerUserId || '';
-            const btnId = `del_${s.id}`;
-            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/groups/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${owner}</td><td><button class=\"btn danger\" id=\"${btnId}\">Delete</button></td>`;
+            const adminLink = `/spaces/${s.id}/admin`;
+            tr.innerHTML = `<td>${s.id}</td><td><a href=\"/admin/groups/${s.id}\">${s.name}</a></td><td>${s.slug}</td><td>${owner}</td><td><a class=\"btn\" href=\"${adminLink}\">Admin</a></td>`;
             tbody.appendChild(tr);
-            // Fetch members to decide if delete can be enabled
-            try{
-              const mres = await fetch(`/api/admin/spaces/${s.id}/members`, { credentials:'same-origin' });
-              const mjson = await mres.json();
-              const members = Array.isArray(mjson.members) ? mjson.members : [];
-              const btn = document.getElementById(btnId);
-              if (members.length > 0) {
-                btn.disabled = true; btn.title = 'Remove all members first';
-              } else {
-                btn.addEventListener('click', async ()=>{
-                  if (!confirm('Delete this group? This cannot be undone.')) return;
-                  try{
-                    const del = await fetch(`/api/spaces/${s.id}`, { method:'DELETE', headers: headers(), credentials:'same-origin' });
-                    if (!del.ok) throw new Error('failed');
-                    load();
-                  }catch{ alert('Failed to delete group'); }
-                });
-              }
-            }catch{}
           }
         }catch(e){ document.getElementById('status').textContent='Failed to load groups'; document.getElementById('status').className='status error'; }
       }

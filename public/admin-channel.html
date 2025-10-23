@@ -50,6 +50,15 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
+
+      <div class="section">
+        <h3>Delete Channel</h3>
+        <div class="muted" id="delNote">All members must be removed before deletion.</div>
+        <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+          <button class="btn danger" id="deleteBtn" disabled>Delete Channel</button>
+        </div>
+        <div class="status" id="deleteStatus"></div>
+      </div>
     </main>
     <script>
       const idMatch = location.pathname.match(/\/admin\/channels\/(\d+)/); const spaceId = idMatch? Number(idMatch[1]) : null;
@@ -114,9 +123,24 @@
           tbody.querySelectorAll('button[data-action="remove"]').forEach(btn=>{
             btn.addEventListener('click', async (e)=>{ const uid=Number(e.currentTarget.getAttribute('data-user')); if(!confirm('Remove member?')) return; await fetch(`/api/admin/spaces/${spaceId}/members/${uid}`, { method:'DELETE', headers: headers(), credentials:'same-origin' }); load(); })
           })
+          // Update delete button state
+          const delBtn = document.getElementById('deleteBtn'); const note = document.getElementById('delNote');
+          const members = Array.isArray(data.members) ? data.members : [];
+          if (members.length > 0) { delBtn.disabled = true; note.textContent = 'All members must be removed before deletion.'; }
+          else { delBtn.disabled = false; note.textContent = 'No members detected; deletion is allowed.'; }
         }catch(e){
           const s=document.getElementById('status'); s.textContent='Failed to load members'; s.className='status error'
         }
+      }
+      async function doDelete(){
+        if (!confirm('Delete this channel? This cannot be undone.')) return;
+        const st = document.getElementById('deleteStatus');
+        try{
+          const res = await fetch(`/api/spaces/${spaceId}`, { method:'DELETE', headers: headers(), credentials:'same-origin' });
+          if (!res.ok) throw new Error('failed');
+          st.textContent='Deleted'; st.className='status ok';
+          setTimeout(()=>{ window.location.href = '/admin/channels'; }, 600);
+        }catch(e){ st.textContent='Failed to delete channel'; st.className='status error'; }
       }
       async function save(){
         try{
@@ -131,6 +155,7 @@
       }
       async function addMember(){ const uid=Number(document.getElementById('addUserId').value); const roles=[...document.querySelectorAll('#rolesBox input[type=checkbox]')].filter(b=>b.checked).map(b=>b.getAttribute('data-role')); try{ await fetch(`/api/admin/spaces/${spaceId}/members`, { method:'POST', headers: headers(), credentials:'same-origin', body: JSON.stringify({ userId: uid, roles }) }); load(); }catch(e){ alert('Failed to add member') } }
       document.getElementById('saveBtn').addEventListener('click', save);
+      document.getElementById('deleteBtn').addEventListener('click', doDelete);
       document.getElementById('addBtn').addEventListener('click', addMember);
       loadRoles().then(loadSite).then(load);
     </script>
