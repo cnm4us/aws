@@ -72,3 +72,13 @@ Commit
   - Routes: GET /api/feed/global; GET /api/spaces/:id/feed
   - DB: none
   - Flags: none
+
+Commit
+- Subject: feat(productions): square previews and streamlined columns
+- Hash: 943925e
+- Committed: 2025-10-24T19:30:31+00:00
+- Meta:
+  - Affects: frontend/src/app/Productions.tsx; src/routes/productions.ts
+  - Routes: /productions; /publish?production=:id
+  - DB: none
+  - Flags: none

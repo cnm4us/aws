@@ -16,7 +16,9 @@ Permission Model
 Default Git Workflow
 - By default, do not commit.
 - Only provide a pasteable git commit when the user explicitly says they are ready to commit.
-- Provide it as a single pasteable `git commit ...` command with `-m` blocks (subject, body, Meta). Do not also duplicate the message as plain text.
+- Provide exactly one pasteable `git commit ...` command using multiple `-m` blocks (Subject, Context, Approach, Impact, Tests, Meta).
+- Use real newlines inside each `-m` block; do not include literal `\n` escapes. Avoid here‑docs unless the user asks for them.
+- Do not duplicate the commit message as plain text in the reply.
 - Omit `git add`/staging commands unless the user asks for them.
 - If the user authorizes auto‑commits in a thread, restrict commits to the paths they specify.
 
@@ -90,6 +92,7 @@ Use of Git History
   - git show <commit>:<path>
   - git diff <old>..<new> -- <paths>
   - git blame <path>
+ - Post‑commit traceability: after the user commits, record the latest commit hash (and optional timestamp) in the active handoff entry.
 
 Testing Practices
 - E2E (Playwright):
@@ -102,9 +105,23 @@ Testing Practices
 Safety & Scope
 - Keep changes minimal and task‑focused; do not refactor broadly unless asked.
 - Call out unrelated issues you notice, but don’t fix them unless requested.
+- Agent docs live under `docs/agents/` only; do not duplicate handoffs/instructions elsewhere.
 
 What to Produce in Handoffs by Default
 - A short summary of what changed.
 - When requested by the user: include only the pasteable `git commit` command.
 - After the user commits: record the commit hash (and optional timestamp) alongside Meta (Affects/Routes/DB/Flags) for traceability.
 - Any follow‑ups or risks discovered while working.
+
+Preferred Pasteable Commit Command (example)
+```
+git commit -m "feat(example): concise subject" -m "Context:
+- Why the change is needed." -m "Approach:
+- How implemented." -m "Impact:
+- Behavior and compatibility." -m "Tests:
+- What was verified." -m "Meta:
+- Affects: path/one; path/two
+- Routes: /api/foo; /bar
+- DB: none
+- Flags: none"
+```
