@@ -9,6 +9,7 @@ import { ulid as genUlid } from '../utils/ulid'
 export type RenderOptions = {
   upload: any
   userId: number
+  name?: string | null
   profile?: string | null
   quality?: string | null
   sound?: string | null
@@ -16,7 +17,7 @@ export type RenderOptions = {
 }
 
 export async function startProductionRender(options: RenderOptions) {
-  const { upload, userId, profile, quality, sound, config } = options
+  const { upload, userId, name, profile, quality, sound, config } = options
   if (!MC_ROLE_ARN) throw new Error('MC_ROLE_ARN not configured')
   const db = getPool()
 
@@ -54,9 +55,9 @@ export async function startProductionRender(options: RenderOptions) {
   }
   const prodUlid = genUlid()
   const [preIns] = await db.query(
-    `INSERT INTO productions (upload_id, user_id, status, config, ulid)
-     VALUES (?, ?, 'queued', ?, ?)`,
-    [upload.id, userId, JSON.stringify(configPayload), prodUlid]
+    `INSERT INTO productions (upload_id, user_id, name, status, config, ulid)
+     VALUES (?, ?, ?, 'queued', ?, ?)`,
+    [upload.id, userId, name ?? null, JSON.stringify(configPayload), prodUlid]
   )
   const productionId = Number((preIns as any).insertId)
 

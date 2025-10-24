@@ -26,6 +26,19 @@ Changes Implemented
   - Files: `frontend/src/app/Productions.tsx`.
   - Preview thumbnail style: square 96×96 (match Uploads page), center-cropped with `object-fit: cover`.
 
+- Production naming:
+  - DB: add `productions.name VARCHAR(255) NULL` (idempotent migration + column in initial schema).
+  - API: POST `/api/productions` accepts optional `name` and persists it.
+  - Runner: `startProductionRender` insert includes `name`; route applies a back-compat UPDATE to set `name` after insert if runner did not persist it (older build).
+  - Types: add `name` to `ProductionRow` (server + frontend).
+  - UI (upload-scoped view `/productions?upload=:id`): add a text input “Name this production (optional)” above the Create Production button; pass through on create; Existing Productions table shows `prod.name` (fallback `Production #<id>`); link remains to `/publish?production=<id>`.
+  - Files: `src/db.ts`; `src/services/productionRunner.ts`; `src/routes/productions.ts`; `frontend/src/app/Productions.tsx`.
+
+- Bugfix: name not persisted from UI
+  - Root cause: `handleCreateProductionForUpload` was wrapped in `useCallback` without `newProductionName` in the dependency list, so it always sent an empty/undefined name.
+  - Fix: add `newProductionName` to the dependency array so the latest value is posted.
+  - File: `frontend/src/app/Productions.tsx`.
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -47,6 +60,7 @@ Quick Verify
 - Open `/productions` (no `id`/`upload` params): first column shows poster thumbnails; click opens the production detail. Rows still show Source Upload with link to publish page.
   - Header shows “Preview, Name, Status, Completed”. No Created/Job ID columns.
   - Name cell shows just the file name linking to publish options.
+  - On `/productions?upload=<id>`: entering a name and clicking Create Production persists the name; the Existing Productions table displays the name (linked to publish page).
 
 Next Session Suggestions
 - Confirm whether to rename the general list’s first column to “Name” for consistency.

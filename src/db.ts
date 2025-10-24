@@ -92,6 +92,7 @@ export async function ensureSchema(db: DB) {
       upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       ulid CHAR(26) NULL,
+      name VARCHAR(255) NULL,
       status ENUM('pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending',
       config JSON NULL,
       output_prefix VARCHAR(1024) NULL,
@@ -109,6 +110,7 @@ export async function ensureSchema(db: DB) {
   `);
   // Add new columns/indexes for productions table if upgrading
   await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
+  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
   try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
 
   // --- RBAC+ core tables ---
@@ -640,6 +642,7 @@ export type ProductionRow = {
   id: number;
   upload_id: number;
   user_id: number;
+  name?: string | null;
   status: ProductionStatus;
   config: any;
   output_prefix: string | null;

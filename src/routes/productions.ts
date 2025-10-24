@@ -11,6 +11,7 @@ const productionsRouter = Router()
 
 const createProductionSchema = z.object({
   uploadId: z.number().int().positive(),
+  name: z.string().min(1).max(255).optional(),
   config: z.any().optional(),
   profile: z.string().optional(),
   quality: z.string().optional(),
@@ -36,6 +37,7 @@ function mapProduction(row: any): ProductionRecord {
     id: Number(row.id),
     upload_id: Number(row.upload_id),
     user_id: Number(row.user_id),
+    name: row.name ? String(row.name) : null,
     status: row.status as ProductionStatus,
     config: row.config ? safeJson(row.config) : null,
     output_prefix: row.output_prefix ? String(row.output_prefix) : null,
@@ -190,7 +192,7 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res) => {
 
 productionsRouter.post('/api/productions', requireAuth, async (req, res) => {
   try {
-    const { uploadId, config, profile, quality, sound } = createProductionSchema.parse(req.body || {})
+    const { uploadId, name, config, profile, quality, sound } = createProductionSchema.parse(req.body || {})
     const db = getPool()
     const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
     const upload = (rows as any[])[0]
@@ -212,11 +214,19 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res) => {
     const { jobId, outPrefix, productionId } = await startProductionRender({
       upload,
       userId: currentUserId,
+      name: typeof name === 'string' ? name : null,
       profile: profile ?? null,
       quality: quality ?? null,
       sound: sound ?? null,
       config,
     })
+
+    // Back-compat: if the runner insert didn't persist name (older build), set it explicitly now
+    if (name && typeof name === 'string') {
+      try {
+        await db.query(`UPDATE productions SET name = ? WHERE id = ? AND (name IS NULL OR name = '')`, [name, productionId])
+      } catch {}
+    }
 
     const [detailRows] = await db.query(
       `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,

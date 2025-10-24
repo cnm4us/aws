@@ -137,6 +137,13 @@ const PublishPage: React.FC = () => {
             height: up.height ?? null,
             created_at: up.created_at || '',
             uploaded_at: null,
+            // Prefer production-specific posters injected by the backend for this production
+            poster_portrait_cdn: up.poster_portrait_cdn || up.poster_cdn || undefined,
+            poster_landscape_cdn: up.poster_landscape_cdn || undefined,
+            poster_cdn: up.poster_cdn || undefined,
+            poster_portrait_s3: up.poster_portrait_s3 || up.poster_s3 || undefined,
+            poster_landscape_s3: up.poster_landscape_s3 || undefined,
+            poster_s3: up.poster_s3 || undefined,
             publications: [],
           }
           const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })

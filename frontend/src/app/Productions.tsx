@@ -4,6 +4,7 @@ type ProductionRow = {
   id: number
   upload_id: number
   user_id: number
+  name?: string | null
   status: string
   config: any
   output_prefix: string | null
@@ -126,6 +127,7 @@ const ProductionsPage: React.FC = () => {
   const [uploadDetailError, setUploadDetailError] = useState<string | null>(null)
   const [creatingProduction, setCreatingProduction] = useState(false)
   const [createProductionError, setCreateProductionError] = useState<string | null>(null)
+  const [newProductionName, setNewProductionName] = useState<string>('')
 
   const loadProductions = useCallback(async (userId: number) => {
     setLoading(true)
@@ -245,7 +247,7 @@ const ProductionsPage: React.FC = () => {
       const detailHref = `/productions?id=${prod.id}`
       const publishHref = `/publish?production=${prod.id}`
       const poster = pickPoster(upload || null)
-      const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`
+      const displayName = (prod.name && prod.name.trim()) || (upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`)
       return (
         <tr key={prod.id}>
           <td style={{ padding: 12, width: 96 }}>
@@ -258,18 +260,16 @@ const ProductionsPage: React.FC = () => {
             )}
           </td>
           <td style={{ padding: 12 }}>
-            {upload ? (
-              <div style={{ color: '#ddd' }}>
-                <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>
-                  {displayName}
-                </a>
+            <div style={{ color: '#ddd' }}>
+              <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>
+                {displayName}
+              </a>
+              {upload && (
                 <div style={{ marginTop: 2, color: '#777' }}>
                   {upload.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
                 </div>
-              </div>
-            ) : (
-              <div style={{ color: '#ddd', fontWeight: 600 }}>Upload {prod.upload_id}</div>
-            )}
+              )}
+            </div>
           </td>
           <td style={{ padding: 12 }}>{prod.completed_at ? formatDate(prod.completed_at) : '—'}</td>
         </tr>
@@ -294,7 +294,7 @@ const ProductionsPage: React.FC = () => {
         method: 'POST',
         credentials: 'same-origin',
         headers,
-        body: JSON.stringify({ uploadId: uploadContextId }),
+        body: JSON.stringify({ uploadId: uploadContextId, name: newProductionName && newProductionName.trim() ? newProductionName.trim() : undefined }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -312,13 +312,14 @@ const ProductionsPage: React.FC = () => {
         setSelectedId(newId)
         setSelectedProduction(production || null)
         setUploadContextId(null)
+        setNewProductionName('')
       }
     } catch (err: any) {
       setCreateProductionError(err?.message || 'Failed to start production')
     } finally {
       setCreatingProduction(false)
     }
-  }, [uploadContextId, me?.userId, loadProductions])
+  }, [uploadContextId, me?.userId, loadProductions, newProductionName])
 
   if (me === null) {
     return (
@@ -383,6 +384,24 @@ const ProductionsPage: React.FC = () => {
                 <div>Resolution: {(upload?.width || 0)}×{upload?.height || 0}</div>
                 <div>Uploaded: {formatDate(upload?.created_at || null)}</div>
               </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder="Name this production (optional)"
+                  value={newProductionName}
+                  onChange={(e) => setNewProductionName(e.target.value)}
+                  style={{
+                    flex: '1 1 220px',
+                    minWidth: 220,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid #2a2a2a',
+                    background: '#0c0c0c',
+                    color: '#fff',
+                    outline: 'none',
+                  }}
+                />
+              </div>
               <button
                 onClick={handleCreateProductionForUpload}
                 disabled={creatingProduction}
@@ -425,7 +444,7 @@ const ProductionsPage: React.FC = () => {
                         <tr key={prod.id}>
                           <td style={{ padding: 12 }}>
                             <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
-                              Production #{prod.id}
+                              {prod.name && prod.name.trim() ? prod.name : `Production #${prod.id}`}
                             </a>
                           </td>
                           <td style={{ padding: 12 }}>{prod.status}</td>
