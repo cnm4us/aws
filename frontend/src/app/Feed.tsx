@@ -42,7 +42,6 @@ type MySpacesResponse = {
 }
 
 type FeedMode =
-  | { kind: 'legacy' }
   | { kind: 'global' }
   | { kind: 'space'; spaceId: number }
 
@@ -84,17 +83,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   }
 }
 
-async function fetchLegacyFeed(opts: { cursor?: number; userId?: number; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: number | null }> {
-  const params = new URLSearchParams({ status: 'completed', limit: String(opts.limit ?? 20) })
-  if (opts.cursor) params.set('cursor', String(opts.cursor))
-  if (opts.userId) params.set('user_id', String(opts.userId))
-  const res = await fetch(`/api/uploads?${params.toString()}`)
-  if (!res.ok) throw new Error('failed to fetch uploads')
-  const data = await res.json()
-  const items = (Array.isArray(data) ? data : []).map((row) => buildUploadItem(row, null, null))
-  const nextCursor = items.length ? Number(items[items.length - 1].id) : null
-  return { items, nextCursor }
-}
+// Legacy feed removed: feeds are driven by publications only.
 
 async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
@@ -157,7 +146,7 @@ export default function Feed() {
   const [spacesLoaded, setSpacesLoaded] = useState(false)
   const [spacesLoading, setSpacesLoading] = useState(false)
   const [spacesError, setSpacesError] = useState<string | null>(null)
-  const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'legacy' })
+  const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'global' })
   const railRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
@@ -229,7 +218,7 @@ export default function Feed() {
         setSpaceList(null)
         setSpacesLoaded(false)
         setSpacesError(null)
-        setFeedMode((prev) => (prev.kind === 'space' ? { kind: 'legacy' } : prev))
+        setFeedMode((prev) => (prev.kind === 'space' ? { kind: 'global' } : prev))
       }
     })()
     return () => { canceled = true }
@@ -257,14 +246,10 @@ export default function Feed() {
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else {
-          const { items: page, nextCursor: next } = await fetchLegacyFeed({
-            userId: mineOnly && myUserId != null ? myUserId : undefined,
-          })
-          fetchedItems = mineOnly && myUserId == null ? [] : page
-          nextCursor = next != null ? String(next) : null
-          if (mineOnly && myUserId != null) {
-            fetchedItems = applyMineFilter(page, mineOnly, myUserId)
-          }
+          // Fallback: treat as global feed
+          const { items: page, nextCursor: cursorStr } = await fetchGlobalFeed()
+          fetchedItems = applyMineFilter(page, mineOnly, myUserId)
+          nextCursor = cursorStr
         }
         if (canceled) return
         setItems(fetchedItems)
@@ -535,18 +520,10 @@ export default function Feed() {
               setItems((prev) => prev.concat(filtered))
               setCursor(nextCursor)
             } else {
-              const nextCursorNum = Number(cursor)
-              if (!Number.isFinite(nextCursorNum) || nextCursorNum <= 0) {
-                setCursor(null)
-                return
-              }
-              const { items: page, nextCursor } = await fetchLegacyFeed({
-                cursor: nextCursorNum,
-                userId: mineOnly && myUserId != null ? myUserId : undefined,
-              })
-              const filtered = mineOnly && myUserId != null ? applyMineFilter(page, mineOnly, myUserId) : (mineOnly && myUserId == null ? [] : page)
+              const { items: page, nextCursor: nextCursorStr } = await fetchGlobalFeed({ cursor })
+              const filtered = applyMineFilter(page, mineOnly, myUserId)
               setItems((prev) => prev.concat(filtered))
-              setCursor(nextCursor != null ? String(nextCursor) : null)
+              setCursor(nextCursorStr)
             }
           } catch (err) {
             console.error('load more failed', err)
@@ -735,10 +712,7 @@ export default function Feed() {
     setDrawerOpen(false)
   }
 
-  const handleSelectLegacy = () => {
-    setFeedMode({ kind: 'legacy' })
-    setDrawerOpen(false)
-  }
+  // Legacy feed removed
 
   const handleSelectGlobal = () => {
     setFeedMode({ kind: 'global' })
@@ -753,7 +727,7 @@ export default function Feed() {
     if (feedMode.kind === 'global') {
       return mineOnly ? 'My Global Feed' : 'Global Feed'
     }
-    return mineOnly ? 'My Completed Videos' : 'All Completed Videos'
+    return mineOnly ? 'My Global Feed' : 'Global Feed'
   }, [feedMode, mineOnly, spaceList])
 
   const activeSpaceId = feedMode.kind === 'space' ? feedMode.spaceId : null

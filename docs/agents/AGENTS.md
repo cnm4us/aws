@@ -14,9 +14,10 @@ Permission Model
 - Credentials & secrets: Never add secrets to Git. Honor .gitignore and keep env values out of commits.
 
 Default Git Workflow
-- By default, do not commit. Provide:
-  1) A ready‑to‑paste multi‑line commit message (subject + body + meta).
-  2) The exact git add / git commit commands for the paths you touched.
+- By default, do not commit.
+- Only provide a pasteable git commit when the user explicitly says they are ready to commit.
+- Provide it as a single pasteable `git commit ...` command with `-m` blocks (subject, body, Meta). Do not also duplicate the message as plain text.
+- Omit `git add`/staging commands unless the user asks for them.
 - If the user authorizes auto‑commits in a thread, restrict commits to the paths they specify.
 
 Commit Message Policy (Conventional Commits + Meta)
@@ -104,7 +105,6 @@ Safety & Scope
 
 What to Produce in Handoffs by Default
 - A short summary of what changed.
-- The commit message to paste (subject/body/meta).
-- The exact commands to stage and commit (without executing them).
+- When requested by the user: include only the pasteable `git commit` command.
+- After the user commits: record the commit hash (and optional timestamp) alongside Meta (Affects/Routes/DB/Flags) for traceability.
 - Any follow‑ups or risks discovered while working.
-
