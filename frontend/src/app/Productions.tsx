@@ -409,21 +409,37 @@ const ProductionsPage: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: '#aaa' }}>
-                      <th style={{ padding: 12 }}>ID</th>
+                      <th style={{ padding: 12 }}>Name</th>
                       <th style={{ padding: 12 }}>Status</th>
                       <th style={{ padding: 12 }}>Created</th>
                       <th style={{ padding: 12 }}>Job ID</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {productionsForUpload.map((prod) => (
-                      <tr key={prod.id}>
-                        <td style={{ padding: 12 }}><a href={`/productions?id=${prod.id}`} style={{ color: '#0a84ff', textDecoration: 'none' }}>Production #{prod.id}</a></td>
-                        <td style={{ padding: 12 }}>{prod.status}</td>
-                        <td style={{ padding: 12 }}>{formatDate(prod.created_at)}</td>
-                        <td style={{ padding: 12 }}>{prod.mediaconvert_job_id || '—'}</td>
-                      </tr>
-                    ))}
+                    {productionsForUpload.map((prod) => {
+                      const publishHref = `/publish?production=${prod.id}`
+                      const detailHref = `/productions?id=${prod.id}`
+                      return (
+                        <tr key={prod.id}>
+                          <td style={{ padding: 12 }}>
+                            <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
+                              Production #{prod.id}
+                            </a>
+                          </td>
+                          <td style={{ padding: 12 }}>{prod.status}</td>
+                          <td style={{ padding: 12 }}>{formatDate(prod.created_at)}</td>
+                          <td style={{ padding: 12 }}>
+                            {prod.mediaconvert_job_id ? (
+                              <a href={detailHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
+                                {prod.mediaconvert_job_id}
+                              </a>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
