@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { getPool, type ProductionRow, type ProductionStatus } from '../db'
+import { enhanceUploadRow } from '../utils/enhance'
 import { OUTPUT_BUCKET } from '../config'
 import { startProductionRender } from '../services/productionRunner'
 import { requireAuth } from '../middleware/auth'
@@ -84,8 +85,18 @@ productionsRouter.get('/api/productions', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'forbidden' })
     }
     const [rows] = await db.query(
-      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
-              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
+      `SELECT p.*,
+              u.original_filename,
+              u.modified_filename,
+              u.description AS upload_description,
+              u.status AS upload_status,
+              u.size_bytes,
+              u.width,
+              u.height,
+              u.created_at AS upload_created_at,
+              u.s3_key AS upload_s3_key,
+              u.profile AS upload_profile,
+              COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
          FROM productions p
          JOIN uploads u ON u.id = p.upload_id
         WHERE p.user_id = ?
@@ -94,7 +105,29 @@ productionsRouter.get('/api/productions', requireAuth, async (req, res) => {
       [qUser]
     )
     const list = (rows as any[]).map(mapProduction)
-    res.json({ productions: list })
+    // Enhance poster/urls for uploads using resolved output prefix
+    const enhanced = (rows as any[]).map((row) => {
+      const rec = mapProduction(row)
+      try {
+        const enhancedUpload = enhanceUploadRow({
+          s3_key: row.upload_s3_key,
+          output_prefix: row.upload_output_prefix,
+          original_filename: row.original_filename,
+          width: row.width,
+          height: row.height,
+          profile: row.upload_profile,
+        })
+        if (rec.upload) {
+          ;(rec.upload as any).poster_portrait_cdn = enhancedUpload.poster_portrait_cdn
+          ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
+          ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
+          ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
+        }
+      } catch {}
+      return rec
+    })
+
+    res.json({ productions: enhanced })
   } catch (err: any) {
     console.error('list productions failed', err)
     res.status(500).json({ error: 'failed_to_list_productions', detail: String(err?.message || err) })
@@ -107,8 +140,18 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res) => {
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
-              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
+      `SELECT p.*,
+              u.original_filename,
+              u.modified_filename,
+              u.description AS upload_description,
+              u.status AS upload_status,
+              u.size_bytes,
+              u.width,
+              u.height,
+              u.created_at AS upload_created_at,
+              u.s3_key AS upload_s3_key,
+              u.profile AS upload_profile,
+              COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
          FROM productions p
          JOIN uploads u ON u.id = p.upload_id
         WHERE p.id = ?
@@ -121,7 +164,24 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res) => {
     if (Number(row.user_id) !== currentUserId && !(await can(currentUserId, 'video:delete_any'))) {
       return res.status(403).json({ error: 'forbidden' })
     }
-    res.json({ production: mapProduction(row) })
+    const rec = mapProduction(row)
+    try {
+      const enhancedUpload = enhanceUploadRow({
+        s3_key: row.upload_s3_key,
+        output_prefix: row.upload_output_prefix,
+        original_filename: row.original_filename,
+        width: row.width,
+        height: row.height,
+        profile: row.upload_profile,
+      })
+      if (rec.upload) {
+        ;(rec.upload as any).poster_portrait_cdn = enhancedUpload.poster_portrait_cdn
+        ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
+        ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
+        ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
+      }
+    } catch {}
+    res.json({ production: rec })
   } catch (err: any) {
     console.error('get production failed', err)
     res.status(500).json({ error: 'failed_to_get_production', detail: String(err?.message || err) })

@@ -244,32 +244,34 @@ const ProductionsPage: React.FC = () => {
       const upload = prod.upload
       const detailHref = `/productions?id=${prod.id}`
       const publishHref = `/publish?production=${prod.id}`
+      const poster = pickPoster(upload || null)
       const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`
       return (
         <tr key={prod.id}>
-          <td style={{ padding: 12 }}>{prod.id}</td>
+          <td style={{ padding: 12, width: 96 }}>
+            {poster ? (
+              <a href={detailHref} style={{ display: 'inline-block', borderRadius: 8, overflow: 'hidden', lineHeight: 0 }}>
+                <img src={poster} alt={`Production ${prod.id} poster`} style={{ width: 96, height: 96, objectFit: 'cover', display: 'block', background: '#111' }} />
+              </a>
+            ) : (
+              <div style={{ width: 96, height: 96, background: '#1a1a1a', borderRadius: 8 }} />
+            )}
+          </td>
           <td style={{ padding: 12 }}>
-            <a href={detailHref} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>
-              Production #{prod.id}
-            </a>
             {upload ? (
-              <div style={{ color: '#777', marginTop: 4 }}>
-                Source:{' '}
-                <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
+              <div style={{ color: '#ddd' }}>
+                <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>
                   {displayName}
                 </a>
-                <div style={{ marginTop: 2 }}>
+                <div style={{ marginTop: 2, color: '#777' }}>
                   {upload.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
                 </div>
               </div>
             ) : (
-              <div style={{ color: '#777', marginTop: 4 }}>Upload {prod.upload_id}</div>
+              <div style={{ color: '#ddd', fontWeight: 600 }}>Upload {prod.upload_id}</div>
             )}
           </td>
-          <td style={{ padding: 12 }}>{prod.status}</td>
-          <td style={{ padding: 12 }}>{formatDate(prod.created_at)}</td>
           <td style={{ padding: 12 }}>{prod.completed_at ? formatDate(prod.completed_at) : '—'}</td>
-          <td style={{ padding: 12 }}>{prod.mediaconvert_job_id || '—'}</td>
         </tr>
       )
     })
@@ -542,15 +544,12 @@ const ProductionsPage: React.FC = () => {
           <div style={{ color: '#bbb' }}>No productions yet. Select an upload to start a new production.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: '#aaa' }}>
-                  <th style={{ padding: 12 }}>ID</th>
-                  <th style={{ padding: 12 }}>Source Upload</th>
-                  <th style={{ padding: 12 }}>Status</th>
-                  <th style={{ padding: 12 }}>Created</th>
+                  <th style={{ padding: 12 }}>Preview</th>
+                  <th style={{ padding: 12 }}>Name</th>
                   <th style={{ padding: 12 }}>Completed</th>
-                  <th style={{ padding: 12 }}>Job ID</th>
                 </tr>
               </thead>
               <tbody>{rows}</tbody>
