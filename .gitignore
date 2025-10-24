@@ -7,21 +7,18 @@ dist/
 .tmp_awscli/
 *.mp4
 *.m3u8
-*.ts
+
 
 logs/
 
-# Keep TypeScript source tracked
-!src/**/*.ts
-!src/**/*.d.ts
-!scripts/**/*.ts
 
 # Ignore built web assets (output of `npm run web:build`)
 public/app/assets/
 public/app/index.html
 
 # Ignore PlayWright Artificats.
-e2e/test-results/
-e2e/playwright-report/
+playwright-report/
+test-results/
+e2e/utils/.auth/
 e2e/.auth/
 reports/
