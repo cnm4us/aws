@@ -17,7 +17,11 @@
     "web:deploy": "node scripts/web-deploy.js root",
     "web:build:scoped": "npm run build && vite build --config frontend/vite.config.ts",
     "web:deploy:scoped": "node scripts/web-deploy.js scoped",
-    "admin:own-uploads": "ts-node scripts/admin-own-uploads.ts"
+    "admin:own-uploads": "ts-node scripts/admin-own-uploads.ts",
+    "e2e": "playwright test --config=e2e/playwright.config.ts",
+    "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
+    "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",
+    "e2e:install": "playwright install --with-deps"
   },
   "dependencies": {
     "@aws-sdk/client-mediaconvert": "^3.645.0",
@@ -50,6 +54,8 @@
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",
-    "workbox-build": "^7.3.0"
+    "workbox-build": "^7.3.0",
+    "@playwright/test": "^1.47.2",
+    "cross-env": "^7.0.3"
   }
 }
