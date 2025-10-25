@@ -12,8 +12,8 @@ Decisions (carried + new)
 - Production naming: `productions.name` exists; UI passes optional name; back-compat update path retained in service.
 
 Changes Since Last
-- Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; docs/agents/Handoff_08.md
-- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed
+- Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; src/features/publications/service.ts; src/routes/publications.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed; POST /api/publications/:id/(approve|unpublish|reject)
 - DB: none
 - Flags: none
 
@@ -94,7 +94,29 @@ Open Items / Next Actions
   - Feeds: cursor round-trip and item mapping.
  - [ ] Optional cleanup: move route-level publication note events into a service helper for consistency.
    - Implemented: routes now call publications.service.recordNoteEvent; models-level event writer no longer used here.
-- [ ] Optional cleanup: consider relocating `enhanceUploadRow` to a shared util folder and documenting its inputs/outputs.
+ - [ ] Optional cleanup: consider relocating `enhanceUploadRow` to a shared util folder and documenting its inputs/outputs.
+
+Subject: chore(publications): remove legacy models/spacePublications and dead route helpers
+
+Context:
+- With publications now fully serviced via features/publications/{service,repo}, legacy models are unused.
+- A local canViewSpaceFeed + parseSpaceSettings duplicate in routes/spaces.ts was left after service extraction.
+
+Approach:
+- Delete src/models/spacePublications.ts; remove its import from routes/publications.ts.
+- Remove unused canViewSpaceFeed/parseSpaceSettings helpers from routes/spaces.ts (route uses spaces service).
+
+Impact:
+- No behavior change; reduces duplication and potential drift.
+
+Tests:
+- Build and lint; no references to deleted modules remain.
+
+Meta:
+- Affects: src/models/spacePublications.ts (deleted); src/routes/publications.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: n/a
+- DB: none
+- Flags: none
 
 Work Log (optional)
 - 2025-10-25 21:50Z — Bootstrapped thread; created Handoff_08.md with carried decisions and next actions.

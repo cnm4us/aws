@@ -4,13 +4,7 @@ import { getPool, SpacePublicationRow, SpacePublicationStatus, SpacePublicationV
 import { requireAuth } from '../middleware/auth';
 import { can, resolveChecker } from '../security/permissions';
 import * as pubsSvc from '../features/publications/service'
-import {
-  createSpacePublication,
-  getSpacePublicationById,
-  listSpacePublicationEvents,
-  listSpacePublicationsForUpload,
-  updateSpacePublicationStatus,
-} from '../models/spacePublications';
+// Legacy models removed from route usage; publications now delegate to service/repo
 
 type SpaceRow = {
   id: number;

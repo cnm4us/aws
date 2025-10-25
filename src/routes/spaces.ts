@@ -85,24 +85,7 @@ async function ensurePermission(userId: number, spaceId: number, permission: str
   return can(userId, permission as any, { spaceId });
 }
 
-function parseSpaceSettings(space: SpaceRow | null): any {
-  if (!space || space.settings == null) return {};
-  if (typeof space.settings === 'object') return space.settings;
-  try {
-    return JSON.parse(String(space.settings));
-  } catch {
-    return {};
-  }
-}
-
-function settingsAllowPublicView(settings: any): boolean {
-  if (!settings || typeof settings !== 'object') return false;
-  const visibility = typeof settings.visibility === 'string' ? settings.visibility.toLowerCase() : '';
-  if (visibility === 'public' || visibility === 'global') return true;
-  if (settings.allowAnonymousAccess === true) return true;
-  if (settings.publicFeed === true) return true;
-  return false;
-}
+// settings helpers moved to spaces service; legacy copies removed
 
 async function hasActiveSubscription(db: any, spaceId: number, userId: number): Promise<boolean> {
   const [rows] = await db.query(
@@ -114,23 +97,7 @@ async function hasActiveSubscription(db: any, spaceId: number, userId: number): 
   return (rows as any[]).length > 0;
 }
 
-async function canViewSpaceFeed(db: any, space: SpaceRow, userId: number): Promise<boolean> {
-  // Banned users cannot view the space at all
-  try {
-    const [bRows] = await db.query(
-      `SELECT 1 FROM suspensions WHERE user_id = ? AND kind = 'ban' AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) AND (target_type = 'site' OR (target_type = 'space' AND target_id = ?)) LIMIT 1`,
-      [userId, space.id]
-    );
-    if ((bRows as any[]).length > 0) return false;
-  } catch {}
-  const siteAdmin = await can(userId, 'video:delete_any');
-  if (siteAdmin) return true;
-  if (space.owner_user_id != null && space.owner_user_id === userId) return true;
-  if (await isMember(db, space.id, userId)) return true;
-  if (space.type === 'channel' && (await hasActiveSubscription(db, space.id, userId))) return true;
-  const settings = parseSpaceSettings(space);
-  return settingsAllowPublicView(settings);
-}
+// canViewSpaceFeed moved to spaces service
 
 function mapSpaceSummary(row: any, relationship: SpaceRelationship, subscribed: boolean): SpaceSummary {
   return {
