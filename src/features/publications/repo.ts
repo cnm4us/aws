@@ -112,7 +112,33 @@ export async function loadProduction(productionId: number, conn?: any): Promise<
   return { id: Number(row.id), upload_id: Number(row.upload_id), user_id: Number(row.user_id) }
 }
 
-export async function loadSpace(_spaceId: number, _conn?: any): Promise<any | null> { throw new Error('not_implemented: publications.repo.loadSpace') }
+export async function loadSpace(spaceId: number, conn?: any): Promise<{ id: number; type: string; owner_user_id: number | null; settings: any } | null> {
+  const db = conn || getPool()
+  const [rows] = await db.query(`SELECT id, type, owner_user_id, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    id: Number(row.id),
+    type: String(row.type || ''),
+    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
+    settings: row.settings,
+  }
+}
+
+export async function loadSiteSettings(conn?: any): Promise<{ require_group_review: boolean; require_channel_review: boolean } | null> {
+  const db = conn || getPool()
+  try {
+    const [rows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`)
+    const row = (rows as any[])[0]
+    if (!row) return null
+    return {
+      require_group_review: Boolean(Number(row.require_group_review)),
+      require_channel_review: Boolean(Number(row.require_channel_review)),
+    }
+  } catch {
+    return null
+  }
+}
 
 // Minimal projection for listing publications of a production
 export async function listPublicationsForProduction(productionId: number, conn?: any): Promise<Array<{

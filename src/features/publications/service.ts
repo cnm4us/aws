@@ -1,4 +1,4 @@
-import { ForbiddenError, InvalidStateError, NotFoundError } from '../../core/errors'
+import { ForbiddenError, InvalidStateError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import { resolveChecker, can } from '../../security/permissions'
 import { type CreateFromProductionInput, type CreateFromUploadInput, type Publication, type PublicationEvent, type ServiceContext } from './types'
@@ -66,8 +66,46 @@ export async function unpublish(publicationId: number, ctx: ServiceContext): Pro
 }
 
 export async function republish(publicationId: number, ctx: ServiceContext): Promise<Publication> {
-  // TODO: owner vs moderator paths; idempotency
-  throw new InvalidStateError('not_implemented: publications.service.republish')
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const status = String(pub.status || '')
+  if (status === 'published' || status === 'pending' || status === 'approved') {
+    throw new DomainError('invalid_status', 'invalid_status', 400)
+  }
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const canPublishSpace = await can(ctx.userId, 'video:publish_space', { spaceId: pub.space_id, checker })
+
+  if (isAdmin || canPublishSpace) {
+    const now = new Date()
+    const updated = await repo.updateStatus(publicationId, { status: 'published', approvedBy: ctx.userId, publishedAt: now, unpublishedAt: null })
+    await repo.insertEvent(publicationId, ctx.userId, 'moderator_republish_published', undefined)
+    return updated
+  }
+
+  const upload = await repo.loadUpload(pub.upload_id)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const ownerId = upload.user_id
+  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId, checker }))
+  if (!isOwner) throw new ForbiddenError()
+  if (status === 'rejected') throw new ForbiddenError()
+
+  const events = await repo.listEvents(publicationId)
+  const lastUnpub = [...events].reverse().find((e) => e.action === 'unpublish_publication')
+  if (!lastUnpub || lastUnpub.actor_user_id !== ctx.userId) throw new ForbiddenError()
+
+  const space = await repo.loadSpace(pub.space_id)
+  const requiresApproval = await effectiveRequiresApproval(space)
+  if (requiresApproval) {
+    const updated = await repo.updateStatus(publicationId, { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null })
+    await repo.insertEvent(publicationId, ctx.userId, 'owner_republish_requested', undefined)
+    return updated
+  } else {
+    const now = new Date()
+    const updated = await repo.updateStatus(publicationId, { status: 'published', approvedBy: ctx.userId, publishedAt: now, unpublishedAt: null })
+    await repo.insertEvent(publicationId, ctx.userId, 'owner_republish_published', undefined)
+    return updated
+  }
 }
 
 export async function listByProduction(productionId: number, _ctx: ServiceContext): Promise<Publication[]> {
@@ -79,9 +117,19 @@ export async function get(publicationId: number, _ctx: ServiceContext): Promise<
   throw new NotFoundError('not_implemented: publications.service.get')
 }
 
-export async function effectiveRequiresApproval(_space: any): Promise<boolean> {
-  // TODO: site/space precedence with channel default true
-  return true
+export async function effectiveRequiresApproval(space: any): Promise<boolean> {
+  const site = await repo.loadSiteSettings()
+  if (!space) return false
+  if (space.type === 'group' && site?.require_group_review) return true
+  if (space.type === 'channel' && site?.require_channel_review) return true
+  let settings: any = {}
+  try { settings = typeof space.settings === 'string' ? JSON.parse(space.settings) : (space.settings || {}) } catch { settings = {} }
+  const publishing = settings && typeof settings === 'object' ? settings.publishing : undefined
+  if (publishing && typeof publishing === 'object' && typeof publishing.requireApproval === 'boolean') {
+    return publishing.requireApproval
+  }
+  if (space.type === 'channel') return true
+  return false
 }
 
 // A minimal read-only helper specific to the current API response shape.

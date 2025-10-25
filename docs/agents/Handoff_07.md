@@ -89,6 +89,13 @@ Refactor — Publications (reject mutation migrated)
   - Route preserves `{ publication }` and still attaches an optional note as a separate event.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (republish mutation migrated)
+- Route POST `/api/publications/:id/republish` now uses the service/repo:
+  - Service: `republish(id, { userId })` implements moderator/admin immediate publish; owner path enforces last-actor rule, blocks rejected, and respects review policy (pending vs published) using site/space settings.
+  - Repo: added `loadSpace` and `loadSiteSettings` to support policy evaluation.
+  - Route preserves `{ publication }` and error mapping; returns `invalid_status` with 400 where appropriate.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -194,5 +201,15 @@ Commit
 - Meta:
   - Affects: src/routes/publications.ts; src/features/publications/service.ts; src/features/publications/repo.ts; docs/agents/Handoff_07.md
   - Routes: POST /api/publications/:id/unpublish
+  - DB: none
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): move reject mutation to service/repo
+- Hash: b660a98
+- Committed: 2025-10-25T19:48:56+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
+  - Routes: POST /api/publications/:id/reject
   - DB: none
   - Flags: none
