@@ -2,21 +2,14 @@ import { listGlobalFeedRows } from './repo'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { type FeedResponse } from './types'
 import { listSpaceFeedRows } from './repo'
+import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 
 export async function getGlobalFeed(opts: { limit?: number; cursor?: string | null }): Promise<FeedResponse> {
-  const limit = Math.min(Math.max(Number(opts.limit ?? 20) || 20, 1), 100)
-  const cursor = typeof opts.cursor === 'string' ? opts.cursor : null
-  let cursorPublishedAt: string | null = null
-  let cursorId: number | null = null
-  if (cursor) {
-    const [tsPart, idPart] = cursor.split('|')
-    if (tsPart && idPart) {
-      cursorPublishedAt = tsPart
-      const parsedId = Number(idPart)
-      if (Number.isFinite(parsedId) && parsedId > 0) cursorId = parsedId
-    }
-  }
+  const limit = clampLimit(opts.limit, 20, 1, 100)
+  const parsed = parseTsIdCursor(opts.cursor ?? null)
+  const cursorPublishedAt = parsed?.ts ?? null
+  const cursorId = parsed?.id ?? null
 
   const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit })
   const items = rows.map((row) => {
@@ -73,25 +66,17 @@ export async function getGlobalFeed(opts: { limit?: number; cursor?: string | nu
   let nextCursor: string | null = null
   if (rows.length === limit && items.length) {
     const last = items[items.length - 1].publication as any
-    if (last.published_at) nextCursor = `${last.published_at}|${last.id}`
+    if (last.published_at) nextCursor = buildTsIdCursor(last.published_at, last.id)
   }
 
   return { items, nextCursor }
 }
 
 export async function getSpaceFeed(spaceId: number, opts: { limit?: number; cursor?: string | null }): Promise<FeedResponse> {
-  const limit = Math.min(Math.max(Number(opts.limit ?? 20) || 20, 1), 100)
-  const cursor = typeof opts.cursor === 'string' ? opts.cursor : null
-  let cursorPublishedAt: string | null = null
-  let cursorId: number | null = null
-  if (cursor) {
-    const [tsPart, idPart] = cursor.split('|')
-    if (tsPart && idPart) {
-      cursorPublishedAt = tsPart
-      const parsedId = Number(idPart)
-      if (Number.isFinite(parsedId) && parsedId > 0) cursorId = parsedId
-    }
-  }
+  const limit = clampLimit(opts.limit, 20, 1, 100)
+  const parsed = parseTsIdCursor(opts.cursor ?? null)
+  const cursorPublishedAt = parsed?.ts ?? null
+  const cursorId = parsed?.id ?? null
 
   const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit })
   const items = rows.map((row) => {
@@ -148,7 +133,7 @@ export async function getSpaceFeed(spaceId: number, opts: { limit?: number; curs
   let nextCursor: string | null = null
   if (rows.length === limit && items.length) {
     const last = items[items.length - 1].publication as any
-    if (last.published_at) nextCursor = `${last.published_at}|${last.id}`
+    if (last.published_at) nextCursor = buildTsIdCursor(last.published_at, last.id)
   }
 
   return { items, nextCursor }

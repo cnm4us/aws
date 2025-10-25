@@ -13,7 +13,7 @@ Decisions (carried + new)
 
 Changes Since Last
 - Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; docs/agents/Handoff_08.md
-- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id
+- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed
 - DB: none
 - Flags: none
 
@@ -74,6 +74,10 @@ Meta:
 - DB: none
 - Flags: none
 
+Commit:
+- 224931d8cc5131e892d35c9e88c515b9a0f60ac6
+- Committed: 2025-10-25T22:35:19+00:00
+
 Open Items / Next Actions
 - [ ] Extract Uploads to service/repo:
   - Endpoints: GET `/api/uploads`, GET `/api/uploads/:id`, GET `/api/uploads/:id/publish-options`.
@@ -81,6 +85,7 @@ Open Items / Next Actions
 - [ ] Extract Spaces to service/repo (split routes):
   - Membership/admin/settings/delete flows; keep `canViewSpaceFeed` and related checks but centralize logic.
 - [ ] Centralize cursor helpers in `src/core/pagination.ts` and replace ad-hoc parsing in feeds/services.
+  - Implemented: added `parseTsIdCursor`, `buildTsIdCursor`, `clampLimit`; feeds service updated.
 - [ ] Standardize permission wrappers (one place for `can(userId, perm, {spaceId|ownerId})`).
 - [ ] Tests (service-level, minimal but high-value):
   - Publications: approve/reject/unpublish/republish/create (happy + key forbidden states).
@@ -94,3 +99,26 @@ Work Log (optional)
 
 Artifacts (optional)
 <!-- e.g., reports/, playwright-report/ (not committed) -->
+Subject: refactor(feeds): centralize pagination cursor and limit helpers
+
+Context:
+- Avoid duplicated cursor parsing/building and limit clamping across services; standardize feed pagination.
+
+Approach:
+- Add src/core/pagination.ts with parseTsIdCursor, buildTsIdCursor, clampLimit.
+- Update feeds service to use helpers for both global and space feeds.
+
+Impact:
+- No API changes; cursors remain "<timestamp>|<id>". Code is simpler and consistent.
+
+Tests:
+- Build passes in your environment; feeds continue to accept/emit the same cursors.
+
+References:
+- Prior refactors; this follows the Handoff plan to centralize pagination.
+
+Meta:
+- Affects: src/core/pagination.ts; src/features/feeds/service.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/feed/global; GET /api/spaces/:id/feed
+- DB: none
+- Flags: none
