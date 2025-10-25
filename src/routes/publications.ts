@@ -321,140 +321,25 @@ const createProdPublicationSchema = z.object({
 
 publicationsRouter.post('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
   try {
-    const productionId = Number(req.params.productionId);
+    const productionId = Number(req.params.productionId)
     if (!Number.isFinite(productionId) || productionId <= 0) {
-      return res.status(400).json({ error: 'bad_production_id' });
+      return res.status(400).json({ error: 'bad_production_id' })
     }
-    const parsed = createProdPublicationSchema.safeParse(req.body || {});
+    const parsed = createProdPublicationSchema.safeParse(req.body || {})
     if (!parsed.success) {
-      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() });
+      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     }
-    const { spaceId, visibility, distributionFlags } = parsed.data;
-    const db = getPool();
-    const production = await loadProduction(db, productionId);
-    if (!production) return res.status(404).json({ error: 'production_not_found' });
-
-    const space = await loadSpace(db, spaceId);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    // Uniqueness by (production_id, space_id)
-    const [existingRows] = await db.query(
-      `SELECT id, status FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`,
-      [productionId, spaceId]
-    );
-    const existing = (existingRows as any[])[0];
-    if (existing) {
-      // Apply republish semantics for production-centric route
-      const existingId = Number(existing.id);
-      const curStatus = String(existing.status || '');
-      if (curStatus === 'published' || curStatus === 'approved' || curStatus === 'pending') {
-        const existingPub = await getSpacePublicationById(existingId, db);
-        return res.json({ publication: existingPub });
-      }
-      const currentUserId = Number(req.user!.id);
-      const checker = await resolveChecker(currentUserId);
-      const isAdmin = await can(currentUserId, 'video:delete_any', { checker });
-      const canPublishSpace = await can(currentUserId, 'video:publish_space', { spaceId, checker });
-      if (curStatus === 'unpublished') {
-        if (isAdmin || canPublishSpace) {
-          const now = new Date();
-          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
-          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'moderator_republish_published' }, db);
-          return res.json({ publication: updated });
-        }
-        const ownerId = production.user_id;
-        const isOwner = ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId, checker }));
-        if (!isOwner) return res.status(403).json({ error: 'forbidden' });
-        const ev = await listSpacePublicationEvents(existingId, db);
-        const lastUnpub = [...ev].reverse().find((e) => e.action === 'unpublish_publication');
-        if (!lastUnpub || lastUnpub.actor_user_id !== currentUserId) return res.status(403).json({ error: 'forbidden' });
-        const requiresApproval = await effectiveRequiresApproval(db, space);
-        if (requiresApproval) {
-          const updated = await updateSpacePublicationStatus(existingId, { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null }, db);
-          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'owner_republish_requested' }, db);
-          return res.json({ publication: updated });
-        } else {
-          const now = new Date();
-          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
-          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'owner_republish_published' }, db);
-          return res.json({ publication: updated });
-        }
-      } else if (curStatus === 'rejected') {
-        if (!(isAdmin || canPublishSpace)) return res.status(403).json({ error: 'forbidden' });
-        const now = new Date();
-        const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: currentUserId, publishedAt: now, unpublishedAt: null }, db);
-        await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: currentUserId, action: 'moderator_republish_published' }, db);
-        return res.json({ publication: updated });
-      }
-    }
-
-    const currentUserId = Number(req.user!.id);
-    const ownerId = production.user_id;
-    const checker = await resolveChecker(currentUserId);
-    const isAdmin = await can(currentUserId, 'video:delete_any', { checker });
-    const canPublishOwn = ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId, checker }));
-    const canPublishSpacePerm = await can(currentUserId, 'video:publish_space', { spaceId, checker });
-    const canPostSpace = await can(currentUserId, 'space:post', { spaceId, checker });
-    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const requireApproval = await effectiveRequiresApproval(db, space);
-    const now = new Date();
-    const status: SpacePublicationStatus = requireApproval ? 'pending' : 'published';
-    const approvedBy: number | null = requireApproval ? null : currentUserId;
-    const publishedAt: Date | null = requireApproval ? null : now;
-
-    // Visibility defaults by space type
-    let visibleInSpace = true;
-    let visibleInGlobal = false;
-    if (space.type === 'personal') {
-      visibleInGlobal = true;
-    } else if (space.type === 'group') {
-      visibleInGlobal = false;
-    } else if (space.type === 'channel') {
-      visibleInGlobal = false; // can be elevated by moderators later
-    }
-
-    const publication = await createSpacePublication(
-      {
-        uploadId: production.upload_id,
-        productionId,
-        spaceId,
-        status,
-        requestedBy: currentUserId,
-        approvedBy,
-        isPrimary: false,
-        visibility: visibility ?? 'inherit',
-        distributionFlags: distributionFlags ?? null,
-        ownerUserId: ownerId,
-        visibleInSpace,
-        visibleInGlobal,
-        publishedAt,
-      },
-      db
-    );
-
-    await recordSpacePublicationEvent(
-      {
-        publicationId: publication.id,
-        actorUserId: currentUserId,
-        action: requireApproval ? 'create_pending' : 'auto_published',
-        detail: {
-          visibility: publication.visibility,
-          distribution: distributionFlags ?? null,
-          productionId,
-        },
-      },
-      db
-    );
-
-    res.status(201).json({ publication });
+    const { spaceId, visibility, distributionFlags } = parsed.data
+    const userId = Number(req.user!.id)
+    const publication = await pubsSvc.createFromProduction({ productionId, spaceId, visibility, distributionFlags }, { userId })
+    res.status(201).json({ publication })
   } catch (err: any) {
-    console.error('create production publication failed', err);
-    res.status(500).json({ error: 'failed_to_create_publication', detail: String(err?.message || err) });
+    console.error('create production publication failed', err)
+    const code = err?.code || 'failed_to_create_publication'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async (req, res) => {
   try {

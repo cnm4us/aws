@@ -96,6 +96,13 @@ Refactor — Publications (republish mutation migrated)
   - Route preserves `{ publication }` and error mapping; returns `invalid_status` with 400 where appropriate.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (create from production migrated)
+- Route POST `/api/productions/:productionId/publications` now delegates to the service:
+  - Service: `createFromProduction({ productionId, spaceId, visibility?, distributionFlags? }, { userId })` enforces permissions (admin/publish_own/publish_space/space:post), handles existing (production, space) via `republish`, applies review policy for initial create, sets visibility defaults, and records the appropriate event.
+  - Repo: implemented `getByProductionSpace`, `insert` for creation.
+  - Route preserves response `{ publication }` and error mapping; validation still via zod schema.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts`.
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -211,5 +218,15 @@ Commit
 - Meta:
   - Affects: src/routes/publications.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
   - Routes: POST /api/publications/:id/reject
+  - DB: none
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): move republish mutation to service/repo
+- Hash: e301ae6
+- Committed: 2025-10-25T20:11:33+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/service.ts; src/features/publications/repo.ts; docs/agents/Handoff_07.md
+  - Routes: POST /api/publications/:id/republish
   - DB: none
   - Flags: none

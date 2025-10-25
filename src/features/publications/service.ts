@@ -18,8 +18,61 @@ export async function createFromUpload(input: CreateFromUploadInput, ctx: Servic
 }
 
 export async function createFromProduction(input: CreateFromProductionInput, ctx: ServiceContext): Promise<Publication> {
-  // Similar to createFromUpload, but explicit productionId
-  throw new InvalidStateError('not_implemented: publications.service.createFromProduction')
+  const { productionId, spaceId, visibility, distributionFlags } = input
+  const prod = await repo.loadProduction(productionId)
+  if (!prod) throw new NotFoundError('production_not_found')
+  const space = await repo.loadSpace(spaceId)
+  if (!space) throw new NotFoundError('space_not_found')
+
+  // If an entry already exists for (production, space), reuse republish semantics
+  const existing = await repo.getByProductionSpace(productionId, spaceId)
+  if (existing) {
+    // Delegate to republish for consistent behavior and events
+    return republish(existing.id, ctx)
+  }
+
+  // Permission checks
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const canPublishOwn = Number(prod.user_id) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId: prod.user_id, checker }))
+  const canPublishSpacePerm = await can(ctx.userId, 'video:publish_space', { spaceId, checker })
+  const canPostSpace = await can(ctx.userId, 'space:post', { spaceId, checker })
+  if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
+    throw new ForbiddenError()
+  }
+
+  const requireApproval = await effectiveRequiresApproval(space)
+  const now = new Date()
+  const status = requireApproval ? 'pending' : 'published'
+  const approvedBy = requireApproval ? null : ctx.userId
+  const publishedAt = requireApproval ? null : now
+
+  // Visibility defaults
+  let visibleInSpace = true
+  let visibleInGlobal = false
+  if (space.type === 'personal') visibleInGlobal = true
+
+  const publication = await repo.insert({
+    uploadId: prod.upload_id,
+    productionId,
+    spaceId,
+    status,
+    requestedBy: ctx.userId,
+    approvedBy,
+    isPrimary: false,
+    visibility: (visibility ?? 'inherit') as any,
+    distributionFlags: distributionFlags ?? null,
+    ownerUserId: prod.user_id,
+    visibleInSpace,
+    visibleInGlobal,
+    publishedAt,
+  })
+  await repo.insertEvent(publication.id, ctx.userId, requireApproval ? 'create_pending' : 'auto_published', {
+    visibility: publication.visibility,
+    distribution: distributionFlags ?? null,
+    productionId,
+  })
+  return publication
 }
 
 export async function approve(publicationId: number, ctx: ServiceContext): Promise<Publication> {

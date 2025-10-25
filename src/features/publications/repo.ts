@@ -31,7 +31,11 @@ export async function getById(id: number, conn?: any): Promise<Publication | nul
 }
 
 export async function getByProductionSpace(productionId: number, spaceId: number, _conn?: any): Promise<Publication | null> {
-  throw new Error('not_implemented: publications.repo.getByProductionSpace')
+  const db = _conn || getPool()
+  const [rows] = await db.query(`SELECT * FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`, [productionId, spaceId])
+  const r = (rows as any[])[0]
+  if (!r) return null
+  return await getById(Number(r.id), db)
 }
 
 export async function listByUpload(uploadId: number, _conn?: any): Promise<Publication[]> {
@@ -42,8 +46,51 @@ export async function listByProduction(productionId: number, _conn?: any): Promi
   throw new Error('not_implemented: publications.repo.listByProduction')
 }
 
-export async function insert(_data: any, _txn: any): Promise<Publication> {
-  throw new Error('not_implemented: publications.repo.insert (use existing model create until migrated)')
+export async function insert(data: {
+  uploadId: number
+  productionId: number | null
+  spaceId: number
+  status: string
+  requestedBy: number | null
+  approvedBy: number | null
+  isPrimary: boolean
+  visibility: 'inherit' | 'members' | 'public'
+  distributionFlags: any | null
+  ownerUserId: number | null
+  visibleInSpace: boolean
+  visibleInGlobal: boolean
+  publishedAt?: Date | string | null
+  unpublishedAt?: Date | string | null
+}, conn?: any): Promise<Publication> {
+  const db = conn || getPool()
+  const publishedAt = data.publishedAt ? new Date(data.publishedAt).toISOString().slice(0,19).replace('T',' ') : null
+  const unpublishedAt = data.unpublishedAt ? new Date(data.unpublishedAt).toISOString().slice(0,19).replace('T',' ') : null
+  const distribution = data.distributionFlags == null ? null : JSON.stringify(data.distributionFlags)
+  const [result] = await db.query(
+    `INSERT INTO space_publications
+       (upload_id, production_id, space_id, status, requested_by, approved_by, is_primary, visibility, distribution_flags, owner_user_id, visible_in_space, visible_in_global, published_at, unpublished_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.uploadId,
+      data.productionId,
+      data.spaceId,
+      data.status,
+      data.requestedBy,
+      data.approvedBy,
+      data.isPrimary ? 1 : 0,
+      data.visibility,
+      distribution,
+      data.ownerUserId,
+      data.visibleInSpace ? 1 : 0,
+      data.visibleInGlobal ? 1 : 0,
+      publishedAt,
+      unpublishedAt,
+    ]
+  )
+  const id = Number((result as any).insertId)
+  const created = await getById(id, db)
+  if (!created) throw new Error('failed_to_create_space_publication')
+  return created
 }
 
 export async function updateStatus(id: number, data: { status: string; approvedBy?: number | null; publishedAt?: Date | string | null; unpublishedAt?: Date | string | null; distributionFlags?: any }, conn?: any): Promise<Publication> {
