@@ -283,3 +283,8 @@ Infra — Types consolidation
   - publications/types.ts and feeds/types.ts now import canonical `SpacePublicationStatus` and `SpacePublicationVisibility` from `src/db`.
   - Removed duplicate string union definitions in feature modules.
 - Files: `src/features/publications/types.ts`; `src/features/feeds/types.ts`.
+Refactor — Productions (list/get/create migrated)
+- Added feature modules and migrated all three endpoints:
+  - Repo: `src/features/productions/repo.ts` — listForUser, getWithUpload, loadUpload, updateProductionNameIfEmpty.
+  - Service: `src/features/productions/service.ts` — list (auth check, poster enhancement), get (owner/admin auth, enhancement), create (permission checks, runner call, back-compat name update, returns { production, jobId, output }).
+  - Routes: `src/routes/productions.ts` now delegates list/detail/create to the service while keeping identical response shapes and error mapping.

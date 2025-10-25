@@ -1,9 +1,8 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { getPool, type ProductionRow, type ProductionStatus } from '../db'
-import { enhanceUploadRow } from '../utils/enhance'
 import { OUTPUT_BUCKET } from '../config'
-import { startProductionRender } from '../services/productionRunner'
+import * as prodSvc from '../features/productions/service'
 import { requireAuth } from '../middleware/auth'
 import { can } from '../security/permissions'
 
@@ -79,60 +78,15 @@ function safeJson(input: any) {
 
 productionsRouter.get('/api/productions', requireAuth, async (req, res) => {
   try {
-    const db = getPool()
     const currentUserId = req.user!.id
     const qUser = req.query.user_id ? Number(req.query.user_id) : currentUserId
-    const isAdmin = await can(currentUserId, 'video:delete_any')
-    if (!isAdmin && qUser !== currentUserId) {
-      return res.status(403).json({ error: 'forbidden' })
-    }
-    const [rows] = await db.query(
-      `SELECT p.*,
-              u.original_filename,
-              u.modified_filename,
-              u.description AS upload_description,
-              u.status AS upload_status,
-              u.size_bytes,
-              u.width,
-              u.height,
-              u.created_at AS upload_created_at,
-              u.s3_key AS upload_s3_key,
-              u.profile AS upload_profile,
-              COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
-         FROM productions p
-         JOIN uploads u ON u.id = p.upload_id
-        WHERE p.user_id = ?
-        ORDER BY p.created_at DESC
-        LIMIT 200`,
-      [qUser]
-    )
-    const list = (rows as any[]).map(mapProduction)
-    // Enhance poster/urls for uploads using resolved output prefix
-    const enhanced = (rows as any[]).map((row) => {
-      const rec = mapProduction(row)
-      try {
-        const enhancedUpload = enhanceUploadRow({
-          s3_key: row.upload_s3_key,
-          output_prefix: row.upload_output_prefix,
-          original_filename: row.original_filename,
-          width: row.width,
-          height: row.height,
-          profile: row.upload_profile,
-        })
-        if (rec.upload) {
-          ;(rec.upload as any).poster_portrait_cdn = enhancedUpload.poster_portrait_cdn
-          ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
-          ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
-          ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
-        }
-      } catch {}
-      return rec
-    })
-
-    res.json({ productions: enhanced })
+    const productions = await prodSvc.list(currentUserId, qUser)
+    res.json({ productions })
   } catch (err: any) {
     console.error('list productions failed', err)
-    res.status(500).json({ error: 'failed_to_list_productions', detail: String(err?.message || err) })
+    const code = err?.code || 'failed_to_list_productions'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
 })
 
@@ -140,108 +94,28 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const db = getPool()
-    const [rows] = await db.query(
-      `SELECT p.*,
-              u.original_filename,
-              u.modified_filename,
-              u.description AS upload_description,
-              u.status AS upload_status,
-              u.size_bytes,
-              u.width,
-              u.height,
-              u.created_at AS upload_created_at,
-              u.s3_key AS upload_s3_key,
-              u.profile AS upload_profile,
-              COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
-         FROM productions p
-         JOIN uploads u ON u.id = p.upload_id
-        WHERE p.id = ?
-        LIMIT 1`,
-      [id]
-    )
-    const row = (rows as any[])[0]
-    if (!row) return res.status(404).json({ error: 'not_found' })
     const currentUserId = req.user!.id
-    if (Number(row.user_id) !== currentUserId && !(await can(currentUserId, 'video:delete_any'))) {
-      return res.status(403).json({ error: 'forbidden' })
-    }
-    const rec = mapProduction(row)
-    try {
-      const enhancedUpload = enhanceUploadRow({
-        s3_key: row.upload_s3_key,
-        output_prefix: row.upload_output_prefix,
-        original_filename: row.original_filename,
-        width: row.width,
-        height: row.height,
-        profile: row.upload_profile,
-      })
-      if (rec.upload) {
-        ;(rec.upload as any).poster_portrait_cdn = enhancedUpload.poster_portrait_cdn
-        ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
-        ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
-        ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
-      }
-    } catch {}
-    res.json({ production: rec })
+    const production = await prodSvc.get(id, currentUserId)
+    res.json({ production })
   } catch (err: any) {
     console.error('get production failed', err)
-    res.status(500).json({ error: 'failed_to_get_production', detail: String(err?.message || err) })
+    const code = err?.code || 'failed_to_get_production'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
 })
 
 productionsRouter.post('/api/productions', requireAuth, async (req, res) => {
   try {
     const { uploadId, name, config, profile, quality, sound } = createProductionSchema.parse(req.body || {})
-    const db = getPool()
-    const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
-    const upload = (rows as any[])[0]
-    if (!upload) return res.status(404).json({ error: 'upload_not_found' })
-    // Allow producing from fresh uploads and from previously completed uploads
-    const upStatus = String(upload.status || '').toLowerCase()
-    if (upStatus !== 'uploaded' && upStatus !== 'completed') {
-      return res.status(400).json({ error: 'invalid_state', detail: 'upload not ready for production' })
-    }
-
     const currentUserId = req.user!.id
-    const ownerId = upload.user_id != null ? Number(upload.user_id) : null
-    const isOwner = ownerId === currentUserId
-    const canProduceAny = await can(currentUserId, 'video:delete_any')
-    if (!isOwner && !canProduceAny) {
-      return res.status(403).json({ error: 'forbidden' })
-    }
-
-    const { jobId, outPrefix, productionId } = await startProductionRender({
-      upload,
-      userId: currentUserId,
-      name: typeof name === 'string' ? name : null,
-      profile: profile ?? null,
-      quality: quality ?? null,
-      sound: sound ?? null,
-      config,
-    })
-
-    // Back-compat: if the runner insert didn't persist name (older build), set it explicitly now
-    if (name && typeof name === 'string') {
-      try {
-        await db.query(`UPDATE productions SET name = ? WHERE id = ? AND (name IS NULL OR name = '')`, [name, productionId])
-      } catch {}
-    }
-
-    const [detailRows] = await db.query(
-      `SELECT p.*, u.original_filename, u.modified_filename, u.description AS upload_description,
-              u.status AS upload_status, u.size_bytes, u.width, u.height, u.created_at AS upload_created_at
-         FROM productions p
-         JOIN uploads u ON u.id = p.upload_id
-        WHERE p.id = ?
-        LIMIT 1`,
-      [productionId]
-    )
-    const detail = (detailRows as any[])[0]
-    res.status(201).json({ production: mapProduction(detail), jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } })
+    const result = await prodSvc.create({ uploadId, name, config, profile, quality, sound }, currentUserId)
+    res.status(201).json(result)
   } catch (err: any) {
     console.error('create production failed', err)
-    res.status(500).json({ error: 'failed_to_create_production', detail: String(err?.message || err) })
+    const code = err?.code || 'failed_to_create_production'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
 })
 
