@@ -77,6 +77,12 @@ Refactor — Publications (approve mutation migrated)
   - Route preserves the response `{ publication }` and continues to optionally record a user note for backward compatibility.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (unpublish mutation migrated)
+- Route POST `/api/publications/:id/unpublish` delegates to service:
+  - Service: `unpublish(id, { userId })` enforces admin OR owner (with `video:unpublish_own`) OR `video:unpublish_space`; sets status=unpublished and unpublishedAt; records event.
+  - Route keeps `{ publication }` response and still records an optional note in a separate event for compatibility.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).

@@ -578,42 +578,27 @@ publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req
 
 publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (req, res) => {
   try {
-    const publicationId = Number(req.params.id);
+    const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
-      return res.status(400).json({ error: 'bad_publication_id' });
+      return res.status(400).json({ error: 'bad_publication_id' })
     }
-    const permission = await requirePublicationPermission(req, res, publicationId, 'unpublish');
-    if (!permission) return;
-    const { db } = permission;
-    const userId = Number(req.user!.id);
-    const note = noteSchema.safeParse(req.body || {});
-    const now = new Date();
-    const updated = await updateSpacePublicationStatus(
-      publicationId,
-      {
-        status: 'unpublished',
-        unpublishedAt: now,
-      },
-      db
-    );
-    if (!updated) return res.status(404).json({ error: 'publication_not_found' });
-    await recordSpacePublicationEvent(
-      {
-        publicationId,
-        actorUserId: userId,
-        action: 'unpublish_publication',
-        detail: {
-          note: note.success ? note.data.note ?? null : null,
-        },
-      },
-      db
-    );
-    res.json({ publication: updated });
+    const userId = Number(req.user!.id)
+    const updated = await pubsSvc.unpublish(publicationId, { userId })
+    // Preserve optional note behavior
+    const note = noteSchema.safeParse(req.body || {})
+    if (note.success && note.data.note && note.data.note.length) {
+      try {
+        await recordSpacePublicationEvent({ publicationId, actorUserId: userId, action: 'unpublish_publication', detail: { note: note.data.note } })
+      } catch {}
+    }
+    res.json({ publication: updated })
   } catch (err: any) {
-    console.error('unpublish publication failed', err);
-    res.status(500).json({ error: 'failed_to_unpublish_publication', detail: String(err?.message || err) });
+    console.error('unpublish publication failed', err)
+    const code = err?.code || 'failed_to_unpublish_publication'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req, res) => {
   try {

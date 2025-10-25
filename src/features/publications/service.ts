@@ -41,8 +41,21 @@ export async function reject(publicationId: number, ctx: ServiceContext): Promis
 }
 
 export async function unpublish(publicationId: number, ctx: ServiceContext): Promise<Publication> {
-  // TODO: permission checks, transition to unpublished, event
-  throw new InvalidStateError('not_implemented: publications.service.unpublish')
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const upload = await repo.loadUpload(pub.upload_id)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const ownerId = upload.user_id
+  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, 'video:unpublish_own', { ownerId, checker }))
+  const spacePerm = await can(ctx.userId, 'video:unpublish_space', { spaceId: pub.space_id, checker })
+  if (!(isAdmin || isOwner || spacePerm)) throw new ForbiddenError()
+
+  const now = new Date()
+  const updated = await repo.updateStatus(publicationId, { status: 'unpublished', unpublishedAt: now })
+  await repo.insertEvent(publicationId, ctx.userId, 'unpublish_publication', undefined)
+  return updated
 }
 
 export async function republish(publicationId: number, ctx: ServiceContext): Promise<Publication> {
