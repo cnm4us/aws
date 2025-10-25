@@ -42,19 +42,38 @@ export async function listByProduction(productionId: number, _conn?: any): Promi
   throw new Error('not_implemented: publications.repo.listByProduction')
 }
 
-export async function insert(data: any, _txn: any): Promise<Publication> {
-  // data includes: uploadId, productionId?, spaceId, status, requestedBy, approvedBy, isPrimary, visibility,
-  // distributionFlags, ownerUserId, visibleInSpace, visibleInGlobal, publishedAt?, unpublishedAt?
-  throw new Error('not_implemented: publications.repo.insert')
+export async function insert(_data: any, _txn: any): Promise<Publication> {
+  throw new Error('not_implemented: publications.repo.insert (use existing model create until migrated)')
 }
 
-export async function updateStatus(id: number, data: any, _txn: any): Promise<Publication> {
-  // data includes: status, approvedBy?, publishedAt?, unpublishedAt?
-  throw new Error('not_implemented: publications.repo.updateStatus')
+export async function updateStatus(id: number, data: { status: string; approvedBy?: number | null; publishedAt?: Date | string | null; unpublishedAt?: Date | string | null; distributionFlags?: any }, conn?: any): Promise<Publication> {
+  const db = conn || getPool()
+  const publishedAt = data.publishedAt ? new Date(data.publishedAt).toISOString().slice(0, 19).replace('T', ' ') : null
+  const unpublishedAt = data.unpublishedAt ? new Date(data.unpublishedAt).toISOString().slice(0, 19).replace('T', ' ') : null
+  const distribution = data.distributionFlags == null ? null : JSON.stringify(data.distributionFlags)
+  await db.query(
+    `UPDATE space_publications
+        SET status = ?,
+            approved_by = COALESCE(?, approved_by),
+            distribution_flags = COALESCE(?, distribution_flags),
+            published_at = ?,
+            unpublished_at = ?,
+            updated_at = NOW()
+      WHERE id = ?`,
+    [data.status, data.approvedBy ?? null, distribution, publishedAt, unpublishedAt, id]
+  )
+  const updated = await getById(id, db)
+  if (!updated) throw new Error('publication_not_found')
+  return updated
 }
 
-export async function insertEvent(publicationId: number, actorUserId: number | null, action: string, detail: any | undefined, _txn: any): Promise<void> {
-  throw new Error('not_implemented: publications.repo.insertEvent')
+export async function insertEvent(publicationId: number, actorUserId: number | null, action: string, detail: any | undefined, conn?: any): Promise<void> {
+  const db = conn || getPool()
+  const payload = detail == null ? null : JSON.stringify(detail)
+  await db.query(
+    `INSERT INTO space_publication_events (publication_id, actor_user_id, action, detail) VALUES (?, ?, ?, ?)`,
+    [publicationId, actorUserId ?? null, action, payload]
+  )
 }
 
 export async function listEvents(publicationId: number, conn?: any): Promise<PublicationEvent[]> {

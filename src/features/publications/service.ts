@@ -23,8 +23,16 @@ export async function createFromProduction(input: CreateFromProductionInput, ctx
 }
 
 export async function approve(publicationId: number, ctx: ServiceContext): Promise<Publication> {
-  // TODO: permission checks, transition to published, event
-  throw new InvalidStateError('not_implemented: publications.service.approve')
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const canApprove = isAdmin || (await can(ctx.userId, 'video:approve_space', { spaceId: pub.space_id, checker })) || (await can(ctx.userId, 'video:approve', { checker }))
+  if (!canApprove) throw new ForbiddenError()
+  const now = new Date()
+  const updated = await repo.updateStatus(publicationId, { status: 'published', approvedBy: ctx.userId, publishedAt: now, unpublishedAt: null })
+  await repo.insertEvent(publicationId, ctx.userId, 'approve_publication', undefined)
+  return updated
 }
 
 export async function reject(publicationId: number, ctx: ServiceContext): Promise<Publication> {

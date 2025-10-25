@@ -554,46 +554,27 @@ async function requirePublicationPermission(
 
 publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req, res) => {
   try {
-    const publicationId = Number(req.params.id);
+    const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
-      return res.status(400).json({ error: 'bad_publication_id' });
+      return res.status(400).json({ error: 'bad_publication_id' })
     }
-    const permission = await requirePublicationPermission(req, res, publicationId, 'approve');
-    if (!permission) return;
-    const { db, context } = permission;
-    const userId = Number(req.user!.id);
-    const now = new Date();
-    const updated = await updateSpacePublicationStatus(
-      publicationId,
-      {
-        status: 'published',
-        approvedBy: userId,
-        publishedAt: now,
-        unpublishedAt: null,
-      },
-      db
-    );
-    if (!updated) {
-      return res.status(404).json({ error: 'publication_not_found' });
+    const userId = Number(req.user!.id)
+    const updated = await pubsSvc.approve(publicationId, { userId })
+    // Preserve note recording behavior for compatibility (optional note in body)
+    const note = noteSchema.safeParse(req.body || {})
+    if (note.success && note.data.note && note.data.note.length) {
+      try {
+        await recordSpacePublicationEvent({ publicationId, actorUserId: userId, action: 'approve_publication', detail: { note: note.data.note } })
+      } catch {}
     }
-    const note = noteSchema.safeParse(req.body || {});
-    await recordSpacePublicationEvent(
-      {
-        publicationId,
-        actorUserId: userId,
-        action: 'approve_publication',
-        detail: {
-          note: note.success ? note.data.note ?? null : null,
-        },
-      },
-      db
-    );
-    res.json({ publication: updated });
+    res.json({ publication: updated })
   } catch (err: any) {
-    console.error('approve publication failed', err);
-    res.status(500).json({ error: 'failed_to_approve_publication', detail: String(err?.message || err) });
+    console.error('approve publication failed', err)
+    const code = err?.code || 'failed_to_approve_publication'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (req, res) => {
   try {

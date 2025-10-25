@@ -70,6 +70,13 @@ Refactor — Publications (third endpoint migrated)
   - Route keeps the response shape `{ publication, events, canRepublishOwner }` and prior error mapping.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (approve mutation migrated)
+- Route POST `/api/publications/:id/approve` delegates to service:
+  - Service: `approve(id, { userId })` enforces admin or approve perms, updates status to published, sets approvedBy/publishedAt, and records an event.
+  - Repo: `updateStatus`, `insertEvent` implemented for this flow.
+  - Route preserves the response `{ publication }` and continues to optionally record a user note for backward compatibility.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -155,5 +162,15 @@ Commit
 - Meta:
   - Affects: src/routes/publications.ts; src/features/publications/repo.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
   - Routes: GET /api/uploads/:uploadId/publications
+  - DB: none
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): move GET /api/publications/:id to service/repo
+- Hash: b1512aa
+- Committed: 2025-10-25T19:24:08+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/repo.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
+  - Routes: GET /api/publications/:id
   - DB: none
   - Flags: none
