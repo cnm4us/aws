@@ -1,5 +1,4 @@
-export type SpacePublicationStatus = 'draft' | 'pending' | 'approved' | 'published' | 'unpublished' | 'rejected'
-export type SpacePublicationVisibility = 'inherit' | 'members' | 'public'
+import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 
 export type FeedPublication = {
   id: number
@@ -26,4 +25,3 @@ export type GlobalFeedItem = {
 }
 
 export type FeedResponse = { items: GlobalFeedItem[]; nextCursor: string | null }
-

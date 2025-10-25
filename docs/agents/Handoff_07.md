@@ -278,3 +278,8 @@ Refactor — Feeds (space feed migrated)
   - Service: `getSpaceFeed(spaceId, { limit, cursor })` maps rows to `{ publication, upload, owner }` and computes `nextCursor`.
   - Route preserves the pre-check `canViewSpaceFeed` permission logic and returns the same response shape.
 - Files: `src/features/feeds/{repo.ts, service.ts}`; `src/routes/spaces.ts`.
+Infra — Types consolidation
+- Consolidated publication status/visibility types to avoid drift:
+  - publications/types.ts and feeds/types.ts now import canonical `SpacePublicationStatus` and `SpacePublicationVisibility` from `src/db`.
+  - Removed duplicate string union definitions in feature modules.
+- Files: `src/features/publications/types.ts`; `src/features/feeds/types.ts`.

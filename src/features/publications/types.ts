@@ -1,5 +1,8 @@
-export type Visibility = 'inherit' | 'members' | 'public'
-export type PublicationStatus = 'draft' | 'pending' | 'approved' | 'published' | 'unpublished' | 'rejected'
+import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
+
+// Consolidated: reuse canonical types from db.ts to avoid drift
+export type Visibility = SpacePublicationVisibility
+export type PublicationStatus = SpacePublicationStatus
 
 export type Publication = {
   id: number
@@ -50,4 +53,3 @@ export type ServiceContext = {
   userId: number
   checker?: PermissionChecker
 }
-
