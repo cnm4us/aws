@@ -323,3 +323,13 @@ export async function listByUploadForDto(uploadId: number, ctx: ServiceContext):
     unpublishedAt: r.unpublished_at,
   }))
 }
+
+export type NoteEventAction = 'approve_publication' | 'reject_publication' | 'unpublish_publication'
+
+// Records a free-form note attached to a moderation action event for a publication.
+// Keeps event shapes consistent and encapsulated in the publications service.
+export async function recordNoteEvent(publicationId: number, userId: number, action: NoteEventAction, note: string): Promise<void> {
+  const txt = String(note || '').trim()
+  if (!txt) return
+  await repo.insertEvent(publicationId, userId, action, { note: txt })
+}

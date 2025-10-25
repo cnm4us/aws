@@ -92,7 +92,8 @@ Open Items / Next Actions
   - Publications: approve/reject/unpublish/republish/create (happy + key forbidden states).
   - Productions: list/get/create mapping and permissions.
   - Feeds: cursor round-trip and item mapping.
-- [ ] Optional cleanup: move route-level publication note events into a service helper for consistency.
+ - [ ] Optional cleanup: move route-level publication note events into a service helper for consistency.
+   - Implemented: routes now call publications.service.recordNoteEvent; models-level event writer no longer used here.
 - [ ] Optional cleanup: consider relocating `enhanceUploadRow` to a shared util folder and documenting its inputs/outputs.
 
 Work Log (optional)
@@ -148,5 +149,33 @@ References:
 Meta:
 - Affects: src/features/uploads/service.ts; src/features/productions/service.ts; src/features/spaces/service.ts; docs/agents/Handoff_08.md
 - Routes: n/a (service internals)
+- DB: none
+- Flags: none
+
+Commit:
+- 41a4970a7394151ce79ed4292088f14020805bd3
+- Committed: 2025-10-25T22:48:05+00:00
+
+Subject: refactor(publications): move moderation note event recording into service helper
+
+Context:
+- Routes previously recorded note events via models; moved to publications service for consistency and encapsulation.
+
+Approach:
+- Add publications.service `recordNoteEvent(publicationId, userId, action, note)` using repo.insertEvent.
+- Update routes to call service helper for approve/unpublish/reject optional notes; remove direct models call.
+
+Impact:
+- No API shape changes; event stream gains the same note detail but recording is centralized.
+
+Tests:
+- Build and manual endpoint checks; notes persist alongside moderation events.
+
+References:
+- Handoff plan optional cleanup.
+
+Meta:
+- Affects: src/features/publications/service.ts; src/routes/publications.ts; docs/agents/Handoff_08.md
+- Routes: POST /api/publications/:id/approve; POST /api/publications/:id/unpublish; POST /api/publications/:id/reject
 - DB: none
 - Flags: none

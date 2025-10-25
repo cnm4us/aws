@@ -9,7 +9,6 @@ import {
   getSpacePublicationById,
   listSpacePublicationEvents,
   listSpacePublicationsForUpload,
-  recordSpacePublicationEvent,
   updateSpacePublicationStatus,
 } from '../models/spacePublications';
 
@@ -232,9 +231,7 @@ publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req
     // Preserve note recording behavior for compatibility (optional note in body)
     const note = noteSchema.safeParse(req.body || {})
     if (note.success && note.data.note && note.data.note.length) {
-      try {
-        await recordSpacePublicationEvent({ publicationId, actorUserId: userId, action: 'approve_publication', detail: { note: note.data.note } })
-      } catch {}
+      try { await pubsSvc.recordNoteEvent(publicationId, userId, 'approve_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
   } catch (err: any) {
@@ -256,9 +253,7 @@ publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (r
     // Preserve optional note behavior
     const note = noteSchema.safeParse(req.body || {})
     if (note.success && note.data.note && note.data.note.length) {
-      try {
-        await recordSpacePublicationEvent({ publicationId, actorUserId: userId, action: 'unpublish_publication', detail: { note: note.data.note } })
-      } catch {}
+      try { await pubsSvc.recordNoteEvent(publicationId, userId, 'unpublish_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
   } catch (err: any) {
@@ -279,9 +274,7 @@ publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req,
     const updated = await pubsSvc.reject(publicationId, { userId })
     const note = noteSchema.safeParse(req.body || {})
     if (note.success && note.data.note && note.data.note.length) {
-      try {
-        await recordSpacePublicationEvent({ publicationId, actorUserId: userId, action: 'reject_publication', detail: { note: note.data.note } })
-      } catch {}
+      try { await pubsSvc.recordNoteEvent(publicationId, userId, 'reject_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
   } catch (err: any) {
