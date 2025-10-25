@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { can } from '../security/permissions';
 import { enhanceUploadRow } from '../utils/enhance';
 import * as feedsSvc from '../features/feeds/service'
+import * as spacesSvc from '../features/spaces/service'
 import {
   assignDefaultAdminRoles,
   assignDefaultMemberRoles,
@@ -171,101 +172,14 @@ function mergeChannelEntries(
 
 spacesRouter.get('/api/me/spaces', requireAuth, async (req, res) => {
   try {
-    const db = getPool();
-    const userId = Number(req.user!.id);
-
-    // Personal space (owner)
-    const [personalRows] = await db.query(
-      `SELECT id, name, slug, type FROM spaces WHERE type = 'personal' AND owner_user_id = ? LIMIT 1`,
-      [userId]
-    );
-    const personalRow = (personalRows as any[])[0] || null;
-    const personal = personalRow
-      ? mapSpaceSummary({ ...personalRow }, 'owner', false)
-      : null;
-
-    // Group memberships
-    const [groupRows] = await db.query(
-      `SELECT s.id, s.name, s.slug, s.type,
-              MAX(CASE WHEN r.name = 'group_admin' THEN 1 ELSE 0 END) AS is_admin
-         FROM user_space_roles usr
-         JOIN spaces s ON s.id = usr.space_id
-         JOIN roles r ON r.id = usr.role_id
-        WHERE usr.user_id = ? AND s.type = 'group'
-        GROUP BY s.id, s.name, s.slug, s.type
-        ORDER BY s.name`,
-      [userId]
-    );
-    const groups: SpaceSummary[] = (groupRows as any[]).map((row) =>
-      mapSpaceSummary(row, Number(row.is_admin) ? 'admin' : 'member', false)
-    );
-
-    // Channel memberships
-    const [channelRows] = await db.query(
-      `SELECT s.id, s.name, s.slug, s.type,
-              MAX(CASE WHEN r.name = 'channel_admin' THEN 1 ELSE 0 END) AS is_admin
-         FROM user_space_roles usr
-         JOIN spaces s ON s.id = usr.space_id
-         JOIN roles r ON r.id = usr.role_id
-        WHERE usr.user_id = ? AND s.type = 'channel'
-        GROUP BY s.id, s.name, s.slug, s.type
-        ORDER BY s.name`,
-      [userId]
-    );
-    const channelMemberships: SpaceSummary[] = (channelRows as any[]).map((row) =>
-      mapSpaceSummary(row, Number(row.is_admin) ? 'admin' : 'member', false)
-    );
-
-    // Channel subscriptions (active)
-    const [subscriptionRows] = await db.query(
-      `SELECT s.id, s.name, s.slug, s.type
-         FROM space_subscriptions sub
-         JOIN spaces s ON s.id = sub.space_id
-        WHERE sub.user_id = ? AND sub.status = 'active'`,
-      [userId]
-    );
-    const channelSubscriptions: SpaceSummary[] = (subscriptionRows as any[])
-      .filter((row) => String(row.type) === 'channel')
-      .map((row) => mapSpaceSummary(row, 'subscriber', true));
-
-    const channels = mergeChannelEntries(channelMemberships, channelSubscriptions);
-
-    // Attempt to find a designated global space
-    let global: SpaceSummary | null = null;
-    const [globalSlugRows] = await db.query(
-      `SELECT id, name, slug, type, settings
-         FROM spaces
-        WHERE slug IN ('global', 'global-feed')
-        ORDER BY slug = 'global' DESC
-        LIMIT 1`
-    );
-    const globalCandidate = (globalSlugRows as any[])[0] || null;
-    if (globalCandidate) {
-      global = mapSpaceSummary(globalCandidate, 'member', false);
-    } else {
-      const [channelCandidates] = await db.query(
-        `SELECT id, name, slug, type, settings FROM spaces WHERE type = 'channel' LIMIT 50`
-      );
-      for (const row of channelCandidates as any[]) {
-        const settings = parseSpaceSettings(row);
-        if (settings && (settings.global === true || settings.isGlobal === true || settings.feed === 'global')) {
-          global = mapSpaceSummary(row, 'member', false);
-          break;
-        }
-      }
-    }
-
-    res.json({
-      personal,
-      global,
-      groups,
-      channels,
-    });
+    const userId = Number(req.user!.id)
+    const data = await spacesSvc.getMySpaces(userId)
+    res.json(data)
   } catch (err: any) {
-    console.error('list my spaces failed', err);
-    res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) });
+    console.error('list my spaces failed', err)
+    res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) })
   }
-});
+})
 
 // List subscribers for a space (active and recent)
 spacesRouter.get('/api/spaces/:id/subscribers', requireAuth, async (req, res) => {
@@ -615,122 +529,64 @@ spacesRouter.post('/api/spaces', requireAuth, async (req, res) => {
 // List members of a space
 spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-    
-    const currentUserId = req.user!.id;
-    const siteAdmin = await can(currentUserId, 'video:delete_any');
-    const member = await isMember(db, spaceId, currentUserId);
-    const viewAllowed = siteAdmin || member || (await ensurePermission(currentUserId, spaceId, 'space:view_private'));
-    if (!viewAllowed) return res.status(403).json({ error: 'forbidden' });
-
-    const members = await listSpaceMembers(db, spaceId);
-
-    res.json({ members });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const currentUserId = Number(req.user!.id)
+    const data = await spacesSvc.listMembers(spaceId, currentUserId)
+    res.json(data)
   } catch (err: any) {
-    console.error('list members failed', err);
-    res.status(500).json({ error: 'failed_to_list_members', detail: String(err?.message || err) });
+    console.error('list members failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list_members', detail: String(err?.message || err) })
   }
-});
+})
 
 // Read space settings (space-admin scope)
 spacesRouter.get('/api/spaces/:id/settings', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    const siteAdmin = await can(currentUserId, 'video:delete_any');
-    const allowed = siteAdmin || (await ensurePermission(currentUserId, spaceId, 'space:manage'));
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    const settings = parseSpaceSettings(space);
-    const review = await fetchSiteReviewFlags(db);
-    const siteEnforced = space.type === 'group' ? review.requireGroupReview : space.type === 'channel' ? review.requireChannelReview : false;
-
-    res.json({
-      id: space.id,
-      name: space.name ?? null,
-      type: space.type,
-      settings,
-      site: { requireGroupReview: review.requireGroupReview, requireChannelReview: review.requireChannelReview, siteEnforced },
-    });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const currentUserId = Number(req.user!.id)
+    const data = await spacesSvc.getSettings(spaceId, currentUserId)
+    res.json(data)
   } catch (err: any) {
-    console.error('get space settings failed', err);
-    res.status(500).json({ error: 'failed_to_get_space_settings', detail: String(err?.message || err) });
+    console.error('get space settings failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_get_space_settings', detail: String(err?.message || err) })
   }
-});
+})
 
 // Update space settings (space-admin scope)
 spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    const siteAdmin = await can(currentUserId, 'video:delete_any');
-    const allowed = siteAdmin || (await ensurePermission(currentUserId, spaceId, 'space:manage'));
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    const body = (req.body || {}) as any;
-    const wantComments = body.commentsPolicy;
-    const wantRequire = body.requireReview;
-    const settings = parseSpaceSettings(space);
-    if (!settings.publishing || typeof settings.publishing !== 'object') settings.publishing = {};
-
-    // Apply comments policy
-    if (wantComments !== undefined) {
-      const allowed = new Set(['on', 'off', 'inherit']);
-      const val = String(wantComments || '').toLowerCase();
-      if (!allowed.has(val)) return res.status(400).json({ error: 'bad_comments_policy' });
-      settings.comments = val;
-    }
-
-    // Apply require review unless site enforces it
-    const review = await fetchSiteReviewFlags(db);
-    const siteEnforced = space.type === 'group' ? review.requireGroupReview : space.type === 'channel' ? review.requireChannelReview : false;
-    if (!siteEnforced && wantRequire !== undefined) {
-      settings.publishing.requireApproval = !!wantRequire;
-    }
-
-    await db.query(`UPDATE spaces SET settings = ? WHERE id = ?`, [JSON.stringify(settings), spaceId]);
-    res.json({ ok: true, id: spaceId, settings });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const currentUserId = Number(req.user!.id)
+    const body = (req.body || {}) as any
+    const wantComments = body.commentsPolicy
+    const wantRequire = body.requireReview
+    const data = await spacesSvc.updateSettings(spaceId, currentUserId, { commentsPolicy: wantComments, requireReview: wantRequire })
+    res.json(data)
   } catch (err: any) {
-    console.error('update space settings failed', err);
-    res.status(500).json({ error: 'failed_to_update_space_settings', detail: String(err?.message || err) });
+    console.error('update space settings failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_update_space_settings', detail: String(err?.message || err) })
   }
-});
+})
 
 spacesRouter.get('/api/spaces/:id/invitations', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    const siteAdmin = await can(currentUserId, 'video:delete_any');
-    const member = await isMember(db, spaceId, currentUserId);
-    const viewAllowed = siteAdmin || member || (await ensurePermission(currentUserId, spaceId, 'space:view_private'));
-    if (!viewAllowed) return res.status(403).json({ error: 'forbidden' });
-
-    const invitations = await listSpaceInvitations(db, spaceId);
-    res.json({ invitations });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const currentUserId = Number(req.user!.id)
+    const data = await spacesSvc.listInvitations(spaceId, currentUserId)
+    res.json(data)
   } catch (err: any) {
-    console.error('list invitations failed', err);
-    res.status(500).json({ error: 'failed_to_list_invitations', detail: String(err?.message || err) });
+    console.error('list invitations failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list_invitations', detail: String(err?.message || err) })
   }
-});
+})
 
 // Invite a member
 spacesRouter.post('/api/spaces/:id/invitations', requireAuth, async (req, res) => {
@@ -893,36 +749,17 @@ spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, 
 // Delete a space
 spacesRouter.delete('/api/spaces/:id', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    let allowed = false;
-    if (space.owner_user_id && space.owner_user_id === currentUserId) allowed = true;
-    if (!allowed && (await can(currentUserId, 'video:delete_any'))) allowed = true;
-    if (!allowed && (await ensurePermission(currentUserId, spaceId, 'space:manage'))) allowed = true;
-    if (!allowed && (await ensurePermission(currentUserId, spaceId, 'space:manage_members'))) allowed = true;
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    if (space.type === 'personal' && !(await can(currentUserId, 'video:delete_any'))) {
-      return res.status(400).json({ error: 'cannot_delete_personal_space' });
-    }
-
-    await db.query(`DELETE FROM user_space_roles WHERE space_id = ?`, [spaceId]);
-    await db.query(`DELETE FROM space_follows WHERE space_id = ?`, [spaceId]);
-    await db.query(`DELETE FROM space_invitations WHERE space_id = ?`, [spaceId]);
-    await db.query(`DELETE FROM spaces WHERE id = ?`, [spaceId]);
-
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const currentUserId = Number(req.user!.id)
+    const data = await spacesSvc.deleteSpace(spaceId, currentUserId)
+    res.json(data)
   } catch (err: any) {
-    console.error('delete space failed', err);
-    res.status(500).json({ error: 'failed_to_delete_space', detail: String(err?.message || err) });
+    console.error('delete space failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_delete_space', detail: String(err?.message || err) })
   }
-});
+})
 
 spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
   try {
@@ -934,7 +771,7 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
     if (!space) return res.status(404).json({ error: 'space_not_found' });
 
     const userId = Number(req.user!.id);
-    const allowed = await canViewSpaceFeed(db, space, userId);
+    const allowed = await spacesSvc.canViewSpaceFeed(space, userId);
     if (!allowed) return res.status(403).json({ error: 'forbidden' });
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20

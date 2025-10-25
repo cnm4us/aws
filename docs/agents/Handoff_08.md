@@ -12,8 +12,8 @@ Decisions (carried + new)
 - Production naming: `productions.name` exists; UI passes optional name; back-compat update path retained in service.
 
 Changes Since Last
-- Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; docs/agents/Handoff_08.md
-- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options
+- Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id
 - DB: none
 - Flags: none
 
@@ -41,6 +41,36 @@ References:
 Meta:
 - Affects: src/features/uploads/service.ts; src/features/uploads/repo.ts; src/routes/uploads.ts; docs/agents/Handoff_08.md
 - Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options
+- DB: none
+- Flags: none
+
+Commit:
+- 44b8ee16617e810641bf45befdc11b8cf2858f00
+- Committed: 2025-10-25T22:08:41+00:00
+
+Subject: refactor(spaces): extract settings/members/invitations/delete and my-spaces to service/repo
+
+Context:
+- Continue modularization. Centralize space settings, membership listing, invitations listing, delete, and “my spaces” aggregation under a spaces service.
+- Keep response shapes and error mapping unchanged.
+
+Approach:
+- Add spaces repo/service. Move site flags lookups, global candidate scan, and subscription/ban checks into repo/service.
+- Delegate routes: GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id.
+- Centralize canViewSpaceFeed in spaces service and use it from the feed route.
+
+Impact:
+- No functional change intended. Permissions and shapes preserved. Logic now reusable across routes.
+
+Tests:
+- Build frontend. Hit settings read/update, members/invitations endpoints, my-spaces aggregator; verify identical JSON shapes.
+
+References:
+- docs/agents/Handoff_07.md Open Items; feeds/publications refactors.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/features/spaces/repo.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id
 - DB: none
 - Flags: none
 
