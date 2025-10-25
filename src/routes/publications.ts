@@ -494,45 +494,18 @@ publicationsRouter.get('/api/productions/:productionId/publications', requireAut
 
 publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) => {
   try {
-    const publicationId = Number(req.params.id);
+    const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
-      return res.status(400).json({ error: 'bad_publication_id' });
+      return res.status(400).json({ error: 'bad_publication_id' })
     }
-    const db = getPool();
-    const pub = await getSpacePublicationById(publicationId, db);
-    if (!pub) return res.status(404).json({ error: 'publication_not_found' });
-
-    const upload = await loadUpload(db, pub.upload_id);
-    if (!upload) return res.status(404).json({ error: 'upload_not_found' });
-
-    const userId = Number(req.user!.id);
-    const checker = await resolveChecker(userId);
-    const isAdmin = await can(userId, 'video:delete_any', { checker });
-    const ownerId = upload.user_id;
-    const isOwner =
-      ownerId != null &&
-      ownerId === userId &&
-      (await can(userId, 'video:publish_own', { ownerId, checker }));
-    const canModerateSpace =
-      (await can(userId, 'video:publish_space', { spaceId: pub.space_id, checker })) ||
-      (await can(userId, 'video:approve_space', { spaceId: pub.space_id, checker })) ||
-      (await can(userId, 'video:unpublish_space', { spaceId: pub.space_id, checker }));
-
-    if (!isAdmin && !isOwner && !canModerateSpace) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const events = await listSpacePublicationEvents(publicationId, db);
-    // Owner republish is allowed only when last unpublish was performed by the owner and status is 'unpublished'
-    let canRepublishOwner = false;
-    if (pub.status === 'unpublished' && isOwner) {
-      const lastUnpub = [...events].reverse().find((e) => e.action === 'unpublish_publication');
-      if (lastUnpub && lastUnpub.actor_user_id === userId) canRepublishOwner = true;
-    }
-    res.json({ publication: pub, events, canRepublishOwner });
+    const userId = Number(req.user!.id)
+    const { publication, events, canRepublishOwner } = await pubsSvc.getForDto(publicationId, { userId })
+    res.json({ publication, events, canRepublishOwner })
   } catch (err: any) {
-    console.error('get publication failed', err);
-    res.status(500).json({ error: 'failed_to_get_publication', detail: String(err?.message || err) });
+    console.error('get publication failed', err)
+    const code = err?.code || 'failed_to_get_publication'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
 });
 

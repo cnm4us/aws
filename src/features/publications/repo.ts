@@ -4,8 +4,30 @@ import { type Publication, type PublicationEvent } from './types'
 // NOTE: This module will hold all SQL for publications and related projections.
 // Each function should accept an optional connection/transaction handle.
 
-export async function getById(id: number, _conn?: any): Promise<Publication | null> {
-  throw new Error('not_implemented: publications.repo.getById')
+export async function getById(id: number, conn?: any): Promise<Publication | null> {
+  const db = conn || getPool()
+  const [rows] = await db.query(`SELECT * FROM space_publications WHERE id = ? LIMIT 1`, [id])
+  const r = (rows as any[])[0]
+  if (!r) return null
+  return {
+    id: Number(r.id),
+    upload_id: Number(r.upload_id),
+    production_id: r.production_id == null ? null : Number(r.production_id),
+    space_id: Number(r.space_id),
+    status: String(r.status),
+    requested_by: r.requested_by == null ? null : Number(r.requested_by),
+    approved_by: r.approved_by == null ? null : Number(r.approved_by),
+    is_primary: Boolean(Number(r.is_primary)),
+    visibility: String(r.visibility) as any,
+    distribution_flags: r.distribution_flags ? (() => { try { return JSON.parse(String(r.distribution_flags)) } catch { return null } })() : null,
+    owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
+    visible_in_space: Boolean(Number(r.visible_in_space)),
+    visible_in_global: Boolean(Number(r.visible_in_global)),
+    published_at: r.published_at ? String(r.published_at) : null,
+    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+    created_at: String(r.created_at),
+    updated_at: r.updated_at ? String(r.updated_at) : String(r.created_at),
+  }
 }
 
 export async function getByProductionSpace(productionId: number, spaceId: number, _conn?: any): Promise<Publication | null> {
@@ -35,8 +57,23 @@ export async function insertEvent(publicationId: number, actorUserId: number | n
   throw new Error('not_implemented: publications.repo.insertEvent')
 }
 
-export async function listEvents(publicationId: number, _conn?: any): Promise<PublicationEvent[]> {
-  throw new Error('not_implemented: publications.repo.listEvents')
+export async function listEvents(publicationId: number, conn?: any): Promise<PublicationEvent[]> {
+  const db = conn || getPool()
+  const [rows] = await db.query(
+    `SELECT id, publication_id, actor_user_id, action, detail, created_at
+       FROM space_publication_events
+      WHERE publication_id = ?
+      ORDER BY created_at ASC, id ASC`,
+    [publicationId]
+  )
+  return (rows as any[]).map((e) => ({
+    id: Number(e.id),
+    publication_id: Number(e.publication_id),
+    actor_user_id: e.actor_user_id == null ? null : Number(e.actor_user_id),
+    action: String(e.action || ''),
+    detail: (() => { try { return e.detail ? JSON.parse(String(e.detail)) : null } catch { return null } })(),
+    created_at: String(e.created_at),
+  }))
 }
 
 // Projections for dependent rows (space/upload/production) kept small and explicit to reduce coupling.

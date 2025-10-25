@@ -86,6 +86,38 @@ export async function listByProductionForDto(productionId: number, ctx: ServiceC
   }))
 }
 
+export async function getForDto(publicationId: number, ctx: ServiceContext): Promise<{
+  publication: Publication
+  events: PublicationEvent[]
+  canRepublishOwner: boolean
+}> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+
+  // Permission: admin OR owner(publish_own) OR space moderator/publisher roles
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const upload = await repo.loadUpload(pub.upload_id)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const ownerId = upload.user_id
+  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId, checker }))
+  const canModerateSpace =
+    (await can(ctx.userId, 'video:publish_space', { spaceId: pub.space_id, checker })) ||
+    (await can(ctx.userId, 'video:approve_space', { spaceId: pub.space_id, checker })) ||
+    (await can(ctx.userId, 'video:unpublish_space', { spaceId: pub.space_id, checker }))
+  if (!isAdmin && !isOwner && !canModerateSpace) {
+    throw new ForbiddenError()
+  }
+
+  const events = await repo.listEvents(publicationId)
+  let canRepublishOwner = false
+  if (pub.status === 'unpublished' && isOwner) {
+    const lastUnpub = [...events].reverse().find((e) => e.action === 'unpublish_publication')
+    if (lastUnpub && lastUnpub.actor_user_id === ctx.userId) canRepublishOwner = true
+  }
+  return { publication: pub, events, canRepublishOwner }
+}
+
 export async function listByUploadForDto(uploadId: number, ctx: ServiceContext): Promise<Array<{
   id: number
   spaceId: number

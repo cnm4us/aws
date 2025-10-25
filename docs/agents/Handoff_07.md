@@ -63,6 +63,13 @@ Refactor — Publications (second endpoint migrated)
   - Route preserves the exact response shape and error mapping.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (third endpoint migrated)
+- Route GET `/api/publications/:id` now uses the service/repo:
+  - Service: `getForDto` loads the publication and events, enforces permissions (admin/owner/moderator), and computes `canRepublishOwner` using the last unpublish event rule.
+  - Repo: `getById`, `listEvents`, and `loadUpload` provide needed projections.
+  - Route keeps the response shape `{ publication, events, canRepublishOwner }` and prior error mapping.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -138,5 +145,15 @@ Commit
 - Meta:
   - Affects: src/routes/publications.ts; src/features/publications/types.ts; src/features/publications/repo.ts; src/features/publications/service.ts; src/features/publications/routes.ts; src/core/errors.ts; src/core/http.ts
   - Routes: GET /api/productions/:productionId/publications
+  - DB: none
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): migrate upload publications list to service/repo
+- Hash: 0ee79db
+- Committed: 2025-10-25T19:14:19+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/repo.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
+  - Routes: GET /api/uploads/:uploadId/publications
   - DB: none
   - Flags: none
