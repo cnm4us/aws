@@ -115,6 +115,16 @@ Infra — Error Middleware
 - Files: `src/core/http.ts` (existing); `src/app.ts` (import + app.use(domainErrorMiddleware)).
 
 Commit
+- Subject: chore(core): wire DomainError -> HTTP middleware
+- Hash: 7750a12
+- Committed: 2025-10-25T20:30:24+00:00
+- Meta:
+  - Affects: src/app.ts; docs/agents/Handoff_07.md
+  - Routes: n/a
+  - DB: none
+  - Flags: none
+
+Commit
 - Subject: refactor(publications): migrate create-from-upload to service/repo
 - Hash: 86efb30
 - Committed: 2025-10-25T20:26:01+00:00
@@ -261,3 +271,9 @@ Commit
   - Routes: POST /api/publications/:id/republish
   - DB: none
   - Flags: none
+Refactor — Feeds (global feed migrated)
+- Route GET `/api/feed/global` now uses a dedicated feeds service/repo:
+  - Repo: `listGlobalFeedRows` mirrors the previous SQL and paging condition.
+  - Service: `getGlobalFeed({ limit, cursor })` parses cursor, maps rows to `{ publication, upload, owner }`, enhances uploads, and computes `nextCursor`.
+  - Route delegates to the service and preserves response `{ items, nextCursor }` and error mapping.
+- Files: `src/features/feeds/{repo.ts, service.ts}`; `src/routes/spaces.ts` (handler updated).
