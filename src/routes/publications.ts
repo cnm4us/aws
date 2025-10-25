@@ -34,37 +34,7 @@ type ProductionRow = {
   user_id: number;
 };
 
-// legacy parseSettings removed; policy logic moved to publications service
-
-async function effectiveRequiresApproval(db: any, space: SpaceRow | null): Promise<boolean> {
-  if (!space) return false;
-  // Site-level precedence
-  try {
-    const [rows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
-    const site = (rows as any[])[0];
-    if (site) {
-      const siteRequires = space.type === 'group'
-        ? Boolean(Number(site.require_group_review))
-        : space.type === 'channel'
-          ? Boolean(Number(site.require_channel_review))
-          : false;
-      if (siteRequires) return true;
-    }
-  } catch {
-    // ignore
-  }
-  // Space-level setting
-  const settings = parseSettings(space.settings);
-  if (settings && typeof settings === 'object') {
-    const publishing = settings.publishing;
-    if (publishing && typeof publishing === 'object' && typeof publishing.requireApproval === 'boolean') {
-      return publishing.requireApproval;
-    }
-  }
-  // Fallback to profile defaults: group=false, channel=true
-  if (space.type === 'channel') return true;
-  return false;
-}
+// Note: legacy effectiveRequiresApproval removed; routes now rely on service logic
 
 async function loadUpload(db: any, uploadId: number): Promise<UploadWithOwner | null> {
   const [rows] = await db.query(

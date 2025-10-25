@@ -1,4 +1,4 @@
-import { getPool } from '../../db'
+import { getPool, SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 import { type Publication, type PublicationEvent } from './types'
 
 // NOTE: This module will hold all SQL for publications and related projections.
@@ -14,11 +14,11 @@ export async function getById(id: number, conn?: any): Promise<Publication | nul
     upload_id: Number(r.upload_id),
     production_id: r.production_id == null ? null : Number(r.production_id),
     space_id: Number(r.space_id),
-    status: String(r.status),
+    status: String(r.status) as SpacePublicationStatus,
     requested_by: r.requested_by == null ? null : Number(r.requested_by),
     approved_by: r.approved_by == null ? null : Number(r.approved_by),
     is_primary: Boolean(Number(r.is_primary)),
-    visibility: String(r.visibility) as any,
+    visibility: String(r.visibility) as SpacePublicationVisibility,
     distribution_flags: r.distribution_flags ? (() => { try { return JSON.parse(String(r.distribution_flags)) } catch { return null } })() : null,
     owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
     visible_in_space: Boolean(Number(r.visible_in_space)),

@@ -2,6 +2,7 @@ import { listGlobalFeedRows } from './repo'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { type FeedResponse } from './types'
 import { listSpaceFeedRows } from './repo'
+import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 
 export async function getGlobalFeed(opts: { limit?: number; cursor?: string | null }): Promise<FeedResponse> {
   const limit = Math.min(Math.max(Number(opts.limit ?? 20) || 20, 1), 100)
@@ -27,11 +28,11 @@ export async function getGlobalFeed(opts: { limit?: number; cursor?: string | nu
       id: Number(row.publication_id),
       upload_id: Number(row.upload_id),
       space_id: Number(row.space_id),
-      status: String(row.publication_status),
+      status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
       approved_by: row.approved_by == null ? null : Number(row.approved_by),
       is_primary: Boolean(Number(row.is_primary)),
-      visibility: (row.publication_visibility || 'inherit') as any,
+      visibility: (row.publication_visibility || 'inherit') as SpacePublicationVisibility,
       distribution_flags: distribution,
       published_at: row.published_at ? String(row.published_at) : null,
       unpublished_at: row.unpublished_at ? String(row.unpublished_at) : null,
@@ -102,11 +103,11 @@ export async function getSpaceFeed(spaceId: number, opts: { limit?: number; curs
       id: Number(row.publication_id),
       upload_id: Number(row.upload_id),
       space_id: Number(row.space_id),
-      status: String(row.publication_status),
+      status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
       approved_by: row.approved_by == null ? null : Number(row.approved_by),
       is_primary: Boolean(Number(row.is_primary)),
-      visibility: (row.publication_visibility || 'inherit') as any,
+      visibility: (row.publication_visibility || 'inherit') as SpacePublicationVisibility,
       distribution_flags: distribution,
       published_at: row.published_at ? String(row.published_at) : null,
       unpublished_at: row.unpublished_at ? String(row.unpublished_at) : null,

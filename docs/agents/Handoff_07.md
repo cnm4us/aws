@@ -278,6 +278,22 @@ Refactor — Feeds (space feed migrated)
   - Service: `getSpaceFeed(spaceId, { limit, cursor })` maps rows to `{ publication, upload, owner }` and computes `nextCursor`.
   - Route preserves the pre-check `canViewSpaceFeed` permission logic and returns the same response shape.
 - Files: `src/features/feeds/{repo.ts, service.ts}`; `src/routes/spaces.ts`.
+
+Open Items / Next Actions
+- Extract Uploads to service/repo:
+  - Endpoints: GET `/api/uploads`, GET `/api/uploads/:id`, GET `/api/uploads/:id/publish-options`.
+  - Include `include_publications=1` fan-out via publications service; keep response shapes.
+- Extract Spaces to service/repo (split routes):
+  - Membership/admin/settings/delete flows; keep `canViewSpaceFeed` and related checks but centralize logic.
+- Centralize cursor helpers in `src/core/pagination.ts` and replace ad‑hoc parsing in feeds/services.
+- Standardize permission wrappers (one place for `can(userId, perm, {spaceId|ownerId})`).
+- Tests (service-level, minimal but high-value):
+  - Publications: approve/reject/unpublish/republish/create (happy + key forbidden states).
+  - Productions: list/get/create mapping and permissions.
+  - Feeds: cursor round‑trip and item mapping.
+- Optional cleanup:
+  - Route-level note events in publications (approve/reject/unpublish) currently use `recordSpacePublicationEvent`; consider moving those to a service helper for consistency.
+  - Consider relocating `enhanceUploadRow` to a shared util folder and documenting its inputs/outputs.
 Infra — Types consolidation
 - Consolidated publication status/visibility types to avoid drift:
   - publications/types.ts and feeds/types.ts now import canonical `SpacePublicationStatus` and `SpacePublicationVisibility` from `src/db`.
