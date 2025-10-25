@@ -34,15 +34,7 @@ type ProductionRow = {
   user_id: number;
 };
 
-function parseSettings(raw: any): any {
-  if (!raw) return {};
-  if (typeof raw === 'object') return raw;
-  try {
-    return JSON.parse(String(raw));
-  } catch {
-    return {};
-  }
-}
+// legacy parseSettings removed; policy logic moved to publications service
 
 async function effectiveRequiresApproval(db: any, space: SpaceRow | null): Promise<boolean> {
   if (!space) return false;
@@ -119,19 +111,7 @@ async function loadProduction(db: any, productionId: number): Promise<Production
   };
 }
 
-async function loadPublicationContext(db: any, publicationId: number) {
-  const [rows] = await db.query(
-    `SELECT sp.*, u.user_id AS upload_owner_id, u.origin_space_id, u.space_id AS upload_space_id,
-            s.type AS space_type, s.owner_user_id AS space_owner_id, s.settings AS space_settings
-       FROM space_publications sp
-       JOIN uploads u ON u.id = sp.upload_id
-       JOIN spaces s ON s.id = sp.space_id
-      WHERE sp.id = ?
-      LIMIT 1`,
-    [publicationId]
-  );
-  return (rows as any[])[0] || null;
-}
+// legacy loadPublicationContext removed; replaced by service/repo
 
 function mapPublicationRow(row: any): SpacePublicationRow {
   return {
@@ -269,44 +249,7 @@ const noteSchema = z.object({
   note: z.string().max(2000).optional(),
 });
 
-async function requirePublicationPermission(
-  req: any,
-  res: any,
-  publicationId: number,
-  intent: 'approve' | 'unpublish' | 'reject'
-): Promise<{ db: any; context: any } | null> {
-  const db = getPool();
-  const row = await loadPublicationContext(db, publicationId);
-  if (!row) {
-    res.status(404).json({ error: 'publication_not_found' });
-    return null;
-  }
-  const userId = Number(req.user!.id);
-  const ownerId = row.upload_owner_id == null ? null : Number(row.upload_owner_id);
-  const spaceId = Number(row.space_id);
-  const checker = await resolveChecker(userId);
-  const isAdmin = await can(userId, 'video:delete_any', { checker });
-  let allowed = false;
-  if (isAdmin) {
-    allowed = true;
-  } else if (intent === 'approve') {
-    allowed = await can(userId, 'video:approve_space', { spaceId, checker }) || await can(userId, 'video:approve', { checker });
-  } else if (intent === 'unpublish') {
-    const isOwner =
-      ownerId != null &&
-      ownerId === userId &&
-      (await can(userId, 'video:unpublish_own', { ownerId, checker }));
-    const spacePerm = await can(userId, 'video:unpublish_space', { spaceId, checker });
-    allowed = isOwner || spacePerm;
-  } else if (intent === 'reject') {
-    allowed = await can(userId, 'video:approve_space', { spaceId, checker }) || await can(userId, 'video:approve', { checker });
-  }
-  if (!allowed) {
-    res.status(403).json({ error: 'forbidden' });
-    return null;
-  }
-  return { db, context: row };
-}
+// legacy requirePublicationPermission removed; routes now delegate to service for permission checks
 
 publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req, res) => {
   try {

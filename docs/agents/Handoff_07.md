@@ -39,15 +39,9 @@ Changes Implemented
   - Fix: add `newProductionName` to the dependency array so the latest value is posted.
   - File: `frontend/src/app/Productions.tsx`.
 
-Refactor — Publications (skeleton only, no behavior change)
-- Added foundational structure to migrate heavy logic out of routes:
-  - `src/core/errors.ts` — DomainError + common subclasses (NotFound/Forbidden/Conflict/InvalidState/Validation).
-  - `src/core/http.ts` — middleware to translate DomainError → HTTP JSON (not yet wired).
-  - `src/features/publications/types.ts` — domain types for publications/events and service context.
-  - `src/features/publications/repo.ts` — stubbed SQL layer (functions throw not_implemented for now).
-  - `src/features/publications/service.ts` — stubbed use-case methods with TODOs.
-  - `src/features/publications/routes.ts` — thin-route placeholders (not mounted yet).
-- Scope: skeleton only; no imports/wiring changed, so runtime behavior is unchanged.
+Refactor — Publications (skeleton bootstrapped; now cleaned up)
+- Initial skeleton added errors/http/types/repo/service; placeholders are now implemented across endpoints.
+- Cleanup: removed unused legacy helpers in `src/routes/publications.ts` and deleted the unused placeholder `src/features/publications/routes.ts`.
 
 Refactor — Publications (first endpoint migrated)
 - Route GET `/api/productions/:productionId/publications` now delegates to the new service/repo:
