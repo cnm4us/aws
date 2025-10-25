@@ -277,3 +277,10 @@ Refactor — Feeds (global feed migrated)
   - Service: `getGlobalFeed({ limit, cursor })` parses cursor, maps rows to `{ publication, upload, owner }`, enhances uploads, and computes `nextCursor`.
   - Route delegates to the service and preserves response `{ items, nextCursor }` and error mapping.
 - Files: `src/features/feeds/{repo.ts, service.ts}`; `src/routes/spaces.ts` (handler updated).
+
+Refactor — Feeds (space feed migrated)
+- Route GET `/api/spaces/:id/feed` now delegates to the feeds service/repo:
+  - Repo: `listSpaceFeedRows(spaceId, ...)` mirrors the previous SQL and cursor predicate.
+  - Service: `getSpaceFeed(spaceId, { limit, cursor })` maps rows to `{ publication, upload, owner }` and computes `nextCursor`.
+  - Route preserves the pre-check `canViewSpaceFeed` permission logic and returns the same response shape.
+- Files: `src/features/feeds/{repo.ts, service.ts}`; `src/routes/spaces.ts`.
