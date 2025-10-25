@@ -19,6 +19,7 @@ import { requireAuth } from './middleware/auth';
 import { getPool } from './db';
 import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
 import { requireSiteAdminPage } from './middleware/auth';
+import { domainErrorMiddleware } from './core/http';
 
 export function buildServer(): express.Application {
   const app = express();
@@ -382,6 +383,8 @@ export function buildServer(): express.Application {
       res.status(500).json({ error: 'failed_to_fetch_action_log', detail: String(e?.message || e) });
     }
   });
+  // Central DomainError -> HTTP mapping for migrated routes/services
+  app.use(domainErrorMiddleware);
 
   return app;
 }

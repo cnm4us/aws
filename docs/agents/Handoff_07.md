@@ -110,6 +110,20 @@ Refactor — Publications (create from upload migrated)
   - Route preserves response and error mapping; request body validation stays via zod.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts`.
 
+Infra — Error Middleware
+- Wire `domainErrorMiddleware` to centralize DomainError → HTTP JSON mapping for migrated routes.
+- Files: `src/core/http.ts` (existing); `src/app.ts` (import + app.use(domainErrorMiddleware)).
+
+Commit
+- Subject: refactor(publications): migrate create-from-upload to service/repo
+- Hash: 86efb30
+- Committed: 2025-10-25T20:26:01+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/service.ts; src/features/publications/repo.ts; docs/agents/Handoff_07.md
+  - Routes: POST /api/uploads/:uploadId/publications
+  - DB: none
+  - Flags: none
+
 Commit
 - Subject: refactor(publications): migrate create-from-production to service/repo
 - Hash: 3fea883
