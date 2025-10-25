@@ -2,7 +2,7 @@ import { enhanceUploadRow } from '../../utils/enhance'
 import { ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
-import { can } from '../../security/permissions'
+import { can, resolveChecker } from '../../security/permissions'
 
 export type ServiceContext = { userId?: number | null }
 
@@ -56,9 +56,10 @@ export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
   const ownerId = basic.user_id
   const originSpaceId = basic.origin_space_id
 
-  const allowedOwner = ownerId != null && (await can(currentUserId, 'video:publish_own', { ownerId }))
-  const allowedOrigin = originSpaceId ? await can(currentUserId, 'video:publish_space', { spaceId: originSpaceId }) : false
-  const allowedAdmin = await can(currentUserId, 'video:publish_space')
+  const checker = await resolveChecker(currentUserId)
+  const allowedOwner = ownerId != null && (await can(currentUserId, 'video:publish_own', { ownerId, checker }))
+  const allowedOrigin = originSpaceId ? await can(currentUserId, 'video:publish_space', { spaceId: originSpaceId, checker }) : false
+  const allowedAdmin = await can(currentUserId, 'video:publish_space', { checker })
   if (!allowedOwner && !allowedOrigin && !allowedAdmin) {
     throw new ForbiddenError()
   }
@@ -80,4 +81,3 @@ export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
     spaces: spaces.map((s) => ({ id: s.id, name: s.name, slug: s.slug, type: s.type })),
   }
 }
-

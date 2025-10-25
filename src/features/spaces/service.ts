@@ -1,6 +1,6 @@
 import { getPool, type DB } from '../../db'
 import * as repo from './repo'
-import { can } from '../../security/permissions'
+import { can, resolveChecker } from '../../security/permissions'
 import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
@@ -69,7 +69,8 @@ export async function canViewSpaceFeed(space: SpaceRow, userId: number): Promise
   const db = getPool()
   const banned = await repo.isBannedFromSpace(space.id, userId, db)
   if (banned) return false
-  const siteAdmin = await can(userId, 'video:delete_any')
+  const checker = await resolveChecker(userId)
+  const siteAdmin = await can(userId, 'video:delete_any', { checker })
   if (siteAdmin) return true
   if (space.owner_user_id != null && space.owner_user_id === userId) return true
   if (await isMember(db, space.id, userId)) return true
@@ -83,8 +84,9 @@ export async function getSettings(spaceId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
-  const siteAdmin = await can(currentUserId, 'video:delete_any')
-  const allowed = siteAdmin || (await can(currentUserId, 'space:manage', { spaceId }))
+  const checker = await resolveChecker(currentUserId)
+  const siteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const allowed = siteAdmin || (await can(currentUserId, 'space:manage', { spaceId, checker }))
   if (!allowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
   const settings = parseSettings(space)
   const review = (await repo.fetchSiteReviewFlags(db)) || { requireGroupReview: false, requireChannelReview: true }
@@ -102,8 +104,9 @@ export async function updateSettings(spaceId: number, currentUserId: number, inp
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
-  const siteAdmin = await can(currentUserId, 'video:delete_any')
-  const allowed = siteAdmin || (await can(currentUserId, 'space:manage', { spaceId }))
+  const checker = await resolveChecker(currentUserId)
+  const siteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const allowed = siteAdmin || (await can(currentUserId, 'space:manage', { spaceId, checker }))
   if (!allowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
   const settings = parseSettings(space)
   if (!settings.publishing || typeof settings.publishing !== 'object') settings.publishing = {}
@@ -126,9 +129,10 @@ export async function listMembers(spaceId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
-  const siteAdmin = await can(currentUserId, 'video:delete_any')
+  const checker = await resolveChecker(currentUserId)
+  const siteAdmin = await can(currentUserId, 'video:delete_any', { checker })
   const member = await isMember(db, spaceId, currentUserId)
-  const viewAllowed = siteAdmin || member || (await can(currentUserId, 'space:view_private', { spaceId }))
+  const viewAllowed = siteAdmin || member || (await can(currentUserId, 'space:view_private', { spaceId, checker }))
   if (!viewAllowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
   const members = await listSpaceMembers(db, spaceId)
   return { members }
@@ -138,9 +142,10 @@ export async function listInvitations(spaceId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
-  const siteAdmin = await can(currentUserId, 'video:delete_any')
+  const checker = await resolveChecker(currentUserId)
+  const siteAdmin = await can(currentUserId, 'video:delete_any', { checker })
   const member = await isMember(db, spaceId, currentUserId)
-  const viewAllowed = siteAdmin || member || (await can(currentUserId, 'space:view_private', { spaceId }))
+  const viewAllowed = siteAdmin || member || (await can(currentUserId, 'space:view_private', { spaceId, checker }))
   if (!viewAllowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
   const invitations = await listSpaceInvitations(db, spaceId)
   return { invitations }
@@ -150,13 +155,14 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
   if (!space) throw new Error('space_not_found')
+  const checker = await resolveChecker(currentUserId)
   let allowed = false
   if (space.owner_user_id && space.owner_user_id === currentUserId) allowed = true
-  if (!allowed && (await can(currentUserId, 'video:delete_any'))) allowed = true
-  if (!allowed && (await can(currentUserId, 'space:manage', { spaceId }))) allowed = true
-  if (!allowed && (await can(currentUserId, 'space:manage_members', { spaceId }))) allowed = true
+  if (!allowed && (await can(currentUserId, 'video:delete_any', { checker }))) allowed = true
+  if (!allowed && (await can(currentUserId, 'space:manage', { spaceId, checker }))) allowed = true
+  if (!allowed && (await can(currentUserId, 'space:manage_members', { spaceId, checker }))) allowed = true
   if (!allowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
-  if (space.type === 'personal' && !(await can(currentUserId, 'video:delete_any'))) {
+  if (space.type === 'personal' && !(await can(currentUserId, 'video:delete_any', { checker }))) {
     throw Object.assign(new Error('cannot_delete_personal_space'), { code: 'cannot_delete_personal_space', status: 400 })
   }
   await db.query(`DELETE FROM user_space_roles WHERE space_id = ?`, [spaceId])
@@ -165,4 +171,3 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   await db.query(`DELETE FROM spaces WHERE id = ?`, [spaceId])
   return { ok: true }
 }
-

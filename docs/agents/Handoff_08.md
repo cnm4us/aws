@@ -87,6 +87,7 @@ Open Items / Next Actions
 - [ ] Centralize cursor helpers in `src/core/pagination.ts` and replace ad-hoc parsing in feeds/services.
   - Implemented: added `parseTsIdCursor`, `buildTsIdCursor`, `clampLimit`; feeds service updated.
 - [ ] Standardize permission wrappers (one place for `can(userId, perm, {spaceId|ownerId})`).
+  - Implemented: services now resolve a checker per request and pass it to `can(...)` consistently (uploads, productions, spaces, publications already used checker).
 - [ ] Tests (service-level, minimal but high-value):
   - Publications: approve/reject/unpublish/republish/create (happy + key forbidden states).
   - Productions: list/get/create mapping and permissions.
@@ -120,5 +121,32 @@ References:
 Meta:
 - Affects: src/core/pagination.ts; src/features/feeds/service.ts; docs/agents/Handoff_08.md
 - Routes: GET /api/feed/global; GET /api/spaces/:id/feed
+- DB: none
+- Flags: none
+
+Commit:
+- b70dc2d4e1993bfaeab76d6e79eaff2cbdcd44ed
+- Committed: 2025-10-25T22:42:00+00:00
+Subject: chore(permissions): standardize can() usage with resolved checker across services
+
+Context:
+- Mixed patterns for permission checks caused inconsistent performance and readability.
+- Standardize on resolving a checker once per request and passing it to can(userId, perm, { spaceId|ownerId, checker }).
+
+Approach:
+- Update services to resolve checker and pass it to can: uploads, productions, spaces (publications already used this pattern).
+
+Impact:
+- No behavior change; reduces duplicate permission resolution and improves consistency.
+
+Tests:
+- Build verified in your environment previously; endpoints continue to authorize as before.
+
+References:
+- docs/agents/Handoff_07.md; ongoing service/repo refactors.
+
+Meta:
+- Affects: src/features/uploads/service.ts; src/features/productions/service.ts; src/features/spaces/service.ts; docs/agents/Handoff_08.md
+- Routes: n/a (service internals)
 - DB: none
 - Flags: none

@@ -1,4 +1,4 @@
-import { can } from '../../security/permissions'
+import { can, resolveChecker } from '../../security/permissions'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { OUTPUT_BUCKET } from '../../config'
 import { startProductionRender } from '../../services/productionRunner'
@@ -45,7 +45,8 @@ function safeJson(input: any) {
 
 export async function list(currentUserId: number, targetUserId?: number) {
   const qUser = targetUserId ?? currentUserId
-  const isAdmin = await can(currentUserId, 'video:delete_any')
+  const checker = await resolveChecker(currentUserId)
+  const isAdmin = await can(currentUserId, 'video:delete_any', { checker })
   if (!isAdmin && qUser !== currentUserId) throw new ForbiddenError()
   const rows = await repo.listForUser(qUser)
   return rows.map((row) => {
@@ -75,7 +76,8 @@ export async function get(id: number, currentUserId: number) {
   if (!row) throw new NotFoundError('not_found')
   const ownerId = Number(row.user_id)
   const isOwner = ownerId === currentUserId
-  const isAdmin = await can(currentUserId, 'video:delete_any')
+  const checker = await resolveChecker(currentUserId)
+  const isAdmin = await can(currentUserId, 'video:delete_any', { checker })
   if (!isOwner && !isAdmin) throw new ForbiddenError()
   const rec = mapProduction(row)
   try {
@@ -106,7 +108,8 @@ export async function create(input: { uploadId: number; name?: string | null; pr
   }
   const ownerId = upload.user_id != null ? Number(upload.user_id) : null
   const isOwner = ownerId === currentUserId
-  const canProduceAny = await can(currentUserId, 'video:delete_any')
+  const checker = await resolveChecker(currentUserId)
+  const canProduceAny = await can(currentUserId, 'video:delete_any', { checker })
   if (!isOwner && !canProduceAny) throw new ForbiddenError()
 
   const { jobId, outPrefix, productionId } = await startProductionRender({
@@ -126,4 +129,3 @@ export async function create(input: { uploadId: number; name?: string | null; pr
   const production = mapProduction(row)
   return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
 }
-
