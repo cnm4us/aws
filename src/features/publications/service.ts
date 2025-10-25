@@ -85,3 +85,31 @@ export async function listByProductionForDto(productionId: number, ctx: ServiceC
     unpublishedAt: r.unpublished_at,
   }))
 }
+
+export async function listByUploadForDto(uploadId: number, ctx: ServiceContext): Promise<Array<{
+  id: number
+  spaceId: number
+  spaceName: string
+  spaceType: string
+  status: string
+  publishedAt: string | null
+  unpublishedAt: string | null
+}>> {
+  const up = await repo.loadUpload(uploadId)
+  if (!up) throw new NotFoundError('upload_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const isOwner = up.user_id != null && Number(up.user_id) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId: up.user_id, checker }))
+  if (!isAdmin && !isOwner) throw new ForbiddenError()
+
+  const rows = await repo.listPublicationsForUpload(uploadId)
+  return rows.map((r) => ({
+    id: r.id,
+    spaceId: r.space_id,
+    spaceName: r.space_name,
+    spaceType: r.space_type,
+    status: r.status,
+    publishedAt: r.published_at,
+    unpublishedAt: r.unpublished_at,
+  }))
+}

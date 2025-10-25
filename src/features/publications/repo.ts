@@ -40,7 +40,13 @@ export async function listEvents(publicationId: number, _conn?: any): Promise<Pu
 }
 
 // Projections for dependent rows (space/upload/production) kept small and explicit to reduce coupling.
-export async function loadUpload(_uploadId: number, _conn?: any): Promise<any | null> { throw new Error('not_implemented: publications.repo.loadUpload') }
+export async function loadUpload(uploadId: number, conn?: any): Promise<{ id: number; user_id: number | null } | null> {
+  const db = conn || getPool()
+  const [rows] = await db.query(`SELECT id, user_id FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return { id: Number(row.id), user_id: row.user_id == null ? null : Number(row.user_id) }
+}
 
 export async function loadProduction(productionId: number, conn?: any): Promise<{ id: number; upload_id: number; user_id: number } | null> {
   const db = conn || getPool()
@@ -70,6 +76,35 @@ export async function listPublicationsForProduction(productionId: number, conn?:
       WHERE sp.production_id = ?
       ORDER BY sp.published_at DESC, sp.id DESC`,
     [productionId]
+  )
+  return (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    space_id: Number(r.space_id),
+    space_name: String(r.space_name || ''),
+    space_type: String(r.space_type || ''),
+    status: String(r.status || ''),
+    published_at: r.published_at ? String(r.published_at) : null,
+    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+  }))
+}
+
+export async function listPublicationsForUpload(uploadId: number, conn?: any): Promise<Array<{
+  id: number
+  space_id: number
+  space_name: string
+  space_type: string
+  status: string
+  published_at: string | null
+  unpublished_at: string | null
+}>> {
+  const db = conn || getPool()
+  const [rows] = await db.query(
+    `SELECT sp.id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at, s.name AS space_name, s.type AS space_type
+       FROM space_publications sp
+       JOIN spaces s ON s.id = sp.space_id
+      WHERE sp.upload_id = ?
+      ORDER BY sp.published_at DESC, sp.id DESC`,
+    [uploadId]
   )
   return (rows as any[]).map((r) => ({
     id: Number(r.id),

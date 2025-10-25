@@ -56,6 +56,13 @@ Refactor — Publications (first endpoint migrated)
   - Route preserves the exact response shape and error mapping.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (second endpoint migrated)
+- Route GET `/api/uploads/:uploadId/publications` now delegates to the new service/repo:
+  - Service: `listByUploadForDto` enforces owner/admin permission with the same logic as before (including `video:publish_own` for owners).
+  - Repo: `loadUpload`, `listPublicationsForUpload` mirror the previous SQL and ordering.
+  - Route preserves the exact response shape and error mapping.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -122,4 +129,14 @@ Commit
   - Affects: src/db.ts; src/services/productionRunner.ts; src/routes/productions.ts; frontend/src/app/Productions.tsx; frontend/src/app/Publish.tsx; docs/agents/Handoff_07.md
   - Routes: POST /api/productions; GET /api/productions; GET /api/productions/:id
   - DB: add column productions.name (idempotent)
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): extract list-by-production to service/repo
+- Hash: 0a1a845
+- Committed: 2025-10-25T18:59:09+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/types.ts; src/features/publications/repo.ts; src/features/publications/service.ts; src/features/publications/routes.ts; src/core/errors.ts; src/core/http.ts
+  - Routes: GET /api/productions/:productionId/publications
+  - DB: none
   - Flags: none

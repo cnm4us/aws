@@ -458,34 +458,20 @@ publicationsRouter.post('/api/productions/:productionId/publications', requireAu
 
 publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async (req, res) => {
   try {
-    const uploadId = Number(req.params.uploadId);
+    const uploadId = Number(req.params.uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) {
-      return res.status(400).json({ error: 'bad_upload_id' });
+      return res.status(400).json({ error: 'bad_upload_id' })
     }
-    const db = getPool();
-    const upload = await loadUpload(db, uploadId);
-    if (!upload) return res.status(404).json({ error: 'upload_not_found' });
-
-    const userId = Number(req.user!.id);
-    const ownerId = upload.user_id;
-    const checker = await resolveChecker(userId);
-    const isAdmin = await can(userId, 'video:delete_any', { checker });
-    const isOwner =
-      ownerId != null &&
-      ownerId === userId &&
-      (await can(userId, 'video:publish_own', { ownerId, checker }));
-
-    if (!isAdmin && !isOwner) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const publications = await listSpacePublicationsForUpload(uploadId, db);
-    res.json({ publications });
+    const userId = Number(req.user!.id)
+    const publications = await pubsSvc.listByUploadForDto(uploadId, { userId })
+    res.json({ publications })
   } catch (err: any) {
-    console.error('list publications failed', err);
-    res.status(500).json({ error: 'failed_to_list_publications', detail: String(err?.message || err) });
+    console.error('list publications failed', err)
+    const code = err?.code || 'failed_to_list_publications'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 // List publications for a specific production (for production-centric publish page)
 publicationsRouter.get('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
