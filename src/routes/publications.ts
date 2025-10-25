@@ -163,154 +163,25 @@ const createPublicationSchema = z.object({
 
 publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, async (req, res) => {
   try {
-    const uploadId = Number(req.params.uploadId);
+    const uploadId = Number(req.params.uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) {
-      return res.status(400).json({ error: 'bad_upload_id' });
+      return res.status(400).json({ error: 'bad_upload_id' })
     }
-    const parsed = createPublicationSchema.safeParse(req.body || {});
+    const parsed = createPublicationSchema.safeParse(req.body || {})
     if (!parsed.success) {
-      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() });
+      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     }
-    const { spaceId, visibility, distributionFlags } = parsed.data;
-    const db = getPool();
-    const upload = await loadUpload(db, uploadId);
-    if (!upload) return res.status(404).json({ error: 'upload_not_found' });
-
-    const space = await loadSpace(db, spaceId);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    // Prefer binding to the latest completed production for this upload
-    let boundProductionId: number | null = null;
-    try {
-      const [pRows] = await db.query(
-        `SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`,
-        [uploadId]
-      );
-      const prow = (pRows as any[])[0];
-      if (prow) boundProductionId = Number(prow.id);
-    } catch {}
-    if (boundProductionId != null) {
-      const [existsRows] = await db.query(
-        `SELECT id, status FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`,
-        [boundProductionId, spaceId]
-      );
-      const ex = (existsRows as any[])[0];
-      if (ex) {
-        // Attempt republish semantics for existing record to avoid frontend 409 handling
-        const existingId = Number(ex.id);
-        const curStatus = String(ex.status || '');
-        if (curStatus === 'published' || curStatus === 'approved' || curStatus === 'pending') {
-          const existingPub = await getSpacePublicationById(existingId, db);
-          return res.json({ publication: existingPub });
-        }
-        const userId = Number(req.user!.id);
-        const checker = await resolveChecker(userId);
-        const isAdmin = await can(userId, 'video:delete_any', { checker });
-        const canPublishSpace = await can(userId, 'video:publish_space', { spaceId, checker });
-        if (curStatus === 'unpublished') {
-          if (isAdmin || canPublishSpace) {
-            const now = new Date();
-            const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
-            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'moderator_republish_published' }, db);
-            return res.json({ publication: updated });
-          }
-          const ownerId = upload.user_id;
-          const isOwner = ownerId != null && Number(ownerId) === userId && (await can(userId, 'video:publish_own', { ownerId, checker }));
-          if (!isOwner) return res.status(403).json({ error: 'forbidden' });
-          const ev = await listSpacePublicationEvents(existingId, db);
-          const lastUnpub = [...ev].reverse().find((e) => e.action === 'unpublish_publication');
-          if (!lastUnpub || lastUnpub.actor_user_id !== userId) return res.status(403).json({ error: 'forbidden' });
-          const requiresApproval = await effectiveRequiresApproval(db, space);
-          if (requiresApproval) {
-            const updated = await updateSpacePublicationStatus(existingId, { status: 'pending', approvedBy: null, publishedAt: null, unpublishedAt: null }, db);
-            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'owner_republish_requested' }, db);
-            return res.json({ publication: updated });
-          } else {
-            const now = new Date();
-            const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
-            await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'owner_republish_published' }, db);
-            return res.json({ publication: updated });
-          }
-        } else if (curStatus === 'rejected') {
-          if (!(isAdmin || canPublishSpace)) return res.status(403).json({ error: 'forbidden' });
-          const now = new Date();
-          const updated = await updateSpacePublicationStatus(existingId, { status: 'published', approvedBy: userId, publishedAt: now, unpublishedAt: null }, db);
-          await recordSpacePublicationEvent({ publicationId: existingId, actorUserId: userId, action: 'moderator_republish_published' }, db);
-          return res.json({ publication: updated });
-        }
-      }
-    }
-
-    const userId = Number(req.user!.id);
-    const ownerId = upload.user_id;
-    const checker = await resolveChecker(userId);
-    const isAdmin = await can(userId, 'video:delete_any', { checker });
-    const canPublishOwn =
-      ownerId != null &&
-      ownerId === userId &&
-      (await can(userId, 'video:publish_own', { ownerId, checker }));
-    const canPublishSpacePerm = await can(userId, 'video:publish_space', { spaceId, checker });
-    const canPostSpace = await can(userId, 'space:post', { spaceId, checker });
-    if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const requireApproval = await effectiveRequiresApproval(db, space);
-    const now = new Date();
-    let status: SpacePublicationStatus = requireApproval ? 'pending' : 'published';
-    let approvedBy: number | null = null;
-    let publishedAt: Date | null = null;
-    if (!requireApproval) {
-      approvedBy = userId;
-      publishedAt = now;
-    }
-
-    // Visibility defaults by space type
-    let visibleInSpace = true;
-    let visibleInGlobal = false;
-    if (space.type === 'personal') {
-      visibleInGlobal = true;
-    } else if (space.type === 'group') {
-      visibleInGlobal = false;
-    } else if (space.type === 'channel') {
-      visibleInGlobal = false;
-    }
-
-    const publication = await createSpacePublication({
-      uploadId,
-      productionId: boundProductionId ?? undefined,
-      spaceId,
-      status,
-      requestedBy: userId,
-      approvedBy,
-      isPrimary: Boolean(upload.origin_space_id && upload.origin_space_id === spaceId),
-      visibility: visibility ?? 'inherit',
-      distributionFlags: distributionFlags ?? null,
-      ownerUserId: upload.user_id ?? null,
-      visibleInSpace,
-      visibleInGlobal,
-      publishedAt,
-    }, db);
-
-    await recordSpacePublicationEvent(
-      {
-        publicationId: publication.id,
-        actorUserId: userId,
-        action: requireApproval ? 'create_pending' : 'auto_published',
-        detail: {
-          visibility: publication.visibility,
-          distribution: distributionFlags ?? null,
-        },
-      },
-      db
-    );
-
-    res.status(201).json({ publication });
+    const { spaceId, visibility, distributionFlags } = parsed.data
+    const userId = Number(req.user!.id)
+    const publication = await pubsSvc.createFromUpload({ uploadId, spaceId, visibility, distributionFlags }, { userId })
+    res.status(201).json({ publication })
   } catch (err: any) {
-    console.error('create publication failed', err);
-    res.status(500).json({ error: 'failed_to_create_publication', detail: String(err?.message || err) });
+    console.error('create publication failed', err)
+    const code = err?.code || 'failed_to_create_publication'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 // New: create publication from a Production (preferred path)
 const createProdPublicationSchema = z.object({

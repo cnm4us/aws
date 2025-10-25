@@ -7,14 +7,63 @@ import { type CreateFromProductionInput, type CreateFromUploadInput, type Public
 // Keep response objects domain-oriented; routes will map to API DTO shapes.
 
 export async function createFromUpload(input: CreateFromUploadInput, ctx: ServiceContext): Promise<Publication> {
-  // TODO: begin txn
-  // 1) Load upload + space
-  // 2) Permission checks using ctx.userId / ctx.checker
-  // 3) Resolve latest completed production for upload (if present)
-  // 4) Upsert/idempotency on (productionId, spaceId); apply review policy (pending vs published)
-  // 5) Insert event (create_pending | auto_published)
-  // 6) commit and return
-  throw new InvalidStateError('not_implemented: publications.service.createFromUpload')
+  const { uploadId, spaceId, visibility, distributionFlags } = input
+  const upload = await repo.loadUpload(uploadId)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const space = await repo.loadSpace(spaceId)
+  if (!space) throw new NotFoundError('space_not_found')
+
+  // Bind to latest completed production if present
+  const boundProductionId = await repo.findLatestCompletedProductionForUpload(uploadId)
+  if (boundProductionId != null) {
+    const existing = await repo.getByProductionSpace(boundProductionId, spaceId)
+    if (existing) {
+      return republish(existing.id, ctx)
+    }
+  }
+
+  // Permissions
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const canPublishOwn = upload.user_id != null && Number(upload.user_id) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId: upload.user_id, checker }))
+  const canPublishSpacePerm = await can(ctx.userId, 'video:publish_space', { spaceId, checker })
+  const canPostSpace = await can(ctx.userId, 'space:post', { spaceId, checker })
+  if (!isAdmin && !canPublishOwn && !canPublishSpacePerm && !canPostSpace) {
+    throw new ForbiddenError()
+  }
+
+  const requireApproval = await effectiveRequiresApproval(space)
+  const now = new Date()
+  const status = requireApproval ? 'pending' : 'published'
+  const approvedBy = requireApproval ? null : ctx.userId
+  const publishedAt = requireApproval ? null : now
+
+  let visibleInSpace = true
+  let visibleInGlobal = false
+  if (space.type === 'personal') visibleInGlobal = true
+
+  const isPrimary = upload.origin_space_id != null && Number(upload.origin_space_id) === Number(spaceId)
+
+  const publication = await repo.insert({
+    uploadId: uploadId,
+    productionId: boundProductionId ?? null,
+    spaceId,
+    status,
+    requestedBy: ctx.userId,
+    approvedBy,
+    isPrimary,
+    visibility: (visibility ?? 'inherit') as any,
+    distributionFlags: distributionFlags ?? null,
+    ownerUserId: upload.user_id ?? null,
+    visibleInSpace,
+    visibleInGlobal,
+    publishedAt,
+  })
+  await repo.insertEvent(publication.id, ctx.userId, requireApproval ? 'create_pending' : 'auto_published', {
+    visibility: publication.visibility,
+    distribution: distributionFlags ?? null,
+  })
+  return publication
 }
 
 export async function createFromProduction(input: CreateFromProductionInput, ctx: ServiceContext): Promise<Publication> {

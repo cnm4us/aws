@@ -103,6 +103,23 @@ Refactor — Publications (create from production migrated)
   - Route preserves response `{ publication }` and error mapping; validation still via zod schema.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts`.
 
+Refactor — Publications (create from upload migrated)
+- Route POST `/api/uploads/:uploadId/publications` now uses the service/repo:
+  - Service: `createFromUpload({ uploadId, spaceId, visibility?, distributionFlags? }, { userId })` binds to latest completed production when available, reuses republish when an existing (production, space) publication exists, enforces permissions (admin/publish_own/publish_space/space:post), evaluates review policy, sets isPrimary based on upload.origin_space_id, and records events.
+  - Repo: added `findLatestCompletedProductionForUpload` and expanded `loadUpload` to include `origin_space_id`.
+  - Route preserves response and error mapping; request body validation stays via zod.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts`.
+
+Commit
+- Subject: refactor(publications): migrate create-from-production to service/repo
+- Hash: 3fea883
+- Committed: 2025-10-25T20:20:31+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/service.ts; src/features/publications/repo.ts; docs/agents/Handoff_07.md
+  - Routes: POST /api/productions/:productionId/publications
+  - DB: none
+  - Flags: none
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).

@@ -143,12 +143,12 @@ export async function listEvents(publicationId: number, conn?: any): Promise<Pub
 }
 
 // Projections for dependent rows (space/upload/production) kept small and explicit to reduce coupling.
-export async function loadUpload(uploadId: number, conn?: any): Promise<{ id: number; user_id: number | null } | null> {
+export async function loadUpload(uploadId: number, conn?: any): Promise<{ id: number; user_id: number | null; origin_space_id: number | null } | null> {
   const db = conn || getPool()
-  const [rows] = await db.query(`SELECT id, user_id FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
+  const [rows] = await db.query(`SELECT id, user_id, origin_space_id FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
   const row = (rows as any[])[0]
   if (!row) return null
-  return { id: Number(row.id), user_id: row.user_id == null ? null : Number(row.user_id) }
+  return { id: Number(row.id), user_id: row.user_id == null ? null : Number(row.user_id), origin_space_id: row.origin_space_id == null ? null : Number(row.origin_space_id) }
 }
 
 export async function loadProduction(productionId: number, conn?: any): Promise<{ id: number; upload_id: number; user_id: number } | null> {
@@ -244,4 +244,11 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
     published_at: r.published_at ? String(r.published_at) : null,
     unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
   }))
+}
+
+export async function findLatestCompletedProductionForUpload(uploadId: number, conn?: any): Promise<number | null> {
+  const db = conn || getPool()
+  const [rows] = await db.query(`SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`, [uploadId])
+  const row = (rows as any[])[0]
+  return row ? Number(row.id) : null
 }
