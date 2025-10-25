@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getPool, SpacePublicationRow, SpacePublicationStatus, SpacePublicationVisibility } from '../db';
 import { requireAuth } from '../middleware/auth';
 import { can, resolveChecker } from '../security/permissions';
+import * as pubsSvc from '../features/publications/service'
 import {
   createSpacePublication,
   getSpacePublicationById,
@@ -489,48 +490,21 @@ publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async
 // List publications for a specific production (for production-centric publish page)
 publicationsRouter.get('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
   try {
-    const productionId = Number(req.params.productionId);
+    const productionId = Number(req.params.productionId)
     if (!Number.isFinite(productionId) || productionId <= 0) {
-      return res.status(400).json({ error: 'bad_production_id' });
+      return res.status(400).json({ error: 'bad_production_id' })
     }
-    const db = getPool();
-    // Load production to validate ownership/permissions
-    const [pRows] = await db.query(`SELECT id, upload_id, user_id FROM productions WHERE id = ? LIMIT 1`, [productionId]);
-    const p = (pRows as any[])[0];
-    if (!p) return res.status(404).json({ error: 'production_not_found' });
-
-    const userId = Number(req.user!.id);
-    const ownerId = p.user_id != null ? Number(p.user_id) : null;
-    const checker = await resolveChecker(userId);
-    const isAdmin = await can(userId, 'video:delete_any', { checker });
-    const isOwner = ownerId === userId;
-    if (!isAdmin && !isOwner) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const [rows] = await db.query(
-      `SELECT sp.id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at, s.name AS space_name, s.type AS space_type
-         FROM space_publications sp
-         JOIN spaces s ON s.id = sp.space_id
-        WHERE sp.production_id = ?
-        ORDER BY sp.published_at DESC, sp.id DESC`,
-      [productionId]
-    );
-    const publications = (rows as any[]).map((r) => ({
-      id: Number(r.id),
-      spaceId: Number(r.space_id),
-      spaceName: String(r.space_name || ''),
-      spaceType: String(r.space_type || ''),
-      status: String(r.status || ''),
-      publishedAt: r.published_at ? String(r.published_at) : null,
-      unpublishedAt: r.unpublished_at ? String(r.unpublished_at) : null,
-    }));
-    res.json({ publications });
+    const userId = Number(req.user!.id)
+    const publications = await pubsSvc.listByProductionForDto(productionId, { userId })
+    res.json({ publications })
   } catch (err: any) {
-    console.error('list production publications failed', err);
-    res.status(500).json({ error: 'failed_to_list_publications', detail: String(err?.message || err) });
+    // Preserve existing error logging/shape
+    console.error('list production publications failed', err)
+    const code = err?.code || 'failed_to_list_publications'
+    const status = err?.status || 500
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
-});
+})
 
 publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) => {
   try {

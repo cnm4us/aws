@@ -39,6 +39,23 @@ Changes Implemented
   - Fix: add `newProductionName` to the dependency array so the latest value is posted.
   - File: `frontend/src/app/Productions.tsx`.
 
+Refactor — Publications (skeleton only, no behavior change)
+- Added foundational structure to migrate heavy logic out of routes:
+  - `src/core/errors.ts` — DomainError + common subclasses (NotFound/Forbidden/Conflict/InvalidState/Validation).
+  - `src/core/http.ts` — middleware to translate DomainError → HTTP JSON (not yet wired).
+  - `src/features/publications/types.ts` — domain types for publications/events and service context.
+  - `src/features/publications/repo.ts` — stubbed SQL layer (functions throw not_implemented for now).
+  - `src/features/publications/service.ts` — stubbed use-case methods with TODOs.
+  - `src/features/publications/routes.ts` — thin-route placeholders (not mounted yet).
+- Scope: skeleton only; no imports/wiring changed, so runtime behavior is unchanged.
+
+Refactor — Publications (first endpoint migrated)
+- Route GET `/api/productions/:productionId/publications` now delegates to the new service/repo:
+  - Service: `listByProductionForDto` handles permission check (owner/admin) and uses repo projection.
+  - Repo: `loadProduction`, `listPublicationsForProduction` mirror the previous SQL.
+  - Route preserves the exact response shape and error mapping.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -95,4 +112,14 @@ Commit
   - Affects: frontend/src/app/Productions.tsx; src/routes/productions.ts
   - Routes: /productions; /publish?production=:id
   - DB: none
+  - Flags: none
+
+Commit
+- Subject: feat(productions): naming + production-specific poster; show names in lists
+- Hash: 133d611
+- Committed: 2025-10-24T21:27:00+00:00
+- Meta:
+  - Affects: src/db.ts; src/services/productionRunner.ts; src/routes/productions.ts; frontend/src/app/Productions.tsx; frontend/src/app/Publish.tsx; docs/agents/Handoff_07.md
+  - Routes: POST /api/productions; GET /api/productions; GET /api/productions/:id
+  - DB: add column productions.name (idempotent)
   - Flags: none
