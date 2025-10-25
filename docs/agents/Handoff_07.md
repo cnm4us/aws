@@ -83,6 +83,12 @@ Refactor — Publications (unpublish mutation migrated)
   - Route keeps `{ publication }` response and still records an optional note in a separate event for compatibility.
 - Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
 
+Refactor — Publications (reject mutation migrated)
+- Route POST `/api/publications/:id/reject` now uses the service/repo:
+  - Service: `reject(id, { userId })` enforces the same approve permissions, sets status=rejected (with unpublishedAt), and records a reject event.
+  - Route preserves `{ publication }` and still attaches an optional note as a separate event.
+- Files: `src/features/publications/{service.ts, repo.ts}`; `src/routes/publications.ts` (handler updated).
+
 Rationale
 - Product asked to funnel users from the upload workspace directly to per‑production publishing options.
 - Header reads “Name” to better reflect row intent; content remains “Production #<id>” (no canonical production name exists today).
@@ -178,5 +184,15 @@ Commit
 - Meta:
   - Affects: src/routes/publications.ts; src/features/publications/repo.ts; src/features/publications/service.ts; docs/agents/Handoff_07.md
   - Routes: GET /api/publications/:id
+  - DB: none
+  - Flags: none
+
+Commit
+- Subject: refactor(publications): move unpublish mutation to service/repo
+- Hash: d82b2de
+- Committed: 2025-10-25T19:42:03+00:00
+- Meta:
+  - Affects: src/routes/publications.ts; src/features/publications/service.ts; src/features/publications/repo.ts; docs/agents/Handoff_07.md
+  - Routes: POST /api/publications/:id/unpublish
   - DB: none
   - Flags: none

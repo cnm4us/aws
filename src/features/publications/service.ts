@@ -36,8 +36,15 @@ export async function approve(publicationId: number, ctx: ServiceContext): Promi
 }
 
 export async function reject(publicationId: number, ctx: ServiceContext): Promise<Publication> {
-  // TODO: permission checks, transition to rejected, event
-  throw new InvalidStateError('not_implemented: publications.service.reject')
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const canReject = isAdmin || (await can(ctx.userId, 'video:approve_space', { spaceId: pub.space_id, checker })) || (await can(ctx.userId, 'video:approve', { checker }))
+  if (!canReject) throw new ForbiddenError()
+  const updated = await repo.updateStatus(publicationId, { status: 'rejected', unpublishedAt: new Date() })
+  await repo.insertEvent(publicationId, ctx.userId, 'reject_publication', undefined)
+  return updated
 }
 
 export async function unpublish(publicationId: number, ctx: ServiceContext): Promise<Publication> {
