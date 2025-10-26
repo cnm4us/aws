@@ -151,159 +151,69 @@ spacesRouter.get('/api/me/spaces', requireAuth, async (req, res) => {
 // List subscribers for a space (active and recent)
 spacesRouter.get('/api/spaces/:id/subscribers', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const userId = Number(req.user!.id);
-    const isSiteAdmin = await can(userId, 'video:delete_any');
-    const canView = isSiteAdmin || (await can(userId, 'subscription:view_subscribers', { spaceId }));
-    if (!canView) return res.status(403).json({ error: 'forbidden' });
-
-    const [rows] = await db.query(
-      `SELECT sub.user_id, sub.tier, sub.status, sub.started_at, sub.ended_at, u.email, u.display_name
-         FROM space_subscriptions sub
-         JOIN users u ON u.id = sub.user_id
-        WHERE sub.space_id = ?
-        ORDER BY sub.status = 'active' DESC, sub.started_at DESC`,
-      [spaceId]
-    );
-    const subscribers = (rows as any[]).map((r) => ({
-      userId: Number(r.user_id),
-      email: r.email || null,
-      displayName: r.display_name || null,
-      tier: r.tier || null,
-      status: String(r.status),
-      startedAt: r.started_at ? String(r.started_at) : null,
-      endedAt: r.ended_at ? String(r.ended_at) : null,
-    }));
-    res.json({ subscribers });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const userId = Number(req.user!.id)
+    const data = await spacesSvc.listSubscribers(spaceId, userId)
+    res.json(data)
   } catch (err: any) {
-    console.error('list subscribers failed', err);
-    res.status(500).json({ error: 'failed_to_list_subscribers', detail: String(err?.message || err) });
+    console.error('list subscribers failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list_subscribers', detail: String(err?.message || err) })
   }
-});
+})
 
 // List suspensions for a space (optionally only active)
 spacesRouter.get('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const userId = Number(req.user!.id);
-    const isSiteAdmin = await can(userId, 'video:delete_any');
-    const canView = isSiteAdmin || (await can(userId, 'moderation:suspend_posting', { spaceId })) || (await can(userId, 'moderation:ban', { spaceId }));
-    if (!canView) return res.status(403).json({ error: 'forbidden' });
-
-    const activeOnly = String(req.query.active || '') === '1' || String(req.query.active || '').toLowerCase() === 'true';
-    const where: string[] = [
-      `target_type = 'space'`,
-      `target_id = ?`,
-    ];
-    const params: any[] = [spaceId];
-    if (activeOnly) {
-      where.push(`(starts_at IS NULL OR starts_at <= NOW())`);
-      where.push(`(ends_at IS NULL OR ends_at >= NOW())`);
-    }
-    const sql = `
-      SELECT id, user_id, kind, degree, starts_at, ends_at, reason, created_by, created_at
-        FROM suspensions
-       WHERE ${where.join(' AND ')}
-       ORDER BY created_at DESC, id DESC
-       LIMIT 1000`;
-    const [rows] = await db.query(sql, params);
-    const items = (rows as any[]).map((r) => ({
-      id: Number(r.id),
-      userId: Number(r.user_id),
-      kind: String(r.kind),
-      degree: r.degree != null ? Number(r.degree) : null,
-      startsAt: r.starts_at ? String(r.starts_at) : null,
-      endsAt: r.ends_at ? String(r.ends_at) : null,
-      reason: r.reason || null,
-      createdBy: r.created_by != null ? Number(r.created_by) : null,
-      createdAt: String(r.created_at),
-    }));
-    res.json({ suspensions: items });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const userId = Number(req.user!.id)
+    const activeOnly = String(req.query.active || '') === '1' || String(req.query.active || '').toLowerCase() === 'true'
+    const data = await spacesSvc.listSuspensions(spaceId, userId, activeOnly)
+    res.json(data)
   } catch (err: any) {
-    console.error('list space suspensions failed', err);
-    res.status(500).json({ error: 'failed_to_list_suspensions', detail: String(err?.message || err) });
+    console.error('list space suspensions failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list_suspensions', detail: String(err?.message || err) })
   }
-});
+})
 
 // Create a suspension (posting or ban) scoped to a space
 spacesRouter.post('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const { userId, kind, degree, reason, days } = (req.body || {}) as any;
-    const targetUserId = Number(userId);
-    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const k = String(kind || '').toLowerCase();
-    if (k !== 'posting' && k !== 'ban') return res.status(400).json({ error: 'bad_kind' });
-    const actorId = Number(req.user!.id);
-    const isSiteAdmin = await can(actorId, 'video:delete_any');
-    if (!isSiteAdmin) {
-      if (k === 'posting') {
-        const ok = await can(actorId, 'moderation:suspend_posting', { spaceId });
-        if (!ok) return res.status(403).json({ error: 'forbidden' });
-      } else {
-        const ok = await can(actorId, 'moderation:ban', { spaceId });
-        if (!ok) return res.status(403).json({ error: 'forbidden' });
-      }
-    }
-    let endsAt: Date | null = null;
-    if (k === 'posting') {
-      const d = Number(degree || 1);
-      const daysMap = d === 1 ? 1 : d === 2 ? 7 : 30;
-      endsAt = new Date(Date.now() + daysMap * 24 * 60 * 60 * 1000);
-    } else if (k === 'ban') {
-      // Optional limited ban in days
-      const d = days != null ? Number(days) : NaN;
-      if (Number.isFinite(d) && d > 0) {
-        endsAt = new Date(Date.now() + d * 24 * 60 * 60 * 1000);
-      }
-    }
-    const db = getPool();
-    await db.query(
-      `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
-       VALUES (?, 'space', ?, ?, ?, NOW(), ?, ?, ?)`,
-      [targetUserId, spaceId, k, Number(degree || (k === 'posting' ? 1 : 1)), endsAt, reason ? String(reason).slice(0, 255) : null, actorId]
-    );
-    res.status(201).json({ ok: true });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const { userId, kind, degree, reason, days } = (req.body || {}) as any
+    const targetUserId = Number(userId)
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    if (String(kind || '').toLowerCase() !== 'posting' && String(kind || '').toLowerCase() !== 'ban') return res.status(400).json({ error: 'bad_kind' })
+    const actorId = Number(req.user!.id)
+    const result = await spacesSvc.createSuspension(spaceId, actorId, { userId: targetUserId, kind: String(kind).toLowerCase() as any, degree: degree != null ? Number(degree) : undefined, reason, days: days != null ? Number(days) : undefined })
+    res.status(201).json(result)
   } catch (err: any) {
-    console.error('create space suspension failed', err);
-    res.status(500).json({ error: 'failed_to_create_suspension', detail: String(err?.message || err) });
+    console.error('create space suspension failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_create_suspension', detail: String(err?.message || err) })
   }
-});
+})
 
 // Revoke a suspension by id (space scoped)
 spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    const sid = Number(req.params.sid);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ error: 'bad_suspension_id' });
-    const db = getPool();
-    const [rows] = await db.query(`SELECT id, user_id, kind FROM suspensions WHERE id = ? AND target_type = 'space' AND target_id = ? LIMIT 1`, [sid, spaceId]);
-    const row = (rows as any[])[0];
-    if (!row) return res.status(404).json({ error: 'suspension_not_found' });
-    const actorId = Number(req.user!.id);
-    const isSiteAdmin = await can(actorId, 'video:delete_any');
-    if (!isSiteAdmin) {
-      if (String(row.kind) === 'posting') {
-        const ok = await can(actorId, 'moderation:suspend_posting', { spaceId });
-        if (!ok) return res.status(403).json({ error: 'forbidden' });
-      } else {
-        const ok = await can(actorId, 'moderation:ban', { spaceId });
-        if (!ok) return res.status(403).json({ error: 'forbidden' });
-      }
-    }
-    await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ?`, [sid]);
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    const sid = Number(req.params.sid)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(sid) || sid <= 0) return res.status(400).json({ error: 'bad_suspension_id' })
+    const actorId = Number(req.user!.id)
+    const result = await spacesSvc.revokeSuspension(spaceId, sid, actorId)
+    res.json(result)
   } catch (err: any) {
-    console.error('revoke space suspension failed', err);
-    res.status(500).json({ error: 'failed_to_revoke_suspension', detail: String(err?.message || err) });
+    console.error('revoke space suspension failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_revoke_suspension', detail: String(err?.message || err) })
   }
-});
+})
 // Moderation queue for a space (pending publications)
 spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, res) => {
   try {

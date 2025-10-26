@@ -173,6 +173,118 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   return { ok: true }
 }
 
+export async function listSubscribers(spaceId: number, currentUserId: number) {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const canView = isSiteAdmin || (await can(currentUserId, 'subscription:view_subscribers', { spaceId, checker }))
+  if (!canView) throw new ForbiddenError()
+  const [rows] = await db.query(
+    `SELECT sub.user_id, sub.tier, sub.status, sub.started_at, sub.ended_at, u.email, u.display_name
+       FROM space_subscriptions sub
+       JOIN users u ON u.id = sub.user_id
+      WHERE sub.space_id = ?
+      ORDER BY sub.status = 'active' DESC, sub.started_at DESC`,
+    [spaceId]
+  )
+  const subscribers = (rows as any[]).map((r) => ({
+    userId: Number(r.user_id),
+    email: r.email || null,
+    displayName: r.display_name || null,
+    tier: r.tier || null,
+    status: String(r.status),
+    startedAt: r.started_at ? String(r.started_at) : null,
+    endedAt: r.ended_at ? String(r.ended_at) : null,
+  }))
+  return { subscribers }
+}
+
+export async function listSuspensions(spaceId: number, currentUserId: number, activeOnly: boolean) {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const canView = isSiteAdmin || (await can(currentUserId, 'moderation:suspend_posting', { spaceId, checker })) || (await can(currentUserId, 'moderation:ban', { spaceId, checker }))
+  if (!canView) throw new ForbiddenError()
+  const where: string[] = [`target_type = 'space'`, `target_id = ?`]
+  const params: any[] = [spaceId]
+  if (activeOnly) {
+    where.push(`(starts_at IS NULL OR starts_at <= NOW())`)
+    where.push(`(ends_at IS NULL OR ends_at >= NOW())`)
+  }
+  const sql = `SELECT id, user_id, kind, degree, starts_at, ends_at, reason, created_by, created_at
+                 FROM suspensions
+                WHERE ${where.join(' AND ')}
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1000`
+  const [rows] = await db.query(sql, params)
+  const items = (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    userId: Number(r.user_id),
+    kind: String(r.kind),
+    degree: r.degree != null ? Number(r.degree) : null,
+    startsAt: r.starts_at ? String(r.starts_at) : null,
+    endsAt: r.ends_at ? String(r.ends_at) : null,
+    reason: r.reason || null,
+    createdBy: r.created_by != null ? Number(r.created_by) : null,
+    createdAt: String(r.created_at),
+  }))
+  return { suspensions: items }
+}
+
+export async function createSuspension(spaceId: number, currentUserId: number, input: { userId: number; kind: 'posting' | 'ban'; degree?: number; reason?: string; days?: number }) {
+  const db = getPool()
+  const { userId, kind, degree, reason, days } = input
+  const k = String(kind || '').toLowerCase()
+  if (k !== 'posting' && k !== 'ban') throw new DomainError('bad_kind', 'bad_kind', 400)
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  if (!isSiteAdmin) {
+    if (k === 'posting') {
+      const ok = await can(currentUserId, 'moderation:suspend_posting', { spaceId, checker })
+      if (!ok) throw new ForbiddenError()
+    } else {
+      const ok = await can(currentUserId, 'moderation:ban', { spaceId, checker })
+      if (!ok) throw new ForbiddenError()
+    }
+  }
+  let endsAt: Date | null = null
+  if (k === 'posting') {
+    const d = Number(degree || 1)
+    const daysMap = d === 1 ? 1 : d === 2 ? 7 : 30
+    endsAt = new Date(Date.now() + daysMap * 24 * 60 * 60 * 1000)
+  } else if (k === 'ban') {
+    const d = days != null ? Number(days) : NaN
+    if (Number.isFinite(d) && d > 0) {
+      endsAt = new Date(Date.now() + d * 24 * 60 * 60 * 1000)
+    }
+  }
+  await db.query(
+    `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
+       VALUES (?, 'space', ?, ?, ?, NOW(), ?, ?, ?)`,
+    [userId, spaceId, k, Number(degree || (k === 'posting' ? 1 : 1)), endsAt, reason ? String(reason).slice(0, 255) : null, currentUserId]
+  )
+  return { ok: true }
+}
+
+export async function revokeSuspension(spaceId: number, suspensionId: number, currentUserId: number) {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT id, user_id, kind FROM suspensions WHERE id = ? AND target_type = 'space' AND target_id = ? LIMIT 1`, [suspensionId, spaceId])
+  const row = (rows as any[])[0]
+  if (!row) throw new NotFoundError('suspension_not_found')
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  if (!isSiteAdmin) {
+    if (String(row.kind) === 'posting') {
+      const ok = await can(currentUserId, 'moderation:suspend_posting', { spaceId, checker })
+      if (!ok) throw new ForbiddenError()
+    } else {
+      const ok = await can(currentUserId, 'moderation:ban', { spaceId, checker })
+      if (!ok) throw new ForbiddenError()
+    }
+  }
+  await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ?`, [suspensionId])
+  return { ok: true }
+}
 export async function inviteMember(spaceId: number, inviteeUserId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)
