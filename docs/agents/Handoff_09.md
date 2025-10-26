@@ -131,6 +131,7 @@ Open Items / Next Actions
   - Implemented: Deduplicated `slugify` and `defaultSettings` into `src/features/spaces/util.ts`; updated spaces service and admin route; removed unused copies from spaces route.
 - [P2] Admin routes modularization (optional)
   - Implemented (partial): created `features/admin/{repo,service}.ts` with roles listing and admin space creation helpers; routes now delegate for `/admin/roles` and `POST /admin/spaces`.
+  - Implemented (continued): delegated users list/create and site roles GET/PUT to admin service; next candidates are user detail/update/delete, capabilities, site-settings, and space-member management.
 - [P2] Document and type `enhanceUploadRow`
   - Confirm inputs/outputs; consider relocating to `src/core/enhance.ts` or `features/uploads/util.ts` for clearer ownership.
 - [P3] Remove stale scaffolding
@@ -218,3 +219,28 @@ Meta:
 Commit:
 - 232c51c5dc70699a0c8ec8040380ebbfa9295579
 - Committed: 2025-10-26 19:51:23 +0000
+
+Subject: refactor(admin): delegate users list/create to feature service
+
+Context:
+- Continue admin modularization by moving user listing and creation to the admin feature service/repo.
+
+Approach:
+- Add repo helpers (listUsers, insertUser, insertPersonalSpaceForUser) and service methods (listUsers, createUser with scrypt hashing).
+- Update routes to delegate GET /admin/users and POST /admin/users; preserve response shapes and errors.
+
+Impact:
+- No API shape changes; routes thinner and logic centralized.
+
+Tests:
+- Build in your environment; verify GET /admin/users and POST /admin/users work as before.
+
+Meta:
+- Affects: src/features/admin/{repo.ts,service.ts}; src/routes/admin.ts; docs/agents/Handoff_09.md
+- Routes: GET /admin/users; POST /admin/users
+- DB: none
+- Flags: none
+
+Commit:
+- 9307fa2be95e9ba48c552a88f1493076abc912c6
+- Committed: 2025-10-26 19:57:56 +0000

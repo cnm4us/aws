@@ -195,19 +195,10 @@ adminRouter.post('/dev/truncate-content', async (_req, res) => {
 // Site role assignments for a user (user_roles)
 adminRouter.get('/users/:id/roles', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const db = getPool();
-    const [rows] = await db.query(
-      `SELECT r.name
-         FROM user_roles ur
-         JOIN roles r ON r.id = ur.role_id
-        WHERE ur.user_id = ?
-        ORDER BY r.name`,
-      [userId]
-    );
-    const roleNames = (rows as any[]).map((r) => String(r.name));
-    res.json({ roles: roleNames });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const result = await adminSvc.getUserSiteRoles(userId)
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_get_user_roles', detail: String(err?.message || err) });
   }
@@ -215,39 +206,11 @@ adminRouter.get('/users/:id/roles', async (req, res) => {
 
 adminRouter.put('/users/:id/roles', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const rolesIn = Array.isArray((req.body || {}).roles) ? (req.body.roles as any[]) : [];
-    const normalized = rolesIn.map((r: any) => String(r || '').trim()).filter((r) => r.length > 0);
-    const db = getPool();
-    // Fetch site-scoped roles (or infer by name prefix 'site_')
-    let siteRoleRows: any[] = [];
-    try {
-      const [rows] = await db.query(`SELECT id, name FROM roles WHERE scope = 'site'`);
-      siteRoleRows = rows as any[];
-    } catch {
-      const [rows] = await db.query(`SELECT id, name FROM roles WHERE name LIKE 'site\\_%'`);
-      siteRoleRows = rows as any[];
-    }
-    const idByName = new Map<string, number>();
-    siteRoleRows.forEach((r) => idByName.set(String(r.name), Number(r.id)));
-
-    // Build target set of role ids
-    const targetIds = new Set<number>();
-    for (const name of normalized) {
-      const rid = idByName.get(name);
-      if (rid) targetIds.add(rid);
-    }
-
-    // Remove current site roles and re-insert target set (replace-all strategy)
-    const roleIdsCsv = [...idByName.values()].join(',');
-    if (roleIdsCsv.length) {
-      await db.query(`DELETE ur FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? AND r.id IN (${roleIdsCsv})`, [userId]);
-    }
-    for (const rid of targetIds) {
-      await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, [userId, rid]);
-    }
-    res.json({ ok: true, roles: normalized.filter((n) => idByName.has(n)) });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const rolesIn = Array.isArray((req.body || {}).roles) ? (req.body.roles as any[]) : []
+    const result = await adminSvc.setUserSiteRoles(userId, rolesIn)
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
   }

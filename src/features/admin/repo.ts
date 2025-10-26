@@ -57,3 +57,38 @@ export async function insertPersonalSpaceForUser(userId: number, name: string, s
     [userId, name, slug, JSON.stringify({ visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true })]
   )
 }
+
+export async function listUserSiteRoleNames(userId: number): Promise<string[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT r.name
+       FROM user_roles ur
+       JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = ? AND (r.scope = 'site' OR r.name LIKE 'site\\_%')
+      ORDER BY r.name`,
+    [userId]
+  )
+  return (rows as any[]).map((r) => String(r.name))
+}
+
+export async function deleteAllUserSiteRoles(userId: number): Promise<void> {
+  const db = getPool()
+  await db.query(`DELETE ur FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? AND (r.scope = 'site' OR r.name LIKE 'site\\_%')`, [userId])
+}
+
+export async function getSiteRoleIdsByNames(names: string[]): Promise<Map<string, number>> {
+  const db = getPool()
+  if (!names.length) return new Map()
+  const placeholders = names.map(() => '?').join(',')
+  const [rows] = await db.query(`SELECT id, name FROM roles WHERE (scope = 'site' OR name LIKE 'site\\_%') AND name IN (${placeholders})`, names)
+  const map = new Map<string, number>()
+  for (const r of rows as any[]) map.set(String(r.name), Number(r.id))
+  return map
+}
+
+export async function insertUserRoles(userId: number, roleIds: number[]): Promise<void> {
+  const db = getPool()
+  for (const rid of roleIds) {
+    await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, [userId, rid])
+  }
+}

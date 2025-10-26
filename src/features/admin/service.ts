@@ -71,3 +71,20 @@ export async function createUser(input: { email: string; displayName?: string; p
   try { await repo.insertPersonalSpaceForUser(userId, dn || e, slug) } catch {}
   return { id: userId, email: e, displayName: dn || e }
 }
+
+export async function getUserSiteRoles(userId: number) {
+  const roles = await repo.listUserSiteRoleNames(userId)
+  return { roles }
+}
+
+export async function setUserSiteRoles(userId: number, roleNames: string[]) {
+  const normalized = (Array.isArray(roleNames) ? roleNames : [])
+    .map((r) => String(r || '').trim())
+    .filter((r) => r.length > 0)
+  const idByName = await repo.getSiteRoleIdsByNames(normalized)
+  await repo.deleteAllUserSiteRoles(userId)
+  const targetIds = normalized.map((n) => idByName.get(n)).filter((v): v is number => typeof v === 'number')
+  if (targetIds.length) await repo.insertUserRoles(userId, targetIds)
+  const accepted = normalized.filter((n) => idByName.has(n))
+  return { ok: true, roles: accepted }
+}
