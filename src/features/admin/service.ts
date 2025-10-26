@@ -160,3 +160,75 @@ export async function setSiteSettings(input: any) {
   await repo.updateSiteSettings({ allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview })
   return { ok: true, allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview }
 }
+
+function toNullableBool(input: any): boolean | null {
+  if (input === null) return null
+  if (input === undefined) return null
+  if (typeof input === 'boolean') return input
+  if (typeof input === 'number') return input === 1
+  if (typeof input === 'string') {
+    const v = input.trim().toLowerCase()
+    if (v === 'true' || v === '1') return true
+    if (v === 'false' || v === '0') return false
+    if (v === 'null' || v === '') return null
+  }
+  throw Object.assign(new Error('invalid_boolean'), { code: 'invalid_boolean', status: 400 })
+}
+
+function toDbValue(value: boolean | null): number | null {
+  return value === null ? null : value ? 1 : 0
+}
+
+export async function getUserCapabilities(userId: number) {
+  const u = await repo.getUserRow(userId)
+  if (!u) throw Object.assign(new Error('user_not_found'), { code: 'user_not_found', status: 404 })
+  const site = await repo.readSiteSettings()
+  if (!site) throw Object.assign(new Error('missing_site_settings'), { code: 'missing_site_settings', status: 500 })
+  const dbBool = (v: any) => Boolean(Number(v))
+  const siteGroup = dbBool(site.allow_group_creation)
+  const siteChannel = dbBool(site.allow_channel_creation)
+  const overrideGroup = u.can_create_group == null ? null : dbBool(u.can_create_group)
+  const overrideChannel = u.can_create_channel == null ? null : dbBool(u.can_create_channel)
+  return {
+    userId,
+    overrides: { canCreateGroup: overrideGroup, canCreateChannel: overrideChannel },
+    effective: {
+      canCreateGroup: overrideGroup === null ? siteGroup : overrideGroup,
+      canCreateChannel: overrideChannel === null ? siteChannel : overrideChannel,
+    },
+    siteDefaults: { allowGroupCreation: siteGroup, allowChannelCreation: siteChannel },
+  }
+}
+
+export async function setUserCapabilities(userId: number, input: { canCreateGroup?: any; canCreateChannel?: any }) {
+  const fields: Record<string, any> = {}
+  if (input.canCreateGroup !== undefined) {
+    const v = toNullableBool(input.canCreateGroup)
+    fields.can_create_group = toDbValue(v)
+  }
+  if (input.canCreateChannel !== undefined) {
+    const v = toNullableBool(input.canCreateChannel)
+    fields.can_create_channel = toDbValue(v)
+  }
+  if (!Object.keys(fields).length) throw Object.assign(new Error('no_fields_to_update'), { code: 'no_fields_to_update', status: 400 })
+  const affected = await repo.updateUser(userId, fields)
+  if (!affected) throw Object.assign(new Error('user_not_found'), { code: 'user_not_found', status: 404 })
+
+  // Return refreshed capabilities (without siteDefaults to match prior PUT shape)
+  const u = await repo.getUserRow(userId)
+  const site = await repo.readSiteSettings()
+  if (!u || !site) throw Object.assign(new Error('missing_context'), { code: 'missing_context', status: 500 })
+  const dbBool = (v: any) => Boolean(Number(v))
+  const siteGroup = dbBool(site.allow_group_creation)
+  const siteChannel = dbBool(site.allow_channel_creation)
+  const overrideGroup = u.can_create_group == null ? null : dbBool(u.can_create_group)
+  const overrideChannel = u.can_create_channel == null ? null : dbBool(u.can_create_channel)
+  return {
+    userId,
+    overrides: { canCreateGroup: overrideGroup, canCreateChannel: overrideChannel },
+    effective: {
+      canCreateGroup: overrideGroup === null ? siteGroup : overrideGroup,
+      canCreateChannel: overrideChannel === null ? siteChannel : overrideChannel,
+    },
+  }
+}

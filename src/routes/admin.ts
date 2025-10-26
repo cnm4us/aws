@@ -494,103 +494,26 @@ adminRouter.put('/site-settings', async (req, res) => {
 
 adminRouter.get('/users/:id/capabilities', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const db = getPool();
-    const [userRows] = await db.query(
-      `SELECT id, can_create_group, can_create_channel FROM users WHERE id = ? LIMIT 1`,
-      [userId]
-    );
-    const user = (userRows as any[])[0];
-    if (!user) return res.status(404).json({ error: 'user_not_found' });
-
-    const [siteRows] = await db.query(`SELECT allow_group_creation, allow_channel_creation FROM site_settings WHERE id = 1 LIMIT 1`);
-    const site = (siteRows as any[])[0];
-    if (!site) return res.status(500).json({ error: 'missing_site_settings' });
-
-    const siteGroup = dbBool(site.allow_group_creation);
-    const siteChannel = dbBool(site.allow_channel_creation);
-    const overrideGroup = user.can_create_group == null ? null : dbBool(user.can_create_group);
-    const overrideChannel = user.can_create_channel == null ? null : dbBool(user.can_create_channel);
-
-    res.json({
-      userId,
-      overrides: {
-        canCreateGroup: overrideGroup,
-        canCreateChannel: overrideChannel,
-      },
-      effective: {
-        canCreateGroup: overrideGroup === null ? siteGroup : overrideGroup,
-        canCreateChannel: overrideChannel === null ? siteChannel : overrideChannel,
-      },
-      siteDefaults: {
-        allowGroupCreation: siteGroup,
-        allowChannelCreation: siteChannel,
-      },
-    });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const result = await adminSvc.getUserCapabilities(userId)
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_fetch_user_capabilities', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_fetch_user_capabilities', detail: String(err?.message || err) })
   }
 });
 
 adminRouter.put('/users/:id/capabilities', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const { canCreateGroup, canCreateChannel } = req.body || {};
-
-    const updates: string[] = [];
-    const params: Array<number | null> = [];
-
-    if (canCreateGroup !== undefined) {
-      let value: NullableBool;
-      if (canCreateGroup === null) value = null;
-      else if (typeof canCreateGroup === 'boolean') value = canCreateGroup;
-      else value = toNullableBool(canCreateGroup);
-      updates.push('can_create_group = ?');
-      params.push(toDbValue(value));
-    }
-
-    if (canCreateChannel !== undefined) {
-      let value: NullableBool;
-      if (canCreateChannel === null) value = null;
-      else if (typeof canCreateChannel === 'boolean') value = canCreateChannel;
-      else value = toNullableBool(canCreateChannel);
-      updates.push('can_create_channel = ?');
-      params.push(toDbValue(value));
-    }
-
-    if (!updates.length) return res.status(400).json({ error: 'no_fields_to_update' });
-
-    const db = getPool();
-    const [result] = await db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, [...params, userId]);
-    const info = result as any;
-    if ((info.affectedRows || 0) === 0) return res.status(404).json({ error: 'user_not_found' });
-
-    // return the refreshed capabilities
-    const [userRows] = await db.query(`SELECT can_create_group, can_create_channel FROM users WHERE id = ?`, [userId]);
-    const user = (userRows as any[])[0];
-    const [siteRows] = await db.query(`SELECT allow_group_creation, allow_channel_creation FROM site_settings WHERE id = 1 LIMIT 1`);
-    const site = (siteRows as any[])[0];
-
-    const siteGroup = dbBool(site.allow_group_creation);
-    const siteChannel = dbBool(site.allow_channel_creation);
-    const overrideGroup = user.can_create_group == null ? null : dbBool(user.can_create_group);
-    const overrideChannel = user.can_create_channel == null ? null : dbBool(user.can_create_channel);
-
-    res.json({
-      userId,
-      overrides: {
-        canCreateGroup: overrideGroup,
-        canCreateChannel: overrideChannel,
-      },
-      effective: {
-        canCreateGroup: overrideGroup === null ? siteGroup : overrideGroup,
-        canCreateChannel: overrideChannel === null ? siteChannel : overrideChannel,
-      },
-    });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const { canCreateGroup, canCreateChannel } = (req.body || {}) as any
+    const result = await adminSvc.setUserCapabilities(userId, { canCreateGroup, canCreateChannel })
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_update_user_capabilities', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_update_user_capabilities', detail: String(err?.message || err) })
   }
 });
 

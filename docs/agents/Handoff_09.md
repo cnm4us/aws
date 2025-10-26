@@ -134,6 +134,32 @@ Open Items / Next Actions
   - Implemented (continued): delegated users list/create and site roles GET/PUT to admin service; next candidates are user detail/update/delete, capabilities, site-settings, and space-member management.
   - Implemented (continued): delegated user detail/update/delete to admin service.
   - Implemented (continued): delegated site settings GET/PUT to admin service.
+  - Implemented (continued): delegated user capabilities GET/PUT to admin service.
+
+Subject: refactor(admin): delegate site settings GET/PUT to feature service
+
+Context:
+- Centralize site settings fetch/update in admin feature service/repo.
+
+Approach:
+- Add repo readSiteSettings/updateSiteSettings; add service getSiteSettings/setSiteSettings with validation and boolean mapping.
+- Update routes/admin.ts to delegate GET/PUT /admin/site-settings; preserve response shapes.
+
+Impact:
+- No API shape changes; routes thinner and easier to maintain.
+
+Tests:
+- Build in your environment; verify settings read/write works.
+
+Meta:
+- Affects: src/features/admin/repo.ts; src/features/admin/service.ts; src/routes/admin.ts; docs/agents/Handoff_09.md
+- Routes: GET/PUT /admin/site-settings
+- DB: none
+- Flags: none
+
+Commit:
+- 748f34c5e82ed1cdea587bbcf3ec0947381677ff
+- Committed: 2025-10-26 22:16:17 +0000
 
 Subject: refactor(admin): delegate user detail/update/delete to feature service
 
