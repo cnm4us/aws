@@ -139,3 +139,24 @@ export async function deleteUser(userId: number) {
   await repo.softDeleteUser(userId)
   return { ok: true }
 }
+
+export async function getSiteSettings() {
+  const row = await repo.readSiteSettings()
+  if (!row) throw Object.assign(new Error('missing_site_settings'), { code: 'missing_site_settings', status: 500 })
+  const dbBool = (v: any) => Boolean(Number(v))
+  return {
+    allowGroupCreation: dbBool(row.allow_group_creation),
+    allowChannelCreation: dbBool(row.allow_channel_creation),
+    requireGroupReview: dbBool(row.require_group_review),
+    requireChannelReview: dbBool(row.require_channel_review),
+  }
+}
+
+export async function setSiteSettings(input: any) {
+  const { allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview } = input || {}
+  const allBools = [allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview]
+  const valid = allBools.every((v) => typeof v === 'boolean')
+  if (!valid) throw Object.assign(new Error('invalid_payload'), { code: 'invalid_payload', status: 400 })
+  await repo.updateSiteSettings({ allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview })
+  return { ok: true, allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview }
+}

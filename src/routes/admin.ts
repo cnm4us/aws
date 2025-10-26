@@ -474,40 +474,21 @@ adminRouter.put('/spaces/:id/users/:userId/roles', async (req, res) => {
 
 adminRouter.get('/site-settings', async (_req, res) => {
   try {
-    const db = getPool();
-    const [rows] = await db.query(`SELECT allow_group_creation, allow_channel_creation, require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
-    const row = (rows as any[])[0];
-    if (!row) return res.status(500).json({ error: 'missing_site_settings' });
-    res.json({
-      allowGroupCreation: dbBool(row.allow_group_creation),
-      allowChannelCreation: dbBool(row.allow_channel_creation),
-      requireGroupReview: dbBool(row.require_group_review),
-      requireChannelReview: dbBool(row.require_channel_review),
-    });
+    const result = await adminSvc.getSiteSettings()
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_fetch_site_settings', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_fetch_site_settings', detail: String(err?.message || err) })
   }
 });
 
 adminRouter.put('/site-settings', async (req, res) => {
   try {
-    const { allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview } = req.body || {};
-    if (
-      typeof allowGroupCreation !== 'boolean' ||
-      typeof allowChannelCreation !== 'boolean' ||
-      typeof requireGroupReview !== 'boolean' ||
-      typeof requireChannelReview !== 'boolean'
-    ) {
-      return res.status(400).json({ error: 'invalid_payload' });
-    }
-    const db = getPool();
-    await db.query(
-      `UPDATE site_settings SET allow_group_creation = ?, allow_channel_creation = ?, require_group_review = ?, require_channel_review = ? WHERE id = 1`,
-      [allowGroupCreation ? 1 : 0, allowChannelCreation ? 1 : 0, requireGroupReview ? 1 : 0, requireChannelReview ? 1 : 0]
-    );
-    res.json({ ok: true, allowGroupCreation, allowChannelCreation, requireGroupReview, requireChannelReview });
+    const result = await adminSvc.setSiteSettings(req.body || {})
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_update_site_settings', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_update_site_settings', detail: String(err?.message || err) })
   }
 });
 

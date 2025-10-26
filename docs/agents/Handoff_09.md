@@ -133,6 +133,32 @@ Open Items / Next Actions
   - Implemented (partial): created `features/admin/{repo,service}.ts` with roles listing and admin space creation helpers; routes now delegate for `/admin/roles` and `POST /admin/spaces`.
   - Implemented (continued): delegated users list/create and site roles GET/PUT to admin service; next candidates are user detail/update/delete, capabilities, site-settings, and space-member management.
   - Implemented (continued): delegated user detail/update/delete to admin service.
+  - Implemented (continued): delegated site settings GET/PUT to admin service.
+
+Subject: refactor(admin): delegate user detail/update/delete to feature service
+
+Context:
+- Continue admin modularization to align routes with feature service/repo.
+
+Approach:
+- Add repo helpers (getUserRow, updateUser, softDeleteUser) and service methods (getUserDetail, updateUser, deleteUser).
+- Update routes to delegate GET/PUT/DELETE /admin/users/:id; preserve response shapes and error mapping.
+
+Impact:
+- No API shape changes; routes thinner and logic centralized.
+
+Tests:
+- Build in your environment; verify the three endpoints behave unchanged.
+
+Meta:
+- Affects: src/features/admin/{repo.ts,service.ts}; src/routes/admin.ts; docs/agents/Handoff_09.md
+- Routes: GET/PUT/DELETE /admin/users/:id
+- DB: none
+- Flags: none
+
+Commit:
+- 05395d31c6f2ec59530ff0f8e7b836727ec1ed9b
+- Committed: 2025-10-26 20:21:47 +0000
 - [P2] Document and type `enhanceUploadRow`
   - Confirm inputs/outputs; consider relocating to `src/core/enhance.ts` or `features/uploads/util.ts` for clearer ownership.
 - [P3] Remove stale scaffolding

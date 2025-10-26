@@ -119,3 +119,23 @@ export async function softDeleteUser(userId: number): Promise<void> {
   const db = getPool()
   await db.query(`UPDATE users SET deleted_at = NOW() WHERE id = ?`, [userId])
 }
+
+export async function readSiteSettings(): Promise<{
+  allow_group_creation: any
+  allow_channel_creation: any
+  require_group_review: any
+  require_channel_review: any
+} | null> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT allow_group_creation, allow_channel_creation, require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`)
+  const row = (rows as any[])[0]
+  return row || null
+}
+
+export async function updateSiteSettings(flags: { allowGroupCreation: boolean; allowChannelCreation: boolean; requireGroupReview: boolean; requireChannelReview: boolean }): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `UPDATE site_settings SET allow_group_creation = ?, allow_channel_creation = ?, require_group_review = ?, require_channel_review = ? WHERE id = 1`,
+    [flags.allowGroupCreation ? 1 : 0, flags.allowChannelCreation ? 1 : 0, flags.requireGroupReview ? 1 : 0, flags.requireChannelReview ? 1 : 0]
+  )
+}
