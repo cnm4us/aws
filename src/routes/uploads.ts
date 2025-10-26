@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import * as uploadsSvc from '../features/uploads/service'
+import { clampLimit, parseNumberCursor } from '../core/pagination'
 
 export const uploadsRouter = Router();
 
@@ -8,12 +9,14 @@ uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
     const { status, limit, cursor, user_id, space_id, include_publications } = req.query as any
     const includePubs = include_publications === '1' || include_publications === 'true'
+    const lim = clampLimit(limit, 50, 1, 500)
+    const curId = parseNumberCursor(cursor) ?? undefined
     const result = await uploadsSvc.list({
       status: status ? String(status) : undefined,
       userId: user_id ? Number(user_id) : undefined,
       spaceId: space_id ? Number(space_id) : undefined,
-      cursorId: cursor ? Number(cursor) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      cursorId: curId,
+      limit: lim,
       includePublications: includePubs,
     }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
     return res.json(result)

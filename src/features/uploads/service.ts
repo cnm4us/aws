@@ -8,6 +8,7 @@ import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import { OUTPUT_BUCKET, UPLOAD_BUCKET } from '../../config'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
+import { clampLimit } from '../../core/pagination'
 
 export type ServiceContext = { userId?: number | null }
 
@@ -17,7 +18,7 @@ export async function list(params: { status?: string; userId?: number; spaceId?:
     userId: params.userId,
     spaceId: params.spaceId,
     cursorId: params.cursorId,
-    limit: Math.min(Math.max(Number(params.limit || 50), 1), 500),
+    limit: clampLimit(params.limit, 50, 1, 500),
   })
   const includePubs = Boolean(params.includePublications)
   const userId = ctx.userId && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null

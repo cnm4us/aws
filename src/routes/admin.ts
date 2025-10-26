@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getPool } from '../db';
+import { clampLimit } from '../core/pagination'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
 import crypto from 'crypto';
 import {
@@ -298,7 +299,7 @@ adminRouter.get('/users', async (req, res) => {
     const db = getPool();
     const search = (req.query.search ? String(req.query.search) : '').trim();
     const includeDeleted = String(req.query.include_deleted || '') === '1';
-    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+    const limit = clampLimit(req.query.limit, 50, 1, 200);
     const offset = Math.max(Number(req.query.offset || 0), 0);
     const where: string[] = [];
     const params: any[] = [];

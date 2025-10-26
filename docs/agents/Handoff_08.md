@@ -272,7 +272,7 @@ Commit:
 - 7f9e63711a938add0f9f2f459424b45876d560cb
 - Committed: 2025-10-26T14:37:38+00:00
 
-Subject: refactor(uploads): move delete endpoint to service
+Subject: refactor(uploads): move delete endpoint to service; use pagination helpers for list
 
 Context:
 - Keep routes thin and centralize permission + S3 deletion logic in uploads service.
@@ -280,13 +280,14 @@ Context:
 Approach:
 - Add `uploads.service.remove(id, userId)` handling permission checks, S3 prefix deletions for upload/output, DB deletion, and action_log entries.
 - Route delegates and preserves error/status mapping; on S3 issues, returns `s3_delete_failed` with details.
+- Extend pagination helpers to uploads list: use `clampLimit` and `parseNumberCursor`.
 
 Impact:
 - No API shape changes; same error codes and success shape.
 
 Meta:
 - Affects: src/features/uploads/service.ts; src/routes/uploads.ts; docs/agents/Handoff_08.md
-- Routes: DELETE /api/uploads/:id
+- Routes: GET /api/uploads; DELETE /api/uploads/:id
 - DB: none
 - Flags: none
 
@@ -337,6 +338,29 @@ Meta:
 Commit:
 - de5ddd794babce78fd5be4d7a74e062524e3eac0
 - Committed: 2025-10-26T17:10:22+00:00
+
+Subject: chore(security): centralize permission names and update checks
+
+Context:
+- Permission strings were duplicated across services/routes causing drift risk and harder refactors.
+
+Approach:
+- Add src/security/perm.ts exporting PERM constants for all permission names.
+- Update core modules to use PERM: permissions.ts, uploads/productions/publications/spaces services, auth middleware, publish routes.
+- Leave DB seeding literals as-is (data layer), application logic uses constants.
+
+Impact:
+- No behavior change; consistent checks and easier maintenance.
+
+Meta:
+- Affects: src/security/perm.ts; src/security/permissions.ts; src/features/uploads/service.ts; src/features/productions/service.ts; src/features/publications/service.ts; src/features/spaces/service.ts; src/middleware/auth.ts; src/routes/publish*.ts; docs/agents/Handoff_08.md
+- Routes: n/a
+- DB: none
+- Flags: none
+
+Commit:
+- fe063893e63cafaa9f12539b68df0ffae4ce2ed9
+- Committed: 2025-10-26T17:44:00+00:00
 
 Subject: refactor(spaces): move subscribers and suspensions endpoints to service
 
