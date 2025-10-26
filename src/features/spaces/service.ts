@@ -5,34 +5,9 @@ import { PERM } from '../../security/perm'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, removeAllRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
 import { enhanceUploadRow } from '../../utils/enhance'
+import { slugify, defaultSettings } from './util'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
-
-function slugify(input: string): string {
-  return (input || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120) || 'space'
-}
-
-function defaultSettings(type: 'group' | 'channel'): any {
-  if (type === 'group') {
-    return {
-      visibility: 'private',
-      membership: 'invite',
-      publishing: { requireApproval: false, targets: ['space'] },
-      limits: {},
-    }
-  }
-  return {
-    visibility: 'members_only',
-    membership: 'invite',
-    publishing: { requireApproval: true, targets: ['channel'] },
-    limits: {},
-  }
-}
 
 function parseSettings(space: SpaceRow | null): any {
   if (!space || space.settings == null) return {}

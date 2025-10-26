@@ -3,6 +3,7 @@ import { getPool } from '../db';
 import { clampLimit } from '../core/pagination'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
 import crypto from 'crypto';
+import { slugify, defaultSettings } from '../features/spaces/util'
 import {
   assignDefaultAdminRoles,
   assignDefaultMemberRoles,
@@ -978,18 +979,3 @@ adminRouter.post('/spaces/:id/members', async (req, res) => {
 });
 
 export default adminRouter;
-function slugify(input: string): string {
-  return String(input || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120);
-}
-
-function defaultSettings(type: 'group' | 'channel'): any {
-  if (type === 'group') {
-    return { visibility: 'private', membership: 'invite', publishing: { requireApproval: false, targets: ['space'] }, limits: {} };
-  }
-  return { visibility: 'members_only', membership: 'invite', publishing: { requireApproval: true, targets: ['channel'] }, limits: {} };
-}

@@ -35,31 +35,7 @@ type SiteSettings = {
   allowChannelCreation: boolean;
 };
 
-function slugify(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120) || 'space';
-}
-
-function defaultSettings(type: 'group' | 'channel'): any {
-  if (type === 'group') {
-    return {
-      visibility: 'private',
-      membership: 'invite',
-      publishing: { requireApproval: false, targets: ['space'] },
-      limits: {},
-    };
-  }
-  return {
-    visibility: 'members_only',
-    membership: 'invite',
-    publishing: { requireApproval: true, targets: ['channel'] },
-    limits: {},
-  };
-}
+// slugify/defaultSettings moved to features/spaces/util; routes no longer use them directly
 
 async function fetchSiteSettings(db: any): Promise<SiteSettings> {
   const [rows] = await db.query(`SELECT allow_group_creation, allow_channel_creation FROM site_settings WHERE id = 1 LIMIT 1`);

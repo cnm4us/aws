@@ -128,7 +128,7 @@ Open Items / Next Actions
 - [P2] Signing flow consolidation
   - Extract upload DB mutations from `routes/signing.ts` into `features/uploads` (e.g., `createSignedUpload(...)`, `markComplete(id, etag, size)`), preserving current API.
 - [P2] Normalize shared helpers
-  - Deduplicate `slugify` and `defaultSettings` across admin/spaces; expose from a single module (spaces util or service).
+  - Implemented: Deduplicated `slugify` and `defaultSettings` into `src/features/spaces/util.ts`; updated spaces service and admin route; removed unused copies from spaces route.
 - [P2] Admin routes modularization (optional)
   - Create `features/admin/{repo,service}.ts` for roles, users, and admin-space helpers; keep routes thin and consistent.
 - [P2] Document and type `enhanceUploadRow`
@@ -165,3 +165,7 @@ Meta:
 - Routes: POST /api/sign-upload; POST /api/mark-complete
 - DB: none
 - Flags: none
+
+Commit:
+- eca8d938af331e7aa7c14f95f5695fe136c2eb90
+- Committed: 2025-10-26 19:24:42 +0000
