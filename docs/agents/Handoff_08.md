@@ -13,7 +13,7 @@ Decisions (carried + new)
 
 Changes Since Last
 - Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; src/features/publications/service.ts; src/routes/publications.ts; docs/agents/Handoff_08.md
-- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed; POST /api/publications/:id/(approve|unpublish|reject)
+- Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; DELETE /api/uploads/:id; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed; POST /api/publications/:id/(approve|unpublish|reject)
   ; POST /api/spaces/:id/invitations; DELETE /api/spaces/:id/invitations/:userId; POST /api/spaces/:id/invitations/:userId/(accept|decline)
 - DB: none
 - Flags: none
@@ -271,6 +271,24 @@ Meta:
 Commit:
 - 7f9e63711a938add0f9f2f459424b45876d560cb
 - Committed: 2025-10-26T14:37:38+00:00
+
+Subject: refactor(uploads): move delete endpoint to service
+
+Context:
+- Keep routes thin and centralize permission + S3 deletion logic in uploads service.
+
+Approach:
+- Add `uploads.service.remove(id, userId)` handling permission checks, S3 prefix deletions for upload/output, DB deletion, and action_log entries.
+- Route delegates and preserves error/status mapping; on S3 issues, returns `s3_delete_failed` with details.
+
+Impact:
+- No API shape changes; same error codes and success shape.
+
+Meta:
+- Affects: src/features/uploads/service.ts; src/routes/uploads.ts; docs/agents/Handoff_08.md
+- Routes: DELETE /api/uploads/:id
+- DB: none
+- Flags: none
 
 Subject: refactor(spaces): move subscribers and suspensions endpoints to service
 
