@@ -3,6 +3,7 @@ import { getPool } from '../db';
 import { clampLimit } from '../core/pagination'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
 import crypto from 'crypto';
+import * as adminSvc from '../features/admin/service'
 import { slugify, defaultSettings } from '../features/spaces/util'
 import {
   assignDefaultAdminRoles,
@@ -49,14 +50,8 @@ adminRouter.use(requireSiteAdmin);
 // ---------- Roles ----------
 adminRouter.get('/roles', async (_req, res) => {
   try {
-    const db = getPool();
-    try {
-      const [rows] = await db.query(`SELECT id, name, scope, space_type FROM roles ORDER BY name`);
-      return res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name), scope: r.scope || null, spaceType: r.space_type || null })) });
-    } catch {
-      const [rows] = await db.query(`SELECT id, name FROM roles ORDER BY name`);
-      return res.json({ roles: (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name), scope: null, spaceType: null })) });
-    }
+    const result = await adminSvc.listRoles()
+    return res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_roles', detail: String(err?.message || err) });
   }
@@ -261,29 +256,18 @@ adminRouter.put('/users/:id/roles', async (req, res) => {
 // Create Group / Channel (admin)
 adminRouter.post('/spaces', async (req, res) => {
   try {
-    const { type, name, slug } = (req.body || {}) as any;
-    const kind = String(type || '').trim().toLowerCase();
-    if (kind !== 'group' && kind !== 'channel') return res.status(400).json({ error: 'invalid_space_type' });
-    const title = String(name || '').trim(); if (!title) return res.status(400).json({ error: 'invalid_name' });
-    const rawSlug = String(slug || '').trim(); if (!rawSlug) return res.status(400).json({ error: 'invalid_slug' });
-    const normalizedSlug = slugify(rawSlug); if (!normalizedSlug) return res.status(400).json({ error: 'invalid_slug' });
-
-    const db = getPool();
-    // enforce uniqueness across all spaces (table uses unique slug)
-    const [exists] = await db.query(`SELECT id FROM spaces WHERE slug = ? LIMIT 1`, [normalizedSlug]);
-    if ((exists as any[]).length) return res.status(409).json({ error: 'slug_taken' });
-
-    const settings = JSON.stringify(defaultSettings(kind));
-    const [ins] = await db.query(
-      `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
-      [kind, req.user!.id, title, normalizedSlug, settings]
-    );
-    const spaceId = Number((ins as any).insertId);
-    const space: SpaceRow = { id: spaceId, type: kind as any, owner_user_id: req.user!.id };
-    await assignDefaultAdminRoles(db, space, req.user!.id);
-    res.status(201).json({ id: spaceId, type: kind, name: title, slug: normalizedSlug });
+    const { type, name, slug } = (req.body || {}) as any
+    const kind = String(type || '').trim().toLowerCase()
+    if (kind !== 'group' && kind !== 'channel') return res.status(400).json({ error: 'invalid_space_type' })
+    const title = String(name || '').trim(); if (!title) return res.status(400).json({ error: 'invalid_name' })
+    const rawSlug = String(slug || '').trim(); if (!rawSlug) return res.status(400).json({ error: 'invalid_slug' })
+    const normalizedSlug = rawSlug
+    const space = await adminSvc.createSpace({ type: kind, name: title, slug: normalizedSlug }, Number(req.user!.id))
+    res.status(201).json(space)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_create_space', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    const code = err?.code || 'failed_to_create_space'
+    res.status(status).json({ error: code, detail: String(err?.message || err) })
   }
 });
 

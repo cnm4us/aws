@@ -130,7 +130,7 @@ Open Items / Next Actions
 - [P2] Normalize shared helpers
   - Implemented: Deduplicated `slugify` and `defaultSettings` into `src/features/spaces/util.ts`; updated spaces service and admin route; removed unused copies from spaces route.
 - [P2] Admin routes modularization (optional)
-  - Create `features/admin/{repo,service}.ts` for roles, users, and admin-space helpers; keep routes thin and consistent.
+  - Implemented (partial): created `features/admin/{repo,service}.ts` with roles listing and admin space creation helpers; routes now delegate for `/admin/roles` and `POST /admin/spaces`.
 - [P2] Document and type `enhanceUploadRow`
   - Confirm inputs/outputs; consider relocating to `src/core/enhance.ts` or `features/uploads/util.ts` for clearer ownership.
 - [P3] Remove stale scaffolding
@@ -145,6 +145,30 @@ Work Log (optional)
 
 Artifacts (optional)
 <!-- none -->
+Subject: refactor(spaces): centralize slugify/defaultSettings into shared util
+
+Context:
+- Deduplicate helper functions used in spaces service and admin route to avoid drift and keep semantics consistent.
+
+Approach:
+- Add src/features/spaces/util.ts exporting slugify and defaultSettings.
+- Update spaces service and admin route to import these helpers; remove local copies and unused route versions.
+
+Impact:
+- No behavior change; consolidation improves maintainability.
+
+Tests:
+- Type build in your environment; verify space creation (admin and non-admin flows) still works.
+
+Meta:
+- Affects: src/features/spaces/util.ts; src/features/spaces/service.ts; src/routes/admin.ts; src/routes/spaces.ts; docs/agents/Handoff_09.md
+- Routes: n/a
+- DB: none
+- Flags: none
+
+Commit:
+- eeff554c2d0d5d194543ca28940a56c68af29d93
+- Committed: 2025-10-26 19:44:24 +0000
 - Subject: refactor(uploads): move signing and completion to service
 
 Context:
