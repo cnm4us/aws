@@ -348,78 +348,26 @@ adminRouter.get('/users/:id/spaces', async (req, res) => {
 // ---------- Spaces ----------
 adminRouter.get('/spaces/:id', async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const db = getPool();
-    const [rows] = await db.query(`SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
-    const s = (rows as any[])[0];
-    if (!s) return res.status(404).json({ error: 'space_not_found' });
-    res.json({
-      id: Number(s.id),
-      type: String(s.type),
-      ownerUserId: s.owner_user_id != null ? Number(s.owner_user_id) : null,
-      name: s.name,
-      slug: s.slug,
-      settings: typeof s.settings === 'string' ? JSON.parse(s.settings) : s.settings,
-    });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const result = await adminSvc.getSpace(spaceId)
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_get_space', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_get_space', detail: String(err?.message || err) })
   }
 });
 
 adminRouter.put('/spaces/:id', async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    const { name, commentsPolicy, requireReview } = (req.body || {}) as any;
-    const title = (name ? String(name) : '').trim();
-    const db = getPool();
-
-    // Load current space to get type + settings
-    const [srows] = await db.query(`SELECT type, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId]);
-    const srow = (srows as any[])[0];
-    if (!srow) return res.status(404).json({ error: 'space_not_found' });
-    let settings: any = {};
-    try { settings = typeof srow.settings === 'string' ? JSON.parse(srow.settings) : (srow.settings || {}); } catch { settings = {}; }
-    const spaceType = String(srow.type || '');
-
-    const updates: string[] = [];
-    const params: any[] = [];
-    if (title) { updates.push('name = ?'); params.push(title); }
-
-    let settingsChanged = false;
-    if (commentsPolicy !== undefined) {
-      const cp = String(commentsPolicy || '').toLowerCase();
-      if (!['on','off','inherit'].includes(cp)) return res.status(400).json({ error: 'bad_comments_policy' });
-      settings = { ...(settings || {}), comments: cp };
-      settingsChanged = true;
-    }
-
-    if (requireReview !== undefined) {
-      const rr = Boolean(requireReview);
-      // Enforce site-level requirement precedence
-      const [siteRows] = await db.query(`SELECT require_group_review, require_channel_review FROM site_settings WHERE id = 1 LIMIT 1`);
-      const site = (siteRows as any[])[0];
-      if (!site) return res.status(500).json({ error: 'missing_site_settings' });
-      const siteRequires = spaceType === 'group' ? dbBool(site.require_group_review) : spaceType === 'channel' ? dbBool(site.require_channel_review) : false;
-      if (siteRequires && rr === false) {
-        return res.status(400).json({ error: 'cannot_override_site_policy' });
-      }
-      const pub = { ...(settings?.publishing || {}) };
-      pub.requireApproval = rr;
-      settings = { ...(settings || {}), publishing: pub };
-      settingsChanged = true;
-    }
-
-    if (settingsChanged) { updates.push('settings = ?'); params.push(JSON.stringify(settings)); }
-
-    if (!updates.length) return res.status(400).json({ error: 'no_fields_to_update' });
-    params.push(spaceId);
-    const [result] = await db.query(`UPDATE spaces SET ${updates.join(', ')} WHERE id = ?`, params);
-    if ((result as any).affectedRows === 0) return res.status(404).json({ error: 'space_not_found' });
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const { name, commentsPolicy, requireReview } = (req.body || {}) as any
+    const result = await adminSvc.updateSpace(spaceId, { name, commentsPolicy, requireReview })
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_update_space', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_update_space', detail: String(err?.message || err) })
   }
 });
 
@@ -519,29 +467,10 @@ adminRouter.put('/users/:id/capabilities', async (req, res) => {
 
 adminRouter.get('/spaces', async (req, res) => {
   try {
-    const { type } = req.query as { type?: string };
-    const db = getPool();
-    const types = ['group', 'channel'];
-    let sql = `SELECT s.id, s.type, s.name, s.slug, s.owner_user_id, u.display_name AS owner_display_name
-                 FROM spaces s
-                 LEFT JOIN users u ON u.id = s.owner_user_id
-                WHERE s.type IN ('group','channel')`;
-    const params: any[] = [];
-    if (type && types.includes(type.toLowerCase())) {
-      sql += ` AND s.type = ?`;
-      params.push(type.toLowerCase());
-    }
-    sql += ` ORDER BY s.type, s.name`;
-    const [rows] = await db.query(sql, params);
-    const spaces = (rows as any[]).map((row) => ({
-      id: Number(row.id),
-      type: String(row.type),
-      name: row.name,
-      slug: row.slug,
-      ownerUserId: row.owner_user_id ? Number(row.owner_user_id) : null,
-      ownerDisplayName: row.owner_display_name || null,
-    }));
-    res.json({ spaces });
+    const { type } = req.query as { type?: string }
+    const t = type && ['group','channel'].includes(String(type).toLowerCase()) ? (String(type).toLowerCase() as any) : undefined
+    const result = await adminSvc.listSpaces(t)
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) });
   }

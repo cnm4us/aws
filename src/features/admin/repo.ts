@@ -139,3 +139,42 @@ export async function updateSiteSettings(flags: { allowGroupCreation: boolean; a
     [flags.allowGroupCreation ? 1 : 0, flags.allowChannelCreation ? 1 : 0, flags.requireGroupReview ? 1 : 0, flags.requireChannelReview ? 1 : 0]
   )
 }
+
+export async function listSpaces(type?: 'group' | 'channel'): Promise<Array<{ id: number; type: string; name: string; slug: string; owner_user_id: number | null; owner_display_name: string | null }>> {
+  const db = getPool()
+  let sql = `SELECT s.id, s.type, s.name, s.slug, s.owner_user_id, u.display_name AS owner_display_name FROM spaces s LEFT JOIN users u ON u.id = s.owner_user_id WHERE s.type IN ('group','channel')`
+  const params: any[] = []
+  if (type && (type === 'group' || type === 'channel')) { sql += ` AND s.type = ?`; params.push(type) }
+  sql += ` ORDER BY s.type, s.name`
+  const [rows] = await db.query(sql, params)
+  return rows as any[]
+}
+
+export async function getSpace(spaceId: number): Promise<{ id: number; type: string; owner_user_id: number | null; name: string; slug: string; settings: any } | null> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+  const s = (rows as any[])[0]
+  if (!s) return null
+  return { id: Number(s.id), type: String(s.type), owner_user_id: s.owner_user_id != null ? Number(s.owner_user_id) : null, name: s.name, slug: s.slug, settings: s.settings }
+}
+
+export async function updateSpace(spaceId: number, fields: { name?: string; settingsJson?: string }): Promise<number> {
+  const db = getPool()
+  const sets: string[] = []
+  const params: any[] = []
+  if (fields.name) { sets.push('name = ?'); params.push(fields.name) }
+  if (fields.settingsJson !== undefined) { sets.push('settings = ?'); params.push(fields.settingsJson) }
+  if (!sets.length) return 0
+  params.push(spaceId)
+  const [result] = await db.query(`UPDATE spaces SET ${sets.join(', ')} WHERE id = ?`, params)
+  return Number((result as any).affectedRows || 0)
+}
+
+export async function getSpaceUserRoleNames(spaceId: number, userId: number): Promise<string[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT r.name FROM user_space_roles usr JOIN roles r ON r.id = usr.role_id WHERE usr.space_id = ? AND usr.user_id = ? ORDER BY r.name`,
+    [spaceId, userId]
+  )
+  return (rows as any[]).map((r) => String(r.name))
+}

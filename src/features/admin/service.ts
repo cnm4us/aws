@@ -298,3 +298,81 @@ export async function addSpaceMember(spaceId: number, targetUserId: number, role
     roles: roleNames,
   }
 }
+
+export async function listSpaces(type?: 'group' | 'channel') {
+  const rows = await repo.listSpaces(type)
+  const spaces = (rows as any[]).map((row) => ({
+    id: Number(row.id),
+    type: String(row.type),
+    name: row.name,
+    slug: row.slug,
+    ownerUserId: row.owner_user_id ? Number(row.owner_user_id) : null,
+    ownerDisplayName: row.owner_display_name || null,
+  }))
+  return { spaces }
+}
+
+export async function getSpace(spaceId: number) {
+  const s = await repo.getSpace(spaceId)
+  if (!s) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  return {
+    id: Number(s.id),
+    type: String(s.type),
+    ownerUserId: s.owner_user_id != null ? Number(s.owner_user_id) : null,
+    name: s.name,
+    slug: s.slug,
+    settings: typeof s.settings === 'string' ? JSON.parse(s.settings) : s.settings,
+  }
+}
+
+export async function updateSpace(spaceId: number, input: { name?: string; commentsPolicy?: string; requireReview?: boolean }) {
+  const s = await repo.getSpace(spaceId)
+  if (!s) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  let settings: any = {}
+  try { settings = typeof s.settings === 'string' ? JSON.parse(s.settings) : (s.settings || {}) } catch { settings = {} }
+  const updates: { name?: string; settingsJson?: string } = {}
+  if (input.name) updates.name = String(input.name).trim()
+
+  let settingsChanged = false
+  if (input.commentsPolicy !== undefined) {
+    const cp = String(input.commentsPolicy || '').toLowerCase()
+    if (!['on','off','inherit'].includes(cp)) throw Object.assign(new Error('bad_comments_policy'), { code: 'bad_comments_policy', status: 400 })
+    settings = { ...(settings || {}), comments: cp }
+    settingsChanged = true
+  }
+  if (input.requireReview !== undefined) {
+    const site = await repo.readSiteSettings()
+    if (!site) throw Object.assign(new Error('missing_site_settings'), { code: 'missing_site_settings', status: 500 })
+    const dbBool = (v: any) => Boolean(Number(v))
+    const isGroup = String(s.type) === 'group'
+    const isChannel = String(s.type) === 'channel'
+    const siteRequires = isGroup ? dbBool(site.require_group_review) : isChannel ? dbBool(site.require_channel_review) : false
+    if (siteRequires && input.requireReview === false) {
+      throw Object.assign(new Error('cannot_override_site_policy'), { code: 'cannot_override_site_policy', status: 400 })
+    }
+    const pub = { ...(settings?.publishing || {}) }
+    pub.requireApproval = Boolean(input.requireReview)
+    settings = { ...(settings || {}), publishing: pub }
+    settingsChanged = true
+  }
+  if (settingsChanged) updates.settingsJson = JSON.stringify(settings)
+  if (!updates.name && updates.settingsJson === undefined) throw Object.assign(new Error('no_fields_to_update'), { code: 'no_fields_to_update', status: 400 })
+  const affected = await repo.updateSpace(spaceId, updates)
+  if (!affected) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  return { ok: true }
+}
+
+export async function getUserSpaceRoles(spaceId: number, userId: number) {
+  const roles = await repo.getSpaceUserRoleNames(spaceId, userId)
+  return { roles }
+}
+
+export async function setUserSpaceRoles(spaceId: number, userId: number, roles: any[]) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  const normalized = (Array.isArray(roles) ? roles : []).map((r: any) => (typeof r === 'string' ? r.trim() : String(r || '')).toLowerCase()).filter((r) => r.length > 0)
+  await removeAllRoles(db, spaceId, userId)
+  if (normalized.length) await assignRoles(db, space, userId, normalized)
+  return { ok: true, roles: normalized }
+}

@@ -135,6 +135,7 @@ Open Items / Next Actions
   - Implemented (continued): delegated user detail/update/delete to admin service.
   - Implemented (continued): delegated site settings GET/PUT to admin service.
   - Implemented (continued): delegated user capabilities GET/PUT to admin service.
+  - Implemented (continued): delegated admin spaces list/get/update, per-space user roles GET/PUT.
 
 Subject: refactor(admin): delegate site settings GET/PUT to feature service
 
