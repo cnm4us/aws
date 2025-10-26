@@ -238,10 +238,10 @@ export async function createSpace(input: { type: 'group' | 'channel'; name: stri
   let allowed = false
   if (t === 'group') {
     const baseline = overrideGroup === null ? flags.allowGroupCreation : overrideGroup
-    allowed = baseline && (await can(currentUserId, 'space:create_group', { checker }))
+    allowed = baseline && (await can(currentUserId, PERM.SPACE_CREATE_GROUP, { checker }))
   } else {
     const baseline = overrideChannel === null ? flags.allowChannelCreation : overrideChannel
-    allowed = baseline && (await can(currentUserId, 'space:create_channel', { checker }))
+    allowed = baseline && (await can(currentUserId, PERM.SPACE_CREATE_CHANNEL, { checker }))
   }
   if (!allowed) throw new ForbiddenError()
 
@@ -495,7 +495,7 @@ export async function inviteMember(spaceId: number, inviteeUserId: number, curre
   const space = await loadSpace(spaceId, db)
   if (!space) throw new NotFoundError('space_not_found')
   const checker = await resolveChecker(currentUserId)
-  const allowed = (await can(currentUserId, 'space:invite_members', { spaceId, checker })) || (await can(currentUserId, 'space:manage_members', { spaceId, checker })) || (await can(currentUserId, 'video:delete_any', { checker }))
+  const allowed = (await can(currentUserId, PERM.SPACE_INVITE_MEMBERS, { spaceId, checker })) || (await can(currentUserId, PERM.SPACE_MANAGE_MEMBERS, { spaceId, checker })) || (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
   if (!allowed) throw new ForbiddenError()
   if (space.owner_user_id === inviteeUserId) throw new DomainError('cannot_invite_owner', 'cannot_invite_owner', 400)
   if (await isMember(db, spaceId, inviteeUserId)) throw new DomainError('already_member', 'already_member', 409)
@@ -517,7 +517,7 @@ export async function revokeInvitation(spaceId: number, inviteeUserId: number, c
   const space = await loadSpace(spaceId, db)
   if (!space) throw new NotFoundError('space_not_found')
   const checker = await resolveChecker(currentUserId)
-  const allowed = (await can(currentUserId, 'space:invite_members', { spaceId, checker })) || (await can(currentUserId, 'space:manage_members', { spaceId, checker })) || (await can(currentUserId, 'video:delete_any', { checker }))
+  const allowed = (await can(currentUserId, PERM.SPACE_INVITE_MEMBERS, { spaceId, checker })) || (await can(currentUserId, PERM.SPACE_MANAGE_MEMBERS, { spaceId, checker })) || (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
   if (!allowed) throw new ForbiddenError()
   const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId])
   const invitation = (inviteRows as any[])[0]
@@ -529,7 +529,7 @@ export async function revokeInvitation(spaceId: number, inviteeUserId: number, c
 export async function acceptInvitation(spaceId: number, inviteeUserId: number, currentUserId: number) {
   const db = getPool()
   const checker = await resolveChecker(currentUserId)
-  if (currentUserId !== inviteeUserId && !(await can(currentUserId, 'video:delete_any', { checker }))) {
+  if (currentUserId !== inviteeUserId && !(await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))) {
     throw new ForbiddenError()
   }
   const space = await loadSpace(spaceId, db)
@@ -545,7 +545,7 @@ export async function acceptInvitation(spaceId: number, inviteeUserId: number, c
 export async function declineInvitation(spaceId: number, inviteeUserId: number, currentUserId: number) {
   const db = getPool()
   const checker = await resolveChecker(currentUserId)
-  if (currentUserId !== inviteeUserId && !(await can(currentUserId, 'video:delete_any', { checker }))) {
+  if (currentUserId !== inviteeUserId && !(await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))) {
     throw new ForbiddenError()
   }
   const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId])

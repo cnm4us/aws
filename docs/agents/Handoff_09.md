@@ -13,7 +13,7 @@ Decisions (carried + new)
 - New: Prefer PERM constants (`src/security/perm.ts`) over string literals across all modules; remove remaining stragglers.
 
 Changes Since Last
-- Affects: docs/agents/Handoff_09.md; src/features/productions/service.ts; src/routes/publish.ts; src/features/publications/{repo.ts,service.ts}; src/routes/publish-single.ts; src/features/spaces/service.ts; src/routes/spaces.ts
+- Affects: docs/agents/Handoff_09.md; src/features/productions/service.ts; src/routes/publish.ts; src/features/publications/{repo.ts,service.ts}; src/routes/publish-single.ts; src/features/spaces/service.ts; src/routes/spaces.ts; src/security/permissions.ts
 - Routes: POST /api/publish; POST /api/uploads/:id/publish; POST /api/uploads/:id/unpublish; DELETE /api/spaces/:id/members/:userId
 - DB: none
 - Flags: none
@@ -80,6 +80,32 @@ Meta:
 - Routes: DELETE /api/spaces/:id/members/:userId
 - DB: none
 - Flags: none
+
+Subject: chore(permissions): replace string literals with PERM constants in services
+
+Context:
+- Eliminate drift-prone string permission names in services and core checks.
+
+Approach:
+- spaces.service: use PERM.SPACE_CREATE_GROUP/CHANNEL in createSpace; PERM.SPACE_INVITE_MEMBERS / PERM.SPACE_MANAGE_MEMBERS / PERM.VIDEO_DELETE_ANY in invitation flows.
+- publications.service: use PERM.VIDEO_APPROVE_SPACE/APPROVE and PERM.VIDEO_UNPUBLISH_OWN/SPACE.
+- permissions.ts: compare against PERM constants for video review/approve/publish/unpublish in any-space moderation guard.
+
+Impact:
+- No behavior change; improves readability and consistency when editing permissions.
+
+Tests:
+- Build in your environment; routes and services compile; permission checks unchanged.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/features/publications/service.ts; src/security/permissions.ts
+- Routes: n/a (service/core internals)
+- DB: none
+- Flags: none
+
+Commit:
+- 77258c725d36c5a84b55d7881fbbf415849f53cc
+- Committed: 2025-10-26 18:43:37 +0000
 
 Open Items / Next Actions
 - [P1] Refactor publish routes to services

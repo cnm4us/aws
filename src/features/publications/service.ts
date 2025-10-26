@@ -130,7 +130,7 @@ export async function approve(publicationId: number, ctx: ServiceContext): Promi
   if (!pub) throw new NotFoundError('publication_not_found')
   const checker = await resolveChecker(ctx.userId)
   const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
-  const canApprove = isAdmin || (await can(ctx.userId, 'video:approve_space', { spaceId: pub.space_id, checker })) || (await can(ctx.userId, 'video:approve', { checker }))
+  const canApprove = isAdmin || (await can(ctx.userId, PERM.VIDEO_APPROVE_SPACE, { spaceId: pub.space_id, checker })) || (await can(ctx.userId, PERM.VIDEO_APPROVE, { checker }))
   if (!canApprove) throw new ForbiddenError()
   const now = new Date()
   const updated = await repo.updateStatus(publicationId, { status: 'published', approvedBy: ctx.userId, publishedAt: now, unpublishedAt: null })
@@ -158,8 +158,8 @@ export async function unpublish(publicationId: number, ctx: ServiceContext): Pro
   const upload = await repo.loadUpload(pub.upload_id)
   if (!upload) throw new NotFoundError('upload_not_found')
   const ownerId = upload.user_id
-  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, 'video:unpublish_own', { ownerId, checker }))
-  const spacePerm = await can(ctx.userId, 'video:unpublish_space', { spaceId: pub.space_id, checker })
+  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, PERM.VIDEO_UNPUBLISH_OWN, { ownerId, checker }))
+  const spacePerm = await can(ctx.userId, PERM.VIDEO_UNPUBLISH_SPACE, { spaceId: pub.space_id, checker })
   if (!(isAdmin || isOwner || spacePerm)) throw new ForbiddenError()
 
   const now = new Date()

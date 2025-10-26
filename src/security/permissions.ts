@@ -132,10 +132,10 @@ export async function can(userId: number, permission: Permission, options: CanOp
     }
     // Any-space authority for moderation/publishing actions
     if (
-      permission === 'video:review_space' ||
-      permission === 'video:approve_space' ||
-      permission === 'video:publish_space' ||
-      permission === 'video:unpublish_space'
+      permission === PERM.VIDEO_REVIEW_SPACE ||
+      permission === PERM.VIDEO_APPROVE_SPACE ||
+      permission === PERM.VIDEO_PUBLISH_SPACE ||
+      permission === PERM.VIDEO_UNPUBLISH_SPACE
     ) {
       if (await hasAnySpaceModeration(checker)) return true;
     }
