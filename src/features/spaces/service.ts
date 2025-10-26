@@ -3,7 +3,7 @@ import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
-import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
+import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, removeAllRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
 import { enhanceUploadRow } from '../../utils/enhance'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
@@ -198,6 +198,25 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   await db.query(`DELETE FROM space_follows WHERE space_id = ?`, [spaceId])
   await db.query(`DELETE FROM space_invitations WHERE space_id = ?`, [spaceId])
   await db.query(`DELETE FROM spaces WHERE id = ?`, [spaceId])
+  return { ok: true }
+}
+
+export async function removeMember(spaceId: number, targetUserId: number, currentUserId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  if (currentUserId !== targetUserId) {
+    const checker = await resolveChecker(currentUserId)
+    const allowed = (await can(currentUserId, PERM.SPACE_MANAGE_MEMBERS, { spaceId, checker })) || (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
+    if (!allowed) throw Object.assign(new Error('forbidden'), { code: 'forbidden', status: 403 })
+  }
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
+  if (space.owner_user_id === targetUserId && !isSiteAdmin) {
+    throw Object.assign(new Error('cannot_remove_owner'), { code: 'cannot_remove_owner', status: 400 })
+  }
+  await removeAllRoles(db, spaceId, targetUserId)
+  await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`, [spaceId, targetUserId])
   return { ok: true }
 }
 

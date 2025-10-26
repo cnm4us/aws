@@ -382,28 +382,13 @@ spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, 
     const targetUserId = Number(req.params.userId);
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
     if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    if (currentUserId !== targetUserId) {
-      const allowed = (await ensurePermission(currentUserId, spaceId, 'space:manage_members')) || (await can(currentUserId, 'video:delete_any'));
-      if (!allowed) return res.status(403).json({ error: 'forbidden' });
-    }
-
-    if (space.owner_user_id === targetUserId && !(await can(currentUserId, 'video:delete_any'))) {
-      return res.status(400).json({ error: 'cannot_remove_owner' });
-    }
-
-    await removeAllRoles(db, spaceId, targetUserId);
-    await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`, [spaceId, targetUserId]);
-
-    res.json({ ok: true });
+    const currentUserId = Number(req.user!.id)
+    const result = await spacesSvc.removeMember(spaceId, targetUserId, currentUserId)
+    res.json(result)
   } catch (err: any) {
     console.error('remove member failed', err);
-    res.status(500).json({ error: 'failed_to_remove_member', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_remove_member', detail: String(err?.message || err) });
   }
 });
 

@@ -252,3 +252,34 @@ export async function findLatestCompletedProductionForUpload(uploadId: number, c
   const row = (rows as any[])[0]
   return row ? Number(row.id) : null
 }
+
+// Convenience: fetch a user's default comments flag
+export async function getUserDefaultCommentsEnabled(userId: number, conn?: any): Promise<number> {
+  const db = conn || getPool()
+  try {
+    const [rows] = await db.query(`SELECT default_comments_enabled FROM users WHERE id = ? LIMIT 1`, [userId])
+    const row = (rows as any[])[0]
+    if (!row) return 1
+    return row.default_comments_enabled != null ? Number(row.default_comments_enabled) : 1
+  } catch {
+    return 1
+  }
+}
+
+// Convenience: update comments_enabled after creation to avoid widening insert signature
+export async function setCommentsEnabled(publicationId: number, enabled: number | null, conn?: any): Promise<void> {
+  const db = conn || getPool()
+  await db.query(`UPDATE space_publications SET comments_enabled = ? WHERE id = ?`, [enabled, publicationId])
+}
+
+// For bulk unpublish: list publication ids for an upload across a set of spaces
+export async function listPublicationIdsForUploadSpaces(uploadId: number, spaceIds: number[], conn?: any): Promise<Array<{ id: number; space_id: number }>> {
+  if (!spaceIds.length) return []
+  const db = conn || getPool()
+  const placeholders = spaceIds.map(() => '?').join(',')
+  const [rows] = await db.query(
+    `SELECT id, space_id FROM space_publications WHERE upload_id = ? AND space_id IN (${placeholders})`,
+    [uploadId, ...spaceIds]
+  )
+  return (rows as any[]).map((r) => ({ id: Number(r.id), space_id: Number(r.space_id) }))
+}

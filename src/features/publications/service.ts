@@ -346,3 +346,65 @@ export async function recordNoteEvent(publicationId: number, userId: number, act
   if (!txt) return
   await repo.insertEvent(publicationId, userId, action, { note: txt })
 }
+
+// Helper: compute default comments_enabled for a new publication in a space
+async function computeDefaultCommentsEnabled(space: any, userId: number): Promise<number | null> {
+  try {
+    let settings: any = {}
+    try { settings = typeof space.settings === 'string' ? JSON.parse(space.settings) : (space.settings || {}) } catch { settings = {} }
+    const cp = settings && settings.comments ? String(settings.comments).toLowerCase() : 'on'
+    if (cp === 'off') return 0
+    const def = await repo.getUserDefaultCommentsEnabled(userId)
+    return def != null ? Number(def) : 1
+  } catch { return 1 }
+}
+
+// Publish an upload to a list of spaces, returning created vs activated sets (compat with legacy route)
+export async function publishUploadToSpaces(uploadId: number, spaces: number[], ctx: ServiceContext): Promise<{ ok: true; uploadId: number; created: number[]; activated: number[] }> {
+  if (!Array.isArray(spaces) || !spaces.length) throw new DomainError('no_spaces', 'no_spaces', 400)
+  const created: number[] = []
+  const activated: number[] = []
+
+  // Pick latest completed production if available for republish checks
+  const prodId = await repo.findLatestCompletedProductionForUpload(uploadId)
+
+  for (const spaceId of spaces) {
+    // If a publication exists for (production, space), use republish path
+    if (prodId != null) {
+      const existing = await repo.getByProductionSpace(prodId, spaceId)
+      if (existing) {
+        const st = String(existing.status)
+        if (st === 'published' || st === 'approved' || st === 'pending') {
+          activated.push(spaceId)
+          continue
+        }
+        await republish(existing.id, ctx)
+        activated.push(spaceId)
+        continue
+      }
+    }
+
+    // Create a fresh publication via service
+    const pub = await createFromUpload({ uploadId, spaceId, visibility: 'inherit' }, ctx)
+    try {
+      const space = await repo.loadSpace(spaceId)
+      if (space) {
+        const ce = await computeDefaultCommentsEnabled(space, ctx.userId)
+        await repo.setCommentsEnabled(pub.id, ce)
+      }
+    } catch {}
+    created.push(spaceId)
+  }
+
+  return { ok: true, uploadId, created, activated }
+}
+
+// Unpublish an upload from a list of spaces (compat with legacy route)
+export async function unpublishUploadFromSpaces(uploadId: number, spaces: number[], ctx: ServiceContext): Promise<{ ok: true; uploadId: number; spaces: number[] }> {
+  if (!Array.isArray(spaces) || !spaces.length) throw new DomainError('no_spaces', 'no_spaces', 400)
+  const ids = await repo.listPublicationIdsForUploadSpaces(uploadId, spaces)
+  for (const row of ids) {
+    await unpublish(row.id, ctx)
+  }
+  return { ok: true, uploadId, spaces }
+}

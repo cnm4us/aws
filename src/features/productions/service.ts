@@ -130,3 +130,40 @@ export async function create(input: { uploadId: number; name?: string | null; pr
   const production = mapProduction(row)
   return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
 }
+
+// Wrapper used by legacy /api/publish route.
+// Preserves historical permission semantics: allow owner, site admin, global/video publish, or space publish/approve on the upload's space.
+export async function createForPublishRoute(input: { uploadId: number; profile?: string | null; quality?: string | null; sound?: string | null; config?: any }, currentUserId: number) {
+  const upload = await repo.loadUpload(input.uploadId)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const upStatus = String((upload as any).status || '').toLowerCase()
+  if (upStatus !== 'uploaded' && upStatus !== 'completed') {
+    throw new ForbiddenError('invalid_state')
+  }
+  const ownerId = upload.user_id != null ? Number(upload.user_id) : null
+  const spaceId = (upload as any).space_id != null ? Number((upload as any).space_id) : null
+  const checker = await resolveChecker(currentUserId)
+
+  const allowed =
+    (ownerId != null && ownerId === currentUserId && (await can(currentUserId, PERM.VIDEO_PUBLISH_OWN, { ownerId, checker }))) ||
+    (await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { checker })) ||
+    (spaceId != null && (await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId, checker }))) ||
+    (await can(currentUserId, PERM.VIDEO_APPROVE, { checker })) ||
+    (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
+
+  if (!allowed) throw new ForbiddenError()
+
+  const { jobId, outPrefix, productionId } = await startProductionRender({
+    upload,
+    userId: currentUserId,
+    name: null,
+    profile: input.profile ?? null,
+    quality: input.quality ?? null,
+    sound: input.sound ?? null,
+    config: input.config,
+  })
+  const row = await repo.getWithUpload(productionId)
+  if (!row) throw new NotFoundError('not_found')
+  const production = mapProduction(row)
+  return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
+}
