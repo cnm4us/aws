@@ -230,10 +230,7 @@ export async function listByProduction(productionId: number, ctx: ServiceContext
   return results
 }
 
-export async function get(publicationId: number, ctx: ServiceContext): Promise<{ publication: Publication; events: PublicationEvent[]; canRepublishOwner: boolean }> {
-  // Reuse DTO variant (it already returns domain Publication + events + rule)
-  return getForDto(publicationId, ctx)
-}
+// Domain get is defined below; keep a single implementation
 
 export async function effectiveRequiresApproval(space: any): Promise<boolean> {
   const site = await repo.loadSiteSettings()
@@ -252,7 +249,7 @@ export async function effectiveRequiresApproval(space: any): Promise<boolean> {
 
 // A minimal read-only helper specific to the current API response shape.
 // Returns the existing DTO list for /api/productions/:productionId/publications.
-export async function listByProductionForDto(productionId: number, ctx: ServiceContext): Promise<Array<{
+export async function listByProductionDto(productionId: number, ctx: ServiceContext): Promise<Array<{
   id: number
   spaceId: number
   spaceName: string
@@ -264,7 +261,7 @@ export async function listByProductionForDto(productionId: number, ctx: ServiceC
   const p = await repo.loadProduction(productionId)
   if (!p) throw new NotFoundError('production_not_found')
   const checker = await resolveChecker(ctx.userId)
-  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
   const isOwner = Number(p.user_id) === Number(ctx.userId)
   if (!isAdmin && !isOwner) throw new ForbiddenError()
 
@@ -280,7 +277,7 @@ export async function listByProductionForDto(productionId: number, ctx: ServiceC
   }))
 }
 
-export async function getForDto(publicationId: number, ctx: ServiceContext): Promise<{
+export async function get(publicationId: number, ctx: ServiceContext): Promise<{
   publication: Publication
   events: PublicationEvent[]
   canRepublishOwner: boolean
@@ -290,15 +287,15 @@ export async function getForDto(publicationId: number, ctx: ServiceContext): Pro
 
   // Permission: admin OR owner(publish_own) OR space moderator/publisher roles
   const checker = await resolveChecker(ctx.userId)
-  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
   const upload = await repo.loadUpload(pub.upload_id)
   if (!upload) throw new NotFoundError('upload_not_found')
   const ownerId = upload.user_id
-  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, 'video:publish_own', { ownerId, checker }))
+  const isOwner = ownerId != null && Number(ownerId) === Number(ctx.userId) && (await can(ctx.userId, PERM.VIDEO_PUBLISH_OWN, { ownerId, checker }))
   const canModerateSpace =
-    (await can(ctx.userId, 'video:publish_space', { spaceId: pub.space_id, checker })) ||
-    (await can(ctx.userId, 'video:approve_space', { spaceId: pub.space_id, checker })) ||
-    (await can(ctx.userId, 'video:unpublish_space', { spaceId: pub.space_id, checker }))
+    (await can(ctx.userId, PERM.VIDEO_PUBLISH_SPACE, { spaceId: pub.space_id, checker })) ||
+    (await can(ctx.userId, PERM.VIDEO_APPROVE_SPACE, { spaceId: pub.space_id, checker })) ||
+    (await can(ctx.userId, PERM.VIDEO_UNPUBLISH_SPACE, { spaceId: pub.space_id, checker }))
   if (!isAdmin && !isOwner && !canModerateSpace) {
     throw new ForbiddenError()
   }
@@ -312,7 +309,7 @@ export async function getForDto(publicationId: number, ctx: ServiceContext): Pro
   return { publication: pub, events, canRepublishOwner }
 }
 
-export async function listByUploadForDto(uploadId: number, ctx: ServiceContext): Promise<Array<{
+export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Promise<Array<{
   id: number
   spaceId: number
   spaceName: string
@@ -324,7 +321,7 @@ export async function listByUploadForDto(uploadId: number, ctx: ServiceContext):
   const up = await repo.loadUpload(uploadId)
   if (!up) throw new NotFoundError('upload_not_found')
   const checker = await resolveChecker(ctx.userId)
-  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
   const isOwner = up.user_id != null && Number(up.user_id) === Number(ctx.userId) && (await can(ctx.userId, PERM.VIDEO_PUBLISH_OWN, { ownerId: up.user_id, checker }))
   if (!isAdmin && !isOwner) throw new ForbiddenError()
 

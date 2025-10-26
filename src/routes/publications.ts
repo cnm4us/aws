@@ -80,7 +80,7 @@ publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async
       return res.status(400).json({ error: 'bad_upload_id' })
     }
     const userId = Number(req.user!.id)
-    const publications = await pubsSvc.listByUploadForDto(uploadId, { userId })
+    const publications = await pubsSvc.listByUploadDto(uploadId, { userId })
     res.json({ publications })
   } catch (err: any) {
     console.error('list publications failed', err)
@@ -98,7 +98,7 @@ publicationsRouter.get('/api/productions/:productionId/publications', requireAut
       return res.status(400).json({ error: 'bad_production_id' })
     }
     const userId = Number(req.user!.id)
-    const publications = await pubsSvc.listByProductionForDto(productionId, { userId })
+    const publications = await pubsSvc.listByProductionDto(productionId, { userId })
     res.json({ publications })
   } catch (err: any) {
     // Preserve existing error logging/shape
@@ -116,7 +116,7 @@ publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) =>
       return res.status(400).json({ error: 'bad_publication_id' })
     }
     const userId = Number(req.user!.id)
-    const { publication, events, canRepublishOwner } = await pubsSvc.getForDto(publicationId, { userId })
+    const { publication, events, canRepublishOwner } = await pubsSvc.get(publicationId, { userId })
     res.json({ publication, events, canRepublishOwner })
   } catch (err: any) {
     console.error('get publication failed', err)

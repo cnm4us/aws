@@ -26,7 +26,7 @@ export async function list(params: { status?: string; userId?: number; spaceId?:
     const enhanced = enhanceUploadRow(row)
     if (includePubs && userId) {
       try {
-        const pubs = await pubsSvc.listByUploadForDto(Number(row.id), { userId })
+        const pubs = await pubsSvc.listByUploadDto(Number(row.id), { userId })
         ;(enhanced as any).publications = pubs
       } catch (e) {
         // Intentionally swallow permission errors to preserve list behavior
@@ -45,7 +45,7 @@ export async function get(id: number, params: { includePublications?: boolean },
   const userId = ctx.userId && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
   if (includePubs && userId) {
     try {
-      const pubs = await pubsSvc.listByUploadForDto(Number(row.id), { userId })
+      const pubs = await pubsSvc.listByUploadDto(Number(row.id), { userId })
       ;(enhanced as any).publications = pubs
     } catch (e) {
       // swallow permission errors; keep base upload data
