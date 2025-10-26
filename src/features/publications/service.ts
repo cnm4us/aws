@@ -210,13 +210,28 @@ export async function republish(publicationId: number, ctx: ServiceContext): Pro
   }
 }
 
-export async function listByProduction(productionId: number, _ctx: ServiceContext): Promise<Publication[]> {
-  throw new InvalidStateError('not_implemented: publications.service.listByProduction')
+export async function listByProduction(productionId: number, ctx: ServiceContext): Promise<Publication[]> {
+  // Permission: admin or production owner
+  const p = await repo.loadProduction(productionId)
+  if (!p) throw new NotFoundError('production_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, 'video:delete_any', { checker })
+  const isOwner = Number(p.user_id) === Number(ctx.userId)
+  if (!isAdmin && !isOwner) throw new ForbiddenError()
+
+  // Load publications tied to the production and expand to full records
+  const rows = await repo.listPublicationsForProduction(productionId)
+  const results: Publication[] = []
+  for (const r of rows) {
+    const pub = await repo.getById(r.id)
+    if (pub) results.push(pub)
+  }
+  return results
 }
 
-export async function get(publicationId: number, _ctx: ServiceContext): Promise<{ publication: Publication; events: PublicationEvent[]; canRepublishOwner: boolean }> {
-  // TODO: load pub + events; compute canRepublishOwner
-  throw new NotFoundError('not_implemented: publications.service.get')
+export async function get(publicationId: number, ctx: ServiceContext): Promise<{ publication: Publication; events: PublicationEvent[]; canRepublishOwner: boolean }> {
+  // Reuse DTO variant (it already returns domain Publication + events + rule)
+  return getForDto(publicationId, ctx)
 }
 
 export async function effectiveRequiresApproval(space: any): Promise<boolean> {

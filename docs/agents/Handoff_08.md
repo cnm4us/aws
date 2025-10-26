@@ -271,3 +271,25 @@ Meta:
 Commit:
 - 7f9e63711a938add0f9f2f459424b45876d560cb
 - Committed: 2025-10-26T14:37:38+00:00
+
+Subject: refactor(spaces): move subscribers and suspensions endpoints to service
+
+Context:
+- Moderation endpoints (subscribers list, suspensions list/create/revoke) moved from routes to spaces service for consistency.
+
+Approach:
+- Add spaces.service methods: listSubscribers, listSuspensions, createSuspension, revokeSuspension.
+- Update routes to delegate and preserve validation and error mapping.
+
+Impact:
+- No API shape change; routes thinner and logic centralized.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/spaces/:id/subscribers; GET /api/spaces/:id/suspensions; POST /api/spaces/:id/suspensions; DELETE /api/spaces/:id/suspensions/:sid
+- DB: none
+- Flags: none
+
+Commit:
+- 38fcd079eff545d1b1dccf601b5cd1dddf38467d
+- Committed: 2025-10-26T14:49:08+00:00
