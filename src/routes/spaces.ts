@@ -558,128 +558,70 @@ spacesRouter.get('/api/spaces/:id/invitations', requireAuth, async (req, res) =>
 // Invite a member
 spacesRouter.post('/api/spaces/:id/invitations', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    const { userId } = req.body || {};
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    const allowed = (await ensurePermission(currentUserId, spaceId, 'space:invite_members')) || (await ensurePermission(currentUserId, spaceId, 'space:manage_members')) || (await can(currentUserId, 'video:delete_any'));
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    if (space.owner_user_id === userId) return res.status(400).json({ error: 'cannot_invite_owner' });
-    if (await isMember(db, spaceId, userId)) return res.status(409).json({ error: 'already_member' });
-
-    const [userRows] = await db.query(`SELECT id FROM users WHERE id = ? LIMIT 1`, [userId]);
-    if (!(userRows as any[]).length) return res.status(404).json({ error: 'user_not_found' });
-
-    const [inviteRows] = await db.query(`SELECT id, status FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? LIMIT 1`, [spaceId, userId]);
-    const existingInvite = (inviteRows as any[])[0];
-    if (existingInvite) {
-      const inv = existingInvite as any;
-      if (inv.status === 'pending') return res.status(409).json({ error: 'invitation_pending' });
-      await db.query(`UPDATE space_invitations SET status = 'pending', inviter_user_id = ?, responded_at = NULL WHERE id = ?`, [currentUserId, inv.id]);
-    } else {
-      await db.query(
-        `INSERT INTO space_invitations (space_id, inviter_user_id, invitee_user_id, status)
-         VALUES (?, ?, ?, 'pending')`,
-        [spaceId, currentUserId, userId]
-      );
-    }
-
-    res.status(201).json({ ok: true });
+    const spaceId = Number(req.params.id)
+    const { userId } = (req.body || {}) as any
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const result = await spacesSvc.inviteMember(spaceId, Number(userId), currentUserId)
+    res.status(201).json(result)
   } catch (err: any) {
-    console.error('create invitation failed', err);
-    res.status(500).json({ error: 'failed_to_invite_member', detail: String(err?.message || err) });
+    console.error('create invitation failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_invite_member', detail: String(err?.message || err) })
   }
-});
+})
 
 // Revoke invitation
 spacesRouter.delete('/api/spaces/:id/invitations/:userId', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    const inviteeUserId = Number(req.params.userId);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const currentUserId = req.user!.id;
-    const allowed = (await ensurePermission(currentUserId, spaceId, 'space:invite_members')) || (await ensurePermission(currentUserId, spaceId, 'space:manage_members')) || (await can(currentUserId, 'video:delete_any'));
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId]);
-    const invitation = (inviteRows as any[])[0];
-    if (!invitation) return res.status(404).json({ error: 'invitation_not_found' });
-    await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE id = ?`, [invitation.id]);
-
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    const inviteeUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const result = await spacesSvc.revokeInvitation(spaceId, inviteeUserId, currentUserId)
+    res.json(result)
   } catch (err: any) {
-    console.error('revoke invitation failed', err);
-    res.status(500).json({ error: 'failed_to_revoke_invitation', detail: String(err?.message || err) });
+    console.error('revoke invitation failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_revoke_invitation', detail: String(err?.message || err) })
   }
-});
+})
 
 // Accept invitation
 spacesRouter.post('/api/spaces/:id/invitations/:userId/accept', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    const inviteeUserId = Number(req.params.userId);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-
-    if (req.user!.id !== inviteeUserId && !(await can(req.user!.id, 'video:delete_any'))) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId]);
-    const invitation = (inviteRows as any[])[0];
-    if (!invitation) return res.status(404).json({ error: 'invitation_not_found' });
-    await db.query(`UPDATE space_invitations SET status = 'accepted', responded_at = NOW() WHERE id = ?`, [invitation.id]);
-
-    await assignDefaultMemberRoles(db, space, inviteeUserId);
-
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    const inviteeUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const result = await spacesSvc.acceptInvitation(spaceId, inviteeUserId, currentUserId)
+    res.json(result)
   } catch (err: any) {
-    console.error('accept invitation failed', err);
-    res.status(500).json({ error: 'failed_to_accept_invitation', detail: String(err?.message || err) });
+    console.error('accept invitation failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_accept_invitation', detail: String(err?.message || err) })
   }
-});
+})
 
 // Decline invitation
 spacesRouter.post('/api/spaces/:id/invitations/:userId/decline', requireAuth, async (req, res) => {
   try {
-    const spaceId = Number(req.params.id);
-    const inviteeUserId = Number(req.params.userId);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-
-    if (req.user!.id !== inviteeUserId && !(await can(req.user!.id, 'video:delete_any'))) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const db = getPool();
-    const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId]);
-    const invitation = (inviteRows as any[])[0];
-    if (!invitation) return res.status(404).json({ error: 'invitation_not_found' });
-    await db.query(`UPDATE space_invitations SET status = 'declined', responded_at = NOW() WHERE id = ?`, [invitation.id]);
-
-    res.json({ ok: true });
+    const spaceId = Number(req.params.id)
+    const inviteeUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(inviteeUserId) || inviteeUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const result = await spacesSvc.declineInvitation(spaceId, inviteeUserId, currentUserId)
+    res.json(result)
   } catch (err: any) {
-    console.error('decline invitation failed', err);
-    res.status(500).json({ error: 'failed_to_decline_invitation', detail: String(err?.message || err) });
+    console.error('decline invitation failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_decline_invitation', detail: String(err?.message || err) })
   }
-});
+})
 
 // Remove a member
 spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, res) => {

@@ -14,6 +14,7 @@ Decisions (carried + new)
 Changes Since Last
 - Affects: src/features/uploads/{service.ts,repo.ts}; src/routes/uploads.ts; src/features/spaces/{service.ts,repo.ts}; src/routes/spaces.ts; src/features/publications/service.ts; src/routes/publications.ts; docs/agents/Handoff_08.md
 - Routes: GET /api/uploads; GET /api/uploads/:id; GET /api/uploads/:id/publish-options; GET /api/me/spaces; GET/PUT /api/spaces/:id/settings; GET /api/spaces/:id/members; GET /api/spaces/:id/invitations; DELETE /api/spaces/:id; GET /api/feed/global; GET /api/spaces/:id/feed; POST /api/publications/:id/(approve|unpublish|reject)
+  ; POST /api/spaces/:id/invitations; DELETE /api/spaces/:id/invitations/:userId; POST /api/spaces/:id/invitations/:userId/(accept|decline)
 - DB: none
 - Flags: none
 
@@ -243,5 +244,26 @@ Impact:
 Meta:
 - Affects: src/routes/productions.ts; docs/agents/Handoff_08.md
 - Routes: n/a
+- DB: none
+- Flags: none
+
+Commit:
+- a27abd28a861f317b86c13c3f75308966ebcf1b3
+- Committed: 2025-10-26T01:09:06+00:00
+Subject: refactor(spaces): move invitations create/revoke/accept/decline to service
+
+Context:
+- Route-level invitation mutations duplicated permission and DB logic. Align with service/repo pattern.
+
+Approach:
+- Add spaces.service methods: inviteMember, revokeInvitation, acceptInvitation, declineInvitation.
+- Update routes to delegate and preserve error/status mapping and response shapes.
+
+Impact:
+- No behavior change; permissions and errors unchanged. Routes thinned.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: POST /api/spaces/:id/invitations; DELETE /api/spaces/:id/invitations/:userId; POST /api/spaces/:id/invitations/:userId/(accept|decline)
 - DB: none
 - Flags: none

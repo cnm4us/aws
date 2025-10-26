@@ -1,7 +1,8 @@
 import { getPool } from '../../db'
 import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
-import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
+import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
+import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
 
@@ -169,5 +170,70 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   await db.query(`DELETE FROM space_follows WHERE space_id = ?`, [spaceId])
   await db.query(`DELETE FROM space_invitations WHERE space_id = ?`, [spaceId])
   await db.query(`DELETE FROM spaces WHERE id = ?`, [spaceId])
+  return { ok: true }
+}
+
+export async function inviteMember(spaceId: number, inviteeUserId: number, currentUserId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw new NotFoundError('space_not_found')
+  const checker = await resolveChecker(currentUserId)
+  const allowed = (await can(currentUserId, 'space:invite_members', { spaceId, checker })) || (await can(currentUserId, 'space:manage_members', { spaceId, checker })) || (await can(currentUserId, 'video:delete_any', { checker }))
+  if (!allowed) throw new ForbiddenError()
+  if (space.owner_user_id === inviteeUserId) throw new DomainError('cannot_invite_owner', 'cannot_invite_owner', 400)
+  if (await isMember(db, spaceId, inviteeUserId)) throw new DomainError('already_member', 'already_member', 409)
+  const [userRows] = await db.query(`SELECT id FROM users WHERE id = ? LIMIT 1`, [inviteeUserId])
+  if (!(userRows as any[]).length) throw new NotFoundError('user_not_found')
+  const [inviteRows] = await db.query(`SELECT id, status FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? LIMIT 1`, [spaceId, inviteeUserId])
+  const existing = (inviteRows as any[])[0]
+  if (existing) {
+    if (String(existing.status) === 'pending') throw new DomainError('invitation_pending', 'invitation_pending', 409)
+    await db.query(`UPDATE space_invitations SET status = 'pending', inviter_user_id = ?, responded_at = NULL WHERE id = ?`, [currentUserId, existing.id])
+  } else {
+    await db.query(`INSERT INTO space_invitations (space_id, inviter_user_id, invitee_user_id, status) VALUES (?, ?, ?, 'pending')`, [spaceId, currentUserId, inviteeUserId])
+  }
+  return { ok: true }
+}
+
+export async function revokeInvitation(spaceId: number, inviteeUserId: number, currentUserId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw new NotFoundError('space_not_found')
+  const checker = await resolveChecker(currentUserId)
+  const allowed = (await can(currentUserId, 'space:invite_members', { spaceId, checker })) || (await can(currentUserId, 'space:manage_members', { spaceId, checker })) || (await can(currentUserId, 'video:delete_any', { checker }))
+  if (!allowed) throw new ForbiddenError()
+  const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId])
+  const invitation = (inviteRows as any[])[0]
+  if (!invitation) throw new NotFoundError('invitation_not_found')
+  await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE id = ?`, [invitation.id])
+  return { ok: true }
+}
+
+export async function acceptInvitation(spaceId: number, inviteeUserId: number, currentUserId: number) {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  if (currentUserId !== inviteeUserId && !(await can(currentUserId, 'video:delete_any', { checker }))) {
+    throw new ForbiddenError()
+  }
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw new NotFoundError('space_not_found')
+  const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId])
+  const invitation = (inviteRows as any[])[0]
+  if (!invitation) throw new NotFoundError('invitation_not_found')
+  await db.query(`UPDATE space_invitations SET status = 'accepted', responded_at = NOW() WHERE id = ?`, [invitation.id])
+  await assignDefaultMemberRoles(db, space, inviteeUserId)
+  return { ok: true }
+}
+
+export async function declineInvitation(spaceId: number, inviteeUserId: number, currentUserId: number) {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  if (currentUserId !== inviteeUserId && !(await can(currentUserId, 'video:delete_any', { checker }))) {
+    throw new ForbiddenError()
+  }
+  const [inviteRows] = await db.query(`SELECT id FROM space_invitations WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending' LIMIT 1`, [spaceId, inviteeUserId])
+  const invitation = (inviteRows as any[])[0]
+  if (!invitation) throw new NotFoundError('invitation_not_found')
+  await db.query(`UPDATE space_invitations SET status = 'declined', responded_at = NOW() WHERE id = ?`, [invitation.id])
   return { ok: true }
 }
