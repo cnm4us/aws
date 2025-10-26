@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod'
 import { getPool } from '../db';
 import { clampLimit } from '../core/pagination'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
@@ -46,6 +47,58 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth);
 adminRouter.use(requireSiteAdmin);
+
+// ---------- Schemas ----------
+const createUserSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().max(255).optional(),
+  password: z.string().min(8),
+  phoneNumber: z.string().max(64).optional().nullable(),
+  verificationLevel: z.number().int().optional().nullable(),
+  kycStatus: z.enum(['none','pending','verified','rejected']).optional(),
+  canCreateGroup: z.union([z.boolean(), z.null()]).optional(),
+  canCreateChannel: z.union([z.boolean(), z.null()]).optional(),
+})
+
+const updateUserSchema = z.object({
+  email: z.string().email().optional(),
+  displayName: z.string().max(255).optional(),
+  password: z.string().min(8).optional(),
+  orgId: z.number().int().optional().nullable(),
+  phoneNumber: z.string().max(64).optional().nullable(),
+  verificationLevel: z.number().int().optional().nullable(),
+  kycStatus: z.enum(['none','pending','verified','rejected']).optional().nullable(),
+  canCreateGroup: z.union([z.boolean(), z.null()]).optional(),
+  canCreateChannel: z.union([z.boolean(), z.null()]).optional(),
+})
+
+const siteSettingsSchema = z.object({
+  allowGroupCreation: z.boolean(),
+  allowChannelCreation: z.boolean(),
+  requireGroupReview: z.boolean(),
+  requireChannelReview: z.boolean(),
+})
+
+const capabilitiesSchema = z.object({
+  canCreateGroup: z.union([z.boolean(), z.null()]).optional(),
+  canCreateChannel: z.union([z.boolean(), z.null()]).optional(),
+})
+
+const createSpaceSchema = z.object({
+  type: z.enum(['group','channel']),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+})
+
+const updateSpaceSchema = z.object({
+  name: z.string().min(1).optional(),
+  commentsPolicy: z.enum(['on','off','inherit']).optional(),
+  requireReview: z.boolean().optional(),
+})
+
+const rolesSchema = z.object({ roles: z.array(z.string()).optional() })
+
+const addMemberSchema = z.object({ userId: z.number().int().positive(), roles: z.array(z.string()).optional() })
 
 // ---------- Roles ----------
 adminRouter.get('/roles', async (_req, res) => {
@@ -208,8 +261,9 @@ adminRouter.put('/users/:id/roles', async (req, res) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const rolesIn = Array.isArray((req.body || {}).roles) ? (req.body.roles as any[]) : []
-    const result = await adminSvc.setUserSiteRoles(userId, rolesIn)
+    const parsed = rolesSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.setUserSiteRoles(userId, parsed.data.roles || [])
     res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
@@ -219,7 +273,9 @@ adminRouter.put('/users/:id/roles', async (req, res) => {
 // Create Group / Channel (admin)
 adminRouter.post('/spaces', async (req, res) => {
   try {
-    const { type, name, slug } = (req.body || {}) as any
+    const parsed = createSpaceSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const { type, name, slug } = parsed.data
     const kind = String(type || '').trim().toLowerCase()
     if (kind !== 'group' && kind !== 'channel') return res.status(400).json({ error: 'invalid_space_type' })
     const title = String(name || '').trim(); if (!title) return res.status(400).json({ error: 'invalid_name' })
@@ -257,8 +313,9 @@ adminRouter.get('/users', async (req, res) => {
 
 adminRouter.post('/users', async (req, res) => {
   try {
-    const { email, displayName, password, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel } = (req.body || {}) as any
-    const result = await adminSvc.createUser({ email, displayName, password, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel })
+    const parsed = createUserSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.createUser(parsed.data)
     res.status(201).json(result)
   } catch (err: any) {
     const status = err?.status || 500
@@ -282,8 +339,9 @@ adminRouter.put('/users/:id', async (req, res) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const { email, displayName, password, orgId, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel } = (req.body || {}) as any
-    const result = await adminSvc.updateUser(userId, { email, displayName, password, orgId, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel })
+    const parsed = updateUserSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.updateUser(userId, parsed.data as any)
     res.json(result)
   } catch (err: any) {
     const status = err?.status || 500
@@ -362,8 +420,9 @@ adminRouter.put('/spaces/:id', async (req, res) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
-    const { name, commentsPolicy, requireReview } = (req.body || {}) as any
-    const result = await adminSvc.updateSpace(spaceId, { name, commentsPolicy, requireReview })
+    const parsed = updateSpaceSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.updateSpace(spaceId, parsed.data)
     res.json(result)
   } catch (err: any) {
     const status = err?.status || 500
@@ -398,23 +457,10 @@ adminRouter.put('/spaces/:id/users/:userId/roles', async (req, res) => {
     const userId = Number(req.params.userId);
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const roles = Array.isArray((req.body || {}).roles) ? (req.body as any).roles : [];
-    const normalized = roles
-      .map((r: any) => (typeof r === 'string' ? r.trim() : String(r || '')).toLowerCase())
-      .filter((r: string) => r.length > 0);
-    const db = getPool();
-    // Replace-all strategy
-    await db.query(`DELETE FROM user_space_roles WHERE space_id = ? AND user_id = ?`, [spaceId, userId]);
-    if (normalized.length) {
-      // Map role names to ids
-      const placeholders = normalized.map(() => '?').join(',');
-      const [roleRows] = await db.query(`SELECT id, name FROM roles WHERE name IN (${placeholders})`, normalized);
-      const ids = (roleRows as any[]).map((r) => Number(r.id));
-      for (const rid of ids) {
-        await db.query(`INSERT IGNORE INTO user_space_roles (user_id, space_id, role_id) VALUES (?, ?, ?)`, [userId, spaceId, rid]);
-      }
-    }
-    res.json({ ok: true, roles: normalized });
+    const parsed = rolesSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.setUserSpaceRoles(spaceId, userId, parsed.data.roles || [])
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
   }
@@ -456,8 +502,9 @@ adminRouter.put('/users/:id/capabilities', async (req, res) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const { canCreateGroup, canCreateChannel } = (req.body || {}) as any
-    const result = await adminSvc.setUserCapabilities(userId, { canCreateGroup, canCreateChannel })
+    const parsed = capabilitiesSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const result = await adminSvc.setUserCapabilities(userId, parsed.data)
     res.json(result)
   } catch (err: any) {
     const status = err?.status || 500
@@ -535,11 +582,12 @@ adminRouter.delete('/spaces/:id/invitations/:userId', async (req, res) => {
 adminRouter.post('/spaces/:id/members', async (req, res) => {
   try {
     const spaceId = Number(req.params.id)
-    const { userId, roles } = (req.body || {}) as any
+    const parsed = addMemberSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
-    const parsedUserId = Number(userId)
+    const parsedUserId = Number(parsed.data.userId)
     if (!Number.isFinite(parsedUserId) || parsedUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
-    const result = await adminSvc.addSpaceMember(spaceId, parsedUserId, roles)
+    const result = await adminSvc.addSpaceMember(spaceId, parsedUserId, parsed.data.roles)
     // Validate assigned roles non-empty to match legacy behavior
     if (!result.roles || !result.roles.length) return res.status(400).json({ error: 'roles_not_assigned' })
     res.json(result)
