@@ -3,6 +3,7 @@ import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
+import { enhanceUploadRow } from '../../utils/enhance'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
 
@@ -284,6 +285,111 @@ export async function revokeSuspension(spaceId: number, suspensionId: number, cu
   }
   await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ?`, [suspensionId])
   return { ok: true }
+}
+
+export async function moderationQueue(spaceId: number, currentUserId: number) {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  const isSiteAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const canModerate = isSiteAdmin || (await can(currentUserId, 'video:approve_space', { spaceId, checker })) || (await can(currentUserId, 'video:publish_space', { spaceId, checker }))
+  if (!canModerate) throw new ForbiddenError()
+
+  const params: any[] = [spaceId]
+  const where: string[] = [ 'sp.space_id = ?', "sp.status = 'pending'" ]
+  const sql = `
+    SELECT
+      sp.id AS publication_id,
+      sp.upload_id,
+      sp.production_id,
+      sp.space_id,
+      sp.status AS publication_status,
+      sp.requested_by,
+      sp.approved_by,
+      sp.visibility AS publication_visibility,
+      sp.distribution_flags,
+      sp.published_at,
+      sp.unpublished_at,
+      sp.created_at AS publication_created_at,
+      sp.updated_at AS publication_updated_at,
+      u.id AS upload_id,
+      u.s3_bucket,
+      u.s3_key,
+      u.original_filename,
+      u.modified_filename,
+      u.description AS upload_description,
+      u.content_type,
+      u.size_bytes,
+      u.width,
+      u.height,
+      u.duration_seconds,
+      u.status AS upload_status,
+      u.etag,
+      u.mediaconvert_job_id,
+      COALESCE(p.output_prefix, u.output_prefix) AS output_prefix,
+      u.asset_uuid,
+      u.date_ymd,
+      u.profile,
+      u.orientation,
+      u.created_at AS upload_created_at,
+      u.uploaded_at,
+      u.user_id AS upload_user_id,
+      req.display_name AS requester_display_name,
+      req.email AS requester_email
+    FROM space_publications sp
+    JOIN uploads u ON u.id = sp.upload_id
+    LEFT JOIN productions p ON p.id = sp.production_id
+    LEFT JOIN users req ON req.id = sp.requested_by
+    WHERE ${where.join(' AND ')}
+    ORDER BY sp.created_at DESC, sp.id DESC
+    LIMIT 200`
+  const [rows] = await db.query(sql, params)
+  const items = (rows as any[]).map((row) => {
+    let distribution: any = null
+    if (row.distribution_flags) { try { distribution = JSON.parse(row.distribution_flags) } catch { distribution = null } }
+    const publication = {
+      id: Number(row.publication_id),
+      upload_id: Number(row.upload_id),
+      production_id: row.production_id == null ? null : Number(row.production_id),
+      space_id: Number(row.space_id),
+      status: String(row.publication_status),
+      requested_by: row.requested_by == null ? null : Number(row.requested_by),
+      approved_by: row.approved_by == null ? null : Number(row.approved_by),
+      visibility: (row.publication_visibility || 'inherit') as any,
+      distribution_flags: distribution,
+      published_at: row.published_at ? String(row.published_at) : null,
+      unpublished_at: row.unpublished_at ? String(row.unpublished_at) : null,
+      created_at: String(row.publication_created_at),
+      updated_at: String(row.publication_updated_at),
+    }
+    const uploadRaw: any = {
+      id: Number(row.upload_id), s3_bucket: row.s3_bucket, s3_key: row.s3_key,
+      original_filename: row.original_filename,
+      modified_filename: row.modified_filename ? String(row.modified_filename) : row.original_filename,
+      description: row.upload_description != null ? String(row.upload_description) : null,
+      content_type: row.content_type,
+      size_bytes: row.size_bytes != null ? Number(row.size_bytes) : null,
+      width: row.width != null ? Number(row.width) : null,
+      height: row.height != null ? Number(row.height) : null,
+      duration_seconds: row.duration_seconds != null ? Number(row.duration_seconds) : null,
+      status: row.upload_status,
+      etag: row.etag,
+      mediaconvert_job_id: row.mediaconvert_job_id,
+      output_prefix: row.output_prefix,
+      asset_uuid: row.asset_uuid,
+      date_ymd: row.date_ymd,
+      profile: row.profile,
+      orientation: row.orientation,
+      created_at: String(row.upload_created_at),
+      uploaded_at: row.uploaded_at ? String(row.uploaded_at) : null,
+      user_id: row.upload_user_id != null ? Number(row.upload_user_id) : null,
+      space_id: spaceId,
+      origin_space_id: null,
+    }
+    const upload = enhanceUploadRow(uploadRaw)
+    const requester = row.requester_email || row.requester_display_name ? { displayName: row.requester_display_name || null, email: row.requester_email || null } : null
+    return { publication, upload, requester }
+  })
+  return { items }
 }
 export async function inviteMember(spaceId: number, inviteeUserId: number, currentUserId: number) {
   const db = getPool()

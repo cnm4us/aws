@@ -290,6 +290,10 @@ Meta:
 - DB: none
 - Flags: none
 
+Commit:
+- b9cbc73010dc4226f30ff9e597552475b1724442
+- Committed: 2025-10-26T15:50:16+00:00
+
 Subject: refactor(spaces): move subscribers and suspensions endpoints to service
 
 Context:
