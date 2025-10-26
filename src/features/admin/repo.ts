@@ -92,3 +92,30 @@ export async function insertUserRoles(userId: number, roleIds: number[]): Promis
     await db.query(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, [userId, rid])
   }
 }
+
+export async function getUserRow(userId: number): Promise<any | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, email, display_name, org_id, email_verified_at, phone_number, phone_verified_at,
+            verification_level, kyc_status, can_create_group, can_create_channel, created_at, updated_at, deleted_at
+       FROM users WHERE id = ? LIMIT 1`,
+    [userId]
+  )
+  return (rows as any[])[0] || null
+}
+
+export async function updateUser(userId: number, fields: Record<string, any>): Promise<number> {
+  const db = getPool()
+  const entries = Object.entries(fields)
+  if (!entries.length) return 0
+  const sets: string[] = []
+  const params: any[] = []
+  for (const [k, v] of entries) { sets.push(`${k} = ?`); params.push(v) }
+  const [result] = await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, [...params, userId])
+  return Number((result as any).affectedRows || 0)
+}
+
+export async function softDeleteUser(userId: number): Promise<void> {
+  const db = getPool()
+  await db.query(`UPDATE users SET deleted_at = NOW() WHERE id = ?`, [userId])
+}

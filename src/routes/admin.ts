@@ -268,93 +268,38 @@ adminRouter.post('/users', async (req, res) => {
 
 adminRouter.get('/users/:id', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const db = getPool();
-    const [rows] = await db.query(
-      `SELECT id, email, display_name, org_id, email_verified_at, phone_number, phone_verified_at,
-              verification_level, kyc_status, can_create_group, can_create_channel, created_at, updated_at, deleted_at
-         FROM users WHERE id = ? LIMIT 1`,
-      [userId]
-    );
-    const u = (rows as any[])[0];
-    if (!u) return res.status(404).json({ error: 'not_found' });
-    res.json({
-      id: Number(u.id),
-      email: u.email,
-      displayName: u.display_name,
-      orgId: u.org_id != null ? Number(u.org_id) : null,
-      emailVerifiedAt: u.email_verified_at ? String(u.email_verified_at) : null,
-      phoneNumber: u.phone_number || null,
-      phoneVerifiedAt: u.phone_verified_at ? String(u.phone_verified_at) : null,
-      verificationLevel: u.verification_level != null ? Number(u.verification_level) : 0,
-      kycStatus: u.kyc_status,
-      canCreateGroup: u.can_create_group == null ? null : Boolean(Number(u.can_create_group)),
-      canCreateChannel: u.can_create_channel == null ? null : Boolean(Number(u.can_create_channel)),
-      createdAt: String(u.created_at),
-      updatedAt: u.updated_at ? String(u.updated_at) : null,
-      deletedAt: u.deleted_at ? String(u.deleted_at) : null,
-    });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const result = await adminSvc.getUserDetail(userId)
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_get_user', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_get_user', detail: String(err?.message || err) })
   }
 });
 
 adminRouter.put('/users/:id', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const {
-      email,
-      displayName,
-      password,
-      orgId,
-      phoneNumber,
-      verificationLevel,
-      kycStatus,
-      canCreateGroup,
-      canCreateChannel,
-    } = (req.body || {}) as any;
-
-    const sets: string[] = [];
-    const params: any[] = [];
-    if (email !== undefined) {
-      const e = String(email || '').trim().toLowerCase();
-      if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return res.status(400).json({ error: 'invalid_email' });
-      sets.push('email = ?'); params.push(e);
-    }
-    if (displayName !== undefined) { sets.push('display_name = ?'); params.push(String(displayName || '').slice(0, 255)); }
-    if (password !== undefined) {
-      const pw = String(password || '');
-      if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
-      sets.push('password_hash = ?'); params.push(scryptHash(pw));
-    }
-    if (orgId !== undefined) { sets.push('org_id = ?'); params.push(orgId == null ? null : Number(orgId)); }
-    if (phoneNumber !== undefined) { sets.push('phone_number = ?'); params.push(phoneNumber == null ? null : String(phoneNumber)); }
-    if (verificationLevel !== undefined) { sets.push('verification_level = ?'); params.push(verificationLevel == null ? null : Number(verificationLevel)); }
-    if (kycStatus !== undefined) { sets.push('kyc_status = ?'); params.push(kycStatus == null ? null : String(kycStatus)); }
-    if (canCreateGroup !== undefined) { sets.push('can_create_group = ?'); params.push(canCreateGroup == null ? null : (canCreateGroup ? 1 : 0)); }
-    if (canCreateChannel !== undefined) { sets.push('can_create_channel = ?'); params.push(canCreateChannel == null ? null : (canCreateChannel ? 1 : 0)); }
-
-    if (!sets.length) return res.status(400).json({ error: 'no_fields_to_update' });
-    const db = getPool();
-    const [result] = await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, [...params, userId]);
-    if ((result as any).affectedRows === 0) return res.status(404).json({ error: 'not_found' });
-    res.json({ ok: true });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const { email, displayName, password, orgId, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel } = (req.body || {}) as any
+    const result = await adminSvc.updateUser(userId, { email, displayName, password, orgId, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel })
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_update_user', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_update_user', detail: err?.detail || String(err?.message || err) })
   }
 });
 
 adminRouter.delete('/users/:id', async (req, res) => {
   try {
-    const userId = Number(req.params.id);
-    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' });
-    const db = getPool();
-    await db.query(`UPDATE users SET deleted_at = NOW() WHERE id = ?`, [userId]);
-    res.json({ ok: true });
+    const userId = Number(req.params.id)
+    if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const result = await adminSvc.deleteUser(userId)
+    res.json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_delete_user', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_delete_user', detail: String(err?.message || err) })
   }
 });
 

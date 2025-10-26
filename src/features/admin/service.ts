@@ -88,3 +88,54 @@ export async function setUserSiteRoles(userId: number, roleNames: string[]) {
   const accepted = normalized.filter((n) => idByName.has(n))
   return { ok: true, roles: accepted }
 }
+
+export async function getUserDetail(userId: number) {
+  const u = await repo.getUserRow(userId)
+  if (!u) throw Object.assign(new Error('not_found'), { code: 'not_found', status: 404 })
+  return {
+    id: Number(u.id),
+    email: u.email,
+    displayName: u.display_name,
+    orgId: u.org_id != null ? Number(u.org_id) : null,
+    emailVerifiedAt: u.email_verified_at ? String(u.email_verified_at) : null,
+    phoneNumber: u.phone_number || null,
+    phoneVerifiedAt: u.phone_verified_at ? String(u.phone_verified_at) : null,
+    verificationLevel: u.verification_level != null ? Number(u.verification_level) : 0,
+    kycStatus: u.kyc_status,
+    canCreateGroup: u.can_create_group == null ? null : Boolean(Number(u.can_create_group)),
+    canCreateChannel: u.can_create_channel == null ? null : Boolean(Number(u.can_create_channel)),
+    createdAt: String(u.created_at),
+    updatedAt: u.updated_at ? String(u.updated_at) : null,
+    deletedAt: u.deleted_at ? String(u.deleted_at) : null,
+  }
+}
+
+export async function updateUser(userId: number, input: { email?: string; displayName?: string; password?: string; orgId?: number | null; phoneNumber?: string | null; verificationLevel?: number | null; kycStatus?: string | null; canCreateGroup?: boolean | null; canCreateChannel?: boolean | null }) {
+  const fields: Record<string, any> = {}
+  if (input.email !== undefined) {
+    const e = String(input.email || '').trim().toLowerCase()
+    if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw Object.assign(new Error('invalid_email'), { code: 'invalid_email', status: 400 })
+    fields.email = e
+  }
+  if (input.displayName !== undefined) fields.display_name = String(input.displayName || '').slice(0, 255)
+  if (input.password !== undefined) {
+    const pw = String(input.password || '')
+    if (!pw || pw.length < 8) throw Object.assign(new Error('weak_password'), { code: 'weak_password', status: 400, detail: 'min_length_8' })
+    fields.password_hash = scryptHash(pw)
+  }
+  if (input.orgId !== undefined) fields.org_id = input.orgId == null ? null : Number(input.orgId)
+  if (input.phoneNumber !== undefined) fields.phone_number = input.phoneNumber == null ? null : String(input.phoneNumber)
+  if (input.verificationLevel !== undefined) fields.verification_level = input.verificationLevel == null ? null : Number(input.verificationLevel)
+  if (input.kycStatus !== undefined) fields.kyc_status = input.kycStatus == null ? null : String(input.kycStatus)
+  if (input.canCreateGroup !== undefined) fields.can_create_group = input.canCreateGroup == null ? null : (input.canCreateGroup ? 1 : 0)
+  if (input.canCreateChannel !== undefined) fields.can_create_channel = input.canCreateChannel == null ? null : (input.canCreateChannel ? 1 : 0)
+  if (!Object.keys(fields).length) throw Object.assign(new Error('no_fields_to_update'), { code: 'no_fields_to_update', status: 400 })
+  const affected = await repo.updateUser(userId, fields)
+  if (!affected) throw Object.assign(new Error('not_found'), { code: 'not_found', status: 404 })
+  return { ok: true }
+}
+
+export async function deleteUser(userId: number) {
+  await repo.softDeleteUser(userId)
+  return { ok: true }
+}

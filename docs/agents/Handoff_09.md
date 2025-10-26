@@ -132,6 +132,7 @@ Open Items / Next Actions
 - [P2] Admin routes modularization (optional)
   - Implemented (partial): created `features/admin/{repo,service}.ts` with roles listing and admin space creation helpers; routes now delegate for `/admin/roles` and `POST /admin/spaces`.
   - Implemented (continued): delegated users list/create and site roles GET/PUT to admin service; next candidates are user detail/update/delete, capabilities, site-settings, and space-member management.
+  - Implemented (continued): delegated user detail/update/delete to admin service.
 - [P2] Document and type `enhanceUploadRow`
   - Confirm inputs/outputs; consider relocating to `src/core/enhance.ts` or `features/uploads/util.ts` for clearer ownership.
 - [P3] Remove stale scaffolding
@@ -244,3 +245,28 @@ Meta:
 Commit:
 - 9307fa2be95e9ba48c552a88f1493076abc912c6
 - Committed: 2025-10-26 19:57:56 +0000
+
+Subject: refactor(admin): delegate site user roles GET/PUT to feature service
+
+Context:
+- Continue admin modularization to centralize site role management for users.
+
+Approach:
+- Add repo helpers to list/replace site-scoped roles and resolve site role ids; add service methods getUserSiteRoles/setUserSiteRoles.
+- Update routes/admin.ts to delegate GET/PUT /admin/users/:id/roles; preserve shapes and error mapping.
+
+Impact:
+- No API shape changes.
+
+Tests:
+- Build in your environment; verify GET/PUT roles behavior unchanged.
+
+Meta:
+- Affects: src/features/admin/{repo.ts,service.ts}; src/routes/admin.ts; docs/agents/Handoff_09.md
+- Routes: GET /admin/users/:id/roles; PUT /admin/users/:id/roles
+- DB: none
+- Flags: none
+
+Commit:
+- d789901686225bbb2dd62ec54a929d75cdd59dc5
+- Committed: 2025-10-26 20:16:46 +0000
