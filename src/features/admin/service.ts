@@ -1,5 +1,5 @@
 import * as repo from './repo'
-import { assignDefaultAdminRoles, type SpaceRow } from '../../services/spaceMembership'
+import { assignDefaultAdminRoles, assignDefaultMemberRoles, assignRoles, getDefaultMemberRoles, listSpaceMembers as listSpaceMembersSM, listSpaceInvitations as listSpaceInvitationsSM, loadSpace, removeAllRoles, type SpaceRow } from '../../services/spaceMembership'
 import { getPool } from '../../db'
 import { defaultSettings, slugify } from '../spaces/util'
 import { DomainError } from '../../core/errors'
@@ -230,5 +230,71 @@ export async function setUserCapabilities(userId: number, input: { canCreateGrou
       canCreateGroup: overrideGroup === null ? siteGroup : overrideGroup,
       canCreateChannel: overrideChannel === null ? siteChannel : overrideChannel,
     },
+  }
+}
+
+export async function listSpaceMembers(spaceId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  const members = await listSpaceMembersSM(db, spaceId)
+  return { spaceId, members }
+}
+
+export async function removeSpaceMember(spaceId: number, userId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  await removeAllRoles(db, spaceId, userId)
+  await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`, [spaceId, userId])
+  return { ok: true }
+}
+
+export async function listSpaceInvitations(spaceId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  const invitations = await listSpaceInvitationsSM(db, spaceId)
+  return { spaceId, invitations }
+}
+
+export async function revokeSpaceInvitation(spaceId: number, userId: number) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  await db.query(`UPDATE space_invitations SET status = 'revoked', responded_at = NOW() WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`, [spaceId, userId])
+  return { ok: true }
+}
+
+export async function addSpaceMember(spaceId: number, targetUserId: number, rolesInput?: any) {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+
+  const [userRows] = await db.query(`SELECT id, email, display_name FROM users WHERE id = ? LIMIT 1`, [targetUserId])
+  const user = (userRows as any[])[0]
+  if (!user) throw Object.assign(new Error('user_not_found'), { code: 'user_not_found', status: 404 })
+
+  let roleNames: string[] | null = null
+  if (Array.isArray(rolesInput)) {
+    roleNames = rolesInput.map((r: any) => (typeof r === 'string' ? r.trim() : String(r || '')).toLowerCase()).filter((r: string) => r.length > 0)
+    if (!roleNames.length) roleNames = null
+  }
+
+  if (roleNames && roleNames.length) {
+    await assignRoles(db, space, targetUserId, roleNames)
+  } else {
+    roleNames = getDefaultMemberRoles(space.type)
+    if (!roleNames.length) throw Object.assign(new Error('no_default_roles'), { code: 'no_default_roles', status: 400 })
+    await assignDefaultMemberRoles(db, space, targetUserId)
+  }
+
+  await db.query(`UPDATE space_invitations SET status = 'accepted', responded_at = NOW() WHERE space_id = ? AND invitee_user_id = ? AND status = 'pending'`, [spaceId, targetUserId])
+
+  return {
+    ok: true,
+    spaceId,
+    user: { id: Number(user.id), email: user.email, displayName: user.display_name },
+    roles: roleNames,
   }
 }
