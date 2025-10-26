@@ -118,6 +118,10 @@ Meta:
 - DB: none
 - Flags: none
 
+Commit:
+- d3bda78e40255084801fc082fa689bcccd744226
+- Committed: 2025-10-25T23:03:53+00:00
+
 Work Log (optional)
 - 2025-10-25 21:50Z — Bootstrapped thread; created Handoff_08.md with carried decisions and next actions.
 

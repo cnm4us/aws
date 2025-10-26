@@ -1,98 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getPool, SpacePublicationRow, SpacePublicationStatus, SpacePublicationVisibility } from '../db';
+// db types no longer needed here; routes delegate to service
 import { requireAuth } from '../middleware/auth';
-import { can, resolveChecker } from '../security/permissions';
+// permission checks handled in publications service
 import * as pubsSvc from '../features/publications/service'
 // Legacy models removed from route usage; publications now delegate to service/repo
 
-type SpaceRow = {
-  id: number;
-  type: 'personal' | 'group' | 'channel';
-  owner_user_id: number | null;
-  settings: any;
-};
-
-type UploadWithOwner = {
-  id: number;
-  user_id: number | null;
-  space_id: number | null;
-  origin_space_id: number | null;
-  status: string;
-};
-
-type ProductionRow = {
-  id: number;
-  upload_id: number;
-  user_id: number;
-};
+// legacy type aliases removed
 
 // Note: legacy effectiveRequiresApproval removed; routes now rely on service logic
 
-async function loadUpload(db: any, uploadId: number): Promise<UploadWithOwner | null> {
-  const [rows] = await db.query(
-    `SELECT id, user_id, space_id, origin_space_id, status FROM uploads WHERE id = ? LIMIT 1`,
-    [uploadId]
-  );
-  const row = (rows as any[])[0];
-  if (!row) return null;
-  return {
-    id: Number(row.id),
-    user_id: row.user_id == null ? null : Number(row.user_id),
-    space_id: row.space_id == null ? null : Number(row.space_id),
-    origin_space_id: row.origin_space_id == null ? null : Number(row.origin_space_id),
-    status: String(row.status),
-  };
-}
-
-async function loadSpace(db: any, spaceId: number): Promise<SpaceRow | null> {
-  const [rows] = await db.query(
-    `SELECT id, type, owner_user_id, settings FROM spaces WHERE id = ? LIMIT 1`,
-    [spaceId]
-  );
-  const row = (rows as any[])[0];
-  if (!row) return null;
-  return {
-    id: Number(row.id),
-    type: String(row.type) as any,
-    owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
-    settings: row.settings,
-  };
-}
-
-async function loadProduction(db: any, productionId: number): Promise<ProductionRow | null> {
-  const [rows] = await db.query(
-    `SELECT id, upload_id, user_id FROM productions WHERE id = ? LIMIT 1`,
-    [productionId]
-  );
-  const row = (rows as any[])[0];
-  if (!row) return null;
-  return {
-    id: Number(row.id),
-    upload_id: Number(row.upload_id),
-    user_id: Number(row.user_id),
-  };
-}
-
-// legacy loadPublicationContext removed; replaced by service/repo
-
-function mapPublicationRow(row: any): SpacePublicationRow {
-  return {
-    id: Number(row.id),
-    upload_id: Number(row.upload_id),
-    space_id: Number(row.space_id),
-    status: row.status as SpacePublicationStatus,
-    requested_by: row.requested_by == null ? null : Number(row.requested_by),
-    approved_by: row.approved_by == null ? null : Number(row.approved_by),
-    is_primary: Boolean(Number(row.is_primary)),
-    visibility: (row.visibility || 'inherit') as SpacePublicationVisibility,
-    distribution_flags: row.distribution_flags ? (() => { try { return JSON.parse(row.distribution_flags); } catch { return null; } })() : null,
-    published_at: row.published_at ? String(row.published_at) : null,
-    unpublished_at: row.unpublished_at ? String(row.unpublished_at) : null,
-    created_at: String(row.created_at),
-    updated_at: String(row.updated_at),
-  };
-}
+// legacy helpers removed; publications data comes from service DTOs
 
 export const publicationsRouter = Router();
 
