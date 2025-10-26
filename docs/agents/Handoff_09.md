@@ -104,6 +104,10 @@ Meta:
 - Flags: none
 
 Commit:
+- 8da96f22f9d3e801f1160232e618157d65432561
+- Committed: 2025-10-26 19:06:21 +0000
+
+Commit:
 - 77258c725d36c5a84b55d7881fbbf415849f53cc
 - Committed: 2025-10-26 18:43:37 +0000
 
@@ -141,3 +145,23 @@ Work Log (optional)
 
 Artifacts (optional)
 <!-- none -->
+- Subject: refactor(uploads): move signing and completion to service
+
+Context:
+- Consolidate upload signing and completion logic in uploads service; keep routes thin and preserve response shapes.
+
+Approach:
+- Add uploads.service.createSignedUpload and uploads.service.markComplete; reuse naming utils and S3 presign.
+- Update routes/signing.ts to delegate to service; retain requireAuthOrAdminToken.
+
+Impact:
+- No API changes. Centralized logic for owner association and S3 conditions.
+
+Tests:
+- Build locally in your environment; verify POST /api/sign-upload returns { id, key, bucket, post } and POST /api/mark-complete returns { ok: true }.
+
+Meta:
+- Affects: src/features/uploads/service.ts; src/routes/signing.ts; docs/agents/Handoff_09.md
+- Routes: POST /api/sign-upload; POST /api/mark-complete
+- DB: none
+- Flags: none

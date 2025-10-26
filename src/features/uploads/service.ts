@@ -6,7 +6,10 @@ import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
-import { OUTPUT_BUCKET, UPLOAD_BUCKET } from '../../config'
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
+import { randomUUID } from 'crypto'
+import { OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
+import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
 
@@ -202,5 +205,105 @@ export async function remove(id: number, currentUserId: number): Promise<{ ok: t
     }
     await db.query(`INSERT INTO action_log (user_id, action, resource_type, resource_id, detail) VALUES (?, 'delete', 'upload', ?, ?)`, [currentUserId, id, JSON.stringify(detail)])
   } catch {}
+  return { ok: true }
+}
+
+export async function createSignedUpload(input: {
+  filename: string
+  contentType?: string
+  sizeBytes?: number
+  width?: number | null
+  height?: number | null
+  durationSeconds?: number | null
+  modifiedFilename?: string
+  description?: string
+  ownerUserId?: number | null
+}, ctx: ServiceContext): Promise<{ id: number; key: string; bucket: string; post: any }> {
+  const filename = String(input.filename)
+  const contentType = input.contentType
+  const sizeBytes = input.sizeBytes
+  const width = input.width ?? null
+  const height = input.height ?? null
+  const durationSeconds = input.durationSeconds ?? null
+  const providedModified = (input.modifiedFilename || '').trim()
+  const modifiedFilename = providedModified.length ? providedModified : filename
+  const rawDescription = (input.description || '').trim()
+  const description = rawDescription.length ? rawDescription : null
+  const safe = sanitizeFilename(filename)
+  const { ymd: dateYmd, folder: datePrefix } = nowDateYmd()
+  const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
+
+  const ext = pickExtension(contentType, safe)
+  const assetUuid = randomUUID()
+  const key = buildUploadKey(basePrefix, datePrefix, assetUuid, ext)
+
+  const db = getPool()
+  const [result] = await db.query(
+    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`,
+    [
+      UPLOAD_BUCKET,
+      key,
+      filename,
+      modifiedFilename,
+      description,
+      contentType ?? null,
+      sizeBytes ?? null,
+      width ?? null,
+      height ?? null,
+      durationSeconds ?? null,
+      assetUuid,
+      dateYmd,
+    ]
+  )
+  const id = Number((result as any).insertId)
+
+  // Determine owner: prefer session user; otherwise explicit ownerUserId (admin token flow)
+  const ownerId = ctx.userId ?? (input.ownerUserId ?? null)
+  if (ownerId) {
+    try {
+      const [sp] = await db.query(`SELECT id FROM spaces WHERE type='personal' AND owner_user_id = ? LIMIT 1`, [ownerId])
+      const spaceId = (sp as any[]).length ? Number((sp as any[])[0].id) : null
+      await db.query(
+        `UPDATE uploads
+            SET user_id = ?,
+                space_id = COALESCE(?, space_id),
+                origin_space_id = COALESCE(?, origin_space_id)
+          WHERE id = ?`,
+        [ownerId, spaceId, spaceId, id]
+      )
+    } catch {}
+  }
+
+  const maxBytes = MAX_UPLOAD_MB * 1024 * 1024
+  const basePrefixCond = basePrefix || ''
+  const conditions: any[] = [
+    ['content-length-range', 1, maxBytes],
+    ['starts-with', '$key', basePrefixCond],
+  ]
+  const fields: Record<string, string> = { key, success_action_status: '201' }
+  if (contentType) fields['Content-Type'] = contentType
+  fields['x-amz-meta-original-filename'] = filename
+
+  const presigned = await createPresignedPost(s3, {
+    Bucket: UPLOAD_BUCKET,
+    Key: key,
+    Conditions: conditions,
+    Fields: fields,
+    Expires: 60 * 5,
+  })
+
+  return { id, key, bucket: UPLOAD_BUCKET, post: presigned }
+}
+
+export async function markComplete(input: { id: number; etag?: string; sizeBytes?: number }, _ctx: ServiceContext): Promise<{ ok: true }> {
+  const db = getPool()
+  await db.query(
+    `UPDATE uploads
+       SET status = 'uploaded', uploaded_at = CURRENT_TIMESTAMP,
+           etag = COALESCE(?, etag), size_bytes = COALESCE(?, size_bytes)
+     WHERE id = ?`,
+    [input.etag ?? null, input.sizeBytes ?? null, input.id]
+  )
   return { ok: true }
 }
