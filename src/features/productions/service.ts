@@ -1,4 +1,5 @@
 import { can, resolveChecker } from '../../security/permissions'
+import { PERM } from '../../security/perm'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { OUTPUT_BUCKET } from '../../config'
 import { startProductionRender } from '../../services/productionRunner'
@@ -46,7 +47,7 @@ function safeJson(input: any) {
 export async function list(currentUserId: number, targetUserId?: number) {
   const qUser = targetUserId ?? currentUserId
   const checker = await resolveChecker(currentUserId)
-  const isAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const isAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   if (!isAdmin && qUser !== currentUserId) throw new ForbiddenError()
   const rows = await repo.listForUser(qUser)
   return rows.map((row) => {
@@ -77,7 +78,7 @@ export async function get(id: number, currentUserId: number) {
   const ownerId = Number(row.user_id)
   const isOwner = ownerId === currentUserId
   const checker = await resolveChecker(currentUserId)
-  const isAdmin = await can(currentUserId, 'video:delete_any', { checker })
+  const isAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   if (!isOwner && !isAdmin) throw new ForbiddenError()
   const rec = mapProduction(row)
   try {
@@ -109,7 +110,7 @@ export async function create(input: { uploadId: number; name?: string | null; pr
   const ownerId = upload.user_id != null ? Number(upload.user_id) : null
   const isOwner = ownerId === currentUserId
   const checker = await resolveChecker(currentUserId)
-  const canProduceAny = await can(currentUserId, 'video:delete_any', { checker })
+  const canProduceAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   if (!isOwner && !canProduceAny) throw new ForbiddenError()
 
   const { jobId, outPrefix, productionId } = await startProductionRender({

@@ -316,6 +316,28 @@ Commit:
 - 8522e87034e34e0d8be280045cbfeb58adf6b5e5
 - Committed: 2025-10-26T16:22:48+00:00
 
+Subject: refactor(spaces): move creation endpoint to service
+
+Context:
+- Keep routes thin and centralize validation/permission/slugging logic for space creation in the spaces service.
+
+Approach:
+- Add spaces.service.createSpace({ type, name }, userId) with site flag checks, user overrides, permission checks, slugging and insert; assign default admin roles.
+- Route delegates and preserves error/status mapping (invalid_space_type, invalid_name, user_not_found, forbidden).
+
+Impact:
+- No API shape changes; behavior unchanged; cleaner boundaries for future enhancements.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: POST /api/spaces
+- DB: none
+- Flags: none
+
+Commit:
+- de5ddd794babce78fd5be4d7a74e062524e3eac0
+- Committed: 2025-10-26T17:10:22+00:00
+
 Subject: refactor(spaces): move subscribers and suspensions endpoints to service
 
 Context:

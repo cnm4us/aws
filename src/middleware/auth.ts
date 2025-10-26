@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { ADMIN_TOKEN } from '../config';
 import { can } from '../security/permissions';
+import { PERM } from '../security/perm'
 
 function hasAdminToken(req: Request): boolean {
   const token = ADMIN_TOKEN;
@@ -24,7 +25,7 @@ export function requireAuthOrAdminToken(req: Request, res: Response, next: NextF
 export async function requireSiteAdmin(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.user || !req.session) return res.status(401).json({ error: 'unauthorized' });
-    const allowed = await can(req.user.id, 'video:delete_any');
+  const allowed = await can(req.user.id, PERM.VIDEO_DELETE_ANY);
     if (!allowed) return res.status(403).json({ error: 'forbidden' });
     return next();
   } catch (err) {
@@ -37,7 +38,7 @@ export async function requireSiteAdminPage(req: Request, res: Response, next: Ne
   try {
     const from = encodeURIComponent(req.originalUrl || '/');
     if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
-    const allowed = await can(req.user.id, 'video:delete_any');
+  const allowed = await can(req.user.id, PERM.VIDEO_DELETE_ANY);
     if (!allowed) return res.redirect(`/forbidden?from=${from}`);
     return next();
   } catch (_err) {
@@ -55,11 +56,11 @@ export async function requireSpaceAdminPage(req: Request, res: Response, next: N
     if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
     if (!Number.isFinite(sid) || sid <= 0) return res.redirect(`/forbidden?from=${from}`);
     // Site admin always allowed
-    if (await can(req.user.id, 'video:delete_any')) return next();
+  if (await can(req.user.id, PERM.VIDEO_DELETE_ANY)) return next();
     // Allow space admins/managers and membership managers
-    const ok = (await can(req.user.id, 'space:manage', { spaceId: sid }))
-      || (await can(req.user.id, 'space:manage_members', { spaceId: sid }))
-      || (await can(req.user.id, 'space:assign_roles', { spaceId: sid }));
+  const ok = (await can(req.user.id, PERM.SPACE_MANAGE, { spaceId: sid }))
+      || (await can(req.user.id, PERM.SPACE_MANAGE_MEMBERS, { spaceId: sid }))
+      || (await can(req.user.id, PERM.SPACE_ASSIGN_ROLES, { spaceId: sid }));
     if (!ok) return res.redirect(`/forbidden?from=${from}`);
     return next();
   } catch {
@@ -76,10 +77,10 @@ export async function requireSpaceModeratorPage(req: Request, res: Response, nex
     if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
     if (!Number.isFinite(sid) || sid <= 0) return res.redirect(`/forbidden?from=${from}`);
     // Site admin or site moderator-like powers: allow via video:delete_any shortcut
-    if (await can(req.user.id, 'video:delete_any')) return next();
+  if (await can(req.user.id, PERM.VIDEO_DELETE_ANY)) return next();
     // Moderation/publish permissions in the space
-    const ok = (await can(req.user.id, 'video:approve_space', { spaceId: sid }))
-      || (await can(req.user.id, 'video:publish_space', { spaceId: sid }));
+  const ok = (await can(req.user.id, PERM.VIDEO_APPROVE_SPACE, { spaceId: sid }))
+      || (await can(req.user.id, PERM.VIDEO_PUBLISH_SPACE, { spaceId: sid }));
     if (!ok) return res.redirect(`/forbidden?from=${from}`);
     return next();
   } catch {

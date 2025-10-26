@@ -3,6 +3,7 @@ import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
 import { can, resolveChecker } from '../../security/permissions'
+import { PERM } from '../../security/perm'
 import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import { OUTPUT_BUCKET, UPLOAD_BUCKET } from '../../config'
@@ -61,9 +62,9 @@ export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
   const originSpaceId = basic.origin_space_id
 
   const checker = await resolveChecker(currentUserId)
-  const allowedOwner = ownerId != null && (await can(currentUserId, 'video:publish_own', { ownerId, checker }))
-  const allowedOrigin = originSpaceId ? await can(currentUserId, 'video:publish_space', { spaceId: originSpaceId, checker }) : false
-  const allowedAdmin = await can(currentUserId, 'video:publish_space', { checker })
+  const allowedOwner = ownerId != null && (await can(currentUserId, PERM.VIDEO_PUBLISH_OWN, { ownerId, checker }))
+  const allowedOrigin = originSpaceId ? await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId: originSpaceId, checker }) : false
+  const allowedAdmin = await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { checker })
   if (!allowedOwner && !allowedOrigin && !allowedAdmin) {
     throw new ForbiddenError()
   }
@@ -143,9 +144,9 @@ export async function remove(id: number, currentUserId: number): Promise<{ ok: t
   const ownerId = u.user_id ? Number(u.user_id) : null
   const spaceId = u.space_id ? Number(u.space_id) : null
   const allowed =
-    (ownerId && (await can(currentUserId, 'video:delete_own', { ownerId, checker }))) ||
-    (await can(currentUserId, 'video:delete_any', { checker })) ||
-    (spaceId && (await can(currentUserId, 'video:unpublish_space', { spaceId, checker })))
+    (ownerId && (await can(currentUserId, PERM.VIDEO_DELETE_OWN, { ownerId, checker }))) ||
+    (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })) ||
+    (spaceId && (await can(currentUserId, PERM.VIDEO_UNPUBLISH_SPACE, { spaceId, checker })))
   if (!allowed) throw new ForbiddenError()
 
   let delUp: DeleteSummary | null = null

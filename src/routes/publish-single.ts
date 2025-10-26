@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getPool } from '../db'
 import { requireAuth } from '../middleware/auth'
 import { can } from '../security/permissions'
+import { PERM } from '../security/perm'
 
 const publishSingleRouter = Router()
 
@@ -25,13 +26,13 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
 
     const currentUserId = req.user!.id
     const ownerId = upload.user_id != null ? Number(upload.user_id) : null
-    const allowedOwner = ownerId != null && (await can(currentUserId, 'video:publish_own', { ownerId }))
-    const allowedAnySpace = await can(currentUserId, 'video:publish_space')
+    const allowedOwner = ownerId != null && (await can(currentUserId, PERM.VIDEO_PUBLISH_OWN, { ownerId }))
+    const allowedAnySpace = await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE)
 
     if (!allowedOwner && !allowedAnySpace) {
       let allowed = false
       for (const spaceId of spaces) {
-        const ok = await can(currentUserId, 'video:publish_space', { spaceId })
+        const ok = await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId })
         if (ok) {
           allowed = true
           break
@@ -113,8 +114,8 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
             activated.push(spaceId)
           } else if (curStatus === 'unpublished') {
             // Republish path
-            const allowedAny = await can(currentUserId, 'video:delete_any')
-            const allowedSpace = await can(currentUserId, 'video:publish_space', { spaceId })
+            const allowedAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY)
+            const allowedSpace = await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId })
             if (allowedAny || allowedSpace) {
               await db.query(
                 `UPDATE space_publications
@@ -125,7 +126,7 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
               // Log event
               try { await db.query(`INSERT INTO space_publication_events (publication_id, actor_user_id, action) VALUES (?, ?, 'moderator_republish_published')`, [pubId, currentUserId]) } catch {}
               activated.push(spaceId)
-            } else if (ownerId != null && ownerId === currentUserId && (await can(currentUserId, 'video:publish_own', { ownerId }))) {
+            } else if (ownerId != null && ownerId === currentUserId && (await can(currentUserId, PERM.VIDEO_PUBLISH_OWN, { ownerId }))) {
               // Owner path requires last-actor owner unpublish
               let lastOwner = false
               try {
@@ -159,8 +160,8 @@ publishSingleRouter.post('/api/uploads/:id/publish', requireAuth, async (req, re
             }
           } else if (curStatus === 'rejected') {
             // Owner cannot republish rejected; moderators/admins can
-            const allowedAny = await can(currentUserId, 'video:delete_any')
-            const allowedSpace = await can(currentUserId, 'video:publish_space', { spaceId })
+            const allowedAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY)
+            const allowedSpace = await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId })
             if (!allowedAny && !allowedSpace) {
               return res.status(403).json({ error: 'forbidden' })
             }
@@ -207,9 +208,9 @@ publishSingleRouter.post('/api/uploads/:id/unpublish', requireAuth, async (req, 
     const ownerId = upload.user_id != null ? Number(upload.user_id) : null
 
     for (const spaceId of spaces) {
-      const allowedOwner = ownerId != null && (await can(currentUserId, 'video:unpublish_own', { ownerId }))
-      const allowedSpace = await can(currentUserId, 'video:unpublish_space', { spaceId })
-      const allowedAny = await can(currentUserId, 'video:delete_any')
+      const allowedOwner = ownerId != null && (await can(currentUserId, PERM.VIDEO_UNPUBLISH_OWN, { ownerId }))
+      const allowedSpace = await can(currentUserId, PERM.VIDEO_UNPUBLISH_SPACE, { spaceId })
+      const allowedAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY)
       if (!allowedOwner && !allowedSpace && !allowedAny) {
         return res.status(403).json({ error: 'forbidden' })
       }

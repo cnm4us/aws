@@ -5,6 +5,7 @@ import { MC_ROLE_ARN, OUTPUT_BUCKET } from '../config';
 import { startProductionRender } from '../services/productionRunner';
 import { requireAuth } from '../middleware/auth';
 import { can } from '../security/permissions';
+import { PERM } from '../security/perm'
 
 export const publishRouter = Router();
 
@@ -30,10 +31,10 @@ publishRouter.post('/api/publish', requireAuth, async (req, res) => {
     const ownerId = upload.user_id ? Number(upload.user_id) : null;
     const spaceId = upload.space_id ? Number(upload.space_id) : null;
     const allowed =
-      (ownerId && (await can(currentUserId, 'video:publish_own', { ownerId }))) ||
-      (spaceId && (await can(currentUserId, 'video:publish_space', { spaceId }))) ||
-      (await can(currentUserId, 'video:publish_space')) ||
-      (await can(currentUserId, 'video:approve'));
+      (ownerId && (await can(currentUserId, PERM.VIDEO_PUBLISH_OWN, { ownerId }))) ||
+      (spaceId && (await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { spaceId }))) ||
+      (await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE)) ||
+      (await can(currentUserId, PERM.VIDEO_APPROVE));
     if (!allowed) return res.status(403).json({ error: 'forbidden' });
 
     let chosenProfile: string = profile || (

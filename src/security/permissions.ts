@@ -1,4 +1,5 @@
 import { getPool } from '../db';
+import { PERM } from './perm'
 
 // Widen to string so we can evolve permissions without chasing union types everywhere
 export type Permission = string;
@@ -61,9 +62,9 @@ export async function resolveChecker(userId: number): Promise<PermissionChecker>
 // Helper: does the user have site-level any-space moderation authority?
 async function hasAnySpaceModeration(checker: PermissionChecker): Promise<boolean> {
   return (
-    (await checker.hasGlobalPermission('feed:moderate_global')) ||
-    (await checker.hasGlobalPermission('feed:publish_global')) ||
-    (await checker.hasGlobalPermission('video:delete_any'))
+    (await checker.hasGlobalPermission(PERM.FEED_MODERATE_GLOBAL)) ||
+    (await checker.hasGlobalPermission(PERM.FEED_PUBLISH_GLOBAL)) ||
+    (await checker.hasGlobalPermission(PERM.VIDEO_DELETE_ANY))
   );
 }
 
@@ -93,21 +94,21 @@ export async function can(userId: number, permission: Permission, options: CanOp
   const checker = options.checker ?? (await resolveChecker(userId));
 
   // Admin shortcut
-  if (await checker.hasGlobalPermission('video:delete_any')) {
+  if (await checker.hasGlobalPermission(PERM.VIDEO_DELETE_ANY)) {
     return true;
   }
 
   // Posting suspension check (affects posting to spaces only)
-  if (permission === 'space:post' || permission === 'video:post_space') {
+  if (permission === PERM.SPACE_POST || permission === PERM.VIDEO_POST_SPACE) {
     if (await isPostingSuspended(userId, spaceId ?? null)) return false;
   }
 
   // Own-type permissions
   if (
-    permission === 'video:publish_own' ||
-    permission === 'video:unpublish_own' ||
-    permission === 'video:edit_own' ||
-    permission === 'video:delete_own'
+    permission === PERM.VIDEO_PUBLISH_OWN ||
+    permission === PERM.VIDEO_UNPUBLISH_OWN ||
+    permission === PERM.VIDEO_EDIT_OWN ||
+    permission === PERM.VIDEO_DELETE_OWN
   ) {
     if (ownerId && ownerId === userId) {
       return checker.hasGlobalPermission(permission);
@@ -117,11 +118,11 @@ export async function can(userId: number, permission: Permission, options: CanOp
 
   // Space-scoped permissions
   const spaceScoped = new Set([
-    'space:manage', 'space:settings_update', 'space:assign_roles', 'space:invite', 'space:kick', 'space:view_private', 'space:view_hidden', 'space:post',
-    'video:review_space', 'video:approve_space', 'video:publish_space', 'video:unpublish_space',
-    'comment:create', 'comment:delete_any', 'comment:moderate',
-    'moderation:comment_creator', 'moderation:suspend_posting', 'moderation:ban',
-    'subscription:manage_plans', 'subscription:view_subscribers', 'subscription:grant_comp', 'subscription:gate_content'
+    PERM.SPACE_MANAGE, 'space:settings_update', PERM.SPACE_ASSIGN_ROLES, PERM.SPACE_INVITE, PERM.SPACE_KICK, PERM.SPACE_VIEW_PRIVATE, PERM.SPACE_VIEW_HIDDEN, PERM.SPACE_POST,
+    PERM.VIDEO_REVIEW_SPACE, PERM.VIDEO_APPROVE_SPACE, PERM.VIDEO_PUBLISH_SPACE, PERM.VIDEO_UNPUBLISH_SPACE,
+    PERM.COMMENT_CREATE, PERM.COMMENT_DELETE_ANY, PERM.COMMENT_MODERATE,
+    'moderation:comment_creator', PERM.MOD_SUSPEND_POSTING, PERM.MOD_BAN,
+    PERM.SUBS_MANAGE_PLANS, PERM.SUBS_VIEW_SUBSCRIBERS, PERM.SUBS_GRANT_COMP, PERM.SUBS_GATE_CONTENT
   ]);
 
   if (spaceScoped.has(permission)) {
