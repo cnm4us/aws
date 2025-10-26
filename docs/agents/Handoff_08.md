@@ -294,6 +294,28 @@ Commit:
 - b9cbc73010dc4226f30ff9e597552475b1724442
 - Committed: 2025-10-26T15:50:16+00:00
 
+Subject: refactor(spaces): move moderation queue to service
+
+Context:
+- Keep routes thin; centralize pending-publications queue with permissions and mapping in spaces service.
+
+Approach:
+- Add spaces.service.moderationQueue(spaceId, currentUserId) with admin/moderator checks and SQL projection for pending items.
+- Delegate GET /api/spaces/:id/moderation/queue to the service; preserve response shape and error mapping.
+
+Impact:
+- No API shape changes; behavior unchanged.
+
+Meta:
+- Affects: src/features/spaces/service.ts; src/routes/spaces.ts; docs/agents/Handoff_08.md
+- Routes: GET /api/spaces/:id/moderation/queue
+- DB: none
+- Flags: none
+
+Commit:
+- 8522e87034e34e0d8be280045cbfeb58adf6b5e5
+- Committed: 2025-10-26T16:22:48+00:00
+
 Subject: refactor(spaces): move subscribers and suspensions endpoints to service
 
 Context:

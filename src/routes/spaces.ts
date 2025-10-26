@@ -231,67 +231,19 @@ spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, re
 // Create new group/channel space
 spacesRouter.post('/api/spaces', requireAuth, async (req, res) => {
   try {
-    const { type, name } = req.body || {};
-    const normalizedType = typeof type === 'string' ? type.trim().toLowerCase() : '';
-    if (normalizedType !== 'group' && normalizedType !== 'channel') {
-      return res.status(400).json({ error: 'invalid_space_type' });
-    }
-    const title = typeof name === 'string' && name.trim().length ? name.trim().slice(0, 120) : null;
-    if (!title) return res.status(400).json({ error: 'invalid_name' });
-
-    const db = getPool();
-    const site = await fetchSiteSettings(db);
-
-    const [userRows] = await db.query(`SELECT can_create_group, can_create_channel FROM users WHERE id = ? LIMIT 1`, [req.user!.id]);
-    const user = (userRows as any[])[0];
-    if (!user) return res.status(401).json({ error: 'user_not_found' });
-
-    const overrideGroup = user.can_create_group == null ? null : Boolean(Number(user.can_create_group));
-    const overrideChannel = user.can_create_channel == null ? null : Boolean(Number(user.can_create_channel));
-
-    let allowed = false;
-    if (normalizedType === 'group') {
-      const baseline = overrideGroup === null ? site.allowGroupCreation : overrideGroup;
-      allowed = baseline && (await can(req.user!.id, 'space:create_group'));
-    } else {
-      const baseline = overrideChannel === null ? site.allowChannelCreation : overrideChannel;
-      allowed = baseline && (await can(req.user!.id, 'space:create_channel'));
-    }
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
-
-    const baseSlug = slugify(title);
-    let slug = baseSlug;
-    let attempt = 1;
-    while (true) {
-      const [exists] = await db.query(`SELECT id FROM spaces WHERE type = ? AND slug = ? LIMIT 1`, [normalizedType, slug]);
-      if (!(exists as any[]).length) break;
-      attempt += 1;
-      slug = `${baseSlug}-${attempt}`;
-    }
-
-    const settings = JSON.stringify(defaultSettings(normalizedType));
-    const [ins] = await db.query(
-      `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
-      [normalizedType, req.user!.id, title, slug, settings]
-    );
-    const space: SpaceRow = { id: (ins as any).insertId as number, type: normalizedType, owner_user_id: req.user!.id };
-
-    await assignDefaultAdminRoles(db, space, req.user!.id);
-
-    res.status(201).json({
-      space: {
-        id: space.id,
-        type: normalizedType,
-        name: title,
-        slug,
-        settings: JSON.parse(settings),
-      },
-    });
+    const { type, name } = (req.body || {}) as any
+    const normalizedType = typeof type === 'string' ? type.trim().toLowerCase() : ''
+    if (normalizedType !== 'group' && normalizedType !== 'channel') return res.status(400).json({ error: 'invalid_space_type' })
+    const title = typeof name === 'string' && name.trim().length ? name.trim().slice(0, 120) : null
+    if (!title) return res.status(400).json({ error: 'invalid_name' })
+    const data = await spacesSvc.createSpace({ type: normalizedType, name: title }, Number(req.user!.id))
+    res.status(201).json(data)
   } catch (err: any) {
-    console.error('create space failed', err);
-    res.status(500).json({ error: 'failed_to_create_space', detail: String(err?.message || err) });
+    console.error('create space failed', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_create_space', detail: String(err?.message || err) })
   }
-});
+})
 
 // List members of a space
 spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res) => {

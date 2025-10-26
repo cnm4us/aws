@@ -7,6 +7,32 @@ import { enhanceUploadRow } from '../../utils/enhance'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
 
+function slugify(input: string): string {
+  return (input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'space'
+}
+
+function defaultSettings(type: 'group' | 'channel'): any {
+  if (type === 'group') {
+    return {
+      visibility: 'private',
+      membership: 'invite',
+      publishing: { requireApproval: false, targets: ['space'] },
+      limits: {},
+    }
+  }
+  return {
+    visibility: 'members_only',
+    membership: 'invite',
+    publishing: { requireApproval: true, targets: ['channel'] },
+    limits: {},
+  }
+}
+
 function parseSettings(space: SpaceRow | null): any {
   if (!space || space.settings == null) return {}
   if (typeof space.settings === 'object') return space.settings
@@ -172,6 +198,59 @@ export async function deleteSpace(spaceId: number, currentUserId: number) {
   await db.query(`DELETE FROM space_invitations WHERE space_id = ?`, [spaceId])
   await db.query(`DELETE FROM spaces WHERE id = ?`, [spaceId])
   return { ok: true }
+}
+
+export async function createSpace(input: { type: 'group' | 'channel'; name: string }, currentUserId: number) {
+  const db = getPool()
+  const t = String(input.type || '').toLowerCase()
+  if (t !== 'group' && t !== 'channel') throw Object.assign(new Error('invalid_space_type'), { code: 'invalid_space_type', status: 400 })
+  const title = typeof input.name === 'string' && input.name.trim().length ? input.name.trim().slice(0, 120) : null
+  if (!title) throw Object.assign(new Error('invalid_name'), { code: 'invalid_name', status: 400 })
+
+  const flags = (await repo.fetchSiteCreationFlags(db)) || { allowGroupCreation: true, allowChannelCreation: true }
+  const [userRows] = await db.query(`SELECT can_create_group, can_create_channel FROM users WHERE id = ? LIMIT 1`, [currentUserId])
+  const user = (userRows as any[])[0]
+  if (!user) throw Object.assign(new Error('user_not_found'), { code: 'user_not_found', status: 401 })
+  const overrideGroup = user.can_create_group == null ? null : Boolean(Number(user.can_create_group))
+  const overrideChannel = user.can_create_channel == null ? null : Boolean(Number(user.can_create_channel))
+
+  const checker = await resolveChecker(currentUserId)
+  let allowed = false
+  if (t === 'group') {
+    const baseline = overrideGroup === null ? flags.allowGroupCreation : overrideGroup
+    allowed = baseline && (await can(currentUserId, 'space:create_group', { checker }))
+  } else {
+    const baseline = overrideChannel === null ? flags.allowChannelCreation : overrideChannel
+    allowed = baseline && (await can(currentUserId, 'space:create_channel', { checker }))
+  }
+  if (!allowed) throw new ForbiddenError()
+
+  const baseSlug = slugify(title)
+  let slug = baseSlug
+  let attempt = 1
+  while (true) {
+    const [exists] = await db.query(`SELECT id FROM spaces WHERE type = ? AND slug = ? LIMIT 1`, [t, slug])
+    if (!(exists as any[]).length) break
+    attempt += 1
+    slug = `${baseSlug}-${attempt}`
+  }
+
+  const settingsJson = JSON.stringify(defaultSettings(t))
+  const [ins] = await db.query(
+    `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
+    [t, currentUserId, title, slug, settingsJson]
+  )
+  const space: SpaceRow = { id: (ins as any).insertId as number, type: t as any, owner_user_id: currentUserId }
+  await assignDefaultMemberRoles(db, space, currentUserId)
+  return {
+    space: {
+      id: space.id,
+      type: t,
+      name: title,
+      slug,
+      settings: JSON.parse(settingsJson),
+    }
+  }
 }
 
 export async function listSubscribers(spaceId: number, currentUserId: number) {
