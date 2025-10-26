@@ -281,36 +281,12 @@ function scryptHash(password: string): string {
 
 adminRouter.get('/users', async (req, res) => {
   try {
-    const db = getPool();
-    const search = (req.query.search ? String(req.query.search) : '').trim();
-    const includeDeleted = String(req.query.include_deleted || '') === '1';
-    const limit = clampLimit(req.query.limit, 50, 1, 200);
-    const offset = Math.max(Number(req.query.offset || 0), 0);
-    const where: string[] = [];
-    const params: any[] = [];
-    if (!includeDeleted) where.push('deleted_at IS NULL');
-    if (search) {
-      where.push('(email LIKE ? OR display_name LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
-    }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const [rows] = await db.query(
-      `SELECT id, email, display_name, created_at, updated_at, deleted_at
-         FROM users
-         ${whereSql}
-         ORDER BY id DESC
-         LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
-    );
-    const users = (rows as any[]).map((r) => ({
-      id: Number(r.id),
-      email: r.email,
-      displayName: r.display_name,
-      createdAt: String(r.created_at),
-      updatedAt: r.updated_at ? String(r.updated_at) : null,
-      deletedAt: r.deleted_at ? String(r.deleted_at) : null,
-    }));
-    res.json({ users, limit, offset });
+    const search = (req.query.search ? String(req.query.search) : '').trim()
+    const includeDeleted = String(req.query.include_deleted || '') === '1'
+    const limit = clampLimit(req.query.limit, 50, 1, 200)
+    const offset = Math.max(Number(req.query.offset || 0), 0)
+    const result = await adminSvc.listUsers({ search, includeDeleted, limit, offset })
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_list_users', detail: String(err?.message || err) });
   }
@@ -318,50 +294,12 @@ adminRouter.get('/users', async (req, res) => {
 
 adminRouter.post('/users', async (req, res) => {
   try {
-    const {
-      email,
-      displayName,
-      password,
-      phoneNumber,
-      verificationLevel,
-      kycStatus,
-      canCreateGroup,
-      canCreateChannel,
-    } = (req.body || {}) as any;
-    const e = String(email || '').trim().toLowerCase();
-    const dn = (displayName ? String(displayName) : '').trim().slice(0, 255);
-    const pw = String(password || '');
-    if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return res.status(400).json({ error: 'invalid_email' });
-    if (!pw || pw.length < 8) return res.status(400).json({ error: 'weak_password', detail: 'min_length_8' });
-    const passwordHash = scryptHash(pw);
-    const db = getPool();
-    // Optional fields
-    const phone = phoneNumber == null || phoneNumber === '' ? null : String(phoneNumber);
-    const verLevel = verificationLevel == null || verificationLevel === '' ? null : Number(verificationLevel);
-    const allowedKyc = new Set(['none','pending','verified','rejected']);
-    const kyc = kycStatus && allowedKyc.has(String(kycStatus)) ? String(kycStatus) : 'none';
-    let cg: number | null = null; let cc: number | null = null;
-    try { if (canCreateGroup !== undefined) cg = toDbValue(toNullableBool(canCreateGroup as any)); } catch {}
-    try { if (canCreateChannel !== undefined) cc = toDbValue(toNullableBool(canCreateChannel as any)); } catch {}
-
-    const [ins] = await db.query(
-      `INSERT INTO users (email, password_hash, display_name, phone_number, verification_level, kyc_status, can_create_group, can_create_channel)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [e, passwordHash, dn || e, phone, verLevel, kyc, cg, cc]
-    );
-    const userId = Number((ins as any).insertId);
-    // Create personal space for the user to align with register route
-    const slug = e.split('@')[0].replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || `user-${userId}`;
-    const settings = { visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true };
-    try {
-      await db.query(
-        `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES ('personal', ?, ?, ?, ?)`,
-        [userId, dn || e, slug, JSON.stringify(settings)]
-      );
-    } catch {}
-    res.status(201).json({ id: userId, email: e, displayName: dn || e });
+    const { email, displayName, password, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel } = (req.body || {}) as any
+    const result = await adminSvc.createUser({ email, displayName, password, phoneNumber, verificationLevel, kycStatus, canCreateGroup, canCreateChannel })
+    res.status(201).json(result)
   } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_create_user', detail: String(err?.message || err) });
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_create_user', detail: err?.detail || String(err?.message || err) })
   }
 });
 

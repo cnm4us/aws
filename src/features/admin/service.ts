@@ -3,6 +3,8 @@ import { assignDefaultAdminRoles, type SpaceRow } from '../../services/spaceMemb
 import { getPool } from '../../db'
 import { defaultSettings, slugify } from '../spaces/util'
 import { DomainError } from '../../core/errors'
+import { clampLimit } from '../../core/pagination'
+import crypto from 'crypto'
 
 export async function listRoles() {
   const roles = await repo.listRoles()
@@ -29,3 +31,43 @@ export async function createSpace(input: { type: 'group' | 'channel'; name: stri
   return { id, type: kind, name: title, slug: normSlug }
 }
 
+export async function listUsers(params: { search?: string; includeDeleted?: boolean; limit?: number; offset?: number }) {
+  const limit = clampLimit(params.limit, 50, 1, 200)
+  const offset = Math.max(Number(params.offset || 0), 0)
+  const rows = await repo.listUsers({ search: (params.search || '').trim() || undefined, includeDeleted: Boolean(params.includeDeleted), limit, offset })
+  const users = rows.map((r: any) => ({
+    id: Number(r.id),
+    email: r.email,
+    displayName: r.display_name,
+    createdAt: String(r.created_at),
+    updatedAt: r.updated_at ? String(r.updated_at) : null,
+    deletedAt: r.deleted_at ? String(r.deleted_at) : null,
+  }))
+  return { users, limit, offset }
+}
+
+function scryptHash(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const N = 16384
+  const hash = crypto.scryptSync(password, salt, 64, { N } as any).toString('hex')
+  return `s2$${N}$${salt}$${hash}`
+}
+
+export async function createUser(input: { email: string; displayName?: string; password: string; phoneNumber?: string | null; verificationLevel?: number | null; kycStatus?: string | null; canCreateGroup?: boolean | null; canCreateChannel?: boolean | null }) {
+  const e = String(input.email || '').trim().toLowerCase()
+  if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw Object.assign(new Error('invalid_email'), { code: 'invalid_email', status: 400 })
+  const pw = String(input.password || '')
+  if (!pw || pw.length < 8) throw Object.assign(new Error('weak_password'), { code: 'weak_password', status: 400, detail: 'min_length_8' })
+  const dn = (input.displayName ? String(input.displayName) : '').trim().slice(0, 255)
+  const passwordHash = scryptHash(pw)
+  const allowedKyc = new Set(['none','pending','verified','rejected'])
+  const kyc = input.kycStatus && allowedKyc.has(String(input.kycStatus)) ? String(input.kycStatus) : 'none'
+  let cg: number | null = null; let cc: number | null = null
+  if (input.canCreateGroup !== undefined) cg = input.canCreateGroup == null ? null : (input.canCreateGroup ? 1 : 0)
+  if (input.canCreateChannel !== undefined) cc = input.canCreateChannel == null ? null : (input.canCreateChannel ? 1 : 0)
+  const userId = await repo.insertUser({ email: e, passwordHash, displayName: dn || e, phoneNumber: input.phoneNumber ?? null, verificationLevel: input.verificationLevel ?? null, kycStatus: kyc, canCreateGroup: cg, canCreateChannel: cc })
+  // Create personal space
+  const slug = e.split('@')[0].replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || `user-${userId}`
+  try { await repo.insertPersonalSpaceForUser(userId, dn || e, slug) } catch {}
+  return { id: userId, email: e, displayName: dn || e }
+}

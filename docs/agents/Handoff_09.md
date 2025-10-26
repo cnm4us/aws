@@ -193,3 +193,28 @@ Meta:
 Commit:
 - eca8d938af331e7aa7c14f95f5695fe136c2eb90
 - Committed: 2025-10-26 19:24:42 +0000
+
+Subject: refactor(admin): add admin service/repo; delegate roles list and admin space creation
+
+Context:
+- Begin modularization of admin routes by extracting roles listing and admin space creation to a feature service/repo.
+
+Approach:
+- Add features/admin/repo.ts (listRoles, isSlugTaken, insertSpace) and features/admin/service.ts (listRoles, createSpace).
+- Update routes/admin.ts to delegate GET /admin/roles and POST /admin/spaces; keep response shapes.
+
+Impact:
+- No API changes; establishes pattern for future admin modularization.
+
+Tests:
+- Build in your environment; verify GET /admin/roles and POST /admin/spaces work as before.
+
+Meta:
+- Affects: src/features/admin/{repo.ts,service.ts}; src/routes/admin.ts; docs/agents/Handoff_09.md
+- Routes: GET /admin/roles; POST /admin/spaces
+- DB: none
+- Flags: none
+
+Commit:
+- 232c51c5dc70699a0c8ec8040380ebbfa9295579
+- Committed: 2025-10-26 19:51:23 +0000
