@@ -229,3 +229,19 @@ Meta:
 Commit:
 - d1f7b5e22e6596a79cbfa9296face6c2fbe22244
 - Committed: 2025-10-26T00:51:17+00:00
+Subject: chore(productions): remove unused imports and legacy mapping from routes
+
+Context:
+- After moving productions list/get/create to features service/repo, the route retained unused imports and mapping helpers.
+
+Approach:
+- Remove unused imports (config OUTPUT_BUCKET, permissions can, db types/getPool) and delete unused mapProduction/safeJson helpers in src/routes/productions.ts.
+
+Impact:
+- No behavior change; routes delegate fully to service; file is slimmer.
+
+Meta:
+- Affects: src/routes/productions.ts; docs/agents/Handoff_08.md
+- Routes: n/a
+- DB: none
+- Flags: none
