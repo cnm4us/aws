@@ -1,4 +1,4 @@
-import { getPool, type DB } from '../../db'
+import { getPool } from '../../db'
 import * as repo from './repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, type SpaceRow, type SpaceType } from '../../services/spaceMembership'

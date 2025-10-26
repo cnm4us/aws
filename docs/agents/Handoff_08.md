@@ -205,3 +205,27 @@ Meta:
 - Routes: POST /api/publications/:id/approve; POST /api/publications/:id/unpublish; POST /api/publications/:id/reject
 - DB: none
 - Flags: none
+
+Subject: chore(publications): remove unused helpers/imports from routes
+
+Context:
+- After migrating publications endpoints to service/repo, routes had dead helpers and type imports.
+
+Approach:
+- Remove mapPublicationRow, local loaders, and related db/permission imports from src/routes/publications.ts. Keep routes thin; delegate DTO shaping and permission checks to the service.
+
+Impact:
+- No behavior change; reduced noise and tighter ownership boundaries.
+
+Tests:
+- Build verified previously; file now imports only what's needed.
+
+Meta:
+- Affects: src/routes/publications.ts
+- Routes: n/a
+- DB: none
+- Flags: none
+
+Commit:
+- d1f7b5e22e6596a79cbfa9296face6c2fbe22244
+- Committed: 2025-10-26T00:51:17+00:00

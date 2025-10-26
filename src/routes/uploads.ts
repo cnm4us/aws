@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { getPool } from '../db';
-import { enhanceUploadRow } from '../utils/enhance';
 import { OUTPUT_BUCKET, UPLOAD_BUCKET } from '../config';
 import { s3 } from '../services/s3';
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3';
