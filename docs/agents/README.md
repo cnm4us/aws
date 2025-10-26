@@ -3,6 +3,16 @@ Start Here — Agent Bootstrap (Every New Thread)
 Purpose
 - Provide a single entry point so you (the agent) load the right operating rules and the most recent handoff, then create a new handoff for this thread. Cross‑thread coherence is the priority.
 
+Quick Start
+- Load rules: read `docs/agents/AGENTS.md` and `docs/agents/Handoff.md`.
+- Find latest `Handoff_N` and create `Handoff_{N+1}` from the template.
+- Update `Handoff_{N+1}` at validated checkpoints (after changes work), not continuously.
+
+Trigger Map
+- New thread → follow Quick Start (above).
+- "Ready to commit" → re-check AGENTS.md commit policy; output one pasteable `git commit` with multiple `-m` blocks.
+- "Commit made" → record hash/timestamp + Meta in the active handoff entry.
+
 Step 1 — Load Operating Rules
 - Read docs/agents/AGENTS.md
   - Permissions: local Git history (log/show/diff/blame) allowed; no destructive or remote Git ops without approval.

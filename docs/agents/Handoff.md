@@ -2,6 +2,7 @@ Thread Continuity Procedures (Handoff Files)
 
 Goal
 - Ensure maximal cross‑thread coherence by carrying forward decisions, context, and machine‑readable metadata. This file defines how to find the latest handoff and how to seed/update the next one.
+ - Reminder: prefer post‑validation updates (after a change is confirmed) over continuous edits; see Update During Thread.
 
 Locate Latest
 1) List files matching docs/agents/Handoff_*.md.
@@ -44,6 +45,7 @@ Decisions (carried + new)
 Changes Since Last
 - Affects: <semicolon‑separated files>
 - Routes: <semicolon‑separated routes>
+  (e.g., GET /api/foo; POST /api/bar)
 - DB: <schema change? none>
 - Flags: <feature flags? none>
 

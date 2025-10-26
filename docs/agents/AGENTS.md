@@ -3,6 +3,13 @@ Agent Operating Guide
 Purpose
 - Define what you (the agent) may do in this repository, how to use Git history for context, and how to format commit messages and handoffs so humans can scan and machines can parse.
 
+Quick Triggers
+- New thread: read `docs/agents/README.md`, `docs/agents/AGENTS.md`, `docs/agents/Handoff.md`; locate latest `Handoff_N`; create `Handoff_{N+1}`.
+- "Ready to commit": refresh commit policy; output one pasteable `git commit` with multiple `-m` blocks; no `git add` unless asked.
+- "Commit made": append commit hash (and timestamp) to the active handoff entry (Meta: Affects/Routes/DB/Flags).
+- Editing `docs/agents/*`: re-check AGENTS.md scope/style and keep changes minimal and scoped.
+- Before destructive or broad refactors: re-check Permission Model and Safety & Scope.
+
 Permission Model
 - History reads: You may read local Git history as needed to do the task.
   - Allowed: git log, git show, git diff, git blame (local only).
@@ -21,6 +28,7 @@ Default Git Workflow
 - Do not duplicate the commit message as plain text in the reply.
 - Omit `git add`/staging commands unless the user asks for them.
 - If the user authorizes auto‑commits in a thread, restrict commits to the paths they specify.
+ - Plans: for multi-step or non-trivial work, use the plan tool to outline steps (keep exactly one step `in_progress`); update the plan only when step state changes.
 
 Commit Message Policy (Conventional Commits + Meta)
 - Subject (first line, ≤50 chars):
@@ -82,6 +90,17 @@ Staging & Partial Commits
   - git diff --staged
   - git commit (paste the prepared message)
 
+Plan Tool (quick example)
+- When: use for multi-step or non-trivial work where sequencing matters or you want intermediate checkpoints.
+- Structure: 4–6 concise steps (≤7 words each); exactly one step `in_progress`, others `pending`/`completed`.
+- Update: mark a step `completed` before starting the next; only update the plan when step state changes.
+- Example steps:
+  1) Parse args — in_progress
+  2) Implement service — pending
+  3) Wire route — pending
+  4) Prepare commit message — pending
+
+
 Use of Git History
 - Proactively use history to:
   - Understand rationale before altering behavior.
@@ -125,3 +144,6 @@ git commit -m "feat(example): concise subject" -m "Context:
 - DB: none
 - Flags: none"
 ```
+
+Quoting tip
+- When quoting inside an `-m "..."` block, use single quotes for the inner quote to avoid breaking the shell, e.g. `-m "another 'important' comment section"`. Avoid nested double quotes unless you escape them.

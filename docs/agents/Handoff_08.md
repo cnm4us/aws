@@ -293,3 +293,25 @@ Meta:
 Commit:
 - 38fcd079eff545d1b1dccf601b5cd1dddf38467d
 - Committed: 2025-10-26T14:49:08+00:00
+
+Subject: feat(publications): implement listByProduction and get in service
+
+Context:
+- Service had placeholders while routes used DTO variants; implement domain methods for upcoming use.
+
+Approach:
+- listByProduction: admin-or-owner permission; load publication IDs and map to full Publication records via repo.getById.
+- get: reuse getForDto to return { publication, events, canRepublishOwner } with consistent permissions.
+
+Impact:
+- Enables future callers to use domain-level methods; no route changes yet.
+
+Meta:
+- Affects: src/features/publications/service.ts
+- Routes: n/a
+- DB: none
+- Flags: none
+
+Commit:
+- 94f06b8c07581e47b53a1791db55ac3e247700fb
+- Committed: 2025-10-26T15:15:03+00:00
