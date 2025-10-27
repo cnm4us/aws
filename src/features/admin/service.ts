@@ -376,3 +376,27 @@ export async function setUserSpaceRoles(spaceId: number, userId: number, roles: 
   if (normalized.length) await assignRoles(db, space, userId, normalized)
   return { ok: true, roles: normalized }
 }
+
+export async function getDevStats() {
+  const db = getPool()
+  const [u] = await db.query(`SELECT COUNT(*) AS c FROM uploads`)
+  const [p] = await db.query(`SELECT COUNT(*) AS c FROM productions`)
+  const [sp] = await db.query(`SELECT COUNT(*) AS c FROM space_publications`)
+  const [spe] = await db.query(`SELECT COUNT(*) AS c FROM space_publication_events`)
+  return {
+    uploads: Number((u as any[])[0]?.c || 0),
+    productions: Number((p as any[])[0]?.c || 0),
+    spacePublications: Number((sp as any[])[0]?.c || 0),
+    spacePublicationEvents: Number((spe as any[])[0]?.c || 0),
+  }
+}
+
+export async function truncateContent() {
+  const db = getPool()
+  const tables = ['space_publication_events', 'space_publications', 'productions', 'uploads', 'action_log']
+  for (const t of tables) {
+    try { await db.query(`DELETE FROM ${t}`) } catch {}
+  }
+  const stats = await getDevStats()
+  return { ok: true, remaining: stats }
+}

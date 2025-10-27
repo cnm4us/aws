@@ -208,17 +208,8 @@ adminRouter.delete('/users/:id/suspensions/:sid', async (req, res) => {
 // ---- Dev utilities: content stats + truncate (admin only) ----
 adminRouter.get('/dev/stats', async (_req, res) => {
   try {
-    const db = getPool();
-    const [u] = await db.query(`SELECT COUNT(*) AS c FROM uploads`);
-    const [p] = await db.query(`SELECT COUNT(*) AS c FROM productions`);
-    const [sp] = await db.query(`SELECT COUNT(*) AS c FROM space_publications`);
-    const [spe] = await db.query(`SELECT COUNT(*) AS c FROM space_publication_events`);
-    res.json({
-      uploads: Number((u as any[])[0]?.c || 0),
-      productions: Number((p as any[])[0]?.c || 0),
-      spacePublications: Number((sp as any[])[0]?.c || 0),
-      spacePublicationEvents: Number((spe as any[])[0]?.c || 0),
-    });
+    const result = await adminSvc.getDevStats()
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_fetch_stats', detail: String(err?.message || err) });
   }
@@ -226,38 +217,23 @@ adminRouter.get('/dev/stats', async (_req, res) => {
 
 adminRouter.post('/dev/truncate-content', async (_req, res) => {
   try {
-    const db = getPool();
-    const tables = ['space_publication_events', 'space_publications', 'productions', 'uploads', 'action_log'];
-    for (const t of tables) {
-      try { await db.query(`DELETE FROM ${t}`); } catch {}
-    }
-    const [u] = await db.query(`SELECT COUNT(*) AS c FROM uploads`);
-    const [p] = await db.query(`SELECT COUNT(*) AS c FROM productions`);
-    const [sp] = await db.query(`SELECT COUNT(*) AS c FROM space_publications`);
-    const [spe] = await db.query(`SELECT COUNT(*) AS c FROM space_publication_events`);
-    res.json({ ok: true, remaining: {
-      uploads: Number((u as any[])[0]?.c || 0),
-      productions: Number((p as any[])[0]?.c || 0),
-      spacePublications: Number((sp as any[])[0]?.c || 0),
-      spacePublicationEvents: Number((spe as any[])[0]?.c || 0),
-    }});
+    const result = await adminSvc.truncateContent()
+    res.json(result)
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_truncate', detail: String(err?.message || err) });
   }
 });
 // Site role assignments for a user (user_roles)
-adminRouter.get('/users/:id/roles', async (req, res) => {
+adminRouter.get('/users/:id/roles', async (req, res, next) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
     const result = await adminSvc.getUserSiteRoles(userId)
     res.json(result)
-  } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_get_user_roles', detail: String(err?.message || err) });
-  }
+  } catch (err) { next(err) }
 });
 
-adminRouter.put('/users/:id/roles', async (req, res) => {
+adminRouter.put('/users/:id/roles', async (req, res, next) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
@@ -265,13 +241,11 @@ adminRouter.put('/users/:id/roles', async (req, res) => {
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     const result = await adminSvc.setUserSiteRoles(userId, parsed.data.roles || [])
     res.json(result)
-  } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_set_user_roles', detail: String(err?.message || err) });
-  }
+  } catch (err) { next(err) }
 });
 
 // Create Group / Channel (admin)
-adminRouter.post('/spaces', async (req, res) => {
+adminRouter.post('/spaces', async (req, res, next) => {
   try {
     const parsed = createSpaceSchema.safeParse(req.body || {})
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
@@ -283,11 +257,7 @@ adminRouter.post('/spaces', async (req, res) => {
     const normalizedSlug = rawSlug
     const space = await adminSvc.createSpace({ type: kind, name: title, slug: normalizedSlug }, Number(req.user!.id))
     res.status(201).json(space)
-  } catch (err: any) {
-    const status = err?.status || 500
-    const code = err?.code || 'failed_to_create_space'
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err) { next(err) }
 });
 
 // ---------- Users ----------
@@ -298,7 +268,7 @@ function scryptHash(password: string): string {
   return `s2$${N}$${salt}$${hash}`;
 }
 
-adminRouter.get('/users', async (req, res) => {
+adminRouter.get('/users', async (req, res, next) => {
   try {
     const search = (req.query.search ? String(req.query.search) : '').trim()
     const includeDeleted = String(req.query.include_deleted || '') === '1'
@@ -306,9 +276,7 @@ adminRouter.get('/users', async (req, res) => {
     const offset = Math.max(Number(req.query.offset || 0), 0)
     const result = await adminSvc.listUsers({ search, includeDeleted, limit, offset })
     res.json(result)
-  } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_list_users', detail: String(err?.message || err) });
-  }
+  } catch (err) { next(err) }
 });
 
 adminRouter.post('/users', async (req, res) => {
@@ -466,39 +434,32 @@ adminRouter.put('/spaces/:id/users/:userId/roles', async (req, res) => {
   }
 });
 
-adminRouter.get('/site-settings', async (_req, res) => {
+adminRouter.get('/site-settings', async (_req, res, next) => {
   try {
     const result = await adminSvc.getSiteSettings()
     res.json(result)
-  } catch (err: any) {
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_fetch_site_settings', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 });
 
-adminRouter.put('/site-settings', async (req, res) => {
+adminRouter.put('/site-settings', async (req, res, next) => {
   try {
-    const result = await adminSvc.setSiteSettings(req.body || {})
+    const parsed = siteSettingsSchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_payload', detail: parsed.error.flatten() })
+    const result = await adminSvc.setSiteSettings(parsed.data)
     res.json(result)
-  } catch (err: any) {
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_update_site_settings', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 });
 
-adminRouter.get('/users/:id/capabilities', async (req, res) => {
+adminRouter.get('/users/:id/capabilities', async (req, res, next) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
     const result = await adminSvc.getUserCapabilities(userId)
     res.json(result)
-  } catch (err: any) {
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_fetch_user_capabilities', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 });
 
-adminRouter.put('/users/:id/capabilities', async (req, res) => {
+adminRouter.put('/users/:id/capabilities', async (req, res, next) => {
   try {
     const userId = Number(req.params.id)
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
@@ -506,37 +467,28 @@ adminRouter.put('/users/:id/capabilities', async (req, res) => {
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
     const result = await adminSvc.setUserCapabilities(userId, parsed.data)
     res.json(result)
-  } catch (err: any) {
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_update_user_capabilities', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 });
 
-adminRouter.get('/spaces', async (req, res) => {
+adminRouter.get('/spaces', async (req, res, next) => {
   try {
     const { type } = req.query as { type?: string }
     const t = type && ['group','channel'].includes(String(type).toLowerCase()) ? (String(type).toLowerCase() as any) : undefined
     const result = await adminSvc.listSpaces(t)
     res.json(result)
-  } catch (err: any) {
-    res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) });
-  }
+  } catch (err) { next(err) }
 });
 
-adminRouter.get('/spaces/:id/members', async (req, res) => {
+adminRouter.get('/spaces/:id/members', async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const result = await adminSvc.listSpaceMembers(spaceId)
     res.json(result)
-  } catch (err: any) {
-    console.error('admin list space members failed', err);
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_list_members', detail: String(err?.message || err) })
-  }
+  } catch (err) { next(err) }
 });
 
-adminRouter.delete('/spaces/:id/members/:userId', async (req, res) => {
+adminRouter.delete('/spaces/:id/members/:userId', async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const userId = Number(req.params.userId)
@@ -544,11 +496,7 @@ adminRouter.delete('/spaces/:id/members/:userId', async (req, res) => {
     if (!Number.isFinite(userId) || userId <= 0) return res.status(400).json({ error: 'bad_user_id' })
     const result = await adminSvc.removeSpaceMember(spaceId, userId)
     res.json(result)
-  } catch (err: any) {
-    console.error('admin remove member failed', err);
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_remove_member', detail: String(err?.message || err) })
-  }
+  } catch (err) { next(err) }
 });
 
 adminRouter.get('/spaces/:id/invitations', async (req, res) => {
