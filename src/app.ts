@@ -57,6 +57,14 @@ export function buildServer(): express.Application {
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 
+  // Centralized error handling: map thrown DomainError to consistent JSON
+  app.use(domainErrorMiddleware);
+  // Fallback: unknown errors
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    try { console.error('Unhandled error', err) } catch {}
+    res.status(err?.status || 500).json({ error: 'internal_error', detail: String(err?.message || err) })
+  });
+
   app.get('/api/me', async (req, res) => {
     try {
       const user = req.user;

@@ -191,7 +191,7 @@ Commit:
 - [P3] Remove stale scaffolding
   - Remove empty `src/models/` directory (now unused) once confirmed clean.
 - [P3] Error handling consistency
-  - Consider centralized error middleware for consistent `{ error, detail, status }` mapping; phase in without changing response shapes.
+  - Implemented: added centralized error middleware to map DomainError to consistent `{ error, detail }` JSON; added fallback 500 handler. Next: phase out route-level try/catch where feasible.
 - [P3] Validation consistency
   - Prefer zod schemas for all route inputs (some routes still parse manually).
 
