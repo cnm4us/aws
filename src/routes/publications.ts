@@ -22,7 +22,7 @@ const createPublicationSchema = z.object({
   distributionFlags: z.any().optional(),
 });
 
-publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, async (req, res, next) => {
   try {
     const uploadId = Number(req.params.uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) {
@@ -36,12 +36,7 @@ publicationsRouter.post('/api/uploads/:uploadId/publications', requireAuth, asyn
     const userId = Number(req.user!.id)
     const publication = await pubsSvc.createFromUpload({ uploadId, spaceId, visibility, distributionFlags }, { userId })
     res.status(201).json({ publication })
-  } catch (err: any) {
-    console.error('create publication failed', err)
-    const code = err?.code || 'failed_to_create_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // New: create publication from a Production (preferred path)
@@ -51,7 +46,7 @@ const createProdPublicationSchema = z.object({
   distributionFlags: z.any().optional(),
 });
 
-publicationsRouter.post('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/productions/:productionId/publications', requireAuth, async (req, res, next) => {
   try {
     const productionId = Number(req.params.productionId)
     if (!Number.isFinite(productionId) || productionId <= 0) {
@@ -65,15 +60,10 @@ publicationsRouter.post('/api/productions/:productionId/publications', requireAu
     const userId = Number(req.user!.id)
     const publication = await pubsSvc.createFromProduction({ productionId, spaceId, visibility, distributionFlags }, { userId })
     res.status(201).json({ publication })
-  } catch (err: any) {
-    console.error('create production publication failed', err)
-    const code = err?.code || 'failed_to_create_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
-publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async (req, res) => {
+publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async (req, res, next) => {
   try {
     const uploadId = Number(req.params.uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) {
@@ -82,16 +72,11 @@ publicationsRouter.get('/api/uploads/:uploadId/publications', requireAuth, async
     const userId = Number(req.user!.id)
     const publications = await pubsSvc.listByUploadDto(uploadId, { userId })
     res.json({ publications })
-  } catch (err: any) {
-    console.error('list publications failed', err)
-    const code = err?.code || 'failed_to_list_publications'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // List publications for a specific production (for production-centric publish page)
-publicationsRouter.get('/api/productions/:productionId/publications', requireAuth, async (req, res) => {
+publicationsRouter.get('/api/productions/:productionId/publications', requireAuth, async (req, res, next) => {
   try {
     const productionId = Number(req.params.productionId)
     if (!Number.isFinite(productionId) || productionId <= 0) {
@@ -100,16 +85,10 @@ publicationsRouter.get('/api/productions/:productionId/publications', requireAut
     const userId = Number(req.user!.id)
     const publications = await pubsSvc.listByProductionDto(productionId, { userId })
     res.json({ publications })
-  } catch (err: any) {
-    // Preserve existing error logging/shape
-    console.error('list production publications failed', err)
-    const code = err?.code || 'failed_to_list_publications'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
-publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) => {
+publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
@@ -118,12 +97,7 @@ publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res) =>
     const userId = Number(req.user!.id)
     const { publication, events, canRepublishOwner } = await pubsSvc.get(publicationId, { userId })
     res.json({ publication, events, canRepublishOwner })
-  } catch (err: any) {
-    console.error('get publication failed', err)
-    const code = err?.code || 'failed_to_get_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 });
 
 const noteSchema = z.object({
@@ -132,7 +106,7 @@ const noteSchema = z.object({
 
 // legacy requirePublicationPermission removed; routes now delegate to service for permission checks
 
-publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
@@ -146,15 +120,10 @@ publicationsRouter.post('/api/publications/:id/approve', requireAuth, async (req
       try { await pubsSvc.recordNoteEvent(publicationId, userId, 'approve_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
-  } catch (err: any) {
-    console.error('approve publication failed', err)
-    const code = err?.code || 'failed_to_approve_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
-publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
@@ -168,15 +137,10 @@ publicationsRouter.post('/api/publications/:id/unpublish', requireAuth, async (r
       try { await pubsSvc.recordNoteEvent(publicationId, userId, 'unpublish_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
-  } catch (err: any) {
-    console.error('unpublish publication failed', err)
-    const code = err?.code || 'failed_to_unpublish_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
-publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
@@ -189,12 +153,7 @@ publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req,
       try { await pubsSvc.recordNoteEvent(publicationId, userId, 'reject_publication', note.data.note) } catch {}
     }
     res.json({ publication: updated })
-  } catch (err: any) {
-    console.error('reject publication failed', err)
-    const code = err?.code || 'failed_to_reject_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Republish endpoint
@@ -203,7 +162,7 @@ publicationsRouter.post('/api/publications/:id/reject', requireAuth, async (req,
 //   - If space requires review, set to 'pending' (requested_by=owner), otherwise publish immediately.
 // - Moderators/admins with video:publish_space (or site admin) may republish immediately regardless of review requirement.
 // - When status is 'rejected', owner may NOT republish; moderators may republish.
-publicationsRouter.post('/api/publications/:id/republish', requireAuth, async (req, res) => {
+publicationsRouter.post('/api/publications/:id/republish', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)
     if (!Number.isFinite(publicationId) || publicationId <= 0) {
@@ -212,10 +171,5 @@ publicationsRouter.post('/api/publications/:id/republish', requireAuth, async (r
     const userId = Number(req.user!.id)
     const updated = await pubsSvc.republish(publicationId, { userId })
     res.json({ publication: updated })
-  } catch (err: any) {
-    console.error('republish publication failed', err)
-    const code = err?.code || 'failed_to_republish_publication'
-    const status = err?.status || 500
-    res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })

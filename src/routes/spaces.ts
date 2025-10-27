@@ -113,34 +113,27 @@ function mergeChannelEntries(
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-spacesRouter.get('/api/me/spaces', requireAuth, async (req, res) => {
+spacesRouter.get('/api/me/spaces', requireAuth, async (req, res, next) => {
   try {
     const userId = Number(req.user!.id)
     const data = await spacesSvc.getMySpaces(userId)
     res.json(data)
-  } catch (err: any) {
-    console.error('list my spaces failed', err)
-    res.status(500).json({ error: 'failed_to_list_spaces', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // List subscribers for a space (active and recent)
-spacesRouter.get('/api/spaces/:id/subscribers', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/subscribers', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const userId = Number(req.user!.id)
     const data = await spacesSvc.listSubscribers(spaceId, userId)
     res.json(data)
-  } catch (err: any) {
-    console.error('list subscribers failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_list_subscribers', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // List suspensions for a space (optionally only active)
-spacesRouter.get('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/suspensions', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
@@ -148,15 +141,11 @@ spacesRouter.get('/api/spaces/:id/suspensions', requireAuth, async (req, res) =>
     const activeOnly = String(req.query.active || '') === '1' || String(req.query.active || '').toLowerCase() === 'true'
     const data = await spacesSvc.listSuspensions(spaceId, userId, activeOnly)
     res.json(data)
-  } catch (err: any) {
-    console.error('list space suspensions failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_list_suspensions', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Create a suspension (posting or ban) scoped to a space
-spacesRouter.post('/api/spaces/:id/suspensions', requireAuth, async (req, res) => {
+spacesRouter.post('/api/spaces/:id/suspensions', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
@@ -167,15 +156,11 @@ spacesRouter.post('/api/spaces/:id/suspensions', requireAuth, async (req, res) =
     const actorId = Number(req.user!.id)
     const result = await spacesSvc.createSuspension(spaceId, actorId, { userId: targetUserId, kind: String(kind).toLowerCase() as any, degree: degree != null ? Number(degree) : undefined, reason, days: days != null ? Number(days) : undefined })
     res.status(201).json(result)
-  } catch (err: any) {
-    console.error('create space suspension failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_create_suspension', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Revoke a suspension by id (space scoped)
-spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req, res) => {
+spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const sid = Number(req.params.sid)
@@ -184,28 +169,20 @@ spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req,
     const actorId = Number(req.user!.id)
     const result = await spacesSvc.revokeSuspension(spaceId, sid, actorId)
     res.json(result)
-  } catch (err: any) {
-    console.error('revoke space suspension failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_revoke_suspension', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 // Moderation queue for a space (pending publications)
-spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const userId = Number(req.user!.id)
     const data = await spacesSvc.moderationQueue(spaceId, userId)
     res.json(data)
-  } catch (err: any) {
-    console.error('space moderation queue failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_load_queue', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 // Create new group/channel space
-spacesRouter.post('/api/spaces', requireAuth, async (req, res) => {
+spacesRouter.post('/api/spaces', requireAuth, async (req, res, next) => {
   try {
     const { type, name } = (req.body || {}) as any
     const normalizedType = typeof type === 'string' ? type.trim().toLowerCase() : ''
@@ -214,45 +191,33 @@ spacesRouter.post('/api/spaces', requireAuth, async (req, res) => {
     if (!title) return res.status(400).json({ error: 'invalid_name' })
     const data = await spacesSvc.createSpace({ type: normalizedType, name: title }, Number(req.user!.id))
     res.status(201).json(data)
-  } catch (err: any) {
-    console.error('create space failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_create_space', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // List members of a space
-spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/members', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const currentUserId = Number(req.user!.id)
     const data = await spacesSvc.listMembers(spaceId, currentUserId)
     res.json(data)
-  } catch (err: any) {
-    console.error('list members failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_list_members', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Read space settings (space-admin scope)
-spacesRouter.get('/api/spaces/:id/settings', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/settings', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const currentUserId = Number(req.user!.id)
     const data = await spacesSvc.getSettings(spaceId, currentUserId)
     res.json(data)
-  } catch (err: any) {
-    console.error('get space settings failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_get_space_settings', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Update space settings (space-admin scope)
-spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res) => {
+spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
@@ -262,29 +227,21 @@ spacesRouter.put('/api/spaces/:id/settings', requireAuth, async (req, res) => {
     const wantRequire = body.requireReview
     const data = await spacesSvc.updateSettings(spaceId, currentUserId, { commentsPolicy: wantComments, requireReview: wantRequire })
     res.json(data)
-  } catch (err: any) {
-    console.error('update space settings failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_update_space_settings', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
-spacesRouter.get('/api/spaces/:id/invitations', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/invitations', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const currentUserId = Number(req.user!.id)
     const data = await spacesSvc.listInvitations(spaceId, currentUserId)
     res.json(data)
-  } catch (err: any) {
-    console.error('list invitations failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_list_invitations', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Invite a member
-spacesRouter.post('/api/spaces/:id/invitations', requireAuth, async (req, res) => {
+spacesRouter.post('/api/spaces/:id/invitations', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const { userId } = (req.body || {}) as any
@@ -293,15 +250,11 @@ spacesRouter.post('/api/spaces/:id/invitations', requireAuth, async (req, res) =
     const currentUserId = Number(req.user!.id)
     const result = await spacesSvc.inviteMember(spaceId, Number(userId), currentUserId)
     res.status(201).json(result)
-  } catch (err: any) {
-    console.error('create invitation failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_invite_member', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Revoke invitation
-spacesRouter.delete('/api/spaces/:id/invitations/:userId', requireAuth, async (req, res) => {
+spacesRouter.delete('/api/spaces/:id/invitations/:userId', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const inviteeUserId = Number(req.params.userId)
@@ -310,15 +263,11 @@ spacesRouter.delete('/api/spaces/:id/invitations/:userId', requireAuth, async (r
     const currentUserId = Number(req.user!.id)
     const result = await spacesSvc.revokeInvitation(spaceId, inviteeUserId, currentUserId)
     res.json(result)
-  } catch (err: any) {
-    console.error('revoke invitation failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_revoke_invitation', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Accept invitation
-spacesRouter.post('/api/spaces/:id/invitations/:userId/accept', requireAuth, async (req, res) => {
+spacesRouter.post('/api/spaces/:id/invitations/:userId/accept', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const inviteeUserId = Number(req.params.userId)
@@ -327,15 +276,11 @@ spacesRouter.post('/api/spaces/:id/invitations/:userId/accept', requireAuth, asy
     const currentUserId = Number(req.user!.id)
     const result = await spacesSvc.acceptInvitation(spaceId, inviteeUserId, currentUserId)
     res.json(result)
-  } catch (err: any) {
-    console.error('accept invitation failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_accept_invitation', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Decline invitation
-spacesRouter.post('/api/spaces/:id/invitations/:userId/decline', requireAuth, async (req, res) => {
+spacesRouter.post('/api/spaces/:id/invitations/:userId/decline', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     const inviteeUserId = Number(req.params.userId)
@@ -344,15 +289,11 @@ spacesRouter.post('/api/spaces/:id/invitations/:userId/decline', requireAuth, as
     const currentUserId = Number(req.user!.id)
     const result = await spacesSvc.declineInvitation(spaceId, inviteeUserId, currentUserId)
     res.json(result)
-  } catch (err: any) {
-    console.error('decline invitation failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_decline_invitation', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 // Remove a member
-spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, res) => {
+spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id);
     const targetUserId = Number(req.params.userId);
@@ -361,26 +302,18 @@ spacesRouter.delete('/api/spaces/:id/members/:userId', requireAuth, async (req, 
     const currentUserId = Number(req.user!.id)
     const result = await spacesSvc.removeMember(spaceId, targetUserId, currentUserId)
     res.json(result)
-  } catch (err: any) {
-    console.error('remove member failed', err);
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_remove_member', detail: String(err?.message || err) });
-  }
+  } catch (err: any) { next(err) }
 });
 
 // Delete a space
-spacesRouter.delete('/api/spaces/:id', requireAuth, async (req, res) => {
+spacesRouter.delete('/api/spaces/:id', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
     const currentUserId = Number(req.user!.id)
     const data = await spacesSvc.deleteSpace(spaceId, currentUserId)
     res.json(data)
-  } catch (err: any) {
-    console.error('delete space failed', err)
-    const status = err?.status || 500
-    res.status(status).json({ error: err?.code || 'failed_to_delete_space', detail: String(err?.message || err) })
-  }
+  } catch (err: any) { next(err) }
 })
 
 spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
