@@ -84,6 +84,24 @@ export async function canViewSpaceFeed(space: SpaceRow, userId: number): Promise
   return false
 }
 
+// Helper: load a space or throw a domain error with legacy code for route shape compatibility
+export async function loadSpaceOrThrow(spaceId: number): Promise<SpaceRow> {
+  const db = getPool()
+  const space = await loadSpace(spaceId, db)
+  if (!space) {
+    // Preserve legacy error code used by routes
+    throw new DomainError('space_not_found', 'space_not_found', 404)
+  }
+  return space
+}
+
+// Helper: assert that a user can view a space feed; throws DomainError with preserved codes
+export async function assertCanViewSpaceFeed(spaceId: number, userId: number): Promise<void> {
+  const space = await loadSpaceOrThrow(spaceId)
+  const allowed = await canViewSpaceFeed(space, userId)
+  if (!allowed) throw new ForbiddenError('forbidden')
+}
+
 export async function getSettings(spaceId: number, currentUserId: number) {
   const db = getPool()
   const space = await loadSpace(spaceId, db)

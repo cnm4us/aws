@@ -5,6 +5,7 @@ import { can } from '../security/permissions';
 import { enhanceUploadRow } from '../utils/enhance';
 import * as feedsSvc from '../features/feeds/service'
 import * as spacesSvc from '../features/spaces/service'
+import { DomainError } from '../core/errors'
 import {
   assignDefaultAdminRoles,
   assignDefaultMemberRoles,
@@ -316,31 +317,26 @@ spacesRouter.delete('/api/spaces/:id', requireAuth, async (req, res, next) => {
   } catch (err: any) { next(err) }
 })
 
-spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res) => {
+spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res, next) => {
   try {
-    const spaceId = Number(req.params.id);
-    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' });
-
-    const db = getPool();
-    const space = await loadSpace(spaceId, db);
-    if (!space) return res.status(404).json({ error: 'space_not_found' });
-
-    const userId = Number(req.user!.id);
-    const allowed = await spacesSvc.canViewSpaceFeed(space, userId);
-    if (!allowed) return res.status(403).json({ error: 'forbidden' });
+    const spaceId = Number(req.params.id)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    const userId = Number(req.user!.id)
+    await spacesSvc.assertCanViewSpaceFeed(spaceId, userId)
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
     const data = await feedsSvc.getSpaceFeed(spaceId, { limit, cursor })
     res.json(data)
   } catch (err: any) {
-    console.error('space feed failed', err);
-    res.status(500).json({ error: 'failed_to_load_feed', detail: String(err?.message || err) });
+    // Preserve legacy error code shape while using centralized error middleware
+    if (err instanceof DomainError) return next(err)
+    return next(new DomainError(String(err?.message || err), 'failed_to_load_feed', 500))
   }
-});
+})
 
 // Global feed aggregator: includes items explicitly marked visible_in_global and published
-spacesRouter.get('/api/feed/global', requireAuth, async (req, res) => {
+spacesRouter.get('/api/feed/global', requireAuth, async (req, res, next) => {
   try {
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
@@ -348,9 +344,8 @@ spacesRouter.get('/api/feed/global', requireAuth, async (req, res) => {
     const data = await feedsSvc.getGlobalFeed({ limit, cursor })
     res.json(data)
   } catch (err: any) {
-    console.error('global feed failed', err);
-    res.status(500).json({ error: 'failed_to_load_global_feed', detail: String(err?.message || err) });
+    return next(new DomainError(String(err?.message || err), 'failed_to_load_global_feed', 500))
   }
-});
+})
 
 export default spacesRouter;

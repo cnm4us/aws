@@ -42,32 +42,34 @@ Decisions (carried + new)
 - Prefer PERM constants (`src/security/perm.ts`) over string literals across all modules; remove remaining stragglers.
 
 Changes Since Last
-- Affects: 
-- Routes: 
+- Affects: src/routes/spaces.ts; src/features/spaces/service.ts
+- Routes: GET /api/spaces/:id/feed; GET /api/feed/global
 - DB: none
 - Flags: none
 
 Commit Messages (ready to paste)
-Subject: 
+Subject: refactor(spaces): move feed checks to service and use next(err)
 
 Context:
-- 
+- Align feed routes with global DomainError middleware and remove remaining DB access from routes. Preserve legacy error codes for client compatibility.
 
 Approach:
-- 
+- Added service helpers `loadSpaceOrThrow` and `assertCanViewSpaceFeed` to encapsulate space loading and permission checks with DomainError codes.
+- Updated `/api/spaces/:id/feed` to call service, parse pagination, and `next(err)` with legacy code wrapping (`failed_to_load_feed`).
+- Updated `/api/feed/global` to `next(err)` with legacy code wrapping (`failed_to_load_global_feed`).
 
 Impact:
-- 
+- Centralized permission logic; routes are thinner and consistent with error middleware. Response error codes for failures remain stable.
 
 Tests:
-- 
+- Build passes (`npm run build`). Manual check of routes and imports. Recommend E2E smoke for space feed and global feed with pagination.
 
 References:
-- 
+- docs/agents/AGENTS.md commit policy; Handoff_10 backlog P1 items
 
 Meta:
-- Affects: 
-- Routes: 
+- Affects: src/routes/spaces.ts; src/features/spaces/service.ts
+- Routes: GET /api/spaces/:id/feed; GET /api/feed/global
 - DB: none
 - Flags: none
 
@@ -88,4 +90,3 @@ Work Log (optional, terse; reverse‑chronological)
 
 Artifacts (optional)
 <!-- none -->
-
