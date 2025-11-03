@@ -36,6 +36,21 @@ Template — docs/agents/Handoff_{N}.md
 ```
 Handoff {N}
 
+Priority Backlog (Refactor Objectives)
+- Objective:
+  - Organize code to facilitate adding new features and extending existing ones quickly.
+  - Organize code so it’s optimized for agent work: consistent patterns, thin routes, typed services, standard validation and errors.
+- Instructions:
+  - Maintain this Priority Backlog at the top of each Handoff_N.md.
+  - Copy this section forward to Handoff_{N+1}.md at the start of a new thread and update statuses as items complete or are added.
+  - Use P1 for highest‑impact foundation items; P2 for high‑value follow‑ups; P3 for structural polish.
+- P1 (foundation)
+  - [ ] P1.1 — …
+- P2 (high‑value)
+  - [ ] P2.1 — …
+- P3 (polish)
+  - [ ] P3.1 — …
+
 Summary
 - One paragraph framing what changed and why (agent‑oriented; terse).
 
@@ -82,9 +97,10 @@ Git Commands (used when committing)
 - git add <paths>
 - git commit -m "<subject>" -m "<body>" -m "Meta: Affects: …" -m "Meta: Routes: …" -m "Meta: DB: …" -m "Meta: Flags: …"
 
-Open Items / Next Actions
-- [ ] Task …
-- [ ] Task …
+Thread Plan (subset of Backlog)
+- Reference items by Backlog ID (e.g., [P1.2]); keep this list minimal and specific to this thread.
+- [ ] Task … ([P1.x])
+- [ ] Task … ([P2.x])
 
 Work Log (optional, terse; reverse‑chronological)
 - 2025‑MM‑DD HH:MMZ — Short note; files touched.

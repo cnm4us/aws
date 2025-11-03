@@ -1,5 +1,44 @@
 Handoff 09
 
+Priority Backlog (Refactor Objectives)
+- Objective:
+  - Organize code to facilitate adding new features and extending existing ones quickly.
+  - Organize code so it’s optimized for agent work: consistent patterns, thin routes, typed services, standard validation and errors.
+- Instructions:
+  - Maintain this Priority Backlog at the top of each Handoff_N.md.
+  - Copy this section forward to Handoff_{N+1}.md at the start of a new thread and update statuses as items complete or are added.
+  - Use P1 for highest-impact foundation items; P2 for high-value follow‑ups; P3 for structural polish.
+
+- P1 (foundation, highest impact)
+  - [x] Modularize Admin (roles, users, spaces, site settings, capabilities, members/invitations, dev utils) — completed
+  - [x] Add centralized DomainError middleware and register globally — completed
+  - [x] Add Zod validation to admin routes — completed
+  - [x] Add Zod + middleware cleanup to publications, productions, spaces routes — completed (feeds endpoints left as-is)
+  - [ ] Replace remaining permission helpers/strings with PERM and service checks (e.g., remove ensurePermission usage in routes/spaces.ts)
+  - [ ] Convert spaces feed endpoints to next(err) and/or move remaining DB logic behind services while preserving shapes
+
+- P2 (high-value follow-ups)
+  - [ ] DTO typing + mapping: introduce DTO types per feature and centralize mapping in services or small mappers; standardize pagination shapes
+  - [ ] Pagination helpers adoption across lists (clampLimit, parse*Cursor) where missing
+  - [ ] Deprecate legacy /api/publish in favor of POST /api/productions; document deprecation window; keep compatibility
+  - [ ] Document and (optionally) relocate enhanceUploadRow with explicit types (core or uploads util)
+  - [ ] Docs refresh (docs/API.md, docs/Architecture.md) for features/{repo,service}, Zod use, error middleware, admin structure
+
+- P3 (structural polish)
+  - [ ] Feature surface cleanup: add index.ts per feature to simplify imports and exports
+  - [ ] Error code catalog per feature to reduce ad‑hoc error strings
+  - [ ] Remove dead code (e.g., empty src/models/), stale helpers/imports
+
+Thread Plan (subset of Backlog)
+- [P1] Replace remaining permission helpers/strings with PERM and service checks (Backlog: P1)
+- [P1] Convert spaces feed endpoints to next(err) and/or move remaining DB logic behind services (Backlog: P1)
+- [P2] DTO typing + mapping per feature; standardize pagination shapes (Backlog: P2)
+- [P2] Pagination helpers adoption where missing (Backlog: P2)
+- [P2] Deprecate legacy /api/publish; document and keep compatibility (Backlog: P2)
+- [P2] Document and (optionally) relocate enhanceUploadRow with explicit types (Backlog: P2)
+- [P2] Docs refresh: API/Architecture for features pattern, Zod, middleware (Backlog: P2)
+- [P3] Feature export hygiene (index.ts per feature), error code catalog, remove dead code (Backlog: P3)
+
 Summary
 - Bootstrapped new thread per agents README. Reviewed AGENTS.md, Handoff.md, and Handoff_08.md. Audited current routes/services to identify remaining refactor targets. Captured a prioritized backlog to continue modularization and consistency work.
 
@@ -110,32 +149,6 @@ Commit:
 Commit:
 - 77258c725d36c5a84b55d7881fbbf415849f53cc
 - Committed: 2025-10-26 18:43:37 +0000
-
-Open Items / Next Actions
-- [P1] Refactor publish routes to services
-  - Implemented: `/api/publish` delegates to `productions.service.createForPublishRoute(...)` (legacy perms, same shape).
-  - Implemented: `/api/uploads/:id/publish` and `/api/uploads/:id/unpublish` delegate to `publications.service.publishUploadToSpaces(...)` and `.unpublishUploadFromSpaces(...)` (same shapes).
-- [P1] Spaces: finish delegations
-  - Implemented: moved member removal logic into `spaces.service.removeMember(...)`; route delegates.
-  - Ensure space feed permission check remains centralized in `spaces.service` (route already delegates, but keep direct DB usage minimal).
-- [P1] Permissions constants cleanup
-  - Replace string literals like `'space:create_group'` and `'space:create_channel'` with `PERM.SPACE_CREATE_GROUP` / `PERM.SPACE_CREATE_CHANNEL` (and audit for any remaining literals).
-- [P1] Service-level tests (minimal, high-value)
-  - Publications: approve/reject/unpublish/republish/create (owner/moderator/admin paths; last-actor rule).
-  - Productions: create/list/get (permission boundaries).
-  - Spaces: settings update guards; invitations create/revoke/accept/decline; moderation queue; suspensions CRUD.
-  - Uploads: list/get (with publications fan-out), delete S3 failure path (mock s3 client).
-- [P2] Signing flow consolidation
-  - Extract upload DB mutations from `routes/signing.ts` into `features/uploads` (e.g., `createSignedUpload(...)`, `markComplete(id, etag, size)`), preserving current API.
-- [P2] Normalize shared helpers
-  - Implemented: Deduplicated `slugify` and `defaultSettings` into `src/features/spaces/util.ts`; updated spaces service and admin route; removed unused copies from spaces route.
-- [P2] Admin routes modularization (optional)
-  - Implemented (partial): created `features/admin/{repo,service}.ts` with roles listing and admin space creation helpers; routes now delegate for `/admin/roles` and `POST /admin/spaces`.
-  - Implemented (continued): delegated users list/create and site roles GET/PUT to admin service; next candidates are user detail/update/delete, capabilities, site-settings, and space-member management.
-  - Implemented (continued): delegated user detail/update/delete to admin service.
-  - Implemented (continued): delegated site settings GET/PUT to admin service.
-  - Implemented (continued): delegated user capabilities GET/PUT to admin service.
-  - Implemented (continued): delegated admin spaces list/get/update, per-space user roles GET/PUT.
 
 Subject: refactor(admin): delegate site settings GET/PUT to feature service
 
