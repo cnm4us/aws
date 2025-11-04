@@ -44,24 +44,30 @@ Decisions (carried + new)
 
 Changes Since Last
 - Affects: src/routes/spaces.ts; src/features/spaces/service.ts
-- Routes: GET /api/spaces/:id/feed; GET /api/feed/global
+- Routes: GET /api/spaces/:id/feed; GET /api/feed/global; GET /groups/:slug/admin; GET /channels/:slug/admin; GET /groups/:slug/moderation; GET /channels/:slug/moderation
+  - Slug routes perform 302 redirects to canonical `/spaces/:id/...` to keep UI nav logic stable
 - DB: none
 - Flags: none
 
 Commit Messages (ready to paste)
-Subject: refactor(spaces): move feed checks to service and PERM cleanup
+Subject: refactor(spaces): move feed checks to service, PERM cleanup, add slug admin routes
 
 Context:
 - Align feed routes with global DomainError middleware and remove remaining DB access from routes. Preserve legacy error codes for client compatibility.
 
  Approach:
-  - Added service helpers `loadSpaceOrThrow` and `assertCanViewSpaceFeed` to encapsulate space loading and permission checks with DomainError codes.
-  - Updated `/api/spaces/:id/feed` to call service, parse pagination, and `next(err)` with legacy code wrapping (`failed_to_load_feed`).
-  - Updated `/api/feed/global` to `next(err)` with legacy code wrapping (`failed_to_load_global_feed`).
-  - Removed legacy `ensurePermission` helper and unused imports in `routes/spaces.ts`; routes defer to service + PERM-based checks.
+- Added service helpers `loadSpaceOrThrow` and `assertCanViewSpaceFeed` to encapsulate space loading and permission checks with DomainError codes.
+- Updated `/api/spaces/:id/feed` to call service, parse pagination, and `next(err)` with legacy code wrapping (`failed_to_load_feed`).
+- Updated `/api/feed/global` to `next(err)` with legacy code wrapping (`failed_to_load_global_feed`).
+- Removed legacy `ensurePermission` helper and unused imports in `routes/spaces.ts`; routes defer to service + PERM-based checks.
+- Added slug-aware page routes for groups/channels admin and moderation by resolving `(type, slug) → id` before applying existing guards.
+ - Canonicalization: slug routes issue 302 redirects to `/spaces/:id/...`.
+ - Removed client-side slug→id resolution in static admin pages; pages assume numeric ID paths.
 
 Impact:
 - Centralized permission logic; routes are thinner and consistent with error middleware. Response error codes for failures remain stable.
+- Admin UI accessible via `/groups/:slug/admin[...]` and `/channels/:slug/admin[...]` without requiring numeric IDs.
+ - Sidebar/nav now stays on slug paths. Client JS resolves slug→id as needed for API calls.
 
 Tests:
 - Build passes (`npm run build`). Manual check of routes and imports. Recommend E2E smoke for space feed and global feed with pagination.
@@ -71,7 +77,7 @@ References:
 
  Meta:
 - Affects: src/routes/spaces.ts; src/features/spaces/service.ts
-- Routes: GET /api/spaces/:id/feed; GET /api/feed/global
+- Routes: GET /api/spaces/:id/feed; GET /api/feed/global; GET /groups/:slug/admin; GET /channels/:slug/admin; GET /groups/:slug/moderation; GET /channels/:slug/moderation
 - DB: none
 - Flags: none
 

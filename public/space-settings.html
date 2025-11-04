@@ -134,9 +134,11 @@
             })
           } catch(e){ st.textContent='Failed to load subscribers'; st.className='status error'; }
         }
-        setNav();
-        if (sid) { loadSettings(); loadSubs(); }
-        var btn = document.getElementById('saveBtn'); if (btn) btn.addEventListener('click', save);
+        (function init(){
+          setNav();
+          if (sid) { loadSettings(); loadSubs(); }
+          var btn = document.getElementById('saveBtn'); if (btn) btn.addEventListener('click', save);
+        })();
       })();
     </script>
   </body>

@@ -160,7 +160,7 @@
             body.innerHTML = '<tr><td colspan="5">Failed to load queue.</td></tr>';
           }
         }
-        render();
+        (async function init(){ await render(); })();
       })();
     </script>
     </main>

@@ -52,7 +52,8 @@
     }
   }
 
-  setNav();
-  loadSpaceTitle();
-  load();
+  (function init(){
+    setNav();
+    if (sid) { loadSpaceTitle(); load(); }
+  })();
 })();
