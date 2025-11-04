@@ -69,6 +69,12 @@ Impact:
 - Admin UI accessible via `/groups/:slug/admin[...]` and `/channels/:slug/admin[...]` without requiring numeric IDs.
  - Sidebar/nav now stays on slug paths. Client JS resolves slug→id as needed for API calls.
 
+Additional Changes
+- Added missing PERM constants and removed literals in checks:
+  - PERM.SPACE_SETTINGS_UPDATE ('space:settings_update')
+  - PERM.MOD_COMMENT_CREATOR ('moderation:comment_creator')
+  - Updated `src/security/permissions.ts` to use PERM and typed the spaceScoped Set.
+
 Tests:
 - Build passes (`npm run build`). Manual check of routes and imports. Recommend E2E smoke for space feed and global feed with pagination.
 

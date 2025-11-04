@@ -19,6 +19,7 @@ export const PERM = {
   SPACE_MANAGE: 'space:manage',
   SPACE_INVITE: 'space:invite',
   SPACE_KICK: 'space:kick',
+  SPACE_SETTINGS_UPDATE: 'space:settings_update',
   SPACE_ASSIGN_ROLES: 'space:assign_roles',
   SPACE_VIEW_PRIVATE: 'space:view_private',
   SPACE_VIEW_HIDDEN: 'space:view_hidden',
@@ -31,6 +32,7 @@ export const PERM = {
   // Moderation
   MOD_SUSPEND_POSTING: 'moderation:suspend_posting',
   MOD_BAN: 'moderation:ban',
+  MOD_COMMENT_CREATOR: 'moderation:comment_creator',
 
   // Subscription
   SUBS_MANAGE_PLANS: 'subscription:manage_plans',
@@ -49,4 +51,3 @@ export const PERM = {
 } as const
 
 export type PermissionName = typeof PERM[keyof typeof PERM]
-
