@@ -1,8 +1,5 @@
 import { Router } from 'express';
-import { getPool, SpacePublicationStatus, SpacePublicationVisibility } from '../db';
 import { requireAuth } from '../middleware/auth';
-import { can } from '../security/permissions';
-import { enhanceUploadRow } from '../utils/enhance';
 import * as feedsSvc from '../features/feeds/service'
 import * as spacesSvc from '../features/spaces/service'
 import { DomainError } from '../core/errors'
@@ -58,9 +55,7 @@ async function fetchSiteReviewFlags(db: any): Promise<{ requireGroupReview: bool
   };
 }
 
-async function ensurePermission(userId: number, spaceId: number, permission: string): Promise<boolean> {
-  return can(userId, permission as any, { spaceId });
-}
+// legacy ensurePermission removed; routes delegate to services and PERM-based checks
 
 // settings helpers moved to spaces service; legacy copies removed
 

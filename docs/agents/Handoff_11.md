@@ -14,7 +14,8 @@ Priority Backlog (Refactor Objectives)
   - [x] Add centralized DomainError middleware and register globally — completed
   - [x] Add Zod validation to admin routes — completed
   - [x] Add Zod + middleware cleanup to publications, productions, spaces routes — completed (feeds endpoints left as-is)
-  - [ ] Replace remaining permission helpers/strings with PERM and service checks (e.g., remove ensurePermission usage in routes/spaces.ts)
+- [ ] Replace remaining permission helpers/strings with PERM and service checks (e.g., remove ensurePermission usage in routes/spaces.ts)
+  - [x] Remove legacy ensurePermission in routes/spaces.ts; rely on service checks
   - [ ] Convert spaces feed endpoints to next(err) and/or move remaining DB logic behind services while preserving shapes
 
 - P2 (high-value follow-ups)
@@ -48,15 +49,16 @@ Changes Since Last
 - Flags: none
 
 Commit Messages (ready to paste)
-Subject: refactor(spaces): move feed checks to service and use next(err)
+Subject: refactor(spaces): move feed checks to service and PERM cleanup
 
 Context:
 - Align feed routes with global DomainError middleware and remove remaining DB access from routes. Preserve legacy error codes for client compatibility.
 
-Approach:
-- Added service helpers `loadSpaceOrThrow` and `assertCanViewSpaceFeed` to encapsulate space loading and permission checks with DomainError codes.
-- Updated `/api/spaces/:id/feed` to call service, parse pagination, and `next(err)` with legacy code wrapping (`failed_to_load_feed`).
-- Updated `/api/feed/global` to `next(err)` with legacy code wrapping (`failed_to_load_global_feed`).
+ Approach:
+  - Added service helpers `loadSpaceOrThrow` and `assertCanViewSpaceFeed` to encapsulate space loading and permission checks with DomainError codes.
+  - Updated `/api/spaces/:id/feed` to call service, parse pagination, and `next(err)` with legacy code wrapping (`failed_to_load_feed`).
+  - Updated `/api/feed/global` to `next(err)` with legacy code wrapping (`failed_to_load_global_feed`).
+  - Removed legacy `ensurePermission` helper and unused imports in `routes/spaces.ts`; routes defer to service + PERM-based checks.
 
 Impact:
 - Centralized permission logic; routes are thinner and consistent with error middleware. Response error codes for failures remain stable.
@@ -67,7 +69,7 @@ Tests:
 References:
 - docs/agents/AGENTS.md commit policy; Handoff_10 backlog P1 items
 
-Meta:
+ Meta:
 - Affects: src/routes/spaces.ts; src/features/spaces/service.ts
 - Routes: GET /api/spaces/:id/feed; GET /api/feed/global
 - DB: none
