@@ -1,12 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Hls from 'hls.js'
 
-// Lightweight logging helper for field diagnostics
-const FEED_TAG = '[feed]'
-function log(...args: any[]) { try { console.log(FEED_TAG, ...args) } catch {} }
-function warn(...args: any[]) { try { console.warn(FEED_TAG, ...args) } catch {} }
-function error(...args: any[]) { try { console.error(FEED_TAG, ...args) } catch {} }
-
 type UploadItem = {
   id: number
   url: string
@@ -284,18 +278,6 @@ export default function Feed() {
   }, [])
 
   useEffect(() => {
-    // Environment + capability snapshot for diagnostics
-    try {
-      const test = document.createElement('video') as HTMLVideoElement
-      const native = !!(
-        test.canPlayType &&
-        (test.canPlayType('application/vnd.apple.mpegurl') || test.canPlayType('application/x-mpegURL'))
-      )
-      const mse = typeof (window as any).MediaSource !== 'undefined'
-      const hlsjs = !!Hls.isSupported()
-      log('env', { ua: navigator.userAgent, nativeHls: native, mse, hlsjs })
-    } catch {}
-    
     const nexts = [index + 1, index + 2]
     nexts.forEach((i) => {
       const pi = items[i]
@@ -343,7 +325,6 @@ export default function Feed() {
     const v = getVideoEl(i)
     if (!v) return
     try {
-      log('playSlide', { i, id: it.id, pub: it.publicationId ?? null })
       const r = railRef.current
       if (r) {
         Array.from(r.querySelectorAll('video')).forEach((other) => {
@@ -358,20 +339,12 @@ export default function Feed() {
     if (needSrc) {
       const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
       const preferHls = Hls.isSupported() && !preferNativeHls()
-      log('attach source', { i, canNative, hlsSupported: Hls.isSupported(), preferHls, src })
       if (preferHls) {
         // Force hls.js on non‑Safari/Apple platforms
         const prev = hlsByIndexRef.current[i]
         if (prev) { try { prev.detachMedia(); prev.destroy(); } catch {} }
         const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
-        try {
-          h.on(Hls.Events.ERROR, (_evt, data) => {
-            error('hls error', { type: data.type, details: (data as any).details, fatal: data.fatal, code: (data as any).response?.code })
-          })
-          h.on(Hls.Events.MANIFEST_LOADED, (_evt, data: any) => {
-            log('hls manifest loaded', { levels: data?.levels?.length, targetduration: data?.stats?.tload ? undefined : undefined })
-          })
-        } catch {}
+        try { /* no-op diagnostics removed */ } catch {}
         h.loadSource(src)
         h.attachMedia(v)
         hlsByIndexRef.current[i] = h
@@ -399,27 +372,15 @@ export default function Feed() {
       playingIndexRef.current = i
       setPlayingIndex(i)
       setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
-      log('video playing', { i })
     }
-    const onPause = () => { if (playingIndexRef.current === i) { setPlayingIndex(null); log('video pause', { i }) } }
-    const onEnded = () => { if (playingIndexRef.current === i) { setPlayingIndex(null); log('video ended', { i }) } }
-    const onWaiting = () => log('video waiting', { i })
-    const onStalled = () => log('video stalled', { i })
-    const onError = () => error('video error', { i, mediaError: (v as any).error?.message || (v as any).error?.code })
+    const onPause = () => { if (playingIndexRef.current === i) { setPlayingIndex(null) } }
+    const onEnded = () => { if (playingIndexRef.current === i) { setPlayingIndex(null) } }
     try {
       v.addEventListener('playing', onPlaying)
       v.addEventListener('pause', onPause)
       v.addEventListener('ended', onEnded)
-      v.addEventListener('waiting', onWaiting)
-      v.addEventListener('stalled', onStalled)
-      v.addEventListener('error', onError)
     } catch {}
-    try {
-      await v.play()
-      log('play() resolved', { i, muted: v.muted, readyState: v.readyState })
-    } catch (e: any) {
-      error('play() rejected', { i, name: e?.name, message: e?.message })
-    }
+    try { await v.play() } catch {}
   }
 
   function getSlideHeight(): number {
@@ -558,7 +519,6 @@ export default function Feed() {
   const unlock = () => {
     if (unlocked) return
     // Start via the same pipeline used elsewhere so listeners/state are attached
-    log('unlock gesture', { index, haveItem: !!items[index], haveVideo: !!getVideoEl(index) })
     try { void playSlide(index) } catch {}
     setUnlocked(true)
   }
