@@ -44,13 +44,15 @@ Decisions (carried + new)
 
 Changes Since Last
 - Affects: src/routes/spaces.ts; src/features/spaces/service.ts
+  ; frontend/src/app/Feed.tsx
 - Routes: GET /api/spaces/:id/feed; GET /api/feed/global; GET /groups/:slug/admin; GET /channels/:slug/admin; GET /groups/:slug/moderation; GET /channels/:slug/moderation
+  ; UI: feed unlock gesture plays muted synchronously
   - Slug routes perform 302 redirects to canonical `/spaces/:id/...` to keep UI nav logic stable
 - DB: none
 - Flags: none
 
 Commit Messages (ready to paste)
-Subject: refactor(spaces): move feed checks to service, PERM cleanup, add slug admin routes
+Subject: refactor(spaces): move feed checks to service, PERM cleanup, add slug admin routes; fix Chrome first-play gesture
 
 Context:
 - Align feed routes with global DomainError middleware and remove remaining DB access from routes. Preserve legacy error codes for client compatibility.
@@ -62,7 +64,8 @@ Context:
 - Removed legacy `ensurePermission` helper and unused imports in `routes/spaces.ts`; routes defer to service + PERM-based checks.
 - Added slug-aware page routes for groups/channels admin and moderation by resolving `(type, slug) → id` before applying existing guards.
  - Canonicalization: slug routes issue 302 redirects to `/spaces/:id/...`.
- - Removed client-side slug→id resolution in static admin pages; pages assume numeric ID paths.
+- Removed client-side slug→id resolution in static admin pages; pages assume numeric ID paths.
+ - Feed (SPA): first play now starts muted inside unlock click/touch handler to satisfy Chrome autoplay policy; unmute follows via subsequent user action.
 
 Impact:
 - Centralized permission logic; routes are thinner and consistent with error middleware. Response error codes for failures remain stable.
@@ -83,6 +86,7 @@ References:
 
  Meta:
 - Affects: src/routes/spaces.ts; src/features/spaces/service.ts
+  ; frontend/src/app/Feed.tsx
 - Routes: GET /api/spaces/:id/feed; GET /api/feed/global; GET /groups/:slug/admin; GET /channels/:slug/admin; GET /groups/:slug/moderation; GET /channels/:slug/moderation
 - DB: none
 - Flags: none
