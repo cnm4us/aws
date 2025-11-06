@@ -42,6 +42,16 @@ function parseUserIdFromPath(): number | null {
 export default function AdminUserPage() {
   const userId = useMemo(parseUserIdFromPath, [])
   const [detail, setDetail] = useState<UserDetail | null>(null)
+  // Profile edit fields
+  const [pEmail, setPEmail] = useState('')
+  const [pDisplayName, setPDisplayName] = useState('')
+  const [pPhone, setPPhone] = useState('')
+  const [pOrgId, setPOrgId] = useState<string>('')
+  const [pVerificationLevel, setPVerificationLevel] = useState<string>('0')
+  const [pKycStatus, setPKycStatus] = useState<string>('none')
+  const [pPassword, setPPassword] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaved, setProfileSaved] = useState<string | null>(null)
   const [siteRoles, setSiteRoles] = useState<string[]>([])
   const [spaces, setSpaces] = useState<SpaceRole[]>([])
   const [roleCatalog, setRoleCatalog] = useState<RoleCatalogItem[]>([])
@@ -88,6 +98,13 @@ export default function AdminUserPage() {
         const caps = capsRes.ok ? (await capsRes.json()) as any : null
         if (canceled) return
         setDetail(u)
+        // Seed profile form
+        setPEmail(u.email || '')
+        setPDisplayName(u.displayName || '')
+        setPPhone(u.phoneNumber || '')
+        setPOrgId(u.orgId == null ? '' : String(u.orgId))
+        setPVerificationLevel(u.verificationLevel == null ? '0' : String(u.verificationLevel))
+        setPKycStatus(u.kycStatus || 'none')
         setSiteRoles(roles)
         setSpaces(s)
         setRoleCatalog(rc)
@@ -148,6 +165,49 @@ export default function AdminUserPage() {
     } finally { setCapSaving(false) }
   }
 
+  const profileDirty = useMemo(() => {
+    if (!detail) return false
+    const eq = (a: any, b: any) => String(a ?? '') === String(b ?? '')
+    if (!eq(pEmail, detail.email)) return true
+    if (!eq(pDisplayName, detail.displayName)) return true
+    if (!eq(pPhone, detail.phoneNumber)) return true
+    if (!eq(pOrgId, detail.orgId == null ? '' : String(detail.orgId))) return true
+    if (!eq(pVerificationLevel, detail.verificationLevel == null ? '0' : String(detail.verificationLevel))) return true
+    if (!eq(pKycStatus, detail.kycStatus || 'none')) return true
+    if (pPassword && pPassword.length > 0) return true
+    return false
+  }, [detail, pEmail, pDisplayName, pPhone, pOrgId, pVerificationLevel, pKycStatus, pPassword])
+
+  async function saveProfile() {
+    if (!detail || !userId || profileSaving) return
+    setProfileSaving(true); setProfileSaved(null)
+    try {
+      const body: any = {}
+      if (pEmail !== detail.email) body.email = pEmail
+      if (pDisplayName !== (detail.displayName || '')) body.displayName = pDisplayName
+      if (pPhone !== (detail.phoneNumber || '')) body.phoneNumber = pPhone || null
+      if ((detail.orgId == null ? '' : String(detail.orgId)) !== pOrgId) body.orgId = pOrgId === '' ? null : Number(pOrgId)
+      if ((detail.verificationLevel == null ? '0' : String(detail.verificationLevel)) !== pVerificationLevel) body.verificationLevel = Number(pVerificationLevel)
+      if ((detail.kycStatus || 'none') !== pKycStatus) body.kycStatus = pKycStatus
+      if (pPassword) body.password = pPassword
+      const csrf = getCsrfToken()
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+        credentials: 'same-origin',
+        body: JSON.stringify(body)
+      })
+      if (!res.ok) throw new Error('save_profile_failed')
+      setProfileSaved('Saved')
+      setTimeout(() => setProfileSaved(null), 1200)
+      // Update local baseline (avoid reloading for now)
+      setDetail({ ...detail, email: body.email ?? detail.email, displayName: body.displayName ?? detail.displayName, phoneNumber: body.phoneNumber ?? detail.phoneNumber, orgId: (body.hasOwnProperty('orgId') ? body.orgId : detail.orgId), verificationLevel: (body.hasOwnProperty('verificationLevel') ? body.verificationLevel : detail.verificationLevel), kycStatus: body.kycStatus ?? detail.kycStatus })
+      if (pPassword) setPPassword('')
+    } catch (e) {
+      setProfileSaved('Failed')
+    } finally { setProfileSaving(false) }
+  }
+
   if (!userId) {
     return <div style={{ padding: 16, color: '#fff' }}>Invalid user id.</div>
   }
@@ -164,18 +224,53 @@ export default function AdminUserPage() {
       {detail && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
           <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Profile</div>
-            <div>Email: {detail.email}</div>
-            <div>Display Name: {detail.displayName || ''}</div>
-            <div>Phone: {detail.phoneNumber || ''}</div>
-            <div>Org ID: {detail.orgId ?? ''}</div>
+            <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Profile</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={saveProfile} disabled={!profileDirty || profileSaving} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: profileDirty ? '#1976d2' : 'rgba(255,255,255,0.08)', color: '#fff' }}>{profileSaving ? 'Saving…' : 'Save'}</button>
+                {profileSaved && <span style={{ fontSize: 12, opacity: 0.8 }}>{profileSaved}</span>}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span>Email</span>
+                <input value={pEmail} onChange={(e) => setPEmail(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span>Display Name</span>
+                <input value={pDisplayName} onChange={(e) => setPDisplayName(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span>Phone</span>
+                <input value={pPhone} onChange={(e) => setPPhone(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span>Org ID</span>
+                <input value={pOrgId} onChange={(e) => setPOrgId(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="(optional)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span>Password</span>
+                <input type="password" value={pPassword} onChange={(e) => setPPassword(e.target.value)} placeholder="(leave blank to keep)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+              </label>
+            </div>
           </div>
           <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Verification</div>
             <div>Email Verified: {detail.emailVerifiedAt ? 'Yes' : 'No'}</div>
             <div>Phone Verified: {detail.phoneVerifiedAt ? 'Yes' : 'No'}</div>
-            <div>Level: {detail.verificationLevel ?? 0}</div>
-            <div>KYC: {detail.kycStatus ?? 'none'}</div>
+            <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              <span>Level</span>
+              <input value={pVerificationLevel} onChange={(e) => setPVerificationLevel(e.target.value.replace(/[^0-9-]/g, ''))} style={{ width: 120, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              <span>KYC</span>
+              <select value={pKycStatus} onChange={(e) => setPKycStatus(e.target.value)} style={{ width: 200, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }}>
+                <option value="none">none</option>
+                <option value="pending">pending</option>
+                <option value="verified">verified</option>
+                <option value="rejected">rejected</option>
+              </select>
+            </label>
           </div>
           <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Capabilities</div>

@@ -106,7 +106,8 @@ Meta:
 - [x] Bridge — Add universal nav to static admin/space pages
 - [x] Admin Users (SPA beta) — add /adminx/users list (read-only)
 - [x] Admin User Detail (SPA beta) — add /adminx/users/:id (read-only)
- - [x] Admin User (SPA beta) — edit site roles and capabilities
+- [x] Admin User (SPA beta) — edit site roles and capabilities
+ - [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -163,6 +164,17 @@ Description:
 
 Keywords:
 ui, admin, routing, layout, state, props
+
+Prepared Commit Message — Admin User (SPA beta) profile edits (ready to paste)
+Subject: feat(ui): editable profile fields in SPA Admin User
+
+Description:
+- Adds profile form to `frontend/src/app/AdminUser.tsx` for email, display name, phone, orgId, verification level, KYC status, and optional password.
+- Saves changes to `/api/admin/users/:id` via PUT with CSRF header; only changed fields are sent; updates local baseline on success.
+- Keeps roles/capabilities editing from prior step; read-only sections remain for meta and space roles.
+
+Keywords:
+ui, admin, routing, layout, state, props, forms
 
 Prepared Commit Message — Step 4 (completed)
 Subject: perf(frontend): add hover/idle prefetch for lazy routes; wire SharedNav prefetch
