@@ -1038,7 +1038,7 @@ export default function Feed() {
   }
 
   const navLinks = [
-    { label: 'My Uploads', href: '/videos', enabled: true },
+    { label: 'My Uploads', href: '/uploads', enabled: true },
   ]
 
   const upcomingLinks = [
