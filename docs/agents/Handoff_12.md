@@ -43,6 +43,7 @@ Decisions (carried + new)
 Changes Since Last
 - Affects: frontend/src/app/Feed.tsx; frontend/src/ui/SharedNav.tsx; frontend/src/ui/Layout.tsx; frontend/src/main.tsx
   ; public/js/universal-nav.js; public/admin-*.html; public/space-*.html
+  ; frontend/src/ui/Skeletons.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -113,6 +114,17 @@ Description:
 
 Keywords:
 layout, routing, performance
+
+Prepared Commit Message — Route Skeletons (ready to paste)
+Subject: style(ui): add route-specific Suspense skeletons for non-feed pages
+
+Description:
+- Introduces lightweight skeletons for Uploads, UploadNew, Productions, and Publish in `frontend/src/ui/Skeletons.tsx`.
+- Replaces generic Suspense fallbacks in `frontend/src/main.tsx` to show per-page placeholders during lazy load.
+- Keeps Layout-driven universal menu visible while content loads; no behavioral changes.
+
+Keywords:
+layout, performance, loading-state
 
 Prepared Commit Message — Step 4 (completed)
 Subject: perf(frontend): add hover/idle prefetch for lazy routes; wire SharedNav prefetch

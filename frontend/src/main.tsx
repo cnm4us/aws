@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish } from './ui/routes'
+import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -36,7 +37,7 @@ if (path === '/' || path === '') {
 } else if (path.startsWith('/uploads/new')) {
   root.render(
     <Layout label="New Upload">
-      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+      <Suspense fallback={<UploadNewSkeleton />}> 
         <UploadNewPage />
       </Suspense>
     </Layout>
@@ -51,7 +52,7 @@ if (path === '/' || path === '') {
     }, [])
     return (
       <Layout label="Uploads">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+        <Suspense fallback={<UploadsSkeleton />}> 
           <UploadsPage />
         </Suspense>
       </Layout>
@@ -61,7 +62,7 @@ if (path === '/' || path === '') {
 } else if (path.startsWith('/productions')) {
   root.render(
     <Layout label="Productions">
-      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+      <Suspense fallback={<ProductionsSkeleton />}> 
         <ProductionsPage />
       </Suspense>
     </Layout>
@@ -69,7 +70,7 @@ if (path === '/' || path === '') {
 } else if (path.startsWith('/publish')) {
   root.render(
     <Layout label="Publish">
-      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+      <Suspense fallback={<PublishSkeleton />}> 
         <PublishPage />
       </Suspense>
     </Layout>
