@@ -108,3 +108,51 @@ Work Log (optional, terse; reverse‑chronological)
 
 Artifacts (optional)
 <!-- none -->
+
+Refactor Plan — App Shell + Lazy Routes (Ready)
+- Pre‑flight (validated):
+  - History fallback: server returns SPA shell for `/, /uploads, /productions, /publish` (direct reload OK).
+  - Cleanup hooks: feed detaches hls.js, observers, timers on route change (no .m3u8/.ts after leaving; media‑internals clean).
+  - Playback: Windows Chrome uses hls.js; iOS uses native HLS; unlock respected; first‑visit + snapshot restore are stable.
+  - CORS: CloudFront CORS headers in place for `*.m3u8/*.ts` (ACAO, expose headers, OPTIONS allowed).
+  - Snapshot TTL: configurable via `VITE_FEED_SNAPSHOT_TTL_MS` (default 5m).
+
+- Phase 1 — App Shell + Router
+  - Extract `Layout` (both nav bars + providers) and wrap SPA routes.
+  - Keep routes: `/` (feed), `/uploads`, `/productions`, `/publish`.
+  - Add Suspense skeletons for route transitions; add top‑level error boundary.
+
+- Phase 2 — Code‑splitting + Preload
+  - Convert features to `React.lazy()`; split feed (hls.js), uploads, productions, publish into separate chunks.
+  - Add hover/idle preloading for likely next routes; small route skeletons.
+
+- Phase 3 — Nav across admin/space pages (bridge)
+  - Option A (bridge now): ship small web components `<app-nav>` + `<feed-switcher>` to static admin/space HTML; consume `/api/me` + `/api/me/spaces`.
+  - Option B (migrate later): move admin/space pages into SPA routes incrementally; keep existing server guards.
+
+- Phase 4 — Migrate admin/space pages (incremental)
+  - Admin: users, roles, site settings, spaces, members; Space: members, settings, moderation.
+  - Decommission static HTML per section as the SPA route reaches parity.
+
+- Phase 5 — Perf/Polish
+  - Bundle analysis (vite visualizer); ensure hls.js confined to feed chunk; admin tooling in admin chunk.
+  - Overlay dismissal tuned to `playing` for Global restores; snap/smooth re‑enable after overlay hides.
+  - Strict cleanup on route change (hls detach, IO disconnect, cancel RAF/timers) enforced in shell.
+
+Implementation Checklist (initial thread)
+1) Create `Layout` with both nav bars and wrap existing SPA pages
+2) Add React Router (or minimal route switch) + Suspense skeletons
+3) Lazy‑load feature routes; verify chunking and fallbacks
+4) Add small preload helpers (hover/idle)
+5) Optional bridge: web component nav for static admin/space pages
+
+Acceptance Criteria
+- Navigating between `/`, `/uploads`, `/productions`, `/publish` keeps both nav bars present; route transitions show skeletons (no blank/flicker).
+- Initial JS served is limited to shell + route chunk; other chunks load on demand.
+- Leaving the feed stops media/network activity; returning restores position cleanly (snapshot/overlay).
+- Static admin/space pages either include nav (bridge) or are SPA routes.
+
+Risks & Mitigations
+- Multiple media layers: enforce single active feed layer; detach hls on hide.
+- Memory: cap snapshot cache (size 8) and items window (~150); TTL tunable.
+- Deep links: keep pagesRouter mappings; server returns SPA shell for new routes.
