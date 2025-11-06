@@ -169,6 +169,105 @@ export default function Feed() {
 
   const spacesStatusRef = useRef<{ loading: boolean; loaded: boolean }>({ loading: false, loaded: false })
 
+  // ------- Per‑feed UI snapshot cache to avoid visible rewind on revisit -------
+  type FeedSnapshot = { items: UploadItem[]; cursor: string | null; index: number; scrollTop: number; savedAt: number; anchorId: number | null }
+  // Snapshot TTL (ms) can be configured via Vite env: VITE_FEED_SNAPSHOT_TTL_MS
+  const SNAPSHOT_TTL_MS = (() => {
+    try {
+      const raw = (import.meta as any)?.env?.VITE_FEED_SNAPSHOT_TTL_MS
+      const n = typeof raw === 'string' ? Number(raw) : undefined
+      return Number.isFinite(n) && (n as number) > 0 ? (n as number) : 5 * 60 * 1000
+    } catch { return 5 * 60 * 1000 }
+  })()
+  const SNAPSHOT_MAX = 8
+  const snapshotsRef = useRef<Map<string, FeedSnapshot>>(new Map())
+  const restoredRef = useRef<boolean>(false)
+  const [restoring, setRestoring] = useState<boolean>(false)
+  const [restorePoster, setRestorePoster] = useState<string | null>(null)
+  const firstVisitKeyRef = useRef<string | null>(null)
+
+  function feedKey(m: FeedMode): string {
+    return m.kind === 'space' ? `s:${m.spaceId}` : 'g'
+  }
+
+  function hasSnapshot(mode: FeedMode): boolean {
+    const key = feedKey(mode)
+    const snap = snapshotsRef.current.get(key)
+    return !!(snap && (Date.now() - snap.savedAt <= SNAPSHOT_TTL_MS))
+  }
+
+  function trimItems(src: UploadItem[], anchor: number): UploadItem[] {
+    const MAX = 150
+    if (src.length <= MAX) return src.slice()
+    const half = Math.floor(MAX / 2)
+    const start = Math.max(0, Math.min(src.length - MAX, anchor - half))
+    return src.slice(start, start + MAX)
+  }
+
+  function saveSnapshot() {
+    const key = feedKey(feedMode)
+    const r = railRef.current
+    if (!r || !items.length) return
+    const kept = trimItems(items, index)
+    const anchorItem = items[index]
+    const anchorId = anchorItem ? (anchorItem.publicationId ?? anchorItem.id) : null
+    let newIndex = Math.min(index, kept.length - 1)
+    if (anchorId != null) {
+      const found = kept.findIndex((it) => (it.publicationId ?? it.id) === anchorId)
+      if (found >= 0) newIndex = found
+    }
+    const snap: FeedSnapshot = { items: kept, cursor, index: newIndex, scrollTop: r.scrollTop, savedAt: Date.now(), anchorId }
+    const map = snapshotsRef.current
+    map.set(key, snap)
+    while (map.size > SNAPSHOT_MAX) {
+      const firstKey = map.keys().next().value as string | undefined
+      if (!firstKey) break
+      map.delete(firstKey)
+    }
+  }
+
+  function tryRestoreFor(mode: FeedMode): boolean {
+    const key = feedKey(mode)
+    const snap = snapshotsRef.current.get(key)
+    if (!snap) return false
+    if (Date.now() - snap.savedAt > SNAPSHOT_TTL_MS) return false
+    setItems(snap.items)
+    setCursor(snap.cursor)
+    setIndex(Math.max(0, Math.min(snap.index, snap.items.length - 1)))
+    const until = Date.now() + 700
+    ignoreScrollUntil.current = until
+    ignoreIoUntil.current = until
+    // Reanchor by index using layout timing and show a poster overlay to prevent flashes
+    const anchor = snap.items[Math.max(0, Math.min(snap.index, snap.items.length - 1))]
+    const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
+    setRestorePoster(poster)
+    setRestoring(true)
+    requestAnimationFrame(() => {
+      const targetIndex = Math.max(0, Math.min(snap.index, snap.items.length - 1))
+      try { reanchorToIndex(targetIndex) } catch {}
+      const v = getVideoEl(targetIndex)
+      let doneOnce = false
+      const done = () => {
+        if (doneOnce) return; doneOnce = true
+        setRestoring(false)
+        setRestorePoster(null)
+        if (v) {
+          try { v.removeEventListener('playing', done) } catch {}
+          try { v.removeEventListener('loadeddata', done) } catch {}
+        }
+      }
+      if (v) {
+        try { v.addEventListener('playing', done, { once: true } as any) } catch { try { v.addEventListener('playing', done) } catch {} }
+        try { v.addEventListener('loadeddata', done, { once: true } as any) } catch { try { v.addEventListener('loadeddata', done) } catch {} }
+      }
+      // Fallback timeout in case events don’t fire
+      setTimeout(done, 900)
+    })
+    setInitialLoading(false)
+    restoredRef.current = true
+    return true
+  }
+
   const loadSpaces = useCallback(async (force = false) => {
     if (!isAuthed) return
     if (spacesStatusRef.current.loading) return
@@ -232,6 +331,10 @@ export default function Feed() {
   useEffect(() => {
     let canceled = false
     const load = async () => {
+      // Fast restore path: reuse prior UI state when available to avoid visible rewind
+      if (!canceled && tryRestoreFor(feedMode)) {
+        return
+      }
       try {
         setInitialLoading(true)
         setLoadingMore(false)
@@ -255,7 +358,32 @@ export default function Feed() {
         setItems(fetchedItems)
         setCursor(nextCursor)
         setIndex(0)
-        railRef.current && (railRef.current.scrollTop = 0)
+        const fk = firstVisitKeyRef.current
+        if (fk && fk === feedKey(feedMode)) {
+          const anchor = fetchedItems[0]
+          const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
+          setRestorePoster(poster)
+          requestAnimationFrame(() => {
+            try { reanchorToIndex(0) } catch {}
+            const v = getVideoEl(0)
+            let doneOnce = false
+            const done = () => {
+              if (doneOnce) return; doneOnce = true
+              setRestoring(false)
+              setRestorePoster(null)
+              setSnapEnabled(true)
+              setSmoothEnabled(true)
+              firstVisitKeyRef.current = null
+            }
+            if (v) {
+              try { v.addEventListener('playing', done, { once: true } as any) } catch { try { v.addEventListener('playing', done) } catch {} }
+              try { v.addEventListener('loadeddata', done, { once: true } as any) } catch { try { v.addEventListener('loadeddata', done) } catch {} }
+            }
+            setTimeout(done, 900)
+          })
+        } else {
+          railRef.current && (railRef.current.scrollTop = 0)
+        }
       } catch (err) {
         if (canceled) return
         console.error('initial feed load failed', err)
@@ -744,6 +872,24 @@ export default function Feed() {
   }
 
   const handleSelectSpace = (spaceId: number) => {
+    saveSnapshot()
+    const target: FeedMode = { kind: 'space', spaceId }
+    if (!hasSnapshot(target)) {
+      firstVisitKeyRef.current = feedKey(target)
+      setRestorePoster(null)
+      setRestoring(true)
+      setSnapEnabled(false)
+      setSmoothEnabled(false)
+      setIndex(0)
+      setStartedMap({})
+      setPlayingIndex(null)
+      const r = railRef.current; if (r) r.scrollTop = 0
+      const until = Date.now() + 700
+      ignoreScrollUntil.current = until
+      ignoreIoUntil.current = until
+    } else {
+      firstVisitKeyRef.current = null
+    }
     setFeedMode({ kind: 'space', spaceId })
     setDrawerOpen(false)
   }
@@ -751,6 +897,24 @@ export default function Feed() {
   // Legacy feed removed
 
   const handleSelectGlobal = () => {
+    saveSnapshot()
+    const target: FeedMode = { kind: 'global' }
+    if (!hasSnapshot(target)) {
+      firstVisitKeyRef.current = feedKey(target)
+      setRestorePoster(null)
+      setRestoring(true)
+      setSnapEnabled(false)
+      setSmoothEnabled(false)
+      setIndex(0)
+      setStartedMap({})
+      setPlayingIndex(null)
+      const r = railRef.current; if (r) r.scrollTop = 0
+      const until = Date.now() + 700
+      ignoreScrollUntil.current = until
+      ignoreIoUntil.current = until
+    } else {
+      firstVisitKeyRef.current = null
+    }
     setFeedMode({ kind: 'global' })
     setDrawerOpen(false)
   }
@@ -1123,6 +1287,19 @@ export default function Feed() {
             Close
           </button>
         </div>
+      )}
+      {restoring && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1500,
+            background: restorePoster ? `#000 url('${restorePoster}') center / cover no-repeat` : '#000',
+            transition: 'opacity 160ms ease',
+            opacity: 1,
+            pointerEvents: 'none',
+          }}
+        />
       )}
       <style>{`
         .slide{position:relative; width:100vw; height:100dvh; scroll-snap-align:start; scroll-snap-stop:always; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
