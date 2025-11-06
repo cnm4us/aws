@@ -46,6 +46,9 @@ pagesRouter.get('/adminx/users', (_req, res) => {
 pagesRouter.get('/adminx/users/:id', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
+pagesRouter.get('/adminx/settings', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
 pagesRouter.get('/admin/users/new', (_req, res) => {
   serveHtml(res, 'admin-user-new.html');
 });

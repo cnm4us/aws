@@ -45,6 +45,7 @@ Changes Since Last
   ; public/js/universal-nav.js; public/admin-*.html; public/space-*.html
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
+  ; frontend/src/app/AdminSiteSettings.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -107,7 +108,8 @@ Meta:
 - [x] Admin Users (SPA beta) — add /adminx/users list (read-only)
 - [x] Admin User Detail (SPA beta) — add /adminx/users/:id (read-only)
 - [x] Admin User (SPA beta) — edit site roles and capabilities
- - [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
+- [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
+ - [x] Admin Site Settings (SPA beta) — read/edit toggles at /adminx/settings
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -172,6 +174,17 @@ Description:
 - Adds profile form to `frontend/src/app/AdminUser.tsx` for email, display name, phone, orgId, verification level, KYC status, and optional password.
 - Saves changes to `/api/admin/users/:id` via PUT with CSRF header; only changed fields are sent; updates local baseline on success.
 - Keeps roles/capabilities editing from prior step; read-only sections remain for meta and space roles.
+
+Keywords:
+ui, admin, routing, layout, state, props, forms
+
+Prepared Commit Message — Admin Site Settings (SPA beta) (ready to paste)
+Subject: feat(ui): add SPA Admin Site Settings with editable toggles
+
+Description:
+- Adds `frontend/src/app/AdminSiteSettings.tsx` to view and update global flags via `/api/admin/site-settings` (GET/PUT).
+- Wires `/adminx/settings` to SPA shell under site-admin guard and adds lazy-loaded route in `frontend/src/main.tsx`.
+- Provides Save with CSRF header and simple “Saved/Failed” feedback; keeps legacy page available at /admin/settings.
 
 Keywords:
 ui, admin, routing, layout, state, props, forms

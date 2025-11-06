@@ -4,6 +4,7 @@ import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish } fr
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
+const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -96,10 +97,20 @@ if (path === '/' || path === '') {
     )
   }
 } else {
+  if (path.startsWith('/adminx/settings')) {
+    root.render(
+      <Layout label="Admin • Site Settings (SPA)">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <AdminSiteSettingsPage />
+        </Suspense>
+      </Layout>
+    )
+  } else {
   // Fallback: render Feed for unknown routes while preserving shell behavior.
   root.render(
     <Suspense fallback={<FullscreenFallback label="Loading…" />}> 
       <Feed />
     </Suspense>
   )
+  }
 }
