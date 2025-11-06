@@ -57,7 +57,7 @@ export default function Layout(props: { label: string; children: React.ReactNode
   ], [])
 
   return (
-    <div style={{ height: '100dvh', overflow: 'hidden', background: '#000' }}>
+    <div style={{ minHeight: '100dvh', background: '#000' }}>
       <SharedNav
         drawerOpen={drawerOpen}
         drawerMode={drawerMode}
