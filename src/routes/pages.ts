@@ -29,6 +29,7 @@ pagesRouter.get('/forbidden', (_req, res) => {
 
 // Guard all /admin/* UI routes for site admin only
 pagesRouter.use('/admin', requireSiteAdminPage);
+pagesRouter.use('/adminx', requireSiteAdminPage);
 
 // Split admin pages
 pagesRouter.get('/admin/settings', (_req, res) => {
@@ -37,6 +38,13 @@ pagesRouter.get('/admin/settings', (_req, res) => {
 
 pagesRouter.get('/admin/users', (_req, res) => {
   serveHtml(res, 'admin-users.html');
+});
+// SPA Admin (beta) — users list and (later) detail
+pagesRouter.get('/adminx/users', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/adminx/users/:id', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/users/new', (_req, res) => {
   serveHtml(res, 'admin-user-new.html');

@@ -2,6 +2,8 @@ import React, { Suspense, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
+const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
+const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -75,6 +77,24 @@ if (path === '/' || path === '') {
       </Suspense>
     </Layout>
   )
+} else if (path.startsWith('/adminx/users')) {
+  if (/^\/adminx\/users\/(\d+)/.test(path)) {
+    root.render(
+      <Layout label="Admin • User (SPA)">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <AdminUserPage />
+        </Suspense>
+      </Layout>
+    )
+  } else {
+    root.render(
+      <Layout label="Admin • Users (SPA)">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <AdminUsersPage />
+        </Suspense>
+      </Layout>
+    )
+  }
 } else {
   // Fallback: render Feed for unknown routes while preserving shell behavior.
   root.render(

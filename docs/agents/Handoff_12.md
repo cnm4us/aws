@@ -44,6 +44,7 @@ Changes Since Last
 - Affects: frontend/src/app/Feed.tsx; frontend/src/ui/SharedNav.tsx; frontend/src/ui/Layout.tsx; frontend/src/main.tsx
   ; public/js/universal-nav.js; public/admin-*.html; public/space-*.html
   ; frontend/src/ui/Skeletons.tsx
+  ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
 - Routes: none
 - DB: none
 - Flags: none
@@ -102,7 +103,9 @@ Meta:
 - [x] Step 2 — Add Layout wrapper to show SharedNav on all SPA pages (Phase 2)
 - [x] Step 3 — Lazy‑load page components with Suspense (Phase 3)
 - [x] Step 4 — Preload helpers and cleanup verification (Phase 4)
- - [x] Bridge — Add universal nav to static admin/space pages
+- [x] Bridge — Add universal nav to static admin/space pages
+- [x] Admin Users (SPA beta) — add /adminx/users list (read-only)
+ - [x] Admin User Detail (SPA beta) — add /adminx/users/:id (read-only)
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -125,6 +128,28 @@ Description:
 
 Keywords:
 layout, performance, loading-state
+
+Prepared Commit Message — Admin Users (SPA beta) (ready to paste)
+Subject: feat(ui): add SPA Admin Users list at /adminx/users (beta)
+
+Description:
+- Adds `frontend/src/app/AdminUsers.tsx` to list users via `/api/admin/users` with search and a link to legacy details.
+- Wires new SPA routes guarded for site admins: `/adminx/users` (and placeholder `/adminx/users/:id`) to `public/app/index.html`.
+- Keeps legacy static admin pages intact; this is a parallel beta route.
+
+Keywords:
+ui, admin, routing, layout
+
+Prepared Commit Message — Admin User Detail (SPA beta) (ready to paste)
+Subject: feat(ui): add SPA Admin User detail at /adminx/users/:id (read-only)
+
+Description:
+- Adds `frontend/src/app/AdminUser.tsx` showing basic profile, verification, capabilities, site roles, and space roles.
+- Extends path switch to render the detail page when the path matches `/adminx/users/:id`.
+- Keeps links to legacy edit pages for now; no backend changes.
+
+Keywords:
+ui, admin, routing, layout
 
 Prepared Commit Message — Step 4 (completed)
 Subject: perf(frontend): add hover/idle prefetch for lazy routes; wire SharedNav prefetch
