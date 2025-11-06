@@ -42,6 +42,7 @@ Decisions (carried + new)
 
 Changes Since Last
 - Affects: frontend/src/app/Feed.tsx; frontend/src/ui/SharedNav.tsx; frontend/src/ui/Layout.tsx; frontend/src/main.tsx
+  ; public/js/universal-nav.js; public/admin-*.html; public/space-*.html
 - Routes: none
 - DB: none
 - Flags: none
@@ -99,7 +100,19 @@ Meta:
 - [x] Step 1 — Extract SharedNav from Feed (Phase 1)
 - [x] Step 2 — Add Layout wrapper to show SharedNav on all SPA pages (Phase 2)
 - [x] Step 3 — Lazy‑load page components with Suspense (Phase 3)
- - [x] Step 4 — Preload helpers and cleanup verification (Phase 4)
+- [x] Step 4 — Preload helpers and cleanup verification (Phase 4)
+ - [x] Bridge — Add universal nav to static admin/space pages
+
+Prepared Commit Message — Nav Bridge (ready to paste)
+Subject: feat(ui): add universal nav bridge to static admin and space pages
+
+Description:
+- Adds lightweight `public/js/universal-nav.js` that injects top buttons, center label, backdrop, and drawer with login/logout and links.
+- Wires the script into `public/admin-*.html` and `public/space-*.html`. Space switcher directs to `/` (Feed) for switching.
+- Mirrors SPA menu pattern without altering backend; ensures consistent navigation experience on static pages.
+
+Keywords:
+layout, routing, performance
 
 Prepared Commit Message — Step 4 (completed)
 Subject: perf(frontend): add hover/idle prefetch for lazy routes; wire SharedNav prefetch
@@ -121,6 +134,7 @@ Tests:
 
 Meta:
 - Affects: frontend/src/ui/routes.ts; frontend/src/ui/SharedNav.tsx; frontend/src/app/Feed.tsx; frontend/src/ui/Layout.tsx; frontend/src/main.tsx
+  ; public/js/universal-nav.js; public/admin-*.html; public/space-*.html
 - Routes: none
 - DB: none
 - Flags: none
