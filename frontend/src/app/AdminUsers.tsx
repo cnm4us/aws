@@ -74,7 +74,8 @@ export default function AdminUsersPage() {
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.createdAt || ''}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.deletedAt || ''}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                  <a href={`/admin/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none' }}>Open (legacy)</a>
+                  <a href={`/adminx/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Open (SPA)</a>
+                  <a href={`/admin/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none' }}>Legacy</a>
                 </td>
               </tr>
             ))}
@@ -85,4 +86,3 @@ export default function AdminUsersPage() {
     </div>
   )
 }
-

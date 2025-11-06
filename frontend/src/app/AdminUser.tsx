@@ -20,6 +20,15 @@ type UserDetail = {
 type RolesResponse = { roles: string[] }
 type SpaceRole = { id: number; type: string; name: string; slug: string; roles: string[] }
 type SpacesResponse = { spaces: SpaceRole[] }
+type RoleCatalogItem = { id: number; name: string; scope: string | null; spaceType: string | null }
+type RolesCatalogResponse = { roles: RoleCatalogItem[] }
+
+function getCsrfToken(): string | null {
+  try {
+    const m = document.cookie.match(/(?:^|; )csrf=([^;]+)/)
+    return m ? decodeURIComponent(m[1]) : null
+  } catch { return null }
+}
 
 function parseUserIdFromPath(): number | null {
   try {
@@ -35,6 +44,26 @@ export default function AdminUserPage() {
   const [detail, setDetail] = useState<UserDetail | null>(null)
   const [siteRoles, setSiteRoles] = useState<string[]>([])
   const [spaces, setSpaces] = useState<SpaceRole[]>([])
+  const [roleCatalog, setRoleCatalog] = useState<RoleCatalogItem[]>([])
+  const siteRoleNames = useMemo(() => roleCatalog
+    .filter((r) => (r.scope === 'site') || /^site_/i.test(String(r.name)))
+    .map((r) => String(r.name)), [roleCatalog])
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [rolesSaving, setRolesSaving] = useState(false)
+  const [rolesSaved, setRolesSaved] = useState<string | null>(null)
+  const rolesDirty = useMemo(() => {
+    const a = new Set(siteRoles)
+    const b = new Set(selectedRoles)
+    if (a.size !== b.size) return true
+    for (const r of a) if (!b.has(r)) return true
+    return false
+  }, [siteRoles, selectedRoles])
+
+  type CapTri = boolean | null
+  const [capGroup, setCapGroup] = useState<CapTri>(null)
+  const [capChannel, setCapChannel] = useState<CapTri>(null)
+  const [capSaving, setCapSaving] = useState(false)
+  const [capSaved, setCapSaved] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,19 +73,31 @@ export default function AdminUserPage() {
       if (!userId) { setError('Bad user id'); setLoading(false); return }
       setLoading(true); setError(null)
       try {
-        const [uRes, rRes, sRes] = await Promise.all([
+        const [uRes, rRes, sRes, rcRes, capsRes] = await Promise.all([
           fetch(`/api/admin/users/${userId}`, { credentials: 'same-origin' }),
           fetch(`/api/admin/users/${userId}/roles`, { credentials: 'same-origin' }),
           fetch(`/api/admin/users/${userId}/spaces`, { credentials: 'same-origin' }),
+          fetch(`/api/admin/roles`, { credentials: 'same-origin' }),
+          fetch(`/api/admin/users/${userId}/capabilities`, { credentials: 'same-origin' }),
         ])
         if (!uRes.ok) throw new Error('user')
         const u = (await uRes.json()) as UserDetail
         const roles = rRes.ok ? ((await rRes.json()) as RolesResponse).roles || [] : []
         const s = sRes.ok ? ((await sRes.json()) as SpacesResponse).spaces || [] : []
+        const rc = rcRes.ok ? ((await rcRes.json()) as RolesCatalogResponse).roles || [] : []
+        const caps = capsRes.ok ? (await capsRes.json()) as any : null
         if (canceled) return
         setDetail(u)
         setSiteRoles(roles)
         setSpaces(s)
+        setRoleCatalog(rc)
+        setSelectedRoles(roles)
+        if (caps && caps.overrides) {
+          setCapGroup(caps.overrides.canCreateGroup ?? null)
+          setCapChannel(caps.overrides.canCreateChannel ?? null)
+        } else {
+          setCapGroup(null); setCapChannel(null)
+        }
       } catch (e) {
         if (!canceled) setError('Failed to load user')
       } finally { if (!canceled) setLoading(false) }
@@ -64,6 +105,48 @@ export default function AdminUserPage() {
     load();
     return () => { canceled = true }
   }, [userId])
+
+  async function saveRoles() {
+    if (!userId || rolesSaving) return
+    setRolesSaving(true); setRolesSaved(null)
+    try {
+      const csrf = getCsrfToken()
+      const res = await fetch(`/api/admin/users/${userId}/roles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+        credentials: 'same-origin',
+        body: JSON.stringify({ roles: selectedRoles })
+      })
+      if (!res.ok) throw new Error('save_roles_failed')
+      setSiteRoles(selectedRoles)
+      setRolesSaved('Saved')
+      setTimeout(() => setRolesSaved(null), 1200)
+    } catch (e) {
+      setRolesSaved('Failed')
+    } finally { setRolesSaving(false) }
+  }
+
+  async function saveCapabilities() {
+    if (!userId || capSaving) return
+    setCapSaving(true); setCapSaved(null)
+    try {
+      const csrf = getCsrfToken()
+      const body: any = {}
+      body.canCreateGroup = capGroup
+      body.canCreateChannel = capChannel
+      const res = await fetch(`/api/admin/users/${userId}/capabilities`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+        credentials: 'same-origin',
+        body: JSON.stringify(body)
+      })
+      if (!res.ok) throw new Error('save_caps_failed')
+      setCapSaved('Saved')
+      setTimeout(() => setCapSaved(null), 1200)
+    } catch (e) {
+      setCapSaved('Failed')
+    } finally { setCapSaving(false) }
+  }
 
   if (!userId) {
     return <div style={{ padding: 16, color: '#fff' }}>Invalid user id.</div>
@@ -110,17 +193,36 @@ export default function AdminUserPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Site Roles</div>
-          {!siteRoles.length ? (
-            <div style={{ opacity: 0.8 }}>No site roles.</div>
+          <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Site Roles</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button disabled={!rolesDirty || rolesSaving} onClick={saveRoles} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: rolesDirty ? '#1976d2' : 'rgba(255,255,255,0.08)', color: '#fff' }}>{rolesSaving ? 'Saving…' : 'Save'}</button>
+              {rolesSaved && <span style={{ fontSize: 12, opacity: 0.8 }}>{rolesSaved}</span>}
+            </div>
+          </div>
+          {!siteRoleNames.length ? (
+            <div style={{ opacity: 0.8 }}>No site roles available.</div>
           ) : (
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {siteRoles.map((r) => (<li key={r}>{r}</li>))}
-            </ul>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 8 }}>
+              {siteRoleNames.map((name) => {
+                const checked = selectedRoles.includes(name)
+                return (
+                  <label key={name} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, background: 'rgba(255,255,255,0.03)' }}>
+                    <input type="checkbox" checked={checked} onChange={(e) => {
+                      const on = e.target.checked
+                      setSelectedRoles((prev) => on ? Array.from(new Set([...prev, name])) : prev.filter((r) => r !== name))
+                    }} />
+                    <span>{name}</span>
+                  </label>
+                )
+              })}
+            </div>
           )}
         </div>
         <div style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Spaces & Roles</div>
+          <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Spaces & Roles</span>
+          </div>
           {!spaces.length ? (
             <div style={{ opacity: 0.8 }}>No space roles.</div>
           ) : (
@@ -138,7 +240,39 @@ export default function AdminUserPage() {
           )}
         </div>
       </div>
+      <div style={{ marginTop: 16, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
+        <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Capabilities (overrides)</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={saveCapabilities} disabled={capSaving} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: '#1976d2', color: '#fff' }}>{capSaving ? 'Saving…' : 'Save'}</button>
+            {capSaved && <span style={{ fontSize: 12, opacity: 0.8 }}>{capSaved}</span>}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6 }}>Can Create Group</label>
+            <select value={capGroup === null ? 'default' : (capGroup ? 'yes' : 'no')} onChange={(e) => {
+              const v = e.target.value
+              setCapGroup(v === 'default' ? null : v === 'yes')
+            }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }}>
+              <option value="default">Default (site setting)</option>
+              <option value="yes">Allow</option>
+              <option value="no">Deny</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6 }}>Can Create Channel</label>
+            <select value={capChannel === null ? 'default' : (capChannel ? 'yes' : 'no')} onChange={(e) => {
+              const v = e.target.value
+              setCapChannel(v === 'default' ? null : v === 'yes')
+            }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)', color: '#fff' }}>
+              <option value="default">Default (site setting)</option>
+              <option value="yes">Allow</option>
+              <option value="no">Deny</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
-
