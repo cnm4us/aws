@@ -229,35 +229,45 @@ pagesRouter.get('/channels/:id', requireSpaceAdminPage, (req: any, res) => {
   }
   res.redirect(`/channels/${id}/admin/users/${currentUserId}`);
 });
-pagesRouter.get('/groups/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/groups/:id/admin', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin`);
 });
-pagesRouter.get('/groups/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/groups/:id/admin/members', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin/members`);
 });
-pagesRouter.get('/groups/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/groups/:id/admin/users/:userId', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id; const uid = req.params.userId;
+  res.redirect(`/spaces/${id}/admin/users/${uid}`);
 });
-pagesRouter.get('/groups/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/groups/:id/admin/settings', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin/settings`);
 });
-pagesRouter.get('/channels/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/channels/:id/admin', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin`);
 });
-pagesRouter.get('/channels/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/channels/:id/admin/members', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin/members`);
 });
-pagesRouter.get('/channels/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/channels/:id/admin/users/:userId', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id; const uid = req.params.userId;
+  res.redirect(`/spaces/${id}/admin/users/${uid}`);
 });
-pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/admin/settings`);
 });
-pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/moderation`);
 });
-pagesRouter.get('/channels/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/channels/:id/moderation', requireSpaceModeratorPage, (req: any, res) => {
+  const id = req.params.id;
+  res.redirect(`/spaces/${id}/moderation`);
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {

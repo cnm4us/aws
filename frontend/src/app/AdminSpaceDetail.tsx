@@ -43,7 +43,7 @@ export default function AdminSpaceDetailPage() {
   }, [parsed?.id])
 
   const s = detail
-  const adminHref = s ? (s.type === 'group' ? `/groups/${s.id}/admin` : s.type === 'channel' ? `/channels/${s.id}/admin` : `/spaces/${s.id}/admin`) : '#'
+  const adminHref = s ? `/spaces/${s.id}/admin` : '#'
   const settingsHref = `/spaces/${s?.id || 0}/admin/settings`
   const moderationHref = `/spaces/${s?.id || 0}/moderation`
 
@@ -80,4 +80,3 @@ export default function AdminSpaceDetailPage() {
     </div>
   )
 }
-

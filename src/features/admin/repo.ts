@@ -142,7 +142,27 @@ export async function updateSiteSettings(flags: { allowGroupCreation: boolean; a
 
 export async function listSpaces(type?: 'group' | 'channel'): Promise<Array<{ id: number; type: string; name: string; slug: string; owner_user_id: number | null; owner_display_name: string | null }>> {
   const db = getPool()
-  let sql = `SELECT s.id, s.type, s.name, s.slug, s.owner_user_id, u.display_name AS owner_display_name FROM spaces s LEFT JOIN users u ON u.id = s.owner_user_id WHERE s.type IN ('group','channel')`
+  // Prefer explicit owner when present; otherwise, fall back to the first admin's display name for readability.
+  let sql = `SELECT s.id,
+                    s.type,
+                    s.name,
+                    s.slug,
+                    s.owner_user_id,
+                    COALESCE(u.display_name,
+                      (
+                        SELECT u2.display_name
+                          FROM user_space_roles usr2
+                          JOIN roles r2 ON r2.id = usr2.role_id
+                          JOIN users u2 ON u2.id = usr2.user_id
+                         WHERE usr2.space_id = s.id
+                           AND r2.name IN ('space_admin','group_admin','channel_admin')
+                         ORDER BY u2.display_name IS NULL, u2.display_name
+                         LIMIT 1
+                      )
+                    ) AS owner_display_name
+               FROM spaces s
+               LEFT JOIN users u ON u.id = s.owner_user_id
+              WHERE s.type IN ('group','channel')`
   const params: any[] = []
   if (type && (type === 'group' || type === 'channel')) { sql += ` AND s.type = ?`; params.push(type) }
   sql += ` ORDER BY s.type, s.name`

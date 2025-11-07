@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-type SpaceRow = { id: number; type: 'group'|'channel'|'personal'; name: string; slug: string; owner_user_id: number | null; owner_display_name: string | null }
+type SpaceRow = { id: number; type: 'group'|'channel'|'personal'; name: string; slug: string; ownerUserId: number | null; ownerDisplayName: string | null }
 
 function parseKindFromPath(): 'group' | 'channel' {
   const p = typeof window !== 'undefined' ? window.location.pathname : ''
@@ -56,17 +56,19 @@ export default function AdminSpacesPage() {
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.id}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.name}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.slug}</td>
-                <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.owner_display_name || ''}</td>
+                <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.ownerDisplayName || ''}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                   {kind === 'group' ? (
                     <>
                       <a href={`/admin/groups/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
-                      <a href={`/groups/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
+                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Admin</a>
+                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
                     </>
                   ) : (
                     <>
                       <a href={`/admin/channels/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
-                      <a href={`/channels/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
+                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Admin</a>
+                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
                     </>
                   )}
                 </td>
