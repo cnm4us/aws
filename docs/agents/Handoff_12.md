@@ -46,7 +46,7 @@ Changes Since Last
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
   ; frontend/src/app/AdminSiteSettings.tsx
-  ; frontend/src/app/Placeholders.tsx
+  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -111,7 +111,9 @@ Meta:
 - [x] Admin User (SPA beta) — edit site roles and capabilities
 - [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
 - [x] Admin Site Settings (SPA beta) — read/edit toggles at /adminx/settings
- - [x] Remove legacy HTML admin/space pages; route to SPA shell
+- [x] Remove legacy HTML admin/space pages; route to SPA shell
+ - [x] Add SPA Admin Groups/Channels lists; map legacy /admin/{groups,channels}
+ - [x] Add SPA Space Members for /spaces/:id/admin[/members]
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -326,3 +328,13 @@ Work Log
 
 Artifacts
 <!-- none -->
+Prepared Commit Message — Admin groups/channels + Space members (SPA) (ready to paste)
+Subject: feat(ui): add SPA Admin Groups/Channels lists and Space Members; route legacy paths to SPA
+
+Description:
+- Adds AdminSpaces (groups/channels) listing via `/api/admin/spaces?type=…` and SpaceMembers via `/api/spaces/:id/members`.
+- Updates SPA routing to render AdminSpaces for `/admin/groups` and `/admin/channels`, and SpaceMembers for `/spaces/:id/admin` and `/spaces/:id/admin/members`.
+- Keeps guards intact server-side; preserves deep-link reload via SPA shell.
+
+Keywords:
+ui, admin, routing, layout

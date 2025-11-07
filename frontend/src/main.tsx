@@ -5,6 +5,8 @@ import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleto
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
 const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
+const AdminSpacesPage = React.lazy(() => import('./app/AdminSpaces'))
+const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -133,18 +135,48 @@ if (path === '/' || path === '') {
         </Layout>
       )
     } else {
+      // Map groups/channels admin list to SPA
+      if (path.startsWith('/admin/groups')) {
+        root.render(
+          <Layout label="Admin • Groups (SPA)">
+            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+              <AdminSpacesPage />
+            </Suspense>
+          </Layout>
+        )
+      } else if (path.startsWith('/admin/channels')) {
+        root.render(
+          <Layout label="Admin • Channels (SPA)">
+            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+              <AdminSpacesPage />
+            </Suspense>
+          </Layout>
+        )
+      } else {
+        root.render(
+          <Layout label="Admin (SPA)">
+            <AdminPlaceholder />
+          </Layout>
+        )
+      }
+    }
+  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/moderation'))) {
+    // For now, show Space Members for /spaces/:id/admin and .../members
+    if (/^\/spaces\/\d+\/(admin(\/members)?\/?$)/.test(path)) {
       root.render(
-        <Layout label="Admin (SPA)">
-          <AdminPlaceholder />
+        <Layout label="Space Members (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <SpaceMembersPage />
+          </Suspense>
+        </Layout>
+      )
+    } else {
+      root.render(
+        <Layout label="Space Admin (SPA)">
+          <SpaceAdminPlaceholder />
         </Layout>
       )
     }
-  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/moderation'))) {
-    root.render(
-      <Layout label="Space Admin (SPA)">
-        <SpaceAdminPlaceholder />
-      </Layout>
-    )
   } else {
   // Fallback: render Feed for unknown routes while preserving shell behavior.
   root.render(
