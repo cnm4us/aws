@@ -138,8 +138,17 @@ if (path === '/' || path === '') {
         </Layout>
       )
     } else {
-      // Map groups/channels admin list to SPA
-      if (path.startsWith('/admin/groups')) {
+      // Detail first to avoid matching list route prefix
+      if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
+        const isGroup = /^\/admin\/groups\//.test(path)
+        root.render(
+          <Layout label={`Admin • ${isGroup ? 'Group' : 'Channel'} (SPA)`}>
+            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+              <AdminSpaceDetailPage />
+            </Suspense>
+          </Layout>
+        )
+      } else if (path.startsWith('/admin/groups')) {
         root.render(
           <Layout label="Admin • Groups (SPA)">
             <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
@@ -152,15 +161,6 @@ if (path === '/' || path === '') {
           <Layout label="Admin • Channels (SPA)">
             <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
               <AdminSpacesPage />
-            </Suspense>
-          </Layout>
-        )
-      } else if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
-        const isGroup = /^\/admin\/groups\//.test(path)
-        root.render(
-          <Layout label={`Admin • ${isGroup ? 'Group' : 'Channel'} (SPA)`}>
-            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-              <AdminSpaceDetailPage />
             </Suspense>
           </Layout>
         )

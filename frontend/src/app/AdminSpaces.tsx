@@ -61,13 +61,11 @@ export default function AdminSpacesPage() {
                   {kind === 'group' ? (
                     <>
                       <a href={`/admin/groups/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
-                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Admin</a>
                       <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
                     </>
                   ) : (
                     <>
                       <a href={`/admin/channels/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
-                      <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Admin</a>
                       <a href={`/spaces/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
                     </>
                   )}
