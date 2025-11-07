@@ -59,9 +59,15 @@ export default function AdminSpacesPage() {
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{s.owner_display_name || ''}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                   {kind === 'group' ? (
-                    <a href={`/groups/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Open</a>
+                    <>
+                      <a href={`/admin/groups/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
+                      <a href={`/groups/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
+                    </>
                   ) : (
-                    <a href={`/channels/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Open</a>
+                    <>
+                      <a href={`/admin/channels/${s.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Details</a>
+                      <a href={`/channels/${s.id}/admin`} style={{ color: '#9cf', textDecoration: 'none' }}>Members</a>
+                    </>
                   )}
                 </td>
               </tr>
@@ -73,4 +79,3 @@ export default function AdminSpacesPage() {
     </div>
   )
 }
-

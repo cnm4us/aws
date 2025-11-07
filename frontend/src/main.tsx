@@ -8,6 +8,8 @@ const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings')
 const AdminSpacesPage = React.lazy(() => import('./app/AdminSpaces'))
 const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
+const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
+const AdminSpaceDetailPage = React.lazy(() => import('./app/AdminSpaceDetail'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -153,6 +155,15 @@ if (path === '/' || path === '') {
             </Suspense>
           </Layout>
         )
+      } else if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
+        const isGroup = /^\/admin\/groups\//.test(path)
+        root.render(
+          <Layout label={`Admin • ${isGroup ? 'Group' : 'Channel'} (SPA)`}>
+            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+              <AdminSpaceDetailPage />
+            </Suspense>
+          </Layout>
+        )
       } else {
         root.render(
           <Layout label="Admin (SPA)">
@@ -176,6 +187,14 @@ if (path === '/' || path === '') {
         <Layout label="Space Settings (SPA)">
           <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
             <SpaceSettingsPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (/^\/spaces\/\d+\/moderation\/?$/.test(path)) {
+      root.render(
+        <Layout label="Space Moderation (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <SpaceModerationPage />
           </Suspense>
         </Layout>
       )

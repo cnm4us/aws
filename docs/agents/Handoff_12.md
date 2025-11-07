@@ -46,7 +46,7 @@ Changes Since Last
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
   ; frontend/src/app/AdminSiteSettings.tsx
-  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx; frontend/src/app/SpaceSettings.tsx
+  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx; frontend/src/app/SpaceSettings.tsx; frontend/src/app/SpaceModeration.tsx; frontend/src/app/AdminSpaceDetail.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -114,7 +114,9 @@ Meta:
 - [x] Remove legacy HTML admin/space pages; route to SPA shell
 - [x] Add SPA Admin Groups/Channels lists; map legacy /admin/{groups,channels}
 - [x] Add SPA Space Members for /spaces/:id/admin[/members]
- - [x] Add SPA Space Settings for /spaces/:id/admin/settings (comments policy, require review)
+- [x] Add SPA Space Settings for /spaces/:id/admin/settings (comments policy, require review)
+- [x] Add SPA Space Moderation for /spaces/:id/moderation (suspend/revoke)
+ - [x] Add SPA Admin Group/Channel detail pages; route /admin/groups/:id and /admin/channels/:id
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -350,3 +352,24 @@ Description:
 
 Keywords:
 ui, admin, routing, layout, forms
+
+Prepared Commit Message — Space Moderation (SPA) (ready to paste)
+Subject: feat(ui): add SPA Space Moderation page with suspend/revoke actions
+
+Description:
+- Adds `frontend/src/app/SpaceModeration.tsx` to list space members and perform per-user posting suspensions via admin API.
+- Uses `/api/spaces/:id/members` for rows, `/api/admin/users/:id/suspensions` (POST) to suspend, and `/api/admin/users/:id/moderation` + DELETE `/api/admin/users/:id/suspensions/:sid` to list/revoke.
+- Routes `/spaces/:id/moderation` to the SPA component; guards remain server-side.
+
+Keywords:
+ui, admin, routing, layout, moderation
+Prepared Commit Message — Admin Group/Channel detail (SPA) (ready to paste)
+Subject: feat(ui): add SPA Admin Group/Channel detail pages with shortcuts
+
+Description:
+- Adds `frontend/src/app/AdminSpaceDetail.tsx` to read group/channel info via `/api/admin/spaces/:id` and show raw settings.
+- Adds shortcuts to Members, Settings, and Moderation (space-scoped SPA pages).
+- Routes `/admin/groups/:id` and `/admin/channels/:id` to the SPA detail page; list pages link to Details and Members.
+
+Keywords:
+ui, admin, routing, layout
