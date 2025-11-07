@@ -7,6 +7,7 @@ const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
 const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
 const AdminSpacesPage = React.lazy(() => import('./app/AdminSpaces'))
 const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
+const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -167,6 +168,14 @@ if (path === '/' || path === '') {
         <Layout label="Space Members (SPA)">
           <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
             <SpaceMembersPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (/^\/spaces\/\d+\/admin\/settings\/?$/.test(path)) {
+      root.render(
+        <Layout label="Space Settings (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <SpaceSettingsPage />
           </Suspense>
         </Layout>
       )

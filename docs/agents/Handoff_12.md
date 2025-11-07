@@ -46,7 +46,7 @@ Changes Since Last
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
   ; frontend/src/app/AdminSiteSettings.tsx
-  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx
+  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx; frontend/src/app/SpaceSettings.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -112,8 +112,9 @@ Meta:
 - [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
 - [x] Admin Site Settings (SPA beta) — read/edit toggles at /adminx/settings
 - [x] Remove legacy HTML admin/space pages; route to SPA shell
- - [x] Add SPA Admin Groups/Channels lists; map legacy /admin/{groups,channels}
- - [x] Add SPA Space Members for /spaces/:id/admin[/members]
+- [x] Add SPA Admin Groups/Channels lists; map legacy /admin/{groups,channels}
+- [x] Add SPA Space Members for /spaces/:id/admin[/members]
+ - [x] Add SPA Space Settings for /spaces/:id/admin/settings (comments policy, require review)
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -338,3 +339,14 @@ Description:
 
 Keywords:
 ui, admin, routing, layout
+
+Prepared Commit Message — Space Settings (SPA) (ready to paste)
+Subject: feat(ui): add SPA Space Settings page for comments policy and review requirement
+
+Description:
+- Adds `frontend/src/app/SpaceSettings.tsx` to view and update per-space settings via `/api/spaces/:id/settings` (GET/PUT).
+- Supports `commentsPolicy` (inherit/on/off) and `requireReview` (disabled when site policy is enforced for the space type).
+- Routes `/spaces/:id/admin/settings` to the SPA component; guards remain server-side.
+
+Keywords:
+ui, admin, routing, layout, forms
