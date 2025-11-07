@@ -33,11 +33,11 @@ pagesRouter.use('/adminx', requireSiteAdminPage);
 
 // Split admin pages
 pagesRouter.get('/admin/settings', (_req, res) => {
-  serveHtml(res, 'admin-settings.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/admin/users', (_req, res) => {
-  serveHtml(res, 'admin-users.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 // SPA Admin (beta) — users list and (later) detail
 pagesRouter.get('/adminx/users', (_req, res) => {
@@ -50,54 +50,54 @@ pagesRouter.get('/adminx/settings', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/users/new', (_req, res) => {
-  serveHtml(res, 'admin-user-new.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/users/:id', (_req, res) => {
-  serveHtml(res, 'admin-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/admin/groups', (_req, res) => {
-  serveHtml(res, 'admin-groups.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 // Singular fallbacks for convenience
 pagesRouter.get('/admin/group', (_req, res) => {
-  serveHtml(res, 'admin-groups.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/groups/new', (_req, res) => {
-  serveHtml(res, 'admin-group-new.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/groups/:id', (_req, res) => {
-  serveHtml(res, 'admin-group.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/group/:id', (_req, res) => {
-  serveHtml(res, 'admin-group.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/groups/:id/user/:userId', (_req, res) => {
-  serveHtml(res, 'admin-group-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/admin/channels', (_req, res) => {
-  serveHtml(res, 'admin-channels.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/channel', (_req, res) => {
-  serveHtml(res, 'admin-channels.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/channels/new', (_req, res) => {
-  serveHtml(res, 'admin-channel-new.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/channels/:id', (_req, res) => {
-  serveHtml(res, 'admin-channel.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/channel/:id', (_req, res) => {
-  serveHtml(res, 'admin-channel.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/admin/channels/:id/user/:userId', (_req, res) => {
-  serveHtml(res, 'admin-channel-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // Dev utilities page
 pagesRouter.get('/admin/dev', (_req, res) => {
-  serveHtml(res, 'admin-dev.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // -------- Space-level Admin & Moderation UI --------
@@ -150,21 +150,21 @@ pagesRouter.get('/channels/:slug', resolveIdFromSlug('channel'), requireSpaceAdm
 
 // Members default and explicit route
 pagesRouter.get('/spaces/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/spaces/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 // Per-member admin page
 pagesRouter.get('/spaces/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 // Space settings
 pagesRouter.get('/spaces/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-settings.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/spaces/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, 'space-moderation.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // Slug-based admin pages (groups)
@@ -230,34 +230,34 @@ pagesRouter.get('/channels/:id', requireSpaceAdminPage, (req: any, res) => {
   res.redirect(`/channels/${id}/admin/users/${currentUserId}`);
 });
 pagesRouter.get('/groups/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/groups/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/groups/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/groups/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-settings.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/channels/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/channels/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-members.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/channels/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-admin-user.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, 'space-settings.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, 'space-moderation.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/channels/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, 'space-moderation.html');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {

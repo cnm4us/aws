@@ -46,6 +46,7 @@ Changes Since Last
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
   ; frontend/src/app/AdminSiteSettings.tsx
+  ; frontend/src/app/Placeholders.tsx
 - Routes: none
 - DB: none
 - Flags: none
@@ -109,7 +110,8 @@ Meta:
 - [x] Admin User Detail (SPA beta) — add /adminx/users/:id (read-only)
 - [x] Admin User (SPA beta) — edit site roles and capabilities
 - [x] Admin User (SPA beta) — edit profile fields (email, displayName, phone, orgId, verificationLevel, kycStatus, password)
- - [x] Admin Site Settings (SPA beta) — read/edit toggles at /adminx/settings
+- [x] Admin Site Settings (SPA beta) — read/edit toggles at /adminx/settings
+ - [x] Remove legacy HTML admin/space pages; route to SPA shell
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -236,6 +238,17 @@ Description:
 
 Keywords:
 ui, admin, routing, layout, state, props, forms
+
+Prepared Commit Message — remove legacy admin/space HTML and route to SPA (ready to paste)
+Subject: refactor(ui): retire legacy admin/space HTML; serve SPA shell for admin and space routes
+
+Description:
+- Deletes `public/admin-*.html` and `public/space-*.html` (early dev; no users).
+- Updates `src/routes/pages.ts` to serve `public/app/index.html` for `/admin/*`, `/spaces/:id/admin*`, `/groups/:id/admin*`, `/channels/:id/admin*`, and moderation routes (guards preserved).
+- Adds minimal SPA placeholders and maps legacy `/admin/*` paths to SPA components in `frontend/src/main.tsx` (Users, User detail, Settings); others show a placeholder for now.
+
+Keywords:
+ui, admin, routing, refactor, cleanup
 
 Prepared Commit Message — Step 4 (completed)
 Subject: perf(frontend): add hover/idle prefetch for lazy routes; wire SharedNav prefetch

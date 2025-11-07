@@ -11,6 +11,7 @@ const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProductionsPage = React.lazy(loadProductions)
 import Layout from './ui/Layout'
+import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
 
 const root = createRoot(document.getElementById('root')!)
 
@@ -103,6 +104,45 @@ if (path === '/' || path === '') {
         <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
           <AdminSiteSettingsPage />
         </Suspense>
+      </Layout>
+    )
+  } else if (path.startsWith('/admin/')) {
+    // Map legacy admin routes to SPA pages or placeholder
+    if (/^\/admin\/users\/(\d+)/.test(path)) {
+      root.render(
+        <Layout label="Admin • User (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <AdminUserPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (path.startsWith('/admin/users')) {
+      root.render(
+        <Layout label="Admin • Users (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <AdminUsersPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (path.startsWith('/admin/settings')) {
+      root.render(
+        <Layout label="Admin • Site Settings (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <AdminSiteSettingsPage />
+          </Suspense>
+        </Layout>
+      )
+    } else {
+      root.render(
+        <Layout label="Admin (SPA)">
+          <AdminPlaceholder />
+        </Layout>
+      )
+    }
+  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/moderation'))) {
+    root.render(
+      <Layout label="Space Admin (SPA)">
+        <SpaceAdminPlaceholder />
       </Layout>
     )
   } else {
