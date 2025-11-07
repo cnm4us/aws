@@ -178,6 +178,54 @@ Description:
 Keywords:
 ui, admin, routing, layout, state, props, forms
 
+Navigation Plan — Context Drawer (Mobile)
+- Decisions (confirmed)
+  - One hamburger opens a single left drawer for all actions; page behind is dimmed and paused/unfocused.
+  - Channel Changers is just another context (no special‑case); Context Selector is always present at the top of the drawer.
+  - Tapping […] (More) replaces the current context view with the Context Selector; choosing an item swaps back to that context.
+  - Space Management includes its own space picker (not coupled to current feed space).
+  - No quick switcher (long‑press/swipe) for now.
+
+- Contexts (initial set)
+  - channel-changers (default in Feed): personal, global, groups, channels
+  - creator-tools: Uploads, New Upload, Publish, Productions
+  - space-management (conditional): members, settings, moderation (starts with links)
+  - site-admin (conditional): Users, Site Settings (SPA beta links)
+  - space-search: typeahead to navigate to spaces
+  - channel-guide: visual layout of spaces
+
+- Architecture
+  - ContextDrawer component wraps the existing drawer area (replacing ad‑hoc panels);
+    maintains state: { open: bool, currentContext: id, selectorOpen: bool }.
+  - Context registry: { id, label, icon?, guard?: (me)=>bool, loader: () => Promise<View> }.
+  - Header inside the drawer: Title + […] button to toggle selector; consistent across all contexts.
+  - Accessibility: drawer role="dialog", labelled header, focus trap, restore focus on close.
+  - History: push shallow states on open/context change so Back closes/steps back; optional deep link `?menu=<id>`.
+  - Performance: lazy‑load contexts; prefetch likely contexts on idle (creator‑tools, channel‑changers); cap/paginate long lists.
+  - Scroll: body scroll locked while open; drawer scrolls independently (overscroll-behavior: contain; touch-action tuned for iOS).
+  - Feed interop: pause/mute/unfocus playback while open; resume on close (reuse existing cleanup hooks).
+
+- Phases (incremental, non‑breaking)
+  1) Framework: add ContextDrawer + registry; migrate Channel Changers into first context. Keep current UI behavior.
+  2) Selector: add […] button and Context Selector view; guards/disabled states; deep link support.
+  3) Wire contexts: creator-tools, site-admin, space-management (with internal picker), space-search, channel-guide (as stubs or links first).
+  4) Polish: idle prefetch, skeletons, subtle transitions, telemetry for opens/switches, strict cleanup when opening/closing.
+  5) QA: E2E for drawer open/close, selector, guards, deep links; iOS/Android scroll lock verification.
+
+- Acceptance (Phase 1–2)
+  - Hamburger opens the drawer; default context = channel-changers; page behind is inert; Esc/backdrop/Back closes.
+  - Header shows current context + […]; tapping […] shows Context Selector; selecting an item switches the drawer content.
+  - iOS/Android: drawer scrolls; no background scroll bleed; feed pauses (audio/video) while open.
+
+- Risks & mitigations
+  - Resource leaks: ensure we pause/detach HLS when drawer opens; resume on close; add guards in feed hooks.
+  - Scroll bleed on iOS: lock body, contain overscroll, set touch-action appropriately; test iOS 15–17.
+  - Focus/AT: use a dialog pattern; trap/restore focus; ARIA live for context title changes.
+  - State confusion: persist last context per area (Feed/Admin) with TTL; offer `?menu=` deep link for support.
+
+- Metrics
+  - Measure drawer open TTI, context switch latency, and frequency of each context; capture device/UA for mobile QA.
+
 Prepared Commit Message — Admin Site Settings (SPA beta) (ready to paste)
 Subject: feat(ui): add SPA Admin Site Settings with editable toggles
 
