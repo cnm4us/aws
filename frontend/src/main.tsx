@@ -6,6 +6,7 @@ const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
 const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
 const AdminSpacesPage = React.lazy(() => import('./app/AdminSpaces'))
+const AdminSpaceCreatePage = React.lazy(() => import('./app/AdminSpaceCreate'))
 const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
 const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
@@ -138,8 +139,17 @@ if (path === '/' || path === '') {
         </Layout>
       )
     } else {
-      // Detail first to avoid matching list route prefix
-      if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
+      // New → Detail → List ordering to avoid prefix collisions
+      if (/^\/admin\/(groups|channels)\/new\/?$/.test(path)) {
+        const isGroup = /^\/admin\/groups\//.test(path)
+        root.render(
+          <Layout label={`Add ${isGroup ? 'Group' : 'Channel'}`}>
+            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+              <AdminSpaceCreatePage />
+            </Suspense>
+          </Layout>
+        )
+      } else if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
         const isGroup = /^\/admin\/groups\//.test(path)
         root.render(
           <Layout label={`Admin • ${isGroup ? 'Group' : 'Channel'} (SPA)`}>

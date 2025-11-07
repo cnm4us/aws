@@ -60,23 +60,20 @@ export default function AdminUsersPage() {
               <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Email</th>
               <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Created</th>
               <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Deleted</th>
-              <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {!rows.length && !loading ? (
-              <tr><td colSpan={6} style={{ padding: '12px 10px', opacity: 0.8 }}>No users.</td></tr>
+              <tr><td colSpan={5} style={{ padding: '12px 10px', opacity: 0.8 }}>No users.</td></tr>
             ) : rows.map((u) => (
               <tr key={u.id}>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.id}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.displayName || ''}</td>
-                <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.email}</td>
+                <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <a href={`/adminx/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none' }}>{u.email}</a>
+                </td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.createdAt || ''}</td>
                 <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{u.deletedAt || ''}</td>
-                <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                  <a href={`/adminx/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none', marginRight: 10 }}>Open (SPA)</a>
-                  <a href={`/admin/users/${u.id}`} style={{ color: '#9cf', textDecoration: 'none' }}>Legacy</a>
-                </td>
               </tr>
             ))}
           </tbody>

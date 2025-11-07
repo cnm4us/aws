@@ -35,7 +35,15 @@ export default function AdminSpacesPage() {
 
   return (
     <div style={{ padding: 16, color: '#fff' }}>
-      <h1 style={{ fontSize: 20, margin: '6px 0 12px 0' }}>Admin • {kind === 'group' ? 'Groups' : 'Channels'} (SPA)</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <h1 style={{ fontSize: 20, margin: 0 }}>Admin • {kind === 'group' ? 'Groups' : 'Channels'} (SPA)</h1>
+        <a
+          href={kind === 'group' ? '/admin/groups/new' : '/admin/channels/new'}
+          style={{ color: '#fff', textDecoration: 'none', background: '#1976d2', border: '1px solid rgba(255,255,255,0.2)', padding: '8px 12px', borderRadius: 8 }}
+        >
+          Add {kind === 'group' ? 'Group' : 'Channel'}
+        </a>
+      </div>
       {error ? <div style={{ color: '#ffb3b3', marginBottom: 12 }}>{error}</div> : null}
       <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
