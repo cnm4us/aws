@@ -46,7 +46,8 @@ Changes Since Last
   ; frontend/src/ui/Skeletons.tsx
   ; frontend/src/app/AdminUsers.tsx; frontend/src/app/AdminUser.tsx; src/routes/pages.ts
   ; frontend/src/app/AdminSiteSettings.tsx
-  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx; frontend/src/app/SpaceSettings.tsx; frontend/src/app/SpaceModeration.tsx; frontend/src/app/AdminSpaceDetail.tsx
+  ; frontend/src/app/Placeholders.tsx; frontend/src/app/AdminSpaces.tsx; frontend/src/app/SpaceMembers.tsx; frontend/src/app/SpaceSettings.tsx; frontend/src/app/SpaceModeration.tsx; frontend/src/app/AdminSpaceDetail.tsx; frontend/src/app/AdminSpaceCreate.tsx
+  ; src/features/admin/repo.ts
 - Routes: none
 - DB: none
 - Flags: none
@@ -116,7 +117,11 @@ Meta:
 - [x] Add SPA Space Members for /spaces/:id/admin[/members]
 - [x] Add SPA Space Settings for /spaces/:id/admin/settings (comments policy, require review)
 - [x] Add SPA Space Moderation for /spaces/:id/moderation (suspend/revoke)
- - [x] Add SPA Admin Group/Channel detail pages; route /admin/groups/:id and /admin/channels/:id
+- [x] Add SPA Admin Group/Channel detail pages; route /admin/groups/:id and /admin/channels/:id
+ - [x] Add SPA Admin create page: /admin/{groups,channels}/new (POST /api/spaces)
+ - [x] Admin lists: Owner column fallback (first admin) + email link to SPA user detail; remove Actions column
+ - [x] Canonicalize numeric group/channel admin paths → /spaces/:id/* (redirects)
+ - [x] Moderation page now shows publication review queue (Approve/Reject)
 
 Prepared Commit Message — Nav Bridge (ready to paste)
 Subject: feat(ui): add universal nav bridge to static admin and space pages
@@ -150,6 +155,41 @@ Description:
 
 Keywords:
 ui, admin, routing, layout
+
+Prepared Commit Message — Admin create/list polish (ready to paste)
+Subject: feat(ui): add SPA create pages for groups/channels; polish Admin lists
+
+Description:
+- Adds `/admin/groups/new` and `/admin/channels/new` (SPA) to create spaces via `POST /api/spaces` and redirect to detail.
+- Admin lists now include an “Add” button, show Owner with fallback to first admin, and link user email to SPA user detail; removed Actions column.
+- Routes `/groups/:id/*` and `/channels/:id/*` canonicalize to `/spaces/:id/*` for SPA pages.
+
+Keywords:
+ui, admin, routing, layout, forms
+
+Prepared Commit Message — Moderation review queue (SPA) (ready to paste)
+Subject: feat(ui): restore Space Moderation review queue with approve/reject actions
+
+Description:
+- Updates `/spaces/:id/moderation` (SPA) to list pending publications from `/api/spaces/:id/moderation/queue`.
+- Adds Approve/Reject actions via `POST /api/publications/:id/approve` and `POST /api/publications/:id/reject`; items are removed upon success.
+- Replaces interim member-suspension view; moderation permissions preserved by backend.
+
+Keywords:
+ui, admin, moderation, routing, layout
+
+Open Items / Next Actions
+- Context Drawer (Phase 1–2): scaffold ContextDrawer + registry; move Channel Changers into first context; add Context Selector in drawer header.
+- Admin: allow editing group/channel slug and owner assignment in Admin detail (PUT via admin service); confirm slug uniqueness.
+- Space Moderation: add poster thumbnails and quick preview; pagination for queues >200; optional notes on approve/reject.
+- Space Members: role toggles per member (edit in place); confirm remove; pagination for large spaces.
+- Site Settings & Capabilities: surface effective site defaults on Admin detail (already computed); optional link to settings.
+- E2E: add smoke tests for admin lists, create, detail save, members add/remove, moderation approve/reject.
+- Performance: idle prefetch Admin detail from list hover; small skeletons for Admin pages.
+
+Decisions (additional)
+- Canonical space admin paths are `/spaces/:id/*`; numeric `/groups/:id/*` and `/channels/:id/*` redirect to canonical for consistency and guard reuse.
+- Owner display in Admin lists falls back to first space_admin display name when `owner_user_id` is null.
 
 Prepared Commit Message — Admin User Detail (SPA beta) (ready to paste)
 Subject: feat(ui): add SPA Admin User detail at /adminx/users/:id (read-only)
