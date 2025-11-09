@@ -1,4 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
+import ContextDrawer from '../menu/ContextDrawer'
+import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
+import MyAssets from '../menu/contexts/MyAssets'
+import ContextPicker, { type ContextId } from '../menu/ContextPicker'
+import { useEffect } from 'react'
 
 type DrawerMode = 'nav' | 'spaces'
 
@@ -19,12 +24,18 @@ export default function SharedNav(props: {
   renderSpacesPanel: () => JSX.Element
   showMineOnlyToggle?: boolean
   onPrefetch?: (href: string) => void
+  // New optional hooks for Channel Switcher when running on Feed
+  activeSpaceId?: number | null
+  isGlobalActive?: boolean
+  onSelectGlobal?: () => void
+  onSelectSpace?: (spaceId: number) => void
 }) {
   const {
-    drawerOpen,
-    drawerMode,
-    openDrawer,
-    closeDrawer,
+    // legacy props retained for compatibility with callers; not used in universal drawer mode
+    drawerOpen: _drawerOpen,
+    drawerMode: _drawerMode,
+    openDrawer: _openDrawer,
+    closeDrawer: _closeDrawer,
     currentFeedLabel,
     isAuthed,
     mineOnly,
@@ -34,60 +45,36 @@ export default function SharedNav(props: {
     renderSpacesPanel,
     showMineOnlyToggle = true,
     onPrefetch,
+    activeSpaceId = null,
+    isGlobalActive = false,
+    onSelectGlobal,
+    onSelectSpace,
   } = props
+
+  // New: single universal menu state
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [activeContext, setActiveContext] = useState<ContextId>(() => {
+    try {
+      const v = localStorage.getItem('menu:context') as ContextId | null
+      if (v === 'channel' || v === 'assets' || v === 'space-admin' || v === 'settings' || v === 'messages') return v
+    } catch {}
+    return 'channel'
+  })
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  useEffect(() => {
+    try { localStorage.setItem('menu:context', activeContext) } catch {}
+  }, [activeContext])
 
   return (
     <>
-      <div
-        onClick={(e) => {
-          e.stopPropagation()
-          if (drawerOpen) closeDrawer()
-        }}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.35)',
-          opacity: drawerOpen ? 1 : 0,
-          transition: 'opacity 200ms ease',
-          zIndex: 1000,
-          pointerEvents: drawerOpen ? 'auto' : 'none',
-        }}
-      />
+      {/* Left hamburger removed in favor of universal menu */}
 
       <button
-        aria-label={drawerOpen && drawerMode === 'nav' ? 'Close menu' : 'Open menu'}
+        aria-label={menuOpen ? 'Close menu' : 'Open menu'}
         onClick={(e) => {
           e.stopPropagation()
-          drawerOpen && drawerMode === 'nav' ? closeDrawer() : openDrawer('nav')
-        }}
-        style={{
-          position: 'fixed',
-          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-          left: 8,
-          zIndex: 1002,
-          background: 'transparent',
-          border: 'none',
-          padding: 8,
-          opacity: 0.9,
-          touchAction: 'manipulation' as any,
-        }}
-      >
-        {drawerOpen && drawerMode === 'nav' ? (
-          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
-          </svg>
-        ) : (
-          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
-
-      <button
-        aria-label={drawerOpen && drawerMode === 'spaces' ? 'Close space switcher' : 'Open space switcher'}
-        onClick={(e) => {
-          e.stopPropagation()
-          drawerOpen && drawerMode === 'spaces' ? closeDrawer() : openDrawer('spaces')
+          setMenuOpen((v) => !v)
         }}
         style={{
           position: 'fixed',
@@ -101,124 +88,49 @@ export default function SharedNav(props: {
           touchAction: 'manipulation' as any,
         }}
       >
-        {drawerOpen && drawerMode === 'spaces' ? (
+        {menuOpen ? (
           <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
           </svg>
         ) : (
           <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="4" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
-            <rect x="14" y="4" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
-            <rect x="4" y="14" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
-            <rect x="14" y="14" width="6" height="6" stroke="#fff" strokeOpacity={0.6} strokeWidth={1.8} fill="none" />
+            <path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
           </svg>
         )}
       </button>
-
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: '78vw',
-          maxWidth: 340,
-          background: 'rgba(0,0,0,0.8)',
-          color: '#fff',
-          zIndex: 1001,
-          transform: drawerOpen ? 'translate3d(0,0,0)' : 'translate3d(-100%,0,0)',
-          transition: 'transform 260ms cubic-bezier(0.25,1,0.5,1)',
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
-          paddingLeft: 12,
-          paddingRight: 12,
-          boxShadow: drawerOpen ? '2px 0 12px rgba(0,0,0,0.5)' : 'none',
-          pointerEvents: drawerOpen ? 'auto' : 'none',
-          WebkitBackdropFilter: drawerOpen ? 'saturate(120%) blur(6px)' : undefined,
-          backdropFilter: drawerOpen ? 'saturate(120%) blur(6px)' : undefined,
-          overflowY: 'auto',
+      {/* New: universal right-side drawer */}
+      <ContextDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        isAuthed={isAuthed}
+        onMoreClick={() => {
+          setPickerOpen((v) => !v)
         }}
-        onClick={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
+        title={pickerOpen ? 'Menu Selector' : (activeContext === 'assets' ? 'My Assets' : activeContext === 'channel' ? 'Channel Changer' : undefined)}
       >
-        {drawerMode === 'nav' ? (
-          <>
-            <a
-              href={isAuthed ? '/logout' : '/login'}
-              style={{
-                display: 'inline-block',
-                textDecoration: 'none',
-                textAlign: 'center' as const,
-                color: '#fff',
-                background: isAuthed ? '#d32f2f' : '#2e7d32',
-                padding: '12px 20px',
-                borderRadius: 10,
-                fontWeight: 600,
-                fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-                boxShadow: '0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.15)',
-                marginBottom: 14,
-              }}
-            >
-              {isAuthed ? 'LOGOUT' : 'LOGIN'}
-            </a>
-            {isAuthed && showMineOnlyToggle && (
-              <div style={{ marginTop: 10, marginBottom: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
-                  <input
-                    type="checkbox"
-                    checked={mineOnly}
-                    onChange={(e) => onChangeMineOnly(e.target.checked)}
-                    style={{ transform: 'scale(1.2)' }}
-                  />
-                  Show only my videos
-                </label>
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {navLinks.map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  onMouseEnter={() => onPrefetch && onPrefetch(link.href)}
-                  onFocus={() => onPrefetch && onPrefetch(link.href)}
-                  style={{
-                    color: '#fff',
-                    textDecoration: 'none',
-                    fontSize: 16,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    background: 'rgba(255,255,255,0.04)',
-                  }}
-                >
-                  {link.label}
-                </a>
-              ))}
-              {upcomingLinks.map((item) => (
-                <div
-                  key={item.label}
-                  style={{
-                    fontSize: 15,
-                    color: 'rgba(255,255,255,0.6)',
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    border: '1px dashed rgba(255,255,255,0.2)',
-                    background: 'rgba(255,255,255,0.02)',
-                  }}
-                >
-                  {item.label}
-                  {item.note ? (
-                    <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.7 }}>({item.note})</span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </>
+        {pickerOpen ? (
+          <ContextPicker
+            active={activeContext}
+            onSelect={(id) => {
+              setActiveContext(id)
+              setPickerOpen(false)
+            }}
+          />
+        ) : activeContext === 'channel' ? (
+          <ChannelSwitcher
+            open={menuOpen}
+            isAuthed={isAuthed}
+            activeSpaceId={activeSpaceId}
+            isGlobalActive={isGlobalActive}
+            onSelectGlobal={onSelectGlobal ? () => { onSelectGlobal(); setMenuOpen(false) } : undefined}
+            onSelectSpace={onSelectSpace ? (sid) => { onSelectSpace(sid); setMenuOpen(false) } : undefined}
+          />
+        ) : activeContext === 'assets' ? (
+          <MyAssets onNavigate={() => setMenuOpen(false)} />
         ) : (
-          renderSpacesPanel()
+          <div style={{ color: '#fff', fontSize: 14, opacity: 0.8 }}>Coming soon…</div>
         )}
-      </div>
+      </ContextDrawer>
 
       <div
         style={{

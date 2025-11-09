@@ -72,6 +72,8 @@ export default function Layout(props: { label: string; children: React.ReactNode
         renderSpacesPanel={renderSpacesPanel}
         showMineOnlyToggle={false}
         onPrefetch={prefetchForHref}
+        activeSpaceId={null}
+        isGlobalActive={false}
       />
       {children}
     </div>

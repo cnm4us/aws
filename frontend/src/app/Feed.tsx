@@ -187,6 +187,13 @@ export default function Feed() {
   const [restoring, setRestoring] = useState<boolean>(false)
   const [restorePoster, setRestorePoster] = useState<string | null>(null)
   const firstVisitKeyRef = useRef<string | null>(null)
+  const initialSpaceFromQuery = useRef<number | null>((() => {
+    try {
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const v = Number(sp.get('space'))
+      return Number.isFinite(v) && v > 0 ? v : null
+    } catch { return null }
+  })())
 
   function feedKey(m: FeedMode): string {
     return m.kind === 'space' ? `s:${m.spaceId}` : 'g'
@@ -301,6 +308,20 @@ export default function Feed() {
   }, [isAuthed])
 
   useEffect(() => {
+    // If URL specifies ?space=ID, set initial feed to that space once
+    if (initialSpaceFromQuery.current && feedMode.kind === 'global') {
+      const sid = initialSpaceFromQuery.current
+      initialSpaceFromQuery.current = null
+      if (sid && Number.isFinite(sid)) {
+        setFeedMode({ kind: 'space', spaceId: sid })
+        try {
+          // Clean the query param to avoid lingering state on refresh
+          const url = new URL(window.location.href)
+          url.searchParams.delete('space')
+          window.history.replaceState({}, '', url.toString())
+        } catch {}
+      }
+    }
     let canceled = false
     ;(async () => {
       try {
@@ -1064,6 +1085,16 @@ export default function Feed() {
         upcomingLinks={upcomingLinks}
         renderSpacesPanel={renderSpacesPanel}
         onPrefetch={prefetchForHref}
+        activeSpaceId={activeSpaceId}
+        isGlobalActive={feedMode.kind === 'global'}
+        onSelectGlobal={() => {
+          handleSelectGlobal()
+          setDrawerOpen(false)
+        }}
+        onSelectSpace={(sid) => {
+          handleSelectSpace(sid)
+          setDrawerOpen(false)
+        }}
       />
       {!unlocked && (
         <div
