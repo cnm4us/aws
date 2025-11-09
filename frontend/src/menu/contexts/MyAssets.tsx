@@ -34,6 +34,7 @@ export default function MyAssets(props: { onNavigate?: () => void }) {
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           {it.label}

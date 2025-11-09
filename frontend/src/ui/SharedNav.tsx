@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import ContextDrawer from '../menu/ContextDrawer'
 import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
 import MyAssets from '../menu/contexts/MyAssets'
 import ContextPicker, { type ContextId } from '../menu/ContextPicker'
-import { useEffect } from 'react'
+// useEffect already imported above
 
 type DrawerMode = 'nav' | 'spaces'
 
@@ -61,6 +61,8 @@ export default function SharedNav(props: {
     return 'channel'
   })
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // No edge-swipe opener; open via hamburger, close via overlay or swipe-right on drawer.
 
   useEffect(() => {
     try { localStorage.setItem('menu:context', activeContext) } catch {}
@@ -131,6 +133,8 @@ export default function SharedNav(props: {
           <div style={{ color: '#fff', fontSize: 14, opacity: 0.8 }}>Coming soon…</div>
         )}
       </ContextDrawer>
+
+      {/* No edge-swipe opener */}
 
       <div
         style={{

@@ -7,9 +7,11 @@ export default function ContextDrawer(props: {
   children?: React.ReactNode
   onMoreClick?: () => void
   title?: string
+  enableGestures?: boolean
 }) {
-  const { open, onClose, isAuthed, children, onMoreClick, title } = props
+  const { open, onClose, isAuthed, children, onMoreClick, title, enableGestures = true } = props
   const drawerRef = useRef<HTMLDivElement | null>(null)
+  const swipeStart = useRef<{ x: number; y: number; active: boolean } | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,6 +43,7 @@ export default function ContextDrawer(props: {
           transition: 'opacity 200ms ease',
           zIndex: 1100,
           pointerEvents: open ? 'auto' : 'none',
+          WebkitTapHighlightColor: 'transparent',
         }}
       />
       <div
@@ -50,6 +53,25 @@ export default function ContextDrawer(props: {
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          if (!enableGestures) return
+          if (!open) return
+          if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return
+          swipeStart.current = { x: e.clientX, y: e.clientY, active: true }
+        }}
+        onPointerMove={(e) => {
+          if (!enableGestures) return
+          const s = swipeStart.current
+          if (!s || !s.active) return
+          const dx = e.clientX - s.x
+          const dy = e.clientY - s.y
+          if (dx > 40 && Math.abs(dx) > Math.abs(dy)) {
+            swipeStart.current = null
+            try { onClose() } catch {}
+          }
+        }}
+        onPointerUp={(e) => { swipeStart.current = null; e.preventDefault() }}
+        onPointerCancel={(e) => { swipeStart.current = null; e.preventDefault() }}
         style={{
           position: 'fixed',
           top: 0,
@@ -74,6 +96,9 @@ export default function ContextDrawer(props: {
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
+          touchAction: 'pan-y',
+          outline: 'none',
+          WebkitTapHighlightColor: 'transparent',
         }}
       >
         {/* Header */}
