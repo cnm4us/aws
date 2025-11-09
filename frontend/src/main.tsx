@@ -21,6 +21,26 @@ import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
 
 const root = createRoot(document.getElementById('root')!)
 
+// App-open bootstrap: on first session open (new browsing context) in standalone/PWA,
+// default the menu context to Channel Changer and normalize to '/'.
+;(() => {
+  try {
+    const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as any).standalone === true
+    const started = sessionStorage.getItem('app:started')
+    if (!started) {
+      sessionStorage.setItem('app:started', '1')
+      if (isStandalone) {
+        try { localStorage.setItem('menu:context', 'channel') } catch {}
+        const p = window.location.pathname || '/'
+        if (p !== '/' && p !== '') {
+          // Ensure we land on the main feed for fresh app opens
+          window.location.replace('/')
+        }
+      }
+    }
+  } catch {}
+})()
+
 const path = window.location.pathname
 
 // Feed renders its own SharedNav (extracted) to preserve behavior.
