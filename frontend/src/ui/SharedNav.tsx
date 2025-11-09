@@ -70,36 +70,7 @@ export default function SharedNav(props: {
 
   return (
     <>
-      {/* Left hamburger removed in favor of universal menu */}
-
-      <button
-        aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen((v) => !v)
-        }}
-        style={{
-          position: 'fixed',
-          top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-          right: 8,
-          zIndex: 1002,
-          background: 'transparent',
-          border: 'none',
-          padding: 8,
-          opacity: 0.9,
-          touchAction: 'manipulation' as any,
-        }}
-      >
-        {menuOpen ? (
-          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
-          </svg>
-        ) : (
-          <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
+      {/* Header bar with centered title and in-bar hamburger */}
       {/* New: universal right-side drawer */}
       <ContextDrawer
         open={menuOpen}
@@ -137,21 +108,53 @@ export default function SharedNav(props: {
       {/* No edge-swipe opener */}
 
       <div
-        style={{
-          position: 'fixed',
-          top: 'calc(env(safe-area-inset-top, 0px) + 10px)',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          color: '#fff',
-          zIndex: 1001,
-          fontSize: 14,
-          padding: '6px 12px',
-          borderRadius: 999,
-          background: 'rgba(0,0,0,0.4)',
-          border: '1px solid rgba(255,255,255,0.2)',
-        }}
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1001 }}
       >
-        {currentFeedLabel}
+        {/* Safe-area band (solid black) */}
+        <div style={{ height: 'env(safe-area-inset-top, 0px)', background: '#000' }} />
+        {/* Header bar (semi-opaque) */}
+        <div
+          style={{
+            height: 'calc(var(--header-h, 44px) - env(safe-area-inset-top, 0px))',
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            color: '#fff',
+            fontSize: 14,
+            paddingLeft: 8,
+            paddingRight: 8,
+          }}
+        >
+          <div style={{ pointerEvents: 'none', textTransform: 'uppercase', opacity: 0.35, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif', fontSize: 16, fontWeight: 700 }}>{currentFeedLabel}</div>
+          <div style={{ position: 'absolute', right: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
+            <button
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              onClick={(e) => {
+                e.stopPropagation()
+                setMenuOpen((v) => !v)
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 8,
+                opacity: 0.9,
+                touchAction: 'manipulation' as any,
+              }}
+            >
+              {menuOpen ? (
+                <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 5 L19 19 M19 5 L5 19" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7 H20 M4 12 H20 M4 17 H20" stroke="#fff" strokeOpacity={0.6} strokeWidth={2} strokeLinecap="round" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     </>
   )

@@ -1071,7 +1071,7 @@ export default function Feed() {
   ]
 
   return (
-    <div style={{ height: '100dvh', overflow: 'hidden', background: '#000' }}>
+    <div style={{ height: '100dvh', overflow: 'hidden', background: '#000', ['--header-h' as any]: 'calc(env(safe-area-inset-top, 0px) + 44px)' }}>
       <SharedNav
         drawerOpen={drawerOpen}
         drawerMode={drawerMode}
@@ -1119,7 +1119,10 @@ export default function Feed() {
         onScroll={onScroll}
         style={{
           position: 'fixed',
-          inset: 0,
+          top: 'var(--header-h, calc(env(safe-area-inset-top, 0px) + 28px))',
+          left: 0,
+          right: 0,
+          bottom: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
@@ -1159,7 +1162,10 @@ export default function Feed() {
         <div
           style={{
             position: 'fixed',
-            inset: 0,
+            top: 'var(--header-h, 0px)',
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 1500,
             background: restorePoster ? `#000 url('${restorePoster}') center / cover no-repeat` : '#000',
             transition: 'opacity 160ms ease',
@@ -1169,7 +1175,7 @@ export default function Feed() {
         />
       )}
       <style>{`
-        .slide{position:relative; width:100vw; height:100dvh; scroll-snap-align:start; scroll-snap-stop:always; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
+        .slide{position:relative; width:100vw; height:calc(100dvh - var(--header-h, 0px)); scroll-snap-align:start; scroll-snap-stop:always; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
         .holder{position:absolute; inset:0;}
       `}</style>
     </div>
