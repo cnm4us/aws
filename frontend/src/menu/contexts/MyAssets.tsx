@@ -5,8 +5,7 @@ export default function MyAssets(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
   const items = [
     { label: 'Uploads', href: '/uploads' },
-    // Label shown as "Assets" while pointing to productions list
-    { label: 'Assets', href: '/productions' },
+    { label: 'Productions', href: '/productions' },
     { label: 'Publish', href: '/publish' },
   ]
   return (

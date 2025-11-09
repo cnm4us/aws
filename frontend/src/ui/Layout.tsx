@@ -57,7 +57,7 @@ export default function Layout(props: { label: string; children: React.ReactNode
   ], [])
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#000' }}>
+    <div style={{ minHeight: '100dvh', background: '#000', ['--header-h' as any]: 'calc(env(safe-area-inset-top, 0px) + 44px)' }}>
       <SharedNav
         drawerOpen={drawerOpen}
         drawerMode={drawerMode}
@@ -75,7 +75,22 @@ export default function Layout(props: { label: string; children: React.ReactNode
         activeSpaceId={null}
         isGlobalActive={false}
       />
-      {children}
+      <div
+        style={{
+          position: 'fixed',
+          top: 'var(--header-h, calc(env(safe-area-inset-top, 0px) + 44px))',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+          overscrollBehavior: 'contain',
+          color: '#fff',
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }
