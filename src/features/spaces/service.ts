@@ -6,6 +6,7 @@ import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import { isMember, listSpaceInvitations, listSpaceMembers, loadSpace, assignDefaultMemberRoles, removeAllRoles, type SpaceRow, type SpaceType } from '../../services/spaceMembership'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { slugify, defaultSettings } from './util'
+import { ulidMonotonic as genSpaceUlid } from '../../utils/ulid'
 
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
 
@@ -27,6 +28,7 @@ function settingsAllowPublicView(settings: any): boolean {
 function mapSpaceSummary(row: any, relationship: SpaceRelationship, subscribed: boolean) {
   return {
     id: Number(row.id),
+    ulid: row.ulid ? String(row.ulid) : null,
     name: String(row.name),
     slug: String(row.slug),
     type: String(row.type) as SpaceType,
@@ -249,9 +251,10 @@ export async function createSpace(input: { type: 'group' | 'channel'; name: stri
   }
 
   const settingsJson = JSON.stringify(defaultSettings(t))
+  const spaceUlid = genSpaceUlid()
   const [ins] = await db.query(
-    `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
-    [t, currentUserId, title, slug, settingsJson]
+    `INSERT INTO spaces (type, owner_user_id, ulid, name, slug, settings) VALUES (?, ?, ?, ?, ?, ?)` ,
+    [t, currentUserId, spaceUlid, title, slug, settingsJson]
   )
   const space: SpaceRow = { id: (ins as any).insertId as number, type: t as any, owner_user_id: currentUserId }
   await assignDefaultMemberRoles(db, space, currentUserId)

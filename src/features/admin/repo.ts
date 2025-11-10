@@ -1,4 +1,5 @@
 import { getPool } from '../../db'
+import { ulidMonotonic as genSpaceUlid } from '../../utils/ulid'
 
 export async function listRoles(): Promise<Array<{ id: number; name: string; scope: string | null; spaceType: string | null }>> {
   const db = getPool()
@@ -19,9 +20,10 @@ export async function isSlugTaken(slug: string): Promise<boolean> {
 
 export async function insertSpace(input: { type: 'group' | 'channel'; ownerUserId: number; name: string; slug: string; settingsJson: string }): Promise<number> {
   const db = getPool()
+  const spaceUlid = genSpaceUlid()
   const [ins] = await db.query(
-    `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES (?, ?, ?, ?, ?)` ,
-    [input.type, input.ownerUserId, input.name, input.slug, input.settingsJson]
+    `INSERT INTO spaces (type, owner_user_id, ulid, name, slug, settings) VALUES (?, ?, ?, ?, ?, ?)` ,
+    [input.type, input.ownerUserId, spaceUlid, input.name, input.slug, input.settingsJson]
   )
   return Number((ins as any).insertId)
 }
@@ -52,9 +54,10 @@ export async function insertUser(data: { email: string; passwordHash: string; di
 
 export async function insertPersonalSpaceForUser(userId: number, name: string, slug: string): Promise<void> {
   const db = getPool()
+  const spaceUlid = genSpaceUlid()
   await db.query(
-    `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES ('personal', ?, ?, ?, ?)` ,
-    [userId, name, slug, JSON.stringify({ visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true })]
+    `INSERT INTO spaces (type, owner_user_id, ulid, name, slug, settings) VALUES ('personal', ?, ?, ?, ?, ?)` ,
+    [userId, spaceUlid, name, slug, JSON.stringify({ visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true })]
   )
 }
 

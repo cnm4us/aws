@@ -31,6 +31,7 @@ type MeResponse = {
 
 type SpaceSummary = {
   id: number
+  ulid?: string | null
   name: string
   slug: string
   type: 'personal' | 'group' | 'channel'
@@ -47,7 +48,7 @@ type MySpacesResponse = {
 
 type FeedMode =
   | { kind: 'global' }
-  | { kind: 'space'; spaceId: number }
+  | { kind: 'space'; spaceId: number; spaceUlid?: string | null }
 
 function swapOrientation(url: string): { portrait?: string; landscape?: string } {
   if (!url) return {}
@@ -201,9 +202,20 @@ export default function Feed() {
       return Number.isFinite(v) && v > 0 ? v : null
     } catch { return null }
   })())
+  const initialSpaceUlidFromQuery = useRef<string | null>((() => {
+    try {
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const raw = sp.get('spaceUlid')
+      return raw && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(raw) ? raw : null
+    } catch { return null }
+  })())
 
   function feedKey(m: FeedMode): string {
-    return m.kind === 'space' ? `s:${m.spaceId}` : 'g'
+    if (m.kind === 'space') {
+      const key = m.spaceUlid && typeof m.spaceUlid === 'string' && m.spaceUlid.length ? m.spaceUlid : String(m.spaceId)
+      return `s:${key}`
+    }
+    return 'g'
   }
 
   function hasSnapshot(mode: FeedMode): boolean {
@@ -320,11 +332,27 @@ export default function Feed() {
       const sid = initialSpaceFromQuery.current
       initialSpaceFromQuery.current = null
       if (sid && Number.isFinite(sid)) {
-        setFeedMode({ kind: 'space', spaceId: sid })
+        const match = flattenSpaces(spaceList).find((s) => s.id === sid)
+        const spaceUlid = match?.ulid ?? null
+        setFeedMode({ kind: 'space', spaceId: sid, spaceUlid })
         try {
           // Clean the query param to avoid lingering state on refresh
           const url = new URL(window.location.href)
           url.searchParams.delete('space')
+          window.history.replaceState({}, '', url.toString())
+        } catch {}
+      }
+    }
+    // If URL specifies ?spaceUlid=ULID, resolve via loaded space list and set feed
+    if (initialSpaceUlidFromQuery.current && feedMode.kind === 'global') {
+      const su = initialSpaceUlidFromQuery.current
+      const match = flattenSpaces(spaceList).find((s) => (s.ulid || '') === su)
+      if (match) {
+        initialSpaceUlidFromQuery.current = null
+        setFeedMode({ kind: 'space', spaceId: match.id, spaceUlid: match.ulid || null })
+        try {
+          const url = new URL(window.location.href)
+          url.searchParams.delete('spaceUlid')
           window.history.replaceState({}, '', url.toString())
         } catch {}
       }
@@ -912,7 +940,9 @@ export default function Feed() {
 
   const handleSelectSpace = (spaceId: number) => {
     saveSnapshot()
-    const target: FeedMode = { kind: 'space', spaceId }
+    const match = flattenSpaces(spaceList).find((s) => s.id === spaceId)
+    const spaceUlid = match?.ulid ?? null
+    const target: FeedMode = { kind: 'space', spaceId, spaceUlid }
     if (!hasSnapshot(target)) {
       firstVisitKeyRef.current = feedKey(target)
       setRestorePoster(null)
@@ -929,7 +959,7 @@ export default function Feed() {
     } else {
       firstVisitKeyRef.current = null
     }
-    setFeedMode({ kind: 'space', spaceId })
+    setFeedMode({ kind: 'space', spaceId, spaceUlid })
     setDrawerOpen(false)
   }
 
@@ -985,6 +1015,7 @@ export default function Feed() {
       <button
         key={space.id}
         onClick={() => handleSelectSpace(space.id)}
+        title={space.ulid ? `ULID: ${space.ulid}` : undefined}
         style={{
           width: '100%',
           textAlign: 'left',

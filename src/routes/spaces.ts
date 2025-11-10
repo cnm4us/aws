@@ -21,6 +21,7 @@ type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber';
 
 type SpaceSummary = {
   id: number;
+  ulid: string | null;
   name: string;
   slug: string;
   type: SpaceType;
@@ -74,6 +75,7 @@ async function hasActiveSubscription(db: any, spaceId: number, userId: number): 
 function mapSpaceSummary(row: any, relationship: SpaceRelationship, subscribed: boolean): SpaceSummary {
   return {
     id: Number(row.id),
+    ulid: row.ulid ? String(row.ulid) : null,
     name: String(row.name),
     slug: String(row.slug),
     type: String(row.type) as SpaceType,

@@ -218,6 +218,7 @@ export async function ensureSchema(db: DB) {
       type ENUM('personal','group','channel') NOT NULL,
       org_id BIGINT UNSIGNED NULL,
       owner_user_id BIGINT UNSIGNED NULL,
+      ulid CHAR(26) NULL,
       name VARCHAR(128) NOT NULL,
       slug VARCHAR(128) NOT NULL,
       settings JSON NULL,
@@ -226,12 +227,15 @@ export async function ensureSchema(db: DB) {
       KEY idx_spaces_owner (owner_user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+  // Idempotent add for upgrades
+  await db.query(`ALTER TABLE spaces ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
   try {
     await db.query(`ALTER TABLE spaces DROP INDEX slug`);
   } catch {}
   try {
     await db.query(`ALTER TABLE spaces ADD UNIQUE INDEX idx_spaces_type_slug (type, slug)`);
   } catch {}
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_spaces_ulid ON spaces (ulid)`); } catch {}
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS user_space_roles (

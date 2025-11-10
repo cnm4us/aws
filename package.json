@@ -18,6 +18,7 @@
     "web:build:scoped": "npm run build && vite build --config frontend/vite.config.ts",
     "web:deploy:scoped": "node scripts/web-deploy.js scoped",
     "admin:own-uploads": "ts-node scripts/admin-own-uploads.ts",
+    "admin:backfill-spaces-ulid": "ts-node scripts/backfill-spaces-ulid.ts",
     "e2e": "playwright test --config=e2e/playwright.config.ts",
     "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",

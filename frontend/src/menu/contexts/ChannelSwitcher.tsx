@@ -5,6 +5,7 @@ type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
 
 type SpaceSummary = {
   id: number
+  ulid?: string | null
   name: string
   slug: string
   type: SpaceType
@@ -82,7 +83,13 @@ export default function ChannelSwitcher(props: {
     if (onSelectSpace) return onSelectSpace(spaceId)
     const url = new URL(window.location.href)
     url.pathname = '/'
-    url.searchParams.set('space', String(spaceId))
+    // Prefer ULID param when available; fallback to numeric id
+    try {
+      const s = entries.groups.find((g) => g.id === spaceId) || entries.channels.find((c) => c.id === spaceId) || spaces?.personal || spaces?.global
+      const su = (s && 'ulid' in (s as any)) ? (s as any).ulid : null
+      if (su && typeof su === 'string' && su.length === 26) url.searchParams.set('spaceUlid', su)
+      else url.searchParams.set('space', String(spaceId))
+    } catch { url.searchParams.set('space', String(spaceId)) }
     window.location.href = url.toString()
   }
 
@@ -100,6 +107,8 @@ export default function ChannelSwitcher(props: {
       <button
         key={space.id}
         onClick={() => gotoSpace(space.id)}
+        title={space.ulid ? `ULID: ${space.ulid}` : undefined}
+        data-space-ulid={space.ulid || undefined}
         style={{
           width: '100%',
           textAlign: 'left',

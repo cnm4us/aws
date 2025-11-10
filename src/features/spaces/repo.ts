@@ -21,13 +21,13 @@ export async function fetchSiteReviewFlags(conn?: DB): Promise<{ requireGroupRev
 }
 
 export async function personalSpaceByOwner(userId: number, conn?: DB): Promise<any | null> {
-  const [rows] = await db(conn).query(`SELECT id, name, slug, type FROM spaces WHERE type = 'personal' AND owner_user_id = ? LIMIT 1`, [userId])
+  const [rows] = await db(conn).query(`SELECT id, ulid, name, slug, type FROM spaces WHERE type = 'personal' AND owner_user_id = ? LIMIT 1`, [userId])
   return (rows as any[])[0] || null
 }
 
 export async function listGroupMemberships(userId: number, conn?: DB): Promise<any[]> {
   const [rows] = await db(conn).query(
-    `SELECT s.id, s.name, s.slug, s.type,
+    `SELECT s.id, s.ulid, s.name, s.slug, s.type,
             MAX(CASE WHEN r.name = 'group_admin' THEN 1 ELSE 0 END) AS is_admin
        FROM user_space_roles usr
        JOIN spaces s ON s.id = usr.space_id
@@ -42,7 +42,7 @@ export async function listGroupMemberships(userId: number, conn?: DB): Promise<a
 
 export async function listChannelMemberships(userId: number, conn?: DB): Promise<any[]> {
   const [rows] = await db(conn).query(
-    `SELECT s.id, s.name, s.slug, s.type,
+    `SELECT s.id, s.ulid, s.name, s.slug, s.type,
             MAX(CASE WHEN r.name = 'channel_admin' THEN 1 ELSE 0 END) AS is_admin
        FROM user_space_roles usr
        JOIN spaces s ON s.id = usr.space_id
@@ -57,7 +57,7 @@ export async function listChannelMemberships(userId: number, conn?: DB): Promise
 
 export async function listChannelSubscriptions(userId: number, conn?: DB): Promise<any[]> {
   const [rows] = await db(conn).query(
-    `SELECT s.id, s.name, s.slug, s.type
+    `SELECT s.id, s.ulid, s.name, s.slug, s.type
        FROM space_subscriptions sub
        JOIN spaces s ON s.id = sub.space_id
       WHERE sub.user_id = ? AND sub.status = 'active'`,
@@ -68,7 +68,7 @@ export async function listChannelSubscriptions(userId: number, conn?: DB): Promi
 
 export async function findGlobalSpaceCandidate(conn?: DB): Promise<any | null> {
   const [globalSlugRows] = await db(conn).query(
-    `SELECT id, name, slug, type, settings
+    `SELECT id, ulid, name, slug, type, settings
        FROM spaces
       WHERE slug IN ('global', 'global-feed')
       ORDER BY slug = 'global' DESC
@@ -76,7 +76,7 @@ export async function findGlobalSpaceCandidate(conn?: DB): Promise<any | null> {
   )
   const bySlug = (globalSlugRows as any[])[0] || null
   if (bySlug) return bySlug
-  const [channelCandidates] = await db(conn).query(`SELECT id, name, slug, type, settings FROM spaces WHERE type = 'channel' LIMIT 50`)
+  const [channelCandidates] = await db(conn).query(`SELECT id, ulid, name, slug, type, settings FROM spaces WHERE type = 'channel' LIMIT 50`)
   return (channelCandidates as any[])[0] || null
 }
 
@@ -97,4 +97,3 @@ export async function isBannedFromSpace(spaceId: number, userId: number, conn?: 
     return (rows as any[]).length > 0
   } catch { return false }
 }
-

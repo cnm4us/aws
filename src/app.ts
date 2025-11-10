@@ -13,6 +13,7 @@ import { pagesRouter } from './routes/pages';
 import adminRouter from './routes/admin';
 import spacesRouter from './routes/spaces';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
+import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { sessionParse } from './middleware/sessionParse';
 import { csrfProtect } from './middleware/csrf';
 import { requireAuth } from './middleware/auth';
@@ -156,12 +157,13 @@ export function buildServer(): express.Application {
     try {
       const slug = String(req.params.slug || '').trim().toLowerCase();
       const db = getPool();
-      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'personal' AND slug = ? LIMIT 1`, [slug]);
+      const [rows] = await db.query(`SELECT id, ulid, name, settings FROM spaces WHERE type = 'personal' AND slug = ? LIMIT 1`, [slug]);
       const space = (rows as any[])[0];
       if (!space) return res.status(404).send('Member space not found');
       res.json({
         type: 'personal',
         id: Number(space.id),
+        ulid: space.ulid || null,
         name: space.name,
         slug,
         settings: space.settings,
@@ -174,12 +176,13 @@ export function buildServer(): express.Application {
     try {
       const slug = String(req.params.slug || '').trim().toLowerCase();
       const db = getPool();
-      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'group' AND slug = ? LIMIT 1`, [slug]);
+      const [rows] = await db.query(`SELECT id, ulid, name, settings FROM spaces WHERE type = 'group' AND slug = ? LIMIT 1`, [slug]);
       const space = (rows as any[])[0];
       if (!space) return res.status(404).send('Group not found');
       res.json({
         type: 'group',
         id: Number(space.id),
+        ulid: space.ulid || null,
         name: space.name,
         slug,
         settings: space.settings,
@@ -192,12 +195,13 @@ export function buildServer(): express.Application {
     try {
       const slug = String(req.params.slug || '').trim().toLowerCase();
       const db = getPool();
-      const [rows] = await db.query(`SELECT id, name, settings FROM spaces WHERE type = 'channel' AND slug = ? LIMIT 1`, [slug]);
+      const [rows] = await db.query(`SELECT id, ulid, name, settings FROM spaces WHERE type = 'channel' AND slug = ? LIMIT 1`, [slug]);
       const space = (rows as any[])[0];
       if (!space) return res.status(404).send('Channel not found');
       res.json({
         type: 'channel',
         id: Number(space.id),
+        ulid: space.ulid || null,
         name: space.name,
         slug,
         settings: space.settings,
@@ -236,9 +240,10 @@ export function buildServer(): express.Application {
         slug = `${baseSlug}-${n}`;
       }
       const settings = { visibility: 'public', membership: 'none', publishing: 'owner_only', moderation: 'none', follow_enabled: true };
+      const spaceUlid = genSpaceUlid();
       const [insSpace] = await db.query(
-        `INSERT INTO spaces (type, owner_user_id, name, slug, settings) VALUES ('personal', ?, ?, ?, ?)`,
-        [userId, dn || e, slug, JSON.stringify(settings)]
+        `INSERT INTO spaces (type, owner_user_id, ulid, name, slug, settings) VALUES ('personal', ?, ?, ?, ?, ?)`,
+        [userId, spaceUlid, dn || e, slug, JSON.stringify(settings)]
       );
       const spaceId = (insSpace as any).insertId as number;
       // Assign default roles using new catalog
