@@ -10,6 +10,8 @@ type UploadItem = {
   posterLandscape?: string
   masterPortrait?: string
   masterLandscape?: string
+  // Stable, public video identifier (prefer production ULID; fallback to asset UUID)
+  videoId?: string | null
   ownerId?: number | null
   ownerName?: string | null
   ownerEmail?: string | null
@@ -69,6 +71,10 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const publicationId = publication?.id != null ? Number(publication.id) : null
   const spaceId = publication?.space_id != null ? Number(publication.space_id) : (raw.space_id != null ? Number(raw.space_id) : null)
   const publishedAt = publication?.published_at ? String(publication.published_at) : null
+  // Prefer production ULID; fallback to upload asset UUID; ensure string or null
+  const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
+  const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
+  const videoId: string | null = productionUlid || assetUuid || null
   return {
     id: Number(raw.id),
     url: masterPortrait || master,
@@ -76,6 +82,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     posterLandscape,
     masterPortrait,
     masterLandscape,
+    videoId,
     ownerId,
     ownerName,
     ownerEmail,
@@ -723,10 +730,18 @@ export default function Feed() {
         const useUrl =
           (desired && posterAvail[desired] !== false ? desired : undefined) ||
           (fallback && posterAvail[fallback] !== false ? fallback : undefined)
+        // Derive stable attributes for DOM anchoring and analytics
+        const vid = (it as any).videoId ? String((it as any).videoId) : null
+        const pubId = it.publicationId != null ? String(it.publicationId) : null
+        const slideId = vid ? `v-${vid}` : (pubId ? `p-${pubId}` : `u-${it.id}`)
         return (
           <div
             key={`${it.id}-${it.publicationId ?? 'upload'}`}
             className="slide"
+            id={slideId}
+            data-video-id={vid || undefined}
+            data-publication-id={pubId || undefined}
+            data-upload-id={String(it.id)}
             style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
             <div className="holder">
@@ -734,6 +749,7 @@ export default function Feed() {
                 playsInline
                 preload="auto"
                 poster={useUrl}
+                data-video-id={vid || undefined}
                 onClick={(e) => {
                   e.stopPropagation()
                   try { e.preventDefault() } catch {}

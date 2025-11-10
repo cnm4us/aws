@@ -17,6 +17,7 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
     SELECT
       sp.id AS publication_id,
       sp.upload_id,
+      sp.production_id,
       sp.space_id,
       sp.status AS publication_status,
       sp.requested_by,
@@ -54,7 +55,9 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
       u.origin_space_id,
       owner.id AS owner_id,
       owner.display_name AS owner_display_name,
-      owner.email AS owner_email
+      owner.email AS owner_email,
+      p.id AS production_id_resolved,
+      p.ulid AS production_ulid
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
@@ -85,6 +88,7 @@ export async function listSpaceFeedRows(spaceId: number, opts: { cursorPublished
     SELECT
       sp.id AS publication_id,
       sp.upload_id,
+      sp.production_id,
       sp.space_id,
       sp.status AS publication_status,
       sp.requested_by,
@@ -122,7 +126,9 @@ export async function listSpaceFeedRows(spaceId: number, opts: { cursorPublished
       u.origin_space_id,
       owner.id AS owner_id,
       owner.display_name AS owner_display_name,
-      owner.email AS owner_email
+      owner.email AS owner_email,
+      p.id AS production_id_resolved,
+      p.ulid AS production_ulid
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id

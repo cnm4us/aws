@@ -3,6 +3,8 @@ import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 export type FeedPublication = {
   id: number
   upload_id: number
+  production_id?: number | null
+  production_ulid?: string | null
   space_id: number
   status: SpacePublicationStatus
   requested_by: number | null

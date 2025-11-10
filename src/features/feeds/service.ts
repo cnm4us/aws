@@ -20,6 +20,8 @@ export async function getGlobalFeed(opts: { limit?: number; cursor?: string | nu
     const publication = {
       id: Number(row.publication_id),
       upload_id: Number(row.upload_id),
+      production_id: row.production_id != null ? Number(row.production_id) : (row.production_id_resolved != null ? Number(row.production_id_resolved) : null),
+      production_ulid: row.production_ulid ? String(row.production_ulid) : null,
       space_id: Number(row.space_id),
       status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
@@ -87,6 +89,8 @@ export async function getSpaceFeed(spaceId: number, opts: { limit?: number; curs
     const publication = {
       id: Number(row.publication_id),
       upload_id: Number(row.upload_id),
+      production_id: row.production_id != null ? Number(row.production_id) : (row.production_id_resolved != null ? Number(row.production_id_resolved) : null),
+      production_ulid: row.production_ulid ? String(row.production_ulid) : null,
       space_id: Number(row.space_id),
       status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
