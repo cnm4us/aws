@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 // permission checks handled in publications service
 import * as pubsSvc from '../features/publications/service'
+import * as likesSvc from '../features/likes/service'
 // Legacy models removed from route usage; publications now delegate to service/repo
 
 // legacy type aliases removed
@@ -171,5 +172,53 @@ publicationsRouter.post('/api/publications/:id/republish', requireAuth, async (r
     const userId = Number(req.user!.id)
     const updated = await pubsSvc.republish(publicationId, { userId })
     res.json({ publication: updated })
+  } catch (err: any) { next(err) }
+})
+
+// --- Likes ---
+// Summary: count + whether current user liked
+publicationsRouter.get('/api/publications/:id/likes', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const data = await likesSvc.getPublicationLikesSummary(publicationId, userId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// Like (idempotent)
+publicationsRouter.post('/api/publications/:id/likes', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const data = await likesSvc.likePublication(publicationId, userId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// Unlike (idempotent)
+publicationsRouter.delete('/api/publications/:id/likes', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const data = await likesSvc.unlikePublication(publicationId, userId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// Who liked list (paginated)
+publicationsRouter.get('/api/publications/:id/likes/users', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const limitRaw = Number(req.query.limit ?? 50)
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
+    const data = await likesSvc.listPublicationLikers(publicationId, userId, { limit, cursor })
+    res.json(data)
   } catch (err: any) { next(err) }
 })

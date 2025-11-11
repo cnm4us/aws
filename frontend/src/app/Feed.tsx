@@ -18,6 +18,7 @@ type UploadItem = {
   publicationId?: number | null
   spaceId?: number | null
   publishedAt?: string | null
+  likesCount?: number | null
 }
 
 type MeResponse = {
@@ -72,6 +73,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const publicationId = publication?.id != null ? Number(publication.id) : null
   const spaceId = publication?.space_id != null ? Number(publication.space_id) : (raw.space_id != null ? Number(raw.space_id) : null)
   const publishedAt = publication?.published_at ? String(publication.published_at) : null
+  const likesCount = typeof publication?.likes_count === 'number' ? Number(publication.likes_count) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -90,6 +92,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     publicationId,
     spaceId,
     publishedAt,
+    likesCount,
   }
 }
 
@@ -177,6 +180,16 @@ export default function Feed() {
   const hlsByIndexRef = useRef<Record<number, Hls | null>>({})
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
+  // Likes state keyed by publicationId
+  const [likesCountMap, setLikesCountMap] = useState<Record<number, number>>({})
+  const [likedMap, setLikedMap] = useState<Record<number, boolean>>({})
+  const [likeBusy, setLikeBusy] = useState<Record<number, boolean>>({})
+  // Who liked modal state
+  const [likersOpen, setLikersOpen] = useState(false)
+  const [likersForPub, setLikersForPub] = useState<number | null>(null)
+  const [likersItems, setLikersItems] = useState<Array<{ userId: number; displayName: string; email: string | null; createdAt: string }>>([])
+  const [likersCursor, setLikersCursor] = useState<string | null>(null)
+  const [likersLoading, setLikersLoading] = useState(false)
   const lastTouchTsRef = useRef<number>(0)
   const suppressDurableRestoreRef = useRef<boolean>(false)
   const restoringRef = useRef<boolean>(false)
@@ -199,6 +212,84 @@ export default function Feed() {
 
   function userKeyPrefix(): string {
     return myUserId != null ? `u:${myUserId}|` : ''
+  }
+
+  function getCsrfToken(): string | null {
+    try {
+      const m = document.cookie.match(/(?:^|; )csrf=([^;]+)/)
+      return m ? decodeURIComponent(m[1]) : null
+    } catch { return null }
+  }
+
+  async function ensureLikeSummary(publicationId: number | null | undefined) {
+    if (!publicationId || !isAuthed) return
+    if (likesCountMap[publicationId] != null && likedMap[publicationId] != null) return
+    try {
+      const res = await fetch(`/api/publications/${publicationId}/likes`, { credentials: 'same-origin' })
+      if (!res.ok) return
+      const data = await res.json()
+      setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? 0) }))
+      setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
+    } catch {}
+  }
+
+  async function toggleLike(publicationId: number | null | undefined) {
+    if (!publicationId) return
+    if (!isAuthed) { try { alert('Please sign in to like videos.') } catch {} ; return }
+    if (likeBusy[publicationId]) return
+    const currentlyLiked = !!likedMap[publicationId]
+    const csrf = getCsrfToken()
+    setLikeBusy((b) => ({ ...b, [publicationId]: true }))
+    // Optimistic update
+    setLikedMap((m) => ({ ...m, [publicationId]: !currentlyLiked }))
+    setLikesCountMap((m) => ({ ...m, [publicationId]: Math.max(0, (m[publicationId] ?? 0) + (currentlyLiked ? -1 : 1)) }))
+    try {
+      const method = currentlyLiked ? 'DELETE' : 'POST'
+      const res = await fetch(`/api/publications/${publicationId}/likes`, {
+        method,
+        headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+        credentials: 'same-origin',
+      })
+      if (!res.ok) throw new Error('like_toggle_failed')
+      const data = await res.json()
+      setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? (m[publicationId] ?? 0)) }))
+      setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
+    } catch {
+      // Rollback on error
+      setLikedMap((m) => ({ ...m, [publicationId]: currentlyLiked }))
+      setLikesCountMap((m) => ({ ...m, [publicationId]: Math.max(0, (m[publicationId] ?? 0) + (currentlyLiked ? 1 : -1)) }))
+    } finally {
+      setLikeBusy((b) => ({ ...b, [publicationId]: false }))
+    }
+  }
+
+  async function openLikers(publicationId: number | null | undefined) {
+    if (!publicationId) return
+    setLikersOpen(true)
+    setLikersForPub(publicationId)
+    setLikersItems([])
+    setLikersCursor(null)
+    await loadMoreLikers(publicationId)
+  }
+
+  async function loadMoreLikers(publicationId?: number | null) {
+    const pubId = publicationId ?? likersForPub
+    if (!pubId) return
+    if (likersLoading) return
+    setLikersLoading(true)
+    try {
+      const params = new URLSearchParams({ limit: '50' })
+      if (likersCursor) params.set('cursor', likersCursor)
+      const res = await fetch(`/api/publications/${pubId}/likes/users?${params.toString()}`, { credentials: 'same-origin' })
+      if (!res.ok) throw new Error('likers_fetch_failed')
+      const data = await res.json()
+      const items = Array.isArray(data?.items) ? data.items : []
+      setLikersItems((prev) => prev.concat(items))
+      setLikersCursor(typeof data?.nextCursor === 'string' && data.nextCursor.length ? data.nextCursor : null)
+    } catch {}
+    finally {
+      setLikersLoading(false)
+    }
   }
   // We no longer read URL hash fragments for deep linking
 
@@ -1030,6 +1121,64 @@ export default function Feed() {
                   touchAction: 'manipulation' as any,
                 }}
               />
+              {/* Like control (always visible, right side) */}
+              {it.publicationId != null && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 14,
+                    top: '40%',
+                    transform: 'translateY(-50%)',
+                    display: 'grid',
+                    gap: 8,
+                    alignItems: 'center',
+                    justifyItems: 'center',
+                    zIndex: 5,
+                  }}
+                >
+                  <button
+                    aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
+                    aria-pressed={likedMap[it.publicationId] ? true : false}
+                    onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); toggleLike(it.publicationId) }}
+                    disabled={!!likeBusy[it.publicationId]}
+                    style={{
+                      width: 54,
+                      height: 54,
+                      minWidth: 44,
+                      minHeight: 44,
+                      borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: '#fff',
+                    }}
+                  >
+                    {likedMap[it.publicationId] ? (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#e53935" stroke="#e53935" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12.1 21.35l-1.1-1.02C5.14 15.24 2 12.36 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.86-3.14 6.74-8.9 11.83l-1 1.02z" />
+                      </svg>
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.86 3.14 6.74 8.9 11.83l1.1 1.02 1.1-1.02C20.86 15.24 24 12.36 24 8.5 24 5.42 21.58 3 18.5 3c-1.74 0-3.41.81-4.5 2.09C13.91 3.81 12.24 3 10.5 3z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); openLikers(it.publicationId) }}
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      borderRadius: 16,
+                      padding: '4px 10px',
+                      color: '#fff',
+                      minWidth: 44,
+                    }}
+                  >
+                    {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
+                  </button>
+                </div>
+              )}
               {playingIndex !== i && (
                 <div
                   aria-hidden
@@ -1057,7 +1206,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, isPortrait, posterAvail, playingIndex, startedMap]
+    [items, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, isAuthed]
   )
 
   function reanchorToIndex(curIndex: number) {
@@ -1154,6 +1303,14 @@ export default function Feed() {
     slidesEl.forEach((el) => io.observe(el))
     return () => io.disconnect()
   }, [items, unlocked])
+
+  // Load likes summary for the active slide when index changes
+  useEffect(() => {
+    const it = items[index]
+    if (it && it.publicationId != null) {
+      ensureLikeSummary(it.publicationId)
+    }
+  }, [index, items])
 
   // Dwell-based persist of last-active and save on page hide
   const persistTimerRef = useRef<number | null>(null)
@@ -1460,6 +1617,40 @@ export default function Feed() {
           >
             Close
           </button>
+        </div>
+      )}
+      {likersOpen && (
+        <div
+          onClick={() => setLikersOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(520px, 92vw)', maxHeight: '80vh', background: 'rgba(22,22,22,0.96)', color: '#fff', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: 600 }}>Likes</div>
+              <button onClick={() => setLikersOpen(false)} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '6px 10px' }}>Close</button>
+            </div>
+            <div style={{ overflowY: 'auto' }}>
+              {likersItems.length === 0 && !likersLoading ? (
+                <div style={{ padding: 16, color: '#aaa' }}>No likes yet.</div>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {likersItems.map((u) => (
+                    <li key={`${u.userId}-${u.createdAt}`} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ fontSize: 15 }}>{u.displayName || u.email || `User ${u.userId}`}</div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>{new Date(u.createdAt).toLocaleString()}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              {likersCursor ? (
+                <button disabled={likersLoading} onClick={() => loadMoreLikers()} style={{ background: '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '6px 10px' }}>{likersLoading ? 'Loading…' : 'Load More'}</button>
+              ) : (
+                <span style={{ fontSize: 12, opacity: 0.7, padding: '6px 0' }}>End of list</span>
+              )}
+            </div>
+          </div>
         </div>
       )}
       {restoring && (

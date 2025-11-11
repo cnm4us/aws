@@ -355,6 +355,7 @@ export async function ensureSchema(db: DB) {
       owner_user_id BIGINT UNSIGNED NULL,
       visible_in_space TINYINT(1) NOT NULL DEFAULT 1,
       visible_in_global TINYINT(1) NOT NULL DEFAULT 0,
+      likes_count INT UNSIGNED NOT NULL DEFAULT 0,
       comments_enabled TINYINT(1) NULL,
       published_at DATETIME NULL,
       unpublished_at DATETIME NULL,
@@ -378,6 +379,7 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS owner_user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_space TINYINT(1) NOT NULL DEFAULT 1`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS likes_count INT UNSIGNED NOT NULL DEFAULT 0`);
   // Drop legacy unique (upload_id, space_id) if present
   try { await db.query(`DROP INDEX uniq_space_publications_upload_space ON space_publications`); } catch {}
   // Supporting indexes (best-effort)
@@ -396,6 +398,17 @@ export async function ensureSchema(db: DB) {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       KEY idx_space_publication_events_pub (publication_id),
       KEY idx_space_publication_events_created (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Publication Likes (per publication, per user)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS publication_likes (
+      publication_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (publication_id, user_id),
+      KEY idx_publication_likes_user_created (user_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 }
