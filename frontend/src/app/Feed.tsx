@@ -142,6 +142,8 @@ function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
 }
 
 export default function Feed() {
+  const FEED_DEBUG = true
+  const dlog = (...args: any[]) => { try { if (FEED_DEBUG) console.log('[FEED]', ...args) } catch {} }
   const [items, setItems] = useState<UploadItem[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
@@ -176,6 +178,110 @@ export default function Feed() {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
   const lastTouchTsRef = useRef<number>(0)
+  const suppressDurableRestoreRef = useRef<boolean>(false)
+  const restoringRef = useRef<boolean>(false)
+  const itemsFeedKeyRef = useRef<string>('')
+
+  // ------- Durable per‑feed last‑active state (localStorage only; no URL hash) -------
+  type LastActive = {
+    feedItemId: number | null
+    videoId: string | null
+    positionMs: number | null
+    sortKey: string | null
+    index: number
+    updatedAt: number
+    version: number
+  }
+  const LAST_ACTIVE_VER = 2
+  const FEED_LAST_PREFIX = 'feed:last:v2:'
+  const VIDEO_LAST_PREFIX = 'video:last:v1:'
+  const LAST_FEED_KEY = 'feed:last:current'
+
+  function userKeyPrefix(): string {
+    return myUserId != null ? `u:${myUserId}|` : ''
+  }
+  // We no longer read URL hash fragments for deep linking
+
+  function feedStorageKey(m: FeedMode): string { return userKeyPrefix() + FEED_LAST_PREFIX + feedKey(m) }
+
+  function computeSlideId(it: UploadItem): string {
+    const vid = (it as any).videoId ? String((it as any).videoId) : null
+    const pubId = it.publicationId != null ? String(it.publicationId) : null
+    return vid ? `v-${vid}` : (pubId ? `p-${pubId}` : `u-${it.id}`)
+  }
+
+  function saveLastActiveFor(m: FeedMode, idx: number) {
+    if (typeof window === 'undefined') return
+    // Require user and stable feed identity to avoid stray keys
+    if (myUserId == null) return
+    if (m.kind === 'space' && !(m.spaceUlid && m.spaceUlid.length)) return // require ULID for feed key
+    // Don't persist while restoring/re-anchoring or if feed items don't match the current feed key
+    if (restoringRef.current) { return }
+    const currentFeedKey = feedKey(m)
+    if (!currentFeedKey || !itemsFeedKeyRef.current || currentFeedKey !== itemsFeedKeyRef.current) {
+      return
+    }
+    const it = items[idx]
+    if (!it) return
+    // Extra guard: ensure the item belongs to the active space when saving for a space feed
+    if (m.kind === 'space' && it.spaceId != null && it.spaceId !== m.spaceId) {
+      return
+    }
+    let positionMs: number | null = null
+    try {
+      const raw = Math.floor((getVideoEl(idx)?.currentTime || 0) * 1000)
+      positionMs = raw > 500 ? raw : null // store only when >0.5s to avoid noise
+    } catch { positionMs = null }
+    const sortKey = it.publishedAt ? `${it.publishedAt}#${it.publicationId ?? it.id}` : null
+    const rec: LastActive = {
+      feedItemId: it.publicationId ?? null,
+      videoId: (it as any).videoId ? String((it as any).videoId) : null,
+      positionMs,
+      sortKey,
+      index: idx,
+      updatedAt: Date.now(),
+      version: LAST_ACTIVE_VER,
+    }
+    try { localStorage.setItem(feedStorageKey(m), JSON.stringify(rec)); dlog('saveLastActive', { key: feedStorageKey(m), idx, positionMs }) } catch {}
+  }
+
+  function readLastActive(m: FeedMode): LastActive | null {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(feedStorageKey(m)) : null
+      dlog('readLastActive', { key: feedStorageKey(m), present: Boolean(raw) })
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj !== 'object') return null
+      return obj as LastActive
+    } catch { return null }
+  }
+
+  function readVideoProgress(videoId: string | null | undefined): number | null {
+    if (!videoId) return null
+    try {
+      const raw = localStorage.getItem(userKeyPrefix() + VIDEO_LAST_PREFIX + videoId)
+      if (!raw) return null
+      const n = Number(raw)
+      return Number.isFinite(n) && n >= 0 ? n : null
+    } catch { return null }
+  }
+
+  function writeLastFeed(spaceUlid: string | null | undefined) {
+    if (!spaceUlid) return
+    try { localStorage.setItem(userKeyPrefix() + LAST_FEED_KEY, `s:${spaceUlid}`); dlog('writeLastFeed', { value: `s:${spaceUlid}` }) } catch {}
+  }
+  function writeLastFeedGlobal() {
+    try { localStorage.setItem(userKeyPrefix() + LAST_FEED_KEY, 'g'); dlog('writeLastFeed', { value: 'g' }) } catch {}
+  }
+  function readLastFeed(): string | null {
+    try {
+      const key = userKeyPrefix() + LAST_FEED_KEY
+      const raw = localStorage.getItem(key)
+      dlog('readLastFeed', { key, value: raw })
+      if (!raw) return null
+      return String(raw)
+    } catch { return null }
+  }
 
   const spacesStatusRef = useRef<{ loading: boolean; loaded: boolean }>({ loading: false, loaded: false })
 
@@ -195,6 +301,7 @@ export default function Feed() {
   const [restoring, setRestoring] = useState<boolean>(false)
   const [restorePoster, setRestorePoster] = useState<string | null>(null)
   const firstVisitKeyRef = useRef<string | null>(null)
+  const didInitLastFeedRef = useRef<boolean>(false)
   const initialSpaceFromQuery = useRef<number | null>((() => {
     try {
       const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
@@ -212,8 +319,8 @@ export default function Feed() {
 
   function feedKey(m: FeedMode): string {
     if (m.kind === 'space') {
-      const key = m.spaceUlid && typeof m.spaceUlid === 'string' && m.spaceUlid.length ? m.spaceUlid : String(m.spaceId)
-      return `s:${key}`
+      const key = m.spaceUlid && typeof m.spaceUlid === 'string' && m.spaceUlid.length ? m.spaceUlid : ''
+      return key ? `s:${key}` : 's:pending'
     }
     return 'g'
   }
@@ -312,6 +419,12 @@ export default function Feed() {
         groups: Array.isArray(data.groups) ? data.groups : [],
         channels: Array.isArray(data.channels) ? data.channels : [],
       })
+      dlog('spaces loaded', {
+        personal: Boolean(data.personal),
+        global: Boolean(data.global),
+        groups: Array.isArray(data.groups) ? data.groups.length : 0,
+        channels: Array.isArray(data.channels) ? data.channels.length : 0,
+      })
       setSpacesError(null)
       spacesStatusRef.current.loaded = true
       setSpacesLoaded(true)
@@ -335,8 +448,8 @@ export default function Feed() {
         const match = flattenSpaces(spaceList).find((s) => s.id === sid)
         const spaceUlid = match?.ulid ?? null
         setFeedMode({ kind: 'space', spaceId: sid, spaceUlid })
+        // Clean the query param to avoid lingering state on refresh
         try {
-          // Clean the query param to avoid lingering state on refresh
           const url = new URL(window.location.href)
           url.searchParams.delete('space')
           window.history.replaceState({}, '', url.toString())
@@ -350,6 +463,7 @@ export default function Feed() {
       if (match) {
         initialSpaceUlidFromQuery.current = null
         setFeedMode({ kind: 'space', spaceId: match.id, spaceUlid: match.ulid || null })
+        // Clean the query param to avoid lingering state on refresh
         try {
           const url = new URL(window.location.href)
           url.searchParams.delete('spaceUlid')
@@ -367,6 +481,7 @@ export default function Feed() {
         setMe(data)
         setIsAuthed(Boolean(data.userId))
         setMyUserId(data.userId ?? null)
+        try { console.log('[FEED] me loaded', { userId: data.userId }) } catch {}
       } catch {
         if (canceled) return
         setMe(null)
@@ -386,9 +501,53 @@ export default function Feed() {
     loadSpaces(true).catch(() => {})
   }, [isAuthed, loadSpaces])
 
+  // If feedMode lacks spaceUlid but list is available, enrich it
+  useEffect(() => {
+    if (feedMode.kind !== 'space') return
+    if (feedMode.spaceUlid && feedMode.spaceUlid.length) return
+    const match = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId)
+    if (match?.ulid) {
+      setFeedMode({ kind: 'space', spaceId: feedMode.spaceId, spaceUlid: match.ulid })
+    }
+  }, [feedMode, spaceList])
+
+  // Always persist last selected feed on mode change, but only after initial startup restore attempt.
+  useEffect(() => {
+    if (!didInitLastFeedRef.current) return
+    if (myUserId == null) return
+    if (feedMode.kind === 'global') {
+      writeLastFeedGlobal()
+    } else if (feedMode.spaceUlid && feedMode.spaceUlid.length) {
+      writeLastFeed(feedMode.spaceUlid)
+    }
+  }, [feedMode.kind, feedMode.spaceUlid])
+
+  // On startup only, restore last selected feed (user-scoped) once user and spaces are ready.
+  useEffect(() => {
+    try {
+      if (didInitLastFeedRef.current) return
+      if (myUserId == null) return
+      if (!spaceList) return
+      // Only act when URL does not specify a space and we are currently on global
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const hasSpaceParam = Boolean(sp.get('space') || sp.get('spaceUlid'))
+      if (feedMode.kind !== 'global' || hasSpaceParam) { didInitLastFeedRef.current = true; return }
+      const last = readLastFeed()
+      didInitLastFeedRef.current = true
+      if (!last || !last.startsWith('s:')) return
+      const ulid = last.slice(2)
+      const match = flattenSpaces(spaceList).find((s) => (s.ulid || '') === ulid)
+      if (!match) return
+      dlog('startup restore to space', { ulid, spaceId: match.id })
+      setFeedMode({ kind: 'space', spaceId: match.id, spaceUlid: match.ulid || null })
+    } catch {}
+  }, [spaceList, myUserId, feedMode.kind])
+
   useEffect(() => {
     let canceled = false
     const load = async () => {
+      // Ensure user identity is known so durable restore can read user‑scoped keys
+      if (myUserId == null) return
       // Fast restore path: reuse prior UI state when available to avoid visible rewind
       if (!canceled && tryRestoreFor(feedMode)) {
         return
@@ -413,21 +572,44 @@ export default function Feed() {
           nextCursor = cursorStr
         }
         if (canceled) return
+        // Tag the feed key for which these items belong so we can guard saves
+        itemsFeedKeyRef.current = feedKey(feedMode)
         setItems(fetchedItems)
         setCursor(nextCursor)
-        setIndex(0)
+        // Determine initial index: URL hash > localStorage > default 0
+        let targetIndex = 0
+        let seekMs: number | null = null
+        if (!suppressDurableRestoreRef.current) {
+          const last = readLastActive(feedMode)
+          if (last) {
+            const iPub = last.feedItemId != null ? fetchedItems.findIndex((it) => (it.publicationId ?? null) === last.feedItemId) : -1
+            let iVid = -1
+            if (iPub < 0 && last.videoId) iVid = fetchedItems.findIndex((it) => ((it as any).videoId ?? null) === last.videoId)
+            const found = iPub >= 0 ? iPub : iVid
+            if (found >= 0) {
+              targetIndex = found
+              seekMs = (last.positionMs != null && last.positionMs > 0) ? last.positionMs : null
+            }
+          }
+        }
+        // Begin restore cycle to suppress premature saves during reanchor
+        restoringRef.current = true
+        setIndex(targetIndex)
         const fk = firstVisitKeyRef.current
         if (fk && fk === feedKey(feedMode)) {
-          const anchor = fetchedItems[0]
+          const anchor = fetchedItems[Math.max(0, Math.min(targetIndex, fetchedItems.length - 1))]
           const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
           setRestorePoster(poster)
+          restoringRef.current = true
+          setRestoring(true)
           requestAnimationFrame(() => {
-            try { reanchorToIndex(0) } catch {}
-            const v = getVideoEl(0)
+            try { reanchorToIndex(targetIndex) } catch {}
+            const v = getVideoEl(targetIndex)
             let doneOnce = false
             const done = () => {
               if (doneOnce) return; doneOnce = true
               setRestoring(false)
+              restoringRef.current = false
               setRestorePoster(null)
               setSnapEnabled(true)
               setSmoothEnabled(true)
@@ -436,12 +618,40 @@ export default function Feed() {
             if (v) {
               try { v.addEventListener('playing', done, { once: true } as any) } catch { try { v.addEventListener('playing', done) } catch {} }
               try { v.addEventListener('loadeddata', done, { once: true } as any) } catch { try { v.addEventListener('loadeddata', done) } catch {} }
+              if (seekMs && seekMs > 0) {
+                const applySeek = () => {
+                  try { v.currentTime = Math.max(0, seekMs! / 1000) } catch {}
+                  v.removeEventListener('loadedmetadata', applySeek)
+                }
+                try { v.addEventListener('loadedmetadata', applySeek, { once: true } as any) } catch { try { v.addEventListener('loadedmetadata', applySeek) } catch {} }
+                // If metadata already loaded, apply immediately
+                try { if ((v as any).readyState >= 1) applySeek() } catch {}
+              }
             }
             setTimeout(done, 900)
           })
         } else {
-          railRef.current && (railRef.current.scrollTop = 0)
+          // Use the same controlled reanchor flow even when firstVisitKeyRef is not set
+          restoringRef.current = true
+          requestAnimationFrame(() => {
+            try { reanchorToIndex(targetIndex) } catch {}
+            if (seekMs && seekMs > 0) {
+              const v = getVideoEl(targetIndex)
+              if (v) {
+                const applySeek = () => {
+                  try { v.currentTime = Math.max(0, seekMs! / 1000) } catch {}
+                  v.removeEventListener('loadedmetadata', applySeek)
+                }
+                try { v.addEventListener('loadedmetadata', applySeek, { once: true } as any) } catch { try { v.addEventListener('loadedmetadata', applySeek) } catch {} }
+                try { if ((v as any).readyState >= 1) applySeek() } catch {}
+              }
+            }
+            // End restore shortly after reanchor/seek has been scheduled
+            setTimeout(() => { restoringRef.current = false }, 400)
+          })
         }
+        // Allow durable restore again after this load cycle
+        suppressDurableRestoreRef.current = false
       } catch (err) {
         if (canceled) return
         console.error('initial feed load failed', err)
@@ -594,6 +804,13 @@ export default function Feed() {
     }
   }, [index, items])
 
+  // No URL hash syncing (clean URLs)
+
+  // Persist last-active on index changes (in addition to scroll handler)
+  useEffect(() => {
+    try { saveLastActiveFor(feedMode, index) } catch {}
+  }, [index])
+
   const attachAndPlay = async (i: number, opts?: { unmute?: boolean }) => {
     const v = videoRef.current
     const r = railRef.current
@@ -719,6 +936,7 @@ export default function Feed() {
     const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h / 2) / h)))
     if (i !== index) {
       setIndex(i)
+      schedulePersist(i)
       if (!loadingMore && items.length - i < 5 && cursor) {
         setLoadingMore(true)
         const loadMore = async () => {
@@ -917,6 +1135,32 @@ export default function Feed() {
     return () => io.disconnect()
   }, [items, unlocked])
 
+  // Dwell-based persist of last-active and save on page hide
+  const persistTimerRef = useRef<number | null>(null)
+  const schedulePersist = useCallback((i: number) => {
+    try { if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current) } catch {}
+    persistTimerRef.current = (setTimeout(() => {
+      try { saveLastActiveFor(feedMode, i) } catch {}
+    }, 380) as unknown) as number
+  }, [feedMode, items])
+
+  useEffect(() => {
+    schedulePersist(index)
+  }, [index, schedulePersist])
+
+  useEffect(() => {
+    const onHide = () => { try { saveLastActiveFor(feedMode, index) } catch {} }
+    const onBeforeUnload = () => { try { saveLastActiveFor(feedMode, index) } catch {} }
+    try { document.addEventListener('visibilitychange', onHide) } catch {}
+    try { window.addEventListener('pagehide', onHide) } catch {}
+    try { window.addEventListener('beforeunload', onBeforeUnload) } catch {}
+    return () => {
+      try { document.removeEventListener('visibilitychange', onHide) } catch {}
+      try { window.removeEventListener('pagehide', onHide) } catch {}
+      try { window.removeEventListener('beforeunload', onBeforeUnload) } catch {}
+    }
+  }, [feedMode, index])
+
   useEffect(() => {
     const v = getVideoEl(index)
     if (!v) return
@@ -939,6 +1183,7 @@ export default function Feed() {
   }
 
   const handleSelectSpace = (spaceId: number) => {
+    try { saveLastActiveFor(feedMode, index) } catch {}
     saveSnapshot()
     const match = flattenSpaces(spaceList).find((s) => s.id === spaceId)
     const spaceUlid = match?.ulid ?? null
@@ -959,6 +1204,8 @@ export default function Feed() {
     } else {
       firstVisitKeyRef.current = null
     }
+    // Persist last selected feed; do not modify the URL params
+    if (spaceUlid) { writeLastFeed(spaceUlid) }
     setFeedMode({ kind: 'space', spaceId, spaceUlid })
     setDrawerOpen(false)
   }
@@ -966,6 +1213,7 @@ export default function Feed() {
   // Legacy feed removed
 
   const handleSelectGlobal = () => {
+    try { saveLastActiveFor(feedMode, index) } catch {}
     saveSnapshot()
     const target: FeedMode = { kind: 'global' }
     if (!hasSnapshot(target)) {
@@ -984,6 +1232,8 @@ export default function Feed() {
     } else {
       firstVisitKeyRef.current = null
     }
+    // Persist last selected feed as global
+    writeLastFeedGlobal()
     setFeedMode({ kind: 'global' })
     setDrawerOpen(false)
   }
@@ -1143,24 +1393,7 @@ export default function Feed() {
           setDrawerOpen(false)
         }}
       />
-      {!unlocked && (
-        <div
-          onClick={unlock}
-          onTouchEnd={unlock}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'grid',
-            placeItems: 'center',
-            background: 'linear-gradient(180deg,#000,#111)',
-            zIndex: 10,
-          }}
-        >
-          <button style={{ color: '#fff', background: '#0a84ff', border: 'none', padding: '14px 20px', borderRadius: 12, fontSize: 16 }}>
-            Tap to start
-          </button>
-        </div>
-      )}
+      {/* Tap-to-start overlay removed per requirements */}
       <div
         ref={railRef}
         onScroll={onScroll}

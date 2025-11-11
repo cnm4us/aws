@@ -124,17 +124,6 @@ if (path === '/' || path === '') {
     )
   }
 } else {
-  // Accept ULID-based feed routes and normalize to /?spaceUlid=<ULID>
-  try {
-    const m = path.match(/^\/(?:s|space|spaces)\/([0-9A-HJKMNP-TV-Z]{26})\/?$/)
-    if (m) {
-      const ulid = m[1]
-      const url = new URL(window.location.href)
-      url.pathname = '/'
-      url.searchParams.set('spaceUlid', ulid)
-      window.history.replaceState(null, '', url.toString())
-    }
-  } catch {}
   if (path.startsWith('/adminx/settings')) {
     root.render(
       <Layout label="Admin • Site Settings (SPA)">
