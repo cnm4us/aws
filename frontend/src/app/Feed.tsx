@@ -600,6 +600,8 @@ export default function Feed() {
           const anchor = fetchedItems[Math.max(0, Math.min(targetIndex, fetchedItems.length - 1))]
           const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
           setRestorePoster(poster)
+          // Ensure snap/smooth are disabled before the next paint
+          disableSnapNow()
           restoringRef.current = true
           setRestoring(true)
           requestAnimationFrame(() => {
@@ -632,6 +634,7 @@ export default function Feed() {
           })
         } else {
           // Use the same controlled reanchor flow even when firstVisitKeyRef is not set
+          disableSnapNow()
           restoringRef.current = true
           requestAnimationFrame(() => {
             try { reanchorToIndex(targetIndex) } catch {}
@@ -998,7 +1001,7 @@ export default function Feed() {
                 data-video-id={vid || undefined}
                 onClick={(e) => {
                   e.stopPropagation()
-                  try { e.preventDefault() } catch {}
+                  try { if ((e as any).cancelable) e.preventDefault() } catch {}
                   const v = getVideoEl(i)
                   if (!v) return
                   if (!v.src) { playSlide(i); return }
@@ -1006,7 +1009,7 @@ export default function Feed() {
                 }}
                 onTouchEnd={(e) => {
                   e.stopPropagation()
-                  try { e.preventDefault() } catch {}
+                  try { if ((e as any).cancelable) e.preventDefault() } catch {}
                   const now = Date.now()
                   if (now - lastTouchTsRef.current < 300) return
                   lastTouchTsRef.current = now
@@ -1063,6 +1066,10 @@ export default function Feed() {
     const slideEl = r.children[curIndex] as HTMLElement | undefined
     const targetTop = slideEl ? slideEl.offsetTop : curIndex * getSlideHeight()
     const lockMs = 700
+    // Imperatively force instant jump (no smooth, no snap) for this reanchor window
+    try { r.style.scrollBehavior = 'auto' } catch {}
+    try { r.style.scrollSnapType = 'none' } catch {}
+    // Keep state toggles for consistency, but imperative styles ensure immediate effect
     setSmoothEnabled(false)
     setSnapEnabled(false)
     const until = Date.now() + lockMs
@@ -1074,13 +1081,26 @@ export default function Feed() {
         const slideEl2 = r.children[curIndex] as HTMLElement | undefined
         const targetTop2 = slideEl2 ? slideEl2.offsetTop : curIndex * getSlideHeight()
         try { r.scrollTo({ top: targetTop2, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop2 }
+        // Restore snap immediately so finger swipes snap again
+        try { r.style.scrollSnapType = 'y mandatory' } catch {}
+        // Programmatic scroll behavior can remain 'auto'; React state may set 'smooth' later
+        try { r.style.scrollBehavior = 'auto' } catch {}
+        // Keep state toggles synchronized, but the inline style above guarantees instant jump
         setTimeout(() => {
           setSmoothEnabled(true)
           setSnapEnabled(true)
-        }, Math.max(50, lockMs - 200))
+        }, 50)
       }, 180)
     })
     return () => cancelAnimationFrame(id1)
+  }
+
+  // Prepare the rail for an instant programmatic jump before the next paint
+  function disableSnapNow() {
+    const r = railRef.current
+    if (!r) return
+    try { r.style.scrollBehavior = 'auto' } catch {}
+    try { r.style.scrollSnapType = 'none' } catch {}
   }
 
   useEffect(() => {
@@ -1204,6 +1224,8 @@ export default function Feed() {
     } else {
       firstVisitKeyRef.current = null
     }
+    // Proactively disable snap/smooth for the upcoming programmatic jump
+    disableSnapNow()
     // Persist last selected feed; do not modify the URL params
     if (spaceUlid) { writeLastFeed(spaceUlid) }
     setFeedMode({ kind: 'space', spaceId, spaceUlid })
@@ -1232,6 +1254,8 @@ export default function Feed() {
     } else {
       firstVisitKeyRef.current = null
     }
+    // Proactively disable snap/smooth for the upcoming programmatic jump
+    disableSnapNow()
     // Persist last selected feed as global
     writeLastFeedGlobal()
     setFeedMode({ kind: 'global' })
