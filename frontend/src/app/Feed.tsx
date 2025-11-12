@@ -1454,6 +1454,16 @@ export default function Feed() {
     }
   }, [index, items])
 
+  // Auto-close comments drawer when advancing to a different slide
+  useEffect(() => {
+    if (!commentsOpen) return
+    const it = items[index]
+    const activePub = it && it.publicationId != null ? Number(it.publicationId) : null
+    if (commentsForPub != null && activePub != null && activePub !== commentsForPub) {
+      setCommentsOpen(false)
+    }
+  }, [index, items, commentsOpen, commentsForPub])
+
   // Dwell-based persist of last-active and save on page hide
   const persistTimerRef = useRef<number | null>(null)
   const schedulePersist = useCallback((i: number) => {
