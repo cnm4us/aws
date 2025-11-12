@@ -19,6 +19,7 @@ type UploadItem = {
   spaceId?: number | null
   publishedAt?: string | null
   likesCount?: number | null
+  commentsCount?: number | null
 }
 
 type MeResponse = {
@@ -74,6 +75,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const spaceId = publication?.space_id != null ? Number(publication.space_id) : (raw.space_id != null ? Number(raw.space_id) : null)
   const publishedAt = publication?.published_at ? String(publication.published_at) : null
   const likesCount = typeof publication?.likes_count === 'number' ? Number(publication.likes_count) : null
+  const commentsCount = typeof publication?.comments_count === 'number' ? Number(publication.comments_count) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -93,6 +95,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     spaceId,
     publishedAt,
     likesCount,
+    commentsCount,
   }
 }
 
@@ -184,6 +187,18 @@ export default function Feed() {
   const [likesCountMap, setLikesCountMap] = useState<Record<number, number>>({})
   const [likedMap, setLikedMap] = useState<Record<number, boolean>>({})
   const [likeBusy, setLikeBusy] = useState<Record<number, boolean>>({})
+  // Comments state
+  const [commentsCountMap, setCommentsCountMap] = useState<Record<number, number>>({})
+  const [commentedByMeMap, setCommentedByMeMap] = useState<Record<number, boolean>>({})
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentsForPub, setCommentsForPub] = useState<number | null>(null)
+  const [commentsItems, setCommentsItems] = useState<Array<{ id: number; userId: number; displayName: string; email: string | null; body: string; createdAt: string }>>([])
+  const [commentsCursor, setCommentsCursor] = useState<string | null>(null)
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentText, setCommentText] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentRows, setCommentRows] = useState<number>(1)
+  const commentsOrder: 'oldest' | 'newest' = 'oldest'
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -231,6 +246,92 @@ export default function Feed() {
       setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? 0) }))
       setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
     } catch {}
+  }
+
+  function ensureCommentCountHydrated(pubId: number | null | undefined, fallback?: number | null) {
+    if (!pubId) return
+    if (commentsCountMap[pubId] != null) return
+    if (typeof fallback === 'number') {
+      setCommentsCountMap((m) => ({ ...m, [pubId]: fallback }))
+    }
+  }
+
+  async function openComments(pubId: number | null | undefined) {
+    if (!pubId) return
+    setCommentsOpen(true)
+    setCommentsForPub(pubId)
+    setCommentsItems([])
+    setCommentsCursor(null)
+    await loadMoreComments(pubId)
+  }
+
+  async function loadMoreComments(pubId?: number | null) {
+    const publicationId = pubId ?? commentsForPub
+    if (!publicationId) return
+    if (commentsLoading) return
+    setCommentsLoading(true)
+    try {
+      const params = new URLSearchParams({ limit: '50', order: commentsOrder })
+      if (commentsCursor) params.set('cursor', commentsCursor)
+      const res = await fetch(`/api/publications/${publicationId}/comments?${params.toString()}`, { credentials: 'same-origin' })
+      if (!res.ok) throw new Error('comments_fetch_failed')
+      const data = await res.json()
+      const items = Array.isArray(data?.items) ? data.items : []
+      const mapped = items.map((c: any) => ({ id: Number(c.id), userId: Number(c.userId), displayName: String(c.displayName || ''), email: c.email ?? null, body: String(c.body || ''), createdAt: String(c.createdAt || '') }))
+      setCommentsItems((prev) => prev.concat(mapped))
+      setCommentsCursor(typeof data?.nextCursor === 'string' && data.nextCursor.length ? data.nextCursor : null)
+      if (myUserId != null && mapped.some((c) => c.userId === myUserId)) {
+        setCommentedByMeMap((m) => ({ ...m, [publicationId]: true }))
+      }
+    } catch {}
+    finally {
+      setCommentsLoading(false)
+    }
+  }
+
+  async function submitComment() {
+    const pubId = commentsForPub
+    if (!pubId) return
+    if (!isAuthed) { try { alert('Please sign in to comment.') } catch {} ; return }
+    const txt = commentText.trim()
+    if (!txt) return
+    if (commentBusy) return
+    setCommentBusy(true)
+    const csrf = getCsrfToken()
+    // Optimistic: increment visible counter immediately
+    const prevCount = commentsCountMap[pubId]
+    setCommentsCountMap((m) => ({ ...m, [pubId]: (m[pubId] ?? 0) + 1 }))
+    try {
+      const res = await fetch(`/api/publications/${pubId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+        credentials: 'same-origin',
+        body: JSON.stringify({ body: txt }),
+      })
+      if (!res.ok) throw new Error('comment_failed')
+      const created = await res.json()
+      // Prepend to list when oldest-first by reloading; simplest is to reload from start
+      setCommentsItems([])
+      setCommentsCursor(null)
+      setCommentText('')
+      try { (document.activeElement as any)?.blur?.() } catch {}
+      // After successful post, collapse composer back to 1 line
+      setCommentRows(1)
+      await loadMoreComments(pubId)
+      setCommentedByMeMap((m) => ({ ...m, [pubId]: true }))
+    } catch (e) {
+      // Roll back optimistic increment
+      setCommentsCountMap((m) => ({ ...m, [pubId]: prevCount != null ? prevCount : Math.max(0, (m[pubId] ?? 1) - 1) }))
+    }
+    finally {
+      setCommentBusy(false)
+    }
+    // Roll back on failure: if last request failed, decrement back to previous
+    // Note: since failures land in catch, use response.ok guard above. Here we can’t inspect,
+    // so we conservatively align count with server by refetching if needed later.
+    // Minimal rollback: if request threw, we should have left the try early.
+    // We detect this by checking commentsItems unchanged and cursor unchanged would be complex;
+    // simpler approach: wrap try/catch and rollback within catch.
   }
 
   async function toggleLike(publicationId: number | null | undefined) {
@@ -1121,7 +1222,7 @@ export default function Feed() {
                   touchAction: 'manipulation' as any,
                 }}
               />
-              {/* Like control (always visible, right side) */}
+              {/* Like and Comment controls (always visible, right side) */}
               {it.publicationId != null && (
                 <div
                   style={{
@@ -1130,7 +1231,7 @@ export default function Feed() {
                     top: '40%',
                     transform: 'translateY(-50%)',
                     display: 'grid',
-                    gap: 8,
+                    gap: 10,
                     alignItems: 'center',
                     justifyItems: 'center',
                     zIndex: 5,
@@ -1177,6 +1278,47 @@ export default function Feed() {
                   >
                     {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
                   </button>
+
+                  {/* Comment icon */}
+                  <button
+                    aria-label={'Comments'}
+                    onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                    style={{
+                      width: 54,
+                      height: 54,
+                      minWidth: 44,
+                      minHeight: 44,
+                      borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: '#fff',
+                    }}
+                  >
+                    {it.publicationId != null && commentedByMeMap[it.publicationId] ? (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#f5c518" stroke="#f5c518" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                      </svg>
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                    style={{
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      borderRadius: 16,
+                      padding: '4px 10px',
+                      color: '#fff',
+                      minWidth: 44,
+                    }}
+                  >
+                    {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
+                  </button>
                 </div>
               )}
               {playingIndex !== i && (
@@ -1206,7 +1348,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, isAuthed]
+    [items, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed]
   )
 
   function reanchorToIndex(curIndex: number) {
@@ -1649,6 +1791,54 @@ export default function Feed() {
               ) : (
                 <span style={{ fontSize: 12, opacity: 0.7, padding: '6px 0' }}>End of list</span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {commentsOpen && (
+        <div
+          onClick={() => setCommentsOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 55 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'rgba(16,16,16,0.98)', borderTop: '1px solid rgba(255,255,255,0.15)', maxHeight: '70vh', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
+            <div style={{ padding: '10px 14px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontWeight: 600 }}>Comments</div>
+              <button onClick={() => setCommentsOpen(false)} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '6px 10px' }}>Close</button>
+            </div>
+            <div style={{ overflowY: 'auto' }}>
+              {commentsItems.length === 0 && !commentsLoading ? (
+                <div style={{ padding: 16, color: '#aaa' }}>No comments yet. Be the first!</div>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {commentsItems.map((c) => (
+                    <li key={c.id} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#fff' }}>
+                      <div style={{ fontSize: 14, opacity: 0.9 }}>{c.displayName || c.email || `User ${c.userId}`}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.35, marginTop: 4 }}>{c.body}</div>
+                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6 }}>{new Date(c.createdAt).toLocaleString()}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div style={{ padding: 12, display: 'flex', justifyContent: 'center' }}>
+                {commentsCursor ? (
+                  <button disabled={commentsLoading} onClick={() => loadMoreComments()} style={{ background: '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '6px 10px' }}>{commentsLoading ? 'Loading…' : 'Load More'}</button>
+                ) : (
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>End of comments</span>
+                )}
+              </div>
+            </div>
+            <div style={{ padding: 10, display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+              <textarea
+                value={commentText}
+                onChange={(e) => setCommentText((e.target as any).value)}
+                onFocus={() => { setCommentRows(3); try { (document.activeElement as any)?.scrollIntoView?.({ block: 'nearest' }) } catch {}; setTimeout(() => window.scrollTo?.(0, document.body.scrollHeight), 0) }}
+                onBlur={() => { if (!commentText.trim()) { setCommentRows(1) } }}
+                placeholder={isAuthed ? 'Write a comment…' : 'Sign in to comment'}
+                disabled={!isAuthed || commentBusy}
+                rows={commentRows}
+                style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 16, lineHeight: 1.35, resize: 'none' as any, outline: 'none' }}
+              />
+              <button onClick={submitComment} disabled={!isAuthed || commentBusy || !commentText.trim()} style={{ background: '#1976d2', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: '10px 12px' }}>{commentBusy ? 'Posting…' : 'Post'}</button>
             </div>
           </div>
         </div>

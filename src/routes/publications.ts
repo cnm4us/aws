@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 // permission checks handled in publications service
 import * as pubsSvc from '../features/publications/service'
 import * as likesSvc from '../features/likes/service'
+import * as commentsSvc from '../features/comments/service'
 // Legacy models removed from route usage; publications now delegate to service/repo
 
 // legacy type aliases removed
@@ -220,5 +221,51 @@ publicationsRouter.get('/api/publications/:id/likes/users', requireAuth, async (
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
     const data = await likesSvc.listPublicationLikers(publicationId, userId, { limit, cursor })
     res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// --- Comments ---
+// List top-level comments
+publicationsRouter.get('/api/publications/:id/comments', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const limitRaw = Number(req.query.limit ?? 50)
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
+    // Sorting: default oldest first; later we’ll read space setting
+    const orderParam = String(req.query.order || 'oldest').toLowerCase() === 'newest' ? 'newest' : 'oldest'
+    const data = await commentsSvc.listTop(publicationId, userId, { limit, cursor, order: orderParam as any })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// List replies for a comment
+publicationsRouter.get('/api/publications/:id/comments/:commentId/replies', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    const commentId = Number(req.params.commentId)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    if (!Number.isFinite(commentId) || commentId <= 0) return res.status(400).json({ error: 'bad_comment_id' })
+    const userId = Number(req.user!.id)
+    const limitRaw = Number(req.query.limit ?? 50)
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
+    const orderParam = String(req.query.order || 'oldest').toLowerCase() === 'newest' ? 'newest' : 'oldest'
+    const data = await commentsSvc.listReplies(publicationId, userId, commentId, { limit, cursor, order: orderParam as any })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// Create comment or reply
+publicationsRouter.post('/api/publications/:id/comments', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).json({ error: 'bad_publication_id' })
+    const userId = Number(req.user!.id)
+    const { body, parentId } = (req.body || {}) as any
+    const created = await commentsSvc.create(publicationId, userId, String(body || ''), parentId != null ? Number(parentId) : null)
+    res.status(201).json(created)
   } catch (err: any) { next(err) }
 })

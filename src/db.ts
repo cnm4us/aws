@@ -356,6 +356,7 @@ export async function ensureSchema(db: DB) {
       visible_in_space TINYINT(1) NOT NULL DEFAULT 1,
       visible_in_global TINYINT(1) NOT NULL DEFAULT 0,
       likes_count INT UNSIGNED NOT NULL DEFAULT 0,
+      comments_count INT UNSIGNED NOT NULL DEFAULT 0,
       comments_enabled TINYINT(1) NULL,
       published_at DATETIME NULL,
       unpublished_at DATETIME NULL,
@@ -380,6 +381,7 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_space TINYINT(1) NOT NULL DEFAULT 1`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS likes_count INT UNSIGNED NOT NULL DEFAULT 0`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_count INT UNSIGNED NOT NULL DEFAULT 0`);
   // Drop legacy unique (upload_id, space_id) if present
   try { await db.query(`DROP INDEX uniq_space_publications_upload_space ON space_publications`); } catch {}
   // Supporting indexes (best-effort)
@@ -409,6 +411,25 @@ export async function ensureSchema(db: DB) {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (publication_id, user_id),
       KEY idx_publication_likes_user_created (user_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Publication Comments (top-level + replies via parent_id)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS publication_comments (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      publication_id BIGINT UNSIGNED NOT NULL,
+      user_id BIGINT UNSIGNED NOT NULL,
+      parent_id BIGINT UNSIGNED NULL,
+      body TEXT NOT NULL,
+      status ENUM('visible','hidden') NOT NULL DEFAULT 'visible',
+      edited_at DATETIME NULL,
+      deleted_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_pc_pub_created (publication_id, created_at, id),
+      KEY idx_pc_pub_parent_created (publication_id, parent_id, created_at, id),
+      KEY idx_pc_user_created (user_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 }
@@ -465,6 +486,10 @@ export async function seedRbac(db: DB) {
     'subscription:view_subscribers',
     'subscription:grant_comp',
     'subscription:gate_content',
+    // Comments
+    'comment:create',
+    'comment:moderate',
+    'comment:delete_any',
   ];
 
   // Insert roles/permissions
@@ -509,8 +534,9 @@ export async function seedRbac(db: DB) {
     'video:delete_own',
     'video:publish_own',
     'video:unpublish_own',
+    'comment:create',
   ]);
-  await give('moderator', ['video:moderate', 'video:approve']);
+  await give('moderator', ['video:moderate', 'video:approve', 'comment:moderate', 'comment:delete_any']);
   await give('space_moderator', [
     'space:view_private',
     'video:publish_space',
@@ -518,6 +544,8 @@ export async function seedRbac(db: DB) {
     'video:approve_space',
     'moderation:suspend_posting',
     'subscription:view_subscribers',
+    'comment:moderate',
+    'comment:delete_any',
   ]);
   await give('space_admin', [
     'space:manage',
@@ -535,6 +563,8 @@ export async function seedRbac(db: DB) {
     'subscription:view_subscribers',
     'subscription:manage_plans',
     'subscription:grant_comp',
+    'comment:moderate',
+    'comment:delete_any',
   ]);
   await give('group_admin', [
     'space:manage',
@@ -546,6 +576,8 @@ export async function seedRbac(db: DB) {
     'video:publish_space',
     'video:unpublish_space',
     'video:approve_space',
+    'comment:moderate',
+    'comment:delete_any',
   ]);
   await give('group_member', ['video:publish_space']);
   await give('channel_admin', [
@@ -560,6 +592,8 @@ export async function seedRbac(db: DB) {
     'video:publish_space',
     'video:unpublish_space',
     'video:approve_space',
+    'comment:moderate',
+    'comment:delete_any',
   ]);
   await give('channel_member', ['video:publish_space']);
   // Admin gets all permissions
