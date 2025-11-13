@@ -1,0 +1,9 @@
+{
+  "$extends": [
+    "templates/base-hls",
+    "mixins/output/portrait-from-landscape-cmaf-720-540",
+    "mixins/output/landscape-cmaf-1080-720-480",
+    "mixins/audio/normalize-lufs-16"
+  ]
+}
+

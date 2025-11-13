@@ -83,6 +83,19 @@ export function getFirstHlsDestinationPrefix(settings: any, outputBucket: string
   return null;
 }
 
+export function getFirstCmafDestinationPrefix(settings: any, outputBucket: string): string | null {
+  try {
+    const groups = settings?.OutputGroups || [];
+    for (const g of groups) {
+      const dest = g?.OutputGroupSettings?.CmafGroupSettings?.Destination as string | undefined;
+      if (dest && dest.startsWith(`s3://${outputBucket}/`)) {
+        return dest.slice((`s3://${outputBucket}/`).length);
+      }
+    }
+  } catch {}
+  return null;
+}
+
 function set(obj: any, path: string[], value: any) {
   let cur = obj;
   for (let i = 0; i < path.length - 1; i++) {
@@ -125,7 +138,7 @@ export function applyHqTuning(settings: any) {
       for (const o of outs) {
         // Skip non-HLS/non-MP4 file groups (e.g., FRAME_CAPTURE for posters)
         const container = o?.ContainerSettings?.Container;
-        if (container && container !== 'M3U8' && container !== 'MP4') continue;
+        if (container && container !== 'M3U8' && container !== 'MP4' && container !== 'CMFC') continue;
         const vd = o?.VideoDescription;
         const cs = vd?.CodecSettings;
         const h264 = cs?.H264Settings;
@@ -164,6 +177,40 @@ export function applyHqTuning(settings: any) {
     }
   } catch {
     // best effort tuning
+  }
+}
+
+// Ensure a valid QVBR configuration across outputs (HLS or CMAF):
+// - Remove fixed Bitrate (incompatible with QVBR)
+// - Set RateControlMode = QVBR and provide a default QvbrQualityLevel
+// - Ensure MaxBitrate exists (MediaConvert requires it for QVBR)
+export function enforceQvbr(settings: any) {
+  try {
+    const groups = settings?.OutputGroups;
+    if (!Array.isArray(groups)) return;
+    for (const g of groups) {
+      const ogType = g?.OutputGroupSettings?.Type;
+      if (ogType !== 'HLS_GROUP_SETTINGS' && ogType !== 'CMAF_GROUP_SETTINGS') continue;
+      const outs = g?.Outputs;
+      if (!Array.isArray(outs)) continue;
+      for (const o of outs) {
+        const vd = o?.VideoDescription;
+        const cs = vd?.CodecSettings;
+        if (!vd || !cs) continue;
+        if (cs.Codec !== 'H_264') continue;
+        const h264 = cs.H264Settings || (cs.H264Settings = {});
+        if ('Bitrate' in h264) delete h264.Bitrate;
+        h264.RateControlMode = 'QVBR';
+        h264.QvbrSettings = h264.QvbrSettings || { QvbrQualityLevel: 7 };
+        if (!h264.MaxBitrate) {
+          const nameMod: string | undefined = o?.NameModifier;
+          const mb = hqMaxBitrateForName(nameMod) || 5000000;
+          h264.MaxBitrate = mb;
+        }
+      }
+    }
+  } catch {
+    // best effort
   }
 }
 

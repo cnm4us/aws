@@ -910,7 +910,7 @@ export default function Feed() {
 
   const preferNativeHls = () => isIOS || isSafari
 
-  const playSlide = async (i: number) => {
+  const playSlide = async (i: number, opts?: { forceUnmute?: boolean }) => {
     const it = items[i]
     if (!it) return
     const v = getVideoEl(i)
@@ -958,7 +958,7 @@ export default function Feed() {
     v.playsInline = true
     v.preload = 'auto'
     v.loop = true
-    v.muted = !unlocked
+    v.muted = opts?.forceUnmute ? false : !unlocked
     const onPlaying = () => {
       playingIndexRef.current = i
       setPlayingIndex(i)
@@ -1051,6 +1051,21 @@ export default function Feed() {
     attachAndPlay(index, { unmute: unlocked }).catch(() => {})
   }, [index, items, unlocked])
 
+  // Ensure only the active slide's video is playing; pause others on index change
+  useEffect(() => {
+    const r = railRef.current
+    if (!r) return
+    const current = getVideoEl(index)
+    try {
+      const videos = Array.from(r.querySelectorAll('video')) as HTMLVideoElement[]
+      for (const el of videos) {
+        if (el !== current) {
+          try { el.pause() } catch {}
+        }
+      }
+    } catch {}
+  }, [index])
+
   function itemHasLandscape(it?: UploadItem): boolean {
     if (!it) return false
     const lp = it.posterLandscape
@@ -1117,7 +1132,7 @@ export default function Feed() {
   const unlock = () => {
     if (unlocked) return
     // Start via the same pipeline used elsewhere so listeners/state are attached
-    try { void playSlide(index) } catch {}
+    try { void playSlide(index, { forceUnmute: true }) } catch {}
     setUnlocked(true)
   }
 
@@ -1196,8 +1211,13 @@ export default function Feed() {
                   try { if ((e as any).cancelable) e.preventDefault() } catch {}
                   const v = getVideoEl(i)
                   if (!v) return
-                  if (!v.src) { playSlide(i); return }
-                  if (v.paused) playSlide(i); else { try { v.pause() } catch {} }
+                  if (!unlocked) setUnlocked(true)
+                  if (!v.src || v.paused || v.ended) {
+                    try { v.muted = false } catch {}
+                    playSlide(i, { forceUnmute: true })
+                  } else {
+                    try { v.pause() } catch {}
+                  }
                 }}
                 onTouchEnd={(e) => {
                   e.stopPropagation()
@@ -1207,8 +1227,13 @@ export default function Feed() {
                   lastTouchTsRef.current = now
                   const v = getVideoEl(i)
                   if (!v) return
-                  if (!v.src) { playSlide(i); return }
-                  if (v.paused) playSlide(i); else { try { v.pause() } catch {} }
+                  if (!unlocked) setUnlocked(true)
+                  if (!v.src || v.paused || v.ended) {
+                    try { v.muted = false } catch {}
+                    playSlide(i, { forceUnmute: true })
+                  } else {
+                    try { v.pause() } catch {}
+                  }
                 }}
                 style={{
                   position: 'absolute',

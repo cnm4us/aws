@@ -1,7 +1,7 @@
 import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
-import { applyAudioNormalization, applyHqTuning, getFirstHlsDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
+import { applyAudioNormalization, applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
 import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, OUTPUT_BUCKET, OUTPUT_PREFIX } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
@@ -25,6 +25,13 @@ export async function startProductionRender(options: RenderOptions) {
   let chosenProfile = profile || (
     upload.width && upload.height ? (upload.height > upload.width ? 'portrait-hls' : 'landscape-both-hls') : 'simple-hls'
   )
+  // Feature flag: prefer CMAF outputs when enabled (keeps same naming for orientation variants)
+  try {
+    const format = String(process.env.MC_OUTPUT_FORMAT || '').toLowerCase()
+    if (!profile && (format === 'cmaf' || format === 'cmaf+hls' || format === 'cmaf+hls+dash')) {
+      chosenProfile = chosenProfile.replace(/-hls\b/, '-cmaf')
+    }
+  } catch {}
   if (!profile && typeof quality === 'string') {
     if (quality.toLowerCase().startsWith('hq')) {
       if (!chosenProfile.endsWith('-hq')) chosenProfile = `${chosenProfile}-hq`
@@ -68,6 +75,8 @@ export async function startProductionRender(options: RenderOptions) {
     dateYMD: createdDate,
     productionUlid: prodUlid,
   })
+  // Ensure QVBR + MaxBitrate with no Bitrate across outputs to avoid MC validation error
+  enforceQvbr(settings)
   if (isHq) applyHqTuning(settings)
   if (typeof sound === 'string' && sound.toLowerCase().startsWith('norm')) {
     applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 160000 })
@@ -80,6 +89,12 @@ export async function startProductionRender(options: RenderOptions) {
       const t = g?.OutputGroupSettings?.Type
       if (t === 'HLS_GROUP_SETTINGS') {
         const d = g?.OutputGroupSettings?.HlsGroupSettings?.Destination
+        if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
+          hlsDests.push(d)
+        }
+      }
+      if (t === 'CMAF_GROUP_SETTINGS') {
+        const d = g?.OutputGroupSettings?.CmafGroupSettings?.Destination
         if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
           hlsDests.push(d)
         }
@@ -127,12 +142,13 @@ export async function startProductionRender(options: RenderOptions) {
     const cleaned: any[] = []
     for (const g of groups) {
       const t = g?.OutputGroupSettings?.Type
-      if (t === 'HLS_GROUP_SETTINGS' || t === 'FILE_GROUP_SETTINGS') {
+      if (t === 'HLS_GROUP_SETTINGS' || t === 'CMAF_GROUP_SETTINGS' || t === 'FILE_GROUP_SETTINGS') {
         if (!Array.isArray(g.Outputs)) g.Outputs = []
         for (const o of g.Outputs) {
           if (!o.ContainerSettings) {
             if (t === 'FILE_GROUP_SETTINGS') o.ContainerSettings = { Container: 'RAW' }
             if (t === 'HLS_GROUP_SETTINGS') o.ContainerSettings = { Container: 'M3U8' } as any
+            if (t === 'CMAF_GROUP_SETTINGS') o.ContainerSettings = { Container: 'CMFC' } as any
           }
         }
         cleaned.push(g)
@@ -154,7 +170,7 @@ export async function startProductionRender(options: RenderOptions) {
   writeRequestLog(`upload:${upload.id}:${profile || ''}`, params)
   const resp = await mc.send(new CreateJobCommand(params))
   const jobId = resp.Job?.Id || null
-  const outPrefix = getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${upload.id}/`
+  const outPrefix = getFirstCmafDestinationPrefix(settings, OUTPUT_BUCKET) || getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${upload.id}/`
 
   await db.query(
     `UPDATE uploads SET status = 'queued', mediaconvert_job_id = ?, output_prefix = ?, profile = ? WHERE id = ?`,
