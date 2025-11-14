@@ -171,6 +171,7 @@ export default function Feed() {
   const [posterAvail, setPosterAvail] = useState<Record<string, boolean>>({})
   const ignoreScrollUntil = useRef<number>(0)
   const ignoreIoUntil = useRef<number>(0)
+  const reanchorTimerRef = useRef<number | null>(null)
   const [snapEnabled, setSnapEnabled] = useState(true)
   // Default to 'auto' scroll-behavior for user gestures; enable smooth only during our programmatic jumps
   const [smoothEnabled, setSmoothEnabled] = useState(false)
@@ -207,6 +208,10 @@ export default function Feed() {
   const [likersCursor, setLikersCursor] = useState<string | null>(null)
   const [likersLoading, setLikersLoading] = useState(false)
   const lastTouchTsRef = useRef<number>(0)
+  const touchStartYRef = useRef<number>(0)
+  const touchStartTRef = useRef<number>(0)
+  const touchLastYRef = useRef<number>(0)
+  const touchLastTRef = useRef<number>(0)
   const suppressDurableRestoreRef = useRef<boolean>(false)
   const restoringRef = useRef<boolean>(false)
   const itemsFeedKeyRef = useRef<string>('')
@@ -1200,7 +1205,8 @@ export default function Feed() {
     if (now < ignoreScrollUntil.current) return
     const y = r.scrollTop
     const h = getSlideHeight()
-    const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h / 2) / h)))
+    // Commit slightly earlier than halfway to make smaller motion page sooner
+    const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h * 0.4) / h)))
     if (i !== index) {
       setIndex(i)
       schedulePersist(i)
@@ -1233,6 +1239,17 @@ export default function Feed() {
         loadMore().catch(() => setLoadingMore(false))
       }
     }
+    // Debounced finalize: after scrolling settles, force a quick reanchor to the nearest slide
+    try { if (reanchorTimerRef.current) window.clearTimeout(reanchorTimerRef.current) } catch {}
+    reanchorTimerRef.current = window.setTimeout(() => {
+      const rr = railRef.current
+      if (!rr) return
+      const y2 = rr.scrollTop
+      const h2 = getSlideHeight()
+      const target = Math.max(0, Math.min(items.length - 1, Math.round(y2 / h2)))
+      disableSnapNow()
+      reanchorToIndex(target)
+    }, 90)
   }
 
   const slides = useMemo(
@@ -1263,6 +1280,27 @@ export default function Feed() {
                 preload="auto"
                 poster={useUrl}
                 data-video-id={vid || undefined}
+                onTouchStart={(e) => {
+                  try {
+                    const t = e.touches && e.touches[0]
+                    if (t) {
+                      touchStartYRef.current = t.clientY
+                      touchLastYRef.current = t.clientY
+                      const nowTs = Date.now()
+                      touchStartTRef.current = nowTs
+                      touchLastTRef.current = nowTs
+                    }
+                  } catch {}
+                }}
+                onTouchMove={(e) => {
+                  try {
+                    const t = e.touches && e.touches[0]
+                    if (t) {
+                      touchLastYRef.current = t.clientY
+                      touchLastTRef.current = Date.now()
+                    }
+                  } catch {}
+                }}
                 onClick={(e) => {
                   e.stopPropagation()
                   try { if ((e as any).cancelable) e.preventDefault() } catch {}
@@ -1287,6 +1325,23 @@ export default function Feed() {
                   const now = Date.now()
                   if (now - lastTouchTsRef.current < 300) return
                   lastTouchTsRef.current = now
+                  // Detect a small, decisive swipe to page-step
+                  const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
+                  const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
+                  const vmag = Math.abs(dy) / dt // px/ms
+                  const SWIPE_DIST = 14
+                  const SWIPE_VEL = 0.5
+                  if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
+                    if (i < items.length - 1) {
+                      try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
+                      return
+                    }
+                  } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
+                    if (i > 0) {
+                      try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
+                      return
+                    }
+                  }
                   const v = getVideoEl(i)
                   if (!v) return
                   if (!unlocked) setUnlocked(true)
@@ -1494,6 +1549,14 @@ export default function Feed() {
     window.addEventListener('orientationchange', handler)
     return () => window.removeEventListener('orientationchange', handler)
   }, [index])
+
+  // When a new feed of items is loaded (e.g., changing channels), reanchor decisively to the current index
+  useEffect(() => {
+    if (!items.length) return
+    // Ensure we dock the current index (usually 0) immediately after items render
+    const id = window.setTimeout(() => { disableSnapNow(); reanchorToIndex(index) }, 50)
+    return () => window.clearTimeout(id)
+  }, [itemsFeedKeyRef.current])
 
   useEffect(() => {
     const r = railRef.current
