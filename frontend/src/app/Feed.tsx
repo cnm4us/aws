@@ -1318,98 +1318,97 @@ export default function Feed() {
                 <div
                   style={{
                     position: 'absolute',
-                    right: 14,
+                    right: 6,
                     top: '40%',
                     transform: 'translateY(-50%)',
                     display: 'grid',
-                    gap: 10,
+                    gap: 12,
                     alignItems: 'center',
                     justifyItems: 'center',
                     zIndex: 5,
                   }}
                 >
-                  <button
-                    aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
-                    aria-pressed={likedMap[it.publicationId] ? true : false}
-                    onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); toggleLike(it.publicationId) }}
-                    disabled={!!likeBusy[it.publicationId]}
-                    style={{
-                      width: 54,
-                      height: 54,
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: '50%',
-                      background: 'rgba(0,0,0,0.35)',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      color: '#fff',
-                    }}
-                  >
-                    {likedMap[it.publicationId] ? (
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#e53935" stroke="#e53935" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12.1 21.35l-1.1-1.02C5.14 15.24 2 12.36 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.86-3.14 6.74-8.9 11.83l-1 1.02z" />
-                      </svg>
-                    ) : (
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.86 3.14 6.74 8.9 11.83l1.1 1.02 1.1-1.02C20.86 15.24 24 12.36 24 8.5 24 5.42 21.58 3 18.5 3c-1.74 0-3.41.81-4.5 2.09C13.91 3.81 12.24 3 10.5 3z" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); openLikers(it.publicationId) }}
-                    style={{
-                      background: 'rgba(0,0,0,0.35)',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      borderRadius: 16,
-                      padding: '4px 10px',
-                      color: '#fff',
-                      minWidth: 44,
-                    }}
-                  >
-                    {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
-                  </button>
-
-                  {/* Comment icon */}
-                  <button
-                    aria-label={'Comments'}
-                    onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
-                    style={{
-                      width: 54,
-                      height: 54,
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: '50%',
-                      background: 'rgba(0,0,0,0.35)',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      color: '#fff',
-                    }}
-                  >
-                    {it.publicationId != null && commentedByMeMap[it.publicationId] ? (
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="#f5c518" stroke="#f5c518" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
-                      </svg>
-                    ) : (
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
-                    style={{
-                      background: 'rgba(0,0,0,0.35)',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      borderRadius: 16,
-                      padding: '4px 10px',
-                      color: '#fff',
-                      minWidth: 44,
-                    }}
-                  >
-                    {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
-                  </button>
+                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                    <button
+                      aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
+                      aria-pressed={likedMap[it.publicationId] ? true : false}
+                      onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); toggleLike(it.publicationId) }}
+                      disabled={!!likeBusy[it.publicationId]}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {likedMap[it.publicationId] ? (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#e53935" stroke="#e53935" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12.1 21.35l-1.1-1.02C5.14 15.24 2 12.36 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.86-3.14 6.74-8.9 11.83l-1 1.02z" />
+                        </svg>
+                      ) : (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.86 3.14 6.74 8.9 11.83l1.1 1.02 1.1-1.02C20.86 15.24 24 12.36 24 8.5 24 5.42 21.58 3 18.5 3c-1.74 0-3.41.81-4.5 2.09C13.91 3.81 12.24 3 10.5 3z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); openLikers(it.publicationId) }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                    {/* Comment icon */}
+                    <button
+                      aria-label={'Comments'}
+                      onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {it.publicationId != null && commentedByMeMap[it.publicationId] ? (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#f5c518" stroke="#f5c518" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                        </svg>
+                      ) : (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
+                    </button>
+                  </div>
                 </div>
               )}
               {playingIndex !== i && (
