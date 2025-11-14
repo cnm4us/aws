@@ -172,7 +172,8 @@ export default function Feed() {
   const ignoreScrollUntil = useRef<number>(0)
   const ignoreIoUntil = useRef<number>(0)
   const [snapEnabled, setSnapEnabled] = useState(true)
-  const [smoothEnabled, setSmoothEnabled] = useState(true)
+  // Default to 'auto' scroll-behavior for user gestures; enable smooth only during our programmatic jumps
+  const [smoothEnabled, setSmoothEnabled] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
   const [myUserId, setMyUserId] = useState<number | null>(null)
@@ -1268,6 +1269,11 @@ export default function Feed() {
                   const v = getVideoEl(i)
                   if (!v) return
                   if (!unlocked) setUnlocked(true)
+                  // If this slide isn't the active one yet, reanchor instantly then play
+                  if (i !== index) {
+                    try { disableSnapNow() } catch {}
+                    try { reanchorToIndex(i) } catch {}
+                  }
                   if (!v.src || v.paused || v.ended) {
                     try { v.muted = false } catch {}
                     playSlide(i, { forceUnmute: true })
@@ -1284,6 +1290,10 @@ export default function Feed() {
                   const v = getVideoEl(i)
                   if (!v) return
                   if (!unlocked) setUnlocked(true)
+                  if (i !== index) {
+                    try { disableSnapNow() } catch {}
+                    try { reanchorToIndex(i) } catch {}
+                  }
                   if (!v.src || v.paused || v.ended) {
                     try { v.muted = false } catch {}
                     playSlide(i, { forceUnmute: true })
@@ -1437,7 +1447,7 @@ export default function Feed() {
     if (!r) return
     const slideEl = r.children[curIndex] as HTMLElement | undefined
     const targetTop = slideEl ? slideEl.offsetTop : curIndex * getSlideHeight()
-    const lockMs = 700
+    const lockMs = 300
     // Imperatively force instant jump (no smooth, no snap) for this reanchor window
     try { r.style.scrollBehavior = 'auto' } catch {}
     try { r.style.scrollSnapType = 'none' } catch {}
@@ -1453,13 +1463,14 @@ export default function Feed() {
         const slideEl2 = r.children[curIndex] as HTMLElement | undefined
         const targetTop2 = slideEl2 ? slideEl2.offsetTop : curIndex * getSlideHeight()
         try { r.scrollTo({ top: targetTop2, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop2 }
-        // Restore snap immediately so finger swipes snap again
+        // Restore snap immediately so finger swipes snap again (mandatory for the controlled jump only)
         try { r.style.scrollSnapType = 'y mandatory' } catch {}
         // Programmatic scroll behavior can remain 'auto'; React state may set 'smooth' later
         try { r.style.scrollBehavior = 'auto' } catch {}
         // Keep state toggles synchronized, but the inline style above guarantees instant jump
         setTimeout(() => {
-          setSmoothEnabled(true)
+          // After the jump, return to user-friendly defaults: auto behavior + proximity snaps
+          setSmoothEnabled(false)
           setSnapEnabled(true)
         }, 50)
       }, 180)
@@ -1821,7 +1832,8 @@ export default function Feed() {
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-y',
           overscrollBehavior: 'contain',
-          scrollSnapType: snapEnabled ? 'y mandatory' as const : 'none' as const,
+          // Use proximity for user scrolling; programmatic jumps temporarily override inline
+          scrollSnapType: snapEnabled ? 'y proximity' as const : 'none' as const,
           scrollBehavior: smoothEnabled ? 'smooth' as const : 'auto' as const,
         }}
       >
@@ -1951,7 +1963,7 @@ export default function Feed() {
         />
       )}
       <style>{`
-        .slide{position:relative; width:100vw; height:calc(100dvh - var(--header-h, 0px)); scroll-snap-align:start; scroll-snap-stop:always; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
+        .slide{position:relative; width:100vw; height:calc(100dvh - var(--header-h, 0px)); scroll-snap-align:start; scroll-snap-stop:normal; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
         .holder{position:absolute; inset:0;}
       `}</style>
     </div>
