@@ -916,6 +916,19 @@ export default function Feed() {
 
   const preferNativeHls = () => isIOS || isSafari
 
+  function pauseNonCurrent(targetIndex: number) {
+    try {
+      const r = railRef.current
+      if (!r) return
+      const currentEl = getVideoEl(targetIndex)
+      const videos = Array.from(r.querySelectorAll('video')) as HTMLVideoElement[]
+      for (const el of videos) {
+        if (currentEl && el === currentEl) continue
+        try { el.pause() } catch {}
+      }
+    } catch {}
+  }
+
   // Prewarm next slide (index+1): attach manifest and prepare buffers without playing.
   const prewarmSlide = (i: number) => {
     const it = items[i]
@@ -1249,6 +1262,7 @@ export default function Feed() {
       const target = Math.max(0, Math.min(items.length - 1, Math.round(y2 / h2)))
       disableSnapNow()
       reanchorToIndex(target)
+      pauseNonCurrent(target)
     }, 90)
   }
 
@@ -1526,6 +1540,8 @@ export default function Feed() {
           // After the jump, return to user-friendly defaults: auto behavior + proximity snaps
           setSmoothEnabled(false)
           setSnapEnabled(true)
+          // Ensure previous slide audio is stopped once docked
+          pauseNonCurrent(curIndex)
         }, 50)
       }, 180)
     })
