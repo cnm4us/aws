@@ -910,6 +910,39 @@ export default function Feed() {
 
   const preferNativeHls = () => isIOS || isSafari
 
+  // Prewarm next slide (index+1): attach manifest and prepare buffers without playing.
+  const prewarmSlide = (i: number) => {
+    const it = items[i]
+    if (!it) return
+    const v = getVideoEl(i)
+    if (!v) return
+    try {
+      v.playsInline = true
+      v.preload = 'auto'
+    } catch {}
+    const src = it.masterPortrait || it.url
+    try {
+      const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
+      const useHlsJs = Hls.isSupported() && !preferNativeHls()
+      if (useHlsJs) {
+        // If an instance already exists for this slide, keep it
+        const existing = hlsByIndexRef.current[i]
+        if (existing) return
+        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 12, backBufferLength: 0, debug: false })
+        h.loadSource(src)
+        h.attachMedia(v)
+        hlsByIndexRef.current[i] = h
+      } else if (canNative) {
+        if (!v.src) {
+          v.src = src
+          try { v.load() } catch {}
+        }
+      }
+    } catch {
+      // best effort warm-up
+    }
+  }
+
   const playSlide = async (i: number, opts?: { forceUnmute?: boolean }) => {
     const it = items[i]
     if (!it) return
@@ -933,23 +966,25 @@ export default function Feed() {
       if (preferHls) {
         // Force hls.js on non‑Safari/Apple platforms
         const prev = hlsByIndexRef.current[i]
-        if (prev) { try { prev.detachMedia(); prev.destroy(); } catch {} }
-        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
-        try { /* no-op diagnostics removed */ } catch {}
-        h.loadSource(src)
-        h.attachMedia(v)
-        hlsByIndexRef.current[i] = h
+        if (!prev) {
+          const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
+          try { /* no-op diagnostics removed */ } catch {}
+          h.loadSource(src)
+          h.attachMedia(v)
+          hlsByIndexRef.current[i] = h
+        }
       } else if (canNative) {
         // Safari/iOS path
         v.src = src
       } else if (Hls.isSupported()) {
         // Fallback to hls.js when native says no
         const prev = hlsByIndexRef.current[i]
-        if (prev) { try { prev.detachMedia(); prev.destroy(); } catch {} }
-        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
-        h.loadSource(src)
-        h.attachMedia(v)
-        hlsByIndexRef.current[i] = h
+        if (!prev) {
+          const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
+          h.loadSource(src)
+          h.attachMedia(v)
+          hlsByIndexRef.current[i] = h
+        }
       } else {
         location.href = src
         return
@@ -1050,6 +1085,27 @@ export default function Feed() {
     if (!items.length) return
     attachAndPlay(index, { unmute: unlocked }).catch(() => {})
   }, [index, items, unlocked])
+
+  // Warm up next slide media (index+1); pause/destroy out-of-window instances
+  useEffect(() => {
+    const nextIndex = index + 1
+    prewarmSlide(nextIndex)
+    // Tear down Hls instances far from the viewport to conserve memory
+    try {
+      const keep = new Set([index, nextIndex])
+      const map = hlsByIndexRef.current
+      for (const key of Object.keys(map)) {
+        const k = Number(key)
+        if (!keep.has(k)) {
+          const inst = map[k]
+          if (inst) {
+            try { inst.detachMedia(); inst.destroy() } catch {}
+          }
+          delete map[k]
+        }
+      }
+    } catch {}
+  }, [index, items])
 
   // Ensure only the active slide's video is playing; pause others on index change
   useEffect(() => {
