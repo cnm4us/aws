@@ -1096,6 +1096,8 @@ export default function Feed() {
         // TEMP DEBUG: render decision
         try { console.log('[Feed] render slide', { i, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait }) } catch {}
         const manifestSrc = isPortrait ? (it.masterPortrait || it.url) : (it.masterLandscape || it.url)
+        const isActive = i === index
+        const isWarm = i === index + 1
         return (
           <div
             key={`${it.id}-${it.publicationId ?? 'upload'}`}
@@ -1107,109 +1109,122 @@ export default function Feed() {
             style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
             <div className="holder">
-              <FeedVideo
-                src={manifestSrc}
-                active={i === index}
-                warm={i === index + 1}
-                muted={!unlocked}
-                poster={useUrl}
-                data-video-id={vid || undefined}
-                onTouchStart={(e) => {
-                  try {
-                    const t = e.touches && e.touches[0]
-                    if (t) {
-                      touchStartYRef.current = t.clientY
-                      touchLastYRef.current = t.clientY
-                      const nowTs = Date.now()
-                      touchStartTRef.current = nowTs
-                      touchLastTRef.current = nowTs
+              {(isActive || isWarm) ? (
+                <FeedVideo
+                  src={manifestSrc}
+                  active={isActive}
+                  warm={isWarm}
+                  muted={false}
+                  poster={useUrl}
+                  data-video-id={vid || undefined}
+                  onTouchStart={(e) => {
+                    try {
+                      const t = e.touches && e.touches[0]
+                      if (t) {
+                        touchStartYRef.current = t.clientY
+                        touchLastYRef.current = t.clientY
+                        const nowTs = Date.now()
+                        touchStartTRef.current = nowTs
+                        touchLastTRef.current = nowTs
+                      }
+                    } catch {}
+                  }}
+                  onTouchMove={(e) => {
+                    try {
+                      const t = e.touches && e.touches[0]
+                      if (t) {
+                        touchLastYRef.current = t.clientY
+                        touchLastTRef.current = Date.now()
+                      }
+                    } catch {}
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                    const v = getVideoEl(i)
+                    if (!v) return
+                    if (!unlocked) setUnlocked(true)
+                    // If this slide isn't the active one yet, reanchor instantly then play
+                    if (i !== index) {
+                      try { disableSnapNow() } catch {}
+                      try { reanchorToIndex(i) } catch {}
                     }
-                  } catch {}
-                }}
-                onTouchMove={(e) => {
-                  try {
-                    const t = e.touches && e.touches[0]
-                    if (t) {
-                      touchLastYRef.current = t.clientY
-                      touchLastTRef.current = Date.now()
+                    try {
+                      // TEMP DEBUG: click toggle
+                      console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                      if (v.paused || v.ended) {
+                        // Optimistically mark started so opacity flips immediately
+                        setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+                        setPlayingIndex(i)
+                        v.muted = false
+                        void v.play()
+                      } else {
+                        v.pause()
+                      }
+                    } catch {}
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation()
+                    try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                    const now = Date.now()
+                    if (now - lastTouchTsRef.current < 300) return
+                    lastTouchTsRef.current = now
+                    // Detect a small, decisive swipe to page-step
+                    const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
+                    const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
+                    const vmag = Math.abs(dy) / dt // px/ms
+                    const SWIPE_DIST = 14
+                    const SWIPE_VEL = 0.5
+                    if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
+                      if (i < items.length - 1) {
+                        try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
+                        return
+                      }
+                    } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
+                      if (i > 0) {
+                        try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
+                        return
+                      }
                     }
-                  } catch {}
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  try { if ((e as any).cancelable) e.preventDefault() } catch {}
-                  const v = getVideoEl(i)
-                  if (!v) return
-                  if (!unlocked) setUnlocked(true)
-                  // If this slide isn't the active one yet, reanchor instantly then play
-                  if (i !== index) {
-                    try { disableSnapNow() } catch {}
-                    try { reanchorToIndex(i) } catch {}
-                  }
-                  try {
-                    // TEMP DEBUG: click toggle
-                    console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
-                    if (v.paused || v.ended) {
-                      v.muted = false
-                      void v.play()
-                    } else {
-                      v.pause()
+                    const v = getVideoEl(i)
+                    if (!v) return
+                    if (!unlocked) setUnlocked(true)
+                    if (i !== index) {
+                      try { disableSnapNow() } catch {}
+                      try { reanchorToIndex(i) } catch {}
                     }
-                  } catch {}
-                }}
-                onTouchEnd={(e) => {
-                  e.stopPropagation()
-                  try { if ((e as any).cancelable) e.preventDefault() } catch {}
-                  const now = Date.now()
-                  if (now - lastTouchTsRef.current < 300) return
-                  lastTouchTsRef.current = now
-                  // Detect a small, decisive swipe to page-step
-                  const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
-                  const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
-                  const vmag = Math.abs(dy) / dt // px/ms
-                  const SWIPE_DIST = 14
-                  const SWIPE_VEL = 0.5
-                  if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
-                    if (i < items.length - 1) {
-                      try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
-                      return
-                    }
-                  } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
-                    if (i > 0) {
-                      try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
-                      return
-                    }
-                  }
-                  const v = getVideoEl(i)
-                  if (!v) return
-                  if (!unlocked) setUnlocked(true)
-                  if (i !== index) {
-                    try { disableSnapNow() } catch {}
-                    try { reanchorToIndex(i) } catch {}
-                  }
-                  try {
-                    // TEMP DEBUG: touch toggle
-                    console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
-                    if (v.paused || v.ended) {
-                      v.muted = false
-                      void v.play()
-                    } else {
-                      v.pause()
-                    }
-                  } catch {}
-                }}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  background: 'transparent',
-                  opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
-                  transition: 'opacity .12s linear',
-                  touchAction: 'manipulation' as any,
-                }}
-              />
+                    try {
+                      // TEMP DEBUG: touch toggle
+                      console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                      if (v.paused || v.ended) {
+                        setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+                        setPlayingIndex(i)
+                        v.muted = false
+                        void v.play()
+                      } else {
+                        v.pause()
+                      }
+                    } catch {}
+                  }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    background: 'transparent',
+                    opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
+                    transition: 'opacity .12s linear',
+                    touchAction: 'manipulation' as any,
+                  }}
+                />
+              ) : (
+                // Placeholder holder without a video element; clicking will reanchor and mount HLSVideo
+                <div
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                  onClick={(e) => { e.stopPropagation(); try { disableSnapNow(); reanchorToIndex(i) } catch {} }}
+                />
+              )}
               {/* Like and Comment controls (always visible, right side) */}
               {it.publicationId != null && (
                 <div
@@ -1426,15 +1441,6 @@ export default function Feed() {
           if (!v) return
           if (e.intersectionRatio < 0.5 && i !== index) {
             try { v.pause() } catch {}
-            if (Math.abs(i - index) > 2) {
-              try { v.removeAttribute('src'); v.load() } catch {}
-              setStartedMap((prev) => {
-                if (!prev[i]) return prev
-                const c = { ...prev }
-                delete c[i]
-                return c
-              })
-            }
           }
         })
       },
@@ -1755,7 +1761,7 @@ export default function Feed() {
               src={modalSrc}
               active={true}
               warm={false}
-              muted={!unlocked}
+              muted={false}
               controls
               style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
             />

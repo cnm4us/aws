@@ -19,7 +19,7 @@ export default function FeedVideo({ src, active, warm, muted = true, poster, cla
   return (
     <HLSVideo
       src={src}
-      autoPlay={active}
+      autoPlay={false}
       warm={warm}
       muted={muted}
       playsInline

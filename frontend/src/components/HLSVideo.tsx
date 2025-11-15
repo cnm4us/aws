@@ -10,7 +10,7 @@ type Props = Omit<React.VideoHTMLAttributes<HTMLVideoElement>, 'src'> & {
 
 export default function HLSVideo({
   src,
-  autoPlay = true,
+  autoPlay = false,
   muted = true,
   playsInline = true,
   warm = false,
@@ -119,7 +119,23 @@ export default function HLSVideo({
         hls.on(Hls.Events.MEDIA_ATTACHED, () => console.log(dbgPrefix + 'hls MEDIA_ATTACHED'))
         hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: any) => console.log(dbgPrefix + 'hls MANIFEST_PARSED', { levels: data?.levels?.length, audioTracks: data?.audioTracks?.length }))
         hls.on(Hls.Events.LEVEL_LOADED, (_e, data: any) => console.log(dbgPrefix + 'hls LEVEL_LOADED', { level: data?.level, totalduration: data?.details?.totalduration, live: data?.details?.live, codecs: { audio: data?.details?.audioCodec, video: data?.details?.videoCodec } }))
-        hls.on(Hls.Events.ERROR, (_e, data: any) => console.log(dbgPrefix + 'hls ERROR', { type: data?.type, details: data?.details, fatal: data?.fatal }))
+        hls.on(Hls.Events.ERROR, (_e, data: any) => {
+          console.log(dbgPrefix + 'hls ERROR', { type: data?.type, details: data?.details, fatal: data?.fatal })
+          if (!data?.fatal) return
+          try {
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              console.log(dbgPrefix + 'hls recoverMediaError')
+              hls.recoverMediaError()
+            } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              console.log(dbgPrefix + 'hls startLoad (network recover)')
+              hls.startLoad()
+            } else {
+              console.log(dbgPrefix + 'hls destroy (fatal other)')
+              hls.destroy()
+              hlsRef.current = null
+            }
+          } catch {}
+        })
       } catch {}
       try {
         video.addEventListener('error', () => {
