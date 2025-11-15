@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Hls from 'hls.js'
+import FeedVideo from '../components/FeedVideo'
 import SharedNav from '../ui/SharedNav'
 import { prefetchForHref } from '../ui/routes'
 
@@ -166,7 +166,7 @@ export default function Feed() {
   const [spacesError, setSpacesError] = useState<string | null>(null)
   const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'global' })
   const railRef = useRef<HTMLDivElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
+  // Note: individual slide videos are rendered via FeedVideo/HLSVideo; no shared video element
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
   const [posterAvail, setPosterAvail] = useState<Record<string, boolean>>({})
   const ignoreScrollUntil = useRef<number>(0)
@@ -178,11 +178,10 @@ export default function Feed() {
   const [modalOpen, setModalOpen] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
   const [myUserId, setMyUserId] = useState<number | null>(null)
-  const modalVideoRef = useRef<HTMLVideoElement>(null)
   const [modalTime, setModalTime] = useState<number | null>(null)
   const [modalSrc, setModalSrc] = useState<string | null>(null)
   const playingIndexRef = useRef<number | null>(null)
-  const hlsByIndexRef = useRef<Record<number, Hls | null>>({})
+  // hls.js lifecycle is managed inside HLSVideo; no per-index map needed here
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
   // Likes state keyed by publicationId
@@ -902,19 +901,7 @@ export default function Feed() {
     return v
   }
 
-  const isIOS = (() => {
-    try {
-      const ua = navigator.userAgent || ''
-      const iOS = /iPad|iPhone|iPod/.test(ua)
-      const macTouch = /Macintosh/.test(ua) && (navigator as any).maxTouchPoints > 1
-      return iOS || macTouch
-    } catch { return false }
-  })()
-  const isSafari = (() => {
-    try { return /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '') } catch { return false }
-  })()
-
-  const preferNativeHls = () => isIOS || isSafari
+  // HLS selection is handled inside HLSVideo; keep UA helpers locally if needed later
 
   function pauseNonCurrent(targetIndex: number) {
     try {
@@ -929,104 +916,7 @@ export default function Feed() {
     } catch {}
   }
 
-  // Prewarm next slide (index+1): attach manifest and prepare buffers without playing.
-  const prewarmSlide = (i: number) => {
-    const it = items[i]
-    if (!it) return
-    const v = getVideoEl(i)
-    if (!v) return
-    try {
-      v.playsInline = true
-      v.preload = 'auto'
-    } catch {}
-    const src = it.masterPortrait || it.url
-    try {
-      const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
-      const useHlsJs = Hls.isSupported() && !preferNativeHls()
-      if (useHlsJs) {
-        // If an instance already exists for this slide, keep it
-        const existing = hlsByIndexRef.current[i]
-        if (existing) return
-        const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 12, backBufferLength: 0, debug: false })
-        h.loadSource(src)
-        h.attachMedia(v)
-        hlsByIndexRef.current[i] = h
-      } else if (canNative) {
-        if (!v.src) {
-          v.src = src
-          try { v.load() } catch {}
-        }
-      }
-    } catch {
-      // best effort warm-up
-    }
-  }
-
-  const playSlide = async (i: number, opts?: { forceUnmute?: boolean }) => {
-    const it = items[i]
-    if (!it) return
-    const v = getVideoEl(i)
-    if (!v) return
-    try {
-      const r = railRef.current
-      if (r) {
-        Array.from(r.querySelectorAll('video')).forEach((other) => {
-          if (other !== v) {
-            try { (other as HTMLVideoElement).pause() } catch {}
-          }
-        })
-      }
-    } catch {}
-    const src = it.masterPortrait || it.url
-    const needSrc = !v.src
-    if (needSrc) {
-      const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
-      const preferHls = Hls.isSupported() && !preferNativeHls()
-      if (preferHls) {
-        // Force hls.js on non‑Safari/Apple platforms
-        const prev = hlsByIndexRef.current[i]
-        if (!prev) {
-          const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
-          try { /* no-op diagnostics removed */ } catch {}
-          h.loadSource(src)
-          h.attachMedia(v)
-          hlsByIndexRef.current[i] = h
-        }
-      } else if (canNative) {
-        // Safari/iOS path
-        v.src = src
-      } else if (Hls.isSupported()) {
-        // Fallback to hls.js when native says no
-        const prev = hlsByIndexRef.current[i]
-        if (!prev) {
-          const h = new Hls({ capLevelToPlayerSize: true, startLevel: -1, maxBufferLength: 15, backBufferLength: 0, debug: false })
-          h.loadSource(src)
-          h.attachMedia(v)
-          hlsByIndexRef.current[i] = h
-        }
-      } else {
-        location.href = src
-        return
-      }
-    }
-    v.playsInline = true
-    v.preload = 'auto'
-    v.loop = true
-    v.muted = opts?.forceUnmute ? false : !unlocked
-    const onPlaying = () => {
-      playingIndexRef.current = i
-      setPlayingIndex(i)
-      setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
-    }
-    const onPause = () => { if (playingIndexRef.current === i) { setPlayingIndex(null) } }
-    const onEnded = () => { if (playingIndexRef.current === i) { setPlayingIndex(null) } }
-    try {
-      v.addEventListener('playing', onPlaying)
-      v.addEventListener('pause', onPause)
-      v.addEventListener('ended', onEnded)
-    } catch {}
-    try { await v.play() } catch {}
-  }
+  // Prewarm and playback are handled by FeedVideo/HLSVideo; keep pauseNonCurrent for index changes.
 
   function getSlideHeight(): number {
     const r = railRef.current
@@ -1035,23 +925,7 @@ export default function Feed() {
     return Math.max(1, h)
   }
 
-  useEffect(() => {
-    const v = getVideoEl(index)
-    const it = items[index]
-    if (!v || !it) return
-    if (!v.src) {
-      try {
-        v.playsInline = true
-        v.preload = 'auto'
-        const canNative = !!(v.canPlayType && (v.canPlayType('application/vnd.apple.mpegurl') || v.canPlayType('application/x-mpegURL')))
-        if (canNative) {
-          const src = it.masterPortrait || it.url
-          v.src = src
-          try { v.load() } catch {}
-        }
-      } catch {}
-    }
-  }, [index, items])
+  // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
   // No URL hash syncing (clean URLs)
 
@@ -1060,71 +934,9 @@ export default function Feed() {
     try { saveLastActiveFor(feedMode, index) } catch {}
   }, [index])
 
-  const attachAndPlay = async (i: number, opts?: { unmute?: boolean }) => {
-    const v = videoRef.current
-    const r = railRef.current
-    if (!v || !r) return
-    const slide = r.children[i] as HTMLDivElement | undefined
-    const holder = slide?.querySelector('.holder') as HTMLDivElement | null
-    if (!slide || !holder) return
-    if (v.parentElement !== holder) {
-      try { holder.insertBefore(v, holder.firstChild) } catch { holder.appendChild(v) }
-    }
-    try { (v.style as any).zIndex = '0' } catch {}
-    const targetUrl = items[i].url
-    const srcChanged = v.src !== targetUrl
-    if (srcChanged) {
-      v.style.opacity = '0'
-      const onLoaded = () => {
-        v.style.opacity = '1'
-        v.removeEventListener('loadeddata', onLoaded)
-      }
-      v.addEventListener('loadeddata', onLoaded)
-    } else {
-      v.style.opacity = '1'
-    }
-    try {
-      v.playsInline = true
-      v.loop = true
-      v.preload = 'auto'
-      v.muted = opts?.unmute ? false : !unlocked
-      if (srcChanged) {
-        v.src = targetUrl
-        try { v.load() } catch {}
-      }
-      await v.play().catch(() => {})
-      if (opts?.unmute && v.muted) {
-        v.muted = false
-        await v.play().catch(() => {})
-      }
-    } catch {}
-  }
+  // Shared attachAndPlay path removed; each slide owns its <video>
 
-  useEffect(() => {
-    if (!items.length) return
-    attachAndPlay(index, { unmute: unlocked }).catch(() => {})
-  }, [index, items, unlocked])
-
-  // Warm up next slide media (index+1); pause/destroy out-of-window instances
-  useEffect(() => {
-    const nextIndex = index + 1
-    prewarmSlide(nextIndex)
-    // Tear down Hls instances far from the viewport to conserve memory
-    try {
-      const keep = new Set([index, nextIndex])
-      const map = hlsByIndexRef.current
-      for (const key of Object.keys(map)) {
-        const k = Number(key)
-        if (!keep.has(k)) {
-          const inst = map[k]
-          if (inst) {
-            try { inst.detachMedia(); inst.destroy() } catch {}
-          }
-          delete map[k]
-        }
-      }
-    } catch {}
-  }, [index, items])
+  // Warm-up handled inside HLSVideo via `warm` prop; ensure only active video plays
 
   // Ensure only the active slide's video is playing; pause others on index change
   useEffect(() => {
@@ -1140,6 +952,31 @@ export default function Feed() {
       }
     } catch {}
   }, [index])
+
+  // Track playing state and mark started for fade-in
+  useEffect(() => {
+    const v = getVideoEl(index)
+    if (!v) return
+    const onPlaying = () => {
+      playingIndexRef.current = index
+      setPlayingIndex(index)
+      setStartedMap((prev) => (prev[index] ? prev : { ...prev, [index]: true }))
+    }
+    const onPause = () => { if (playingIndexRef.current === index) setPlayingIndex(null) }
+    const onEnded = onPause
+    try {
+      v.addEventListener('playing', onPlaying)
+      v.addEventListener('pause', onPause)
+      v.addEventListener('ended', onEnded)
+    } catch {}
+    return () => {
+      try {
+        v.removeEventListener('playing', onPlaying)
+        v.removeEventListener('pause', onPause)
+        v.removeEventListener('ended', onEnded)
+      } catch {}
+    }
+  }, [index, items])
 
   function itemHasLandscape(it?: UploadItem): boolean {
     if (!it) return false
@@ -1165,8 +1002,7 @@ export default function Feed() {
   }
 
   const closeModal = () => {
-    const mv = modalVideoRef.current
-    const cur = mv ? mv.currentTime : modalTime || 0
+    const cur = modalTime || 0
     setModalOpen(false)
     try { document.body.style.overflow = '' } catch {}
     const v = playingIndexRef.current != null ? getVideoEl(playingIndexRef.current) : null
@@ -1178,36 +1014,15 @@ export default function Feed() {
     }
   }
 
-  useEffect(() => {
-    const mv = modalVideoRef.current
-    if (!modalOpen || !mv || !modalSrc) return
-    let mounted = true
-    const onLoaded = async () => {
-      if (!mounted) return
-      try {
-        if (modalTime != null) mv.currentTime = Math.max(0, modalTime)
-      } catch {}
-      mv.muted = !unlocked
-      try { await mv.play() } catch {}
-    }
-    mv.addEventListener('loadedmetadata', onLoaded)
-    if (mv.src !== modalSrc) {
-      mv.src = modalSrc
-      try { mv.load() } catch {}
-    } else {
-      onLoaded()
-    }
-    return () => {
-      mounted = false
-      mv.removeEventListener('loadedmetadata', onLoaded)
-      try { mv.pause() } catch {}
-    }
-  }, [modalOpen, modalSrc])
+  // Modal playback is managed via FeedVideo/HLSVideo when open
 
   const unlock = () => {
     if (unlocked) return
-    // Start via the same pipeline used elsewhere so listeners/state are attached
-    try { void playSlide(index, { forceUnmute: true }) } catch {}
+    // Unmute and attempt to play the current video
+    try {
+      const v = getVideoEl(index)
+      if (v) { v.muted = false; void v.play() }
+    } catch {}
     setUnlocked(true)
   }
 
@@ -1278,6 +1093,9 @@ export default function Feed() {
         const vid = (it as any).videoId ? String((it as any).videoId) : null
         const pubId = it.publicationId != null ? String(it.publicationId) : null
         const slideId = vid ? `v-${vid}` : (pubId ? `p-${pubId}` : `u-${it.id}`)
+        // TEMP DEBUG: render decision
+        try { console.log('[Feed] render slide', { i, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait }) } catch {}
+        const manifestSrc = isPortrait ? (it.masterPortrait || it.url) : (it.masterLandscape || it.url)
         return (
           <div
             key={`${it.id}-${it.publicationId ?? 'upload'}`}
@@ -1289,9 +1107,11 @@ export default function Feed() {
             style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
             <div className="holder">
-              <video
-                playsInline
-                preload="auto"
+              <FeedVideo
+                src={manifestSrc}
+                active={i === index}
+                warm={i === index + 1}
+                muted={!unlocked}
                 poster={useUrl}
                 data-video-id={vid || undefined}
                 onTouchStart={(e) => {
@@ -1326,12 +1146,16 @@ export default function Feed() {
                     try { disableSnapNow() } catch {}
                     try { reanchorToIndex(i) } catch {}
                   }
-                  if (!v.src || v.paused || v.ended) {
-                    try { v.muted = false } catch {}
-                    playSlide(i, { forceUnmute: true })
-                  } else {
-                    try { v.pause() } catch {}
-                  }
+                  try {
+                    // TEMP DEBUG: click toggle
+                    console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                    if (v.paused || v.ended) {
+                      v.muted = false
+                      void v.play()
+                    } else {
+                      v.pause()
+                    }
+                  } catch {}
                 }}
                 onTouchEnd={(e) => {
                   e.stopPropagation()
@@ -1363,12 +1187,16 @@ export default function Feed() {
                     try { disableSnapNow() } catch {}
                     try { reanchorToIndex(i) } catch {}
                   }
-                  if (!v.src || v.paused || v.ended) {
-                    try { v.muted = false } catch {}
-                    playSlide(i, { forceUnmute: true })
-                  } else {
-                    try { v.pause() } catch {}
-                  }
+                  try {
+                    // TEMP DEBUG: touch toggle
+                    console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                    if (v.paused || v.ended) {
+                      v.muted = false
+                      void v.play()
+                    } else {
+                      v.pause()
+                    }
+                  } catch {}
                 }}
                 style={{
                   position: 'absolute',
@@ -1660,11 +1488,7 @@ export default function Feed() {
     }
   }, [feedMode, index])
 
-  useEffect(() => {
-    const v = getVideoEl(index)
-    if (!v) return
-    attachAndPlay(index).catch(() => {})
-  }, [index])
+  // No shared video element; each slide manages its own via HLSVideo
 
   const closeDrawer = () => {
     setDrawerOpen(false)
@@ -1926,14 +1750,16 @@ export default function Feed() {
           onClick={closeModal}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.96)', zIndex: 50, display: 'grid', placeItems: 'center' }}
         >
-          <video
-            ref={modalVideoRef}
-            playsInline
-            controls
-            autoPlay
-            preload="auto"
-            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
-          />
+          {modalSrc && (
+            <FeedVideo
+              src={modalSrc}
+              active={true}
+              warm={false}
+              muted={!unlocked}
+              controls
+              style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+            />
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); closeModal() }}
             style={{ position: 'fixed', top: 14, right: 14, zIndex: 51, background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 16, padding: '6px 10px' }}
