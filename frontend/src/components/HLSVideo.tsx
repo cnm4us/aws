@@ -6,6 +6,9 @@ type Props = Omit<React.VideoHTMLAttributes<HTMLVideoElement>, 'src'> & {
   src: string
   warm?: boolean
   onReady?: (video: HTMLVideoElement) => void
+  // Warm strategy: none (default), attach (manifest only), buffer (few seconds buffered then stop)
+  warmMode?: 'none' | 'attach' | 'buffer'
+  bufferTargetSec?: number
 }
 
 export default function HLSVideo({
@@ -15,17 +18,22 @@ export default function HLSVideo({
   playsInline = true,
   warm = false,
   onReady,
+  warmMode = 'none',
+  bufferTargetSec = 3,
   ...rest
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hlsRef = useRef<Hls | null>(null)
+  const stoppedRef = useRef<boolean>(false)
+  const checkTimerRef = useRef<number | null>(null)
 
+  // Attach/detach only when src changes; do not destroy on warm/warmMode flips
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
     // TEMP DEBUG: environment + decision snapshot
-    const dbgPrefix = `[HLSVideo]${warm ? '[warm]' : '[active]'} `
+    const dbgPrefix = `[HLSVideo]${warmMode !== 'none' ? '[warm]' : '[active]'} `
     try {
       const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
       const mse = typeof (window as any).MediaSource !== 'undefined'
@@ -47,6 +55,7 @@ export default function HLSVideo({
     // Cleanup helper
     const cleanup = () => {
       try { video.removeEventListener('loadeddata', onLoadedData) } catch {}
+      try { video.removeEventListener('play', onPlay) } catch {}
       if (hlsRef.current) {
         try { hlsRef.current.destroy() } catch {}
         hlsRef.current = null
@@ -56,6 +65,8 @@ export default function HLSVideo({
         try { video.removeAttribute('src'); video.load?.() } catch {}
       }
       try { console.log(dbgPrefix + 'cleanup', { currentSrc: (video as any).currentSrc, src: video.getAttribute('src') }) } catch {}
+      if (checkTimerRef.current) { try { window.clearInterval(checkTimerRef.current) } catch {} ; checkTimerRef.current = null }
+      stoppedRef.current = false
     }
 
     const onLoadedData = () => {
@@ -67,11 +78,21 @@ export default function HLSVideo({
           const cur = (video as any).currentSrc
           console.log(dbgPrefix + 'loadeddata', { readyState: rs, networkState: ns, currentSrc: cur, muted: video.muted, paused: video.paused })
         } catch {}
-        if (warm) {
+        if (warmMode !== 'none') {
           video.pause()
         }
         if (onReady) onReady(video)
       } catch {}
+    }
+
+    const onPlay = () => {
+      // If we paused network during warm, resume when user starts playback
+      const h = hlsRef.current
+      if (h && stoppedRef.current) {
+        try { console.log(dbgPrefix + 'resume startLoad on play') } catch {}
+        try { h.startLoad(-1) } catch {}
+        stoppedRef.current = false
+      }
     }
 
     // Capability & platform probes
@@ -84,7 +105,9 @@ export default function HLSVideo({
     // Safari (Apple vendor) native HLS only
     if (isAppleVendor && isSafari() && canNative) {
       try {
-        console.log(dbgPrefix + 'branch', { mode: 'safari-native' })
+        console.log(dbgPrefix + 'branch', { mode: 'safari-native', warmMode })
+        // Adjust preload behavior based on warmMode for Safari
+        try { video.preload = warmMode === 'attach' ? 'metadata' : 'auto' } catch {}
         if (video.src !== manifest) {
           video.src = manifest
           try { video.load() } catch {}
@@ -100,6 +123,7 @@ export default function HLSVideo({
         video.addEventListener('playing', () => console.log(dbgPrefix + 'playing'))
         video.addEventListener('waiting', () => console.log(dbgPrefix + 'waiting'))
         video.addEventListener('stalled', () => console.log(dbgPrefix + 'stalled'))
+        video.addEventListener('play', onPlay)
       } catch {}
       try { video.addEventListener('loadeddata', onLoadedData) } catch {}
       // TEMP DEBUG: warn if src is manifest on non-Safari (should never happen here)
@@ -109,10 +133,10 @@ export default function HLSVideo({
 
     // Other browsers with MSE: use hls.js
     if (Hls.isSupported()) {
-      const hls = new Hls({ autoStartLoad: true })
+      const hls = new Hls({ autoStartLoad: warmMode === 'attach' ? false : true })
       hlsRef.current = hls
       try {
-        console.log(dbgPrefix + 'branch', { mode: 'hls.js' })
+        console.log(dbgPrefix + 'branch', { mode: 'hls.js', warmMode })
         hls.loadSource(manifest)
         hls.attachMedia(video)
         // TEMP DEBUG: key Hls events only
@@ -136,6 +160,7 @@ export default function HLSVideo({
             }
           } catch {}
         })
+        // Buffer warm handled by separate effect reacting to warmMode
       } catch {}
       try {
         video.addEventListener('error', () => {
@@ -147,6 +172,7 @@ export default function HLSVideo({
         video.addEventListener('playing', () => console.log(dbgPrefix + 'playing'))
         video.addEventListener('waiting', () => console.log(dbgPrefix + 'waiting'))
         video.addEventListener('stalled', () => console.log(dbgPrefix + 'stalled'))
+        video.addEventListener('play', onPlay)
       } catch {}
       try { video.addEventListener('loadeddata', onLoadedData) } catch {}
       // TEMP DEBUG: after a tick, verify currentSrc is blob: and not the manifest
@@ -178,7 +204,41 @@ export default function HLSVideo({
       console.error(dbgPrefix + 'no supported playback path (not assigning manifest to src)')
     } catch {}
     return cleanup
-  }, [src, warm])
+  }, [src])
+
+  // React to warmMode changes without destroying the instance
+  useEffect(() => {
+    const video = videoRef.current
+    const hls = hlsRef.current
+    // Safari native: adjust preload and keep paused during warm
+    if (video && !hls && isSafari()) {
+      try { video.preload = warmMode === 'attach' ? 'metadata' : 'auto' } catch {}
+      if (warmMode !== 'none') { try { video.pause() } catch {} }
+      return
+    }
+    if (!hls) return
+    // Clear any prior checker
+    if (checkTimerRef.current) { try { window.clearInterval(checkTimerRef.current) } catch {} ; checkTimerRef.current = null }
+    if (warmMode === 'attach') {
+      try { hls.stopLoad(); stoppedRef.current = true } catch {}
+    } else if (warmMode === 'buffer') {
+      try { hls.startLoad(-1); stoppedRef.current = false } catch {}
+      checkTimerRef.current = window.setInterval(() => {
+        const v = videoRef.current
+        if (!v) return
+        try {
+          if (!v.buffered || v.buffered.length === 0) return
+          const end = v.buffered.end(v.buffered.length - 1)
+          if (end >= bufferTargetSec) {
+            try { hls.stopLoad(); stoppedRef.current = true } catch {}
+            if (checkTimerRef.current) { window.clearInterval(checkTimerRef.current); checkTimerRef.current = null }
+          }
+        } catch {}
+      }, 250)
+    } else {
+      try { hls.startLoad(-1); stoppedRef.current = false } catch {}
+    }
+  }, [warmMode, bufferTargetSec, src])
 
   return (
     <video

@@ -184,6 +184,7 @@ export default function Feed() {
   // hls.js lifecycle is managed inside HLSVideo; no per-index map needed here
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
+  const [pendingPlayIndex, setPendingPlayIndex] = useState<number | null>(null)
   // Likes state keyed by publicationId
   const [likesCountMap, setLikesCountMap] = useState<Record<number, number>>({})
   const [likedMap, setLikedMap] = useState<Record<number, boolean>>({})
@@ -961,6 +962,8 @@ export default function Feed() {
       playingIndexRef.current = index
       setPlayingIndex(index)
       setStartedMap((prev) => (prev[index] ? prev : { ...prev, [index]: true }))
+      // If we had a pending play intent for this index, clear it
+      setPendingPlayIndex((p) => (p === index ? null : p))
     }
     const onPause = () => { if (playingIndexRef.current === index) setPlayingIndex(null) }
     const onEnded = onPause
@@ -977,6 +980,31 @@ export default function Feed() {
       } catch {}
     }
   }, [index, items])
+
+  // Fulfill pending play intent when a slide becomes ready
+  useEffect(() => {
+    if (pendingPlayIndex == null) return
+    const v = getVideoEl(pendingPlayIndex)
+    if (!v) return
+    const tryPlay = () => {
+      try {
+        v.muted = false
+        const p = v.play()
+        if (p && typeof p.then === 'function') {
+          p.then(() => setPendingPlayIndex((cur) => (cur === pendingPlayIndex ? null : cur))).catch(() => {})
+        } else {
+          setPendingPlayIndex((cur) => (cur === pendingPlayIndex ? null : cur))
+        }
+      } catch {}
+    }
+    if (v.readyState >= 2) {
+      tryPlay()
+      return
+    }
+    const onReady = () => { tryPlay() }
+    try { v.addEventListener('loadeddata', onReady, { once: true } as any) } catch { try { v.addEventListener('loadeddata', onReady) } catch {} }
+    return () => { try { v.removeEventListener('loadeddata', onReady) } catch {} }
+  }, [pendingPlayIndex, index, items])
 
   function itemHasLandscape(it?: UploadItem): boolean {
     if (!it) return false
@@ -1098,9 +1126,11 @@ export default function Feed() {
         const manifestSrc = isPortrait ? (it.masterPortrait || it.url) : (it.masterLandscape || it.url)
         const isActive = i === index
         const isWarm = i === index + 1
+        const isPrewarm = i === index + 2
+        const isLinger = i === index - 1
         return (
           <div
-            key={`${it.id}-${it.publicationId ?? 'upload'}`}
+            key={slideId}
             className="slide"
             id={slideId}
             data-video-id={vid || undefined}
@@ -1109,11 +1139,12 @@ export default function Feed() {
             style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
             <div className="holder">
-              {(isActive || isWarm) ? (
+              {(isActive || isWarm || isPrewarm || isLinger) ? (
                 <FeedVideo
                   src={manifestSrc}
                   active={isActive}
-                  warm={isWarm}
+                  warm={isWarm || isPrewarm || isLinger}
+                  warmMode={isActive ? 'none' : (isWarm ? 'buffer' : 'attach')}
                   muted={false}
                   poster={useUrl}
                   data-video-id={vid || undefined}
@@ -1141,14 +1172,18 @@ export default function Feed() {
                   onClick={(e) => {
                     e.stopPropagation()
                     try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                    // Avoid duplicate handling when touch just fired
+                    try { if (Date.now() - lastTouchTsRef.current < 350) return } catch {}
                     const v = getVideoEl(i)
-                    if (!v) return
-                    if (!unlocked) setUnlocked(true)
-                    // If this slide isn't the active one yet, reanchor instantly then play
                     if (i !== index) {
+                      // Treat as intent: make it active and play when ready
+                      setPendingPlayIndex(i)
                       try { disableSnapNow() } catch {}
-                      try { reanchorToIndex(i) } catch {}
+                      try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                      return
                     }
+                    if (!v) { setPendingPlayIndex(i); return }
+                    if (!unlocked) setUnlocked(true)
                     try {
                       // TEMP DEBUG: click toggle
                       console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
@@ -1157,7 +1192,10 @@ export default function Feed() {
                         setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                         setPlayingIndex(i)
                         v.muted = false
-                        void v.play()
+                        const p = v.play()
+                        if (p && typeof p.then === 'function') {
+                          p.catch(() => { setPendingPlayIndex(i) })
+                        }
                       } else {
                         v.pause()
                       }
@@ -1187,12 +1225,14 @@ export default function Feed() {
                       }
                     }
                     const v = getVideoEl(i)
-                    if (!v) return
-                    if (!unlocked) setUnlocked(true)
                     if (i !== index) {
+                      setPendingPlayIndex(i)
                       try { disableSnapNow() } catch {}
-                      try { reanchorToIndex(i) } catch {}
+                      try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                      return
                     }
+                    if (!v) { setPendingPlayIndex(i); return }
+                    if (!unlocked) setUnlocked(true)
                     try {
                       // TEMP DEBUG: touch toggle
                       console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
@@ -1200,7 +1240,10 @@ export default function Feed() {
                         setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                         setPlayingIndex(i)
                         v.muted = false
-                        void v.play()
+                        const p = v.play()
+                        if (p && typeof p.then === 'function') {
+                          p.catch(() => { setPendingPlayIndex(i) })
+                        }
                       } else {
                         v.pause()
                       }
@@ -1222,7 +1265,7 @@ export default function Feed() {
                 // Placeholder holder without a video element; clicking will reanchor and mount HLSVideo
                 <div
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-                  onClick={(e) => { e.stopPropagation(); try { disableSnapNow(); reanchorToIndex(i) } catch {} }}
+                  onClick={(e) => { e.stopPropagation(); setPendingPlayIndex(i); try { disableSnapNow(); setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} } }}
                 />
               )}
               {/* Like and Comment controls (always visible, right side) */}
