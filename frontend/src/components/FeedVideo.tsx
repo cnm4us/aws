@@ -22,6 +22,7 @@ export default function FeedVideo({ src, active, warm, muted = true, poster, cla
     <HLSVideo
       src={src}
       autoPlay={false}
+      loop
       warm={warm}
       warmMode={warmMode}
       debugId={debugId}

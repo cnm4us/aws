@@ -61,9 +61,22 @@ export default function HLSVideo({
     const cleanup = () => {
       try { video.removeEventListener('loadeddata', onLoadedData) } catch {}
       try { video.removeEventListener('play', onPlay) } catch {}
+      // Gentle destroy: stop first, then wait briefly or until next FRAG_LOADED to avoid mid-fragment aborts
       if (hlsRef.current) {
-        try { hlsRef.current.destroy() } catch {}
+        const h = hlsRef.current
         hlsRef.current = null
+        try { h.stopLoad() } catch {}
+        let done = false
+        let timer: number | null = null
+        const finish = () => {
+          if (done) return; done = true
+          try { if (timer != null) window.clearTimeout(timer) } catch {}
+          try { h.off(Hls.Events.FRAG_LOADED, onFragLoaded) } catch {}
+          try { h.destroy() } catch {}
+        }
+        const onFragLoaded = () => { finish() }
+        try { h.on(Hls.Events.FRAG_LOADED, onFragLoaded) } catch {}
+        try { timer = window.setTimeout(finish, 160) as unknown as number } catch { finish() }
       }
       // Clear src only when not Safari to avoid Chrome trying to use native pipeline inadvertently later
       if (!isSafari()) {
