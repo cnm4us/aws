@@ -5,8 +5,9 @@ export type ContextId = 'channel' | 'assets' | 'space-admin' | 'settings' | 'mes
 export default function ContextPicker(props: {
   active: ContextId
   onSelect: (id: ContextId) => void
+  showAdmin?: boolean
 }) {
-  const { active, onSelect } = props
+  const { active, onSelect, showAdmin = false } = props
   const item = (id: ContextId, label: string, enabled = true, note?: string) => (
     <button
       key={id}
@@ -37,10 +38,9 @@ export default function ContextPicker(props: {
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {item('assets', 'My Assets')}
       {item('channel', 'Channel Changer')}
-      {item('space-admin', 'Space Admin', false, 'Coming soon')}
+      {showAdmin ? item('space-admin', 'Admin', true) : null}
       {item('messages', 'My Messages', false, 'Coming soon')}
       {item('settings', 'Settings', false, 'Coming soon')}
     </div>
   )
 }
-

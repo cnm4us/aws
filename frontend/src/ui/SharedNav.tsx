@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import ContextDrawer from '../menu/ContextDrawer'
 import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
 import MyAssets from '../menu/contexts/MyAssets'
+import AdminMenu from '../menu/contexts/AdminMenu'
 import ContextPicker, { type ContextId } from '../menu/ContextPicker'
 // useEffect already imported above
 
@@ -29,6 +30,9 @@ export default function SharedNav(props: {
   isGlobalActive?: boolean
   onSelectGlobal?: () => void
   onSelectSpace?: (spaceId: number) => void
+  // Admin gating
+  isSiteAdmin?: boolean
+  authLoaded?: boolean
 }) {
   const {
     // legacy props retained for compatibility with callers; not used in universal drawer mode
@@ -61,8 +65,21 @@ export default function SharedNav(props: {
     return 'channel'
   })
   const [pickerOpen, setPickerOpen] = useState(false)
+  const isSiteAdmin = props.isSiteAdmin === true
+  const authLoaded = props.authLoaded === true
+
+  // Normalize context when admin not allowed
+  useEffect(() => {
+    if (!authLoaded) return
+    if (!isSiteAdmin && activeContext === 'space-admin') setActiveContext('channel')
+  }, [authLoaded, isSiteAdmin, activeContext])
 
   // No edge-swipe opener; open via hamburger, close via overlay or swipe-right on drawer.
+
+  // Ensure opening the drawer shows the last selected context (not the picker)
+  useEffect(() => {
+    if (menuOpen) setPickerOpen(false)
+  }, [menuOpen])
 
   useEffect(() => {
     try { localStorage.setItem('menu:context', activeContext) } catch {}
@@ -79,7 +96,7 @@ export default function SharedNav(props: {
         onMoreClick={() => {
           setPickerOpen((v) => !v)
         }}
-        title={pickerOpen ? 'Menu Selector' : (activeContext === 'assets' ? 'My Assets' : activeContext === 'channel' ? 'Channel Changer' : undefined)}
+        title={pickerOpen ? 'Menu Selector' : (activeContext === 'assets' ? 'My Assets' : activeContext === 'channel' ? 'Channel Changer' : activeContext === 'space-admin' ? 'Admin' : undefined)}
       >
         {pickerOpen ? (
           <ContextPicker
@@ -88,6 +105,7 @@ export default function SharedNav(props: {
               setActiveContext(id)
               setPickerOpen(false)
             }}
+            showAdmin={isSiteAdmin}
           />
         ) : activeContext === 'channel' ? (
           <ChannelSwitcher
@@ -100,6 +118,8 @@ export default function SharedNav(props: {
           />
         ) : activeContext === 'assets' ? (
           <MyAssets onNavigate={() => setMenuOpen(false)} />
+        ) : activeContext === 'space-admin' ? (
+          <AdminMenu onNavigate={() => setMenuOpen(false)} />
         ) : (
           <div style={{ color: '#fff', fontSize: 14, opacity: 0.8 }}>Coming soon…</div>
         )}
@@ -159,3 +179,4 @@ export default function SharedNav(props: {
     </>
   )
 }
+ 

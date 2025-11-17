@@ -27,6 +27,7 @@ type MeResponse = {
   email: string | null
   displayName: string | null
   roles: string[]
+  isSiteAdmin?: boolean
   spaceRoles: Record<string, string[]>
   personalSpace: { id: number; slug: string } | null
 }
@@ -174,6 +175,7 @@ export default function Feed() {
   const [drawerMode, setDrawerMode] = useState<'nav' | 'spaces'>('nav')
   const [isAuthed, setIsAuthed] = useState(false)
   const [me, setMe] = useState<MeResponse | null>(null)
+  const [meLoaded, setMeLoaded] = useState(false)
   const [spaceList, setSpaceList] = useState<MySpacesResponse | null>(null)
   const [spacesLoaded, setSpacesLoaded] = useState(false)
   const [spacesLoading, setSpacesLoading] = useState(false)
@@ -597,7 +599,7 @@ export default function Feed() {
         setSpacesLoaded(false)
         setSpacesError(null)
         setFeedMode((prev) => (prev.kind === 'space' ? { kind: 'global' } : prev))
-      }
+      } finally { if (!canceled) setMeLoaded(true) }
     })()
     return () => { canceled = true }
   }, [])
@@ -1685,6 +1687,8 @@ export default function Feed() {
         closeDrawer={closeDrawer}
         currentFeedLabel={currentFeedLabel}
         isAuthed={isAuthed}
+        authLoaded={meLoaded}
+        isSiteAdmin={Boolean(me?.isSiteAdmin)}
         mineOnly={mineOnly}
         onChangeMineOnly={(checked) => setMineOnly(checked)}
         navLinks={navLinks}

@@ -20,6 +20,8 @@ import { requireAuth } from './middleware/auth';
 import { getPool } from './db';
 import { createSession, revokeSession, parseSidCookie } from './security/sessionStore';
 import { requireSiteAdminPage } from './middleware/auth';
+import { can } from './security/permissions'
+import { PERM } from './security/perm'
 import { domainErrorMiddleware } from './core/http';
 
 export function buildServer(): express.Application {
@@ -75,6 +77,7 @@ export function buildServer(): express.Application {
           email: null,
           displayName: null,
           roles: [],
+          isSiteAdmin: false,
           spaceRoles: {},
           personalSpace: null,
         });
@@ -126,11 +129,18 @@ export function buildServer(): express.Application {
         ? { id: Number(personalSpaceRow.id), slug: String(personalSpaceRow.slug) }
         : null;
 
+      // Derive site admin capability
+      let isSiteAdmin = false
+      try {
+        isSiteAdmin = await can(user.id, PERM.VIDEO_DELETE_ANY)
+      } catch {}
+
       res.json({
         userId: user.id,
         email: user.email,
         displayName: user.display_name,
         roles: roles.filter((r: string) => /^site_/.test(String(r))),
+        isSiteAdmin,
         spaceRoles,
         personalSpace,
       });

@@ -11,6 +11,8 @@ const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
 const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
 const AdminSpaceDetailPage = React.lazy(() => import('./app/AdminSpaceDetail'))
+const AdminModerationGroupsPage = React.lazy(() => import('./app/AdminModerationGroups'))
+const AdminModerationChannelsPage = React.lazy(() => import('./app/AdminModerationChannels'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -168,7 +170,23 @@ if (path === '/' || path === '') {
     )
   } else if (path.startsWith('/admin/')) {
     // Map legacy admin routes to SPA pages or placeholder
-    if (/^\/admin\/users\/(\d+)/.test(path)) {
+    if (path.startsWith('/admin/moderation/groups')) {
+      root.render(
+        <Layout label="Admin • Group Moderation (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <AdminModerationGroupsPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (path.startsWith('/admin/moderation/channels')) {
+      root.render(
+        <Layout label="Admin • Channel Moderation (SPA)">
+          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+            <AdminModerationChannelsPage />
+          </Suspense>
+        </Layout>
+      )
+    } else if (/^\/admin\/users\/(\d+)/.test(path)) {
       root.render(
         <Layout label="Admin • User (SPA)">
           <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 

@@ -110,6 +110,63 @@ adminRouter.get('/roles', async (_req, res) => {
   }
 });
 
+// ---------- Moderation Overviews (Site Admin) ----------
+// List groups with pending publication counts
+adminRouter.get('/moderation/groups', async (_req, res) => {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN (
+           SELECT space_id, COUNT(*) AS pending
+             FROM space_publications
+            WHERE status = 'pending'
+            GROUP BY space_id
+         ) cnt ON cnt.space_id = s.id
+        WHERE s.type = 'group'
+        ORDER BY pending DESC, s.name ASC`
+    );
+    const items = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      name: String(r.name || ''),
+      slug: String(r.slug || ''),
+      pending: Number(r.pending || 0),
+    }));
+    res.json({ items });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_group_moderation', detail: String(err?.message || err) });
+  }
+});
+
+// List channels with pending publication counts
+adminRouter.get('/moderation/channels', async (_req, res) => {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN (
+           SELECT space_id, COUNT(*) AS pending
+             FROM space_publications
+            WHERE status = 'pending'
+            GROUP BY space_id
+         ) cnt ON cnt.space_id = s.id
+        WHERE s.type = 'channel'
+        ORDER BY pending DESC, s.name ASC`
+    );
+    const items = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      name: String(r.name || ''),
+      slug: String(r.slug || ''),
+      pending: Number(r.pending || 0),
+    }));
+    res.json({ items });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_channel_moderation', detail: String(err?.message || err) });
+  }
+});
+
 // ---- Moderation: per-user global hold + suspensions ----
 adminRouter.get('/users/:id/moderation', async (req, res) => {
   try {

@@ -9,6 +9,8 @@ export default function Layout(props: { label: string; children: React.ReactNode
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerMode, setDrawerMode] = useState<DrawerMode>('nav')
   const [isAuthed, setIsAuthed] = useState(false)
+  const [isSiteAdmin, setIsSiteAdmin] = useState(false)
+  const [authLoaded, setAuthLoaded] = useState(false)
 
   useEffect(() => {
     let canceled = false
@@ -17,9 +19,17 @@ export default function Layout(props: { label: string; children: React.ReactNode
         const res = await fetch('/api/me', { credentials: 'same-origin' })
         if (!res.ok) throw new Error('me')
         const me = await res.json()
-        if (!canceled) setIsAuthed(!!me && me.userId != null)
+        if (!canceled) {
+          setIsAuthed(!!me && me.userId != null)
+          setIsSiteAdmin(Boolean(me?.isSiteAdmin))
+        }
       } catch {
-        if (!canceled) setIsAuthed(false)
+        if (!canceled) {
+          setIsAuthed(false)
+          setIsSiteAdmin(false)
+        }
+      } finally {
+        if (!canceled) setAuthLoaded(true)
       }
     })()
     return () => { canceled = true }
@@ -65,6 +75,8 @@ export default function Layout(props: { label: string; children: React.ReactNode
         closeDrawer={closeDrawer}
         currentFeedLabel={label}
         isAuthed={isAuthed}
+        authLoaded={authLoaded}
+        isSiteAdmin={isSiteAdmin}
         mineOnly={false}
         onChangeMineOnly={() => { /* no-op outside feed */ }}
         navLinks={navLinks}

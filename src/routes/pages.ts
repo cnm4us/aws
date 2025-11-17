@@ -100,6 +100,14 @@ pagesRouter.get('/admin/dev', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+// Admin moderation overviews (SPA)
+pagesRouter.get('/admin/moderation/groups', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/admin/moderation/channels', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 // -------- Space-level Admin & Moderation UI --------
 // Helper: resolve space id from (type, slug) and attach to req.params.id
 function resolveIdFromSlug(type: 'group' | 'channel') {

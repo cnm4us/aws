@@ -23,7 +23,10 @@ Priority Backlog (Refactor Objectives)
   - [ ] Future: predictive preloading hooks
 
 Summary
-- Initialize new thread focused on Windows/Chrome feed reliability: N plays, N+1 plays, N+2 sometimes does not start on first tap. Validate user-gesture startLoad behavior, strengthen promotion guard, and consider upgrading N+2 warm from attach→buffer to improve first-tap start odds while preserving resource limits.
+- Canonical routing enabled: `/groups`, `/groups/:slug`, `/channels`, `/channels/:slug` now render the SPA without server redirects. Feed derives mode from the path and skips any LS/global restore, eliminating stray warms from the wrong feed.
+- LocalStorage persistence removed for last feed/video. Canonical pages always start at index 0. Warm gating requires items to match the active feedKey and restore completion.
+- hls.js pipeline stabilized for Windows/Chrome: attach‑warm defers manifest (no early .m3u8), on user play we guarantee `loadSource+startLoad(-1)`, and cleanup uses a gentle destroy. Videos loop automatically after completion.
+- Media ladders updated for mobile: added 360p rung, reduced MaxBitrate ceilings (1080→6.5 Mbps, 720→3.5, 540→1.8, 480→1.5), AAC 128 kbps. Outputs verified in S3.
 
 Decisions (carried + new)
 - Keep using hls.js for non‑Safari browsers; rely on native HLS only on Safari/iOS.
@@ -33,55 +36,107 @@ Decisions (carried + new)
 - Split HLSVideo attach/detach (keyed to `src`) from warm control (keyed to `warmMode`) so warm→active does not destroy MSE.
 - Warm window: index‑1 (linger), index (active), index+1 (buffer warm ~3s then stop), index+2..+5 (attach warm). Autoplay disabled; user taps start unmuted from frame 0.
 - Promotion lock (ignore IO/scroll ~800ms) on tap-based promotion to reduce index bounce.
+- Canonical feed URLs are the source of truth; bypass PWA forced `/` redirect for `/groups/*` and `/channels/*`.
+- Disable LS read/write for feed/video. Canonical pages land on slide 0.
+- Loop active videos.
 
 Changes Since Last
-- Affects: docs/agents/Handoff_15.md
-- Routes: none
+- Affects: frontend/src/main.tsx; src/routes/pages.ts; frontend/src/app/Feed.tsx; frontend/src/components/HLSVideo.tsx; frontend/src/components/FeedVideo.tsx; jobs/mixins/output/portrait-cmaf-1080-720-540.json; jobs/mixins/output/landscape-cmaf-1080-720-480.json; jobs/mixins/output/portrait-from-landscape-cmaf-720-540.json; jobs/mixins/output/portrait-1080-720-540.json; jobs/mixins/output/landscape-1080-720-480.json; jobs/mixins/audio/normalize-lufs-16.json; src/services/productionRunner.ts; src/jobs.ts
+- Routes: /groups; /groups/:slug; /channels; /channels/:slug
 - DB: none
 - Flags: none
 
 Commit Messages (ready to paste)
-Subject: docs(agents): add Handoff_15; continue Windows/Chrome N+2 freeze work
+Subject: feat(routing): add canonical group/channel routes; serve SPA without redirects
 
 Context:
-- Seed next thread to resolve intermittent first‑tap start failure on the third video in feed on Windows/Chrome. Carry forward decisions and plan instrumentation + warm strategy adjustments.
+- Users need shareable deep links for `/groups/:slug` and `/channels/:slug`. Previous server redirect prevented SPA mounting.
 
 Approach:
-- Create Handoff_15 with copied backlog and decisions; outline concrete next steps for instrumentation, guard strengthening, and warm policy experiments.
+- Frontend: add canonical paths and bypass PWA redirect. Server: serve index.html for canonical paths (no 302).
 
 Impact:
-- Documentation only.
-
-Tests:
-- N/A
-
-References:
-- docs/agents/README.md; docs/agents/AGENTS.md; docs/agents/Handoff_14.md
+- Canonical links work in web and PWA.
 
 Meta:
-- Affects: docs/agents/Handoff_15.md
+- Affects: frontend/src/main.tsx; src/routes/pages.ts
+- Routes: /groups; /groups/:slug; /channels; /channels/:slug
+- DB: none
+- Flags: none
+
+Subject: fix(feed): disable localStorage restore; path‑driven feed; tighten warm gating
+
+Context:
+- LS restore caused stray warms and wrong feed warming.
+
+Approach:
+- Parse canonical path; defer global load; disable all LS read/write for last feed/video; restrict warming to items matching active feedKey after restore.
+
+Impact:
+- No more stray global requests on canonical pages; start at index 0.
+
+Meta:
+- Affects: frontend/src/app/Feed.tsx
+- Routes: none
+- DB: none
+- Flags: none
+
+Subject: fix(video): defer attach‑warm manifest; re‑prime on play; gentle destroy; loop
+
+Context:
+- Attach‑warm canceled manifests and N+2 no‑start on Windows/Chrome.
+
+Approach:
+- Defer `loadSource` for attach‑warm; on play ensure `loadSource+startLoad(-1)`; gentle destroy waits FRAG_LOADED or ~160ms; enable `loop`.
+
+Impact:
+- ~90% fewer canceled .m3u8; improved first‑tap reliability; seamless looping.
+
+Meta:
+- Affects: frontend/src/components/HLSVideo.tsx; frontend/src/components/FeedVideo.tsx
+- Routes: none
+- DB: none
+- Flags: none
+
+Subject: feat(encoding): add 360p rung; lower ceilings; set AAC 128k; align HQ
+
+Context:
+- Provide high quality on strong links and a safe floor on poor mobile connections.
+
+Approach:
+- Add 360p rung; 1080/720/540/480 caps to 6.5/3.5/1.8/1.5 Mbps; AAC 128k; update HQ mapping.
+
+Impact:
+- Better ABR on 0.6–2 Mbps; reduced peaks.
+
+Meta:
+- Affects: jobs/mixins/output/*; src/services/productionRunner.ts; src/jobs.ts
 - Routes: none
 - DB: none
 - Flags: none
 
 Thread Plan (subset of Backlog)
-- [ ] Verify repro on Windows Chrome (real device if possible)
-- [ ] Instrument/confirm `hls.startLoad(-1)` under tap path (N+2)
-- [ ] Trial: upgrade N+2 from attach→buffer warm (2–3s)
-- [ ] Harden promotion guard (≥1s) and keep index‑2 mounted briefly post‑promotion
-- [ ] Audit unmount/detach paths around IO/scroll; prevent premature cleanup
-- [ ] CDN sanity checks for persistent ULIDs (init segments, CORS, caching)
+- [x] Implement canonical routing and SPA fallbacks
+- [x] Disable LS restore; path‑driven feed selection
+- [x] Defer attach‑warm manifest; on‑tap re‑prime; gentle destroy; loop
+- [x] Update CMAF/HLS ladders; add 360p; audio 128k
+- [ ] Optional: stop buffer‑warm on FRAG_LOADED (segment‑aligned)
+- [ ] Optional: index+2 short buffer on Windows/Chrome only
+- [ ] Optional: add hls.js capLevelToPlayerSize/startLevel and a debug level selector
+- [ ] Posters: responsive variants + lazy <img> + concurrency cap
 
 Open Items / Next Actions
-- Chrome “N works, N+1 works, N+2 sometimes won’t start on first tap” persists in tail:
-  - Ensure tap handler always executes `hls.startLoad(-1)` (even when warm exists).
-  - Consider direct `startLoad(-1)` on non‑active tap when a warm instance exists.
-  - Evaluate data cost of N+2 buffer warm (short target window) vs attach-only.
-  - Maintain stricter promotion guard; keep index‑2 mounted ~1s post‑promotion.
+- Rare “waiting” tail on Windows/Chrome: add one‑shot retry (re‑issue `loadSource+startLoad(-1)` ~500ms after tap if still waiting).
+- Boundary‑stop warm on FRAG_LOADED/FRAG_BUFFERED; use integer segment targets to avoid mid‑fragment aborts.
+- Consider platform‑specific index+2 short buffer warm on Windows/Chrome.
+- Poster pipeline: multi‑size (AVIF/WebP/JPEG), responsive <picture>/<img>, lazy loading + IO observer, capped concurrency (3–6), 1–2 screens look‑ahead.
+- hls.js tuning: `capLevelToPlayerSize: true`, `startLevel: 0`, `maxBufferLength: ~10–12s`.
 
 Work Log (optional, terse; reverse‑chronological)
-- 2025-11-16T00:00Z — Initialized Handoff_15; aligned on Windows/Chrome N+2 freeze focus.
+- 2025-11-17 — Canonical routes + SPA fallbacks; Feed path parsing; PWA bypass.
+- 2025-11-17 — Disabled LS read/write for feed/video; tightened warm gating.
+- 2025-11-17 — HLS attach‑warm defer + on‑tap re‑prime; gentle destroy; video loop.
+- 2025-11-17 — Media ladders updated (360p added; ceilings lowered; AAC 128k); HQ mapping aligned.
 
 Artifacts (optional)
 - Screens: playwright-report/ (local only; not in Git)
-
