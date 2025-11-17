@@ -79,7 +79,7 @@ export async function startProductionRender(options: RenderOptions) {
   enforceQvbr(settings)
   if (isHq) applyHqTuning(settings)
   if (typeof sound === 'string' && sound.toLowerCase().startsWith('norm')) {
-    applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 160000 })
+    applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 128000 })
   }
 
   try {

@@ -25,7 +25,7 @@
               "Height": 1080,
               "ScalingBehavior": "DEFAULT",
               "Sharpness": 50,
-              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 8000000 } }
+              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 6500000 } }
             }
           },
           {
@@ -36,7 +36,7 @@
               "Height": 720,
               "ScalingBehavior": "DEFAULT",
               "Sharpness": 50,
-              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 4500000 } }
+              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 3500000 } }
             }
           },
           {
@@ -47,7 +47,18 @@
               "Height": 480,
               "ScalingBehavior": "DEFAULT",
               "Sharpness": 50,
-              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 2000000 } }
+              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 1500000 } }
+            }
+          },
+          {
+            "NameModifier": "360p_h",
+            "ContainerSettings": { "Container": "CMFC" },
+            "VideoDescription": {
+              "Width": 640,
+              "Height": 360,
+              "ScalingBehavior": "DEFAULT",
+              "Sharpness": 50,
+              "CodecSettings": { "Codec": "H_264", "H264Settings": { "MaxBitrate": 1000000 } }
             }
           },
           {
@@ -56,7 +67,7 @@
             "AudioDescriptions": [
               {
                 "AudioSourceName": "Audio Selector 1",
-                "CodecSettings": { "Codec": "AAC", "AacSettings": { "Bitrate": 160000, "CodingMode": "CODING_MODE_2_0", "SampleRate": 48000 } }
+                "CodecSettings": { "Codec": "AAC", "AacSettings": { "Bitrate": 128000, "CodingMode": "CODING_MODE_2_0", "SampleRate": 48000 } }
               }
             ]
           }

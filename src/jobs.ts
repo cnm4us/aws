@@ -108,11 +108,11 @@ function set(obj: any, path: string[], value: any) {
 function hqMaxBitrateForName(name: string | undefined): number | undefined {
   if (!name) return undefined;
   const n = name.toLowerCase();
-  if (n.includes('1080')) return 8000000;
-  if (n.includes('720')) return 4500000;
-  if (n.includes('540')) return 2500000;
-  if (n.includes('480')) return 2000000;
-  if (n.includes('360')) return 1200000;
+  if (n.includes('1080')) return 6500000;
+  if (n.includes('720')) return 3500000;
+  if (n.includes('540')) return 1800000;
+  if (n.includes('480')) return 1500000;
+  if (n.includes('360')) return 1000000;
   return undefined;
 }
 
