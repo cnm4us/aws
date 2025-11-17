@@ -130,22 +130,19 @@ pagesRouter.get('/spaces/:id', requireSpaceAdminPage, (req: any, res) => {
   res.redirect(`/spaces/${id}/admin/users/${currentUserId}`);
 });
 
-// Slug-based convenience redirects (groups/channels)
-pagesRouter.get('/groups/:slug', resolveIdFromSlug('group'), requireSpaceAdminPage, (req: any, res) => {
-  const id = req.params.id;
-  const currentUserId = req.user && req.user.id ? String(req.user.id) : '';
-  if (!currentUserId) {
-    return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '')}`);
-  }
-  res.redirect(`/spaces/${id}/admin/users/${currentUserId}`);
+// Canonical feed routes for groups/channels by slug (SPA shell, no redirect)
+pagesRouter.get('/groups', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
 });
-pagesRouter.get('/channels/:slug', resolveIdFromSlug('channel'), requireSpaceAdminPage, (req: any, res) => {
-  const id = req.params.id;
-  const currentUserId = req.user && req.user.id ? String(req.user.id) : '';
-  if (!currentUserId) {
-    return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '')}`);
-  }
-  res.redirect(`/spaces/${id}/admin/users/${currentUserId}`);
+pagesRouter.get('/channels', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+// Exact one-segment slug (avoid matching admin/moderation subpaths)
+pagesRouter.get(/^\/groups\/([^\/]+)\/?$/, (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get(/^\/channels\/([^\/]+)\/?$/, (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // Members default and explicit route

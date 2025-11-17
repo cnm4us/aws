@@ -32,7 +32,9 @@ const root = createRoot(document.getElementById('root')!)
       if (isStandalone) {
         try { localStorage.setItem('menu:context', 'channel') } catch {}
         const p = window.location.pathname || '/'
-        if (p !== '/' && p !== '') {
+        // Preserve canonical deep links for groups/channels; only normalize unknown non-root paths
+        const isCanonical = p.startsWith('/groups') || p.startsWith('/channels')
+        if (!isCanonical && p !== '/' && p !== '') {
           // Ensure we land on the main feed for fresh app opens
           window.location.replace('/')
         }
@@ -64,6 +66,38 @@ if (path === '/' || path === '') {
     )
   }
   root.render(<App />)
+} else if (path === '/groups' || path === '/groups/') {
+  const GroupsBrowse = React.lazy(() => import('./app/GroupsBrowse'))
+  root.render(
+    <Layout label="Groups">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+        <GroupsBrowse />
+      </Suspense>
+    </Layout>
+  )
+} else if (/^\/groups\/(?:[^/]+)\/?$/.test(path)) {
+  // Group feed by slug uses the same Feed shell
+  root.render(
+    <Suspense fallback={<FullscreenFallback label="Loading group…" />}> 
+      <Feed />
+    </Suspense>
+  )
+} else if (path === '/channels' || path === '/channels/') {
+  const ChannelsBrowse = React.lazy(() => import('./app/ChannelsBrowse'))
+  root.render(
+    <Layout label="Channels">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+        <ChannelsBrowse />
+      </Suspense>
+    </Layout>
+  )
+} else if (/^\/channels\/(?:[^/]+)\/?$/.test(path)) {
+  // Channel feed by slug uses the same Feed shell
+  root.render(
+    <Suspense fallback={<FullscreenFallback label="Loading channel…" />}> 
+      <Feed />
+    </Suspense>
+  )
 } else if (path.startsWith('/uploads/new')) {
   root.render(
     <Layout label="New Upload">

@@ -9,6 +9,8 @@ type Props = Omit<React.VideoHTMLAttributes<HTMLVideoElement>, 'src'> & {
   // Warm strategy: none (default), attach (manifest only), buffer (few seconds buffered then stop)
   warmMode?: 'none' | 'attach' | 'buffer'
   bufferTargetSec?: number
+  // Optional debug identifier (e.g., ULID) for logging
+  debugId?: string
 }
 
 export default function HLSVideo({
@@ -20,12 +22,15 @@ export default function HLSVideo({
   onReady,
   warmMode = 'none',
   bufferTargetSec = 3,
+  debugId,
   ...rest
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hlsRef = useRef<Hls | null>(null)
   const stoppedRef = useRef<boolean>(false)
   const checkTimerRef = useRef<number | null>(null)
+  const manifestParsedRef = useRef<boolean>(false)
+  const lastLoadSrcRef = useRef<string | null>(null)
 
   // Attach/detach only when src changes; do not destroy on warm/warmMode flips
   useEffect(() => {
@@ -33,7 +38,7 @@ export default function HLSVideo({
     if (!video) return
 
     // TEMP DEBUG: environment + decision snapshot
-    const dbgPrefix = `[HLSVideo]${warmMode !== 'none' ? '[warm]' : '[active]'} `
+    const dbgPrefix = `[HLSVideo]${warmMode !== 'none' ? '[warm]' : '[active]'}${debugId ? `[id:${debugId}]` : ''} `
     try {
       const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
       const mse = typeof (window as any).MediaSource !== 'undefined'
@@ -64,9 +69,11 @@ export default function HLSVideo({
       if (!isSafari()) {
         try { video.removeAttribute('src'); video.load?.() } catch {}
       }
-      try { console.log(dbgPrefix + 'cleanup', { currentSrc: (video as any).currentSrc, src: video.getAttribute('src') }) } catch {}
+      try { console.log(dbgPrefix + 'cleanup', { currentSrc: (video as any).currentSrc, src: video.getAttribute('src'), warmMode, srcKey: src }) } catch {}
       if (checkTimerRef.current) { try { window.clearInterval(checkTimerRef.current) } catch {} ; checkTimerRef.current = null }
       stoppedRef.current = false
+      manifestParsedRef.current = false
+      lastLoadSrcRef.current = null
     }
 
     const onLoadedData = () => {
@@ -86,11 +93,19 @@ export default function HLSVideo({
     }
 
     const onPlay = () => {
-      // If we paused network during warm, resume when user starts playback
+      // Ensure loading resumes when user starts playback (covers attach + buffer warm)
       const h = hlsRef.current
-      if (h && stoppedRef.current) {
+      if (h) {
         try { console.log(dbgPrefix + 'resume startLoad on play') } catch {}
-        try { h.startLoad(-1) } catch {}
+        try {
+          if (!manifestParsedRef.current) {
+            // Ensure manifest is (re)loaded before starting
+            if (lastLoadSrcRef.current !== manifest) {
+              try { h.loadSource(manifest); lastLoadSrcRef.current = manifest } catch {}
+            }
+          }
+          h.startLoad(-1)
+        } catch {}
         stoppedRef.current = false
       }
     }
@@ -137,11 +152,14 @@ export default function HLSVideo({
       hlsRef.current = hls
       try {
         console.log(dbgPrefix + 'branch', { mode: 'hls.js', warmMode })
-        hls.loadSource(manifest)
+        // Attach media first; defer manifest for attach-warm to avoid canceled requests
         hls.attachMedia(video)
+        if (warmMode !== 'attach') {
+          try { hls.loadSource(manifest); lastLoadSrcRef.current = manifest } catch {}
+        }
         // TEMP DEBUG: key Hls events only
         hls.on(Hls.Events.MEDIA_ATTACHED, () => console.log(dbgPrefix + 'hls MEDIA_ATTACHED'))
-        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: any) => console.log(dbgPrefix + 'hls MANIFEST_PARSED', { levels: data?.levels?.length, audioTracks: data?.audioTracks?.length }))
+        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: any) => { manifestParsedRef.current = true; console.log(dbgPrefix + 'hls MANIFEST_PARSED', { levels: data?.levels?.length, audioTracks: data?.audioTracks?.length }) })
         hls.on(Hls.Events.LEVEL_LOADED, (_e, data: any) => console.log(dbgPrefix + 'hls LEVEL_LOADED', { level: data?.level, totalduration: data?.details?.totalduration, live: data?.details?.live, codecs: { audio: data?.details?.audioCodec, video: data?.details?.videoCodec } }))
         hls.on(Hls.Events.ERROR, (_e, data: any) => {
           console.log(dbgPrefix + 'hls ERROR', { type: data?.type, details: data?.details, fatal: data?.fatal })
@@ -175,7 +193,7 @@ export default function HLSVideo({
         video.addEventListener('play', onPlay)
       } catch {}
       try { video.addEventListener('loadeddata', onLoadedData) } catch {}
-      // TEMP DEBUG: after a tick, verify currentSrc is blob: and not the manifest
+      // TEMP DEBUG: after a tick, verify currentSrc is blob: when loaded
       setTimeout(() => {
         try {
           const s = video.getAttribute('src') || ''
@@ -220,9 +238,15 @@ export default function HLSVideo({
     // Clear any prior checker
     if (checkTimerRef.current) { try { window.clearInterval(checkTimerRef.current) } catch {} ; checkTimerRef.current = null }
     if (warmMode === 'attach') {
-      try { hls.stopLoad(); stoppedRef.current = true } catch {}
+      // Defer manifest load for attach warm to avoid canceled requests; do nothing here
     } else if (warmMode === 'buffer') {
-      try { hls.startLoad(-1); stoppedRef.current = false } catch {}
+      // Ensure manifest is loaded, then buffer a few seconds and stop
+      try {
+        if (!manifestParsedRef.current) {
+          if (lastLoadSrcRef.current !== src) { try { hls.loadSource(src); lastLoadSrcRef.current = src } catch {} }
+        }
+        hls.startLoad(-1); stoppedRef.current = false
+      } catch {}
       checkTimerRef.current = window.setInterval(() => {
         const v = videoRef.current
         if (!v) return
@@ -236,7 +260,12 @@ export default function HLSVideo({
         } catch {}
       }, 250)
     } else {
-      try { hls.startLoad(-1); stoppedRef.current = false } catch {}
+      try {
+        if (!manifestParsedRef.current) {
+          if (lastLoadSrcRef.current !== src) { try { hls.loadSource(src); lastLoadSrcRef.current = src } catch {} }
+        }
+        hls.startLoad(-1); stoppedRef.current = false
+      } catch {}
     }
   }, [warmMode, bufferTargetSec, src])
 

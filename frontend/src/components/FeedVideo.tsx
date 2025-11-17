@@ -14,15 +14,17 @@ type Props = {
   onTouchMove?: React.TouchEventHandler<HTMLVideoElement>
   onTouchEnd?: React.TouchEventHandler<HTMLVideoElement>
   warmMode?: 'none' | 'attach' | 'buffer'
+  debugId?: string
 }
 
-export default function FeedVideo({ src, active, warm, muted = true, poster, className, style, onClick, onTouchStart, onTouchMove, onTouchEnd, warmMode = 'none' }: Props) {
+export default function FeedVideo({ src, active, warm, muted = true, poster, className, style, onClick, onTouchStart, onTouchMove, onTouchEnd, warmMode = 'none', debugId }: Props) {
   return (
     <HLSVideo
       src={src}
       autoPlay={false}
       warm={warm}
       warmMode={warmMode}
+      debugId={debugId}
       muted={muted}
       playsInline
       poster={poster}
