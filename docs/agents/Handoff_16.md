@@ -42,6 +42,8 @@ Changes Since Last
 - Routes: GET /api/me; GET /api/admin/moderation/groups; GET /api/admin/moderation/channels; /admin/moderation/groups; /admin/moderation/channels
 - DB: none
 - Flags: none
+ - Affects: src/features/spaces/service.ts; frontend/src/app/SpaceModeration.tsx
+ - Routes: GET /api/spaces/:id/moderation/queue (response extended with owner, production{name,createdAt}, space{name})
 
 Commit Messages (ready to paste)
 Subject: feat(admin): add Admin menu + moderation overviews; expose isSiteAdmin
@@ -64,6 +66,8 @@ Meta:
 - Routes: GET /api/me; GET /api/admin/moderation/groups; GET /api/admin/moderation/channels; /admin/moderation/groups; /admin/moderation/channels
 - DB: none
 - Flags: none
+ - Affects: src/features/spaces/service.ts; frontend/src/app/SpaceModeration.tsx
+ - Routes: GET /api/spaces/:id/moderation/queue
 
 Thread Plan (subset of Backlog)
 - [ ] Pick next action from Open Items

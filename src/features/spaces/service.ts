@@ -406,6 +406,8 @@ export async function moderationQueue(spaceId: number, currentUserId: number) {
       sp.unpublished_at,
       sp.created_at AS publication_created_at,
       sp.updated_at AS publication_updated_at,
+      s.name AS space_name,
+      s.type AS space_type,
       u.id AS upload_id,
       u.s3_bucket,
       u.s3_key,
@@ -428,11 +430,17 @@ export async function moderationQueue(spaceId: number, currentUserId: number) {
       u.created_at AS upload_created_at,
       u.uploaded_at,
       u.user_id AS upload_user_id,
+      own.display_name AS owner_display_name,
+      own.email AS owner_email,
+      p.name AS production_name,
+      p.created_at AS production_created_at,
       req.display_name AS requester_display_name,
       req.email AS requester_email
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
+    JOIN spaces s ON s.id = sp.space_id
     LEFT JOIN productions p ON p.id = sp.production_id
+    LEFT JOIN users own ON own.id = u.user_id
     LEFT JOIN users req ON req.id = sp.requested_by
     WHERE ${where.join(' AND ')}
     ORDER BY sp.created_at DESC, sp.id DESC
@@ -482,7 +490,16 @@ export async function moderationQueue(spaceId: number, currentUserId: number) {
     }
     const upload = enhanceUploadRow(uploadRaw)
     const requester = row.requester_email || row.requester_display_name ? { displayName: row.requester_display_name || null, email: row.requester_email || null } : null
-    return { publication, upload, requester }
+    const owner = (row.owner_email || row.owner_display_name || row.upload_user_id != null)
+      ? { id: row.upload_user_id != null ? Number(row.upload_user_id) : null, displayName: row.owner_display_name || null, email: row.owner_email || null }
+      : null
+    const production = {
+      id: publication.production_id,
+      name: row.production_name != null ? String(row.production_name) : null,
+      createdAt: row.production_created_at ? String(row.production_created_at) : null,
+    }
+    const space = { id: publication.space_id, name: row.space_name != null ? String(row.space_name) : null, type: row.space_type != null ? String(row.space_type) : null }
+    return { publication, upload, requester, owner, production, space }
   })
   return { items }
 }
