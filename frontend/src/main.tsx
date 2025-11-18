@@ -173,7 +173,7 @@ if (path === '/' || path === '') {
     if (path.startsWith('/admin/moderation/groups')) {
       root.render(
         <Layout label="Admin • Group Moderation (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <Suspense fallback={<div />}> 
             <AdminModerationGroupsPage />
           </Suspense>
         </Layout>
@@ -181,7 +181,7 @@ if (path === '/' || path === '') {
     } else if (path.startsWith('/admin/moderation/channels')) {
       root.render(
         <Layout label="Admin • Channel Moderation (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <Suspense fallback={<div />}> 
             <AdminModerationChannelsPage />
           </Suspense>
         </Layout>
