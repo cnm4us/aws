@@ -201,6 +201,8 @@ export default function Feed() {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const [startedMap, setStartedMap] = useState<Record<number, boolean>>({})
   const [pendingPlayIndex, setPendingPlayIndex] = useState<number | null>(null)
+  // Fullscreen: track which slide is currently fullscreen (by index)
+  const [fsIndex, setFsIndex] = useState<number | null>(null)
   // Likes state keyed by publicationId
   const [likesCountMap, setLikesCountMap] = useState<Record<number, number>>({})
   const [likedMap, setLikedMap] = useState<Record<number, boolean>>({})
@@ -890,6 +892,31 @@ export default function Feed() {
     }
   }, [index, items])
 
+  // Track fullscreen changes for the current video's element
+  useEffect(() => {
+    const v = getVideoEl(index) as any
+    if (!v) return
+    const onDocFsChange = () => {
+      try {
+        const curFsEl: any = (document as any).fullscreenElement || (document as any).webkitFullscreenElement || null
+        if (curFsEl && v && curFsEl === v) setFsIndex(index)
+        else setFsIndex((prev) => (prev === index ? null : prev))
+      } catch {}
+    }
+    const onWebkitBegin = () => { try { setFsIndex(index) } catch {} }
+    const onWebkitEnd = () => { try { setFsIndex((prev) => (prev === index ? null : prev)) } catch {} }
+    try { document.addEventListener('fullscreenchange', onDocFsChange) } catch {}
+    try { (document as any).addEventListener?.('webkitfullscreenchange', onDocFsChange) } catch {}
+    try { v.addEventListener?.('webkitbeginfullscreen', onWebkitBegin) } catch {}
+    try { v.addEventListener?.('webkitendfullscreen', onWebkitEnd) } catch {}
+    return () => {
+      try { document.removeEventListener('fullscreenchange', onDocFsChange) } catch {}
+      try { (document as any).removeEventListener?.('webkitfullscreenchange', onDocFsChange) } catch {}
+      try { v.removeEventListener?.('webkitbeginfullscreen', onWebkitBegin) } catch {}
+      try { v.removeEventListener?.('webkitendfullscreen', onWebkitEnd) } catch {}
+    }
+  }, [index])
+
   // Fulfill pending play intent when a slide becomes ready
   useEffect(() => {
     if (pendingPlayIndex == null) return
@@ -917,10 +944,11 @@ export default function Feed() {
 
   function itemHasLandscape(it?: UploadItem): boolean {
     if (!it) return false
+    // Only trust server-provided signal for a true landscape variant.
+    // Portrait-only assets do not include posterLandscape; never infer from
+    // fabricated masterLandscape URLs.
     const lp = it.posterLandscape
-    if (lp && posterAvail[lp] !== false) return true
-    if (it.masterLandscape && it.masterLandscape !== it.masterPortrait) return true
-    return false
+    return Boolean(lp && lp.length)
   }
 
   const openModal = () => {
@@ -1032,7 +1060,13 @@ export default function Feed() {
         const slideId = vid ? `v-${vid}` : (pubId ? `p-${pubId}` : `u-${it.id}`)
         // TEMP DEBUG: render decision
         try { console.log('[Feed] render slide', { i, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait }) } catch {}
-        const manifestSrc = isPortrait ? (it.masterPortrait || it.url) : (it.masterLandscape || it.url)
+        // Choose manifest based on device orientation, but only use landscape variant
+        // when the asset truly has a landscape output. Portrait-only assets should
+        // continue using the portrait stream even in landscape device orientation.
+        const hasLandscape = itemHasLandscape(it)
+        const manifestSrc = isPortrait
+          ? (it.masterPortrait || it.url)
+          : (hasLandscape ? (it.masterLandscape || it.url) : (it.masterPortrait || it.url))
         const isActive = i === index
         const isWarm = i === index + 1
         const isPrewarm = i === index + 2
@@ -1317,6 +1351,46 @@ export default function Feed() {
                       {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
                     </button>
                   </div>
+                </div>
+              )}
+              {/* Fullscreen toggle (active slide only) */}
+              {i === index && (
+                <div
+                  style={{ position: 'absolute', left: 6, bottom: 8, zIndex: 6 }}
+                >
+                  <button
+                    aria-label={fsIndex === index ? 'Exit full screen' : 'Full screen'}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      try {
+                        const v = getVideoEl(index) as any
+                        if (!v) return
+                        const doc: any = document
+                        if (fsIndex === index) {
+                          if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+                            try { doc.exitFullscreen?.() } catch {}
+                            try { doc.webkitExitFullscreen?.() } catch {}
+                          }
+                        } else {
+                          if (v.requestFullscreen) {
+                            v.requestFullscreen({ navigationUI: 'hide' } as any).catch(() => {})
+                          } else if (v.webkitEnterFullscreen) {
+                            try { v.webkitEnterFullscreen() } catch {}
+                          }
+                        }
+                      } catch {}
+                    }}
+                    style={{
+                      background: 'rgba(0,0,0,0.45)',
+                      border: '1px solid rgba(255,255,255,0.25)',
+                      color: '#fff',
+                      padding: '6px 10px',
+                      borderRadius: 10,
+                      fontSize: 13,
+                    }}
+                  >
+                    {fsIndex === index ? 'Exit' : 'Full'}
+                  </button>
                 </div>
               )}
               {playingIndex !== i && (
