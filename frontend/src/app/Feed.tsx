@@ -1097,12 +1097,13 @@ export default function Feed() {
             >
               {/* Simple frame that fills the slide; poster/video contain within */}
               <div style={{ position: 'relative', width: '100%', height: '100%', margin: '0 auto', background: 'transparent' }}>
+                {(() => { /* Choose fit: cover for portrait assets on portrait devices; contain otherwise */ })()}
                 {useUrl ? (
                   <img
                     src={useUrl}
                     alt=""
                     draggable={false}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', userSelect: 'none', pointerEvents: 'none' }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isPortrait && isPortraitAsset) ? 'cover' as const : 'contain' as const, userSelect: 'none', pointerEvents: 'none' }}
                   />
                 ) : null}
                 {(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) ? (
@@ -1251,7 +1252,7 @@ export default function Feed() {
                       inset: 0,
                       width: '100%',
                       height: '100%',
-                      objectFit: 'contain',
+                      objectFit: (isPortrait && isPortraitAsset) ? 'cover' : 'contain',
                       background: 'transparent',
                       opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
                       transition: 'opacity .12s linear',
