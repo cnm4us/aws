@@ -1049,8 +1049,12 @@ export default function Feed() {
   const slides = useMemo(
     () =>
       items.map((it, i) => {
-        const desired = isPortrait ? it.posterPortrait : it.posterLandscape
-        const fallback = isPortrait ? it.posterLandscape : it.posterPortrait
+        // Determine asset capabilities once per item
+        const hasLandscape = itemHasLandscape(it)
+        // Choose poster to match the asset orientation, not device orientation,
+        // so the poster aspect aligns with the frame (prevents visual shrink).
+        const desired = hasLandscape ? it.posterLandscape : it.posterPortrait
+        const fallback = hasLandscape ? it.posterPortrait : it.posterLandscape
         const useUrl =
           (desired && posterAvail[desired] !== false ? desired : undefined) ||
           (fallback && posterAvail[fallback] !== false ? fallback : undefined)
@@ -1063,10 +1067,14 @@ export default function Feed() {
         // Choose manifest based on device orientation, but only use landscape variant
         // when the asset truly has a landscape output. Portrait-only assets should
         // continue using the portrait stream even in landscape device orientation.
-        const hasLandscape = itemHasLandscape(it)
-        const manifestSrc = isPortrait
-          ? (it.masterPortrait || it.url)
-          : (hasLandscape ? (it.masterLandscape || it.url) : (it.masterPortrait || it.url))
+        // Always play the asset's canonical orientation stream:
+        // - Landscape assets: use landscape master in both device orientations
+        // - Portrait assets: use portrait master in both device orientations
+        const manifestSrc = hasLandscape
+          ? (it.masterLandscape || it.url || it.masterPortrait || '')
+          : (it.masterPortrait || it.url || '')
+        const isLandscapeAsset = hasLandscape
+        const isPortraitAsset = !isLandscapeAsset
         const isActive = i === index
         const isWarm = i === index + 1
         const isPrewarm = i === index + 2
@@ -1082,163 +1090,178 @@ export default function Feed() {
             data-video-id={vid || undefined}
             data-publication-id={pubId || undefined}
             data-upload-id={String(it.id)}
-            style={{ backgroundImage: useUrl ? `url('${useUrl}')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}
           >
-            <div className="holder">
-              {(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) ? (
-                <FeedVideo
-                  src={manifestSrc}
-                  active={isActive}
-                  warm={isWarm || isPrewarm || isPrewarmFar || isLinger}
-                  warmMode={isActive ? 'none' : (isWarm ? 'buffer' : 'attach')}
-                  debugId={vid || slideId}
-                  muted={false}
-                  poster={useUrl}
-                  data-video-id={vid || undefined}
-                  onTouchStart={(e) => {
-                    try {
-                      const t = e.touches && e.touches[0]
-                      if (t) {
-                        touchStartYRef.current = t.clientY
-                        touchLastYRef.current = t.clientY
-                        const nowTs = Date.now()
-                        touchStartTRef.current = nowTs
-                        touchLastTRef.current = nowTs
-                      }
-                    } catch {}
-                  }}
-                  onTouchMove={(e) => {
-                    try {
-                      const t = e.touches && e.touches[0]
-                      if (t) {
-                        touchLastYRef.current = t.clientY
-                        touchLastTRef.current = Date.now()
-                      }
-                    } catch {}
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    try { if ((e as any).cancelable) e.preventDefault() } catch {}
-                    // Avoid duplicate handling when touch just fired
-                    try { if (Date.now() - lastTouchTsRef.current < 350) return } catch {}
-                    const v = getVideoEl(i)
-                    if (i !== index) {
-                      // If warm element exists, start playback under this gesture before promotion
-                      if (v) {
+            <div
+              className="holder"
+              style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}
+            >
+              {/* Simple frame that fills the slide; poster/video contain within */}
+              <div style={{ position: 'relative', width: '100%', height: '100%', margin: '0 auto', background: 'transparent' }}>
+                {useUrl ? (
+                  <img
+                    src={useUrl}
+                    alt=""
+                    draggable={false}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', userSelect: 'none', pointerEvents: 'none' }}
+                  />
+                ) : null}
+                {(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) ? (
+                  <FeedVideo
+                    src={manifestSrc}
+                    active={isActive}
+                    warm={isWarm || isPrewarm || isPrewarmFar || isLinger}
+                    warmMode={isActive ? 'none' : (isWarm ? 'buffer' : 'attach')}
+                    debugId={vid || slideId}
+                    muted={false}
+                    poster={useUrl}
+                    data-video-id={vid || undefined}
+                    onTouchStart={(e) => {
+                      try {
+                        const t = e.touches && e.touches[0]
+                        if (t) {
+                          touchStartYRef.current = t.clientY
+                          touchLastYRef.current = t.clientY
+                          const nowTs = Date.now()
+                          touchStartTRef.current = nowTs
+                          touchLastTRef.current = nowTs
+                        }
+                      } catch {}
+                    }}
+                    onTouchMove={(e) => {
+                      try {
+                        const t = e.touches && e.touches[0]
+                        if (t) {
+                          touchLastYRef.current = t.clientY
+                          touchLastTRef.current = Date.now()
+                        }
+                      } catch {}
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                      // Avoid duplicate handling when touch just fired
+                      try { if (Date.now() - lastTouchTsRef.current < 350) return } catch {}
+                      const v = getVideoEl(i)
+                      if (i !== index) {
+                        // If warm element exists, start playback under this gesture before promotion
+                        if (v) {
+                          try {
+                            setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+                            setPlayingIndex(i)
+                            v.muted = false
+                            void v.play()
+                          } catch {}
+                        } else {
+                          setPendingPlayIndex(i)
+                        }
+                        // Promotion lock: ignore IO/scroll-driven reindex briefly
                         try {
+                          const until = Date.now() + 800
+                          ignoreScrollUntil.current = until
+                          ignoreIoUntil.current = until
+                        } catch {}
+                        try { disableSnapNow() } catch {}
+                        try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                        return
+                      }
+                      if (!v) { setPendingPlayIndex(i); return }
+                      if (!unlocked) setUnlocked(true)
+                      try {
+                        // TEMP DEBUG: click toggle
+                        console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                        if (v.paused || v.ended) {
+                          // Optimistically mark started so opacity flips immediately
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                           setPlayingIndex(i)
                           v.muted = false
-                          void v.play()
-                        } catch {}
-                      } else {
-                        setPendingPlayIndex(i)
-                      }
-                      // Promotion lock: ignore IO/scroll-driven reindex briefly
-                      try {
-                        const until = Date.now() + 800
-                        ignoreScrollUntil.current = until
-                        ignoreIoUntil.current = until
-                      } catch {}
-                      try { disableSnapNow() } catch {}
-                      try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
-                      return
-                    }
-                    if (!v) { setPendingPlayIndex(i); return }
-                    if (!unlocked) setUnlocked(true)
-                    try {
-                      // TEMP DEBUG: click toggle
-                      console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
-                      if (v.paused || v.ended) {
-                        // Optimistically mark started so opacity flips immediately
-                        setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
-                        setPlayingIndex(i)
-                        v.muted = false
-                        const p = v.play()
-                        if (p && typeof p.then === 'function') {
-                          p.catch(() => { setPendingPlayIndex(i) })
+                          const p = v.play()
+                          if (p && typeof p.then === 'function') {
+                            p.catch(() => { setPendingPlayIndex(i) })
+                          }
+                        } else {
+                          v.pause()
                         }
-                      } else {
-                        v.pause()
+                      } catch {}
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation()
+                      try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                      const now = Date.now()
+                      if (now - lastTouchTsRef.current < 300) return
+                      lastTouchTsRef.current = now
+                      // Detect a small, decisive swipe to page-step
+                      const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
+                      const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
+                      const vmag = Math.abs(dy) / dt // px/ms
+                      const SWIPE_DIST = 14
+                      const SWIPE_VEL = 0.5
+                      if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
+                        if (i < items.length - 1) {
+                          try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
+                          return
+                        }
+                      } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
+                        if (i > 0) {
+                          try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
+                          return
+                        }
                       }
-                    } catch {}
-                  }}
-                  onTouchEnd={(e) => {
-                    e.stopPropagation()
-                    try { if ((e as any).cancelable) e.preventDefault() } catch {}
-                    const now = Date.now()
-                    if (now - lastTouchTsRef.current < 300) return
-                    lastTouchTsRef.current = now
-                    // Detect a small, decisive swipe to page-step
-                    const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
-                    const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
-                    const vmag = Math.abs(dy) / dt // px/ms
-                    const SWIPE_DIST = 14
-                    const SWIPE_VEL = 0.5
-                    if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
-                      if (i < items.length - 1) {
-                        try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
-                        return
-                      }
-                    } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
-                      if (i > 0) {
-                        try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
-                        return
-                      }
-                    }
-                    const v = getVideoEl(i)
-                    if (i !== index) {
-                      if (v) {
+                      const v = getVideoEl(i)
+                      if (i !== index) {
+                        if (v) {
+                          try {
+                            setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
+                            setPlayingIndex(i)
+                            v.muted = false
+                            void v.play()
+                          } catch {}
+                        } else {
+                          setPendingPlayIndex(i)
+                        }
+                        // Promotion lock: ignore IO/scroll-driven reindex briefly
                         try {
+                          const until = Date.now() + 800
+                          ignoreScrollUntil.current = until
+                          ignoreIoUntil.current = until
+                        } catch {}
+                        try { disableSnapNow() } catch {}
+                        try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                        return
+                      }
+                      if (!v) { setPendingPlayIndex(i); return }
+                      if (!unlocked) setUnlocked(true)
+                      try {
+                        // TEMP DEBUG: touch toggle
+                        console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                        if (v.paused || v.ended) {
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                           setPlayingIndex(i)
                           v.muted = false
-                          void v.play()
-                        } catch {}
-                      } else {
-                        setPendingPlayIndex(i)
-                      }
-                      // Promotion lock: ignore IO/scroll-driven reindex briefly
-                      try {
-                        const until = Date.now() + 800
-                        ignoreScrollUntil.current = until
-                        ignoreIoUntil.current = until
-                      } catch {}
-                      try { disableSnapNow() } catch {}
-                      try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
-                      return
-                    }
-                    if (!v) { setPendingPlayIndex(i); return }
-                    if (!unlocked) setUnlocked(true)
-                    try {
-                      // TEMP DEBUG: touch toggle
-                      console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
-                      if (v.paused || v.ended) {
-                        setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
-                        setPlayingIndex(i)
-                        v.muted = false
-                        const p = v.play()
-                        if (p && typeof p.then === 'function') {
-                          p.catch(() => { setPendingPlayIndex(i) })
+                          const p = v.play()
+                          if (p && typeof p.then === 'function') {
+                            p.catch(() => { setPendingPlayIndex(i) })
+                          }
+                        } else {
+                          v.pause()
                         }
-                      } else {
-                        v.pause()
-                      }
-                    } catch {}
-                  }}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    background: 'transparent',
-                    opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
-                    transition: 'opacity .12s linear',
-                    touchAction: 'manipulation' as any,
-                  }}
-                />
-              ) : (
+                      } catch {}
+                    }}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      background: 'transparent',
+                      opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
+                      transition: 'opacity .12s linear',
+                      touchAction: 'manipulation' as any,
+                    }}
+                  />
+                ) : null}
+              </div>
+              {/* Click placeholder to promote inactive slide (outside frame) */}
+              {!(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) && (
                 // Placeholder holder without a video element; clicking will reanchor and mount HLSVideo
                 <div
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
