@@ -1,4 +1,7 @@
 import React, { Suspense, useEffect } from 'react'
+import './styles/variables.css'
+import './styles/base.css'
+import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
 import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'

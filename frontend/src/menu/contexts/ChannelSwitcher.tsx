@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import clsx from 'clsx'
+import styles from '../../styles/channelSwitcher.module.css'
 
 type SpaceType = 'personal' | 'group' | 'channel'
 type SpaceRelationship = 'owner' | 'admin' | 'member' | 'subscriber'
@@ -71,7 +73,7 @@ export default function ChannelSwitcher(props: {
   }, [spaces])
 
   if (!isAuthed) {
-    return <div style={{ color: '#fff', fontSize: 15 }}>Login to switch spaces.</div>
+    return <div className={styles.loading}>Login to switch spaces.</div>
   }
 
   const gotoGlobal = () => {
@@ -103,33 +105,20 @@ export default function ChannelSwitcher(props: {
         : space.relationship === 'subscriber'
         ? 'Subscriber'
         : undefined
+    const variant = space.type === 'group' ? styles.variantGroup : space.type === 'channel' ? styles.variantChannel : styles.variantPersonal
     return (
       <button
         key={space.id}
         onClick={() => gotoSpace(space.id)}
         title={space.ulid ? `ULID: ${space.ulid}` : undefined}
         data-space-ulid={space.ulid || undefined}
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          padding: '12px 14px',
-          borderRadius: 10,
-          marginBottom: 8,
-          border: active ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
-          background: active ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
-          color: '#fff',
-          fontSize: 15,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-        }}
+        className={clsx(styles.btn, variant, active && styles.btnActive)}
       >
-        <span>
+        <span className={styles.labelLeft}>
           {space.name}
-          {accent ? <span style={{ marginLeft: 6, fontSize: 12, color: accent }}>{accent}</span> : null}
+          {accent ? <span className={styles.accent}>{accent}</span> : null}
         </span>
-        <span style={{ fontSize: 12, opacity: 0.8 }}>
+        <span className={styles.badge}>
           {badge}
           {space.subscribed && badge !== 'Subscriber' ? ' · Subscriber' : ''}
         </span>
@@ -138,45 +127,21 @@ export default function ChannelSwitcher(props: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <button
-        onClick={gotoGlobal}
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          padding: '12px 14px',
-          borderRadius: 10,
-          marginBottom: 12,
-          border: isGlobalActive ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
-          background: isGlobalActive ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
-          color: '#fff',
-          fontSize: 15,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
+    <div className={styles.list}>
+      <button onClick={gotoGlobal} className={clsx(styles.btn, styles.variantGlobal, isGlobalActive && styles.btnActive)}>
         Global
-        <span style={{ fontSize: 12, opacity: 0.8 }}>Feed</span>
+        <span className={styles.badge}>Feed</span>
       </button>
 
-      {loading && <div style={{ color: '#fff', fontSize: 13, opacity: 0.7, marginBottom: 8 }}>Loading…</div>}
-      {error && <div style={{ color: '#ffb3b3', fontSize: 13, marginBottom: 8 }}>Failed to load spaces.</div>}
+      {loading && <div className={styles.loading}>Loading…</div>}
+      {error && <div className={styles.error}>Failed to load spaces.</div>}
 
       {spaces?.global && renderSpaceButton(spaces.global, 'Global')}
       {spaces?.personal && renderSpaceButton(spaces.personal, 'Personal')}
-      {entries.groups.length > 0 && (
-        <div style={{ marginTop: 18, marginBottom: 6, fontWeight: 600, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.7 }}>
-          Groups
-        </div>
-      )}
+      {entries.groups.length > 0 && (<div className={styles.sectionLabel}>Groups</div>)}
       {entries.groups.map((g) => renderSpaceButton(g))}
 
-      {entries.channels.length > 0 && (
-        <div style={{ marginTop: 18, marginBottom: 6, fontWeight: 600, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.7 }}>
-          Channels
-        </div>
-      )}
+      {entries.channels.length > 0 && (<div className={styles.sectionLabel}>Channels</div>)}
       {entries.channels.map((c) => renderSpaceButton(c))}
     </div>
   )

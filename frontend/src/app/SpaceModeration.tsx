@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import HLSVideo from '../components/HLSVideo'
+import styles from '../styles/spaceModeration.module.css'
 
 type QueueItem = {
   publication: {
@@ -127,61 +128,61 @@ export default function SpaceModerationPage() {
   const currentDetails = detailsPubId != null ? items.find((x) => x.publication.id === detailsPubId) || null : null
 
   return (
-    <div style={{ padding: 12, color: '#fff', fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
-      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Moderation Queue</div>
-      {error ? <div style={{ color: '#ffb3b3', marginBottom: 12 }}>{error}</div> : null}
+    <div className={styles.container}>
+      <div className={styles.title}>Moderation Queue</div>
+      {error ? <div className={styles.error}>{error}</div> : null}
       {!items.length && !loading ? (
-        <div style={{ padding: 10, opacity: 0.8 }}>No pending items.</div>
+        <div className={styles.empty}>No pending items.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className={styles.list}>
           {items.map((it) => (
-            <div key={it.publication.id} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', background: 'rgba(255,255,255,0.03)' }}>
+            <div key={it.publication.id} className={styles.card}>
               {/* Row 1: Thumbnail + Owner */}
-              <div style={{ display: 'flex', alignItems: 'center', padding: 10, gap: 12 }}>
-                <button onClick={() => setReviewPubId(it.publication.id)} style={{ border: 'none', background: 'transparent', padding: 0, lineHeight: 0, borderRadius: 8, overflow: 'hidden' }} aria-label="Open review">
+              <div className={styles.row}>
+                <button onClick={() => setReviewPubId(it.publication.id)} className={styles.thumbBtn} aria-label="Open review">
                   {thumbFor(it) ? (
-                    <img src={thumbFor(it) as string} alt="thumbnail" style={{ width: 84, height: 120, objectFit: 'cover', display: 'block' }} />
+                    <img src={thumbFor(it) as string} alt="thumbnail" className={styles.thumbImg} />
                   ) : (
-                    <div style={{ width: 84, height: 120, background: 'rgba(255,255,255,0.08)', display: 'grid', placeItems: 'center' }}>—</div>
+                    <div className={styles.thumbPh}>—</div>
                   )}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, opacity: 0.75 }}>Owner</div>
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>
+                  <div className={styles.ownerLabel}>Owner</div>
+                  <div className={styles.ownerName}>
                     {it.owner?.displayName || it.owner?.email || (it.owner?.id != null ? `User ${it.owner.id}` : 'Unknown')}
                   </div>
                 </div>
               </div>
               {/* Row 2: Title */}
-              <div style={{ padding: '4px 10px 8px 10px', fontSize: 16, fontWeight: 600 }}>{titleFor(it)}</div>
+              <div className={styles.rowTitle}>{titleFor(it)}</div>
               {/* Row 3: Details link */}
-              <div style={{ padding: '0 10px 10px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <button onClick={() => setDetailsPubId(it.publication.id)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 8, padding: '6px 10px' }}>Details</button>
-                <div style={{ fontSize: 12, opacity: 0.75 }}>Requested {new Date(it.publication.created_at).toLocaleString()}</div>
+              <div className={styles.rowMeta}>
+                <button onClick={() => setDetailsPubId(it.publication.id)} className="btn btn--outline btn--sm">Details</button>
+                <div className={styles.metaRight}>Requested {new Date(it.publication.created_at).toLocaleString()}</div>
               </div>
             </div>
           ))}
         </div>
       )}
-      {loading ? <div style={{ marginTop: 10, opacity: 0.8 }}>Loading…</div> : null}
+      {loading ? <div className={styles.loading}>Loading…</div> : null}
 
       {/* Review Overlay */}
       {current ? (
-        <div style={{ position: 'fixed', top: 'var(--header-h, 44px)', left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1500, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', padding: 10, gap: 12 }}>
-            <button onClick={() => { setReviewPubId(null); setReviewNote('') }} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 8, padding: '6px 10px' }}>Back</button>
-            <div style={{ fontSize: 16, fontWeight: 700, flex: 1, textAlign: 'center' }}>{titleFor(current)}</div>
+        <div className={styles.overlay}>
+          <div className={styles.overlayHeader}>
+            <button onClick={() => { setReviewPubId(null); setReviewNote('') }} className="btn btn--outline btn--sm">Back</button>
+            <div className={styles.overlayTitle}>{titleFor(current)}</div>
           </div>
-          <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 10 }}>
-            <div style={{ width: '100%', maxWidth: 720 }}>
+          <div className={styles.overlayBody}>
+            <div className={styles.videoBox}>
               <HLSVideo src={(current.upload.cdn_master || current.upload.s3_master || '') as string} controls autoPlay={false} muted={false} playsInline style={{ width: '100%', maxHeight: '62vh', background: '#000', borderRadius: 10 }} />
             </div>
           </div>
-          <div style={{ padding: 10 }}>
-            <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="Optional notes…" rows={3} style={{ width: '100%', borderRadius: 10, padding: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)', color: '#fff', marginBottom: 10 }} />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => approve(current.publication.id, reviewNote)} disabled={!!busy[current.publication.id]} style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: '#2e7d32', color: '#fff', fontSize: 16, fontWeight: 700 }}>Approve</button>
-              <button onClick={() => reject(current.publication.id, reviewNote)} disabled={!!busy[current.publication.id]} style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.25)', background: '#b71c1c', color: '#fff', fontSize: 16, fontWeight: 700 }}>Reject</button>
+          <div className={styles.noteBox}>
+            <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="Optional notes…" rows={3} className={styles.note} />
+            <div className={styles.actions}>
+              <button onClick={() => approve(current.publication.id, reviewNote)} disabled={!!busy[current.publication.id]} className="btn btn--primary">Approve</button>
+              <button onClick={() => reject(current.publication.id, reviewNote)} disabled={!!busy[current.publication.id]} className="btn btn--danger">Reject</button>
             </div>
           </div>
         </div>
@@ -189,11 +190,10 @@ export default function SpaceModerationPage() {
 
       {/* Details Overlay */}
       {currentDetails ? (
-        <div style={{ position: 'fixed', top: 'var(--header-h, 44px)', left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1500, display: 'flex', flexDirection: 'column' }}>
-          {/* Header: Back below app title, then Details centered */}
-          <div style={{ padding: 10 }}>
-            <button onClick={() => setDetailsPubId(null)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 8, padding: '6px 10px' }}>Back</button>
-            <div style={{ marginTop: 8, fontSize: 16, fontWeight: 700, textAlign: 'center' }}>Details</div>
+        <div className={styles.overlay}>
+          <div className={styles.noteBox}>
+            <button onClick={() => setDetailsPubId(null)} className="btn btn--outline btn--sm">Back</button>
+            <div className={styles.overlayTitle} style={{ marginTop: 8 }}>Details</div>
           </div>
           <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, fontSize: 15 }}>
             <div>

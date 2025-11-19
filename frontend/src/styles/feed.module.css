@@ -1,0 +1,85 @@
+.slide {
+  position: relative;
+  width: 100vw;
+  height: calc(100dvh - var(--header-h, 0px));
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  background: #000;
+}
+
+.holder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  margin: 0 auto;
+  background: transparent;
+}
+
+.poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.fitContain { object-fit: contain; }
+.fitCover { object-fit: cover; }
+
+.controlsRight {
+  position: absolute;
+  right: 6px;
+  top: 40%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  justify-items: center;
+  z-index: 5;
+}
+
+.playHint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  width: 22vmin;
+  height: 22vmin;
+  min-width: 72px;
+  min-height: 72px;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+}
+
+.fullToggle {
+  position: absolute;
+  left: 6px;
+  bottom: 8px;
+  z-index: 6;
+}
+
+.btnOverlay {
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+

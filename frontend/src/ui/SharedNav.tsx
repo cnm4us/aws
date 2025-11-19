@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import styles from '../styles/sharedNav.module.css'
 import ContextDrawer from '../menu/ContextDrawer'
 import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
 import MyAssets from '../menu/contexts/MyAssets'
@@ -127,41 +128,18 @@ export default function SharedNav(props: {
 
       {/* No edge-swipe opener */}
 
-      <div
-        style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1001 }}
-      >
-        {/* Safe-area band (solid black) */}
-        <div style={{ height: 'env(safe-area-inset-top, 0px)', background: '#000' }} />
-        {/* Header bar (semi-opaque) */}
-        <div
-          style={{
-            height: 'calc(var(--header-h, 44px) - env(safe-area-inset-top, 0px))',
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-            color: '#fff',
-            fontSize: 14,
-            paddingLeft: 8,
-            paddingRight: 8,
-          }}
-        >
-          <div style={{ pointerEvents: 'none', textTransform: 'uppercase', opacity: 0.35, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif', fontSize: 16, fontWeight: 700 }}>{currentFeedLabel}</div>
-          <div style={{ position: 'absolute', right: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
+      <div className={styles.container}>
+        <div className={styles.safeTop} />
+        <div className={styles.bar}>
+          <div className={styles.title}>{currentFeedLabel}</div>
+          <div className={styles.actionsRight}>
             <button
               aria-label={menuOpen ? 'Close menu' : 'Open menu'}
               onClick={(e) => {
                 e.stopPropagation()
                 setMenuOpen((v) => !v)
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                padding: 8,
-                opacity: 0.9,
-                touchAction: 'manipulation' as any,
-              }}
+              className={styles.iconBtn}
             >
               {menuOpen ? (
                 <svg width={28} height={28} viewBox="0 0 24 24" aria-hidden="true">

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import clsx from 'clsx'
 import FeedVideo from '../components/FeedVideo'
 import SharedNav from '../ui/SharedNav'
 import { prefetchForHref } from '../ui/routes'
+import styles from '../styles/feed.module.css'
 
 type UploadItem = {
   id: number
@@ -1085,26 +1087,17 @@ export default function Feed() {
         return (
           <div
             key={slideId}
-            className="slide"
+            className={styles.slide}
             id={slideId}
             data-video-id={vid || undefined}
             data-publication-id={pubId || undefined}
             data-upload-id={String(it.id)}
           >
-            <div
-              className="holder"
-              style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}
-            >
+            <div className={styles.holder}>
               {/* Simple frame that fills the slide; poster/video contain within */}
-              <div style={{ position: 'relative', width: '100%', height: '100%', margin: '0 auto', background: 'transparent' }}>
-                {(() => { /* Choose fit: cover for portrait assets on portrait devices; contain otherwise */ })()}
+              <div className={styles.frame}>
                 {useUrl ? (
-                  <img
-                    src={useUrl}
-                    alt=""
-                    draggable={false}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (isPortrait && isPortraitAsset) ? 'cover' as const : 'contain' as const, userSelect: 'none', pointerEvents: 'none' }}
-                  />
+                  <img src={useUrl} alt="" draggable={false} className={clsx(styles.poster, (isPortrait && isPortraitAsset) ? styles.fitCover : styles.fitContain)} />
                 ) : null}
                 {(isActive || (allowWarm && (isWarm || isPrewarm || isPrewarmFar || isLinger))) ? (
                   <FeedVideo
@@ -1115,6 +1108,7 @@ export default function Feed() {
                     debugId={vid || slideId}
                     muted={false}
                     poster={useUrl}
+                    className={clsx(styles.video, (isPortrait && isPortraitAsset) ? styles.fitCover : styles.fitContain)}
                     data-video-id={vid || undefined}
                     onTouchStart={(e) => {
                       try {
@@ -1247,17 +1241,6 @@ export default function Feed() {
                         }
                       } catch {}
                     }}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      objectFit: (isPortrait && isPortraitAsset) ? 'cover' : 'contain',
-                      background: 'transparent',
-                      opacity: (playingIndex === i || startedMap[i]) ? 1 : 0,
-                      transition: 'opacity .12s linear',
-                      touchAction: 'manipulation' as any,
-                    }}
                   />
                 ) : null}
               </div>
@@ -1379,9 +1362,7 @@ export default function Feed() {
               )}
               {/* Fullscreen toggle (active slide only) */}
               {i === index && (
-                <div
-                  style={{ position: 'absolute', left: 6, bottom: 8, zIndex: 6 }}
-                >
+                <div className={styles.fullToggle}>
                   <button
                     aria-label={fsIndex === index ? 'Exit full screen' : 'Full screen'}
                     onClick={(e) => {
@@ -1404,37 +1385,14 @@ export default function Feed() {
                         }
                       } catch {}
                     }}
-                    style={{
-                      background: 'rgba(0,0,0,0.45)',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      color: '#fff',
-                      padding: '6px 10px',
-                      borderRadius: 10,
-                      fontSize: 13,
-                    }}
+                    className={`btn btn--overlay btn--sm`}
                   >
                     {fsIndex === index ? 'Exit' : 'Full'}
                   </button>
                 </div>
               )}
               {playingIndex !== i && (
-                <div
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    top: '50%',
-                    transform: 'translate(-50%,-50%)',
-                    width: '22vmin',
-                    height: '22vmin',
-                    minWidth: 72,
-                    minHeight: 72,
-                    pointerEvents: 'none',
-                    display: 'grid',
-                    placeItems: 'center',
-                    zIndex: 2,
-                  }}
-                >
+                <div aria-hidden className={styles.playHint}>
                   <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
                     <polygon points="38,28 38,72 72,50" fill="#ffffff" fillOpacity="0.4" />
                   </svg>
@@ -1958,10 +1916,7 @@ export default function Feed() {
           }}
         />
       )}
-      <style>{`
-        .slide{position:relative; width:100vw; height:calc(100dvh - var(--header-h, 0px)); scroll-snap-align:start; scroll-snap-stop:normal; background:#000; background-size:cover; background-position:center; background-repeat:no-repeat;}
-        .holder{position:absolute; inset:0;}
-      `}</style>
+      
     </div>
   )
 }

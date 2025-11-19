@@ -1,0 +1,48 @@
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+}
+.safeTop {
+  height: env(safe-area-inset-top, 0px);
+  background: #000;
+}
+.bar {
+  height: calc(var(--header-h, 44px) - env(safe-area-inset-top, 0px));
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: #fff;
+  font-size: 14px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.title {
+  pointer-events: none;
+  text-transform: uppercase;
+  opacity: 0.35;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+.actionsRight {
+  position: absolute;
+  right: 8px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+.iconBtn {
+  background: transparent;
+  border: none;
+  padding: 8px;
+  opacity: 0.9;
+  touch-action: manipulation;
+  color: inherit;
+}
+

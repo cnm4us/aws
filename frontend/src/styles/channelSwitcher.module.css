@@ -1,0 +1,31 @@
+.list { display: flex; flex-direction: column; }
+.sectionLabel { margin-top: 18px; margin-bottom: 6px; font-weight: 600; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
+
+.btn {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.btnActive { border-color: rgba(255,255,255,0.9); background: rgba(33,150,243,0.25); }
+.labelLeft { display: inline-flex; align-items: center; }
+.accent { margin-left: 6px; font-size: 12px; }
+.badge { font-size: 12px; opacity: 0.8; }
+
+/* Variants for future theming (currently only color the accent) */
+.variantGlobal .accent { color: #64b5f6; }
+.variantGroup .accent { color: #a5d6a7; }
+.variantChannel .accent { color: #ffcc80; }
+.variantPersonal .accent { color: #b39ddb; }
+
+.loading { color: #fff; font-size: 13px; opacity: 0.7; margin-bottom: 8px; }
+.error { color: #ffb3b3; font-size: 13px; margin-bottom: 8px; }

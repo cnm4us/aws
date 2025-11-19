@@ -1,0 +1,9 @@
+.container { padding: 16px; }
+.title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.spinner { color: #fff; opacity: 0.8; }
+.error { color: #ffb3b3; }
+.wrap { width: 100%; max-width: 800px; }
+.header { display: grid; grid-template-columns: 1fr 140px; gap: 8px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+.row { display: grid; grid-template-columns: 1fr 140px; gap: 8px; padding: 12px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #fff; text-decoration: none; }
+.right { text-align: right; }
+.empty { padding: 12px 12px; color: rgba(255,255,255,0.7) }

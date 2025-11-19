@@ -1,4 +1,5 @@
 import React from 'react'
+import styles from '../styles/menu.module.css'
 
 export type ContextId = 'channel' | 'assets' | 'space-admin' | 'settings' | 'messages'
 
@@ -13,29 +14,15 @@ export default function ContextPicker(props: {
       key={id}
       onClick={() => enabled && onSelect(id)}
       disabled={!enabled}
-      style={{
-        width: '100%',
-        textAlign: 'left',
-        padding: '12px 14px',
-        borderRadius: 10,
-        marginBottom: 8,
-        border: active === id ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(255,255,255,0.15)',
-        background: active === id ? 'rgba(33,150,243,0.25)' : 'rgba(255,255,255,0.05)',
-        color: enabled ? '#fff' : 'rgba(255,255,255,0.6)',
-        fontSize: 15,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        opacity: enabled ? 1 : 0.7,
-      }}
+      className={`${styles.itemBtn} ${active === id ? styles.itemActive : ''}`}
     >
       {label}
-      {note ? <span style={{ fontSize: 12, opacity: 0.8 }}>{note}</span> : null}
+      {note ? <span className={styles.note}>{note}</span> : null}
     </button>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className={styles.list}>
       {item('assets', 'My Assets')}
       {item('channel', 'Channel Changer')}
       {showAdmin ? item('space-admin', 'Admin', true) : null}

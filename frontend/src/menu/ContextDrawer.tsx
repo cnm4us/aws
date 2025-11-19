@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import styles from '../styles/drawer.module.css'
 
 export default function ContextDrawer(props: {
   open: boolean
@@ -35,16 +36,7 @@ export default function ContextDrawer(props: {
           e.stopPropagation()
           if (open) onClose()
         }}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.35)',
-          opacity: open ? 1 : 0,
-          transition: 'opacity 200ms ease',
-          zIndex: 1100,
-          pointerEvents: open ? 'auto' : 'none',
-          WebkitTapHighlightColor: 'transparent',
-        }}
+        className={`${styles.backdrop} ${open ? styles.backdropOpen : ''}`}
       />
       <div
         role="dialog"
@@ -72,50 +64,13 @@ export default function ContextDrawer(props: {
         }}
         onPointerUp={(e) => { swipeStart.current = null; e.preventDefault() }}
         onPointerCancel={(e) => { swipeStart.current = null; e.preventDefault() }}
-        style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: '86vw',
-          maxWidth: 380,
-          background: 'rgba(0,0,0,0.86)',
-          color: '#fff',
-          zIndex: 1101,
-          transform: open ? 'translate3d(0,0,0)' : 'translate3d(100%,0,0)',
-          transition: 'transform 260ms cubic-bezier(0.25,1,0.5,1)',
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
-          paddingLeft: 12,
-          paddingRight: 12,
-          boxShadow: open ? '-2px 0 12px rgba(0,0,0,0.5)' : 'none',
-          pointerEvents: open ? 'auto' : 'none',
-          WebkitBackdropFilter: open ? 'saturate(120%) blur(6px)' : undefined,
-          backdropFilter: open ? 'saturate(120%) blur(6px)' : undefined,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          touchAction: 'pan-y',
-          outline: 'none',
-          WebkitTapHighlightColor: 'transparent',
-        }}
+        className={`${styles.panel} ${open ? styles.panelOpen : ''}`}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div className={styles.headerRow}>
           <a
             href={isAuthed ? '/logout' : '/login'}
-            style={{
-              textDecoration: 'none',
-              color: '#fff',
-              background: isAuthed ? '#d32f2f' : '#2e7d32',
-              padding: '10px 16px',
-              borderRadius: 10,
-              fontWeight: 600,
-              fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-              boxShadow: '0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.15)',
-            }}
+            className={`btn ${isAuthed ? 'btn--danger' : 'btn--success'}`}
           >
             {isAuthed ? 'LOGOUT' : 'LOGIN'}
           </a>
@@ -126,13 +81,7 @@ export default function ContextDrawer(props: {
               e.stopPropagation()
               if (onMoreClick) onMoreClick()
             }}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.25)',
-              borderRadius: 10,
-              padding: '8px 10px',
-              color: '#fff',
-            }}
+            className={`btn btn--outline`}
           >
             <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3.5" y="3.5" width="7" height="7" stroke="#fff" strokeOpacity={0.8} strokeWidth={1.6} fill="none" />
@@ -143,27 +92,10 @@ export default function ContextDrawer(props: {
           </button>
         </div>
 
-        {title ? (
-          <div
-            style={{
-              textAlign: 'center',
-              color: '#fff',
-              opacity: 0.9,
-              fontWeight: 600,
-              fontSize: 16,
-              letterSpacing: 1,
-              textTransform: 'uppercase',
-              paddingTop: 4,
-              paddingBottom: 8,
-              fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-            }}
-          >
-            {title}
-          </div>
-        ) : null}
+        {title ? (<div className={styles.title}>{title}</div>) : null}
 
         {/* Body */}
-        <div style={{ paddingTop: 4 }}>
+        <div className={styles.body}>
           {children}
         </div>
       </div>

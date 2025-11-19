@@ -1,0 +1,32 @@
+:root {
+  --bg: #000;
+  --fg: #fff;
+  --muted: rgba(255,255,255,0.7);
+  --border: rgba(255,255,255,0.2);
+  --accent: #2196f3;
+  --danger: #b71c1c;
+
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+
+  --radius-1: 8px;
+  --radius-2: 10px;
+  --radius-3: 12px;
+
+  --z-controls: 5;
+  --z-overlay: 1500;
+
+  --header-h: calc(env(safe-area-inset-top, 0px) + 44px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000;
+    --fg: #fff;
+  }
+}
+

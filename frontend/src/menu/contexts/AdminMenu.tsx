@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { prefetchForHref } from '../../ui/routes'
+import styles from '../../styles/menu.module.css'
 
 export default function AdminMenu(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
@@ -36,7 +37,7 @@ export default function AdminMenu(props: { onNavigate?: () => void }) {
     { label: 'Channel Moderation', href: '/admin/moderation/channels', count: channelCount },
   ]
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className={styles.list}>
       {items.map((it) => (
         <a
           key={it.href}
@@ -44,27 +45,10 @@ export default function AdminMenu(props: { onNavigate?: () => void }) {
           onMouseEnter={() => prefetchForHref(it.href)}
           onFocus={() => prefetchForHref(it.href)}
           onClick={() => onNavigate && onNavigate()}
-          style={{
-            width: '100%',
-            textAlign: 'left',
-            padding: '12px 14px',
-            borderRadius: 10,
-            border: '1px solid rgba(255,255,255,0.15)',
-            background: 'rgba(255,255,255,0.05)',
-            color: '#fff',
-            fontSize: 15,
-            fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-            textDecoration: 'none',
-            boxSizing: 'border-box',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            WebkitTapHighlightColor: 'transparent',
-          }}
+          className={styles.itemLink}
         >
           <span>{it.label}</span>
-          <span style={{ fontSize: 13, opacity: 0.9 }}>{it.count != null ? it.count : '–'}</span>
+          <span className={styles.note}>{it.count != null ? it.count : '–'}</span>
         </a>
       ))}
     </div>
