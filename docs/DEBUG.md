@@ -35,8 +35,8 @@ Categories
 - `DEBUG_SLIDES` – per-slide render decisions (e.g., active/warm) and active index changes.
 - `DEBUG_AUTH` – auth bootstrap (e.g., `/api/me`).
 - `DEBUG_VIDEO` – HLS attach/cleanup and media events.
-- `DEBUG_NETWORK` – reserved for future network tracing.
-- `DEBUG_RENDER` – reserved for future render tracing hooks.
+- `DEBUG_NETWORK` – network tracing for `fetch` calls (method, URL, status, duration, size).
+- `DEBUG_RENDER` – per-component render tracing (mount/update/unmount and shallow key diffs).
 - `DEBUG_PERF` – perf timing (initial feed load, like toggles, comment submissions).
 - `DEBUG_PERM` – permissions/RBAC state (roles, space access summaries).
 - `DEBUG_ERRORS` – reserved for future error reporting.
@@ -82,7 +82,45 @@ Current Coverage
 - Feed (`feed`): click/touch toggles, like/comment flows, selected auth lifecycle logs.
 - Slides (`slides`): per-slide render decisions (active/warm/prewarm state) and active index changes.
 - Video (`video`): mount/cleanup, media/hls.js events, attach strategy.
- - Permissions (`perm`): `/api/me` roles snapshot and `/api/me/spaces` access summaries.
+- Permissions (`perm`): `/api/me` roles snapshot and `/api/me/spaces` access summaries.
+- Network (`network`): `fetch` calls with method, URL, status, `ok`, duration, and optional content-length.
+ - Render (`render`): opt-in per-component tracing via `useRenderDebug`.
+
+Network-Specific Debug Details (`DEBUG_NETWORK`)
+- Enabling `DEBUG_NETWORK` and `DEBUG` installs a `fetch` wrapper (once per page load).
+- Logs appear as `[NETWORK:fetch]` / `[NETWORK:fetch error]` and include:
+  - `method`: HTTP method (e.g., `GET`, `POST`).
+  - `url`: request URL.
+  - `status`: HTTP status code (for successful fetches).
+  - `ok`: `true`/`false` from the Response object.
+  - `durationMs`: rounded elapsed time in milliseconds.
+  - `size`: parsed `Content-Length` header when available (number or raw string).
+- How to use:
+  - Turn on: `localStorage.DEBUG='1'; localStorage.DEBUG_NETWORK='1'; location.reload()`.
+  - Or via URL: `/?debug=1&debug_network=1` (initial load).
+  - Watch for `[NETWORK:fetch]` lines when APIs like `/api/me`, `/api/feed/global`, `/api/publications/:id/likes`, etc. are called.
+- Notes:
+  - Only `window.fetch` is wrapped; XHRs (e.g., from `hls.js`) still only show in the browser's Network panel.
+  - If `DEBUG_NETWORK` is turned off at runtime, the wrapper still delegates to the original `fetch` but skips logging.
+
+Render-Specific Debug Details (`DEBUG_RENDER`)
+- Enabling `DEBUG_RENDER` and `DEBUG` turns on a helper hook `useRenderDebug` for components that opt in.
+- Hook location: `frontend/src/debug/useRenderDebug.ts`.
+- Usage example (inside a React component):
+  - `useRenderDebug('Feed', { index, itemsLen: items.length, mode: feedMode.kind })`
+- Logs appear as `[RENDER:component]` with events like:
+  - `Feed mount` – first committed render of that component instance.
+  - `Feed update` – subsequent renders.
+  - `Feed unmount` – when the component is removed.
+- Payload includes:
+  - `label`: the label you passed (e.g., `Feed`).
+  - `phase`: `'mount' | 'update' | 'unmount'`.
+  - `count`: render count for that instance.
+  - `keys`: the latest snapshot of keys you provided.
+  - `changed`: keys whose values changed between the previous and current render (shallow compare).
+- How to use:
+  - Turn on: `localStorage.DEBUG='1'; localStorage.DEBUG_RENDER='1'; location.reload()`.
+  - Add `useRenderDebug` calls to components where you want to understand why/how often they re-render.
 
 Perf-Specific Debug Details (`DEBUG_PERF`)
 - Enabling `DEBUG_PERF` and `DEBUG` causes additional timing logs via `console.time` / `console.timeEnd`.

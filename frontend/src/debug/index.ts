@@ -80,6 +80,82 @@ const counters = new Map<string, number>()
 
 function onceKey(ns: Namespace, key: string): string { return `${ns}:${key}` }
 
+let fetchPatched = false
+
+function installFetchDebug() {
+  try {
+    if (typeof window === 'undefined') return
+    const w: any = window as any
+    if (!w.fetch || fetchPatched) return
+    const origFetch: typeof window.fetch = w.fetch.bind(w)
+    fetchPatched = true
+    w.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const start = nowMs()
+      // If network debug is not enabled, delegate directly
+      if (!baseEnabled('network')) return origFetch(input as any, init as any)
+      let url = '[unknown]'
+      let method = 'GET'
+      try {
+        if (typeof input === 'string' || input instanceof URL) {
+          url = String(input)
+          method = (init && init.method) ? String(init.method).toUpperCase() : 'GET'
+        } else {
+          url = input.url
+          method = (input as any).method ? String((input as any).method).toUpperCase() : 'GET'
+        }
+      } catch {}
+
+      const log = (event: string, extra: Record<string, any>) => {
+        try {
+          debug.log(
+            'network',
+            event,
+            {
+              method,
+              url,
+              durationMs: Math.round(Math.max(0, nowMs() - start)),
+              ...extra,
+            },
+            { ctx: 'fetch' }
+          )
+        } catch {}
+      }
+
+      try {
+        const p = origFetch(input as any, init as any)
+        if (!p || typeof (p as any).then !== 'function') {
+          return p
+        }
+        return (p as Promise<Response>).then(
+          (res) => {
+            try {
+              const status = res.status
+              const ok = res.ok
+              let size: number | string | undefined
+              try {
+                const len = res.headers && res.headers.get && res.headers.get('content-length')
+                if (len != null) {
+                  const n = Number(len)
+                  size = Number.isFinite(n) ? n : len
+                }
+              } catch {}
+              log('fetch', { status, ok, size })
+            } catch {}
+            return res
+          },
+          (err) => {
+            log('fetch error', { error: err?.message || String(err) })
+            throw err
+          }
+        )
+      } catch (err: any) {
+        log('fetch error', { error: err?.message || String(err) })
+        throw err
+      }
+    }
+  } catch {}
+}
+
 export const debug = {
   // Flags lifecycle
   reloadFlags,
@@ -155,6 +231,10 @@ export const debug = {
       error: (event: string, meta?: MetaArg, opts?: LogOpts) => debug.error(ns, event, withBase(meta), { id: opts?.id ?? baseId ?? null, ctx: opts?.ctx }),
       group: (title: string, fn: () => void, opts?: LogOpts) => debug.group(ns, title, fn, { id: opts?.id ?? baseId ?? null, ctx: opts?.ctx } as any),
     }
+  },
+
+  installNetworkDebug() {
+    installFetchDebug()
   },
 
   attachGlobal() {

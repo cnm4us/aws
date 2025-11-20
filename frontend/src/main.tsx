@@ -31,6 +31,9 @@ try {
   debug.reloadFlags()
   debug.installStorageSync(() => { debug.reloadFlags() })
   debug.attachGlobal()
+  if (debug.enabled('network')) {
+    debug.installNetworkDebug()
+  }
 } catch {}
 
 const root = createRoot(document.getElementById('root')!)

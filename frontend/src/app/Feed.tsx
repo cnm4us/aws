@@ -5,6 +5,7 @@ import SharedNav from '../ui/SharedNav'
 import { prefetchForHref } from '../ui/routes'
 import styles from '../styles/feed.module.css'
 import debug from '../debug'
+import useRenderDebug from '../debug/useRenderDebug'
 
 type UploadItem = {
   id: number
@@ -234,6 +235,19 @@ export default function Feed() {
   const suppressDurableRestoreRef = useRef<boolean>(false)
   const restoringRef = useRef<boolean>(false)
   const itemsFeedKeyRef = useRef<string>('')
+  const indexReasonRef = useRef<string>('initial')
+
+  // Optional per-component render tracing (DEBUG_RENDER)
+  useRenderDebug('Feed', {
+    index,
+    itemsLen: items.length,
+    mode: feedMode.kind,
+    isAuthed,
+    mineOnly,
+    playingIndex,
+    fsIndex,
+    commentsOpen,
+  })
 
   // ------- Durable per‑feed last‑active state (localStorage only; no URL hash) -------
   type LastActive = {
@@ -533,6 +547,7 @@ export default function Feed() {
     if (Date.now() - snap.savedAt > SNAPSHOT_TTL_MS) return false
     setItems(snap.items)
     setCursor(snap.cursor)
+    indexReasonRef.current = 'snapshot-restore'
     setIndex(Math.max(0, Math.min(snap.index, snap.items.length - 1)))
     const until = Date.now() + 700
     ignoreScrollUntil.current = until
@@ -751,6 +766,7 @@ export default function Feed() {
         }
         // Begin restore cycle to suppress premature saves during reanchor
         restoringRef.current = true
+        indexReasonRef.current = 'initial-load'
         setIndex(targetIndex)
         const fk = firstVisitKeyRef.current
         if (fk && fk === feedKey(feedMode)) {
@@ -1050,6 +1066,7 @@ export default function Feed() {
     // Commit slightly earlier than halfway to make smaller motion page sooner
     const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h * 0.4) / h)))
     if (i !== index) {
+      indexReasonRef.current = 'scroll-commit'
       setIndex(i)
       schedulePersist(i)
       if (!loadingMore && items.length - i < 5 && cursor) {
@@ -1230,7 +1247,7 @@ export default function Feed() {
                           ignoreIoUntil.current = until
                         } catch {}
                         try { disableSnapNow() } catch {}
-                        try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                        try { indexReasonRef.current = 'tap-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'tap-promote'; setIndex(i) } catch {} }
                         return
                       }
                       if (!v) { setPendingPlayIndex(i); return }
@@ -1293,7 +1310,7 @@ export default function Feed() {
                           ignoreIoUntil.current = until
                         } catch {}
                         try { disableSnapNow() } catch {}
-                        try { setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                        try { indexReasonRef.current = 'swipe-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'swipe-promote'; setIndex(i) } catch {} }
                         return
                       }
                       if (!v) { setPendingPlayIndex(i); return }
@@ -1330,7 +1347,7 @@ export default function Feed() {
                       ignoreScrollUntil.current = until
                       ignoreIoUntil.current = until
                     } catch {}
-                    try { disableSnapNow(); setIndex(i); reanchorToIndex(i) } catch { try { setIndex(i) } catch {} }
+                    try { disableSnapNow(); indexReasonRef.current = 'placeholder-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'placeholder-promote'; setIndex(i) } catch {} }
                   }}
                 />
               )}
@@ -1483,7 +1500,8 @@ export default function Feed() {
       if (!debug.enabled('slides')) return
       const it = items[index]
       const slideId = it ? computeSlideId(it) : null
-      debug.log('slides', 'index -> ' + index, { index, slideId, pubId: it?.publicationId ?? null }, { ctx: 'index' })
+      const reason = indexReasonRef.current || 'unknown'
+      debug.log('slides', 'index -> ' + index, { index, slideId, pubId: it?.publicationId ?? null, reason }, { ctx: 'index' })
     } catch {}
   }, [index, items])
 
