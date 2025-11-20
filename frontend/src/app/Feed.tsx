@@ -4,6 +4,7 @@ import FeedVideo from '../components/FeedVideo'
 import SharedNav from '../ui/SharedNav'
 import { prefetchForHref } from '../ui/routes'
 import styles from '../styles/feed.module.css'
+import debug from '../debug'
 
 type UploadItem = {
   id: number
@@ -165,8 +166,6 @@ function flattenSpaces(list: MySpacesResponse | null): SpaceSummary[] {
 }
 
 export default function Feed() {
-  const FEED_DEBUG = true
-  const dlog = (...args: any[]) => { try { if (FEED_DEBUG) console.log('[FEED]', ...args) } catch {} }
   const [items, setItems] = useState<UploadItem[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
@@ -266,11 +265,13 @@ export default function Feed() {
     if (!publicationId || !isAuthed) return
     if (likesCountMap[publicationId] != null && likedMap[publicationId] != null) return
     try {
+      try { debug.log('feed', 'like summary fetch start', { publicationId }) } catch {}
       const res = await fetch(`/api/publications/${publicationId}/likes`, { credentials: 'same-origin' })
       if (!res.ok) return
       const data = await res.json()
       setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? 0) }))
       setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
+      try { debug.log('feed', 'like summary fetched', { publicationId, count: Number(data?.count ?? 0), liked: Boolean(data?.liked) }) } catch {}
     } catch {}
   }
 
@@ -288,6 +289,7 @@ export default function Feed() {
     setCommentsForPub(pubId)
     setCommentsItems([])
     setCommentsCursor(null)
+    try { debug.log('feed', 'comments open', { publicationId: pubId }) } catch {}
     await loadMoreComments(pubId)
   }
 
@@ -297,6 +299,7 @@ export default function Feed() {
     if (commentsLoading) return
     setCommentsLoading(true)
     try {
+      try { debug.log('feed', 'comments fetch start', { publicationId, cursor: commentsCursor }) } catch {}
       const params = new URLSearchParams({ limit: '50', order: commentsOrder })
       if (commentsCursor) params.set('cursor', commentsCursor)
       const res = await fetch(`/api/publications/${publicationId}/comments?${params.toString()}`, { credentials: 'same-origin' })
@@ -309,6 +312,7 @@ export default function Feed() {
       if (myUserId != null && mapped.some((c) => c.userId === myUserId)) {
         setCommentedByMeMap((m) => ({ ...m, [publicationId]: true }))
       }
+      try { debug.log('feed', 'comments fetch done', { publicationId, added: mapped.length, nextCursor: typeof data?.nextCursor === 'string' && data.nextCursor.length ? true : false }) } catch {}
     } catch {}
     finally {
       setCommentsLoading(false)
@@ -327,6 +331,7 @@ export default function Feed() {
     // Optimistic: increment visible counter immediately
     const prevCount = commentsCountMap[pubId]
     setCommentsCountMap((m) => ({ ...m, [pubId]: (m[pubId] ?? 0) + 1 }))
+    try { debug.log('feed', 'comment submit start (optimistic +1)', { publicationId: pubId }) } catch {}
     try {
       const res = await fetch(`/api/publications/${pubId}/comments`, {
         method: 'POST',
@@ -345,9 +350,11 @@ export default function Feed() {
       setCommentRows(1)
       await loadMoreComments(pubId)
       setCommentedByMeMap((m) => ({ ...m, [pubId]: true }))
+      try { debug.log('feed', 'comment submit done', { publicationId: pubId, id: created?.id }) } catch {}
     } catch (e) {
       // Roll back optimistic increment
       setCommentsCountMap((m) => ({ ...m, [pubId]: prevCount != null ? prevCount : Math.max(0, (m[pubId] ?? 1) - 1) }))
+      try { debug.warn('feed', 'comment submit failed (rollback -1)', { publicationId: pubId }) } catch {}
     }
     finally {
       setCommentBusy(false)
@@ -370,6 +377,7 @@ export default function Feed() {
     // Optimistic update
     setLikedMap((m) => ({ ...m, [publicationId]: !currentlyLiked }))
     setLikesCountMap((m) => ({ ...m, [publicationId]: Math.max(0, (m[publicationId] ?? 0) + (currentlyLiked ? -1 : 1)) }))
+    try { debug.log('feed', 'like toggle start (optimistic)', { publicationId, from: currentlyLiked, to: !currentlyLiked }) } catch {}
     try {
       const method = currentlyLiked ? 'DELETE' : 'POST'
       const res = await fetch(`/api/publications/${publicationId}/likes`, {
@@ -381,12 +389,15 @@ export default function Feed() {
       const data = await res.json()
       setLikesCountMap((m) => ({ ...m, [publicationId]: Number(data?.count ?? (m[publicationId] ?? 0)) }))
       setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
+      try { debug.log('feed', 'like toggle server', { publicationId, liked: Boolean(data?.liked), count: Number(data?.count ?? 0) }) } catch {}
     } catch {
       // Rollback on error
       setLikedMap((m) => ({ ...m, [publicationId]: currentlyLiked }))
       setLikesCountMap((m) => ({ ...m, [publicationId]: Math.max(0, (m[publicationId] ?? 0) + (currentlyLiked ? 1 : -1)) }))
+      try { debug.warn('feed', 'like toggle failed (rollback)', { publicationId, restore: currentlyLiked }) } catch {}
     } finally {
       setLikeBusy((b) => ({ ...b, [publicationId]: false }))
+      try { debug.log('feed', 'like toggle end', { publicationId }) } catch {}
     }
   }
 
@@ -459,6 +470,8 @@ export default function Feed() {
   const [restorePoster, setRestorePoster] = useState<string | null>(null)
   const firstVisitKeyRef = useRef<string | null>(null)
   const didInitLastFeedRef = useRef<boolean>(false)
+  // Debug: per-slide render counters (keyed by slideId)
+  const slideRenderCountRef = useRef<Record<string, number>>({})
 
   function feedKey(m: FeedMode): string {
     if (m.kind === 'space') {
@@ -562,12 +575,15 @@ export default function Feed() {
         groups: Array.isArray(data.groups) ? data.groups : [],
         channels: Array.isArray(data.channels) ? data.channels : [],
       })
-      dlog('spaces loaded', {
-        personal: Boolean(data.personal),
-        global: Boolean(data.global),
-        groups: Array.isArray(data.groups) ? data.groups.length : 0,
-        channels: Array.isArray(data.channels) ? data.channels.length : 0,
-      })
+      try {
+        const meta = {
+          personal: Boolean(data.personal),
+          global: Boolean(data.global),
+          groups: Array.isArray(data.groups) ? data.groups.length : 0,
+          channels: Array.isArray(data.channels) ? data.channels.length : 0,
+        }
+        debug.log('feed', 'spaces loaded', meta)
+      } catch {}
       setSpacesError(null)
       spacesStatusRef.current.loaded = true
       setSpacesLoaded(true)
@@ -593,7 +609,7 @@ export default function Feed() {
         setMe(data)
         setIsAuthed(Boolean(data.userId))
         setMyUserId(data.userId ?? null)
-        try { console.log('[FEED] me loaded', { userId: data.userId }) } catch {}
+        try { debug.log('auth', 'me loaded', { userId: data.userId }) } catch {}
       } catch {
         if (canceled) return
         setMe(null)
@@ -1064,8 +1080,35 @@ export default function Feed() {
         const vid = (it as any).videoId ? String((it as any).videoId) : null
         const pubId = it.publicationId != null ? String(it.publicationId) : null
         const slideId = vid ? `v-${vid}` : (pubId ? `p-${pubId}` : `u-${it.id}`)
-        // TEMP DEBUG: render decision
-        try { console.log('[Feed] render slide', { i, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait }) } catch {}
+        // Debug: render decision with counters and dependency hints
+        try {
+          if (debug.enabled('slides')) {
+            const cnt = (slideRenderCountRef.current[slideId] || 0) + 1
+            slideRenderCountRef.current[slideId] = cnt
+            const liked = it.publicationId != null ? likedMap[it.publicationId] : undefined
+            const likesCount = it.publicationId != null ? likesCountMap[it.publicationId] : undefined
+            const commented = it.publicationId != null ? commentedByMeMap[it.publicationId] : undefined
+            const commentsCount = it.publicationId != null ? commentsCountMap[it.publicationId] : undefined
+            const deps = {
+              liked,
+              likesCount,
+              commented,
+              commentsCount,
+              started: startedMap[i] || false,
+              playingIndex,
+              isAuthed,
+              mode: feedMode.kind,
+              posterAvailDesired: Boolean(desired && posterAvail[desired] !== false),
+              posterAvailFallback: Boolean(fallback && posterAvail[fallback] !== false),
+            }
+            debug.log(
+              'slides',
+              'render slide',
+              { i, n: cnt, slideId, active: i === index, warm: i === index + 1, portrait: isPortrait, deps },
+              { id: slideId, ctx: 'render' }
+            )
+          }
+        } catch {}
         // Choose manifest based on device orientation, but only use landscape variant
         // when the asset truly has a landscape output. Portrait-only assets should
         // continue using the portrait stream even in landscape device orientation.
@@ -1162,8 +1205,7 @@ export default function Feed() {
                       if (!v) { setPendingPlayIndex(i); return }
                       if (!unlocked) setUnlocked(true)
                       try {
-                        // TEMP DEBUG: click toggle
-                        console.log('[Feed] click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                        debug.log('feed', 'click video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src'), slideId }, { id: slideId })
                         if (v.paused || v.ended) {
                           // Optimistically mark started so opacity flips immediately
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
@@ -1226,8 +1268,7 @@ export default function Feed() {
                       if (!v) { setPendingPlayIndex(i); return }
                       if (!unlocked) setUnlocked(true)
                       try {
-                        // TEMP DEBUG: touch toggle
-                        console.log('[Feed] touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src') })
+                        debug.log('feed', 'touch video toggle', { i, wasPaused: v.paused, ended: v.ended, currentSrc: (v as any).currentSrc, src: v.getAttribute('src'), slideId }, { id: slideId })
                         if (v.paused || v.ended) {
                           setStartedMap((prev) => (prev[i] ? prev : { ...prev, [i]: true }))
                           setPlayingIndex(i)
@@ -1404,6 +1445,16 @@ export default function Feed() {
       }),
     [items, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode]
   )
+
+  // Debug: log index changes explicitly (outside slides memo)
+  useEffect(() => {
+    try {
+      if (!debug.enabled('slides')) return
+      const it = items[index]
+      const slideId = it ? computeSlideId(it) : null
+      debug.log('slides', 'index -> ' + index, { index, slideId, pubId: it?.publicationId ?? null }, { ctx: 'index' })
+    } catch {}
+  }, [index, items])
 
   function reanchorToIndex(curIndex: number) {
     const r = railRef.current

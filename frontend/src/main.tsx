@@ -23,6 +23,15 @@ const PublishPage = React.lazy(loadPublish)
 const ProductionsPage = React.lazy(loadProductions)
 import Layout from './ui/Layout'
 import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
+import debug from './debug'
+
+// Initialize debug flags early
+try {
+  debug.bootstrapFromQuery()
+  debug.reloadFlags()
+  debug.installStorageSync(() => { debug.reloadFlags() })
+  debug.attachGlobal()
+} catch {}
 
 const root = createRoot(document.getElementById('root')!)
 

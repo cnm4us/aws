@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import Hls from 'hls.js'
 import { isSafari } from '../utils/isSafari'
+import debug from '../debug'
 
 type Props = Omit<React.VideoHTMLAttributes<HTMLVideoElement>, 'src'> & {
   src: string
@@ -37,14 +38,12 @@ export default function HLSVideo({
     const video = videoRef.current
     if (!video) return
 
-    // TEMP DEBUG: environment + decision snapshot
-    const dbgPrefix = `[HLSVideo]${warmMode !== 'none' ? '[warm]' : '[active]'}${debugId ? `[id:${debugId}]` : ''} `
+    // Debug: environment + decision snapshot
     try {
       const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'
       const mse = typeof (window as any).MediaSource !== 'undefined'
-      const canTypeM3U8 = !!(video.canPlayType && (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL'))) 
-      // eslint-disable-next-line no-console
-      console.log(dbgPrefix + 'mount', { ua, isSafari: isSafari(), hlsSupported: Hls.isSupported(), mse, canTypeM3U8, autoPlay, muted, playsInline, src })
+      const canTypeM3U8 = !!(video.canPlayType && (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL')))
+      debug.log('video', 'mount', { ua, isSafari: isSafari(), hlsSupported: Hls.isSupported(), mse, canTypeM3U8, autoPlay, muted, playsInline, src, warmMode }, { id: debugId || null })
     } catch {}
 
     // ensure attributes are in place before wiring
@@ -82,7 +81,7 @@ export default function HLSVideo({
       if (!isSafari()) {
         try { video.removeAttribute('src'); video.load?.() } catch {}
       }
-      try { console.log(dbgPrefix + 'cleanup', { currentSrc: (video as any).currentSrc, src: video.getAttribute('src'), warmMode, srcKey: src }) } catch {}
+      try { debug.log('video', 'cleanup', { currentSrc: (video as any).currentSrc, src: video.getAttribute('src'), warmMode, srcKey: src }, { id: debugId || null }) } catch {}
       if (checkTimerRef.current) { try { window.clearInterval(checkTimerRef.current) } catch {} ; checkTimerRef.current = null }
       stoppedRef.current = false
       manifestParsedRef.current = false
@@ -96,7 +95,7 @@ export default function HLSVideo({
           const rs = video.readyState
           const ns = (video as any).networkState
           const cur = (video as any).currentSrc
-          console.log(dbgPrefix + 'loadeddata', { readyState: rs, networkState: ns, currentSrc: cur, muted: video.muted, paused: video.paused })
+          debug.log('video', 'loadeddata', { readyState: rs, networkState: ns, currentSrc: cur, muted: video.muted, paused: video.paused }, { id: debugId || null })
         } catch {}
         if (warmMode !== 'none') {
           video.pause()
@@ -109,7 +108,7 @@ export default function HLSVideo({
       // Ensure loading resumes when user starts playback (covers attach + buffer warm)
       const h = hlsRef.current
       if (h) {
-        try { console.log(dbgPrefix + 'resume startLoad on play') } catch {}
+        try { debug.log('video', 'resume startLoad on play', { src, warmMode }, { id: debugId || null }) } catch {}
         try {
           if (!manifestParsedRef.current) {
             // Ensure manifest is (re)loaded before starting
@@ -133,7 +132,7 @@ export default function HLSVideo({
     // Safari (Apple vendor) native HLS only
     if (isAppleVendor && isSafari() && canNative) {
       try {
-        console.log(dbgPrefix + 'branch', { mode: 'safari-native', warmMode })
+        debug.log('video', 'branch', { mode: 'safari-native', warmMode }, { id: debugId || null })
         // Adjust preload behavior based on warmMode for Safari
         try { video.preload = warmMode === 'attach' ? 'metadata' : 'auto' } catch {}
         if (video.src !== manifest) {
@@ -144,18 +143,18 @@ export default function HLSVideo({
       try {
         video.addEventListener('error', () => {
           const err = (video as any).error
-          console.log(dbgPrefix + 'video.error', { code: err?.code, message: err?.message })
+          debug.warn('video', 'video.error', { code: err?.code, message: err?.message }, { id: debugId || null })
         })
-        video.addEventListener('loadedmetadata', () => console.log(dbgPrefix + 'loadedmetadata'))
-        video.addEventListener('canplay', () => console.log(dbgPrefix + 'canplay'))
-        video.addEventListener('playing', () => console.log(dbgPrefix + 'playing'))
-        video.addEventListener('waiting', () => console.log(dbgPrefix + 'waiting'))
-        video.addEventListener('stalled', () => console.log(dbgPrefix + 'stalled'))
+        video.addEventListener('loadedmetadata', () => debug.log('video', 'loadedmetadata', undefined, { id: debugId || null }))
+        video.addEventListener('canplay', () => debug.log('video', 'canplay', undefined, { id: debugId || null }))
+        video.addEventListener('playing', () => debug.log('video', 'playing', undefined, { id: debugId || null }))
+        video.addEventListener('waiting', () => debug.log('video', 'waiting', undefined, { id: debugId || null }))
+        video.addEventListener('stalled', () => debug.log('video', 'stalled', undefined, { id: debugId || null }))
         video.addEventListener('play', onPlay)
       } catch {}
       try { video.addEventListener('loadeddata', onLoadedData) } catch {}
       // TEMP DEBUG: warn if src is manifest on non-Safari (should never happen here)
-      try { if (!isSafari() && (video.getAttribute('src') || '').endsWith('.m3u8')) console.error(dbgPrefix + 'WARN non-Safari has manifest src', video.getAttribute('src')) } catch {}
+      try { if (!isSafari() && (video.getAttribute('src') || '').endsWith('.m3u8')) debug.warn('video', 'WARN non-Safari has manifest src', { src: video.getAttribute('src') }, { id: debugId || null }) } catch {}
       return cleanup
     }
 
@@ -164,28 +163,28 @@ export default function HLSVideo({
       const hls = new Hls({ autoStartLoad: warmMode === 'attach' ? false : true })
       hlsRef.current = hls
       try {
-        console.log(dbgPrefix + 'branch', { mode: 'hls.js', warmMode })
+        debug.log('video', 'branch', { mode: 'hls.js', warmMode }, { id: debugId || null })
         // Attach media first; defer manifest for attach-warm to avoid canceled requests
         hls.attachMedia(video)
         if (warmMode !== 'attach') {
           try { hls.loadSource(manifest); lastLoadSrcRef.current = manifest } catch {}
         }
         // TEMP DEBUG: key Hls events only
-        hls.on(Hls.Events.MEDIA_ATTACHED, () => console.log(dbgPrefix + 'hls MEDIA_ATTACHED'))
-        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: any) => { manifestParsedRef.current = true; console.log(dbgPrefix + 'hls MANIFEST_PARSED', { levels: data?.levels?.length, audioTracks: data?.audioTracks?.length }) })
-        hls.on(Hls.Events.LEVEL_LOADED, (_e, data: any) => console.log(dbgPrefix + 'hls LEVEL_LOADED', { level: data?.level, totalduration: data?.details?.totalduration, live: data?.details?.live, codecs: { audio: data?.details?.audioCodec, video: data?.details?.videoCodec } }))
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => debug.log('video', 'hls MEDIA_ATTACHED', undefined, { id: debugId || null }))
+        hls.on(Hls.Events.MANIFEST_PARSED, (_e, data: any) => { manifestParsedRef.current = true; debug.log('video', 'hls MANIFEST_PARSED', { levels: data?.levels?.length, audioTracks: data?.audioTracks?.length }, { id: debugId || null }) })
+        hls.on(Hls.Events.LEVEL_LOADED, (_e, data: any) => debug.log('video', 'hls LEVEL_LOADED', { level: data?.level, totalduration: data?.details?.totalduration, live: data?.details?.live, codecs: { audio: data?.details?.audioCodec, video: data?.details?.videoCodec } }, { id: debugId || null }))
         hls.on(Hls.Events.ERROR, (_e, data: any) => {
-          console.log(dbgPrefix + 'hls ERROR', { type: data?.type, details: data?.details, fatal: data?.fatal })
+          debug.warn('video', 'hls ERROR', { type: data?.type, details: data?.details, fatal: data?.fatal }, { id: debugId || null })
           if (!data?.fatal) return
           try {
             if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-              console.log(dbgPrefix + 'hls recoverMediaError')
+              debug.log('video', 'hls recoverMediaError', undefined, { id: debugId || null })
               hls.recoverMediaError()
             } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              console.log(dbgPrefix + 'hls startLoad (network recover)')
+              debug.log('video', 'hls startLoad (network recover)', undefined, { id: debugId || null })
               hls.startLoad()
             } else {
-              console.log(dbgPrefix + 'hls destroy (fatal other)')
+              debug.log('video', 'hls destroy (fatal other)', undefined, { id: debugId || null })
               hls.destroy()
               hlsRef.current = null
             }
@@ -196,13 +195,13 @@ export default function HLSVideo({
       try {
         video.addEventListener('error', () => {
           const err = (video as any).error
-          console.log(dbgPrefix + 'video.error', { code: err?.code, message: err?.message })
+          debug.warn('video', 'video.error', { code: err?.code, message: err?.message }, { id: debugId || null })
         })
-        video.addEventListener('loadedmetadata', () => console.log(dbgPrefix + 'loadedmetadata'))
-        video.addEventListener('canplay', () => console.log(dbgPrefix + 'canplay'))
-        video.addEventListener('playing', () => console.log(dbgPrefix + 'playing'))
-        video.addEventListener('waiting', () => console.log(dbgPrefix + 'waiting'))
-        video.addEventListener('stalled', () => console.log(dbgPrefix + 'stalled'))
+        video.addEventListener('loadedmetadata', () => debug.log('video', 'loadedmetadata', undefined, { id: debugId || null }))
+        video.addEventListener('canplay', () => debug.log('video', 'canplay', undefined, { id: debugId || null }))
+        video.addEventListener('playing', () => debug.log('video', 'playing', undefined, { id: debugId || null }))
+        video.addEventListener('waiting', () => debug.log('video', 'waiting', undefined, { id: debugId || null }))
+        video.addEventListener('stalled', () => debug.log('video', 'stalled', undefined, { id: debugId || null }))
         video.addEventListener('play', onPlay)
       } catch {}
       try { video.addEventListener('loadeddata', onLoadedData) } catch {}
@@ -211,9 +210,9 @@ export default function HLSVideo({
         try {
           const s = video.getAttribute('src') || ''
           const cs = (video as any).currentSrc || ''
-          console.log(dbgPrefix + 'post-attach src check', { src: s, currentSrc: cs })
+          debug.log('video', 'post-attach src check', { src: s, currentSrc: cs }, { id: debugId || null })
           if ((s && s.endsWith('.m3u8')) || (cs && cs.endsWith('.m3u8'))) {
-            console.error(dbgPrefix + 'WARN Chrome has manifest in src/currentSrc — unexpected for hls.js path')
+            debug.warn('video', 'WARN Chrome has manifest in src/currentSrc — unexpected for hls.js path', undefined, { id: debugId || null })
           }
         } catch {}
       }, 0)
@@ -223,7 +222,7 @@ export default function HLSVideo({
     // Fallback: allow native only on iOS WebKit where MSE is unavailable
     if (isiOS && canNative) {
       try {
-        console.log(dbgPrefix + 'branch', { mode: 'fallback-native-ios' })
+        debug.log('video', 'branch', { mode: 'fallback-native-ios' }, { id: debugId || null })
         video.src = manifest
         video.addEventListener('loadeddata', onLoadedData)
       } catch {}
@@ -231,9 +230,7 @@ export default function HLSVideo({
     }
 
     // As a safety, do not assign manifest src on non-Apple desktop if we reach here
-    try {
-      console.error(dbgPrefix + 'no supported playback path (not assigning manifest to src)')
-    } catch {}
+    try { debug.error('video', 'no supported playback path (not assigning manifest to src)', { src, warmMode }, { id: debugId || null }) } catch {}
     return cleanup
   }, [src])
 
