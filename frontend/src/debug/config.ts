@@ -8,6 +8,7 @@ export type Namespace =
   | 'network'
   | 'render'
   | 'perf'
+  | 'perm'
   | 'errors'
 
 export type Flags = {
@@ -30,6 +31,7 @@ const COLOR_MAP: Record<Namespace, string> = {
   network: '#00BCD4',
   render: '#607D8B',
   perf: '#795548',
+  perm: '#8BC34A',
   errors: '#E53935',
 }
 
@@ -77,6 +79,7 @@ let FLAGS: Flags = {
     network: false,
     render: false,
     perf: false,
+    perm: false,
     errors: false,
   },
   idFilters: { feed: null, slides: null, video: null },
@@ -102,6 +105,7 @@ export function reloadFlags(): Flags {
       network: nsFlag('DEBUG_NETWORK'),
       render: nsFlag('DEBUG_RENDER'),
       perf: nsFlag('DEBUG_PERF'),
+      perm: nsFlag('DEBUG_PERM'),
       errors: nsFlag('DEBUG_ERRORS'),
     },
     idFilters: {
@@ -148,6 +152,7 @@ export function bootstrapFromQuery(): void {
       ['debug_network', 'DEBUG_NETWORK'],
       ['debug_render', 'DEBUG_RENDER'],
       ['debug_perf', 'DEBUG_PERF'],
+      ['debug_perm', 'DEBUG_PERM'],
       ['debug_errors', 'DEBUG_ERRORS'],
       ['debug_feed_id', 'DEBUG_FEED_ID'],
       ['debug_slide_id', 'DEBUG_SLIDE_ID'],

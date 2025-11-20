@@ -31,13 +31,14 @@ Dev vs Prod
     - Note: `window.dlog` remains dev-only by default; ask if you want it available under the override.
 
 Categories
-- `DEBUG_FEED` – feed interactions, taps/clicks, paging.
-- `DEBUG_SLIDES` – per-slide render decisions (e.g., active/warm).
+- `DEBUG_FEED` – feed interactions, taps/clicks, paging, like/comment flows.
+- `DEBUG_SLIDES` – per-slide render decisions (e.g., active/warm) and active index changes.
 - `DEBUG_AUTH` – auth bootstrap (e.g., `/api/me`).
 - `DEBUG_VIDEO` – HLS attach/cleanup and media events.
 - `DEBUG_NETWORK` – reserved for future network tracing.
 - `DEBUG_RENDER` – reserved for future render tracing hooks.
-- `DEBUG_PERF` – reserved for future perf marks/measures.
+- `DEBUG_PERF` – perf timing (initial feed load, like toggles, comment submissions).
+- `DEBUG_PERM` – permissions/RBAC state (roles, space access summaries).
 - `DEBUG_ERRORS` – reserved for future error reporting.
 
 ID Filters
@@ -81,6 +82,20 @@ Current Coverage
 - Feed (`feed`): click/touch toggles, like/comment flows, selected auth lifecycle logs.
 - Slides (`slides`): per-slide render decisions (active/warm/prewarm state) and active index changes.
 - Video (`video`): mount/cleanup, media/hls.js events, attach strategy.
+ - Permissions (`perm`): `/api/me` roles snapshot and `/api/me/spaces` access summaries.
+
+Perf-Specific Debug Details (`DEBUG_PERF`)
+- Enabling `DEBUG_PERF` and `DEBUG` causes additional timing logs via `console.time` / `console.timeEnd`.
+- Labels are namespaced, for example:
+  - `[perf] feed load:global` – time from start of feed load (including network) to completion for the global feed.
+  - `[perf] like toggle:94` – time from optimistic like toggle start to server response/rollback for publication `94`.
+  - `[perf] comment submit:94` – time from optimistic comment submit start to successful response/rollback for publication `94`.
+- How to use:
+  - Turn on perf: `localStorage.DEBUG='1'; localStorage.DEBUG_PERF='1'; location.reload()`.
+  - Watch for `[perf] ...` entries in the console’s `console.time` output when:
+    - The feed initially loads or the feed mode changes.
+    - You like/unlike a video.
+    - You submit a comment.
 
 Slides-Specific Debug Details
 - Render logs (`[SLIDES:render]`):

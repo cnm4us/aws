@@ -331,7 +331,10 @@ export default function Feed() {
     // Optimistic: increment visible counter immediately
     const prevCount = commentsCountMap[pubId]
     setCommentsCountMap((m) => ({ ...m, [pubId]: (m[pubId] ?? 0) + 1 }))
-    try { debug.log('feed', 'comment submit start (optimistic +1)', { publicationId: pubId }) } catch {}
+    try {
+      debug.log('feed', 'comment submit start (optimistic +1)', { publicationId: pubId })
+      debug.time('perf', `comment submit:${pubId}`)
+    } catch {}
     try {
       const res = await fetch(`/api/publications/${pubId}/comments`, {
         method: 'POST',
@@ -377,7 +380,10 @@ export default function Feed() {
     // Optimistic update
     setLikedMap((m) => ({ ...m, [publicationId]: !currentlyLiked }))
     setLikesCountMap((m) => ({ ...m, [publicationId]: Math.max(0, (m[publicationId] ?? 0) + (currentlyLiked ? -1 : 1)) }))
-    try { debug.log('feed', 'like toggle start (optimistic)', { publicationId, from: currentlyLiked, to: !currentlyLiked }) } catch {}
+    try {
+      debug.log('feed', 'like toggle start (optimistic)', { publicationId, from: currentlyLiked, to: !currentlyLiked })
+      debug.time('perf', `like toggle:${publicationId}`)
+    } catch {}
     try {
       const method = currentlyLiked ? 'DELETE' : 'POST'
       const res = await fetch(`/api/publications/${publicationId}/likes`, {
@@ -397,7 +403,10 @@ export default function Feed() {
       try { debug.warn('feed', 'like toggle failed (rollback)', { publicationId, restore: currentlyLiked }) } catch {}
     } finally {
       setLikeBusy((b) => ({ ...b, [publicationId]: false }))
-      try { debug.log('feed', 'like toggle end', { publicationId }) } catch {}
+      try {
+        debug.log('feed', 'like toggle end', { publicationId })
+        debug.timeEnd('perf', `like toggle:${publicationId}`)
+      } catch {}
     }
   }
 
@@ -583,6 +592,15 @@ export default function Feed() {
           channels: Array.isArray(data.channels) ? data.channels.length : 0,
         }
         debug.log('feed', 'spaces loaded', meta)
+        const summarize = (list: SpaceSummary[] | undefined | null) =>
+          (Array.isArray(list) ? list : []).map((s) => ({ id: s.id, slug: s.slug, type: s.type, rel: s.relationship }))
+        debug.log('perm', 'spaces summary', {
+          authed: isAuthed,
+          personal: data.personal ? { id: data.personal.id, slug: data.personal.slug, type: data.personal.type, rel: data.personal.relationship } : null,
+          global: data.global ? { id: data.global.id, slug: data.global.slug, type: data.global.type, rel: data.global.relationship } : null,
+          groups: summarize(data.groups),
+          channels: summarize(data.channels),
+        })
       } catch {}
       setSpacesError(null)
       spacesStatusRef.current.loaded = true
@@ -609,7 +627,17 @@ export default function Feed() {
         setMe(data)
         setIsAuthed(Boolean(data.userId))
         setMyUserId(data.userId ?? null)
-        try { debug.log('auth', 'me loaded', { userId: data.userId }) } catch {}
+        try {
+          debug.log('auth', 'me loaded', { userId: data.userId })
+          debug.log('perm', 'me roles', {
+            userId: data.userId,
+            email: data.email,
+            roles: data.roles,
+            isSiteAdmin: Boolean(data.isSiteAdmin),
+            spaceRoles: data.spaceRoles,
+            personalSpaceId: data.personalSpace?.id ?? null,
+          })
+        } catch {}
       } catch {
         if (canceled) return
         setMe(null)
@@ -679,6 +707,8 @@ export default function Feed() {
         return
       }
       try {
+        const perfLabel = `feed load:${feedMode.kind}`
+        try { debug.time('perf', perfLabel) } catch {}
         setInitialLoading(true)
         setLoadingMore(false)
         let nextCursor: string | null = null
@@ -788,6 +818,7 @@ export default function Feed() {
         setItems([])
         setCursor(null)
       } finally {
+        try { debug.timeEnd('perf', `feed load:${feedMode.kind}`) } catch {}
         if (!canceled) setInitialLoading(false)
       }
     }
