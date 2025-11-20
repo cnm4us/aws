@@ -24,6 +24,8 @@ Priority Backlog (Refactor Objectives)
 
 Summary
 - Add Admin menu to Menu Selector (site-admin gated). New SPA pages for Group/Channel Moderation listing spaces with pending counts and linking to per-space moderation. Backend: expose `/api/admin/moderation/groups|channels` and add `isSiteAdmin` to `/api/me` for front-end gating.
+- Feed: canonical stream by asset orientation; iOS/Windows-safe sizing (no clipping) with object-fit containment; portrait assets in portrait use cover for edge-to-edge; added fullscreen toggle.
+- Styling consolidation Phase 1–3: introduced global variables/base/buttons and migrated Feed, SharedNav/Menu, Drawer, Space Moderation, and Admin Moderation List to CSS Modules.
 
 Decisions (carried + new)
 - Keep using hls.js for non‑Safari browsers; rely on native HLS only on Safari/iOS.
@@ -38,14 +40,34 @@ Decisions (carried + new)
 - Loop active videos.
 
 Changes Since Last
-- Affects: src/app.ts; src/routes/admin.ts; frontend/src/ui/SharedNav.tsx; frontend/src/menu/ContextPicker.tsx; frontend/src/menu/contexts/AdminMenu.tsx; frontend/src/ui/Layout.tsx; frontend/src/app/Feed.tsx; frontend/src/app/AdminModerationList.tsx; frontend/src/app/AdminModerationGroups.tsx; frontend/src/app/AdminModerationChannels.tsx; frontend/src/main.tsx; frontend/src/ui/routes.ts
-- Routes: GET /api/me; GET /api/admin/moderation/groups; GET /api/admin/moderation/channels; /admin/moderation/groups; /admin/moderation/channels
+- Affects: src/app.ts; src/routes/admin.ts; src/routes/pages.ts; src/features/spaces/service.ts
+- Affects: frontend/src/app/Feed.tsx; frontend/src/components/HLSVideo.tsx; frontend/src/ui/SharedNav.tsx; frontend/src/ui/Layout.tsx; frontend/src/ui/routes.ts; frontend/src/menu/ContextDrawer.tsx; frontend/src/menu/ContextPicker.tsx; frontend/src/menu/contexts/AdminMenu.tsx; frontend/src/menu/contexts/MyAssets.tsx; frontend/src/menu/contexts/ChannelSwitcher.tsx; frontend/src/app/SpaceModeration.tsx; frontend/src/app/AdminModerationList.tsx; frontend/src/app/AdminModerationGroups.tsx; frontend/src/app/AdminModerationChannels.tsx; frontend/src/main.tsx
+- Affects: frontend/src/styles/variables.css; frontend/src/styles/base.css; frontend/src/styles/buttons.css; frontend/src/styles/feed.module.css; frontend/src/styles/sharedNav.module.css; frontend/src/styles/menu.module.css; frontend/src/styles/channelSwitcher.module.css; frontend/src/styles/drawer.module.css; frontend/src/styles/spaceModeration.module.css; frontend/src/styles/adminModerationList.module.css
+- Routes: GET /api/me; GET /api/admin/moderation/groups; GET /api/admin/moderation/channels; /admin/moderation/groups; /admin/moderation/channels; GET /api/spaces/:id/moderation/queue (response extended with owner, production{name,createdAt}, space{name})
 - DB: none
 - Flags: none
- - Affects: src/features/spaces/service.ts; frontend/src/app/SpaceModeration.tsx
- - Routes: GET /api/spaces/:id/moderation/queue (response extended with owner, production{name,createdAt}, space{name})
 
 Commit Messages (ready to paste)
+Subject: feat(feed): canonical stream by asset orientation; fullscreen toggle; iOS-safe sizing
+
+Context:
+- Landscape assets should always use the landscape stream; portrait assets the portrait stream. Orientation flips on iOS previously triggered sizing/clipping and source confusion. Needed an explicit fullscreen affordance.
+
+Approach:
+- Choose manifest by asset orientation (not device). Portrait-only assets never synthesize landscape URLs. Added a simple frame that fills the slide and object-fit containment to avoid clipping on iOS. Added fullscreen toggle on the active slide. Portrait assets in portrait use cover for edge-to-edge.
+
+Impact:
+- Stable playback across rotation on iOS Safari and Windows/Chrome; no clipping; explicit fullscreen option.
+
+Tests:
+- Manual on iOS Safari (PWA and in-browser) and Windows/Chrome device emulation for 9:16 and 16:9 assets across rotations.
+
+Meta:
+- Affects: frontend/src/app/Feed.tsx; frontend/src/components/HLSVideo.tsx; frontend/src/styles/feed.module.css
+- Routes: none
+- DB: none
+- Flags: none
+
 Subject: feat(admin): add Admin menu + moderation overviews; expose isSiteAdmin
 
 Context:
@@ -66,8 +88,29 @@ Meta:
 - Routes: GET /api/me; GET /api/admin/moderation/groups; GET /api/admin/moderation/channels; /admin/moderation/groups; /admin/moderation/channels
 - DB: none
 - Flags: none
- - Affects: src/features/spaces/service.ts; frontend/src/app/SpaceModeration.tsx
- - Routes: GET /api/spaces/:id/moderation/queue
+Meta:
+- Affects: src/features/spaces/service.ts; frontend/src/app/SpaceModeration.tsx
+- Routes: GET /api/spaces/:id/moderation/queue
+
+Subject: refactor(css): extract global styles and move nav/menu/drawer/moderation/feed to CSS Modules
+
+Context:
+- Inline styles were duplicated and hard to maintain; needed consistent buttons and layout classes.
+
+Approach:
+- Added variables.css, base.css, buttons.css. Created CSS Modules for feed, shared nav, drawer, menu, channel switcher, space moderation, admin moderation list. Replaced inline styles with classes. Introduced shared .btn utilities for overlay/outline/primary/danger.
+
+Impact:
+- Cleaner, unified styling; easier theming and future tweaks; reduced inline CSS.
+
+Tests:
+- Visual QA across Feed, Drawer, Nav/Menu, Admin lists, Space Moderation overlays.
+
+Meta:
+- Affects: frontend/src/main.tsx; frontend/src/styles/*; frontend/src/ui/SharedNav.tsx; frontend/src/menu/ContextDrawer.tsx; frontend/src/menu/ContextPicker.tsx; frontend/src/menu/contexts/{AdminMenu,MyAssets,ChannelSwitcher}.tsx; frontend/src/app/{Feed,SpaceModeration,AdminModerationList}.tsx
+- Routes: none
+- DB: none
+- Flags: none
 
 Thread Plan (subset of Backlog)
 - [ ] Pick next action from Open Items
@@ -79,8 +122,13 @@ Open Items / Next Actions
 - Poster pipeline: multi‑size (AVIF/WebP/JPEG), responsive `<picture>`/`<img>`, lazy loading + IO observer, capped concurrency (3–6), 1–2 screens look‑ahead.
 - hls.js tuning: `capLevelToPlayerSize: true`, `startLevel: 0`, `maxBufferLength: ~10–12s`.
  - Menu: ensure last-selected menu context opens by default (picker auto-closes on open) — implemented in SharedNav.
+ - Fullscreen resume: preserve currentTime and playing state when swapping streams (if we re‑enable swaps on rotate/Full).
+ - Optional: auto-fullscreen prompt on rotate for landscape assets.
+ - Apply shared .btn utilities to remaining admin pages; consider utilities.css for abs-fill/grid-center.
 
 Work Log (optional, terse; reverse‑chronological)
+- 2025-11-19 — CSS Modules + global styles: Feed, SharedNav/Menu, Drawer, SpaceModeration, AdminModerationList; variables/base/buttons added.
+- 2025-11-19 — Feed: canonical streams; iOS-safe contain; portrait cover; fullscreen toggle.
 - 2025-11-17 — [init] Created Handoff_16.md; carried forward backlog, decisions, and open items.
 
 Artifacts (optional)
