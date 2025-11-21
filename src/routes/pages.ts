@@ -22,6 +22,15 @@ pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+// Help UI (SPA shell)
+pagesRouter.get('/help', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+// SPA shell for help topics by slug (e.g., /help/groups), but do not match .html files
+pagesRouter.get(/^\/help\/([^/.]+)\/?$/, (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 // Forbidden page (shows message and requested URL via querystring)
 pagesRouter.get('/forbidden', (_req, res) => {
   serveHtml(res, 'forbidden.html');

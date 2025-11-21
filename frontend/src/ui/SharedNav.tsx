@@ -5,6 +5,7 @@ import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
 import MyAssets from '../menu/contexts/MyAssets'
 import AdminMenu from '../menu/contexts/AdminMenu'
 import ContextPicker, { type ContextId } from '../menu/ContextPicker'
+import HelpMenu from '../menu/contexts/HelpMenu'
 // useEffect already imported above
 
 type DrawerMode = 'nav' | 'spaces'
@@ -61,7 +62,7 @@ export default function SharedNav(props: {
   const [activeContext, setActiveContext] = useState<ContextId>(() => {
     try {
       const v = localStorage.getItem('menu:context') as ContextId | null
-      if (v === 'channel' || v === 'assets' || v === 'space-admin' || v === 'settings' || v === 'messages') return v
+      if (v === 'channel' || v === 'assets' || v === 'space-admin' || v === 'help' || v === 'settings' || v === 'messages') return v
     } catch {}
     return 'channel'
   })
@@ -97,7 +98,19 @@ export default function SharedNav(props: {
         onMoreClick={() => {
           setPickerOpen((v) => !v)
         }}
-        title={pickerOpen ? 'Menu Selector' : (activeContext === 'assets' ? 'My Assets' : activeContext === 'channel' ? 'Channel Changer' : activeContext === 'space-admin' ? 'Admin' : undefined)}
+        title={
+          pickerOpen
+            ? 'Menu Selector'
+            : activeContext === 'assets'
+            ? 'My Assets'
+            : activeContext === 'channel'
+            ? 'Channel Changer'
+            : activeContext === 'space-admin'
+            ? 'Admin'
+            : activeContext === 'help'
+            ? 'Help'
+            : undefined
+        }
       >
         {pickerOpen ? (
           <ContextPicker
@@ -121,6 +134,8 @@ export default function SharedNav(props: {
           <MyAssets onNavigate={() => setMenuOpen(false)} />
         ) : activeContext === 'space-admin' ? (
           <AdminMenu onNavigate={() => setMenuOpen(false)} />
+        ) : activeContext === 'help' ? (
+          <HelpMenu onNavigate={() => setMenuOpen(false)} />
         ) : (
           <div style={{ color: '#fff', fontSize: 14, opacity: 0.8 }}>Coming soon…</div>
         )}

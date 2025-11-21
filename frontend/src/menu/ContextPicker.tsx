@@ -1,7 +1,7 @@
 import React from 'react'
 import styles from '../styles/menu.module.css'
 
-export type ContextId = 'channel' | 'assets' | 'space-admin' | 'settings' | 'messages'
+export type ContextId = 'channel' | 'assets' | 'space-admin' | 'help' | 'settings' | 'messages'
 
 export default function ContextPicker(props: {
   active: ContextId
@@ -26,6 +26,7 @@ export default function ContextPicker(props: {
       {item('assets', 'My Assets')}
       {item('channel', 'Channel Changer')}
       {showAdmin ? item('space-admin', 'Admin', true) : null}
+      {item('help', 'Help')}
       {item('messages', 'My Messages', false, 'Coming soon')}
       {item('settings', 'Settings', false, 'Coming soon')}
     </div>

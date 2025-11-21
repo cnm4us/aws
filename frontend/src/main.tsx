@@ -16,6 +16,7 @@ const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
 const AdminSpaceDetailPage = React.lazy(() => import('./app/AdminSpaceDetail'))
 const AdminModerationGroupsPage = React.lazy(() => import('./app/AdminModerationGroups'))
 const AdminModerationChannelsPage = React.lazy(() => import('./app/AdminModerationChannels'))
+const HelpPage = React.lazy(() => import('./app/Help'))
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -269,6 +270,22 @@ if (path === '/' || path === '') {
         )
       }
     }
+  } else if (path === '/help' || path === '/help/') {
+    root.render(
+      <Layout label="Help">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <HelpPage />
+        </Suspense>
+      </Layout>
+    )
+  } else if (/^\/help\/(?:[^/]+)\/?$/.test(path)) {
+    root.render(
+      <Layout label="Help">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+          <HelpPage />
+        </Suspense>
+      </Layout>
+    )
   } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/moderation'))) {
     // For now, show Space Members for /spaces/:id/admin and .../members
     if (/^\/spaces\/\d+\/(admin(\/members)?\/?$)/.test(path)) {
