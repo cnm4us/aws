@@ -1,8 +1,11 @@
 import { getPool } from '../../db'
 
-export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number }) {
+export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null }) {
   const db = getPool()
   const params: any[] = []
+  const userId = opts.userId ?? null
+  // First two params are for liked_by_me / commented_by_me EXISTS() subqueries
+  params.push(userId, userId)
   const where: string[] = [
     'sp.visible_in_global = 1',
     "sp.status = 'published'",
@@ -15,6 +18,14 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
   }
   const sql = `
     SELECT
+      EXISTS (
+        SELECT 1 FROM publication_likes pl
+        WHERE pl.publication_id = sp.id AND pl.user_id = ?
+      ) AS liked_by_me,
+      EXISTS (
+        SELECT 1 FROM publication_comments pc
+        WHERE pc.publication_id = sp.id AND pc.user_id = ?
+      ) AS commented_by_me,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -73,9 +84,13 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
   return rows as any[]
 }
 
-export async function listSpaceFeedRows(spaceId: number, opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number }) {
+export async function listSpaceFeedRows(
+  spaceId: number,
+  opts: { cursorPublishedAt?: string | null; cursorId?: number | null; limit: number; userId?: number | null }
+) {
   const db = getPool()
-  const params: any[] = [spaceId]
+  const userId = opts.userId ?? null
+  const params: any[] = [userId, userId, spaceId]
   const where: string[] = [
     'sp.space_id = ?',
     "sp.status = 'published'",
@@ -88,6 +103,14 @@ export async function listSpaceFeedRows(spaceId: number, opts: { cursorPublished
   }
   const sql = `
     SELECT
+      EXISTS (
+        SELECT 1 FROM publication_likes pl
+        WHERE pl.publication_id = sp.id AND pl.user_id = ?
+      ) AS liked_by_me,
+      EXISTS (
+        SELECT 1 FROM publication_comments pc
+        WHERE pc.publication_id = sp.id AND pc.user_id = ?
+      ) AS commented_by_me,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,

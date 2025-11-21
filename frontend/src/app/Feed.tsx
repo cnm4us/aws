@@ -24,6 +24,8 @@ type UploadItem = {
   publishedAt?: string | null
   likesCount?: number | null
   commentsCount?: number | null
+   likedByMe?: boolean | null
+   commentedByMe?: boolean | null
 }
 
 type MeResponse = {
@@ -95,6 +97,8 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const publishedAt = publication?.published_at ? String(publication.published_at) : null
   const likesCount = typeof publication?.likes_count === 'number' ? Number(publication.likes_count) : null
   const commentsCount = typeof publication?.comments_count === 'number' ? Number(publication.comments_count) : null
+  const likedByMe = typeof (publication as any)?.liked_by_me === 'boolean' ? Boolean((publication as any).liked_by_me) : null
+  const commentedByMe = typeof (publication as any)?.commented_by_me === 'boolean' ? Boolean((publication as any).commented_by_me) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -115,6 +119,8 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     publishedAt,
     likesCount,
     commentsCount,
+    likedByMe,
+    commentedByMe,
   }
 }
 
@@ -743,6 +749,27 @@ export default function Feed() {
           nextCursor = cursorStr
         }
         if (canceled) return
+        // Seed per-user like/comment state from feed metadata when available.
+        try {
+          const likeSeeds: Record<number, boolean> = {}
+          const commentSeeds: Record<number, boolean> = {}
+          for (const it of fetchedItems) {
+            if (it.publicationId != null) {
+              if (typeof it.likedByMe === 'boolean') {
+                likeSeeds[it.publicationId] = it.likedByMe
+              }
+              if (typeof it.commentedByMe === 'boolean') {
+                commentSeeds[it.publicationId] = it.commentedByMe
+              }
+            }
+          }
+          if (Object.keys(likeSeeds).length) {
+            setLikedMap((prev) => ({ ...prev, ...likeSeeds }))
+          }
+          if (Object.keys(commentSeeds).length) {
+            setCommentedByMeMap((prev) => ({ ...prev, ...commentSeeds }))
+          }
+        } catch {}
         // Tag the feed key for which these items belong so we can guard saves
         itemsFeedKeyRef.current = feedKey(feedMode)
         setItems(fetchedItems)
@@ -1604,21 +1631,12 @@ export default function Feed() {
 
   // Load likes summary for the active slide when index changes
   useEffect(() => {
+    if (!isAuthed) return
     const it = items[index]
     if (it && it.publicationId != null) {
       ensureLikeSummary(it.publicationId)
     }
-  }, [index, items])
-
-  // Auto-close comments drawer when advancing to a different slide
-  useEffect(() => {
-    if (!commentsOpen) return
-    const it = items[index]
-    const activePub = it && it.publicationId != null ? Number(it.publicationId) : null
-    if (commentsForPub != null && activePub != null && activePub !== commentsForPub) {
-      setCommentsOpen(false)
-    }
-  }, [index, items, commentsOpen, commentsForPub])
+  }, [index, items, isAuthed])
 
   // LocalStorage disabled: no dwell-based persistence
   const persistTimerRef = useRef<number | null>(null)

@@ -3,6 +3,10 @@ import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 export type FeedPublication = {
   id: number
   upload_id: number
+  likes_count: number
+  comments_count: number
+  liked_by_me: boolean
+  commented_by_me: boolean
   production_id?: number | null
   production_ulid?: string | null
   space_id: number

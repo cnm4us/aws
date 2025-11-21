@@ -5,13 +5,13 @@ import { listSpaceFeedRows } from './repo'
 import { clampLimit, parseTsIdCursor, buildTsIdCursor } from '../../core/pagination'
 import { SpacePublicationStatus, SpacePublicationVisibility } from '../../db'
 
-export async function getGlobalFeed(opts: { limit?: number; cursor?: string | null }): Promise<FeedResponse> {
+export async function getGlobalFeed(opts: { userId: number; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
   const parsed = parseTsIdCursor(opts.cursor ?? null)
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit })
+  const rows = await listGlobalFeedRows({ cursorPublishedAt, cursorId, limit, userId: opts.userId })
   const items = rows.map((row) => {
     let distribution: any = null
     if (row.distribution_flags) {
@@ -25,6 +25,8 @@ export async function getGlobalFeed(opts: { limit?: number; cursor?: string | nu
       space_id: Number(row.space_id),
       likes_count: row.likes_count != null ? Number(row.likes_count) : 0,
       comments_count: row.comments_count != null ? Number(row.comments_count) : 0,
+      liked_by_me: Boolean(row.liked_by_me),
+      commented_by_me: Boolean(row.commented_by_me),
       status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
       approved_by: row.approved_by == null ? null : Number(row.approved_by),
@@ -76,13 +78,13 @@ export async function getGlobalFeed(opts: { limit?: number; cursor?: string | nu
   return { items, nextCursor }
 }
 
-export async function getSpaceFeed(spaceId: number, opts: { limit?: number; cursor?: string | null }): Promise<FeedResponse> {
+export async function getSpaceFeed(spaceId: number, opts: { userId: number; limit?: number; cursor?: string | null }): Promise<FeedResponse> {
   const limit = clampLimit(opts.limit, 20, 1, 100)
   const parsed = parseTsIdCursor(opts.cursor ?? null)
   const cursorPublishedAt = parsed?.ts ?? null
   const cursorId = parsed?.id ?? null
 
-  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit })
+  const rows = await listSpaceFeedRows(spaceId, { cursorPublishedAt, cursorId, limit, userId: opts.userId })
   const items = rows.map((row) => {
     let distribution: any = null
     if (row.distribution_flags) {
@@ -96,6 +98,8 @@ export async function getSpaceFeed(spaceId: number, opts: { limit?: number; curs
       space_id: Number(row.space_id),
       likes_count: row.likes_count != null ? Number(row.likes_count) : 0,
       comments_count: row.comments_count != null ? Number(row.comments_count) : 0,
+      liked_by_me: Boolean(row.liked_by_me),
+      commented_by_me: Boolean(row.commented_by_me),
       status: String(row.publication_status) as SpacePublicationStatus,
       requested_by: row.requested_by == null ? null : Number(row.requested_by),
       approved_by: row.approved_by == null ? null : Number(row.approved_by),

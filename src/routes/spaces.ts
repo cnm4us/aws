@@ -323,7 +323,7 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res, next) => 
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
-    const data = await feedsSvc.getSpaceFeed(spaceId, { limit, cursor })
+    const data = await feedsSvc.getSpaceFeed(spaceId, { userId, limit, cursor })
     res.json(data)
   } catch (err: any) {
     // Preserve legacy error code shape while using centralized error middleware
@@ -335,10 +335,11 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res, next) => 
 // Global feed aggregator: includes items explicitly marked visible_in_global and published
 spacesRouter.get('/api/feed/global', requireAuth, async (req, res, next) => {
   try {
+    const userId = Number(req.user!.id)
     const limitRaw = Number(req.query.limit ?? 20)
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 20
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : null
-    const data = await feedsSvc.getGlobalFeed({ limit, cursor })
+    const data = await feedsSvc.getGlobalFeed({ userId, limit, cursor })
     res.json(data)
   } catch (err: any) {
     return next(new DomainError(String(err?.message || err), 'failed_to_load_global_feed', 500))
