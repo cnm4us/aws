@@ -1646,10 +1646,26 @@ export default function Feed() {
   }
 
   const handleSelectSpace = (spaceId: number) => {
+    // Any explicit space selection should clear canonical deep-link mode
+    try { canonicalTargetRef.current = null } catch {}
     try { saveLastActiveFor(feedMode, index) } catch {}
     saveSnapshot()
     const match = flattenSpaces(spaceList).find((s) => s.id === spaceId)
     const spaceUlid = match?.ulid ?? null
+    // Update URL to canonical slug path when available, without leaving the Feed shell.
+    try {
+      if (match && match.slug && (match.type === 'group' || match.type === 'channel')) {
+        const base = match.type === 'group' ? '/groups/' : '/channels/'
+        const slug = encodeURIComponent(match.slug)
+        const currentPath = window.location.pathname || '/'
+        const targetPath = `${base}${slug}`
+        if (currentPath !== targetPath) {
+          window.history.pushState({}, '', targetPath)
+        }
+      }
+    } catch {
+      // If history manipulation fails, continue with in-place feed switch.
+    }
     const target: FeedMode = { kind: 'space', spaceId, spaceUlid }
     if (!hasSnapshot(target)) {
       firstVisitKeyRef.current = feedKey(target)
@@ -1678,9 +1694,19 @@ export default function Feed() {
   // Legacy feed removed
 
   const handleSelectGlobal = () => {
+    // User explicitly chose Global; exit canonical deep-link mode and normalize URL.
+    try { canonicalTargetRef.current = null } catch {}
     try { saveLastActiveFor(feedMode, index) } catch {}
     saveSnapshot()
     const target: FeedMode = { kind: 'global' }
+    try {
+      const currentPath = window.location.pathname || '/'
+      if (currentPath !== '/' && currentPath !== '') {
+        window.history.pushState({}, '', '/')
+      }
+    } catch {
+      // If history manipulation fails, continue with in-place feed switch.
+    }
     if (!hasSnapshot(target)) {
       firstVisitKeyRef.current = feedKey(target)
       setRestorePoster(null)

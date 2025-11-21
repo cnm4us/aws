@@ -83,15 +83,37 @@ export default function ChannelSwitcher(props: {
 
   const gotoSpace = (spaceId: number) => {
     if (onSelectSpace) return onSelectSpace(spaceId)
+    // Outside Feed, navigate to canonical URLs when possible
+    try {
+      const s =
+        entries.groups.find((g) => g.id === spaceId) ||
+        entries.channels.find((c) => c.id === spaceId) ||
+        spaces?.personal ||
+        spaces?.global
+      if (s && s.slug && (s.type === 'group' || s.type === 'channel')) {
+        const base = s.type === 'group' ? '/groups/' : '/channels/'
+        const slug = encodeURIComponent(s.slug)
+        window.location.href = `${base}${slug}`
+        return
+      }
+    } catch {
+      // Fall through to legacy param-based navigation
+    }
+    // Fallback: legacy query-param style (ULID or numeric id)
     const url = new URL(window.location.href)
     url.pathname = '/'
-    // Prefer ULID param when available; fallback to numeric id
     try {
-      const s = entries.groups.find((g) => g.id === spaceId) || entries.channels.find((c) => c.id === spaceId) || spaces?.personal || spaces?.global
+      const s =
+        entries.groups.find((g) => g.id === spaceId) ||
+        entries.channels.find((c) => c.id === spaceId) ||
+        spaces?.personal ||
+        spaces?.global
       const su = (s && 'ulid' in (s as any)) ? (s as any).ulid : null
       if (su && typeof su === 'string' && su.length === 26) url.searchParams.set('spaceUlid', su)
       else url.searchParams.set('space', String(spaceId))
-    } catch { url.searchParams.set('space', String(spaceId)) }
+    } catch {
+      url.searchParams.set('space', String(spaceId))
+    }
     window.location.href = url.toString()
   }
 
