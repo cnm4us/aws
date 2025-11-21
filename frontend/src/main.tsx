@@ -25,6 +25,7 @@ const ProductionsPage = React.lazy(loadProductions)
 import Layout from './ui/Layout'
 import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
 import debug from './debug'
+import { preloadHelpDocs } from './help/helpDocs'
 
 // Initialize debug flags early
 try {
@@ -35,6 +36,8 @@ try {
   if (debug.enabled('network')) {
     debug.installNetworkDebug()
   }
+  // Fire-and-forget preload of help docs so Help pages are instant when opened
+  try { void preloadHelpDocs() } catch {}
 } catch {}
 
 const root = createRoot(document.getElementById('root')!)

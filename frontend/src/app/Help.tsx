@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react'
+import debug from '../debug'
+import { getHelpDoc, isHelpLoaded, preloadHelpDocs } from '../help/helpDocs'
 
 type Topic = 'about' | 'groups' | 'channels' | 'moderation'
 
@@ -22,40 +24,22 @@ function topicToPath(t: Topic): string {
   return `/help/${t}`
 }
 
-function HelpContent({ topic }: { topic: Topic }) {
-  const [html, setHtml] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let canceled = false
-    setLoading(true)
-    setError(null)
-    setHtml(null)
-    const file = `/help/${topic}.html`
-    ;(async () => {
-      try {
-        const res = await fetch(file)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const txt = await res.text()
-        if (!canceled) setHtml(txt)
-      } catch (err: any) {
-        if (!canceled) setError(err?.message ? String(err.message) : 'failed_to_load_help')
-      } finally {
-        if (!canceled) setLoading(false)
-      }
-    })()
-    return () => { canceled = true }
-  }, [topic])
-
-  if (loading && !html) {
+function HelpContent({ topic, ready }: { topic: Topic; ready: boolean }) {
+  const key = `${topic}.html`
+  const html = ready ? getHelpDoc(key) : null
+  try {
+    debug.log(
+      'render',
+      'HelpContent resolve',
+      { topic, key, ready, hasHtml: !!html },
+      { ctx: 'help' }
+    )
+  } catch {}
+  if (!ready) {
     return <div style={{ padding: 20, color: '#000' }}>Loading help…</div>
   }
-  if (error) {
-    return <div style={{ padding: 20, color: '#000' }}>Unable to load this help topic.</div>
-  }
   if (!html) {
-    return null
+    return <div style={{ padding: 20, color: '#000' }}>Unable to load this help topic.</div>
   }
   return (
     <div
@@ -69,16 +53,26 @@ function HelpContent({ topic }: { topic: Topic }) {
 export default function Help() {
   const [topic, setTopic] = useState<Topic>(() => {
     try {
-      return normalizeTopicFromPath(window.location.pathname || '/help')
+      const initial = normalizeTopicFromPath(window.location.pathname || '/help')
+      try {
+        debug.log('render', 'Help initial topic', { path: window.location.pathname, topic: initial }, { ctx: 'help' })
+      } catch {}
+      return initial
     } catch {
       return 'about'
     }
   })
 
   useEffect(() => {
+    try {
+      debug.log('render', 'Help mount', { path: window.location.pathname, loaded: isHelpLoaded() }, { ctx: 'help' })
+    } catch {}
     const handler = () => {
       try {
         const next = normalizeTopicFromPath(window.location.pathname || '/help')
+        try {
+          debug.log('render', 'Help popstate', { path: window.location.pathname, topic: next }, { ctx: 'help' })
+        } catch {}
         setTopic(next)
       } catch {}
     }
@@ -86,10 +80,32 @@ export default function Help() {
     return () => window.removeEventListener('popstate', handler)
   }, [])
 
+  const [ready, setReady] = useState(() => isHelpLoaded())
+  useEffect(() => {
+    try {
+      debug.log('render', 'Help ready effect', { loaded: isHelpLoaded(), readyInitial: ready }, { ctx: 'help' })
+    } catch {}
+    if (isHelpLoaded()) {
+      // Ensure local state aligns with global loaded flag
+      if (!ready) setReady(true)
+      return
+    }
+    let canceled = false
+    ;(async () => {
+      try {
+        debug.log('render', 'Help preload start', undefined, { ctx: 'help' })
+        await preloadHelpDocs()
+        debug.log('render', 'Help preload done', { loaded: isHelpLoaded() }, { ctx: 'help' })
+      } catch {}
+      if (!canceled) setReady(true)
+    })()
+    return () => { canceled = true }
+  }, [ready])
+
   return (
     <div style={{ minHeight: '100%', background: '#f7f7f7', padding: '16px 0 32px 0' }}>
       <main style={{ flex: '1 1 auto', maxWidth: 900, margin: '0 auto' }}>
-        <HelpContent topic={topic} />
+        <HelpContent topic={topic} ready={ready} />
       </main>
     </div>
   )

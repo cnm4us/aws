@@ -1,0 +1,10 @@
+{
+  "version": "v1",
+  "files": [
+    "about.html",
+    "groups.html",
+    "channels.html",
+    "moderation.html"
+  ]
+}
+
