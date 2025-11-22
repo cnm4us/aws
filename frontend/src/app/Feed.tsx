@@ -314,7 +314,11 @@ export default function Feed() {
     await loadMoreComments(pubId)
   }
 
-  async function loadMoreComments(pubId?: number | null, orderOverride?: 'oldest' | 'newest') {
+  async function loadMoreComments(
+    pubId?: number | null,
+    orderOverride?: 'oldest' | 'newest',
+    replace = false
+  ) {
     const publicationId = pubId ?? commentsForPub
     if (!publicationId) return
     if (commentsLoading) return
@@ -328,8 +332,19 @@ export default function Feed() {
       if (!res.ok) throw new Error('comments_fetch_failed')
       const data = await res.json()
       const items = Array.isArray(data?.items) ? data.items : []
-      const mapped = items.map((c: any) => ({ id: Number(c.id), userId: Number(c.userId), displayName: String(c.displayName || ''), email: c.email ?? null, body: String(c.body || ''), createdAt: String(c.createdAt || '') }))
-      setCommentsItems((prev) => prev.concat(mapped))
+      const mapped = items.map((c: any) => ({
+        id: Number(c.id),
+        userId: Number(c.userId),
+        displayName: String(c.displayName || ''),
+        email: c.email ?? null,
+        body: String(c.body || ''),
+        createdAt: String(c.createdAt || ''),
+      }))
+      if (replace) {
+        setCommentsItems(mapped)
+      } else {
+        setCommentsItems((prev) => prev.concat(mapped))
+      }
       setCommentsCursor(typeof data?.nextCursor === 'string' && data.nextCursor.length ? data.nextCursor : null)
       if (myUserId != null && mapped.some((c) => c.userId === myUserId)) {
         setCommentedByMeMap((m) => ({ ...m, [publicationId]: true }))
@@ -2116,11 +2131,9 @@ export default function Feed() {
                           return
                         }
                         setCommentsOrder(opt)
-                        setCommentsItems([])
-                        setCommentsCursor(null)
                         setCommentsSortOpen(false)
                         if (commentsForPub != null) {
-                          void loadMoreComments(commentsForPub, opt)
+                          void loadMoreComments(commentsForPub, opt, true)
                         }
                       }}
                       style={{
