@@ -2001,34 +2001,117 @@ export default function Feed() {
           onClick={() => setCommentsOpen(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 55 }}
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'rgba(16,16,16,0.98)', borderTop: '1px solid rgba(255,255,255,0.15)', maxHeight: '70vh', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
-            <div style={{ padding: '10px 14px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontWeight: 600 }}>Comments</div>
-              <button onClick={() => setCommentsOpen(false)} style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '6px 10px' }}>Close</button>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: '#fff',
+              borderTop: '1px solid rgba(0,0,0,0.15)',
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              maxHeight: '70vh',
+              display: 'grid',
+              gridTemplateRows: 'auto 1fr auto',
+              color: '#000',
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                color: '#000',
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>
+                {(() => {
+                  const total =
+                    commentsForPub != null && commentsCountMap[commentsForPub] != null
+                      ? commentsCountMap[commentsForPub]!
+                      : commentsItems.length
+                  const label = total === 1 ? '1 comment' : `${total} comments`
+                  return label
+                })()}
+              </div>
+              <button
+                onClick={() => setCommentsOpen(false)}
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: 12,
+                  background: 'transparent',
+                  color: '#000',
+                  border: '1px solid rgba(0,0,0,0.25)',
+                  borderRadius: 999,
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
             </div>
             <div style={{ overflowY: 'auto' }}>
               {commentsItems.length === 0 && !commentsLoading ? (
-                <div style={{ padding: 16, color: '#aaa' }}>No comments yet. Be the first!</div>
+                <div style={{ padding: 16, color: '#555' }}>No comments yet. Be the first!</div>
               ) : (
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {commentsItems.map((c) => (
-                    <li key={c.id} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#fff' }}>
+                    <li
+                      key={c.id}
+                      style={{
+                        padding: '10px 14px',
+                        borderBottom: '1px solid rgba(0,0,0,0.06)',
+                        color: '#000',
+                      }}
+                    >
                       <div style={{ fontSize: 14, opacity: 0.9 }}>{c.displayName || c.email || `User ${c.userId}`}</div>
                       <div style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.35, marginTop: 4 }}>{c.body}</div>
-                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6 }}>{new Date(c.createdAt).toLocaleString()}</div>
+                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6, color: '#555' }}>
+                        {new Date(c.createdAt).toLocaleString()}
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
               <div style={{ padding: 12, display: 'flex', justifyContent: 'center' }}>
                 {commentsCursor ? (
-                  <button disabled={commentsLoading} onClick={() => loadMoreComments()} style={{ background: '#222', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '6px 10px' }}>{commentsLoading ? 'Loading…' : 'Load More'}</button>
+                  <button
+                    disabled={commentsLoading}
+                    onClick={() => loadMoreComments()}
+                    style={{
+                      background: '#f0f0f0',
+                      color: '#000',
+                      border: '1px solid rgba(0,0,0,0.25)',
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                    }}
+                  >
+                    {commentsLoading ? 'Loading…' : 'Load More'}
+                  </button>
                 ) : (
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>End of comments</span>
+                  <span style={{ fontSize: 12, opacity: 0.7, color: '#666' }}>End of comments</span>
                 )}
               </div>
             </div>
-            <div style={{ padding: 10, display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <div
+              style={{
+                padding: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                gap: 6,
+              }}
+            >
               <textarea
                 value={commentText}
                 onChange={(e) => setCommentText((e.target as any).value)}
@@ -2037,9 +2120,34 @@ export default function Feed() {
                 placeholder={isAuthed ? 'Write a comment…' : 'Sign in to comment'}
                 disabled={!isAuthed || commentBusy}
                 rows={commentRows}
-                style={{ flex: 1, background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 16, lineHeight: 1.35, resize: 'none' as any, outline: 'none' }}
+                style={{
+                  flex: 1,
+                  background: '#f5f5f5',
+                  color: '#000',
+                  border: '1px solid rgba(0,0,0,0.2)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  fontSize: 16,
+                  lineHeight: 1.35,
+                  resize: 'none' as any,
+                  outline: 'none',
+                }}
               />
-              <button onClick={submitComment} disabled={!isAuthed || commentBusy || !commentText.trim()} style={{ background: '#1976d2', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: '10px 12px' }}>{commentBusy ? 'Posting…' : 'Post'}</button>
+              <button
+                onClick={submitComment}
+                disabled={!isAuthed || commentBusy || !commentText.trim()}
+                style={{
+                  alignSelf: 'flex-end',
+                  background: '#1976d2',
+                  color: '#fff',
+                  border: '1px solid rgba(0,0,0,0.2)',
+                  borderRadius: 8,
+                  padding: '8px 12px',
+                  marginTop: 2,
+                }}
+              >
+                {commentBusy ? 'Posting…' : 'Post'}
+              </button>
             </div>
           </div>
         </div>
