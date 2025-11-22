@@ -946,6 +946,13 @@ export default function Feed() {
     return Math.max(1, h)
   }
 
+  const logSlides = (event: string, meta?: Record<string, any>) => {
+    try {
+      if (!debug.enabled('slides')) return
+      debug.log('slides', event, meta, { ctx: 'scroll' })
+    } catch {}
+  }
+
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
 
   // No URL hash syncing (clean URLs)
@@ -1111,6 +1118,7 @@ export default function Feed() {
     const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h * 0.4) / h)))
     if (i !== index) {
       indexReasonRef.current = 'scroll-commit'
+      logSlides('scroll setIndex', { from: index, to: i, scrollTop: y, h, ignoreScrollUntil: ignoreScrollUntil.current })
       setIndex(i)
       schedulePersist(i)
       if (!loadingMore && items.length - i < 5 && cursor) {
@@ -1281,19 +1289,20 @@ export default function Feed() {
                             v.muted = false
                             void v.play()
                           } catch {}
-                        } else {
-                          setPendingPlayIndex(i)
-                        }
-                        // Promotion lock: ignore IO/scroll-driven reindex briefly
-                        try {
-                          const until = Date.now() + 800
-                          ignoreScrollUntil.current = until
-                          ignoreIoUntil.current = until
-                        } catch {}
-                        try { disableSnapNow() } catch {}
-                        try { indexReasonRef.current = 'tap-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'tap-promote'; setIndex(i) } catch {} }
-                        return
+                      } else {
+                        setPendingPlayIndex(i)
                       }
+                      // Promotion lock: ignore IO/scroll-driven reindex briefly
+                      try {
+                        const until = Date.now() + 800
+                        ignoreScrollUntil.current = until
+                        ignoreIoUntil.current = until
+                        logSlides('tap promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
+                      } catch {}
+                      try { disableSnapNow() } catch {}
+                      try { indexReasonRef.current = 'tap-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'tap-promote'; setIndex(i) } catch {} }
+                      return
+                    }
                       if (!v) { setPendingPlayIndex(i); return }
                       if (!unlocked) setUnlocked(true)
                       try {
@@ -1352,6 +1361,7 @@ export default function Feed() {
                           const until = Date.now() + 800
                           ignoreScrollUntil.current = until
                           ignoreIoUntil.current = until
+                          logSlides('swipe promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
                         } catch {}
                         try { disableSnapNow() } catch {}
                         try { indexReasonRef.current = 'swipe-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'swipe-promote'; setIndex(i) } catch {} }
@@ -1390,6 +1400,7 @@ export default function Feed() {
                       const until = Date.now() + 650
                       ignoreScrollUntil.current = until
                       ignoreIoUntil.current = until
+                      logSlides('placeholder promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
                     } catch {}
                     try { disableSnapNow(); indexReasonRef.current = 'placeholder-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'placeholder-promote'; setIndex(i) } catch {} }
                   }}
@@ -1555,6 +1566,7 @@ export default function Feed() {
     const slideEl = r.children[curIndex] as HTMLElement | undefined
     const targetTop = slideEl ? slideEl.offsetTop : curIndex * getSlideHeight()
     const lockMs = 300
+    logSlides('reanchor start', { index: curIndex, targetTop, lockMs })
     // Imperatively force instant jump (no smooth, no snap) for this reanchor window
     try { r.style.scrollBehavior = 'auto' } catch {}
     try { r.style.scrollSnapType = 'none' } catch {}
@@ -1564,6 +1576,7 @@ export default function Feed() {
     const until = Date.now() + lockMs
     ignoreScrollUntil.current = until
     ignoreIoUntil.current = until
+    logSlides('reanchor lock', { ignoreScrollUntil: until, ignoreIoUntil: until })
     const id1 = requestAnimationFrame(() => {
       try { r.scrollTo({ top: targetTop, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop }
       setTimeout(() => {
@@ -1581,6 +1594,7 @@ export default function Feed() {
           setSnapEnabled(true)
           // Ensure previous slide audio is stopped once docked
           pauseNonCurrent(curIndex)
+          logSlides('reanchor end', { index: curIndex })
         }, 50)
       }, 180)
     })
@@ -1591,6 +1605,7 @@ export default function Feed() {
   function disableSnapNow() {
     const r = railRef.current
     if (!r) return
+    logSlides('snap disable')
     try { r.style.scrollBehavior = 'auto' } catch {}
     try { r.style.scrollSnapType = 'none' } catch {}
   }
@@ -1629,6 +1644,7 @@ export default function Feed() {
         if (!best || best.target == null) return
         const idx = slidesEl.indexOf(best.target as HTMLElement)
         if (idx >= 0 && idx !== index) {
+          logSlides('io setIndex', { to: idx, from: index, ignoreIoUntil: ignoreIoUntil.current })
           setIndex(idx)
         }
         entries.forEach((e) => {
