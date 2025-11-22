@@ -226,7 +226,7 @@ export default function Feed() {
   const [commentText, setCommentText] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentRows, setCommentRows] = useState<number>(1)
-  const commentsOrder: 'oldest' | 'newest' = 'oldest'
+  const [commentsOrder, setCommentsOrder] = useState<'oldest' | 'newest'>('newest')
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -242,6 +242,7 @@ export default function Feed() {
   const restoringRef = useRef<boolean>(false)
   const itemsFeedKeyRef = useRef<string>('')
   const indexReasonRef = useRef<string>('initial')
+  const [commentsSortOpen, setCommentsSortOpen] = useState(false)
 
   // Optional per-component render tracing (DEBUG_RENDER)
   useRenderDebug('Feed', {
@@ -313,14 +314,15 @@ export default function Feed() {
     await loadMoreComments(pubId)
   }
 
-  async function loadMoreComments(pubId?: number | null) {
+  async function loadMoreComments(pubId?: number | null, orderOverride?: 'oldest' | 'newest') {
     const publicationId = pubId ?? commentsForPub
     if (!publicationId) return
     if (commentsLoading) return
     setCommentsLoading(true)
+    const order = orderOverride ?? commentsOrder
     try {
-      try { debug.log('feed', 'comments fetch start', { publicationId, cursor: commentsCursor }) } catch {}
-      const params = new URLSearchParams({ limit: '50', order: commentsOrder })
+      try { debug.log('feed', 'comments fetch start', { publicationId, cursor: commentsCursor, order }) } catch {}
+      const params = new URLSearchParams({ limit: '50', order })
       if (commentsCursor) params.set('cursor', commentsCursor)
       const res = await fetch(`/api/publications/${publicationId}/comments?${params.toString()}`, { credentials: 'same-origin' })
       if (!res.ok) throw new Error('comments_fetch_failed')
@@ -2038,6 +2040,37 @@ export default function Feed() {
                   return label
                 })()}
               </div>
+              {/* Sort (hamburger) button */}
+              <button
+                onClick={() => setCommentsSortOpen((v) => !v)}
+                style={{
+                  position: 'absolute',
+                  right: 56,
+                  top: 12,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 4,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                aria-label="Sort comments"
+              >
+                <div
+                  style={{
+                    width: 20,
+                    height: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span style={{ height: 2, background: '#000', borderRadius: 2 }} />
+                  <span style={{ height: 2, background: '#000', borderRadius: 2 }} />
+                  <span style={{ height: 2, background: '#000', borderRadius: 2 }} />
+                </div>
+              </button>
               <button
                 onClick={() => setCommentsOpen(false)}
                 style={{
@@ -2059,6 +2092,59 @@ export default function Feed() {
               >
                 ×
               </button>
+              {commentsSortOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 56,
+                    top: 44,
+                    background: '#fff',
+                    border: '1px solid rgba(0,0,0,0.2)',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                    minWidth: 120,
+                    zIndex: 10,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {(['newest', 'oldest'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => {
+                        if (commentsOrder === opt) {
+                          setCommentsSortOpen(false)
+                          return
+                        }
+                        setCommentsOrder(opt)
+                        setCommentsItems([])
+                        setCommentsCursor(null)
+                        setCommentsSortOpen(false)
+                        if (commentsForPub != null) {
+                          void loadMoreComments(commentsForPub, opt)
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        width: '100%',
+                        padding: '8px 10px',
+                        background: commentsOrder === opt ? 'rgba(0,0,0,0.04)' : '#fff',
+                        border: 'none',
+                        borderBottom: opt === 'newest' ? '1px solid rgba(0,0,0,0.08)' : 'none',
+                        color: '#000',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ width: 18, marginRight: 6 }}>
+                        {commentsOrder === opt ? '✓' : ''}
+                      </span>
+                      <span>{opt === 'newest' ? 'Newest' : 'Oldest'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ overflowY: 'auto' }}>
               {commentsItems.length === 0 && !commentsLoading ? (
