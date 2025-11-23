@@ -190,15 +190,16 @@ export default function Feed() {
   const [spacesError, setSpacesError] = useState<string | null>(null)
   const [feedMode, setFeedMode] = useState<FeedMode>({ kind: 'global' })
   const railRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
   // Note: individual slide videos are rendered via FeedVideo/HLSVideo; no shared video element
   const [isPortrait, setIsPortrait] = useState<boolean>(() => typeof window !== 'undefined' ? window.matchMedia && window.matchMedia('(orientation: portrait)').matches : true)
   const [posterAvail, setPosterAvail] = useState<Record<string, boolean>>({})
-  const ignoreScrollUntil = useRef<number>(0)
-  const ignoreIoUntil = useRef<number>(0)
-  const reanchorTimerRef = useRef<number | null>(null)
-  const [snapEnabled, setSnapEnabled] = useState(true)
-  // Default to 'auto' scroll-behavior for user gestures; enable smooth only during our programmatic jumps
-  const [smoothEnabled, setSmoothEnabled] = useState(false)
+  const railOffsetRef = useRef<number>(0)
+  const dragStartOffsetRef = useRef<number>(0)
+  const isDraggingRef = useRef<boolean>(false)
+  const dragThresholdPassedRef = useRef<boolean>(false)
+  const lastWheelAtRef = useRef<number>(0)
+  const wheelDeltaAccumRef = useRef<number>(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [mineOnly, setMineOnly] = useState(false)
   const [myUserId, setMyUserId] = useState<number | null>(null)
@@ -234,8 +235,10 @@ export default function Feed() {
   const [likersCursor, setLikersCursor] = useState<string | null>(null)
   const [likersLoading, setLikersLoading] = useState(false)
   const lastTouchTsRef = useRef<number>(0)
+  const touchStartXRef = useRef<number>(0)
   const touchStartYRef = useRef<number>(0)
   const touchStartTRef = useRef<number>(0)
+  const touchLastXRef = useRef<number>(0)
   const touchLastYRef = useRef<number>(0)
   const touchLastTRef = useRef<number>(0)
   const suppressDurableRestoreRef = useRef<boolean>(false)
@@ -572,9 +575,6 @@ export default function Feed() {
     setCursor(snap.cursor)
     indexReasonRef.current = 'snapshot-restore'
     setIndex(Math.max(0, Math.min(snap.index, snap.items.length - 1)))
-    const until = Date.now() + 700
-    ignoreScrollUntil.current = until
-    ignoreIoUntil.current = until
     // Reanchor by index using layout timing and show a poster overlay to prevent flashes
     const anchor = snap.items[Math.max(0, Math.min(snap.index, snap.items.length - 1))]
     const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
@@ -582,7 +582,7 @@ export default function Feed() {
     setRestoring(true)
     requestAnimationFrame(() => {
       const targetIndex = Math.max(0, Math.min(snap.index, snap.items.length - 1))
-      try { reanchorToIndex(targetIndex) } catch {}
+      try { reanchorToIndex(targetIndex, { immediate: true, reason: 'snapshot-restore' }) } catch {}
       const v = getVideoEl(targetIndex)
       let doneOnce = false
       const done = () => {
@@ -817,12 +817,10 @@ export default function Feed() {
           const anchor = fetchedItems[Math.max(0, Math.min(targetIndex, fetchedItems.length - 1))]
           const poster = (isPortrait ? (anchor?.posterPortrait || anchor?.posterLandscape) : (anchor?.posterLandscape || anchor?.posterPortrait)) || null
           setRestorePoster(poster)
-          // Ensure snap/smooth are disabled before the next paint
-          disableSnapNow()
           restoringRef.current = true
           setRestoring(true)
           requestAnimationFrame(() => {
-            try { reanchorToIndex(targetIndex) } catch {}
+            try { reanchorToIndex(targetIndex, { immediate: true, reason: 'initial-load' }) } catch {}
             const v = getVideoEl(targetIndex)
             let doneOnce = false
             const done = () => {
@@ -830,8 +828,6 @@ export default function Feed() {
               setRestoring(false)
               restoringRef.current = false
               setRestorePoster(null)
-              setSnapEnabled(true)
-              setSmoothEnabled(true)
               firstVisitKeyRef.current = null
             }
             if (v) {
@@ -851,10 +847,9 @@ export default function Feed() {
           })
         } else {
           // Use the same controlled reanchor flow even when firstVisitKeyRef is not set
-          disableSnapNow()
           restoringRef.current = true
           requestAnimationFrame(() => {
-            try { reanchorToIndex(targetIndex) } catch {}
+            try { reanchorToIndex(targetIndex, { immediate: true, reason: 'initial-load' }) } catch {}
             if (seekMs && seekMs > 0) {
               const v = getVideoEl(targetIndex)
               if (v) {
@@ -951,6 +946,35 @@ export default function Feed() {
       if (!debug.enabled('slides')) return
       debug.log('slides', event, meta, { ctx: 'scroll' })
     } catch {}
+  }
+
+  type GestureKind = 'tap' | 'swipeUp' | 'swipeDown' | 'none'
+
+  function classifyGesture(): GestureKind {
+    const dy = touchLastYRef.current - touchStartYRef.current
+    const dx = touchLastXRef.current - touchStartXRef.current
+    const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
+    const absDy = Math.abs(dy)
+    const absDx = Math.abs(dx)
+
+    // Very small, quick movement: treat as tap.
+    const TAP_DIST = 8 // px
+    const TAP_TIME = 250 // ms
+    if (absDy <= TAP_DIST && absDx <= TAP_DIST && dt <= TAP_TIME) {
+      return 'tap'
+    }
+
+    // Only consider as vertical swipe if vertical motion clearly dominates horizontal.
+    const dominantVertical = absDy >= absDx * 1.5
+    const SWIPE_DIST = 20 // px
+    const SWIPE_VEL = 0.3 // px/ms
+    const vmag = absDy / dt
+
+    if (dominantVertical && (absDy >= SWIPE_DIST || vmag >= SWIPE_VEL)) {
+      return dy < 0 ? 'swipeUp' : 'swipeDown'
+    }
+
+    return 'none'
   }
 
   // HLSVideo handles attaching source on Safari and via hls.js elsewhere
@@ -1107,61 +1131,31 @@ export default function Feed() {
     setUnlocked(true)
   }
 
-  const onScroll = () => {
-    const r = railRef.current
-    if (!r) return
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    try {
+      if ((e as any).cancelable) e.preventDefault()
+    } catch {}
     const now = Date.now()
-    if (now < ignoreScrollUntil.current) return
-    const y = r.scrollTop
-    const h = getSlideHeight()
-    // Commit slightly earlier than halfway to make smaller motion page sooner
-    const i = Math.max(0, Math.min(items.length - 1, Math.floor((y + h * 0.4) / h)))
-    if (i !== index) {
-      indexReasonRef.current = 'scroll-commit'
-      logSlides('scroll setIndex', { from: index, to: i, scrollTop: y, h, ignoreScrollUntil: ignoreScrollUntil.current })
-      setIndex(i)
-      schedulePersist(i)
-      if (!loadingMore && items.length - i < 5 && cursor) {
-        setLoadingMore(true)
-        const loadMore = async () => {
-          try {
-            if (feedMode.kind === 'space') {
-              const { items: page, nextCursor } = await fetchSpaceFeed(feedMode.spaceId, { cursor })
-              const filtered = applyMineFilter(page, mineOnly, myUserId)
-              setItems((prev) => prev.concat(filtered))
-              setCursor(nextCursor)
-            } else if (feedMode.kind === 'global') {
-              const { items: page, nextCursor } = await fetchGlobalFeed({ cursor })
-              const filtered = applyMineFilter(page, mineOnly, myUserId)
-              setItems((prev) => prev.concat(filtered))
-              setCursor(nextCursor)
-            } else {
-              const { items: page, nextCursor: nextCursorStr } = await fetchGlobalFeed({ cursor })
-              const filtered = applyMineFilter(page, mineOnly, myUserId)
-              setItems((prev) => prev.concat(filtered))
-              setCursor(nextCursorStr)
-            }
-          } catch (err) {
-            console.error('load more failed', err)
-          } finally {
-            setLoadingMore(false)
-          }
-        }
-        loadMore().catch(() => setLoadingMore(false))
+    const dt = now - lastWheelAtRef.current
+    if (dt > 400) {
+      wheelDeltaAccumRef.current = 0
+    }
+    wheelDeltaAccumRef.current += e.deltaY
+    lastWheelAtRef.current = now
+    const THRESHOLD = 40
+    if (wheelDeltaAccumRef.current > THRESHOLD) {
+      wheelDeltaAccumRef.current = 0
+      if (index < items.length - 1) {
+        indexReasonRef.current = 'wheel-next'
+        reanchorToIndex(index + 1)
+      }
+    } else if (wheelDeltaAccumRef.current < -THRESHOLD) {
+      wheelDeltaAccumRef.current = 0
+      if (index > 0) {
+        indexReasonRef.current = 'wheel-prev'
+        reanchorToIndex(index - 1)
       }
     }
-    // Debounced finalize: after scrolling settles, force a quick reanchor to the nearest slide
-    try { if (reanchorTimerRef.current) window.clearTimeout(reanchorTimerRef.current) } catch {}
-    reanchorTimerRef.current = window.setTimeout(() => {
-      const rr = railRef.current
-      if (!rr) return
-      const y2 = rr.scrollTop
-      const h2 = getSlideHeight()
-      const target = Math.max(0, Math.min(items.length - 1, Math.round(y2 / h2)))
-      disableSnapNow()
-      reanchorToIndex(target)
-      pauseNonCurrent(target)
-    }, 90)
   }
 
   const slides = useMemo(
@@ -1257,11 +1251,16 @@ export default function Feed() {
                       try {
                         const t = e.touches && e.touches[0]
                         if (t) {
+                          touchStartXRef.current = t.clientX
                           touchStartYRef.current = t.clientY
+                          touchLastXRef.current = t.clientX
                           touchLastYRef.current = t.clientY
                           const nowTs = Date.now()
                           touchStartTRef.current = nowTs
                           touchLastTRef.current = nowTs
+                          dragStartOffsetRef.current = railOffsetRef.current || 0
+                          isDraggingRef.current = false
+                          dragThresholdPassedRef.current = false
                         }
                       } catch {}
                     }}
@@ -1269,8 +1268,31 @@ export default function Feed() {
                       try {
                         const t = e.touches && e.touches[0]
                         if (t) {
+                          const now = Date.now()
+                          touchLastXRef.current = t.clientX
                           touchLastYRef.current = t.clientY
-                          touchLastTRef.current = Date.now()
+                          touchLastTRef.current = now
+                          if (i !== index) return
+                          const dyTotal = t.clientY - touchStartYRef.current
+                          if (!dragThresholdPassedRef.current && Math.abs(dyTotal) > 5) {
+                            dragThresholdPassedRef.current = true
+                            isDraggingRef.current = true
+                          }
+                          if (isDraggingRef.current) {
+                            const r = railRef.current
+                            const h = getSlideHeight()
+                            if (r && h > 0 && items.length > 0) {
+                              const maxOffset = 0
+                              const minOffset = -h * Math.max(0, items.length - 1)
+                              const nextOffset = Math.min(maxOffset, Math.max(minOffset, dragStartOffsetRef.current + dyTotal))
+                              railOffsetRef.current = nextOffset
+                              try {
+                                r.style.transition = 'none'
+                                r.style.transform = `translate3d(0, ${nextOffset}px, 0)`
+                              } catch {}
+                              try { if ((e as any).cancelable) e.preventDefault() } catch {}
+                            }
+                          }
                         }
                       } catch {}
                     }}
@@ -1289,20 +1311,15 @@ export default function Feed() {
                             v.muted = false
                             void v.play()
                           } catch {}
-                      } else {
-                        setPendingPlayIndex(i)
+                        } else {
+                          setPendingPlayIndex(i)
+                        }
+                        try {
+                          indexReasonRef.current = 'tap-promote'
+                          reanchorToIndex(i, { reason: 'tap-promote' })
+                        } catch {}
+                        return
                       }
-                      // Promotion lock: ignore IO/scroll-driven reindex briefly
-                      try {
-                        const until = Date.now() + 800
-                        ignoreScrollUntil.current = until
-                        ignoreIoUntil.current = until
-                        logSlides('tap promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
-                      } catch {}
-                      try { disableSnapNow() } catch {}
-                      try { indexReasonRef.current = 'tap-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'tap-promote'; setIndex(i) } catch {} }
-                      return
-                    }
                       if (!v) { setPendingPlayIndex(i); return }
                       if (!unlocked) setUnlocked(true)
                       try {
@@ -1325,24 +1342,35 @@ export default function Feed() {
                       e.stopPropagation()
                       try { if ((e as any).cancelable) e.preventDefault() } catch {}
                       const now = Date.now()
-                      if (now - lastTouchTsRef.current < 300) return
                       lastTouchTsRef.current = now
-                      // Detect a small, decisive swipe to page-step
+                      const kind = classifyGesture()
                       const dy = touchLastYRef.current - touchStartYRef.current // +down, -up
-                      const dt = Math.max(1, touchLastTRef.current - touchStartTRef.current)
-                      const vmag = Math.abs(dy) / dt // px/ms
-                      const SWIPE_DIST = 14
-                      const SWIPE_VEL = 0.5
-                      if (dy < -SWIPE_DIST || (dy < 0 && vmag > SWIPE_VEL)) {
-                        if (i < items.length - 1) {
-                          try { disableSnapNow(); reanchorToIndex(i + 1) } catch {}
+                      const didDrag = dragThresholdPassedRef.current && isDraggingRef.current && i === index
+                      let handled = false
+                      if (didDrag) {
+                        let targetIndex = index
+                        if (kind === 'swipeUp') {
+                          targetIndex = Math.min(items.length - 1, index + 1)
+                        } else if (kind === 'swipeDown') {
+                          targetIndex = Math.max(0, index - 1)
+                        }
+                        indexReasonRef.current = targetIndex === index ? 'drag-cancel' : (kind === 'swipeUp' ? 'drag-swipe-up' : kind === 'swipeDown' ? 'drag-swipe-down' : 'drag-cancel')
+                        try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
+                        handled = true
+                      }
+                      isDraggingRef.current = false
+                      dragThresholdPassedRef.current = false
+                      if (handled) return
+                      // No drag-based snap; interpret as tap or swipe from the classifier.
+                      if (kind === 'swipeUp' || kind === 'swipeDown') {
+                        const dir = kind === 'swipeUp' ? 1 : -1
+                        const targetIndex = Math.max(0, Math.min(items.length - 1, index + dir))
+                        if (targetIndex !== index) {
+                          indexReasonRef.current = kind === 'swipeUp' ? 'swipe-up' : 'swipe-down'
+                          try { reanchorToIndex(targetIndex, { reason: indexReasonRef.current }) } catch {}
                           return
                         }
-                      } else if (dy > SWIPE_DIST || (dy > 0 && vmag > SWIPE_VEL)) {
-                        if (i > 0) {
-                          try { disableSnapNow(); reanchorToIndex(i - 1) } catch {}
-                          return
-                        }
+                        // If swipe resolved to same index, fall through to tap behavior.
                       }
                       const v = getVideoEl(i)
                       if (i !== index) {
@@ -1356,15 +1384,10 @@ export default function Feed() {
                         } else {
                           setPendingPlayIndex(i)
                         }
-                        // Promotion lock: ignore IO/scroll-driven reindex briefly
                         try {
-                          const until = Date.now() + 800
-                          ignoreScrollUntil.current = until
-                          ignoreIoUntil.current = until
-                          logSlides('swipe promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
+                          indexReasonRef.current = 'swipe-promote'
+                          reanchorToIndex(i, { reason: 'swipe-promote' })
                         } catch {}
-                        try { disableSnapNow() } catch {}
-                        try { indexReasonRef.current = 'swipe-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'swipe-promote'; setIndex(i) } catch {} }
                         return
                       }
                       if (!v) { setPendingPlayIndex(i); return }
@@ -1395,14 +1418,10 @@ export default function Feed() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setPendingPlayIndex(i)
-                    // Promotion lock
                     try {
-                      const until = Date.now() + 650
-                      ignoreScrollUntil.current = until
-                      ignoreIoUntil.current = until
-                      logSlides('placeholder promote', { index: i, ignoreScrollUntil: until, ignoreIoUntil: until })
+                      indexReasonRef.current = 'placeholder-promote'
+                      reanchorToIndex(i, { reason: 'placeholder-promote' })
                     } catch {}
-                    try { disableSnapNow(); indexReasonRef.current = 'placeholder-promote'; setIndex(i); reanchorToIndex(i) } catch { try { indexReasonRef.current = 'placeholder-promote'; setIndex(i) } catch {} }
                   }}
                 />
               )}
@@ -1546,7 +1565,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode]
+    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -1560,62 +1579,38 @@ export default function Feed() {
     } catch {}
   }, [index, items])
 
-  function reanchorToIndex(curIndex: number) {
+  function reanchorToIndex(curIndex: number, opts?: { immediate?: boolean; reason?: string }) {
     const r = railRef.current
-    if (!r) return
-    const slideEl = r.children[curIndex] as HTMLElement | undefined
-    const targetTop = slideEl ? slideEl.offsetTop : curIndex * getSlideHeight()
-    const lockMs = 300
-    logSlides('reanchor start', { index: curIndex, targetTop, lockMs })
-    // Imperatively force instant jump (no smooth, no snap) for this reanchor window
-    try { r.style.scrollBehavior = 'auto' } catch {}
-    try { r.style.scrollSnapType = 'none' } catch {}
-    // Keep state toggles for consistency, but imperative styles ensure immediate effect
-    setSmoothEnabled(false)
-    setSnapEnabled(false)
-    const until = Date.now() + lockMs
-    ignoreScrollUntil.current = until
-    ignoreIoUntil.current = until
-    logSlides('reanchor lock', { ignoreScrollUntil: until, ignoreIoUntil: until })
-    const id1 = requestAnimationFrame(() => {
-      try { r.scrollTo({ top: targetTop, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop }
-      setTimeout(() => {
-        const slideEl2 = r.children[curIndex] as HTMLElement | undefined
-        const targetTop2 = slideEl2 ? slideEl2.offsetTop : curIndex * getSlideHeight()
-        try { r.scrollTo({ top: targetTop2, left: 0, behavior: 'auto' }) } catch { r.scrollTop = targetTop2 }
-        // Restore snap immediately so finger swipes snap again (mandatory for the controlled jump only)
-        try { r.style.scrollSnapType = 'y mandatory' } catch {}
-        // Programmatic scroll behavior can remain 'auto'; React state may set 'smooth' later
-        try { r.style.scrollBehavior = 'auto' } catch {}
-        // Keep state toggles synchronized, but the inline style above guarantees instant jump
-        setTimeout(() => {
-          // After the jump, return to user-friendly defaults: auto behavior + proximity snaps
-          setSmoothEnabled(false)
-          setSnapEnabled(true)
-          // Ensure previous slide audio is stopped once docked
-          pauseNonCurrent(curIndex)
-          logSlides('reanchor end', { index: curIndex })
-        }, 50)
-      }, 180)
-    })
-    return () => cancelAnimationFrame(id1)
-  }
-
-  // Prepare the rail for an instant programmatic jump before the next paint
-  function disableSnapNow() {
-    const r = railRef.current
-    if (!r) return
-    logSlides('snap disable')
-    try { r.style.scrollBehavior = 'auto' } catch {}
-    try { r.style.scrollSnapType = 'none' } catch {}
+    if (!r || !items.length) return
+    const clamped = Math.max(0, Math.min(items.length - 1, curIndex))
+    const h = getSlideHeight()
+    const targetOffset = -clamped * h
+    const immediate = opts?.immediate ?? false
+    const reason = opts?.reason
+    logSlides('reanchor start', { index: clamped, offset: targetOffset, immediate, reason })
+    try {
+      if (immediate) {
+        r.style.transition = 'none'
+      } else {
+        r.style.transition = 'transform 220ms ease-out'
+      }
+    } catch {}
+    railOffsetRef.current = targetOffset
+    try { r.style.transform = `translate3d(0, ${targetOffset}px, 0)` } catch {}
+    if (reason) indexReasonRef.current = reason
+    if (clamped !== index) setIndex(clamped)
+    pauseNonCurrent(clamped)
+    logSlides('reanchor end', { index: clamped, offset: targetOffset, immediate, reason })
   }
 
   useEffect(() => {
-    return reanchorToIndex(index) || undefined
+    try { reanchorToIndex(index, { immediate: true, reason: 'orientation-change' }) } catch {}
   }, [isPortrait])
 
   useEffect(() => {
-    const handler = () => { reanchorToIndex(index) }
+    const handler = () => {
+      try { reanchorToIndex(index, { immediate: true, reason: 'orientationchange-event' }) } catch {}
+    }
     window.addEventListener('orientationchange', handler)
     return () => window.removeEventListener('orientationchange', handler)
   }, [index])
@@ -1624,43 +1619,11 @@ export default function Feed() {
   useEffect(() => {
     if (!items.length) return
     // Ensure we dock the current index (usually 0) immediately after items render
-    const id = window.setTimeout(() => { disableSnapNow(); reanchorToIndex(index) }, 50)
+    const id = window.setTimeout(() => {
+      try { reanchorToIndex(index, { immediate: true, reason: 'items-change' }) } catch {}
+    }, 50)
     return () => window.clearTimeout(id)
   }, [itemsFeedKeyRef.current])
-
-  useEffect(() => {
-    const r = railRef.current
-    if (!r) return
-    const slidesEl = Array.from(r.children) as HTMLElement[]
-    if (!slidesEl.length) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        const now = Date.now()
-        if (now < ignoreIoUntil.current) return
-        let best: IntersectionObserverEntry | null = null
-        for (const e of entries) {
-          if (!best || e.intersectionRatio > best.intersectionRatio) best = e
-        }
-        if (!best || best.target == null) return
-        const idx = slidesEl.indexOf(best.target as HTMLElement)
-        if (idx >= 0 && idx !== index) {
-          logSlides('io setIndex', { to: idx, from: index, ignoreIoUntil: ignoreIoUntil.current })
-          setIndex(idx)
-        }
-        entries.forEach((e) => {
-          const i = slidesEl.indexOf(e.target as HTMLElement)
-          const v = getVideoEl(i)
-          if (!v) return
-          if (e.intersectionRatio < 0.5 && i !== index) {
-            try { v.pause() } catch {}
-          }
-        })
-      },
-      { root: r, threshold: Array.from({ length: 11 }, (_, i) => i / 10) }
-    )
-    slidesEl.forEach((el) => io.observe(el))
-    return () => io.disconnect()
-  }, [items, unlocked])
 
   // Load likes summary for the active slide when index changes
   useEffect(() => {
@@ -1678,6 +1641,41 @@ export default function Feed() {
   useEffect(() => { /* disabled */ }, [index, schedulePersist])
 
   useEffect(() => { /* disabled */ }, [feedMode, index])
+
+  // Load more items when the active index approaches the end of the list.
+  useEffect(() => {
+    if (!cursor) return
+    if (loadingMore) return
+    if (!items.length) return
+    const remaining = items.length - index
+    if (remaining >= 5) return
+    setLoadingMore(true)
+    const loadMore = async () => {
+      try {
+        if (feedMode.kind === 'space') {
+          const { items: page, nextCursor } = await fetchSpaceFeed(feedMode.spaceId, { cursor })
+          const filtered = applyMineFilter(page, mineOnly, myUserId)
+          setItems((prev) => prev.concat(filtered))
+          setCursor(nextCursor)
+        } else if (feedMode.kind === 'global') {
+          const { items: page, nextCursor } = await fetchGlobalFeed({ cursor })
+          const filtered = applyMineFilter(page, mineOnly, myUserId)
+          setItems((prev) => prev.concat(filtered))
+          setCursor(nextCursor)
+        } else {
+          const { items: page, nextCursor: nextCursorStr } = await fetchGlobalFeed({ cursor })
+          const filtered = applyMineFilter(page, mineOnly, myUserId)
+          setItems((prev) => prev.concat(filtered))
+          setCursor(nextCursorStr)
+        }
+      } catch (err) {
+        console.error('load more failed', err)
+      } finally {
+        setLoadingMore(false)
+      }
+    }
+    loadMore().catch(() => setLoadingMore(false))
+  }, [cursor, feedMode, index, items.length, loadingMore, mineOnly, myUserId])
 
   // No shared video element; each slide manages its own via HLSVideo
 
@@ -1722,20 +1720,13 @@ export default function Feed() {
       firstVisitKeyRef.current = feedKey(target)
       setRestorePoster(null)
       setRestoring(true)
-      setSnapEnabled(false)
-      setSmoothEnabled(false)
       setIndex(0)
       setStartedMap({})
       setPlayingIndex(null)
-      const r = railRef.current; if (r) r.scrollTop = 0
-      const until = Date.now() + 700
-      ignoreScrollUntil.current = until
-      ignoreIoUntil.current = until
+      try { reanchorToIndex(0, { immediate: true, reason: 'space-switch' }) } catch {}
     } else {
       firstVisitKeyRef.current = null
     }
-    // Proactively disable snap/smooth for the upcoming programmatic jump
-    disableSnapNow()
     // Persist last selected feed; do not modify the URL params
     if (!canonicalTargetRef.current && spaceUlid) { writeLastFeed(spaceUlid) }
     setFeedMode({ kind: 'space', spaceId, spaceUlid })
@@ -1762,20 +1753,13 @@ export default function Feed() {
       firstVisitKeyRef.current = feedKey(target)
       setRestorePoster(null)
       setRestoring(true)
-      setSnapEnabled(false)
-      setSmoothEnabled(false)
       setIndex(0)
       setStartedMap({})
       setPlayingIndex(null)
-      const r = railRef.current; if (r) r.scrollTop = 0
-      const until = Date.now() + 700
-      ignoreScrollUntil.current = until
-      ignoreIoUntil.current = until
+      try { reanchorToIndex(0, { immediate: true, reason: 'global-switch' }) } catch {}
     } else {
       firstVisitKeyRef.current = null
     }
-    // Proactively disable snap/smooth for the upcoming programmatic jump
-    disableSnapNow()
     // Persist last selected feed as global
     if (!canonicalTargetRef.current) { writeLastFeedGlobal() }
     setFeedMode({ kind: 'global' })
@@ -1949,28 +1933,38 @@ export default function Feed() {
       )}
       {/* Tap-to-start overlay removed per requirements */}
       <div
-        ref={railRef}
-        onScroll={onScroll}
+        ref={viewportRef}
+        onWheel={onWheel}
         style={{
           position: 'fixed',
           top: 'var(--header-h, calc(env(safe-area-inset-top, 0px) + 28px))',
           left: 0,
           right: 0,
           bottom: 0,
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-y',
-          overscrollBehavior: 'contain',
-          // Use proximity for user scrolling; programmatic jumps temporarily override inline
-          scrollSnapType: snapEnabled ? 'y proximity' as const : 'none' as const,
-          scrollBehavior: smoothEnabled ? 'smooth' as const : 'auto' as const,
+          overflow: 'hidden',
+          WebkitOverflowScrolling: 'auto',
+          touchAction: 'none',
+          overscrollBehavior: 'none',
         }}
       >
-        {slides.length ? slides : (
-          <div style={{ color: '#fff', padding: 20 }}>
-            {initialLoading ? 'Loading…' : 'No videos yet.'}
-          </div>
-        )}
+        <div
+          ref={railRef}
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            willChange: 'transform',
+            transform: 'translate3d(0, 0, 0)',
+          }}
+        >
+          {slides.length ? (
+            slides
+          ) : (
+            <div style={{ color: '#fff', padding: 20 }}>
+              {initialLoading ? 'Loading…' : 'No videos yet.'}
+            </div>
+          )}
+        </div>
       </div>
       {modalOpen && (
         <div
