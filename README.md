@@ -9,6 +9,11 @@ Start Here
 - docs/Architecture.md — modules, flows, diagrams
 - docs/API.md — endpoints and examples
 
+Build & Run (local development)
+- `npm run build` — compile the Node.js/TypeScript service.
+- `npm run web:build` — compile the service and rebuild the frontend SPA bundle under `public/app` (run this after UI changes).
+- `npm run serve` — start the development server (serves the API and SPA shell).
+
 Useful Pages
 - Uploader: / (upload.html)
 - Publisher: /publish.html

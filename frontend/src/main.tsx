@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish } from './ui/routes'
+import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
@@ -22,6 +22,7 @@ const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProductionsPage = React.lazy(loadProductions)
+const ProfilePage = React.lazy(loadProfile)
 import Layout from './ui/Layout'
 import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
 import debug from './debug'
@@ -157,6 +158,14 @@ if (path === '/' || path === '') {
     <Layout label="Publish">
       <Suspense fallback={<PublishSkeleton />}> 
         <PublishPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path === '/profile' || path === '/profile/') {
+  root.render(
+    <Layout label="Profile">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading profile…</div>}> 
+        <ProfilePage />
       </Suspense>
     </Layout>
   )

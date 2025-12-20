@@ -144,6 +144,48 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS require_review_global TINYINT(1) NOT NULL DEFAULT 0`);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      display_name VARCHAR(255) NOT NULL,
+      avatar_url VARCHAR(512) NULL,
+      bio TEXT NULL,
+      is_public TINYINT(1) NOT NULL DEFAULT 1,
+      show_bio TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_profiles_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_credibility (
+      user_id BIGINT UNSIGNED NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,
+      label VARCHAR(64) NOT NULL,
+      effective_from DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      effective_to DATETIME NULL,
+      PRIMARY KEY (user_id, space_id),
+      KEY idx_sc_space (space_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_credibility_log (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,
+      label VARCHAR(64) NOT NULL,
+      reason VARCHAR(255) NULL,
+      source VARCHAR(64) NOT NULL,
+      moderator_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_scl_user_space (user_id, space_id),
+      KEY idx_scl_space (space_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS roles (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(64) NOT NULL UNIQUE

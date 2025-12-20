@@ -22,6 +22,10 @@ pagesRouter.get('/uploads', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/profile', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 // Help UI (SPA shell)
 pagesRouter.get('/help', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
