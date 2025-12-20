@@ -32,7 +32,7 @@ Decisions (carried + new)
 - Use object-fit contain for robust sizing; allow portrait assets to use cover in portrait for edge-to-edge.
 
 Changes Since Last
-- Affects: agents/README.md; agents/git.md; agents/handoff/Handoff.md; agents/handoff_process.md; agents/implementation_planning.md; agents/implementation/plan_01.md; agents/implementation/plan_02.md; agents/implementation/plan_03.md; agents/readme_maintenance.md; agents/db_access.md; src/db.ts; src/features/profiles/repo.ts; src/features/profiles/service.ts; src/routes/profiles.ts; frontend/src/ui/routes.ts; frontend/src/main.tsx; frontend/src/app/Profile.tsx
+- Affects: agents/README.md; agents/git.md; agents/handoff/Handoff.md; agents/handoff_process.md; agents/implementation_planning.md; agents/implementation/plan_01.md; agents/implementation/plan_02.md; agents/implementation/plan_03.md; agents/implementation/plan_04.md; agents/readme_maintenance.md; agents/db_access.md; docs/Configuration.md; docs/Operations.md; src/db.ts; src/features/profiles/repo.ts; src/features/profiles/service.ts; src/routes/profiles.ts; src/routes/pages.ts; frontend/src/ui/routes.ts; frontend/src/main.tsx; frontend/src/app/Profile.tsx; frontend/src/menu/ContextPicker.tsx; frontend/src/menu/contexts/ProfileMenu.tsx
 - Routes: /api/profile/me; /api/profile/:userId; /profile
 - DB: add profiles, space_credibility, and space_credibility_log tables via idempotent ensureSchema updates
 - Flags: none
@@ -158,12 +158,55 @@ Meta:
 - DB: none
 - Flags: none
 
+Subject: feat(avatar): add signed avatar upload and finalize APIs
+
+Context:
+- Provide backend support for user avatar uploads stored under the OUTPUT_BUCKET using the new profiles/avatars prefix.
+
+Approach:
+- Added `src/features/profiles/avatar.ts` to create presigned S3 POSTs for `profiles/avatars/{userId}/{yyyy-mm}/{uuid}.ext` and implemented `/api/profile/avatar/sign` and `/api/profile/avatar/complete` routes that update `profiles.avatar_url` for the current user.
+
+Impact:
+- Enables the upcoming Edit Avatar UI to upload and persist profile images without touching the main uploads pipeline.
+
+Tests:
+- Not yet executed; API tested via code inspection only.
+
+Meta:
+- Affects: src/features/profiles/avatar.ts; src/routes/profiles.ts
+- Routes: /api/profile/avatar/sign; /api/profile/avatar/complete
+- DB: profiles (avatar_url)
+- Flags: none
+
+Subject: docs(avatars): document avatar storage layout
+
+Context:
+- Capture where user avatar images live in S3/CloudFront so future avatar flows have a clear, consistent target.
+
+Approach:
+- Updated `docs/Configuration.md` and `docs/Operations.md` to describe avatar storage under the public OUTPUT_BUCKET using a `profiles/avatars/{userId}/{yyyy-mm}/{uuid}.jpg` prefix and CloudFront-backed URLs.
+
+Impact:
+- Provides an explicit, documented convention for profile image storage without changing application behavior yet.
+
+Tests:
+- N/A (documentation only).
+
+Meta:
+- Affects: docs/Configuration.md; docs/Operations.md
+- Routes: none
+- DB: none
+- Flags: none
+
 Thread Plan (subset of Backlog)
 - [ ] Preserve currentTime on fullscreen/source swaps (feed)
 - [ ] Apply .btn utilities to remaining admin pages (optional)
 - [ ] Add utilities.css (abs-fill, grid-center) and migrate small pockets
 
 Work Log (optional, terse; reverse‑chronological)
+- 2025-12-20 — [ui] Added `/profile/avatar` SPA page for avatar upload with signed S3 POST and wired it into the Profile menu as “Edit Avatar”.
+- 2025-12-20 — [api] Implemented signed avatar upload and finalize endpoints for user profile images.
+- 2025-12-20 — [docs] Documented avatar storage layout and prefix under OUTPUT_BUCKET in Configuration/Operations docs.
 - 2025-12-20 — [ui] Added Profile context to Menu Selector (`ContextPicker`/`SharedNav`) and ProfileMenu with link to `/profile`.
 - 2025-12-20 — [ui] Implemented Profile form UI at `/profile` backed by `/api/me` and `/api/profile/me`, with display name, avatar URL, bio, and public/visibility toggles.
 - 2025-12-20 — [ui] Added `/profile` SPA route and placeholder Profile page component.

@@ -6,6 +6,7 @@ export default function ProfileMenu(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
   const items = [
     { label: 'Edit Profile', href: '/profile' },
+    { label: 'Edit Avatar', href: '/profile/avatar' },
   ]
   return (
     <div className={styles.list}>
@@ -24,4 +25,3 @@ export default function ProfileMenu(props: { onNavigate?: () => void }) {
     </div>
   )
 }
-

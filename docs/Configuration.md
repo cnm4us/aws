@@ -23,3 +23,7 @@ Notes
 - dotenv is loaded at startup. Values in the environment override .env.
 - For CloudFront, ACM certificates must be in us-east-1.
 
+Avatar storage
+- User avatar images are stored in the public OUTPUT_BUCKET (behind CloudFront) under a dedicated prefix, for example:
+  - `profiles/avatars/{userId}/{yyyy-mm}/{uuid}.jpg`
+- Application code uses CLOUDFRONT_DOMAIN + object key to build public avatar URLs.

@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile } from './ui/routes'
+import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
@@ -23,6 +23,7 @@ const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
+const ProfileAvatarPage = React.lazy(loadProfileAvatar)
 import Layout from './ui/Layout'
 import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
 import debug from './debug'
@@ -158,6 +159,14 @@ if (path === '/' || path === '') {
     <Layout label="Publish">
       <Suspense fallback={<PublishSkeleton />}> 
         <PublishPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path === '/profile/avatar' || path === '/profile/avatar/') {
+  root.render(
+    <Layout label="Edit Avatar">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading avatar editor…</div>}> 
+        <ProfileAvatarPage />
       </Suspense>
     </Layout>
   )

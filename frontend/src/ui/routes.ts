@@ -7,6 +7,7 @@ export const loadUploadNew = () => import('../app/UploadNew')
 export const loadProductions = () => import('../app/Productions')
 export const loadPublish = () => import('../app/Publish')
 export const loadProfile = () => import('../app/Profile')
+export const loadProfileAvatar = () => import('../app/ProfileAvatar')
 export const loadAdminModerationGroups = () => import('../app/AdminModerationGroups')
 export const loadAdminModerationChannels = () => import('../app/AdminModerationChannels')
 
@@ -17,6 +18,7 @@ export function prefetchForHref(href: string) {
     else if (href.startsWith('/uploads')) { void loadUploads() }
     else if (href.startsWith('/productions')) { void loadProductions() }
     else if (href.startsWith('/publish')) { void loadPublish() }
+     else if (href.startsWith('/profile/avatar')) { void loadProfileAvatar() }
      else if (href.startsWith('/profile')) { void loadProfile() }
     else if (href.startsWith('/admin/moderation/groups')) { void loadAdminModerationGroups() }
     else if (href.startsWith('/admin/moderation/channels')) { void loadAdminModerationChannels() }

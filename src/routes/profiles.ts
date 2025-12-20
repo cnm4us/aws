@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { requireAuth } from '../middleware/auth';
 import * as profileService from '../features/profiles/service';
+import * as avatarService from '../features/profiles/avatar';
 
 export const profilesRouter = Router();
 
@@ -76,5 +77,42 @@ profilesRouter.get('/api/profile/:userId', async (req, res) => {
     res.json({ profile: result });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_get_profile', detail: String(err?.message || err) });
+  }
+});
+
+profilesRouter.post('/api/profile/avatar/sign', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const body = (req.body || {}) as any;
+    const filename = String(body.filename || '').trim();
+    const contentType = body.contentType ? String(body.contentType) : undefined;
+    const sizeBytes = body.sizeBytes != null ? Number(body.sizeBytes) : undefined;
+    const result = await avatarService.createSignedAvatarUpload(Number(user.id), { filename, contentType, sizeBytes });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: 'failed_to_sign_avatar', detail: String(err?.message || err) });
+  }
+});
+
+profilesRouter.post('/api/profile/avatar/complete', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+    const body = (req.body || {}) as any;
+    const key = String(body.key || '').trim();
+    if (!key) return res.status(400).json({ error: 'missing_key' });
+    const fallbackName =
+      (user.display_name && String(user.display_name).trim()) ||
+      (user.email ? String(user.email).split('@')[0] : null) ||
+      null;
+    const result = await avatarService.finalizeAvatar(Number(user.id), key, fallbackName);
+    res.json(result);
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    if (msg === 'invalid_avatar_key') {
+      return res.status(400).json({ error: 'invalid_avatar_key' });
+    }
+    res.status(500).json({ error: 'failed_to_complete_avatar', detail: msg });
   }
 });
