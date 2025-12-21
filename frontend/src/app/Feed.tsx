@@ -241,6 +241,8 @@ export default function Feed() {
   const [likesCountMap, setLikesCountMap] = useState<Record<number, number>>({})
   const [likedMap, setLikedMap] = useState<Record<number, boolean>>({})
   const [likeBusy, setLikeBusy] = useState<Record<number, boolean>>({})
+  // Per-space follow state keyed by "spaceId:userId"
+  const [followMap, setFollowMap] = useState<Record<string, boolean>>({})
   // Comments state
   const [commentsCountMap, setCommentsCountMap] = useState<Record<number, number>>({})
   const [commentedByMeMap, setCommentedByMeMap] = useState<Record<number, boolean>>({})
@@ -331,6 +333,11 @@ export default function Feed() {
     return flattenSpaces(spaceList).find((s) => s.id === spaceId) || null
   }
 
+  function followKey(spaceId: number | null, userId: number | null): string | null {
+    if (!spaceId || !userId) return null
+    return `${spaceId}:${userId}`
+  }
+
   async function ensureLikeSummary(publicationId: number | null | undefined) {
     if (!publicationId || !isAuthed) return
     if (likesCountMap[publicationId] != null && likedMap[publicationId] != null) return
@@ -403,6 +410,10 @@ export default function Feed() {
         if (!res.ok) return
         const data = await res.json()
         setPeekFollowing(Boolean(data?.following))
+        const key = followKey(spaceId, uid)
+        if (key) {
+          setFollowMap((m) => ({ ...m, [key]: Boolean(data?.following) }))
+        }
         const count = typeof data?.followersCount === 'number' ? Number(data.followersCount) : null
         setPeekFollowersCount(count)
       } catch {
@@ -1367,6 +1378,17 @@ export default function Feed() {
           if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase()
           return (parts[0][0] + parts[1][0]).toUpperCase()
         })()
+        const slideSpaceId = feedMode.kind === 'space' ? feedMode.spaceId : (it.spaceId ?? null)
+        const slideSpace = slideSpaceId != null ? findSpaceSummaryById(slideSpaceId) : null
+        const fk = followKey(slideSpaceId, it.ownerId ?? null)
+        const slideFollowing = fk ? !!followMap[fk] : false
+        const canInlineFollow =
+          !!slideSpace &&
+          (slideSpace.type === 'group' || slideSpace.type === 'channel') &&
+          isAuthed &&
+          it.ownerId != null &&
+          it.ownerId !== myUserId
+        const showInlineFollow = canInlineFollow && !slideFollowing
         return (
           <div
             key={slideId}
@@ -1580,32 +1602,74 @@ export default function Feed() {
                     top: '40%',
                     transform: 'translateY(-50%)',
                     display: 'grid',
-                    gap: 12,
+                    gap: 34,
                     alignItems: 'center',
                     justifyItems: 'center',
                     zIndex: 5,
                   }}
                 >
                   {it.ownerId != null && (
-                    <button
-                      type="button"
-                      className={styles.authorAvatar}
-                      onClick={() =>
-                        openProfilePeek(
-                          it.ownerId ?? null,
-                          feedMode.kind === 'space' ? feedMode.spaceId : (it.spaceId ?? null),
-                          it.ownerName ?? null,
-                          it.ownerAvatarUrl ?? null,
-                        )
-                      }
-                      title={it.ownerName ? `View ${it.ownerName}` : 'View author'}
-                    >
-                      {it.ownerAvatarUrl ? (
-                        <img src={it.ownerAvatarUrl} alt={it.ownerName || it.ownerEmail || 'Author avatar'} />
-                      ) : (
-                        <span className={styles.authorInitials}>{initials}</span>
+                    <div className={styles.authorAvatarWrap}>
+                      <button
+                        type="button"
+                        className={styles.authorAvatar}
+                        onClick={() =>
+                          openProfilePeek(
+                            it.ownerId ?? null,
+                            slideSpaceId,
+                            it.ownerName ?? null,
+                            it.ownerAvatarUrl ?? null,
+                          )
+                        }
+                        title={it.ownerName ? `View ${it.ownerName}` : 'View author'}
+                      >
+                        {it.ownerAvatarUrl ? (
+                          <img src={it.ownerAvatarUrl} alt={it.ownerName || it.ownerEmail || 'Author avatar'} />
+                        ) : (
+                          <span className={styles.authorInitials}>{initials}</span>
+                        )}
+                      </button>
+                      {showInlineFollow && slideSpaceId != null && (
+                        <button
+                          type="button"
+                          className={styles.authorFollowButton}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const uid = it.ownerId
+                            if (!uid) return
+                            const sid = slideSpaceId
+                            const key = followKey(sid, uid)
+                            if (!sid || !key) return
+                            const csrf = getCsrfToken()
+                            // optimistic: mark as following so button disappears
+                            setFollowMap((m) => ({ ...m, [key]: true }))
+                            ;(async () => {
+                              try {
+                                const res = await fetch(`/api/spaces/${sid}/users/${uid}/follow`, {
+                                  method: 'POST',
+                                  headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+                                  credentials: 'same-origin',
+                                })
+                                if (!res.ok) throw new Error('inline_follow_failed')
+                                const data = await res.json()
+                                const serverFollowing = Boolean(data?.following)
+                                setFollowMap((m) => ({ ...m, [key]: serverFollowing }))
+                              } catch {
+                                // rollback
+                                setFollowMap((m) => {
+                                  const copy = { ...m }
+                                  delete copy[key]
+                                  return copy
+                                })
+                              }
+                            })()
+                          }}
+                          aria-label="Follow author in this space"
+                        >
+                          +
+                        </button>
                       )}
-                    </button>
+                    </div>
                   )}
                   <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
                     <button
@@ -1732,7 +1796,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode]
+    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode, followMap, spaceList, myUserId]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -2547,6 +2611,10 @@ export default function Feed() {
                       const csrf = getCsrfToken()
                       setPeekFollowBusy(true)
                       setPeekFollowing(!currentlyFollowing)
+                      const fk = followKey(sid ?? null, uid ?? null)
+                      if (fk) {
+                        setFollowMap((m) => ({ ...m, [fk]: !currentlyFollowing }))
+                      }
                       setPeekFollowersCount((prev) => {
                         const base = typeof prev === 'number' ? prev : 0
                         const next = base + (currentlyFollowing ? -1 : 1)
@@ -2562,7 +2630,11 @@ export default function Feed() {
                           })
                           if (!res.ok) throw new Error('follow_toggle_failed')
                           const data = await res.json()
-                          setPeekFollowing(Boolean(data?.following))
+                          const serverFollowing = Boolean(data?.following)
+                          setPeekFollowing(serverFollowing)
+                          if (fk) {
+                            setFollowMap((m) => ({ ...m, [fk]: serverFollowing }))
+                          }
                           const count =
                             data && typeof data.followersCount === 'number'
                               ? Number(data.followersCount)
@@ -2571,6 +2643,9 @@ export default function Feed() {
                         } catch {
                           // rollback
                           setPeekFollowing(currentlyFollowing)
+                          if (fk) {
+                            setFollowMap((m) => ({ ...m, [fk]: currentlyFollowing }))
+                          }
                           setPeekFollowersCount((prev) => {
                             const base = typeof prev === 'number' ? prev : 0
                             const next = base + (currentlyFollowing ? 1 : -1)
