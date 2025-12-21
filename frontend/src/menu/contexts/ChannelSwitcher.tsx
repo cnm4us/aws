@@ -76,11 +76,6 @@ export default function ChannelSwitcher(props: {
     return <div className={styles.loading}>Login to switch spaces.</div>
   }
 
-  const gotoGlobal = () => {
-    if (onSelectGlobal) return onSelectGlobal()
-    window.location.href = '/'
-  }
-
   const gotoSpace = (spaceId: number) => {
     if (onSelectSpace) return onSelectSpace(spaceId)
     // Outside Feed, navigate to canonical URLs when possible
@@ -150,15 +145,10 @@ export default function ChannelSwitcher(props: {
 
   return (
     <div className={styles.list}>
-      <button onClick={gotoGlobal} className={clsx(styles.btn, styles.variantGlobal, isGlobalActive && styles.btnActive)}>
-        Global
-        <span className={styles.badge}>Feed</span>
-      </button>
-
       {loading && <div className={styles.loading}>Loading…</div>}
       {error && <div className={styles.error}>Failed to load spaces.</div>}
 
-      {spaces?.global && renderSpaceButton(spaces.global, 'Global')}
+      {spaces?.global && renderSpaceButton(spaces.global)}
       {spaces?.personal && renderSpaceButton(spaces.personal, 'Personal')}
       {entries.groups.length > 0 && (<div className={styles.sectionLabel}>Groups</div>)}
       {entries.groups.map((g) => renderSpaceButton(g))}
