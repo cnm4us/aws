@@ -861,7 +861,11 @@ export default function Feed() {
     if (!spaceList) return
     try {
       const pool = target.kind === 'group' ? (spaceList?.groups || []) : (spaceList?.channels || [])
-      const match = pool.find((s) => (s.slug || '') === target.slug)
+      let match = pool.find((s) => (s.slug || '') === target.slug)
+      // Special-case: Global Feed channel may be exposed via `spaceList.global`
+      if (!match && target.kind === 'channel' && spaceList.global && (spaceList.global.slug || '') === target.slug) {
+        match = spaceList.global
+      }
       // Mark init done to prevent LS-based restore when canonical is present
       didInitLastFeedRef.current = true
       if (match) {

@@ -97,7 +97,6 @@ const PublishPage: React.FC = () => {
   const productionId = useMemo(() => parseProductionId(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
-  const [selection, setSelection] = useState<'all' | 'custom'>('custom')
   const [selectedSpaces, setSelectedSpaces] = useState<Record<number, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -163,13 +162,12 @@ const PublishPage: React.FC = () => {
         setUpload(uploadJson)
         setOptions(optionsJson.spaces || [])
         const published = pubs
-          .filter((p) => p.status === 'published' || p.status === 'approved')
+          .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
           .reduce<Record<number, boolean>>((acc, p) => {
             acc[p.spaceId] = true
             return acc
           }, {})
         setSelectedSpaces(published)
-        setSelection(Object.keys(published).length > 0 ? 'custom' : 'all')
       } catch (err: any) {
         if (cancelled) return
         setError(err?.message || 'Failed to load publish data')
@@ -185,7 +183,6 @@ const PublishPage: React.FC = () => {
 
   const toggleSpace = useCallback((spaceId: number) => {
     setSelectedSpaces((prev) => ({ ...prev, [spaceId]: !prev[spaceId] }))
-    setSelection('custom')
   }, [])
 
   const refreshUpload = useCallback(async () => {
@@ -196,12 +193,27 @@ const PublishPage: React.FC = () => {
         if (!pubsRes.ok) throw new Error('Failed to refresh publications')
         const pubsJson = await pubsRes.json()
         const pubList: PublicationSummary[] = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
-        setUpload((prev) => prev ? { ...prev, publications: pubList } : prev)
+        setUpload((prev) => (prev ? { ...prev, publications: pubList } : prev))
+        const published = pubList
+          .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
+          .reduce<Record<number, boolean>>((acc, p) => {
+            acc[p.spaceId] = true
+            return acc
+          }, {})
+        setSelectedSpaces(published)
       } else if (uploadId) {
         const res = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
         if (!res.ok) throw new Error('Failed to refresh upload')
         const json = await res.json()
         setUpload(json)
+        const pubs: PublicationSummary[] = Array.isArray(json?.publications) ? json.publications : []
+        const published = pubs
+          .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
+          .reduce<Record<number, boolean>>((acc, p) => {
+            acc[p.spaceId] = true
+            return acc
+          }, {})
+        setSelectedSpaces(published)
       }
     } catch (err) {
       console.error('refresh upload failed', err)
@@ -210,14 +222,13 @@ const PublishPage: React.FC = () => {
     }
   }, [uploadId, productionId])
 
-  const selectedSpaceIds = useMemo(() => {
-    if (selection === 'all') {
-      return options.map((s) => s.id)
-    }
-    return Object.entries(selectedSpaces)
-      .filter(([_, checked]) => checked)
-      .map(([spaceId]) => Number(spaceId))
-  }, [selection, options, selectedSpaces])
+  const selectedSpaceIds = useMemo(
+    () =>
+      Object.entries(selectedSpaces)
+        .filter(([_, checked]) => checked)
+        .map(([spaceId]) => Number(spaceId)),
+    [selectedSpaces],
+  )
 
   const handlePublish = useCallback(async () => {
     if (!uploadId && !productionId) return
@@ -234,86 +245,123 @@ const PublishPage: React.FC = () => {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
       if (productionId) {
-        // Publish this production to each selected space
-        for (const sid of spaces) {
-          await fetch(`/api/productions/${productionId}/publications`, {
+        // Load current publications for this production so we can compute diffs
+        const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
+        const pubsJson = await pubsRes.json().catch(() => ({}))
+        const pubs: Array<PublicationSummary & { id?: number }> = Array.isArray(pubsJson?.publications)
+          ? pubsJson.publications
+          : []
+        const currentActive = pubs.filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
+        const currentSet = new Set(currentActive.map((p) => Number(p.spaceId)))
+        const desiredSet = new Set(spaces)
+
+        const toPublish: number[] = []
+        const toUnpublish: Array<{ spaceId: number; publicationId: number }> = []
+
+        for (const sid of desiredSet) {
+          if (!currentSet.has(sid)) {
+            toPublish.push(sid)
+          }
+        }
+        for (const pub of currentActive) {
+          const sid = Number(pub.spaceId)
+          if (!desiredSet.has(sid) && pub.id) {
+            toUnpublish.push({ spaceId: sid, publicationId: Number(pub.id) })
+          }
+        }
+
+        if (!toPublish.length && !toUnpublish.length) {
+          setSaveMessage('No changes to publish.')
+          return
+        }
+
+        for (const sid of toPublish) {
+          const res = await fetch(`/api/productions/${productionId}/publications`, {
             method: 'POST',
             credentials: 'same-origin',
             headers,
             body: JSON.stringify({ spaceId: sid }),
           })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error || 'Publish failed')
+          }
+        }
+
+        for (const item of toUnpublish) {
+          const res = await fetch(`/api/publications/${item.publicationId}/unpublish`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({}),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error || 'Unpublish failed')
+          }
         }
       } else if (uploadId) {
-        const res = await fetch(`/api/uploads/${uploadId}/publish`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers,
-          body: JSON.stringify({ spaces }),
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data?.error || 'Publish failed')
+        const pubs: PublicationSummary[] = Array.isArray(upload?.publications) ? upload.publications! : []
+        const currentActiveSpaceIds = pubs
+          .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
+          .map((p) => p.spaceId)
+        const currentSet = new Set(currentActiveSpaceIds)
+        const desiredSet = new Set(spaces)
+
+        const toPublish: number[] = []
+        const toUnpublish: number[] = []
+
+        for (const sid of desiredSet) {
+          if (!currentSet.has(sid)) {
+            toPublish.push(sid)
+          }
+        }
+
+        for (const sid of currentSet) {
+          if (!desiredSet.has(sid)) {
+            toUnpublish.push(sid)
+          }
+        }
+
+        if (!toPublish.length && !toUnpublish.length) {
+          setSaveMessage('No changes to publish.')
+          return
+        }
+
+        if (toPublish.length) {
+          const res = await fetch(`/api/uploads/${uploadId}/publish`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({ spaces: toPublish }),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error || 'Publish failed')
+          }
+        }
+
+        if (toUnpublish.length) {
+          const res = await fetch(`/api/uploads/${uploadId}/unpublish`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({ spaces: toUnpublish }),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error || 'Unpublish failed')
+          }
         }
       }
-      setSaveMessage('Publish request sent.')
+      setSaveMessage('Publish settings updated.')
       await refreshUpload()
     } catch (err: any) {
       setSaveError(err?.message || 'Publish failed')
     } finally {
       setSaving(false)
     }
-  }, [uploadId, productionId, selectedSpaceIds, refreshUpload])
-
-  const handleUnpublish = useCallback(async () => {
-    if (!uploadId && !productionId) return
-    const spaces = selectedSpaceIds
-    if (!spaces.length) {
-      setSaveError('Select at least one space')
-      return
-    }
-    setSaving(true)
-    setSaveMessage(null)
-    setSaveError(null)
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const csrf = getCsrfToken()
-      if (csrf) headers['x-csrf-token'] = csrf
-      if (productionId) {
-        // Fetch current publications for this production and unpublish those in selected spaces
-        const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
-        const pubsJson = await pubsRes.json().catch(() => ({}))
-        const pubs: Array<PublicationSummary & { id?: number }> = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
-        for (const sid of spaces) {
-          const match = pubs.find((p) => Number(p.spaceId) === sid)
-          if (match && match.id) {
-            await fetch(`/api/publications/${Number(match.id)}/unpublish`, {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers,
-              body: JSON.stringify({}),
-            })
-          }
-        }
-      } else if (uploadId) {
-        const res = await fetch(`/api/uploads/${uploadId}/unpublish`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers,
-          body: JSON.stringify({ spaces }),
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data?.error || 'Unpublish failed')
-        }
-      }
-      setSaveMessage('Unpublish request sent.')
-      await refreshUpload()
-    } catch (err: any) {
-      setSaveError(err?.message || 'Unpublish failed')
-    } finally {
-      setSaving(false)
-    }
-  }, [uploadId, productionId, selectedSpaceIds, refreshUpload])
+  }, [uploadId, productionId, selectedSpaceIds, refreshUpload, upload])
 
   if (!uploadId && !productionId) {
     return (
@@ -380,70 +428,112 @@ const PublishPage: React.FC = () => {
             )}
           </div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <section style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: 18, marginBottom: 12 }}>Published To</h2>
-              {(upload.publications || []).length === 0 ? (
-                <p style={{ color: '#888' }}>This video has not been published yet.</p>
-              ) : (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {(upload.publications || []).map((pub, idx) => (
-                    <li key={`${pub.spaceId}-${idx}`} style={{ marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>{pub.spaceName || `Space ${pub.spaceId}`}</span>
-                      <span style={{ color: '#888', marginLeft: 6 }}>({pub.spaceType})</span>
-                      <span style={{ color: '#aaa', marginLeft: 10 }}>{pub.status}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
             <section>
               <h2 style={{ fontSize: 18, marginBottom: 12 }}>Publish To</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="radio"
-                    name="publishTarget"
-                    value="all"
-                    checked={selection === 'all'}
-                    onChange={() => setSelection('all')}
-                  />
-                  <span>All eligible spaces</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="radio"
-                    name="publishTarget"
-                    value="custom"
-                    checked={selection === 'custom'}
-                    onChange={() => setSelection('custom')}
-                  />
-                  <span>Select spaces individually</span>
-                </label>
+              <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: '2px solid #222' }}>
+                {options.length === 0 ? (
+                  <p style={{ color: '#888' }}>No publishable spaces available.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {(() => {
+                      const personal = options.filter((s) => s.type === 'personal')
+                      const globalSpace = options.find((s) => s.slug === 'global' || s.slug === 'global-feed') || null
+                      const globalId = globalSpace?.id ?? null
+                      const groups = options.filter((s) => s.type === 'group' && s.id !== globalId)
+                      const channels = options.filter((s) => s.type === 'channel' && s.id !== globalId)
+
+                      const rows: JSX.Element[] = []
+
+                      if (personal.length) {
+                        const p = personal[0]
+                        rows.push(
+                          <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!selectedSpaces[p.id]}
+                              onChange={() => toggleSpace(p.id)}
+                            />
+                            <span>Personal</span>
+                          </label>,
+                        )
+                      }
+
+                      if (globalSpace) {
+                        rows.push(
+                          <label key={globalSpace.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!selectedSpaces[globalSpace.id]}
+                              onChange={() => toggleSpace(globalSpace.id)}
+                            />
+                            <span>Global Feed</span>
+                          </label>,
+                        )
+                      }
+
+                      if (groups.length) {
+                        rows.push(
+                          <div
+                            key="groups-header"
+                            style={{
+                              marginTop: 10,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              textTransform: 'uppercase',
+                              opacity: 0.7,
+                            }}
+                          >
+                            Groups
+                          </div>,
+                        )
+                        groups.forEach((space) => {
+                          rows.push(
+                            <label key={space.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input
+                                type="checkbox"
+                                checked={!!selectedSpaces[space.id]}
+                                onChange={() => toggleSpace(space.id)}
+                              />
+                              <span>{space.name}</span>
+                            </label>,
+                          )
+                        })
+                      }
+
+                      if (channels.length) {
+                        rows.push(
+                          <div
+                            key="channels-header"
+                            style={{
+                              marginTop: 10,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              textTransform: 'uppercase',
+                              opacity: 0.7,
+                            }}
+                          >
+                            Channels
+                          </div>,
+                        )
+                        channels.forEach((space) => {
+                          rows.push(
+                            <label key={space.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input
+                                type="checkbox"
+                                checked={!!selectedSpaces[space.id]}
+                                onChange={() => toggleSpace(space.id)}
+                              />
+                              <span>{space.name}</span>
+                            </label>,
+                          )
+                        })
+                      }
+
+                      return rows
+                    })()}
+                  </div>
+                )}
               </div>
-              {selection === 'custom' && (
-                <div style={{ marginTop: 16, paddingLeft: 12, borderLeft: '2px solid #222' }}>
-                  {options.length === 0 ? (
-                    <p style={{ color: '#888' }}>No publishable spaces available.</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {options.map((space) => (
-                        <label key={space.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!selectedSpaces[space.id]}
-                            onChange={() => toggleSpace(space.id)}
-                          />
-                          <span>
-                            {space.name}
-                            <span style={{ color: '#888', marginLeft: 8 }}>({space.type})</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <button
                   onClick={() => handlePublish()}
@@ -459,23 +549,7 @@ const PublishPage: React.FC = () => {
                     opacity: saving ? 0.7 : 1,
                   }}
                 >
-                  {saving ? 'Publishing…' : 'Publish Selection'}
-                </button>
-                <button
-                  onClick={() => handleUnpublish()}
-                  disabled={saving || selectedSpaceIds.length === 0}
-                  style={{
-                    background: 'transparent',
-                    color: '#ff9b9b',
-                    border: '1px solid rgba(255,155,155,0.6)',
-                    borderRadius: 10,
-                    padding: '10px 18px',
-                    fontWeight: 600,
-                    cursor: saving ? 'default' : 'pointer',
-                    opacity: saving ? 0.7 : 1,
-                  }}
-                >
-                  Unpublish Selection
+                  {saving ? 'Publishing…' : 'Publish'}
                 </button>
               </div>
             </section>

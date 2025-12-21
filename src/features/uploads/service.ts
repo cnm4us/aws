@@ -2,6 +2,7 @@ import { enhanceUploadRow } from '../../utils/enhance'
 import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
+import * as spacesRepo from '../spaces/repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { getPool } from '../../db'
@@ -83,6 +84,21 @@ export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
   const publishable = await repo.listSpacesUserCanPublish(currentUserId)
   for (const row of publishable) {
     if (!spaces.some((s) => s.id === row.id)) spaces.push(row)
+  }
+
+  // Include a Global Feed entry when a global space candidate exists and the user has
+  // global publish permission.
+  const canPublishGlobal = await can(currentUserId, PERM.FEED_PUBLISH_GLOBAL, { checker })
+  if (canPublishGlobal) {
+    const globalCandidate = await spacesRepo.findGlobalSpaceCandidate()
+    if (globalCandidate && !spaces.some((s) => s.id === globalCandidate.id)) {
+      spaces.push({
+        id: Number(globalCandidate.id),
+        name: String(globalCandidate.name || 'Global Feed'),
+        slug: String(globalCandidate.slug || 'global'),
+        type: String(globalCandidate.type || 'channel'),
+      })
+    }
   }
 
   return {

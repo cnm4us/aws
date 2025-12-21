@@ -82,15 +82,28 @@ export default function ProfileAvatar() {
       setError('Please choose an image file.')
       return
     }
-    if (previewUrl) {
-      try { URL.revokeObjectURL(previewUrl) } catch {}
-    }
-    setFile(f)
-    setError(null)
-    setMessage(null)
-    setUploadProgress(null)
-    const url = URL.createObjectURL(f)
-    setPreviewUrl(url)
+    normalizeImage(f).then((normalized) => {
+      if (previewUrl) {
+        try { URL.revokeObjectURL(previewUrl) } catch {}
+      }
+      setFile(normalized)
+      setError(null)
+      setMessage(null)
+      setUploadProgress(null)
+      const url = URL.createObjectURL(normalized)
+      setPreviewUrl(url)
+    }).catch(() => {
+      // Fallback: use original file if normalization fails
+      if (previewUrl) {
+        try { URL.revokeObjectURL(previewUrl) } catch {}
+      }
+      setFile(f)
+      setError(null)
+      setMessage(null)
+      setUploadProgress(null)
+      const url = URL.createObjectURL(f)
+      setPreviewUrl(url)
+    })
   }
 
   async function onSave(e: React.FormEvent) {
@@ -306,4 +319,63 @@ export default function ProfileAvatar() {
       </form>
     </div>
   )
+}
+
+const MAX_AVATAR_DIM = 512
+
+async function normalizeImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        try {
+          const { width, height } = img
+          if (!width || !height) {
+            URL.revokeObjectURL(url)
+            resolve(file)
+            return
+          }
+          const scale = Math.min(MAX_AVATAR_DIM / width, MAX_AVATAR_DIM / height, 1)
+          if (scale >= 1) {
+            URL.revokeObjectURL(url)
+            resolve(file)
+            return
+          }
+          const targetW = Math.round(width * scale)
+          const targetH = Math.round(height * scale)
+          const canvas = document.createElement('canvas')
+          canvas.width = targetW
+          canvas.height = targetH
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            URL.revokeObjectURL(url)
+            resolve(file)
+            return
+          }
+          ctx.drawImage(img, 0, 0, targetW, targetH)
+          const mime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg'
+          canvas.toBlob((blob) => {
+            URL.revokeObjectURL(url)
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const normalized = new File([blob], file.name, { type: mime })
+            resolve(normalized)
+          }, mime, 0.9)
+        } catch {
+          URL.revokeObjectURL(url)
+          resolve(file)
+        }
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(file)
+      }
+      img.src = url
+    } catch {
+      resolve(file)
+    }
+  })
 }

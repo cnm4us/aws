@@ -159,9 +159,9 @@ export async function loadProduction(productionId: number, conn?: any): Promise<
   return { id: Number(row.id), upload_id: Number(row.upload_id), user_id: Number(row.user_id) }
 }
 
-export async function loadSpace(spaceId: number, conn?: any): Promise<{ id: number; type: string; owner_user_id: number | null; settings: any } | null> {
+export async function loadSpace(spaceId: number, conn?: any): Promise<{ id: number; type: string; owner_user_id: number | null; settings: any; slug?: string } | null> {
   const db = conn || getPool()
-  const [rows] = await db.query(`SELECT id, type, owner_user_id, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+  const [rows] = await db.query(`SELECT id, type, owner_user_id, settings, slug FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
   const row = (rows as any[])[0]
   if (!row) return null
   return {
@@ -169,6 +169,7 @@ export async function loadSpace(spaceId: number, conn?: any): Promise<{ id: numb
     type: String(row.type || ''),
     owner_user_id: row.owner_user_id == null ? null : Number(row.owner_user_id),
     settings: row.settings,
+    slug: row.slug ? String(row.slug) : undefined,
   }
 }
 

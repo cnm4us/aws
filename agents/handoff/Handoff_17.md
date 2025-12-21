@@ -204,6 +204,7 @@ Thread Plan (subset of Backlog)
 - [ ] Add utilities.css (abs-fill, grid-center) and migrate small pockets
 
 Work Log (optional, terse; reverse‑chronological)
+- 2025-12-20 — [ui] Added client-side avatar normalization to downscale large images to a max dimension before upload while preserving support for rectangular images.
 - 2025-12-20 — [ui] Added `/profile/avatar` SPA page for avatar upload with signed S3 POST and wired it into the Profile menu as “Edit Avatar”.
 - 2025-12-20 — [api] Implemented signed avatar upload and finalize endpoints for user profile images.
 - 2025-12-20 — [docs] Documented avatar storage layout and prefix under OUTPUT_BUCKET in Configuration/Operations docs.
@@ -215,6 +216,9 @@ Work Log (optional, terse; reverse‑chronological)
 - 2025-12-20 — [db] Updated `ensureSchema` in `src/db.ts` to create profiles and space_credibility tables for future Profile/Credibility features.
 - 2025-12-20 — [docs] Created `agents/` directory and refined agent workflow docs (handoff, implementation planning, Git, DB access, README maintenance).
 - 2025-11-19 — [init] Created Handoff_17.md; carried forward backlog and decisions.
+
+Planned Next (profile/follow)
+- Drafted `agents/implementation/plan_05.md` for Phase 1 of “avatars in feed + per-space follow/unfollow”: adds a `space_follows`-style table, follow service/APIs, feed avatar display, a profile peek overlay on avatar click, and basic per-space follow UX (status + counts) without changing feed filtering yet.
 
 Artifacts (optional)
 - Screens: playwright-report/ (local only; not in Git)

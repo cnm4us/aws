@@ -85,11 +85,11 @@ export default function ChannelSwitcher(props: {
     if (onSelectSpace) return onSelectSpace(spaceId)
     // Outside Feed, navigate to canonical URLs when possible
     try {
-      const s =
-        entries.groups.find((g) => g.id === spaceId) ||
-        entries.channels.find((c) => c.id === spaceId) ||
-        spaces?.personal ||
-        spaces?.global
+      const all: SpaceSummary[] = []
+      if (spaces?.global) all.push(spaces.global)
+      if (spaces?.personal) all.push(spaces.personal)
+      all.push(...entries.groups, ...entries.channels)
+      const s = all.find((space) => space.id === spaceId) || null
       if (s && s.slug && (s.type === 'group' || s.type === 'channel')) {
         const base = s.type === 'group' ? '/groups/' : '/channels/'
         const slug = encodeURIComponent(s.slug)

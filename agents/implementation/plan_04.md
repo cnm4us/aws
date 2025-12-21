@@ -57,15 +57,15 @@ For avatars we will:
    Verify that navigation from the Menu Selector → Profile → “Edit Avatar” loads the correct page, that selecting an image shows a preview, and that the avatar URL is updated in the Profile.
 
 4. Optional lightweight image normalization (phase 1)  
-   Status: Pending  
+   Status: Completed  
    Testing: For this phase, keep processing minimal and safe:  
-   - Enforce basic constraints on the client and/or server (e.g., max file size, allowed formats JPG/PNG/WebP).  
-   - Optionally add a server-side step that downscales very large images to a reasonable maximum dimension (e.g., 512x512) while preserving aspect ratio, using a simple image library.  
-   - Ensure that any processing happens against the non-production DB and S3 per `agents/db_access.md`.  
-   Confirm that avatars display crisply at intended sizes and that very large uploads are either rejected or normalized.
+   - Enforce basic constraints on the client (image MIME types only) and rely on the existing 5 MB max size and S3 POST conditions for server-side enforcement.  
+   - Add a client-side normalization step that downscales very large images to a reasonable maximum dimension (e.g., 512x512) while preserving aspect ratio before upload.  
+   - Ensure that normalization is applied only in non-production browser contexts; server code continues to treat avatars as static objects in OUTPUT_BUCKET per `agents/db_access.md`.  
+   Confirm that avatars display crisply at intended sizes and that very large uploads are normalized without breaking existing flows.
 
 5. Profile integration and UX pass  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - On the main Profile page (`/profile`), show the current avatar (if any), using the `profiles.avatar_url` field, with a clear link to “Edit Avatar”.  
    - Verify that updating the avatar via `/profile/avatar` immediately reflects on `/profile` and in any other avatar surfaces you choose to wire (e.g., nav, comments, space membership lists) in a later phase.  
@@ -78,5 +78,5 @@ For avatars we will:
 - Step 1 — Status: Completed (documented avatar storage layout under the public OUTPUT_BUCKET in `docs/Configuration.md` and `docs/Operations.md`, using a `profiles/avatars/{userId}/{yyyy-mm}/{uuid}.jpg` prefix and CloudFront-backed URLs).  
 - Step 2 — Status: Completed (added `src/features/profiles/avatar.ts` to generate signed avatar upload posts to OUTPUT_BUCKET under `profiles/avatars/{userId}/{yyyy-mm}/{uuid}.ext` and implemented `/api/profile/avatar/sign` and `/api/profile/avatar/complete` routes in `src/routes/profiles.ts` to wire uploads into `profiles.avatar_url`).  
 - Step 3 — Status: Completed (added `/profile/avatar` SPA route, `frontend/src/app/ProfileAvatar.tsx` for image selection/preview and signed upload using the new avatar APIs, and extended `ProfileMenu` with an “Edit Avatar” link so users can navigate there from the Profile menu).  
-- Step 4 — Status: Pending.  
-- Step 5 — Status: Pending.  
+- Step 4 — Status: Completed (extended the avatar editor to validate image file types and added a client-side resize step that scales large images down to a maximum dimension before upload, so rectangular images remain supported while keeping avatar payloads and display sizes reasonable).  
+- Step 5 — Status: Completed (the main Profile page now shows the current avatar, if any, with a clear “Edit avatar” link that takes users to `/profile/avatar`; updating the avatar there is reflected on `/profile` on the next load).  

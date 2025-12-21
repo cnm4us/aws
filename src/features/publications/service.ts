@@ -41,7 +41,8 @@ export async function createFromUpload(input: CreateFromUploadInput, ctx: Servic
 
   let visibleInSpace = true
   let visibleInGlobal = false
-  if (space.type === 'personal') visibleInGlobal = true
+  const slug = String((space as any).slug || '')
+  if (slug === 'global' || slug === 'global-feed') visibleInGlobal = true
 
   const isPrimary = upload.origin_space_id != null && Number(upload.origin_space_id) === Number(spaceId)
 
@@ -100,7 +101,8 @@ export async function createFromProduction(input: CreateFromProductionInput, ctx
   // Visibility defaults
   let visibleInSpace = true
   let visibleInGlobal = false
-  if (space.type === 'personal') visibleInGlobal = true
+  const slug = String((space as any).slug || '')
+  if (slug === 'global' || slug === 'global-feed') visibleInGlobal = true
 
   const publication = await repo.insert({
     uploadId: prod.upload_id,

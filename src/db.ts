@@ -436,6 +436,25 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS likes_count INT UNSIGNED NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_count INT UNSIGNED NOT NULL DEFAULT 0`);
+  // Retroactive cleanup: clear legacy Personal ⇒ Global coupling
+  try {
+    await db.query(`
+      UPDATE space_publications sp
+      JOIN spaces s ON sp.space_id = s.id
+      SET sp.visible_in_global = 0
+      WHERE s.type = 'personal' AND sp.visible_in_global = 1
+    `)
+  } catch {}
+  // Retroactive alignment: ensure Global space publications participate in the Global feed
+  try {
+    await db.query(`
+      UPDATE space_publications sp
+      JOIN spaces s ON sp.space_id = s.id
+      SET sp.visible_in_global = 1
+      WHERE sp.visible_in_global = 0
+        AND (s.slug = 'global' OR s.slug = 'global-feed')
+    `)
+  } catch {}
   // Drop legacy unique (upload_id, space_id) if present
   try { await db.query(`DROP INDEX uniq_space_publications_upload_space ON space_publications`); } catch {}
   // Supporting indexes (best-effort)

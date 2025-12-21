@@ -157,9 +157,7 @@ export default function Profile() {
       <div style={{ padding: 20, color: '#fff' }}>
         <h1 style={{ fontSize: 22, marginBottom: 12 }}>Profile</h1>
         <p style={{ marginBottom: 10 }}>{error}</p>
-        <a href="/login" style={{ color: '#9cf' }}>
-          Go to login
-        </a>
+        <a href="/login" style={{ color: '#9cf' }}>Go to login</a>
       </div>
     )
   }
@@ -179,13 +177,7 @@ export default function Profile() {
         }}
       >
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 12,
-            gap: 8,
-          }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}
         >
           <div style={{ fontWeight: 600 }}>Profile Details</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -217,10 +209,47 @@ export default function Profile() {
         </p>
 
         {error && (
-          <div style={{ marginBottom: 10, color: '#ffb3b3', fontSize: 13 }}>
-            {error}
-          </div>
+          <div style={{ marginBottom: 10, color: '#ffb3b3', fontSize: 13 }}>{error}</div>
         )}
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: '50%',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.25)',
+              background: 'rgba(255,255,255,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt="Current avatar"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span style={{ fontSize: 28, opacity: 0.35 }}>?</span>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>Avatar</div>
+            <a href="/profile/avatar" style={{ fontSize: 13, color: '#9cf' }}>
+              Edit avatar
+            </a>
+          </div>
+        </div>
 
         <div style={{ display: 'grid', gap: 12 }}>
           <label style={{ display: 'grid', gap: 6 }}>
@@ -296,4 +325,3 @@ export default function Profile() {
     </div>
   )
 }
-
