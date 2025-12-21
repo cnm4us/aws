@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import * as feedsSvc from '../features/feeds/service'
+import * as followsSvc from '../features/follows/service'
 import * as spacesSvc from '../features/spaces/service'
 import { DomainError } from '../core/errors'
 import {
@@ -329,6 +330,49 @@ spacesRouter.get('/api/spaces/:id/feed', requireAuth, async (req, res, next) => 
     // Preserve legacy error code shape while using centralized error middleware
     if (err instanceof DomainError) return next(err)
     return next(new DomainError(String(err?.message || err), 'failed_to_load_feed', 500))
+  }
+})
+
+// Per-space, per-user follow status and mutation
+spacesRouter.get('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
+  try {
+    const spaceId = Number(req.params.id)
+    const targetUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const summary = await followsSvc.getSpaceUserFollowSummary(spaceId, targetUserId, currentUserId)
+    res.json(summary)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+spacesRouter.post('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
+  try {
+    const spaceId = Number(req.params.id)
+    const targetUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const summary = await followsSvc.followSpaceUser(spaceId, targetUserId, currentUserId)
+    res.json(summary)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+spacesRouter.delete('/api/spaces/:id/users/:userId/follow', requireAuth, async (req, res, next) => {
+  try {
+    const spaceId = Number(req.params.id)
+    const targetUserId = Number(req.params.userId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
+    if (!Number.isFinite(targetUserId) || targetUserId <= 0) return res.status(400).json({ error: 'bad_user_id' })
+    const currentUserId = Number(req.user!.id)
+    const summary = await followsSvc.unfollowSpaceUser(spaceId, targetUserId, currentUserId)
+    res.json(summary)
+  } catch (err: any) {
+    next(err)
   }
 })
 

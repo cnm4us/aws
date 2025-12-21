@@ -314,6 +314,18 @@ export async function ensureSchema(db: DB) {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS space_user_follows (
+      follower_user_id BIGINT UNSIGNED NOT NULL,
+      target_user_id BIGINT UNSIGNED NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (follower_user_id, target_user_id, space_id),
+      KEY idx_suf_space (space_id),
+      KEY idx_suf_target (target_user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS space_invitations (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       space_id BIGINT UNSIGNED NOT NULL,

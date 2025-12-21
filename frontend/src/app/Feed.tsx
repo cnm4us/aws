@@ -19,6 +19,7 @@ type UploadItem = {
   ownerId?: number | null
   ownerName?: string | null
   ownerEmail?: string | null
+  ownerAvatarUrl?: string | null
   publicationId?: number | null
   spaceId?: number | null
   publishedAt?: string | null
@@ -84,7 +85,7 @@ function swapOrientation(url: string): { portrait?: string; landscape?: string }
   return { portrait: url }
 }
 
-function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: string | null; email?: string | null } | null, publication?: any | null): UploadItem {
+function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: string | null; email?: string | null; avatarUrl?: string | null } | null, publication?: any | null): UploadItem {
   const posterPortrait = raw.poster_portrait_cdn || raw.poster_portrait_s3 || raw.poster_cdn || raw.poster_s3 || ''
   const posterLandscape = raw.poster_landscape_cdn || raw.poster_landscape_s3 || ''
   const master = raw.cdn_master || raw.s3_master || ''
@@ -92,6 +93,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const ownerId = owner?.id != null ? Number(owner.id) : (raw.user_id != null ? Number(raw.user_id) : null)
   const ownerName = owner?.displayName ?? null
   const ownerEmail = owner?.email ?? null
+  const ownerAvatarUrl = owner?.avatarUrl ?? null
   const publicationId = publication?.id != null ? Number(publication.id) : null
   const spaceId = publication?.space_id != null ? Number(publication.space_id) : (raw.space_id != null ? Number(raw.space_id) : null)
   const publishedAt = publication?.published_at ? String(publication.published_at) : null
@@ -114,6 +116,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     ownerId,
     ownerName,
     ownerEmail,
+    ownerAvatarUrl,
     publicationId,
     spaceId,
     publishedAt,
@@ -134,7 +137,18 @@ async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; l
   const payload = await res.json()
   const items = Array.isArray(payload?.items)
     ? payload.items.map((entry: any) =>
-        buildUploadItem(entry.upload, entry.owner ? { id: entry.owner.id ?? null, displayName: entry.owner.displayName ?? null, email: entry.owner.email ?? null } : null, entry.publication ?? null)
+        buildUploadItem(
+          entry.upload,
+          entry.owner
+            ? {
+                id: entry.owner.id ?? null,
+                displayName: entry.owner.displayName ?? null,
+                email: entry.owner.email ?? null,
+                avatarUrl: entry.owner.avatarUrl ?? null,
+              }
+            : null,
+          entry.publication ?? null,
+        )
       )
     : []
   const nextCursor = typeof payload?.nextCursor === 'string' && payload.nextCursor.length ? payload.nextCursor : null
@@ -149,7 +163,18 @@ async function fetchGlobalFeed(opts: { cursor?: string | null; limit?: number } 
   const payload = await res.json()
   const items = Array.isArray(payload?.items)
     ? payload.items.map((entry: any) =>
-        buildUploadItem(entry.upload, entry.owner ? { id: entry.owner.id ?? null, displayName: entry.owner.displayName ?? null, email: entry.owner.email ?? null } : null, entry.publication ?? null)
+        buildUploadItem(
+          entry.upload,
+          entry.owner
+            ? {
+                id: entry.owner.id ?? null,
+                displayName: entry.owner.displayName ?? null,
+                email: entry.owner.email ?? null,
+                avatarUrl: entry.owner.avatarUrl ?? null,
+              }
+            : null,
+          entry.publication ?? null,
+        )
       )
     : []
   const nextCursor = typeof payload?.nextCursor === 'string' && payload.nextCursor.length ? payload.nextCursor : null
@@ -234,6 +259,22 @@ export default function Feed() {
   const [likersItems, setLikersItems] = useState<Array<{ userId: number; displayName: string; email: string | null; createdAt: string }>>([])
   const [likersCursor, setLikersCursor] = useState<string | null>(null)
   const [likersLoading, setLikersLoading] = useState(false)
+  // Profile peek overlay state
+  const [peekOpen, setPeekOpen] = useState(false)
+  const [peekUserId, setPeekUserId] = useState<number | null>(null)
+  const [peekSpaceId, setPeekSpaceId] = useState<number | null>(null)
+  const [peekProfile, setPeekProfile] = useState<{
+    userId: number
+    displayName: string
+    avatarUrl: string | null
+    bio: string | null
+    memberSince: string | null
+  } | null>(null)
+  const [peekLoading, setPeekLoading] = useState(false)
+  const [peekError, setPeekError] = useState<string | null>(null)
+  const [peekFollowing, setPeekFollowing] = useState<boolean | null>(null)
+  const [peekFollowersCount, setPeekFollowersCount] = useState<number | null>(null)
+  const [peekFollowBusy, setPeekFollowBusy] = useState(false)
   const lastTouchTsRef = useRef<number>(0)
   const touchStartXRef = useRef<number>(0)
   const touchStartYRef = useRef<number>(0)
@@ -285,6 +326,11 @@ export default function Feed() {
     } catch { return null }
   }
 
+  function findSpaceSummaryById(spaceId: number | null): SpaceSummary | null {
+    if (!spaceId || !spaceList) return null
+    return flattenSpaces(spaceList).find((s) => s.id === spaceId) || null
+  }
+
   async function ensureLikeSummary(publicationId: number | null | undefined) {
     if (!publicationId || !isAuthed) return
     if (likesCountMap[publicationId] != null && likedMap[publicationId] != null) return
@@ -298,6 +344,84 @@ export default function Feed() {
       try { debug.log('feed', 'like summary fetched', { publicationId, count: Number(data?.count ?? 0), liked: Boolean(data?.liked) }) } catch {}
     } catch {}
   }
+
+  const openProfilePeek = useCallback(
+    async (
+      ownerId: number | null | undefined,
+      contextSpaceId: number | null | undefined,
+      initialName?: string | null,
+      initialAvatarUrl?: string | null,
+    ) => {
+      if (!ownerId || !Number.isFinite(ownerId)) return
+      const uid = Number(ownerId)
+      const spaceId = contextSpaceId && Number.isFinite(contextSpaceId) ? Number(contextSpaceId) : null
+      setPeekOpen(true)
+      setPeekUserId(uid)
+      setPeekSpaceId(spaceId)
+      if (initialName || initialAvatarUrl) {
+        setPeekProfile({
+          userId: uid,
+          displayName: initialName || '',
+          avatarUrl: initialAvatarUrl || null,
+          bio: null,
+          memberSince: null,
+        })
+      } else {
+        setPeekProfile(null)
+      }
+      setPeekLoading(true)
+      setPeekError(null)
+      setPeekFollowing(null)
+      setPeekFollowersCount(null)
+      try {
+        const res = await fetch(`/api/profile/${uid}`)
+        if (!res.ok) throw new Error('profile_failed')
+        const data = await res.json()
+        const p = data?.profile
+        if (p) {
+          setPeekProfile((prev) => ({
+            userId: Number(p.userId ?? uid),
+            displayName: String(p.displayName || prev?.displayName || ''),
+            avatarUrl: p.avatarUrl || prev?.avatarUrl || null,
+            bio: p.bio ?? prev?.bio ?? null,
+            memberSince: p.memberSince ? String(p.memberSince) : prev?.memberSince ?? null,
+          }))
+        } else {
+          setPeekError('Profile not found.')
+        }
+      } catch {
+        setPeekError('Failed to load profile.')
+      } finally {
+        setPeekLoading(false)
+      }
+
+      if (!spaceId || !isAuthed) return
+      const space = findSpaceSummaryById(spaceId)
+      if (!space || (space.type !== 'group' && space.type !== 'channel')) return
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/users/${uid}/follow`, { credentials: 'same-origin' })
+        if (!res.ok) return
+        const data = await res.json()
+        setPeekFollowing(Boolean(data?.following))
+        const count = typeof data?.followersCount === 'number' ? Number(data.followersCount) : null
+        setPeekFollowersCount(count)
+      } catch {
+        // ignore follow summary errors; overlay is still useful without them
+      }
+    },
+    [isAuthed, spaceList],
+  )
+
+  const closeProfilePeek = useCallback(() => {
+    setPeekOpen(false)
+    setPeekUserId(null)
+    setPeekSpaceId(null)
+    setPeekProfile(null)
+    setPeekError(null)
+    setPeekFollowing(null)
+    setPeekFollowersCount(null)
+    setPeekFollowBusy(false)
+  }, [])
 
   function ensureCommentCountHydrated(pubId: number | null | undefined, fallback?: number | null) {
     if (!pubId) return
@@ -479,6 +603,20 @@ export default function Feed() {
     }
   }
   // We no longer read URL hash fragments for deep linking
+
+  useEffect(() => {
+    if (!peekOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeProfilePeek()
+      }
+    }
+    try { window.addEventListener('keydown', onKey) } catch {}
+    return () => {
+      try { window.removeEventListener('keydown', onKey) } catch {}
+    }
+  }, [peekOpen, closeProfilePeek])
 
   function feedStorageKey(m: FeedMode): string { return userKeyPrefix() + FEED_LAST_PREFIX + feedKey(m) }
 
@@ -1221,6 +1359,14 @@ export default function Feed() {
         const isLinger = i === index - 1
         // Suppress warming until items belong to the active feed and restore is done
         const allowWarm = Boolean(itemsFeedKeyRef.current && itemsFeedKeyRef.current === feedKey(feedMode) && !restoringRef.current)
+        const initials = (() => {
+          const name = (it.ownerName || it.ownerEmail || '').trim()
+          if (!name) return '?'
+          const parts = name.split(/\s+/).filter(Boolean)
+          if (!parts.length) return name.slice(0, 1).toUpperCase()
+          if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase()
+          return (parts[0][0] + parts[1][0]).toUpperCase()
+        })()
         return (
           <div
             key={slideId}
@@ -1425,7 +1571,7 @@ export default function Feed() {
                   }}
                 />
               )}
-              {/* Like and Comment controls (always visible, right side) */}
+              {/* Avatar, Like, and Comment controls (right side) */}
               {it.publicationId != null && (
                 <div
                   style={{
@@ -1440,6 +1586,27 @@ export default function Feed() {
                     zIndex: 5,
                   }}
                 >
+                  {it.ownerId != null && (
+                    <button
+                      type="button"
+                      className={styles.authorAvatar}
+                      onClick={() =>
+                        openProfilePeek(
+                          it.ownerId ?? null,
+                          feedMode.kind === 'space' ? feedMode.spaceId : (it.spaceId ?? null),
+                          it.ownerName ?? null,
+                          it.ownerAvatarUrl ?? null,
+                        )
+                      }
+                      title={it.ownerName ? `View ${it.ownerName}` : 'View author'}
+                    >
+                      {it.ownerAvatarUrl ? (
+                        <img src={it.ownerAvatarUrl} alt={it.ownerName || it.ownerEmail || 'Author avatar'} />
+                      ) : (
+                        <span className={styles.authorInitials}>{initials}</span>
+                      )}
+                    </button>
+                  )}
                   <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
                     <button
                       aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
@@ -2258,6 +2425,182 @@ export default function Feed() {
                 {commentBusy ? 'Posting…' : 'Post'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {peekOpen && (
+        <div
+          onClick={() => closeProfilePeek()}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 55,
+            background: 'transparent',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(340px, 92vw)',
+              marginTop: 'calc(var(--header-h, 44px) + 8px)',
+              marginLeft: 8,
+              background: 'rgba(15,15,15,0.96)',
+              color: '#fff',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.3)',
+              boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+              padding: 12,
+              fontSize: 14,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  background: 'rgba(0,0,0,0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {peekProfile?.avatarUrl ? (
+                  <img
+                    src={peekProfile.avatarUrl}
+                    alt={peekProfile.displayName || 'Profile avatar'}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 20, fontWeight: 600, opacity: 0.85 }}>
+                    {(peekProfile?.displayName || '?').slice(0, 2).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  {peekProfile?.displayName || 'Profile'}
+                </div>
+                {peekProfile?.memberSince && (
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>
+                    Member since {new Date(peekProfile.memberSince).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => closeProfilePeek()}
+                style={{
+                  background: 'transparent',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  borderRadius: 999,
+                  padding: '4px 8px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            {peekError && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#ffb3b3' }}>{peekError}</div>
+            )}
+            {peekLoading && !peekError && (
+              <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.8 }}>Loading…</div>
+            )}
+            {peekProfile?.bio && !peekLoading && (
+              <div style={{ fontSize: 13, marginBottom: 8, whiteSpace: 'pre-wrap' }}>{peekProfile.bio}</div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
+              <a
+                href={peekProfile ? `/users/${peekProfile.userId}` : '#'}
+                style={{ fontSize: 13, color: '#9cf', textDecoration: 'none' }}
+              >
+                View full profile
+              </a>
+              {(() => {
+                const space = peekSpaceId != null ? findSpaceSummaryById(peekSpaceId) : null
+                const canFollow =
+                  !!space && (space.type === 'group' || space.type === 'channel') && isAuthed && peekUserId != null && peekUserId !== myUserId
+                if (!canFollow) return null
+                const following = !!peekFollowing
+                return (
+                  <button
+                    type="button"
+                    disabled={peekFollowBusy}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      const space = peekSpaceId != null ? findSpaceSummaryById(peekSpaceId) : null
+                      const sid = space?.id
+                      const uid = peekUserId
+                      if (!sid || !uid) return
+                      const currentlyFollowing = !!peekFollowing
+                      const csrf = getCsrfToken()
+                      setPeekFollowBusy(true)
+                      setPeekFollowing(!currentlyFollowing)
+                      setPeekFollowersCount((prev) => {
+                        const base = typeof prev === 'number' ? prev : 0
+                        const next = base + (currentlyFollowing ? -1 : 1)
+                        return next < 0 ? 0 : next
+                      })
+                      ;(async () => {
+                        try {
+                          const method = currentlyFollowing ? 'DELETE' : 'POST'
+                          const res = await fetch(`/api/spaces/${sid}/users/${uid}/follow`, {
+                            method,
+                            headers: { ...(csrf ? { 'x-csrf-token': csrf } : {}) },
+                            credentials: 'same-origin',
+                          })
+                          if (!res.ok) throw new Error('follow_toggle_failed')
+                          const data = await res.json()
+                          setPeekFollowing(Boolean(data?.following))
+                          const count =
+                            data && typeof data.followersCount === 'number'
+                              ? Number(data.followersCount)
+                              : null
+                          setPeekFollowersCount(count)
+                        } catch {
+                          // rollback
+                          setPeekFollowing(currentlyFollowing)
+                          setPeekFollowersCount((prev) => {
+                            const base = typeof prev === 'number' ? prev : 0
+                            const next = base + (currentlyFollowing ? 1 : -1)
+                            return next < 0 ? 0 : next
+                          })
+                        } finally {
+                          setPeekFollowBusy(false)
+                        }
+                      })()
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 999,
+                      border: '1px solid rgba(255,255,255,0.4)',
+                      background: following ? 'rgba(33,150,243,0.3)' : 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 13,
+                      cursor: peekFollowBusy ? 'default' : 'pointer',
+                    }}
+                  >
+                    {following ? 'Following' : 'Follow'}
+                  </button>
+                )
+              })()}
+            </div>
+            {peekFollowersCount != null && peekSpaceId != null && (
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
+                {peekFollowersCount} follower{peekFollowersCount === 1 ? '' : 's'} in this space
+              </div>
+            )}
           </div>
         </div>
       )}

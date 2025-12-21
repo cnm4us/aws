@@ -69,12 +69,14 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
       owner.id AS owner_id,
       owner.display_name AS owner_display_name,
       owner.email AS owner_email,
+      prof.avatar_url AS owner_avatar_url,
       p.id AS production_id_resolved,
       p.ulid AS production_ulid
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
     LEFT JOIN users owner ON owner.id = u.user_id
+    LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
     ORDER BY sp.published_at DESC, sp.id DESC
     LIMIT ?
@@ -154,12 +156,14 @@ export async function listSpaceFeedRows(
       owner.id AS owner_id,
       owner.display_name AS owner_display_name,
       owner.email AS owner_email,
+      prof.avatar_url AS owner_avatar_url,
       p.id AS production_id_resolved,
       p.ulid AS production_ulid
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
     LEFT JOIN users owner ON owner.id = u.user_id
+    LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
     ORDER BY sp.published_at DESC, sp.id DESC
     LIMIT ?

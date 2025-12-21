@@ -32,9 +32,9 @@ Decisions (carried + new)
 - Use object-fit contain for robust sizing; allow portrait assets to use cover in portrait for edge-to-edge.
 
 Changes Since Last
-- Affects: agents/implementation/plan_05.md; agents/handoff/Handoff_18.md
-- Routes: none
-- DB: none
+- Affects: agents/implementation/plan_05.md; agents/handoff/Handoff_18.md; src/db.ts; src/features/follows/repo.ts; src/features/follows/service.ts; src/features/feeds/repo.ts; src/features/feeds/service.ts; src/routes/spaces.ts; src/routes/profiles.ts; frontend/src/app/Feed.tsx; frontend/src/styles/feed.module.css
+- Routes: /api/spaces/:id/users/:userId/follow; /api/profile/:userId
+- DB: space_user_follows
 - Flags: none
 
 Commit Messages (ready to paste)
@@ -56,6 +56,50 @@ Tests:
 Meta:
 - Affects: agents/implementation/plan_05.md; agents/handoff/Handoff_18.md
 - Routes: none
+- DB: none
+- Flags: none
+
+Subject: feat(follow): add per-space user follows and APIs
+
+Context:
+- Enable per-space (group/channel) follow relationships between users to support follow UX in the feed and profile overlay.
+
+Approach:
+- Added a `space_user_follows` table in `src/db.ts` keyed by `(follower_user_id, target_user_id, space_id)`.
+- Implemented `src/features/follows/repo.ts` and `service.ts` to manage follow summaries and mutations, including basic self-follow guards and space-type checks.
+- Exposed `GET/POST/DELETE /api/spaces/:id/users/:userId/follow` in `src/routes/spaces.ts` returning `{ following, followersCount }`.
+
+Impact:
+- Backend provides a clean, space-scoped follow primitive that the feed and future UIs can consume without altering feed filtering yet.
+
+Tests:
+- Not yet run; follow endpoints validated by code inspection.
+
+Meta:
+- Affects: src/db.ts; src/features/follows/repo.ts; src/features/follows/service.ts; src/routes/spaces.ts
+- Routes: /api/spaces/:id/users/:userId/follow
+- DB: space_user_follows
+- Flags: none
+
+Subject: feat(feed): show avatars and profile peek overlay with per-space follow
+
+Context:
+- Surface author identity in the feed with avatars and a quick profile peek, and wire in per-space follow/unfollow actions without changing feed filtering.
+
+Approach:
+- Joined `profiles` into feed rows (`src/features/feeds/repo.ts`) and threaded `avatar_url` through `FeedResponse` to `UploadItem.ownerAvatarUrl` in `frontend/src/app/Feed.tsx`.
+- Rendered a 48×48 circular avatar + author name on each slide and added a clickable avatar button that opens a lightweight profile peek overlay.
+- The overlay loads `/api/profile/:userId` (including memberSince), links to `/users/:userId`, and, when in a group/channel context, calls the new follow APIs with optimistic follow/unfollow and “N followers in this space” counts.
+
+Impact:
+- Feed slides now show author avatars and allow quick inspection + follow in group/channel spaces, improving identity and engagement while preserving existing feed behavior.
+
+Tests:
+- Not yet run; manual verification in the browser recommended for avatar rendering, overlay behavior, and follow state consistency.
+
+Meta:
+- Affects: src/features/feeds/repo.ts; src/features/feeds/service.ts; src/routes/profiles.ts; frontend/src/app/Feed.tsx; frontend/src/styles/feed.module.css
+- Routes: /api/profile/:userId
 - DB: none
 - Flags: none
 

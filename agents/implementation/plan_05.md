@@ -27,34 +27,34 @@ References:
 ## 2. Step-by-Step Plan
 
 1. Model per-space follow relationships  
-   Status: Pending  
-   Testing: Add a new table (e.g., `space_follows`) via `src/db.ts` with columns such as `follower_user_id`, `target_user_id`, `space_id`, `created_at`, and soft-delete/`unfollowed_at` if needed. Ensure the DDL is non-destructive and idempotent per `agents/db_access.md`. Verify with `mysql` that the table exists and that unique constraints (e.g., one active follow per follower/target/space) are enforced. Confirm that `space_id` refers only to **group/channel** spaces in this phase (no rows for Global or personal feeds).
+   Status: Completed  
+   Testing: Add a new table (e.g., `space_user_follows`) via `src/db.ts` with columns such as `follower_user_id`, `target_user_id`, `space_id`, and `created_at`. Ensure the DDL is non-destructive and idempotent per `agents/db_access.md`. Verify with `mysql` that the table exists and that unique constraints (e.g., one active follow per follower/target/space) are enforced. Confirm that `space_id` refers only to **group/channel** spaces in this phase (no rows for Global or personal feeds).
 
 2. Backend follow service and APIs  
-   Status: Pending  
-   Testing: Implement a small service module (e.g., `src/features/follow/service.ts`) to create/delete and read per-space follow records, with guards to prevent self-follow and to respect any existing suspension/blocking checks. Add API routes such as:  
+   Status: Completed  
+   Testing: Implement a small service module (e.g., `src/features/follows/service.ts`) to create/delete and read per-space follow records, with guards to prevent self-follow and to respect any existing suspension/blocking checks. Add API routes such as:  
    - `GET /api/spaces/:spaceId/users/:userId/follow` → returns current follow status and simple counts for that space (e.g., `{ following, followersCount }`).  
    - `POST /api/spaces/:spaceId/users/:userId/follow` → follow in that space (authenticated user only, idempotent).  
    - `DELETE /api/spaces/:spaceId/users/:userId/follow` → unfollow in that space (idempotent).  
    Confirm via curl/Postman that these endpoints correctly reflect follow state and counts, enforce that the target space is a **group or channel** (not Global/personal), and that blocked/suspended users are either hidden or not followable according to existing moderation rules. Defer any batch follow-status APIs to a later phase.
 
 3. Feed avatar display  
-   Status: Pending  
+   Status: Completed  
    Testing: Extend the feed backend and UI so each slide can render the author’s avatar:  
    - Update the feed data pipeline (`src/features/feeds/repo.ts`, `src/features/feeds/service.ts`, and the `FeedResponse` mapping) to left-join `profiles` for each owner and expose `avatar_url` in the feed payload.  
-   - Update `UploadItem` in `frontend/src/app/Feed.tsx` to include an `ownerAvatarUrl` (or similar) populated from `profiles.avatar_url`.  
-   - Render a 48×48 circular avatar in the feed slide UI using this URL when available; otherwise, show a generic fallback icon.  
+   - Update `UploadItem` in `frontend/src/app/Feed.tsx` to include an `ownerAvatarUrl` populated from `profiles.avatar_url`.  
+   - Render a 48×48 circular avatar in the feed slide UI using this URL when available; otherwise, show a generic fallback icon or initials.  
    Manually verify in the browser that avatars render crisply at 48×48 CSS pixels, work across global and space feeds without breaking layout, and that slides without avatars still look good.
 
 4. Profile peek overlay on avatar click  
-   Status: Pending  
+   Status: Completed  
    Testing: Add a lightweight overlay/card that opens when a user clicks an avatar in the feed:  
    - Shows the author’s display name, avatar, brief bio (if public), “member since” information, and a “View full profile” link to `/users/:userId` (public-other view).  
    - Includes a follow/unfollow button for the **current space** when the user is viewing a group or channel feed (wire this to the follow APIs from Step 2); on feeds where we do not yet support follows, the overlay can be view-only.  
    Implement this with a simple React overlay or anchored popover that does not navigate away from the feed. Test that only one overlay is visible at a time, that clicking outside or pressing Escape dismisses it, and that navigation to the full profile page (`/users/:userId`) works as expected.
 
 5. Follow state, counts, and basic UX  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - In the profile peek overlay, show follow status (“Follow” vs “Following”) and a simple count like “N followers in this space” using the follow APIs.  
    - Ensure that follow/unfollow actions update UI state immediately (optimistic update) and reconcile with API responses.  
@@ -65,11 +65,11 @@ References:
 
 ## 3. Progress Tracking Notes
 
-- Step 1 — Status: Pending.  
-- Step 2 — Status: Pending.  
-- Step 3 — Status: Pending.  
-- Step 4 — Status: Pending.  
-- Step 5 — Status: Pending.  
+- Step 1 — Status: Completed.  
+- Step 2 — Status: Completed.  
+- Step 3 — Status: Completed.  
+- Step 4 — Status: Completed.  
+- Step 5 — Status: Completed.  
 
 ---
 

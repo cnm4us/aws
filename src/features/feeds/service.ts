@@ -65,7 +65,14 @@ export async function getGlobalFeed(opts: { userId: number; limit?: number; curs
       origin_space_id: row.origin_space_id != null ? Number(row.origin_space_id) : null,
     }
     const upload = enhanceUploadRow(uploadRaw)
-    const owner = row.owner_id ? { id: Number(row.owner_id), displayName: row.owner_display_name, email: row.owner_email } : null
+    const owner = row.owner_id
+      ? {
+          id: Number(row.owner_id),
+          displayName: row.owner_display_name,
+          email: row.owner_email,
+          avatarUrl: row.owner_avatar_url ? String(row.owner_avatar_url) : null,
+        }
+      : null
     return { publication, upload, owner }
   })
 
@@ -138,7 +145,14 @@ export async function getSpaceFeed(spaceId: number, opts: { userId: number; limi
       origin_space_id: row.origin_space_id != null ? Number(row.origin_space_id) : null,
     }
     const upload = enhanceUploadRow(uploadRaw)
-    const owner = row.owner_id ? { id: Number(row.owner_id), displayName: row.owner_display_name, email: row.owner_email } : null
+    const owner = row.owner_id
+      ? {
+          id: Number(row.owner_id),
+          displayName: row.owner_display_name,
+          email: row.owner_email,
+          avatarUrl: row.owner_avatar_url ? String(row.owner_avatar_url) : null,
+        }
+      : null
     return { publication, upload, owner }
   })
 

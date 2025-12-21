@@ -73,6 +73,7 @@ profilesRouter.get('/api/profile/:userId', async (req, res) => {
       displayName: profile.display_name,
       avatarUrl: profile.avatar_url,
       bio: profile.show_bio ? profile.bio : null,
+      memberSince: profile.created_at,
     };
     res.json({ profile: result });
   } catch (err: any) {
