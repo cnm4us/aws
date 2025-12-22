@@ -1,7 +1,7 @@
 # Implementation Plan: Explicit Personal vs Global Publishing Scopes (Phase 1)
 
 ## 1. Overview
-Goal: Create a clear, explicit separation between publishing to Personal and publishing to the Global Feed, and make publish/unpublish behavior fully checkbox-driven per space.
+Goal: Create a clear, explicit separation between publishing to Personal and publishing to the Global Feed (the dedicated Global space), and make publish/unpublish behavior fully checkbox-driven per space.
 
 In scope:
 - Updating the Publish UI so users explicitly select Personal, Global Feed, groups, and channels via checkboxes (no “All eligible spaces” shortcut, no hidden cross-posting).
@@ -73,15 +73,15 @@ References:
 4. Make Personal and Global distinct scopes in publication creation (no automatic “Personal ⇒ Global”)  
    Status: Completed  
    Testing:  
-   - In `src/features/publications/service.ts`, update both `createFromUpload` and `createFromProduction` so that:  
-     - `visible_in_global` is **not** automatically set to `1` when the target space is of type `'personal'`.  
-     - `visible_in_global` is set to `1` only when publishing into the explicitly chosen Global Feed space (e.g., a space row designated as global via slug `global` or `global-feed`).  
-   - Ensure that `visible_in_space` still controls inclusion in space feeds for all spaces; Global Feed continues to read from `visible_in_global` as now.  
-   - Verify via targeted tests or manual checks:  
-     - Publishing a video to Personal only produces a `space_publications` row with `visible_in_space=1`, `visible_in_global=0`.  
-     - Publishing to Global Feed only produces a row where `visible_in_global=1` and, depending on design, `visible_in_space` is either 0 (global-only) or 1 (if Global is treated as its own “space feed”).  
-     - Publishing to both Personal and Global Feed results in two rows (two `space_publications` entries), each with appropriate `visible_in_space`/`visible_in_global` values.  
-   - Confirm that the Global feed aggregator behavior (`src/features/feeds/repo.ts` / `service.ts`) is unchanged in shape but now only surfaces items with explicit Global publication (i.e., `visible_in_global=1` for the Global space).
+  - In `src/features/publications/service.ts`, update both `createFromUpload` and `createFromProduction` so that:  
+    - `visible_in_global` is **not** automatically set to `1` when the target space is of type `'personal'`.  
+    - `visible_in_global` is set to `1` only when publishing into the explicitly chosen Global Feed space (the space whose slug is `global-feed`).  
+  - Ensure that `visible_in_space` still controls inclusion in non-global space feeds; the Global Feed depends only on `visible_in_global` for the `global-feed` space and must not rely on `visible_in_space` for that space.  
+  - Verify via targeted tests or manual checks:  
+    - Publishing a video to Personal only produces a `space_publications` row with `visible_in_space=1`, `visible_in_global=0`.  
+    - Publishing to the Global Feed produces a row where `visible_in_global=1` for the `global-feed` space (the value of `visible_in_space` for that space is not used by Global feed queries).  
+    - Publishing to both Personal and Global Feed results in two rows (two `space_publications` entries), each with appropriate `visible_in_space`/`visible_in_global` values for their respective spaces.  
+  - Confirm that the Global feed aggregator behavior (`src/features/feeds/repo.ts` / `service.ts`) is unchanged in shape but now only surfaces items with explicit Global publication (i.e., `visible_in_global=1` for the `global-feed` space), independent of `visible_in_space`.
 
 5. Retroactive migration to remove legacy “Personal ⇒ Global” coupling for existing data  
    Status: Completed  
