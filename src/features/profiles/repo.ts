@@ -10,11 +10,19 @@ export type ProfileRow = {
   show_bio: boolean
   created_at: string
   updated_at: string
+  slug?: string | null
 }
 
 export async function getByUserId(userId: number): Promise<ProfileRow | null> {
   const db = getPool()
-  const [rows] = await db.query(`SELECT * FROM profiles WHERE user_id = ? LIMIT 1`, [userId])
+  const [rows] = await db.query(
+    `SELECT p.*, u.slug AS user_slug
+       FROM profiles p
+       JOIN users u ON u.id = p.user_id
+      WHERE p.user_id = ?
+      LIMIT 1`,
+    [userId]
+  )
   const row = (rows as any[])[0]
   if (!row) return null
   return mapRow(row)
@@ -77,6 +85,6 @@ function mapRow(row: any): ProfileRow {
     show_bio: Boolean(Number(row.show_bio)),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    slug: row.user_slug != null ? String(row.user_slug || '') : null,
   }
 }
-

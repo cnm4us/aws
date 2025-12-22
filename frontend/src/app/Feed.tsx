@@ -271,6 +271,7 @@ export default function Feed() {
     avatarUrl: string | null
     bio: string | null
     memberSince: string | null
+    slug?: string | null
   } | null>(null)
   const [peekLoading, setPeekLoading] = useState(false)
   const [peekError, setPeekError] = useState<string | null>(null)
@@ -372,6 +373,7 @@ export default function Feed() {
           avatarUrl: initialAvatarUrl || null,
           bio: null,
           memberSince: null,
+          slug: undefined,
         })
       } else {
         setPeekProfile(null)
@@ -392,6 +394,7 @@ export default function Feed() {
             avatarUrl: p.avatarUrl || prev?.avatarUrl || null,
             bio: p.bio ?? prev?.bio ?? null,
             memberSince: p.memberSince ? String(p.memberSince) : prev?.memberSince ?? null,
+            slug: typeof p.slug === 'string' && p.slug.length ? String(p.slug) : prev?.slug ?? null,
           }))
         } else {
           setPeekError('Profile not found.')
@@ -2589,7 +2592,13 @@ export default function Feed() {
             )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
               <a
-                href={peekProfile ? `/users/${peekProfile.userId}` : '#'}
+                href={
+                  peekProfile
+                    ? (peekProfile as any).slug
+                      ? `/users/${encodeURIComponent((peekProfile as any).slug)}`
+                      : `/users/${peekProfile.userId}`
+                    : '#'
+                }
                 style={{ fontSize: 13, color: '#9cf', textDecoration: 'none' }}
               >
                 View full profile

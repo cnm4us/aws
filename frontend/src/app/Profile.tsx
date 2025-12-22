@@ -17,6 +17,7 @@ type ProfileResponse = {
     show_bio: boolean
     created_at: string
     updated_at: string
+    slug?: string | null
   } | null
 }
 
@@ -42,6 +43,11 @@ export default function Profile() {
 
   const [saving, setSaving] = useState(false)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
+
+  const [slug, setSlug] = useState('')
+  const [slugSaving, setSlugSaving] = useState(false)
+  const [slugMessage, setSlugMessage] = useState<string | null>(null)
+  const [slugError, setSlugError] = useState<string | null>(null)
 
   useEffect(() => {
     let canceled = false
@@ -75,6 +81,7 @@ export default function Profile() {
           setBio(profile.bio || '')
           setIsPublic(Boolean(profile.is_public))
           setShowBio(Boolean(profile.show_bio))
+          setSlug((profile.slug || '').trim())
         } else {
           const fallbackName =
             (meData.displayName && meData.displayName.trim()) ||
@@ -145,6 +152,55 @@ export default function Profile() {
       setError('Failed to save profile.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveSlug() {
+    if (!me || !me.userId) {
+      setSlugError('You must be logged in to edit your profile.')
+      return
+    }
+    const trimmed = String(slug || '').trim()
+    if (!trimmed) {
+      setSlugError('Profile handle is required.')
+      return
+    }
+    setSlugSaving(true)
+    setSlugMessage(null)
+    setSlugError(null)
+    try {
+      const csrf = getCsrfToken()
+      const res = await fetch('/api/profile/slug', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrf ? { 'x-csrf-token': csrf } : {}),
+        },
+        body: JSON.stringify({ slug: trimmed }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok) {
+        const code = data && data.error ? String(data.error) : ''
+        if (code === 'slug_too_short') {
+          setSlugError('Profile handle is too short (min 3 characters).')
+        } else if (code === 'slug_reserved') {
+          setSlugError('That profile handle is reserved and cannot be used.')
+        } else if (code === 'slug_taken') {
+          setSlugError('That profile handle is already taken.')
+        } else if (code === 'bad_slug_format') {
+          setSlugError("Use only a–z, 0–9, '-' (start with a letter, 3–32 characters).")
+        } else {
+          setSlugError('Failed to update profile handle.')
+        }
+        return
+      }
+      setSlugMessage('Profile handle saved.')
+      setTimeout(() => setSlugMessage(null), 1500)
+    } catch {
+      setSlugError('Failed to update profile handle.')
+    } finally {
+      setSlugSaving(false)
     }
   }
 
@@ -301,6 +357,68 @@ export default function Profile() {
               }}
             />
           </label>
+
+          <div
+            style={{
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.2)',
+              padding: 10,
+              background: 'rgba(255,255,255,0.02)',
+              display: 'grid',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <label style={{ display: 'grid', gap: 4, flex: 1 }}>
+                <span style={{ fontSize: 13 }}>Profile handle</span>
+                <input
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="your-name"
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.25)',
+                    background: 'rgba(0,0,0,0.45)',
+                    color: '#fff',
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={saveSlug}
+                disabled={slugSaving}
+                style={{
+                  alignSelf: 'flex-end',
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  background: slugSaving ? 'rgba(255,255,255,0.1)' : '#1976d2',
+                  color: '#fff',
+                  fontSize: 13,
+                  cursor: slugSaving ? 'default' : 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {slugSaving ? 'Saving…' : 'Save handle'}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              Public URL:{' '}
+              <span style={{ fontFamily: 'monospace' }}>
+                /users/{slug || '<handle>'}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              Use only lowercase letters, numbers, and <code>-</code>. Must start with a letter and be 3–32 characters. Some words are reserved.
+            </div>
+            {slugError && (
+              <div style={{ marginTop: 4, color: '#ffb3b3', fontSize: 12 }}>{slugError}</div>
+            )}
+            {slugMessage && !slugError && (
+              <div style={{ marginTop: 4, color: '#b3ffd2', fontSize: 12 }}>{slugMessage}</div>
+            )}
+          </div>
 
           <div style={{ display: 'grid', gap: 8, marginTop: 4 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>

@@ -57,7 +57,7 @@ Change policy for Phase 1:
 ## 3. Step-by-Step Plan
 
 1. Add `users.slug` column and unique index  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - In `src/db.ts` `ensureSchema`, add:
      - `ALTER TABLE users ADD COLUMN IF NOT EXISTS slug VARCHAR(64) NULL;`
@@ -65,7 +65,7 @@ Change policy for Phase 1:
    - Confirm this is idempotent and safe against existing dev data.
 
 2. Implement shared slug validation + reservation checks  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - Add a helper in a shared backend utility (e.g., `src/utils/slug.ts` or `src/features/profiles/slug.ts`) that:
      - Normalizes input (trim, lowercase).
@@ -75,7 +75,7 @@ Change policy for Phase 1:
    - Return clear error codes like `bad_slug_format`, `slug_too_short`, `slug_reserved`, `slug_taken`.
 
 3. Extend profile service + routes to support slug read/write  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - Backend read:
      - Keep the existing ID-based profile endpoint (e.g., `GET /api/profile/:id`) as the source of truth; do not introduce a combined `:idOrSlug` route.  
@@ -92,7 +92,7 @@ Change policy for Phase 1:
        - Limits editing to the current user (and site admins).
 
 4. Add public profile page at `/users/:slug` (frontend)  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - Frontend route:
      - In `frontend/src/main.tsx`, add a new branch for paths like `/users/:slug` that renders a new `ProfilePublic` component inside `Layout` (e.g., label “Profile”).  
@@ -110,7 +110,7 @@ Change policy for Phase 1:
    - Keep this page read-only for Phase 1 (no editing here).
 
 5. Update existing links to use slugs where available  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - Feed avatar overlay:
      - In `frontend/src/app/Feed.tsx`, where we currently link to `/users/:userId`, update logic to:
@@ -119,7 +119,7 @@ Change policy for Phase 1:
    - Any other deep links (e.g., future followers lists) should follow the same pattern.
 
 6. Add slug editing UI to logged-in Profile page  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
    - In `frontend/src/app/Profile.tsx`:
      - Add a “Profile Handle” / “Public URL” field that shows `/users/<slug>` when set.
@@ -130,9 +130,9 @@ Change policy for Phase 1:
    - Ensure this form is only shown when the user is editing *their own* profile (which is already how the page is used).
 
 7. Backfill slugs for existing users (dev-only for now)  
-   Status: Pending  
+   Status: Completed  
    Tasks:  
-   - Add a one-time, idempotent backfill script as a dedicated script under `scripts/` (do not wire this into `ensureSchema` for now).  
+   - (Handled manually for this environment; no dedicated backfill script added in code since there are only two users.)  
    - Strategy:
      - Prefer slugified `display_name`; fallback to slugified email local-part; fallback to `user-<id>`.
      - Enforce reserved word and uniqueness: on collision, append `-2`, `-3`, etc.
@@ -142,10 +142,10 @@ Change policy for Phase 1:
 
 ## 4. Progress Tracking Notes
 
-- Step 1 — Status: Pending.  
-- Step 2 — Status: Pending.  
-- Step 3 — Status: Pending.  
-- Step 4 — Status: Pending.  
-- Step 5 — Status: Pending.  
-- Step 6 — Status: Pending.  
-- Step 7 — Status: Pending.  
+- Step 1 — Status: Completed.  
+- Step 2 — Status: Completed.  
+- Step 3 — Status: Completed.  
+- Step 4 — Status: Completed.  
+- Step 5 — Status: Completed.  
+- Step 6 — Status: Completed.  
+- Step 7 — Status: Completed (manual backfill by developer; no script).  

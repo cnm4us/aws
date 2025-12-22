@@ -30,6 +30,11 @@ pagesRouter.get('/profile/avatar', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+// Public user profile pages (slug or legacy numeric id)
+pagesRouter.get(/^\/users\/([^/]+)\/?$/, (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 // Help UI (SPA shell)
 pagesRouter.get('/help', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));

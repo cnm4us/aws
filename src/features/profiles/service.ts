@@ -50,4 +50,3 @@ export async function updateProfile(userId: number, input: ProfileUpdateInput) {
   }
   return repo.update(userId, input)
 }
-

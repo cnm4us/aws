@@ -23,6 +23,7 @@ const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
+const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
 const ProfileAvatarPage = React.lazy(loadProfileAvatar)
 import Layout from './ui/Layout'
 import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
@@ -299,11 +300,19 @@ if (path === '/' || path === '') {
         </Suspense>
       </Layout>
     )
-  } else if (/^\/help\/(?:[^/]+)\/?$/.test(path)) {
+} else if (/^\/help\/(?:[^/]+)\/?$/.test(path)) {
     root.render(
       <Layout label="Help">
         <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
           <HelpPage />
+        </Suspense>
+      </Layout>
+    )
+  } else if (/^\/users\/(?:[^/]+)\/?$/.test(path)) {
+    root.render(
+      <Layout label="Profile">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+          <ProfilePublicPage />
         </Suspense>
       </Layout>
     )

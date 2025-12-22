@@ -142,6 +142,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at DATETIME NULL`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credibility_score INT DEFAULT 0`);
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS require_review_global TINYINT(1) NOT NULL DEFAULT 0`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slug VARCHAR(64) NULL`);
+  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_slug ON users (slug)`); } catch {}
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS profiles (

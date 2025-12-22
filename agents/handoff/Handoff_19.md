@@ -40,6 +40,9 @@ Changes Since Last
 - [docs] Clarified Global space semantics in `agents/implementation/plan_06.md` (Global space identified by slug `global-feed`, Global feed depends only on `visible_in_global` for that space).  
 - [docs] Refined `agents/implementation/plan_07.md` to pin slug rules (first character must be a letter, reserved names from `agents/requirements/reserved_slug_names.md`), shape the profile/slug APIs, and define `/users/:slug` resolution via a small slug lookup endpoint.  
 - [docs] Initialized this handoff file for the new thread with updated summary and decisions around public profile slugs.
+ - [feat] Implemented `users.slug` column and unique index, shared slug validation helper, profile APIs and routes for reading/updating slugs, `/users/:slug` public profile page (with numeric-id fallback), and Profile editor slug UI per `agents/implementation/plan_07.md`.  
+ - [feat] Added `/users/:slugOrId` SPA shell route in `src/routes/pages.ts` to ensure public profile URLs are served by the existing app shell.  
+ - [plan] Authored `agents/implementation/plan_08.md` for the editable Pages and Versioned Rules systems, including DB schema, Markdown pipeline, public routes, admin UIs, and moderation linkage via `moderation_actions`.
 
 Commit Messages (ready to paste)
 - Subject: docs(plan): clarify global feed and slug behavior  
@@ -59,4 +62,24 @@ Commit Messages (ready to paste)
   - Affects: agents/handoff/Handoff_18.md; agents/handoff/Handoff_19.md; agents/implementation/plan_06.md; agents/implementation/plan_07.md; agents/requirements/reserved_slug_names.md  
   - Routes: /api/users/slug/:slug (planned); /users/:slug (frontend); /api/profile/:id  
   - DB: users.slug (planned); space_publications.visible_in_global semantics for global-feed  
+  - Flags: none
+  
+- Subject: feat(profile): add public slugs and profile pages  
+  
+  Context:  
+  - Implement public, shareable profile URLs and a user-editable handle field so avatars and other UI can link to stable `/users/:slug` pages, while preserving existing numeric-id URLs.  
+  
+  Approach:  
+  - Added a `slug` column and unique index on `users` in `src/db.ts`, plus a shared `requireValidUserSlug` helper in `src/utils/slug.ts` enforcing slug rules and reserved names.  
+  - Extended profile repo/service and `GET /api/profile/:id` to surface `slug`, created `GET /api/users/slug/:slug` and `PUT /api/profile/slug` routes, and wired slug validation and uniqueness errors to stable error codes.  
+  - Built a `/users/:slugOrId` public profile page in `frontend/src/app/ProfilePublic.tsx`, routed via both `frontend/src/main.tsx` and a new `/users/:slug` SPA shell route in `src/routes/pages.ts`, and updated the feed avatar overlay to prefer slug links when available.  
+  - Updated the Profile editor at `/profile` to include a “Profile handle” field with client-side guidance and server-side validation for slug format, reserved names, and conflicts.  
+  
+  Impact:  
+  - Enables stable, user-editable profile URLs and integrates them into existing feed and profile flows, while keeping behavior backward compatible for users without slugs.  
+  
+  Meta:  
+  - Affects: src/db.ts; src/utils/slug.ts; src/features/profiles/repo.ts; src/features/profiles/service.ts; src/routes/profiles.ts; src/routes/pages.ts; frontend/src/app/Feed.tsx; frontend/src/app/Profile.tsx; frontend/src/app/ProfilePublic.tsx; frontend/src/main.tsx; public/app/index.html; agents/implementation/plan_07.md  
+  - Routes: /api/profile/:id; /api/profile/me; /api/profile/slug; /api/users/slug/:slug; /users/:slugOrId; /profile  
+  - DB: users.slug (unique); no destructive migrations  
   - Flags: none

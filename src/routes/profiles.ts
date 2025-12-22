@@ -4,6 +4,9 @@ import path from 'path';
 import { requireAuth } from '../middleware/auth';
 import * as profileService from '../features/profiles/service';
 import * as avatarService from '../features/profiles/avatar';
+import { getPool } from '../db';
+import { requireValidUserSlug } from '../utils/slug';
+import { DomainError } from '../core/errors';
 
 export const profilesRouter = Router();
 
@@ -74,10 +77,76 @@ profilesRouter.get('/api/profile/:userId', async (req, res) => {
       avatarUrl: profile.avatar_url,
       bio: profile.show_bio ? profile.bio : null,
       memberSince: profile.created_at,
+      slug: profile.slug ?? null,
     };
     res.json({ profile: result });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_get_profile', detail: String(err?.message || err) });
+  }
+});
+
+// Resolve a public user slug to a user id (and echo slug)
+profilesRouter.get('/api/users/slug/:slug', async (req, res) => {
+  try {
+    const rawSlug = String(req.params.slug || '');
+    let slug: string;
+    try {
+      slug = requireValidUserSlug(rawSlug);
+    } catch (err: any) {
+      const code = (err as DomainError).code || String(err?.message || 'bad_slug_format');
+      if (code === 'slug_reserved' || code === 'slug_too_short' || code === 'bad_slug_format') {
+        return res.status(400).json({ error: code });
+      }
+      return res.status(400).json({ error: 'bad_slug_format' });
+    }
+
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id FROM users WHERE slug = ? LIMIT 1`, [slug]);
+    const row = (rows as any[])[0];
+    if (!row) {
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    return res.json({ userId: Number(row.id), slug });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_resolve_slug', detail: String(err?.message || err) });
+  }
+});
+
+// Update the current user's slug
+profilesRouter.put('/api/profile/slug', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
+
+    const body = (req.body || {}) as any;
+    const rawSlug = body.slug != null ? String(body.slug) : '';
+    let slug: string;
+    try {
+      slug = requireValidUserSlug(rawSlug);
+    } catch (err: any) {
+      const code = (err as DomainError).code || String(err?.message || 'bad_slug_format');
+      if (code === 'slug_reserved' || code === 'slug_too_short' || code === 'bad_slug_format') {
+        return res.status(400).json({ error: code });
+      }
+      return res.status(400).json({ error: 'bad_slug_format' });
+    }
+
+    const db = getPool();
+    try {
+      await db.query(`UPDATE users SET slug = ? WHERE id = ?`, [slug, user.id]);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      // MySQL duplicate key error codes
+      if (msg.includes('Duplicate') || msg.includes('uniq_users_slug')) {
+        return res.status(409).json({ error: 'slug_taken' });
+      }
+      throw err;
+    }
+
+    return res.json({ ok: true, slug });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_update_slug', detail: String(err?.message || err) });
   }
 });
 
