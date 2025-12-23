@@ -165,6 +165,7 @@ curl_req() {
       echo "- Status: \`$code\`"
       echo '```'
       cat "$bodyTmp"
+      echo
       echo '```'
     } >> "$AUTH_LOG_FILE"
   fi

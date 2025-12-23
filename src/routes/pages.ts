@@ -135,55 +135,244 @@ function normalizePageSlug(raw: string): string | null {
   return segments.join('/');
 }
 
-pagesRouter.get('/', async (req: any, res: any) => {
+function jsonNoStore(res: any) {
+  res.set('Cache-Control', 'no-store');
+}
+
+function jsonError(res: any, status: number, code: string) {
+  jsonNoStore(res);
+  res.status(status).json({ error: code });
+}
+
+async function ensurePageVisibilityJson(req: any, res: any, visibility: PageVisibility): Promise<boolean> {
+  if (visibility === 'public') return true;
+
+  const user = req.user;
+  const session = req.session;
+  if (!user || !session) {
+    return jsonError(res, 401, 'unauthorized'), false;
+  }
+
+  if (visibility === 'authenticated') return true;
+
+  if (visibility === 'space_moderator') {
+    if (await hasAnySpaceModerator(user.id)) return true;
+    return jsonError(res, 403, 'forbidden'), false;
+  }
+
+  if (visibility === 'space_admin') {
+    if (await hasAnySpaceAdmin(user.id)) return true;
+    return jsonError(res, 403, 'forbidden'), false;
+  }
+
+  return true;
+}
+
+async function listDirectChildPages(parentSlug: string): Promise<Array<{ slug: string; title: string | null }>> {
+  const slug = String(parentSlug || '').trim().toLowerCase();
+  if (!slug) return [];
+  const segments = slug.split('/');
+  if (segments.length >= 4) return [];
+
+  const prefix = `${slug}/`;
+  const db = getPool();
+  const [rows] = await db.query(
+    `SELECT slug, title
+       FROM pages
+      WHERE slug LIKE ?
+        AND slug NOT LIKE ?
+      ORDER BY slug
+      LIMIT 200`,
+    [`${prefix}%`, `${prefix}%/%`]
+  );
+  return (rows as any[]).map((r) => ({ slug: String(r.slug), title: r.title != null ? String(r.title) : null }));
+}
+
+// -------- JSON APIs: Pages & Rules (latest only; SPA embed) --------
+
+const TOC_PAGE_SLUGS = new Set(['docs']);
+
+pagesRouter.get(/^\/api\/pages\/(.+)$/, async (req: any, res: any) => {
   try {
+    const rawSlug = String((req.params as any)[0] || '');
+    let decoded = rawSlug;
+    try { decoded = decodeURIComponent(rawSlug) } catch {}
+    const slug = normalizePageSlug(decoded);
+    if (!slug) return jsonError(res, 400, 'bad_slug');
+
     const db = getPool();
-    const [rows] = await db.query(`SELECT slug, title, html, visibility FROM pages WHERE slug = 'home' LIMIT 1`);
+    const [rows] = await db.query(
+      `SELECT slug, title, html, visibility, layout, updated_at
+         FROM pages
+        WHERE slug = ?
+        LIMIT 1`,
+      [slug]
+    );
     const page = (rows as any[])[0];
-    if (!page) {
-      // No CMS-configured home page yet; fall back to SPA shell.
-      return serveHtml(res, path.join('app', 'index.html'));
-    }
-    const ok = await ensurePageVisibility(req, res, page.visibility as PageVisibility);
+    if (!page) return jsonError(res, 404, 'page_not_found');
+
+    const ok = await ensurePageVisibilityJson(req, res, page.visibility as PageVisibility);
     if (!ok) return;
-    const doc = renderPageDocument(page.title || 'Home', String(page.html || ''));
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Cache-Control', 'no-store');
-    res.send(doc);
+
+    const updatedAt = page.updated_at ? new Date(page.updated_at) : null;
+    const children = slug === 'home' ? [] : await listDirectChildPages(slug);
+    const includeChildren = TOC_PAGE_SLUGS.has(slug) || children.length > 0;
+    jsonNoStore(res);
+    res.json({
+      slug,
+      title: page.title != null ? String(page.title) : '',
+      html: String(page.html || ''),
+      visibility: String(page.visibility || 'public'),
+      layout: page.layout != null ? String(page.layout) : 'default',
+      updatedAt: updatedAt && !isNaN(updatedAt.getTime()) ? updatedAt.toISOString() : null,
+      ...(includeChildren
+        ? { children: children.map((c) => ({ slug: c.slug, title: c.title || '', url: `/pages/${c.slug}` })) }
+        : {}),
+    });
   } catch (err) {
-    console.error('home page render failed', err);
-    res.status(500).send('Failed to load home page');
+    console.error('api pages failed', err);
+    jsonError(res, 500, 'internal_error');
   }
 });
 
-pagesRouter.get(/^\/pages\/(.+)$/, async (req: any, res: any) => {
+pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
   try {
     const rawSlug = String((req.params as any)[0] || '');
-    const slug = normalizePageSlug(decodeURIComponent(rawSlug));
-    if (!slug || slug === 'home') {
-      return res.status(404).send('Page not found');
-    }
+    let decoded = rawSlug;
+    try { decoded = decodeURIComponent(rawSlug) } catch {}
+    const slug = normalizePageSlug(decoded);
+    if (!slug) return jsonError(res, 400, 'bad_slug');
+
     const db = getPool();
-    const [rows] = await db.query(`SELECT slug, title, html, visibility FROM pages WHERE slug = ? LIMIT 1`, [slug]);
-    const page = (rows as any[])[0];
-    if (!page) {
-      return res.status(404).send('Page not found');
-    }
-    const ok = await ensurePageVisibility(req, res, page.visibility as PageVisibility);
+    const [ruleRows] = await db.query(
+      `SELECT id, slug, title, visibility, current_version_id
+         FROM rules
+        WHERE slug = ?
+        LIMIT 1`,
+      [slug]
+    );
+    const rule = (ruleRows as any[])[0];
+    if (!rule || !rule.current_version_id) return jsonError(res, 404, 'rule_not_found');
+
+    const ok = await ensurePageVisibilityJson(req, res, rule.visibility as PageVisibility);
     if (!ok) return;
-    const doc = renderPageDocument(page.title || page.slug, String(page.html || ''));
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Cache-Control', 'no-store');
-    res.send(doc);
+
+    const [currentRows] = await db.query(
+      `SELECT version, html, created_at, change_summary
+         FROM rule_versions
+        WHERE id = ? AND rule_id = ?
+        LIMIT 1`,
+      [rule.current_version_id, rule.id]
+    );
+    const current = (currentRows as any[])[0];
+    if (!current) return jsonError(res, 404, 'rule_not_found');
+
+    const [versionRows] = await db.query(
+      `SELECT version, created_at, change_summary
+         FROM rule_versions
+        WHERE rule_id = ?
+        ORDER BY version DESC
+        LIMIT 200`,
+      [rule.id]
+    );
+    const versions = (versionRows as any[]).map((r) => {
+      const createdAt = r.created_at ? new Date(r.created_at) : null;
+      return {
+        version: Number(r.version),
+        url: `/rules/${slug}/v:${Number(r.version)}`,
+        createdAt: createdAt && !isNaN(createdAt.getTime()) ? createdAt.toISOString() : null,
+        ...(r.change_summary ? { changeSummary: String(r.change_summary) } : {}),
+      };
+    });
+
+    const createdAt = current.created_at ? new Date(current.created_at) : null;
+    jsonNoStore(res);
+    res.json({
+      slug,
+      title: rule.title != null ? String(rule.title) : '',
+      html: String(current.html || ''),
+      visibility: String(rule.visibility || 'public'),
+      currentVersion: {
+        version: Number(current.version),
+        url: `/rules/${slug}/v:${Number(current.version)}`,
+        createdAt: createdAt && !isNaN(createdAt.getTime()) ? createdAt.toISOString() : null,
+        ...(current.change_summary ? { changeSummary: String(current.change_summary) } : {}),
+      },
+      versions,
+    });
   } catch (err) {
-    console.error('page render failed', err);
-    res.status(500).send('Failed to load page');
+    console.error('api rules failed', err);
+    jsonError(res, 500, 'internal_error');
   }
+});
+
+pagesRouter.get('/api/rules', async (req: any, res: any) => {
+  try {
+    const user = req.user;
+    const session = req.session;
+
+    const allowed: PageVisibility[] = ['public'];
+    if (user && session) {
+      allowed.push('authenticated');
+      if (await hasAnySpaceModerator(user.id)) allowed.push('space_moderator');
+      if (await hasAnySpaceAdmin(user.id)) allowed.push('space_admin');
+    }
+
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT r.slug, r.title, r.visibility, rv.version, rv.created_at, rv.change_summary
+         FROM rules r
+         JOIN rule_versions rv ON rv.id = r.current_version_id
+        WHERE r.visibility IN (${allowed.map(() => '?').join(',')})
+        ORDER BY r.slug
+        LIMIT 200`,
+      allowed
+    );
+
+    jsonNoStore(res);
+    res.json({
+      items: (rows as any[]).map((r) => {
+        const slug = String(r.slug || '');
+        const createdAt = r.created_at ? new Date(r.created_at) : null;
+        return {
+          slug,
+          title: r.title != null ? String(r.title) : '',
+          visibility: String(r.visibility || 'public'),
+          url: `/rules/${slug}`,
+          currentVersion: {
+            version: Number(r.version),
+            url: `/rules/${slug}/v:${Number(r.version)}`,
+            createdAt: createdAt && !isNaN(createdAt.getTime()) ? createdAt.toISOString() : null,
+            ...(r.change_summary ? { changeSummary: String(r.change_summary) } : {}),
+          },
+        };
+      }),
+    });
+  } catch (err) {
+    console.error('api rules index failed', err);
+    jsonError(res, 500, 'internal_error');
+  }
+});
+
+pagesRouter.get('/', async (req: any, res: any) => {
+  // Phase 2: SPA owns '/', and fetches CMS home content via /api/pages/home.
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
+pagesRouter.get(/^\/pages\/(.+)$/, (req: any, res: any) => {
+  // Phase 2: SPA owns latest /pages/* views and fetches content via /api/pages/:slugPath.
+  // Keep /pages/home non-canonical.
+  const rawSlug = String((req.params as any)[0] || '');
+  let decoded = rawSlug;
+  try { decoded = decodeURIComponent(rawSlug) } catch {}
+  const slug = normalizePageSlug(decoded);
+  if (slug === 'home') return res.redirect('/');
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // -------- Public Rules (latest + specific versions) --------
 
-pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)$/, async (req: any, res: any) => {
+pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
   try {
     const rawSlug = String((req.params as any)[0] || '');
     const slug = normalizePageSlug(decodeURIComponent(rawSlug));
@@ -244,67 +433,25 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)$/, async (req: any, res: any) => {
   }
 });
 
-pagesRouter.get(/^\/rules\/(.+)$/, async (req: any, res: any) => {
-  try {
-    const rawSlug = String((req.params as any)[0] || '');
-    const slug = normalizePageSlug(decodeURIComponent(rawSlug));
-    if (!slug) {
-      return res.status(404).send('Rule not found');
-    }
+pagesRouter.get(/^\/rules\/(.+)\/?$/, (_req: any, res: any) => {
+  // Phase 2: SPA owns latest /rules/:slug views (slug is path-like) and fetches content via /api/rules/:slug.
+  // Historical permalinks remain server-rendered at /rules/:slug/v:version.
+  serveHtml(res, path.join('app', 'index.html'));
+});
 
-    const db = getPool();
-    const [ruleRows] = await db.query(
-      `SELECT id, slug, title, visibility, current_version_id
-         FROM rules
-        WHERE slug = ?
-        LIMIT 1`,
-      [slug]
-    );
-    const rule = (ruleRows as any[])[0];
-    if (!rule || !rule.current_version_id) {
-      return res.status(404).send('Rule not found');
-    }
-
-    const [versionRows] = await db.query(
-      `SELECT id, version, html, created_at, change_summary
-         FROM rule_versions
-        WHERE id = ? AND rule_id = ?
-        LIMIT 1`,
-      [rule.current_version_id, rule.id]
-    );
-    const version = (versionRows as any[])[0];
-    if (!version) {
-      return res.status(404).send('Rule version not found');
-    }
-
-    const ok = await ensurePageVisibility(req, res, rule.visibility as PageVisibility);
-    if (!ok) return;
-
-    const titleText = rule.title || rule.slug;
-    const created = version.created_at ? new Date(version.created_at) : null;
-    const createdLabel = created && !isNaN(created.getTime()) ? created.toLocaleDateString() : '';
-    let body = '';
-    body += `<p class="rule-meta">Current version v${escapeHtml(String(version.version))}`;
-    if (createdLabel) {
-      body += ` — published ${escapeHtml(createdLabel)}`;
-    }
-    body += ` (<a href="/rules/${encodeURIComponent(slug)}/v:${encodeURIComponent(String(version.version))}">permalink</a>)</p>\n`;
-    if (version.change_summary) {
-      body += `<p class="rule-meta">${escapeHtml(String(version.change_summary))}</p>\n`;
-    }
-    body += String(version.html || '');
-
-    const doc = renderPageDocument(titleText, body);
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Cache-Control', 'no-store');
-    res.send(doc);
-  } catch (err) {
-    console.error('rule render failed', err);
-    res.status(500).send('Failed to load rule');
-  }
+pagesRouter.get('/rules', (_req: any, res: any) => {
+  // Phase 2: SPA owns /rules index view.
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/rules/', (_req: any, res: any) => {
+  serveHtml(res, path.join('app', 'index.html'));
 });
 
 // -------- Admin: Pages (server-rendered, minimal JS) --------
+
+// Guard all /admin/* UI routes for site admin only
+pagesRouter.use('/admin', requireSiteAdminPage);
+pagesRouter.use('/adminx', requireSiteAdminPage);
 
 const RESERVED_PAGE_ROOT_SLUGS = new Set([
   'global-feed',
@@ -948,10 +1095,6 @@ pagesRouter.get(/^\/help\/([^/.]+)\/?$/, (_req, res) => {
 pagesRouter.get('/forbidden', (_req, res) => {
   serveHtml(res, 'forbidden.html');
 });
-
-// Guard all /admin/* UI routes for site admin only
-pagesRouter.use('/admin', requireSiteAdminPage);
-pagesRouter.use('/adminx', requireSiteAdminPage);
 
 // Split admin pages
 pagesRouter.get('/admin/settings', (_req, res) => {

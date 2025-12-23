@@ -53,42 +53,67 @@ Test harness:
    - Code-only step (no API calls required).  
    - Quick sanity check (optional): confirm current SPA boot works on the target env:  
      - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /version` → `HTTP 200`
+   Discovery notes (implementation touch points):
+   - SPA route switching is a manual `if/else` on `window.location.pathname` in `frontend/src/main.tsx` (not react-router).
+   - Feed is special-cased: `/` renders `Feed` directly (Feed includes its own `SharedNav`); most other routes render inside `frontend/src/ui/Layout.tsx`.
+   - Shared navigation/drawer is `frontend/src/ui/SharedNav.tsx` using context menus under `frontend/src/menu/contexts/*` with a selector in `frontend/src/menu/ContextPicker.tsx`.
+   - Static menu entries live in the per-context `items = [...]` arrays, e.g. `frontend/src/menu/contexts/HelpMenu.tsx`, `frontend/src/menu/contexts/ProfileMenu.tsx`.
+   - Only `HelpMenu` currently does SPA-style navigation (`pushState` + `popstate`); other menu links do full navigations (acceptable once `/pages/*` and `/rules/*` serve SPA shell).
 
 2. Design backend JSON APIs for pages and rules (latest + historical)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
-   - Define the API shapes (no implementation yet) for:  
-     - `GET /api/pages/:slug` → `{ slug, title, html, visibility, breadcrumbs?, children?: Array<{ slug, title }> }`.  
-     - `GET /api/rules/:slug` → `{ slug, title, html, visibility, currentVersion, createdAt, changeSummary, versions?: Array<{ version, url }> }`.  
-     - `GET /api/rules/:slug/v:version` (optional for SPA; may reuse existing HTML route for deep links).  
-   - Ensure the design:  
-     - Returns pre-rendered HTML from the existing Markdown pipeline (no raw Markdown to the client).  
-     - Preserves visibility semantics from `plan_08` (public, authenticated, space_moderator, space_admin).  
-     - Includes enough metadata to build simple TOC-like navigation (e.g., for `/pages/docs` to enumerate `/pages/docs/*` children) without changing the core page/rule schema.
-   - Add “contract tests” expectations (to be executed in Step 3):  
-     - `200` responses must include required keys; error responses must include `{ "error": "<code>" }`.
+   - Design-only step (no new endpoints implemented yet).  
+   - API contract (latest content only; pre-rendered HTML; no raw Markdown in responses):
+     - `GET /api/pages/:slugPath`
+       - `:slugPath` is path-like (supports `/`) with max 4 segments; normalization matches the HTML routes (lowercase; trim; strip leading/trailing `/`; each segment `^[a-z][a-z0-9-]*$`).
+       - Allowed special case: `home` (used by SPA for `/`).
+       - `200` JSON:
+         - `{ slug, title, html, visibility, layout, updatedAt, children? }`
+         - `children` is optional; when present it is an array of *direct* children: `Array<{ slug, title, url }>` for pages under the requested prefix (one segment deeper).
+       - Errors:
+         - `400 { "error": "bad_slug" }`
+         - `404 { "error": "page_not_found" }`
+         - `401 { "error": "unauthorized" }` (visibility requires auth; not logged in)
+         - `403 { "error": "forbidden" }` (logged in but lacks role)
+    - `GET /api/rules/:slug`
+      - `:slug` is path-like (supports `/`) with max 4 segments; normalization matches the HTML routes (lowercase; trim; strip leading/trailing `/`; each segment `^[a-z][a-z0-9-]*$`).
+      - `200` JSON:
+        - `{ slug, title, html, visibility, currentVersion, versions }`
+        - `currentVersion`: `{ version, url, createdAt, changeSummary? }` where `url` is the canonical HTML permalink `/rules/:slug/v:version`.
+         - `versions`: `Array<{ version, url, createdAt, changeSummary? }>` ordered newest→oldest (may be truncated later if needed).
+       - Errors:
+         - `400 { "error": "bad_slug" }`
+         - `404 { "error": "rule_not_found" }`
+         - `401 { "error": "unauthorized" }`
+         - `403 { "error": "forbidden" }`
+     - No JSON endpoint for historical rule versions in Phase 2:
+       - Keep using server-rendered `/rules/:slug/v:version` permalinks for deep links.
+   - Contract test expectations (to be executed in Step 3):
+     - `200` responses include required keys (above).
+     - Error responses include `{ "error": "<code>" }` with the exact codes above.
 
 3. Implement backend APIs for pages and rules (JSON, pre-rendered HTML)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
      - Extend `src/routes/pages.ts` or add a small `src/routes/content.ts` router to implement:  
        - `GET /api/pages/:slug` resolving slugs in the same way as HTML pages, enforcing visibility, and returning JSON `{ slug, title, html, visibility, children… }`.  
        - `GET /api/rules/:slug` resolving the latest version from `rules` + `rule_versions`, enforcing visibility, and returning JSON `{ slug, title, html, visibility, currentVersion, changeSummary, versions? }`.  
    - Canonical API tests (run on target env; append outputs to `agents/implementation/tests/plan_09/step_03_api.md`):  
      - Unauth baseline:
-       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/home` → `HTTP 200` if `visibility=public`, else `401/403`
-       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/does-not-exist` → `HTTP 404` with `{ "error": "not_found" }`
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/home` → `HTTP 200` if page exists and `visibility=public`, else `401/403` (or `404 page_not_found` if not created yet)
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/does-not-exist` → `HTTP 404` with `{ "error": "page_not_found" }`
      - Site admin (“super”) happy paths:
        - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super login`
        - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/home` → `HTTP 200` and JSON includes `slug,title,html,visibility`
-       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/docs` → `HTTP 200` and JSON includes `children[]` for `docs/*` pages (if any exist)
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/docs` → `HTTP 200` (if the page exists) and JSON includes `children[]` for `docs/*` pages (if any exist)
        - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/rules/community-guidelines` → `HTTP 200` and JSON includes `currentVersion` and `html`
      - Space admin (“space_admin”) RBAC spot checks (expected to match the endpoint’s visibility rules):
        - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin login`
        - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin get /api/pages/home` → `HTTP 200` if public/authenticated; `403` if `space_admin`-only and user lacks that condition (or `401` if unauth)
 
 4. Add SPA viewer routes for Home, Pages, and Rules (latest only)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - In `frontend/src/main.tsx`, add branches that:  
      - For `/`, render a new `HomePage` component inside `Layout` that:  
@@ -108,9 +133,10 @@ Test harness:
      - Browser (manual): open `/pages/docs` and confirm:
        - SharedNav/menu is present
        - Page HTML content renders (no markdown parsing client-side)
+   - Build check (actual): `npm run web:build:scoped` (see `agents/implementation/tests/plan_09/step_04_spa_viewers.md`).
 
 5. Align server HTML routes with SPA ownership for latest versions  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Update `src/routes/pages.ts` HTML routes so that:  
      - `/` serves the SPA shell (`public/app/index.html`) instead of the server-rendered home page, or conditionally does so behind a feature flag.  
@@ -127,21 +153,32 @@ Test harness:
        - `curl -sS https://aws.bawebtech.com/rules/community-guidelines/v:1 | rg -n \"id=\\\"root\\\"\"` → no match
 
 6. Add static menu entries for key Pages and Rules  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Locate the SPA menu configuration (under `frontend/src/ui` or `frontend/src/menu`) and add a small number of static entries for:  
      - Home (if not already present), pointing to `/`.  
      - A “Docs” or “Pages” entry pointing to a curated CMS page such as `/pages/docs`.  
-     - A “Rules” entry pointing to a key rule, e.g., `/rules/community-guidelines` or to a rules index page (if desired).  
+     - A “Rules” entry pointing to a rules index page at `/rules`.  
    - Manually verify that:  
      - These entries appear in the shared navigation.  
      - Clicking them from anywhere in the SPA retains the existing layout and shows the embedded page/rule content.
    - Canonical manual checks:
      - “Docs” menu item → `/pages/docs` (renders)
-     - “Rules” menu item → `/rules/community-guidelines` (renders)
+     - “Rules” menu item → `/rules` (renders, lists rules)
+   - Build check (actual): `npm run web:build:scoped`.
+   Implementation notes:
+   - Added an `Info` menu context in `frontend/src/menu/contexts/InfoMenu.tsx` with static links: Home, Docs, Rules.
+   - Exposed it via `frontend/src/menu/ContextPicker.tsx` (context id: `info`) and wired it into `frontend/src/ui/SharedNav.tsx`.
+
+6b. Add a Rules index (TOC) route  
+   Status: Completed  
+   Testing (append outputs to `agents/implementation/tests/plan_09/step_06b_rules_index.md`):  
+   - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/rules` → `HTTP 200` and includes `items[]` with `{slug,title,url}`.
+   - `curl -sS https://aws.bawebtech.com/rules | rg -n "id=\\\"root\\\""` → match (SPA shell)
+   - Manual: `Info (Pages & Rules) → Rules` opens `/rules` and shows a list including newly created rules.
 
 7. Implement TOC-style behavior for selected pages (e.g., `/pages/docs`)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Extend the `/api/pages/:slug` implementation so that, for configured “index” pages (e.g., `docs`, `help`), it also returns a list of children based on slug prefix (e.g., all pages where `slug` starts with `docs/`).  
    - Update `PageView` to detect when the current slug is an index/TOC page (by a flag in the API response or by convention) and render a simple list of links to its children beneath the main HTML content.  
@@ -167,13 +204,14 @@ Test harness:
 
 ## 3. Progress Tracking Notes
 
-- Step 1 — Status: Pending.  
-- Step 2 — Status: Pending.  
-- Step 3 — Status: Pending.  
-- Step 4 — Status: Pending.  
-- Step 5 — Status: Pending.  
-- Step 6 — Status: Pending.  
-- Step 7 — Status: Pending.  
+- Step 1 — Status: Completed (2025-12-23) — Discovered route + menu integration points; see Step 1 “Discovery notes”.  
+- Step 2 — Status: Completed (2025-12-23) — Locked API contracts for `/api/pages/:slugPath` and `/api/rules/:slug` (error codes + response shape).  
+- Step 3 — Status: Completed (2025-12-23) — Implemented `/api/pages/:slugPath` and `/api/rules/:slug` in `src/routes/pages.ts` and captured real outputs in `agents/implementation/tests/plan_09/step_03_api.md`.  
+- Step 4 — Status: Completed (2025-12-23) — Added `HomePage`, `PageView`, and `RuleView` SPA components + `frontend/src/main.tsx` route branches; build verified via `npm run web:build:scoped`.  
+- Step 5 — Status: Completed (2025-12-23) — Updated `src/routes/pages.ts` to serve SPA shell for `/`, `/pages/*`, and `/rules/:slug`, preserving server-rendered `/rules/:slug/v:version`; verified via curl in `agents/implementation/tests/plan_09/step_05_routing.md`.  
+- Step 6 — Status: Completed (2025-12-23) — Added `Info` menu context with static links to Home/Docs/Rules; build verified (see `agents/implementation/tests/plan_09/step_06_menu.md`).  
+- Step 6b — Status: Completed (2025-12-23) — Added `/rules` index (TOC) view + `/api/rules` listing; captured real outputs in `agents/implementation/tests/plan_09/step_06b_rules_index.md`.  
+- Step 7 — Status: Completed (2025-12-23) — Enabled TOC children for `/api/pages/docs` and created `docs` + `docs/faq` pages for verification; captured output in `agents/implementation/tests/plan_09/step_07_toc.md`.  
 - Step 8 — Status: Pending.  
 
 ---
@@ -192,17 +230,18 @@ Step | Scenario | Command (canonical) | Last result / Notes
 0 | RBAC: admin guard (super) | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/admin/moderation/actions` | 2025-12-23: `HTTP 200`, `{"actions":[]}`
 0 | Auth: space_admin identity | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin login && ./scripts/auth_curl.sh --profile space_admin me` | 2025-12-23: `HTTP 200`, `userId=6`, `isSiteAdmin=false`
 0 | RBAC: admin guard (space_admin) | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin get /api/admin/moderation/actions` | 2025-12-23: `HTTP 403`, `{"error":"forbidden"}`
-1 | SPA discovery (no API calls) | _N/A — code-only inspection_ | Pending
-2 | API shapes agreed | _N/A — design-only_ | Pending
-3 | `/api/pages/:slug` happy path | `./scripts/auth_curl.sh get /api/pages/home` | Pending
-3 | `/api/pages/:slug` TOC behavior | `./scripts/auth_curl.sh get /api/pages/docs` | Pending
-3 | `/api/rules/:slug` current + versions | `./scripts/auth_curl.sh get /api/rules/community-guidelines` | Pending
-4 | SPA Home fetch | _Navigate to `/` in browser; SPA calls `/api/pages/home`_ | Pending
-4 | SPA page view | _Navigate to `/pages/docs` in browser; SPA calls `/api/pages/docs`_ | Pending
-4 | SPA rule view | _Navigate to `/rules/community-guidelines` in browser; SPA calls `/api/rules/community-guidelines`_ | Pending
-5 | SPA shell for `/pages/:slug` | `curl -I "$BASE_URL/pages/docs"` (should serve SPA shell) | Pending
-5 | Historical rule permalink | `curl -I "$BASE_URL/rules/community-guidelines/v:1"` | Pending
-6 | Menu entry for Docs | _Click “Docs” item in SPA nav → `/pages/docs`_ | Pending
-6 | Menu entry for Rules | _Click “Rules” item in SPA nav → `/rules/community-guidelines`_ | Pending
-7 | TOC children list | `./scripts/auth_curl.sh get /api/pages/docs` (verify `children[]`) | Pending
+1 | SPA discovery (no API calls) | _N/A — code-only inspection_ | Completed 2025-12-23: routing in `frontend/src/main.tsx`, layout in `frontend/src/ui/Layout.tsx`, menu items in `frontend/src/menu/contexts/*`
+2 | API shapes agreed | _N/A — design-only_ | Completed 2025-12-23: `/api/pages/:slugPath` + `/api/rules/:slug` response/error contract
+3 | `/api/pages/:slug` happy path | `./scripts/auth_curl.sh get /api/pages/home` | 2025-12-23 (local): `HTTP 200`, returns `{slug,title,html,visibility,layout,updatedAt}`
+3 | `/api/pages/:slug` TOC behavior | `./scripts/auth_curl.sh get /api/pages/docs` | 2025-12-23 (local): `HTTP 404`, `{"error":"page_not_found"}` (no `docs` page yet)
+3 | `/api/rules/:slug` current + versions | `./scripts/auth_curl.sh get /api/rules/community-guidelines` | 2025-12-23 (local): `HTTP 200`, returns `currentVersion` + `versions[]`
+4 | SPA Home fetch | _Navigate to `/` in browser; SPA calls `/api/pages/home`_ | 2025-12-23: SPA components added; full navigation test depends on Step 5 serving SPA shell
+4 | SPA page view | _Navigate to `/pages/docs` in browser; SPA calls `/api/pages/docs`_ | 2025-12-23: SPA components added; full navigation test depends on Step 5 serving SPA shell
+4 | SPA rule view | _Navigate to `/rules/community-guidelines` in browser; SPA calls `/api/rules/community-guidelines`_ | 2025-12-23: SPA components added; full navigation test depends on Step 5 serving SPA shell
+5 | SPA shell for `/pages/:slug` | `curl -sS "$BASE_URL/pages/docs" | rg -n 'id=\"root\"'` | 2025-12-23 (local): match (`agents/implementation/tests/plan_09/step_05_routing.md`)
+5 | Historical rule permalink | `curl -sS "$BASE_URL/rules/community-guidelines/v:1" | rg -n 'id=\"root\"'` | 2025-12-23 (local): no match (`agents/implementation/tests/plan_09/step_05_routing.md`)
+6 | Menu entry for Docs | _Menu selector → “Info (Pages & Rules)” → “Docs”_ | 2025-12-23: implemented; validate manually in browser
+6 | Menu entry for Rules | _Menu selector → “Info (Pages & Rules)” → “Rules”_ | 2025-12-23: implemented; validate manually in browser
+6b | Rules index (TOC) | `./scripts/auth_curl.sh get /api/rules` | 2025-12-23 (local): `HTTP 200`, returns `items[]` (`agents/implementation/tests/plan_09/step_06b_rules_index.md`)
+7 | TOC children list | `./scripts/auth_curl.sh --profile super get /api/pages/docs` (verify `children[]`) | 2025-12-23 (local): `HTTP 200`, includes `children=[{slug:\"docs/faq\"...}]` (`agents/implementation/tests/plan_09/step_07_toc.md`)
 8 | Moderation actions rule URLs | `./scripts/auth_curl.sh get /api/admin/moderation/actions` | Pending

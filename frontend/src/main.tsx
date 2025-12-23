@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
@@ -17,6 +17,10 @@ const AdminSpaceDetailPage = React.lazy(() => import('./app/AdminSpaceDetail'))
 const AdminModerationGroupsPage = React.lazy(() => import('./app/AdminModerationGroups'))
 const AdminModerationChannelsPage = React.lazy(() => import('./app/AdminModerationChannels'))
 const HelpPage = React.lazy(() => import('./app/Help'))
+const HomePage = React.lazy(loadHomePage)
+const PageView = React.lazy(loadPageView)
+const RuleView = React.lazy(loadRuleView)
+const RulesIndexPage = React.lazy(loadRulesIndex)
 const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
@@ -75,21 +79,37 @@ const FullscreenFallback = ({ label = 'Loading…' }: { label?: string }) => (
 )
 
 if (path === '/' || path === '') {
-  // Idle prefetch: when on Feed, likely next is Uploads or Publish.
-  const App = () => {
-    useEffect(() => {
-      const idle = (cb: () => void) => (window as any).requestIdleCallback ? (window as any).requestIdleCallback(cb) : setTimeout(cb, 600)
-      idle(() => { void loadUploads() })
-      idle(() => { void loadProductions() })
-      idle(() => { void loadPublish() })
-    }, [])
-    return (
-      <Suspense fallback={<FullscreenFallback label="Loading feed…" />}> 
-        <Feed />
+  root.render(
+    <Layout label="Home">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <HomePage />
       </Suspense>
-    )
-  }
-  root.render(<App />)
+    </Layout>
+  )
+} else if (/^\/pages\/.+/.test(path)) {
+  root.render(
+    <Layout label="Page">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <PageView />
+      </Suspense>
+    </Layout>
+  )
+} else if (path === '/rules' || path === '/rules/') {
+  root.render(
+    <Layout label="Rules">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <RulesIndexPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/rules/') && !/\/v:\d+\/?$/.test(path)) {
+  root.render(
+    <Layout label="Rule">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <RuleView />
+      </Suspense>
+    </Layout>
+  )
 } else if (path === '/groups' || path === '/groups/') {
   const GroupsBrowse = React.lazy(() => import('./app/GroupsBrowse'))
   root.render(

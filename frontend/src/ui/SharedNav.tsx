@@ -7,6 +7,7 @@ import AdminMenu from '../menu/contexts/AdminMenu'
 import ContextPicker, { type ContextId } from '../menu/ContextPicker'
 import HelpMenu from '../menu/contexts/HelpMenu'
 import ProfileMenu from '../menu/contexts/ProfileMenu'
+import InfoMenu from '../menu/contexts/InfoMenu'
 // useEffect already imported above
 
 type DrawerMode = 'nav' | 'spaces'
@@ -63,7 +64,7 @@ export default function SharedNav(props: {
   const [activeContext, setActiveContext] = useState<ContextId>(() => {
     try {
       const v = localStorage.getItem('menu:context') as ContextId | null
-      if (v === 'channel' || v === 'assets' || v === 'space-admin' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
+      if (v === 'info' || v === 'channel' || v === 'assets' || v === 'space-admin' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
     } catch {}
     return 'channel'
   })
@@ -102,6 +103,8 @@ export default function SharedNav(props: {
         title={
           pickerOpen
             ? 'Menu Selector'
+            : activeContext === 'info'
+            ? 'Info'
             : activeContext === 'assets'
             ? 'My Assets'
             : activeContext === 'channel'
@@ -124,6 +127,8 @@ export default function SharedNav(props: {
             }}
             showAdmin={isSiteAdmin}
           />
+        ) : activeContext === 'info' ? (
+          <InfoMenu onNavigate={() => setMenuOpen(false)} />
         ) : activeContext === 'channel' ? (
           <ChannelSwitcher
             open={menuOpen}
