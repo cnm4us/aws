@@ -38,7 +38,7 @@ References:
 ### Phase A — Shared Markdown & Editable Pages
 
 1. Design and add DB schema for pages and moderation actions (DDL only)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - In `src/db.ts` `ensureSchema`, add tables such as:  
      - `pages` (id, slug, title, markdown, html, visibility enum, layout enum, created_at, updated_at, created_by, updated_by).  
@@ -50,7 +50,7 @@ References:
    - Apply `ensureSchema` locally and verify via `DESCRIBE pages` / `DESCRIBE moderation_actions` that columns and indexes match the intended design, and that repeated runs are idempotent.
 
 2. Implement shared Markdown → HTML rendering utility (strict, contract-based)  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Create a server-side utility (e.g., `src/utils/markdown.ts`) that:  
      - Accepts raw Markdown input and returns sanitized HTML plus any derived metadata (e.g., heading anchors).  
@@ -61,7 +61,7 @@ References:
    - Verify determinism by rendering the same Markdown multiple times and confirming identical HTML output.
 
 3. Add public page rendering routes for `/` and `/pages/:slug`  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Extend `src/routes/pages.ts` (or add a dedicated router) to:  
      - Handle GET `/` by loading the `home` page record and rendering its HTML inside the shared layout; show a clear “Home page not configured” placeholder if missing.  
@@ -73,7 +73,7 @@ References:
      - Hitting `/` and a few `/pages/...` URLs renders the expected content with no SPA bloat.
 
 4. Implement server-rendered admin pages for listing and editing `pages` under `/admin/pages`  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Add plain server-rendered admin routes (e.g., in `src/routes/pages.ts` or a new `adminPages` router) that require appropriate site-level editor permission (e.g., a dedicated `page_editor` role or permission):  
      - `GET /admin/pages` → list of pages (slug, title, visibility, updated_at).  
@@ -90,7 +90,7 @@ References:
 ### Phase B — Versioned Rules & Moderation Linkage
 
 5. Add DB schema for `rules` and `rule_versions` and link to moderation actions  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - In `src/db.ts` `ensureSchema`, add:  
      - `rules` (id, slug, title, visibility enum, current_version_id NULL, created_at, updated_at, created_by, updated_by).  
@@ -102,7 +102,7 @@ References:
    - Run `ensureSchema` and verify via `DESCRIBE rules`, `DESCRIBE rule_versions`, and that repeated runs remain idempotent.
 
 6. Implement public routes for `/rules/:slug` and `/rules/:slug/v:version`  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Add GET routes that:  
      - Resolve `/rules/:slug` to the `rules` record by slug and then to its `current_version_id`, loading the latest `rule_version`.  
@@ -114,7 +114,7 @@ References:
      - Nonexistent slugs or versions return 404 (not 500).
 
 7. Build server-rendered admin UI for rules and version history under `/admin/rules`  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Add admin routes (server-rendered, minimal JS) that require a site-level `rule_editor` capability:  
      - `GET /admin/rules` → list all rules (slug, title, current version).  
@@ -128,7 +128,7 @@ References:
      - Historical versions remain accessible even after newer versions are added.
 
 8. Integrate moderation actions with rule_version references and optional logging  
-   Status: Pending  
+   Status: Completed  
    Testing:  
    - Identify key moderation flows (e.g., suspensions or bans) where sanctions should reference a rule version and update the relevant services/routes to:  
      - Accept a `ruleVersionId` (or `ruleSlug + version`) parameter when recording a new moderation action.  
@@ -152,4 +152,3 @@ References:
 - Step 6 — Status: Pending.  
 - Step 7 — Status: Pending.  
 - Step 8 — Status: Pending.  
-

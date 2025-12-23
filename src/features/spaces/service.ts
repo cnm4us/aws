@@ -354,11 +354,30 @@ export async function createSuspension(spaceId: number, currentUserId: number, i
       endsAt = new Date(Date.now() + d * 24 * 60 * 60 * 1000)
     }
   }
-  await db.query(
+  const [ins] = await db.query(
     `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
        VALUES (?, 'space', ?, ?, ?, NOW(), ?, ?, ?)`,
     [userId, spaceId, k, Number(degree || (k === 'posting' ? 1 : 1)), endsAt, reason ? String(reason).slice(0, 255) : null, currentUserId]
   )
+  const suspensionId = (ins as any).insertId as number
+
+  try {
+    await db.query(
+      `INSERT INTO moderation_actions (actor_user_id, target_type, target_id, action_type, reason, rule_version_id, detail)
+       VALUES (?, 'space', ?, ?, ?, NULL, JSON_OBJECT('suspension_id', ?, 'kind', ?, 'degree', ?, 'ends_at', ?))`,
+      [
+        currentUserId,
+        spaceId,
+        k === 'posting' ? 'suspension_posting' : 'suspension_ban',
+        reason ? String(reason).slice(0, 255) : null,
+        suspensionId,
+        k,
+        Number(degree || (k === 'posting' ? 1 : 1)),
+        endsAt ? endsAt.toISOString() : null,
+      ]
+    )
+  } catch {}
+
   return { ok: true }
 }
 

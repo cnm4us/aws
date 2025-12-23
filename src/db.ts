@@ -396,6 +396,83 @@ export async function ensureSchema(db: DB) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  // Site-wide editable pages (Markdown-backed)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS pages (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      slug VARCHAR(255) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      markdown MEDIUMTEXT NOT NULL,
+      html MEDIUMTEXT NOT NULL,
+      visibility ENUM('public','authenticated','space_moderator','space_admin') NOT NULL DEFAULT 'public',
+      layout VARCHAR(64) NOT NULL DEFAULT 'default',
+      created_by BIGINT UNSIGNED NULL,
+      updated_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_pages_slug (slug)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Dedicated moderation actions with optional linkage to rule versions
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS moderation_actions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      actor_user_id BIGINT UNSIGNED NOT NULL,
+      target_type VARCHAR(32) NOT NULL,
+      target_id BIGINT UNSIGNED NULL,
+      action_type VARCHAR(64) NOT NULL,
+      reason VARCHAR(255) NULL,
+      rule_version_id BIGINT UNSIGNED NULL,
+      detail JSON NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_ma_actor (actor_user_id, created_at),
+      KEY idx_ma_target (target_type, target_id, created_at),
+      KEY idx_ma_rule_version (rule_version_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Versioned rules metadata and content
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rules (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      slug VARCHAR(255) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      visibility ENUM('public','authenticated','space_moderator','space_admin') NOT NULL DEFAULT 'public',
+      current_version_id BIGINT UNSIGNED NULL,
+      created_by BIGINT UNSIGNED NULL,
+      updated_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rules_slug (slug),
+      KEY idx_rules_current_version (current_version_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rule_versions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      rule_id BIGINT UNSIGNED NOT NULL,
+      version INT UNSIGNED NOT NULL,
+      markdown MEDIUMTEXT NOT NULL,
+      html MEDIUMTEXT NOT NULL,
+      change_summary VARCHAR(512) NULL,
+      created_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rule_versions_rule_version (rule_id, version),
+      KEY idx_rule_versions_rule (rule_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Best-effort foreign key from moderation actions to rule versions
+  try {
+    await db.query(`
+      ALTER TABLE moderation_actions
+      ADD CONSTRAINT fk_moderation_actions_rule_version
+      FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
+    `);
+  } catch {}
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS space_publications (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -237,11 +237,29 @@ adminRouter.post('/users/:id/suspensions', async (req, res) => {
     const days = deg === 1 ? 1 : deg === 2 ? 7 : 30;
     const db = getPool();
     const ends = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    await db.query(
+    const [ins] = await db.query(
       `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
        VALUES (?, ?, ?, 'posting', ?, NOW(), ?, ?, ?)`,
       [userId, String(scope), String(scope) === 'space' ? Number(spaceId) : null, deg, ends, reason ? String(reason).slice(0,255) : null, req.user ? Number(req.user.id) : null]
     );
+    const suspensionId = (ins as any).insertId as number;
+
+    try {
+      await db.query(
+        `INSERT INTO moderation_actions (actor_user_id, target_type, target_id, action_type, reason, rule_version_id, detail)
+         VALUES (?, ?, ?, 'suspension_posting', ?, NULL, JSON_OBJECT('suspension_id', ?, 'scope', ?, 'degree', ?, 'ends_at', ?))`,
+        [
+          req.user ? Number(req.user.id) : null,
+          String(scope),
+          String(scope) === 'space' ? Number(spaceId) : null,
+          reason ? String(reason).slice(0, 255) : null,
+          suspensionId,
+          String(scope),
+          deg,
+          ends.toISOString(),
+        ]
+      );
+    } catch {}
     res.status(201).json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_create_suspension', detail: String(err?.message || err) });
@@ -259,6 +277,45 @@ adminRouter.delete('/users/:id/suspensions/:sid', async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: 'failed_to_revoke_suspension', detail: String(err?.message || err) });
+  }
+});
+
+// ---- Moderation actions log (rules linkage) ----
+adminRouter.get('/moderation/actions', async (_req, res) => {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT ma.id,
+              ma.actor_user_id,
+              ma.target_type,
+              ma.target_id,
+              ma.action_type,
+              ma.reason,
+              ma.rule_version_id,
+              ma.created_at,
+              r.slug AS rule_slug,
+              rv.version AS rule_version
+         FROM moderation_actions ma
+         LEFT JOIN rule_versions rv ON rv.id = ma.rule_version_id
+         LEFT JOIN rules r ON r.id = rv.rule_id
+        ORDER BY ma.created_at DESC, ma.id DESC
+        LIMIT 200`
+    );
+    const items = (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      actorUserId: r.actor_user_id != null ? Number(r.actor_user_id) : null,
+      targetType: String(r.target_type || ''),
+      targetId: r.target_id != null ? Number(r.target_id) : null,
+      actionType: String(r.action_type || ''),
+      reason: r.reason || null,
+      ruleVersionId: r.rule_version_id != null ? Number(r.rule_version_id) : null,
+      ruleSlug: r.rule_slug || null,
+      ruleVersion: r.rule_version != null ? Number(r.rule_version) : null,
+      createdAt: String(r.created_at),
+    }));
+    res.json({ actions: items });
+  } catch (err: any) {
+    res.status(500).json({ error: 'failed_to_list_moderation_actions', detail: String(err?.message || err) });
   }
 });
 
