@@ -5,6 +5,9 @@ dist/
 .mc-endpoint.json
 .DS_Store
 .tmp_awscli/
+.tmp/
+.codex-local/*
+!.codex-local/auth_profiles.env.example
 *.mp4
 *.m3u8
 

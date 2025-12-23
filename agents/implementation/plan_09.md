@@ -31,18 +31,28 @@ References:
 - `frontend/src/main.tsx` — SPA route switching.
 - `frontend/src/ui` / `frontend/src/menu` — Existing layout and navigation patterns (to be discovered).
 - `src/routes/pages.ts` — Existing HTML routes for `/`, `/pages/:slug`, `/rules/:slug`, `/rules/:slug/v:version`.
+- `scripts/auth_curl.sh` — Tiny wrapper for authenticated `curl` tests using `/api/login` + `sid`/`csrf` cookies.
+
+Test harness:
+- Use `scripts/auth_curl.sh` for all step-by-step API checks so tests are repeatable and documented.
+- Convention:
+  - Log in once per environment:
+    - `AUTH_EMAIL="you@example.com" AUTH_PASSWORD="secret" ./scripts/auth_curl.sh login`
+  - Then use:
+    - `./scripts/auth_curl.sh get <path>` for authenticated GETs.
+    - `./scripts/auth_curl.sh post|put|delete <path> ...` for state-changing calls (CSRF header auto-attached from cookie jar).
+  - Store full “command + output” snapshots under `agents/implementation/tests/plan_09/` as we complete each step (keeps the plan readable while preserving real outputs for later threads).
 
 ---
 
 ## 2. Step-by-Step Plan
 
 1. Discover current SPA navigation and layout integration points  
-   Status: Pending  
+   Status: Completed  
    Testing:  
-   - Inspect `frontend/src/main.tsx`, `frontend/src/ui/Layout.tsx` (or equivalent), and any menu-related modules under `frontend/src/menu` to identify:  
-     - How routes are currently selected (path-based branching, components).  
-     - Where the main navigation/menu is defined and how items are added.  
-   - Document (in this plan or handoff notes) the minimal set of components and modules that will need changes to add new SPA routes for pages and rules, and where static menu entries live.
+   - Code-only step (no API calls required).  
+   - Quick sanity check (optional): confirm current SPA boot works on the target env:  
+     - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /version` → `HTTP 200`
 
 2. Design backend JSON APIs for pages and rules (latest + historical)  
    Status: Pending  
@@ -55,17 +65,27 @@ References:
      - Returns pre-rendered HTML from the existing Markdown pipeline (no raw Markdown to the client).  
      - Preserves visibility semantics from `plan_08` (public, authenticated, space_moderator, space_admin).  
      - Includes enough metadata to build simple TOC-like navigation (e.g., for `/pages/docs` to enumerate `/pages/docs/*` children) without changing the core page/rule schema.
+   - Add “contract tests” expectations (to be executed in Step 3):  
+     - `200` responses must include required keys; error responses must include `{ "error": "<code>" }`.
 
 3. Implement backend APIs for pages and rules (JSON, pre-rendered HTML)  
    Status: Pending  
    Testing:  
-   - Extend `src/routes/pages.ts` or add a small `src/routes/content.ts` router to implement:  
-     - `GET /api/pages/:slug` resolving slugs in the same way as HTML pages, enforcing visibility, and returning JSON `{ slug, title, html, visibility, children… }`.  
-     - `GET /api/rules/:slug` resolving the latest version from `rules` + `rule_versions`, enforcing visibility, and returning JSON `{ slug, title, html, visibility, currentVersion, changeSummary, versions? }`.  
-   - Add focused tests or manual checks:  
-     - Hitting `/api/pages/home` returns the same content as the HTML home route.  
-     - Hitting `/api/pages/docs` returns HTML plus a list of child pages where `slug` starts with `docs/` (TOC seed).  
-     - Hitting `/api/rules/community-guidelines` returns current rule HTML and a list of versions with their version numbers and canonical URLs.
+     - Extend `src/routes/pages.ts` or add a small `src/routes/content.ts` router to implement:  
+       - `GET /api/pages/:slug` resolving slugs in the same way as HTML pages, enforcing visibility, and returning JSON `{ slug, title, html, visibility, children… }`.  
+       - `GET /api/rules/:slug` resolving the latest version from `rules` + `rule_versions`, enforcing visibility, and returning JSON `{ slug, title, html, visibility, currentVersion, changeSummary, versions? }`.  
+   - Canonical API tests (run on target env; append outputs to `agents/implementation/tests/plan_09/step_03_api.md`):  
+     - Unauth baseline:
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/home` → `HTTP 200` if `visibility=public`, else `401/403`
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/pages/does-not-exist` → `HTTP 404` with `{ "error": "not_found" }`
+     - Site admin (“super”) happy paths:
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super login`
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/home` → `HTTP 200` and JSON includes `slug,title,html,visibility`
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/docs` → `HTTP 200` and JSON includes `children[]` for `docs/*` pages (if any exist)
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/rules/community-guidelines` → `HTTP 200` and JSON includes `currentVersion` and `html`
+     - Space admin (“space_admin”) RBAC spot checks (expected to match the endpoint’s visibility rules):
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin login`
+       - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin get /api/pages/home` → `HTTP 200` if public/authenticated; `403` if `space_admin`-only and user lacks that condition (or `401` if unauth)
 
 4. Add SPA viewer routes for Home, Pages, and Rules (latest only)  
    Status: Pending  
@@ -83,6 +103,11 @@ References:
    - Manually verify:  
      - Navigating to `/` and `/pages/...` routes from within the SPA shows content inside the shared menu/layout.  
      - Clicking existing SPA links (e.g., to `/uploads`, `/profile`) still works as before.
+   - Canonical checks:
+     - `BASE_URL="https://aws.bawebtech.com" curl -sS https://aws.bawebtech.com/ | rg -n \"id=\\\"root\\\"\"` → should match once Step 5 changes land
+     - Browser (manual): open `/pages/docs` and confirm:
+       - SharedNav/menu is present
+       - Page HTML content renders (no markdown parsing client-side)
 
 5. Align server HTML routes with SPA ownership for latest versions  
    Status: Pending  
@@ -94,6 +119,12 @@ References:
    - Manually verify that:  
      - Navigating directly to `/`, `/pages/...`, `/rules/...` loads the SPA and then shows content via the new viewer components.  
      - Navigating to `/rules/:slug/v:version` still shows the HTML-only view independent of SPA.
+   - Canonical routing tests (run on target env; append outputs to `agents/implementation/tests/plan_09/step_05_routing.md`):  
+     - SPA shell served for latest:
+       - `curl -sS https://aws.bawebtech.com/pages/docs | rg -n \"id=\\\"root\\\"\"` → match
+       - `curl -sS https://aws.bawebtech.com/rules/community-guidelines | rg -n \"id=\\\"root\\\"\"` → match
+     - Historical permalink remains server-rendered:
+       - `curl -sS https://aws.bawebtech.com/rules/community-guidelines/v:1 | rg -n \"id=\\\"root\\\"\"` → no match
 
 6. Add static menu entries for key Pages and Rules  
    Status: Pending  
@@ -105,6 +136,9 @@ References:
    - Manually verify that:  
      - These entries appear in the shared navigation.  
      - Clicking them from anywhere in the SPA retains the existing layout and shows the embedded page/rule content.
+   - Canonical manual checks:
+     - “Docs” menu item → `/pages/docs` (renders)
+     - “Rules” menu item → `/rules/community-guidelines` (renders)
 
 7. Implement TOC-style behavior for selected pages (e.g., `/pages/docs`)  
    Status: Pending  
@@ -114,6 +148,8 @@ References:
    - Manually verify:  
      - `/pages/docs` shows both the doc page content and a TOC listing of `/pages/docs/...` children.  
      - Child pages continue to render normally when visited directly.
+   - Canonical API check (after Step 7 lands; append outputs to `agents/implementation/tests/plan_09/step_07_toc.md`):  
+     - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/docs` → JSON includes `children[]` with slugs prefixed by `docs/`
 
 8. Add a JSON moderation view for rule-linked actions (optional polish)  
    Status: Pending  
@@ -123,6 +159,9 @@ References:
      - Optionally filter actions by `rule_slug` or `rule_version_id`.  
    - (Optional SPA integration) Decide whether a future iteration should show a minimal moderation activity list linked from a Rules view; for this phase, confirm only that the JSON response exposes the necessary rule linkage.  
    - Manually verify via curl/Postman that moderation actions referencing rules expose correct rule URLs and versions for later use.
+   - Canonical RBAC tests (append outputs to `agents/implementation/tests/plan_09/step_08_moderation.md`):  
+     - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/admin/moderation/actions` → `HTTP 200`
+     - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin get /api/admin/moderation/actions` → `HTTP 403`
 
 ---
 
@@ -137,3 +176,33 @@ References:
 - Step 7 — Status: Pending.  
 - Step 8 — Status: Pending.  
 
+---
+
+## 4. Test Log (auth_curl.sh snapshots)
+
+This section is a lightweight record of the canonical `auth_curl` tests for each step and their latest observed results.  
+Use it as you work through the plan; update the “Last result” column when you run the commands locally or in staging.
+
+Step | Scenario | Command (canonical) | Last result / Notes
+---- | -------- | ------------------- | -------------------
+0 | Smoke: server reachable | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /version` | 2025-12-23: `HTTP/2 200`, JSON includes `buildTag=6728d35-2025-12-22T210016+0000`, `commit=6728d35`
+0 | Auth: unauth identity | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/me` | 2025-12-23: `HTTP/2 200`, `userId=null` (not logged in)
+0 | RBAC: admin guard (unauth) | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh get /api/admin/moderation/actions` | 2025-12-23: `HTTP/2 401`, `{"error":"unauthorized"}`
+0 | Auth: super identity | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super login && ./scripts/auth_curl.sh --profile super me` | 2025-12-23: `HTTP 200`, `userId=1`, `isSiteAdmin=true`
+0 | RBAC: admin guard (super) | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/admin/moderation/actions` | 2025-12-23: `HTTP 200`, `{"actions":[]}`
+0 | Auth: space_admin identity | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin login && ./scripts/auth_curl.sh --profile space_admin me` | 2025-12-23: `HTTP 200`, `userId=6`, `isSiteAdmin=false`
+0 | RBAC: admin guard (space_admin) | `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile space_admin get /api/admin/moderation/actions` | 2025-12-23: `HTTP 403`, `{"error":"forbidden"}`
+1 | SPA discovery (no API calls) | _N/A — code-only inspection_ | Pending
+2 | API shapes agreed | _N/A — design-only_ | Pending
+3 | `/api/pages/:slug` happy path | `./scripts/auth_curl.sh get /api/pages/home` | Pending
+3 | `/api/pages/:slug` TOC behavior | `./scripts/auth_curl.sh get /api/pages/docs` | Pending
+3 | `/api/rules/:slug` current + versions | `./scripts/auth_curl.sh get /api/rules/community-guidelines` | Pending
+4 | SPA Home fetch | _Navigate to `/` in browser; SPA calls `/api/pages/home`_ | Pending
+4 | SPA page view | _Navigate to `/pages/docs` in browser; SPA calls `/api/pages/docs`_ | Pending
+4 | SPA rule view | _Navigate to `/rules/community-guidelines` in browser; SPA calls `/api/rules/community-guidelines`_ | Pending
+5 | SPA shell for `/pages/:slug` | `curl -I "$BASE_URL/pages/docs"` (should serve SPA shell) | Pending
+5 | Historical rule permalink | `curl -I "$BASE_URL/rules/community-guidelines/v:1"` | Pending
+6 | Menu entry for Docs | _Click “Docs” item in SPA nav → `/pages/docs`_ | Pending
+6 | Menu entry for Rules | _Click “Rules” item in SPA nav → `/rules/community-guidelines`_ | Pending
+7 | TOC children list | `./scripts/auth_curl.sh get /api/pages/docs` (verify `children[]`) | Pending
+8 | Moderation actions rule URLs | `./scripts/auth_curl.sh get /api/admin/moderation/actions` | Pending

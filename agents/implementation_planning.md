@@ -13,6 +13,7 @@ This guide applies whenever the agent is in **Implementation Plan Mode**.
 - Only create or modify an implementation plan when the user asks for one or an existing plan needs to change.
 - Store plans in `agents/implementation/plan_nn.md` and keep exactly one active at a time.
 - Break work into small, testable steps that leave the system runnable and include a clear testing instruction.
+- Testing must be **actually executed** in the target environment (not hypothetical, not “would pass”).
 - Use `Status: Pending`, `Status: In Progress`, and `Status: Completed` per step, with at most one step In Progress at a time.
 - Before starting the next step, update statuses in the plan file (and any plan-tracking tool) so future agents can reliably resume across sessions.
 - External plan tools (for example, an `update_plan` helper) are optional mirrors; the on-disk `plan_nn.md` file is the source of truth.
@@ -71,6 +72,7 @@ A numbered list of steps, where each step:
 - Is small and atomic.
 - Leaves the system running.
 - Includes a testing instruction.
+- Includes at least one **canonical test command** (e.g., `curl`/wrapper invocation) plus the expected outcome (status code + minimal shape).
 - Ends with a checkpoint: “Wait for developer approval before proceeding.”
 
 ### 3. Tracking Progress Through the Plan
@@ -98,6 +100,56 @@ When updating progress:
 
 ---
 
+## TESTING REQUIREMENTS (REAL ENVIRONMENT)
+
+Agents must run tests in the **actual environment the user cares about** (local dev box, staging, prod), and record the real outputs.
+
+Practical rules:
+- Prefer small “contract tests” after each step:
+  - status code
+  - minimal required keys (JSON) or key markers (HTML)
+  - RBAC checks where relevant (unauth vs regular user vs admin)
+- Don’t claim a test passed unless it was executed and the output was observed.
+- Avoid leaking secrets into logs. Do not paste session cookies, tokens, or credentials into plan files or tracked docs.
+
+Recommended harness (repo convention):
+- Use `scripts/auth_curl.sh` for API calls that require login / CSRF.
+- Store credentials locally in a gitignored file:
+  - `.codex-local/auth_profiles.env` (see `.codex-local/auth_profiles.env.example`)
+- Use profiles for RBAC testing:
+  - `./scripts/auth_curl.sh --profile <name> login`
+  - `./scripts/auth_curl.sh --profile <name> me`
+
+---
+
+## WHERE TO RECORD TEST RESULTS
+
+Use a two-layer approach:
+
+1) In the plan file (`agents/implementation/plan_nn.md`)
+- Under each step, list **canonical tests** (commands) and **expected outcomes** (brief).
+- Keep this short so the plan stays readable.
+
+2) In step log files (`agents/implementation/tests/plan_nn/`)
+- Store the **actual executed outputs**.
+- Suggested structure:
+  - `agents/implementation/tests/plan_09/step_00_smoke.md`
+  - `agents/implementation/tests/plan_09/step_03_api.md`
+  - `agents/implementation/tests/plan_09/step_05_routing.md`
+- Each log file should include:
+  - date/time
+  - `BASE_URL` (the environment)
+  - commands run (code blocks)
+  - captured output (redacted as needed)
+
+This keeps the plan clean while preserving “ground truth” results for future agents/threads.
+
+Optional convenience:
+- When using `scripts/auth_curl.sh`, set `AUTH_LOG_FILE` to append results automatically for requests:
+  - `AUTH_LOG_FILE="agents/implementation/tests/plan_09/step_03_api.md" BASE_URL="https://example.com" ./scripts/auth_curl.sh --profile super get /api/me`
+
+---
+
 ### 4. Example Implementation Plan File
 
 Plans live in `agents/implementation/plan_nn.md`.  
@@ -122,17 +174,23 @@ Out of scope:
 
 1. Add backend support for new filters  
    Status: Pending  
-   Testing: Run existing search tests and add a focused test for specialty/date filters.  
+   Testing:
+   - Canonical (expected): `curl -sS "http://localhost:3300/api/search?specialty=..."` → `HTTP 200` and JSON includes `results[]`.  
+   - Record actual output: `agents/implementation/tests/plan_nn/step_01_backend.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 2. Wire API layer to accept filter parameters  
    Status: Pending  
-   Testing: Hit the API directly (e.g., via curl or Postman) and verify responses match expectations.  
+   Testing:
+   - Canonical (expected): `./scripts/auth_curl.sh --profile super get /api/search?...` → `HTTP 200`.  
+   - Record actual output: `agents/implementation/tests/plan_nn/step_02_api.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 3. Connect UI controls to API filters  
    Status: Pending  
-   Testing: Verify end-to-end behavior in the UI, ensuring legacy search still works without filters.  
+   Testing:
+   - Canonical (expected): manual browser check: “filters apply; legacy search unchanged”.  
+   - Record actual notes: `agents/implementation/tests/plan_nn/step_03_ui.md`  
    Checkpoint: Wait for developer approval before proceeding.
 
 ## 3. Progress Tracking Notes
