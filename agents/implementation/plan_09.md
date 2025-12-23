@@ -189,7 +189,7 @@ Test harness:
      - `BASE_URL="https://aws.bawebtech.com" ./scripts/auth_curl.sh --profile super get /api/pages/docs` → JSON includes `children[]` with slugs prefixed by `docs/`
 
 8. Add a JSON moderation view for rule-linked actions (optional polish)  
-   Status: Pending  
+   Status: Deferred  
    Testing:  
    - Extend `GET /api/admin/moderation/actions` (or add a new endpoint) to:  
      - Include canonical rule URLs for any action with a `rule_version_id` (`/rules/:slug/v:version`).  
@@ -212,7 +212,7 @@ Test harness:
 - Step 6 — Status: Completed (2025-12-23) — Added `Info` menu context with static links to Home/Docs/Rules; build verified (see `agents/implementation/tests/plan_09/step_06_menu.md`).  
 - Step 6b — Status: Completed (2025-12-23) — Added `/rules` index (TOC) view + `/api/rules` listing; captured real outputs in `agents/implementation/tests/plan_09/step_06b_rules_index.md`.  
 - Step 7 — Status: Completed (2025-12-23) — Enabled TOC children for `/api/pages/docs` and created `docs` + `docs/faq` pages for verification; captured output in `agents/implementation/tests/plan_09/step_07_toc.md`.  
-- Step 8 — Status: Pending.  
+- Step 8 — Status: Deferred (pending moderation workflow decisions).  
 
 ---
 
@@ -244,4 +244,4 @@ Step | Scenario | Command (canonical) | Last result / Notes
 6 | Menu entry for Rules | _Menu selector → “Info (Pages & Rules)” → “Rules”_ | 2025-12-23: implemented; validate manually in browser
 6b | Rules index (TOC) | `./scripts/auth_curl.sh get /api/rules` | 2025-12-23 (local): `HTTP 200`, returns `items[]` (`agents/implementation/tests/plan_09/step_06b_rules_index.md`)
 7 | TOC children list | `./scripts/auth_curl.sh --profile super get /api/pages/docs` (verify `children[]`) | 2025-12-23 (local): `HTTP 200`, includes `children=[{slug:\"docs/faq\"...}]` (`agents/implementation/tests/plan_09/step_07_toc.md`)
-8 | Moderation actions rule URLs | `./scripts/auth_curl.sh get /api/admin/moderation/actions` | Pending
+8 | Moderation actions rule URLs | `./scripts/auth_curl.sh get /api/admin/moderation/actions` | Deferred
