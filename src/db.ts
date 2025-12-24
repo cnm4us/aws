@@ -505,12 +505,48 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_markdown MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_html MEDIUMTEXT NULL`);
 
+  // Ensure rule drafts exist and can evolve (idempotent)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rule_drafts (
+      rule_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      markdown MEDIUMTEXT NOT NULL,
+      html MEDIUMTEXT NOT NULL,
+      short_description TEXT NULL,
+      allowed_examples_markdown MEDIUMTEXT NULL,
+      allowed_examples_html MEDIUMTEXT NULL,
+      disallowed_examples_markdown MEDIUMTEXT NULL,
+      disallowed_examples_html MEDIUMTEXT NULL,
+      guidance_markdown MEDIUMTEXT NULL,
+      guidance_html MEDIUMTEXT NULL,
+      updated_by BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS short_description TEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS allowed_examples_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS allowed_examples_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS disallowed_examples_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS disallowed_examples_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NULL`);
+
   // Best-effort foreign key from rules to categories
   try {
     await db.query(`
       ALTER TABLE rules
       ADD CONSTRAINT fk_rules_category
       FOREIGN KEY (category_id) REFERENCES rule_categories(id)
+    `);
+  } catch {}
+
+  // Best-effort foreign key from drafts to rules
+  try {
+    await db.query(`
+      ALTER TABLE rule_drafts
+      ADD CONSTRAINT fk_rule_drafts_rule
+      FOREIGN KEY (rule_id) REFERENCES rules(id)
     `);
   } catch {}
 

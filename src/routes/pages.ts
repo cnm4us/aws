@@ -647,6 +647,168 @@ async function listRuleCategories(): Promise<Array<{ id: number; name: string }>
   }
 }
 
+async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
+  const db = getPool();
+  const [draftRows] = await db.query(`SELECT * FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [ruleId]);
+  const existing = (draftRows as any[])[0];
+  if (existing) return existing;
+
+  const [baseRows] = await db.query(
+    `SELECT r.id AS rule_id, rv.markdown, rv.html,
+            rv.short_description,
+            rv.allowed_examples_markdown, rv.allowed_examples_html,
+            rv.disallowed_examples_markdown, rv.disallowed_examples_html,
+            rv.guidance_markdown, rv.guidance_html
+       FROM rules r
+       JOIN rule_versions rv ON rv.id = r.current_version_id
+      WHERE r.id = ?
+      LIMIT 1`,
+    [ruleId]
+  );
+  const base = (baseRows as any[])[0];
+  if (!base) return null;
+
+  await db.query(
+    `INSERT IGNORE INTO rule_drafts (
+       rule_id, markdown, html,
+       short_description,
+       allowed_examples_markdown, allowed_examples_html,
+       disallowed_examples_markdown, disallowed_examples_html,
+       guidance_markdown, guidance_html,
+       updated_by
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    [
+      ruleId,
+      String(base.markdown || ''),
+      String(base.html || ''),
+      base.short_description != null ? String(base.short_description) : null,
+      base.allowed_examples_markdown != null ? String(base.allowed_examples_markdown) : null,
+      base.allowed_examples_html != null ? String(base.allowed_examples_html) : null,
+      base.disallowed_examples_markdown != null ? String(base.disallowed_examples_markdown) : null,
+      base.disallowed_examples_html != null ? String(base.disallowed_examples_html) : null,
+      base.guidance_markdown != null ? String(base.guidance_markdown) : null,
+      base.guidance_html != null ? String(base.guidance_html) : null,
+    ]
+  );
+
+  const [createdRows] = await db.query(`SELECT * FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [ruleId]);
+  return (createdRows as any[])[0] ?? null;
+}
+
+function renderRuleDraftEditPage(opts: {
+  rule: any;
+  draft: any;
+  categories: Array<{ id: number; name: string }>;
+  csrfToken?: string | null;
+  notice?: string | null;
+}): string {
+  const { rule, draft, categories } = opts;
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
+  const notice = opts.notice ? String(opts.notice) : '';
+
+  const titleValue = rule.title ? String(rule.title) : '';
+  const categoryIdValue = rule.category_id != null ? String(rule.category_id) : '';
+
+  const shortDescriptionValue = draft.short_description ? String(draft.short_description) : '';
+  const markdownValue = draft.markdown ? String(draft.markdown) : '';
+  const htmlValue = draft.html ? String(draft.html) : '';
+
+  const allowedExamplesValue = draft.allowed_examples_markdown ? String(draft.allowed_examples_markdown) : '';
+  const allowedExamplesHtmlValue = draft.allowed_examples_html ? String(draft.allowed_examples_html) : '';
+
+  const disallowedExamplesValue = draft.disallowed_examples_markdown ? String(draft.disallowed_examples_markdown) : '';
+  const disallowedExamplesHtmlValue = draft.disallowed_examples_html ? String(draft.disallowed_examples_html) : '';
+
+  const guidanceValue = draft.guidance_markdown ? String(draft.guidance_markdown) : '';
+  const guidanceHtmlValue = draft.guidance_html ? String(draft.guidance_html) : '';
+
+  const changeSummaryId = `rule_draft_change_summary_${String(rule.id)}`;
+
+  const mdId = `rule_draft_markdown_${String(rule.id)}`;
+  const allowedId = `rule_draft_allowed_${String(rule.id)}`;
+  const disallowedId = `rule_draft_disallowed_${String(rule.id)}`;
+  const guidanceId = `rule_draft_guidance_${String(rule.id)}`;
+
+  let body = `<h1>Edit Draft: ${escapeHtml(String(rule.slug || rule.title || 'Rule'))}</h1>`;
+  body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div></div>';
+  if (notice) {
+    body += `<div class="success">${escapeHtml(notice)}</div>`;
+  }
+
+  body += `<form method="post" action="/admin/rules/${escapeHtml(String(rule.id))}/edit">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+
+  body += `<label>Title
+    <input type="text" name="title" value="${escapeHtml(titleValue)}" />
+  </label>`;
+
+  body += `<label>Category
+    <select name="categoryId">
+      <option value=""${categoryIdValue === '' ? ' selected' : ''}>—</option>
+      ${categories
+        .map((c) => {
+          const id = String(c.id);
+          const sel = id === categoryIdValue ? ' selected' : '';
+          return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
+        })
+        .join('')}
+    </select>
+  </label>`;
+
+  body += `<label>Short Description
+    <textarea name="shortDescription" style="min-height: 90px">${escapeHtml(shortDescriptionValue)}</textarea>
+  </label>`;
+
+  body += `<label for="${escapeHtml(mdId)}">Long Description</label>`;
+  body += `<textarea id="${escapeHtml(mdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(allowedId)}">Allowed Examples</label>`;
+  body += `<textarea id="${escapeHtml(allowedId)}" name="allowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(allowedExamplesHtmlValue)}">${escapeHtml(allowedExamplesValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(disallowedId)}">Disallowed Examples</label>`;
+  body += `<textarea id="${escapeHtml(disallowedId)}" name="disallowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(disallowedExamplesHtmlValue)}">${escapeHtml(disallowedExamplesValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(guidanceId)}">Guidance</label>`;
+  body += `<textarea id="${escapeHtml(guidanceId)}" name="guidance" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceHtmlValue)}">${escapeHtml(guidanceValue)}</textarea>`;
+  body += `<div class="field-hint">Guidance is intended for moderators and automated agents; do not expose it to regular users.</div>`;
+
+  body += `<label for="${escapeHtml(changeSummaryId)}">Change summary (optional; used on Publish)</label>`;
+  body += `<input id="${escapeHtml(changeSummaryId)}" type="text" name="changeSummary" value="" />`;
+  body += `<div class="field-hint">Short description of what changed in this published version (e.g., “Clarify harassment examples”).</div>`;
+
+  body += `<div class="actions">`;
+  body += `<button type="submit" name="action" value="save">Save</button>`;
+  body += `<button type="submit" name="action" value="publish">Publish Version</button>`;
+  body += `</div>`;
+  body += `</form>`;
+
+  body += `<div class="field-hint" style="margin-top: 10px">Save updates the draft only. Publish creates a new immutable version and updates the current published version.</div>`;
+
+  body += `
+<style>
+  .md-wysiwyg { margin-top: 6px; }
+  .ck.ck-editor__main>.ck-editor__editable { background: rgba(0,0,0,0.35); color: #f5f5f5; min-height: 220px; }
+  .ck.ck-toolbar { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-button, .ck.ck-toolbar__separator { color: #f5f5f5; }
+  .ck.ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-editor__editable.ck-focused { border-color: rgba(153,204,255,0.8) !important; box-shadow: none !important; }
+  .ck.ck-dropdown__panel { background: rgba(0,0,0,0.92); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-list { background: transparent; }
+  .ck.ck-list__item .ck-button { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button .ck-button__label { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-list__item .ck-button.ck-on { background: #1976d2; color: #fff; }
+  .ck.ck-list__item .ck-button.ck-on .ck-button__label { color: #fff; }
+</style>
+<script src="/vendor/ckeditor5/ckeditor.js"></script>
+<script src="/vendor/turndown/turndown.js"></script>
+<script src="/admin/ckeditor_markdown.js"></script>
+`;
+
+  return renderAdminPage('Edit Rule Draft', body);
+}
+
 function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
   const csrf = csrfToken ? String(csrfToken) : '';
   let body = '<h1>Rules</h1>';
@@ -654,7 +816,7 @@ function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
   if (!rules.length) {
     body += '<p>No rules have been created yet.</p>';
   } else {
-    body += '<table><thead><tr><th>Slug</th><th>Category</th><th>Title</th><th>Visibility</th><th>Current Version</th><th>Updated</th><th></th></tr></thead><tbody>';
+    body += '<table><thead><tr><th>Slug</th><th>Category</th><th>Title</th><th>Visibility</th><th>Current Version</th><th>Draft</th><th>Updated</th><th></th></tr></thead><tbody>';
     for (const row of rules) {
       const slug = escapeHtml(String(row.slug || ''));
       const category = escapeHtml(String(row.category_name || ''));
@@ -662,6 +824,9 @@ function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
       const vis = escapeHtml(String(row.visibility || 'public'));
       const ver = row.current_version ?? row.current_version_id ?? null;
       const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
+      const draftUpdatedAt = row.draft_updated_at ? String(row.draft_updated_at) : '';
+      const currentPublishedAt = row.current_published_at ? String(row.current_published_at) : '';
+      const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
       const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
       body += `<tr>`;
       body += `<td><a href="/admin/rules/${row.id}">${slug}</a></td>`;
@@ -669,9 +834,11 @@ function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
       body += `<td>${title}</td>`;
       body += `<td>${vis}</td>`;
       body += `<td>${versionLabel}</td>`;
+      body += `<td>${hasUnpublishedDraft ? '<span class="pill">Draft pending</span>' : ''}</td>`;
       body += `<td>${updated}</td>`;
-      body += `<td style="text-align: right">`;
-      body += `<form method="post" action="/admin/rules/${row.id}/delete" style="margin:0" onsubmit="return confirm('Delete rule \\'${slug}\\'? This cannot be undone.');">`;
+      body += `<td style="text-align: right; white-space: nowrap">`;
+      body += `<a href="/admin/rules/${row.id}/edit" style="margin-right: 10px">Edit Draft</a>`;
+      body += `<form method="post" action="/admin/rules/${row.id}/delete" style="margin:0; display:inline" onsubmit="return confirm('Delete rule \\'${slug}\\'? This cannot be undone.');">`;
       if (csrf) {
         body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
       }
@@ -821,10 +988,14 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
   try {
     const db = getPool();
     const [rows] = await db.query(
-      `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at, rv.version AS current_version, c.name AS category_name
+      `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at,
+              rv.version AS current_version, rv.created_at AS current_published_at,
+              c.name AS category_name,
+              d.updated_at AS draft_updated_at
          FROM rules r
          LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
          LEFT JOIN rule_categories c ON c.id = r.category_id
+         LEFT JOIN rule_drafts d ON d.rule_id = r.id
         ORDER BY r.slug`
     );
     const rules = rows as any[];
@@ -836,6 +1007,238 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
   } catch (err) {
     console.error('admin rules list failed', err);
     res.status(500).send('Failed to load rules');
+  }
+});
+
+pagesRouter.get('/admin/rules/:id/edit', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
+    const db = getPool();
+    const [ruleRows] = await db.query(
+      `SELECT r.id, r.slug, r.title, r.category_id, r.visibility, r.current_version_id, c.name AS category_name
+         FROM rules r
+         LEFT JOIN rule_categories c ON c.id = r.category_id
+        WHERE r.id = ?
+        LIMIT 1`,
+      [id]
+    );
+    const rule = (ruleRows as any[])[0];
+    if (!rule) return res.status(404).send('Rule not found');
+
+    const draft = await getOrCreateRuleDraft(id);
+    if (!draft) return res.status(404).send('Rule not found');
+
+    const categories = await listRuleCategories();
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+    const notice = req.query && (req.query as any).notice ? String((req.query as any).notice) : '';
+    const doc = renderRuleDraftEditPage({ rule, draft, categories, csrfToken, notice });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    console.error('admin rule draft load failed', err);
+    res.status(500).send('Failed to load rule draft');
+  }
+});
+
+pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
+  let conn: any = null;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
+
+    const action = req.body && (req.body as any).action ? String((req.body as any).action) : '';
+    if (action !== 'save' && action !== 'publish') {
+      const notice = 'Unknown action.';
+      return res.redirect(`/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent(notice)}`);
+    }
+
+    const body = (req.body || {}) as any;
+    const rawTitle = String(body.title || '');
+    const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
+    const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
+
+    const markdown = String(body.markdown || '');
+    const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
+    const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
+    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
+    const changeSummary = body.changeSummary ? String(body.changeSummary) : '';
+
+    const db = getPool() as any;
+    const userId = req.user && req.user.id ? Number(req.user.id) : null;
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [ruleRows] = await conn.query(
+      `SELECT id, slug, title, category_id, current_version_id
+         FROM rules
+        WHERE id = ?
+        LIMIT 1`,
+      [id]
+    );
+    const rule = (ruleRows as any[])[0];
+    if (!rule) {
+      await conn.rollback();
+      return res.status(404).send('Rule not found');
+    }
+
+    let categoryId: number | null = rawCategoryId && /^\d+$/.test(rawCategoryId) ? Number(rawCategoryId) : null;
+    if (categoryId != null) {
+      const [catRows] = await conn.query(`SELECT id FROM rule_categories WHERE id = ? LIMIT 1`, [categoryId]);
+      if (!(catRows as any[])?.length) categoryId = null;
+    }
+
+    const title = rawTitle.trim() || String(rule.title || '');
+
+    // Ensure draft exists inside the transaction.
+    const [draftRows] = await conn.query(`SELECT rule_id FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [id]);
+    if (!(draftRows as any[])?.length) {
+      const [baseRows] = await conn.query(
+        `SELECT markdown, html,
+                short_description,
+                allowed_examples_markdown, allowed_examples_html,
+                disallowed_examples_markdown, disallowed_examples_html,
+                guidance_markdown, guidance_html
+           FROM rule_versions
+          WHERE id = ? AND rule_id = ?
+          LIMIT 1`,
+        [rule.current_version_id, id]
+      );
+      const base = (baseRows as any[])[0];
+      if (!base) {
+        await conn.rollback();
+        return res.status(404).send('Rule version not found');
+      }
+      await conn.query(
+        `INSERT INTO rule_drafts (
+           rule_id, markdown, html,
+           short_description,
+           allowed_examples_markdown, allowed_examples_html,
+           disallowed_examples_markdown, disallowed_examples_html,
+           guidance_markdown, guidance_html,
+           updated_by
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          String(base.markdown || ''),
+          String(base.html || ''),
+          base.short_description != null ? String(base.short_description) : null,
+          base.allowed_examples_markdown != null ? String(base.allowed_examples_markdown) : null,
+          base.allowed_examples_html != null ? String(base.allowed_examples_html) : null,
+          base.disallowed_examples_markdown != null ? String(base.disallowed_examples_markdown) : null,
+          base.disallowed_examples_html != null ? String(base.disallowed_examples_html) : null,
+          base.guidance_markdown != null ? String(base.guidance_markdown) : null,
+          base.guidance_html != null ? String(base.guidance_html) : null,
+          userId,
+        ]
+      );
+    }
+
+    const html = renderMarkdown(markdown).html;
+    const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
+    const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
+    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
+
+    await conn.query(
+      `UPDATE rules
+          SET title = ?, category_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?`,
+      [title, categoryId, userId, id]
+    );
+
+    await conn.query(
+      `UPDATE rule_drafts
+          SET markdown = ?, html = ?,
+              short_description = ?,
+              allowed_examples_markdown = ?, allowed_examples_html = ?,
+              disallowed_examples_markdown = ?, disallowed_examples_html = ?,
+              guidance_markdown = ?, guidance_html = ?,
+              updated_by = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE rule_id = ?`,
+      [
+        markdown,
+        html,
+        shortDescription || null,
+        allowedExamplesMarkdown || null,
+        allowedExamplesMarkdown ? allowedExamplesHtml : null,
+        disallowedExamplesMarkdown || null,
+        disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
+        guidanceMarkdown || null,
+        guidanceMarkdown ? guidanceHtml : null,
+        userId,
+        id,
+      ]
+    );
+
+    if (action === 'publish') {
+      const [maxRows] = await conn.query(
+        `SELECT COALESCE(MAX(version), 0) AS max_version
+           FROM rule_versions
+          WHERE rule_id = ?
+          FOR UPDATE`,
+        [id]
+      );
+      const maxVersion = Number((maxRows as any[])[0]?.max_version ?? 0);
+      const nextVersion = Number.isFinite(maxVersion) && maxVersion >= 0 ? maxVersion + 1 : 1;
+
+      const insertRes = await conn.query(
+        `INSERT INTO rule_versions (
+           rule_id, version,
+           markdown, html,
+           short_description,
+           allowed_examples_markdown, allowed_examples_html,
+           disallowed_examples_markdown, disallowed_examples_html,
+           guidance_markdown, guidance_html,
+           change_summary,
+           created_by
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          nextVersion,
+          markdown,
+          html,
+          shortDescription || null,
+          allowedExamplesMarkdown || null,
+          allowedExamplesMarkdown ? allowedExamplesHtml : null,
+          disallowedExamplesMarkdown || null,
+          disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
+          guidanceMarkdown || null,
+          guidanceMarkdown ? guidanceHtml : null,
+          changeSummary.trim() ? changeSummary.trim().slice(0, 512) : null,
+          userId,
+        ]
+      );
+      const newVersionId = (insertRes as any)?.[0]?.insertId ? Number((insertRes as any)[0].insertId) : null;
+      if (!newVersionId || !Number.isFinite(newVersionId)) {
+        await conn.rollback();
+        return res.status(500).send('Failed to publish version');
+      }
+
+      await conn.query(
+        `UPDATE rules
+            SET current_version_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [newVersionId, userId, id]
+      );
+
+      await conn.commit();
+      return res.redirect(
+        `/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent(`Published v${nextVersion}.`)}`
+      );
+    }
+
+    await conn.commit();
+    res.redirect(`/admin/rules/${encodeURIComponent(String(id))}/edit?notice=${encodeURIComponent('Draft saved.')}`);
+  } catch (err) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error('admin save rule draft failed', err);
+    res.status(500).send('Failed to save draft');
+  } finally {
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
@@ -865,6 +1268,7 @@ pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
       [id]
     );
 
+    await conn.query(`DELETE FROM rule_drafts WHERE rule_id = ?`, [id]);
     await conn.query(`DELETE FROM rule_versions WHERE rule_id = ?`, [id]);
     await conn.query(`DELETE FROM rules WHERE id = ?`, [id]);
     await conn.commit();
@@ -1020,10 +1424,18 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
       [rule.id]
     );
     const versions = versionRows as any[];
+    const [draftRows] = await db.query(`SELECT updated_at FROM rule_drafts WHERE rule_id = ? LIMIT 1`, [rule.id]);
+    const draftUpdatedAt = (draftRows as any[])?.[0]?.updated_at ? String((draftRows as any[])[0].updated_at) : '';
+    const currentVersionRow = versions.find((v) => v && v.id === rule.current_version_id);
+    const currentPublishedAt = currentVersionRow && currentVersionRow.created_at ? String(currentVersionRow.created_at) : '';
+    const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
 
     let body = `<h1>Rule: ${escapeHtml(rule.slug || rule.title || '')}</h1>`;
-    body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div><div><a href="/admin/rules/' + escapeHtml(String(rule.id)) + '/versions/new">New version</a></div></div>';
+    body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div><div><a href="/admin/rules/' + escapeHtml(String(rule.id)) + '/edit">Edit Draft</a> &nbsp; <a href="/admin/rules/' + escapeHtml(String(rule.id)) + '/versions/new">New version</a></div></div>';
     body += `<p><span class="pill">Visibility: ${escapeHtml(String(rule.visibility || 'public'))}</span></p>`;
+    if (draftUpdatedAt) {
+      body += `<p><strong>Draft last saved:</strong> ${escapeHtml(draftUpdatedAt)} ${hasUnpublishedDraft ? '<span class="pill">Draft pending</span>' : ''}</p>`;
+    }
     if (!versions.length) {
       body += '<p>No versions exist yet.</p>';
     } else {
