@@ -11,6 +11,10 @@ type RuleResponse = {
   slug: string
   title: string
   html: string
+  shortDescription?: string
+  allowedExamplesHtml?: string
+  disallowedExamplesHtml?: string
+  guidanceHtml?: string
   visibility: string
   currentVersion: RuleVersionMeta
   versions: RuleVersionMeta[]
@@ -78,6 +82,12 @@ export default function RuleView() {
   return (
     <div style={{ minHeight: '100%', background: '#000', padding: '16px 0 32px 0' }}>
       <main style={{ flex: '1 1 auto', maxWidth: 900, margin: '0 auto' }}>
+        <div style={{ padding: '14px 20px 0 20px', maxWidth: 840, margin: '0 auto' }}>
+          <h1 style={{ margin: '0 0 8px 0', fontSize: 22, color: '#fff' }}>{data.title || data.slug}</h1>
+          {data.shortDescription ? (
+            <div style={{ marginBottom: 10, opacity: 0.9, color: '#fff' }}>{data.shortDescription}</div>
+          ) : null}
+        </div>
         <div style={{ padding: '0 20px 6px 20px', maxWidth: 840, margin: '0 auto', opacity: 0.85, fontSize: 13 }}>
           <div>
             Current version v{current?.version ?? '–'}{' '}
@@ -104,6 +114,26 @@ export default function RuleView() {
           style={{ padding: 20, maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}
           dangerouslySetInnerHTML={{ __html: data.html }}
         />
+        {data.allowedExamplesHtml ? (
+          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}>
+            <h2 style={{ margin: '18px 0 10px 0', fontSize: 18 }}>Allowed Examples</h2>
+            <div dangerouslySetInnerHTML={{ __html: data.allowedExamplesHtml }} />
+          </div>
+        ) : null}
+        {data.disallowedExamplesHtml ? (
+          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}>
+            <h2 style={{ margin: '18px 0 10px 0', fontSize: 18 }}>Disallowed Examples</h2>
+            <div dangerouslySetInnerHTML={{ __html: data.disallowedExamplesHtml }} />
+          </div>
+        ) : null}
+        {data.guidanceHtml ? (
+          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6, opacity: 0.95 }}>
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: 'pointer', color: '#9cf' }}>Guidance (moderators only)</summary>
+              <div style={{ marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceHtml }} />
+            </details>
+          </div>
+        ) : null}
       </main>
     </div>
   )

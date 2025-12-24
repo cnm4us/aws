@@ -432,12 +432,25 @@ export async function ensureSchema(db: DB) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  // Rule categories (for moderation UI grouping)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rule_categories (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rule_categories_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
   // Versioned rules metadata and content
   await db.query(`
     CREATE TABLE IF NOT EXISTS rules (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       slug VARCHAR(255) NOT NULL,
       title VARCHAR(255) NOT NULL,
+      category_id BIGINT UNSIGNED NULL,
       visibility ENUM('public','authenticated','space_moderator','space_admin') NOT NULL DEFAULT 'public',
       current_version_id BIGINT UNSIGNED NULL,
       created_by BIGINT UNSIGNED NULL,
@@ -445,6 +458,7 @@ export async function ensureSchema(db: DB) {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_rules_slug (slug),
+      KEY idx_rules_category (category_id),
       KEY idx_rules_current_version (current_version_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
@@ -456,6 +470,13 @@ export async function ensureSchema(db: DB) {
       version INT UNSIGNED NOT NULL,
       markdown MEDIUMTEXT NOT NULL,
       html MEDIUMTEXT NOT NULL,
+      short_description TEXT NULL,
+      allowed_examples_markdown MEDIUMTEXT NULL,
+      allowed_examples_html MEDIUMTEXT NULL,
+      disallowed_examples_markdown MEDIUMTEXT NULL,
+      disallowed_examples_html MEDIUMTEXT NULL,
+      guidance_markdown MEDIUMTEXT NULL,
+      guidance_html MEDIUMTEXT NULL,
       change_summary VARCHAR(512) NULL,
       created_by BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -470,6 +491,26 @@ export async function ensureSchema(db: DB) {
       ALTER TABLE moderation_actions
       ADD CONSTRAINT fk_moderation_actions_rule_version
       FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
+    `);
+  } catch {}
+
+  // Ensure rule category column exists (idempotent best-effort)
+  await db.query(`ALTER TABLE rules ADD COLUMN IF NOT EXISTS category_id BIGINT UNSIGNED NULL`);
+  // Ensure rule version moderation fields exist (idempotent)
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS short_description TEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS allowed_examples_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS allowed_examples_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS disallowed_examples_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS disallowed_examples_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_html MEDIUMTEXT NULL`);
+
+  // Best-effort foreign key from rules to categories
+  try {
+    await db.query(`
+      ALTER TABLE rules
+      ADD CONSTRAINT fk_rules_category
+      FOREIGN KEY (category_id) REFERENCES rule_categories(id)
     `);
   } catch {}
 

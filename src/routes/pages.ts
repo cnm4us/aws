@@ -5,6 +5,8 @@ import { requireSiteAdminPage, requireSpaceAdminPage, requireSpaceModeratorPage 
 import { getPool } from '../db'
 import { renderMarkdown } from '../utils/markdown'
 import { parseCookies } from '../utils/cookies'
+import { can } from '../security/permissions'
+import { PERM } from '../security/perm'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -168,6 +170,21 @@ async function ensurePageVisibilityJson(req: any, res: any, visibility: PageVisi
   return true;
 }
 
+async function canViewGuidance(req: any): Promise<boolean> {
+  const user = req.user;
+  const session = req.session;
+  if (!user || !session) return false;
+  try {
+    return (
+      (await can(user.id, PERM.VIDEO_DELETE_ANY)) ||
+      (await can(user.id, PERM.FEED_MODERATE_GLOBAL)) ||
+      (await can(user.id, PERM.FEED_PUBLISH_GLOBAL))
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function listDirectChildPages(parentSlug: string): Promise<Array<{ slug: string; title: string | null }>> {
   const slug = String(parentSlug || '').trim().toLowerCase();
   if (!slug) return [];
@@ -258,7 +275,11 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
     if (!ok) return;
 
     const [currentRows] = await db.query(
-      `SELECT version, html, created_at, change_summary
+      `SELECT version, html, created_at, change_summary,
+              short_description,
+              allowed_examples_html,
+              disallowed_examples_html,
+              guidance_html
          FROM rule_versions
         WHERE id = ? AND rule_id = ?
         LIMIT 1`,
@@ -286,11 +307,16 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
     });
 
     const createdAt = current.created_at ? new Date(current.created_at) : null;
+    const includeGuidance = await canViewGuidance(req);
     jsonNoStore(res);
     res.json({
       slug,
       title: rule.title != null ? String(rule.title) : '',
       html: String(current.html || ''),
+      ...(current.short_description ? { shortDescription: String(current.short_description) } : {}),
+      ...(current.allowed_examples_html ? { allowedExamplesHtml: String(current.allowed_examples_html) } : {}),
+      ...(current.disallowed_examples_html ? { disallowedExamplesHtml: String(current.disallowed_examples_html) } : {}),
+      ...(includeGuidance && current.guidance_html ? { guidanceHtml: String(current.guidance_html) } : {}),
       visibility: String(rule.visibility || 'public'),
       currentVersion: {
         version: Number(current.version),
@@ -395,7 +421,11 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
     }
 
     const [versionRows] = await db.query(
-      `SELECT id, version, html, created_at, change_summary
+      `SELECT id, version, html, created_at, change_summary,
+              short_description,
+              allowed_examples_html,
+              disallowed_examples_html,
+              guidance_html
          FROM rule_versions
         WHERE rule_id = ? AND version = ?
         LIMIT 1`,
@@ -413,6 +443,7 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
     const created = version.created_at ? new Date(version.created_at) : null;
     const createdLabel = created && !isNaN(created.getTime()) ? created.toLocaleDateString() : '';
     let body = '';
+    body += `<h1>${escapeHtml(String(titleText))}</h1>\n`;
     body += `<p class="rule-meta">Version v${escapeHtml(String(version.version))}`;
     if (createdLabel) {
       body += ` — published ${escapeHtml(createdLabel)}`;
@@ -421,7 +452,25 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
     if (version.change_summary) {
       body += `<p class="rule-meta">${escapeHtml(String(version.change_summary))}</p>\n`;
     }
+    if (version.short_description) {
+      body += `<p class="rule-meta">${escapeHtml(String(version.short_description))}</p>\n`;
+    }
     body += String(version.html || '');
+    if (version.allowed_examples_html) {
+      body += `<h2>Allowed Examples</h2>\n`;
+      body += String(version.allowed_examples_html || '');
+    }
+    if (version.disallowed_examples_html) {
+      body += `<h2>Disallowed Examples</h2>\n`;
+      body += String(version.disallowed_examples_html || '');
+    }
+    if (version.guidance_html) {
+      const showGuidance = await canViewGuidance(req);
+      if (showGuidance) {
+        body += `<h2>Guidance (moderators only)</h2>\n`;
+        body += String(version.guidance_html || '');
+      }
+    }
 
     const doc = renderPageDocument(titleText, body);
     res.set('Content-Type', 'text/html; charset=utf-8');
@@ -514,6 +563,11 @@ function renderAdminPage(title: string, bodyHtml: string): string {
         cursor: pointer;
         font-size: 0.9rem;
       }
+      button.danger {
+        background: #b71c1c;
+        border-color: rgba(255,255,255,0.35);
+      }
+      button.danger:hover { background: #c62828; }
       .error { margin-top: 8px; color: #ffb3b3; font-size: 0.85rem; }
       .success { margin-top: 8px; color: #b3ffd2; font-size: 0.85rem; }
       .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
@@ -564,21 +618,48 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
 
 // -------- Admin: Rules (server-rendered, minimal JS) --------
 
-function renderRuleListPage(rules: any[]): string {
+async function listRuleCategories(): Promise<Array<{ id: number; name: string }>> {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, name FROM rule_categories ORDER BY name`);
+    return (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name || '') })).filter((c) => Number.isFinite(c.id) && c.id > 0 && c.name);
+  } catch {
+    return [];
+  }
+}
+
+function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
+  const csrf = csrfToken ? String(csrfToken) : '';
   let body = '<h1>Rules</h1>';
   body += '<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="/admin/rules/new">New rule</a></div></div>';
   if (!rules.length) {
     body += '<p>No rules have been created yet.</p>';
   } else {
-    body += '<table><thead><tr><th>Slug</th><th>Title</th><th>Visibility</th><th>Current Version</th><th>Updated</th></tr></thead><tbody>';
+    body += '<table><thead><tr><th>Slug</th><th>Category</th><th>Title</th><th>Visibility</th><th>Current Version</th><th>Updated</th><th></th></tr></thead><tbody>';
     for (const row of rules) {
       const slug = escapeHtml(String(row.slug || ''));
+      const category = escapeHtml(String(row.category_name || ''));
       const title = escapeHtml(String(row.title || ''));
       const vis = escapeHtml(String(row.visibility || 'public'));
       const ver = row.current_version ?? row.current_version_id ?? null;
       const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
       const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
-      body += `<tr><td><a href="/admin/rules/${row.id}">${slug}</a></td><td>${title}</td><td>${vis}</td><td>${versionLabel}</td><td>${updated}</td></tr>`;
+      body += `<tr>`;
+      body += `<td><a href="/admin/rules/${row.id}">${slug}</a></td>`;
+      body += `<td>${category}</td>`;
+      body += `<td>${title}</td>`;
+      body += `<td>${vis}</td>`;
+      body += `<td>${versionLabel}</td>`;
+      body += `<td>${updated}</td>`;
+      body += `<td style="text-align: right">`;
+      body += `<form method="post" action="/admin/rules/${row.id}/delete" style="margin:0" onsubmit="return confirm('Delete rule \\'${slug}\\'? This cannot be undone.');">`;
+      if (csrf) {
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrf)}" />`;
+      }
+      body += `<button type="submit" class="danger">Delete</button>`;
+      body += `</form>`;
+      body += `</td>`;
+      body += `</tr>`;
     }
     body += '</tbody></table>';
   }
@@ -587,12 +668,14 @@ function renderRuleListPage(rules: any[]): string {
 
 function renderRuleForm(opts: {
   rule?: any;
+  categories?: Array<{ id: number; name: string }>;
   error?: string | null;
   success?: string | null;
   csrfToken?: string | null;
   isNewVersion?: boolean;
 }): string {
   const rule = opts.rule ?? {};
+  const categories = Array.isArray(opts.categories) ? opts.categories : [];
   const error = opts.error;
   const success = opts.success;
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
@@ -601,8 +684,17 @@ function renderRuleForm(opts: {
   const title = isNewVersion ? 'New Rule Version' : (isEdit ? 'Edit Rule' : 'New Rule');
   const slugValue = rule.slug ? String(rule.slug) : '';
   const titleValue = rule.title ? String(rule.title) : '';
+  const categoryIdValue = rule.category_id != null ? String(rule.category_id) : (rule.categoryId != null ? String(rule.categoryId) : '');
   const visibilityValue = rule.visibility ? String(rule.visibility) : 'public';
   const markdownValue = rule.markdown ? String(rule.markdown) : '';
+  const htmlValue = rule.html ? String(rule.html) : '';
+  const shortDescriptionValue = rule.short_description ? String(rule.short_description) : (rule.shortDescription ? String(rule.shortDescription) : '');
+  const allowedExamplesValue = rule.allowed_examples_markdown ? String(rule.allowed_examples_markdown) : (rule.allowedExamples ? String(rule.allowedExamples) : '');
+  const allowedExamplesHtmlValue = rule.allowed_examples_html ? String(rule.allowed_examples_html) : '';
+  const disallowedExamplesValue = rule.disallowed_examples_markdown ? String(rule.disallowed_examples_markdown) : (rule.disallowedExamples ? String(rule.disallowedExamples) : '');
+  const disallowedExamplesHtmlValue = rule.disallowed_examples_html ? String(rule.disallowed_examples_html) : '';
+  const guidanceValue = rule.guidance_markdown ? String(rule.guidance_markdown) : (rule.guidance ? String(rule.guidance) : '');
+  const guidanceHtmlValue = rule.guidance_html ? String(rule.guidance_html) : '';
   const changeSummaryValue = rule.change_summary ? String(rule.change_summary) : '';
   const baseAction = isEdit ? `/admin/rules/${rule.id}` : '/admin/rules';
   const action = isNewVersion ? `/admin/rules/${rule.id}/versions/new` : baseAction;
@@ -623,6 +715,19 @@ function renderRuleForm(opts: {
       <input type="text" name="slug" value="${escapeHtml(slugValue)}" />
       <div class="field-hint">Lowercase; a–z, 0–9, '-' only; up to 4 segments separated by '/'. Used under <code>/rules/&lt;slug&gt;</code>.</div>
     </label>`;
+    body += `<label>Category
+      <select name="categoryId">
+        <option value=""${categoryIdValue === '' ? ' selected' : ''}>—</option>
+        ${categories
+          .map((c) => {
+            const id = String(c.id);
+            const sel = id === categoryIdValue ? ' selected' : '';
+            return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
+          })
+          .join('')}
+      </select>
+      <div class="field-hint">Categories come from the <code>rule_categories</code> table.</div>
+    </label>`;
     body += `<label>Title
       <input type="text" name="title" value="${escapeHtml(titleValue)}" />
     </label>`;
@@ -636,11 +741,30 @@ function renderRuleForm(opts: {
     </label>`;
   } else {
     body += `<p><strong>Rule:</strong> ${escapeHtml(slugValue || titleValue || '(untitled)')}</p>`;
+    if (rule.category_name) {
+      body += `<p><strong>Category:</strong> ${escapeHtml(String(rule.category_name))}</p>`;
+    }
   }
-  body += `<label>Markdown
-    <textarea name="markdown">${escapeHtml(markdownValue)}</textarea>
-    <div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>
+  body += `<label>Short Description
+    <textarea name="shortDescription" style="min-height: 90px">${escapeHtml(shortDescriptionValue)}</textarea>
   </label>`;
+  const mdId = `rule_markdown_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  const allowedId = `rule_allowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  const disallowedId = `rule_disallowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  const guidanceId = `rule_guidance_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  body += `<label for="${escapeHtml(mdId)}">Long Description</label>`;
+  body += `<textarea id="${escapeHtml(mdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
+  body += `<div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>`;
+
+  body += `<label for="${escapeHtml(allowedId)}">Allowed Examples</label>`;
+  body += `<textarea id="${escapeHtml(allowedId)}" name="allowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(allowedExamplesHtmlValue)}">${escapeHtml(allowedExamplesValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(disallowedId)}">Disallowed Examples</label>`;
+  body += `<textarea id="${escapeHtml(disallowedId)}" name="disallowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(disallowedExamplesHtmlValue)}">${escapeHtml(disallowedExamplesValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(guidanceId)}">Guidance</label>`;
+  body += `<textarea id="${escapeHtml(guidanceId)}" name="guidance" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceHtmlValue)}">${escapeHtml(guidanceValue)}</textarea>`;
+  body += `<div class="field-hint">This field is intended for moderators and automated agents; do not expose it to regular users.</div>`;
   body += `<label>Change summary (optional)
     <input type="text" name="changeSummary" value="${escapeHtml(changeSummaryValue)}" />
     <div class="field-hint">Short description of what changed for this version (e.g., “Clarify harassment examples”).</div>
@@ -650,6 +774,27 @@ function renderRuleForm(opts: {
   </div>`;
   body += `</form>`;
 
+  body += `
+<style>
+  .md-wysiwyg { margin-top: 6px; }
+  .ck.ck-editor__main>.ck-editor__editable { background: rgba(0,0,0,0.35); color: #f5f5f5; min-height: 220px; }
+  .ck.ck-toolbar { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-button, .ck.ck-toolbar__separator { color: #f5f5f5; }
+  .ck.ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-editor__editable.ck-focused { border-color: rgba(153,204,255,0.8) !important; box-shadow: none !important; }
+  .ck.ck-dropdown__panel { background: rgba(0,0,0,0.92); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-list { background: transparent; }
+  .ck.ck-list__item .ck-button { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button .ck-button__label { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-list__item .ck-button.ck-on { background: #1976d2; color: #fff; }
+  .ck.ck-list__item .ck-button.ck-on .ck-button__label { color: #fff; }
+</style>
+<script src="/vendor/ckeditor5/ckeditor.js"></script>
+<script src="/vendor/turndown/turndown.js"></script>
+<script src="/admin/ckeditor_markdown.js"></script>
+`;
+
   return renderAdminPage(title, body);
 }
 
@@ -657,13 +802,16 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
   try {
     const db = getPool();
     const [rows] = await db.query(
-      `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at, rv.version AS current_version
+      `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at, rv.version AS current_version, c.name AS category_name
          FROM rules r
          LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
+         LEFT JOIN rule_categories c ON c.id = r.category_id
         ORDER BY r.slug`
     );
     const rules = rows as any[];
-    const doc = renderRuleListPage(rules);
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+    const doc = renderRuleListPage(rules, csrfToken);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -672,10 +820,51 @@ pagesRouter.get('/admin/rules', async (req: any, res: any) => {
   }
 });
 
+pagesRouter.post('/admin/rules/:id/delete', async (req: any, res: any) => {
+  let conn: any = null;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
+
+    const db = getPool() as any;
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [ruleRows] = await conn.query(`SELECT id, slug FROM rules WHERE id = ? LIMIT 1`, [id]);
+    const rule = (ruleRows as any[])[0];
+    if (!rule) {
+      await conn.rollback();
+      return res.status(404).send('Rule not found');
+    }
+
+    // Preserve moderation records but detach from rule versions (FK-safe).
+    await conn.query(
+      `UPDATE moderation_actions ma
+          JOIN rule_versions rv ON rv.id = ma.rule_version_id
+         SET ma.rule_version_id = NULL
+       WHERE rv.rule_id = ?`,
+      [id]
+    );
+
+    await conn.query(`DELETE FROM rule_versions WHERE rule_id = ?`, [id]);
+    await conn.query(`DELETE FROM rules WHERE id = ?`, [id]);
+    await conn.commit();
+
+    res.redirect('/admin/rules');
+  } catch (err) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error('admin delete rule failed', err);
+    res.status(500).send('Failed to delete rule');
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
 pagesRouter.get('/admin/rules/new', async (req: any, res: any) => {
+  const categories = await listRuleCategories();
   const cookies = parseCookies(req.headers.cookie);
   const csrfToken = cookies['csrf'] || '';
-  const doc = renderRuleForm({ rule: {}, error: null, success: null, csrfToken });
+  const doc = renderRuleForm({ rule: {}, categories, error: null, success: null, csrfToken });
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(doc);
 });
@@ -688,12 +877,18 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
     const rawMarkdown = String(body.markdown || '');
     const rawVisibility = String(body.visibility || 'public');
     const changeSummary = body.changeSummary ? String(body.changeSummary) : '';
+    const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
+    const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
+    const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
+    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
+    const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
 
     const slug = normalizePageSlug(rawSlug);
     if (!slug) {
+      const categories = await listRuleCategories();
       const cookies = parseCookies(req.headers.cookie);
       const csrfToken = cookies['csrf'] || '';
-      const doc = renderRuleForm({ rule: body, error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).', success: null, csrfToken });
+      const doc = renderRuleForm({ rule: body, categories, error: 'Slug is required and must use only a–z, 0–9, \'-\' and \'/\' (max 4 segments).', success: null, csrfToken });
       res.set('Content-Type', 'text/html; charset=utf-8');
       return res.status(400).send(doc);
     }
@@ -703,22 +898,61 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
       : 'public';
 
     const { html } = renderMarkdown(rawMarkdown);
+    const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
+    const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
+    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
     const db = getPool();
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
+    let categoryId: number | null = rawCategoryId && /^\d+$/.test(rawCategoryId) ? Number(rawCategoryId) : null;
+    if (categoryId != null) {
+      try {
+        const [catRows] = await db.query(`SELECT id FROM rule_categories WHERE id = ? LIMIT 1`, [categoryId]);
+        if (!(catRows as any[])?.length) categoryId = null;
+      } catch {
+        categoryId = null;
+      }
+    }
 
     let ruleId: number;
     let versionId: number;
     try {
       const [insRule] = await db.query(
-        `INSERT INTO rules (slug, title, visibility, created_by, updated_by)
-         VALUES (?, ?, ?, ?, ?)`,
-        [slug, title, visibility, userId, userId]
+        `INSERT INTO rules (slug, title, category_id, visibility, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [slug, title, categoryId, visibility, userId, userId]
       );
       ruleId = Number((insRule as any).insertId);
       const [insVersion] = await db.query(
-        `INSERT INTO rule_versions (rule_id, version, markdown, html, change_summary, created_by)
-         VALUES (?, 1, ?, ?, ?, ?)`,
-        [ruleId, rawMarkdown, html, changeSummary || null, userId]
+        `INSERT INTO rule_versions (
+           rule_id, version, markdown, html,
+           short_description,
+           allowed_examples_markdown, allowed_examples_html,
+           disallowed_examples_markdown, disallowed_examples_html,
+           guidance_markdown, guidance_html,
+           change_summary, created_by
+         )
+         VALUES (
+           ?, 1, ?, ?,
+           ?,
+           ?, ?,
+           ?, ?,
+           ?, ?,
+           ?, ?
+         )`,
+        [
+          ruleId,
+          rawMarkdown,
+          html,
+          shortDescription || null,
+          allowedExamplesMarkdown || null,
+          allowedExamplesMarkdown ? allowedExamplesHtml : null,
+          disallowedExamplesMarkdown || null,
+          disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
+          guidanceMarkdown || null,
+          guidanceMarkdown ? guidanceHtml : null,
+          changeSummary || null,
+          userId,
+        ]
       );
       versionId = Number((insVersion as any).insertId);
       await db.query(
@@ -728,9 +962,10 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_rules_slug')) {
+        const categories = await listRuleCategories();
         const cookies = parseCookies(req.headers.cookie);
         const csrfToken = cookies['csrf'] || '';
-        const doc = renderRuleForm({ rule: body, error: 'Slug already exists. Please choose a different slug.', success: null, csrfToken });
+        const doc = renderRuleForm({ rule: body, categories, error: 'Slug already exists. Please choose a different slug.', success: null, csrfToken });
         res.set('Content-Type', 'text/html; charset=utf-8');
         return res.status(400).send(doc);
       }
@@ -799,17 +1034,48 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Rule not found');
     const db = getPool();
     const [ruleRows] = await db.query(
-      `SELECT id, slug, title
-         FROM rules
-        WHERE id = ?
+      `SELECT r.id, r.slug, r.title, r.current_version_id, c.name AS category_name
+         FROM rules r
+         LEFT JOIN rule_categories c ON c.id = r.category_id
+        WHERE r.id = ?
         LIMIT 1`,
       [id]
     );
     const rule = (ruleRows as any[])[0];
     if (!rule) return res.status(404).send('Rule not found');
+
+    let draft: any = { id: rule.id, slug: rule.slug, title: rule.title, category_name: rule.category_name };
+    if (rule.current_version_id) {
+      const [verRows] = await db.query(
+        `SELECT markdown, html, change_summary, short_description,
+                allowed_examples_markdown, allowed_examples_html,
+                disallowed_examples_markdown, disallowed_examples_html,
+                guidance_markdown, guidance_html
+           FROM rule_versions
+          WHERE id = ?
+          LIMIT 1`,
+        [rule.current_version_id]
+      );
+      const v = (verRows as any[])[0];
+      if (v) {
+        draft = {
+          ...draft,
+          markdown: v.markdown,
+          html: v.html,
+          change_summary: '',
+          short_description: v.short_description,
+          allowed_examples_markdown: v.allowed_examples_markdown,
+          allowed_examples_html: v.allowed_examples_html,
+          disallowed_examples_markdown: v.disallowed_examples_markdown,
+          disallowed_examples_html: v.disallowed_examples_html,
+          guidance_markdown: v.guidance_markdown,
+          guidance_html: v.guidance_html,
+        };
+      }
+    }
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
-    const doc = renderRuleForm({ rule, error: null, success: null, csrfToken, isNewVersion: true });
+    const doc = renderRuleForm({ rule: draft, error: null, success: null, csrfToken, isNewVersion: true });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -825,6 +1091,10 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
     const body = (req.body || {}) as any;
     const rawMarkdown = String(body.markdown || '');
     const changeSummary = body.changeSummary ? String(body.changeSummary) : '';
+    const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
+    const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
+    const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
+    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
 
     const db = getPool();
     const [ruleRows] = await db.query(
@@ -845,12 +1115,43 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
     const nextVersion = maxVersion + 1;
 
     const { html } = renderMarkdown(rawMarkdown);
+    const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
+    const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
+    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
 
     const [insVersion] = await db.query(
-      `INSERT INTO rule_versions (rule_id, version, markdown, html, change_summary, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [rule.id, nextVersion, rawMarkdown, html, changeSummary || null, userId]
+      `INSERT INTO rule_versions (
+         rule_id, version, markdown, html,
+         short_description,
+         allowed_examples_markdown, allowed_examples_html,
+         disallowed_examples_markdown, disallowed_examples_html,
+         guidance_markdown, guidance_html,
+         change_summary, created_by
+       )
+       VALUES (
+         ?, ?, ?, ?,
+         ?,
+         ?, ?,
+         ?, ?,
+         ?, ?,
+         ?, ?
+       )`,
+      [
+        rule.id,
+        nextVersion,
+        rawMarkdown,
+        html,
+        shortDescription || null,
+        allowedExamplesMarkdown || null,
+        allowedExamplesMarkdown ? allowedExamplesHtml : null,
+        disallowedExamplesMarkdown || null,
+        disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
+        guidanceMarkdown || null,
+        guidanceMarkdown ? guidanceHtml : null,
+        changeSummary || null,
+        userId,
+      ]
     );
     const versionId = Number((insVersion as any).insertId);
     await db.query(
@@ -879,6 +1180,7 @@ function renderPageForm(opts: {
   const titleValue = page.title ? String(page.title) : '';
   const visibilityValue = page.visibility ? String(page.visibility) : 'public';
   const markdownValue = page.markdown ? String(page.markdown) : '';
+  const htmlValue = page.html ? String(page.html) : '';
   const action = isEdit ? `/admin/pages/${page.id}` : '/admin/pages';
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
 
@@ -908,14 +1210,35 @@ function renderPageForm(opts: {
       <option value="space_admin"${visibilityValue === 'space_admin' ? ' selected' : ''}>Any space admin</option>
     </select>
   </label>`;
-  body += `<label>Markdown
-    <textarea name="markdown">${escapeHtml(markdownValue)}</textarea>
-    <div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>
-  </label>`;
+  const pageMdId = `page_markdown_${page.id ? String(page.id) : 'new'}`;
+  body += `<label for="${escapeHtml(pageMdId)}">Markdown</label>`;
+  body += `<textarea id="${escapeHtml(pageMdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
+  body += `<div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>`;
   body += `<div class="actions">
     <button type="submit">${isEdit ? 'Save changes' : 'Create page'}</button>
   </div>`;
   body += `</form>`;
+
+  body += `
+<style>
+  .md-wysiwyg { margin-top: 6px; }
+  .ck.ck-editor__main>.ck-editor__editable { background: rgba(0,0,0,0.35); color: #f5f5f5; min-height: 320px; }
+  .ck.ck-toolbar { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-button, .ck.ck-toolbar__separator { color: #f5f5f5; }
+  .ck.ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-editor__editable.ck-focused { border-color: rgba(153,204,255,0.8) !important; box-shadow: none !important; }
+  .ck.ck-dropdown__panel { background: rgba(0,0,0,0.92); border-color: rgba(255,255,255,0.2); }
+  .ck.ck-list { background: transparent; }
+  .ck.ck-list__item .ck-button { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button .ck-button__label { color: #f5f5f5; }
+  .ck.ck-list__item .ck-button:not(.ck-disabled):hover { background: rgba(255,255,255,0.08); }
+  .ck.ck-list__item .ck-button.ck-on { background: #1976d2; color: #fff; }
+  .ck.ck-list__item .ck-button.ck-on .ck-button__label { color: #fff; }
+</style>
+<script src="/vendor/ckeditor5/ckeditor.js"></script>
+<script src="/vendor/turndown/turndown.js"></script>
+<script src="/admin/ckeditor_markdown.js"></script>
+`;
 
   return renderAdminPage(title, body);
 }
@@ -990,7 +1313,7 @@ pagesRouter.get('/admin/pages/:id', async (req: any, res: any) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Page not found');
     const db = getPool();
-    const [rows] = await db.query(`SELECT id, slug, title, markdown, visibility FROM pages WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await db.query(`SELECT id, slug, title, markdown, html, visibility FROM pages WHERE id = ? LIMIT 1`, [id]);
     const page = (rows as any[])[0];
     if (!page) return res.status(404).send('Page not found');
     const cookies = parseCookies(req.headers.cookie);
