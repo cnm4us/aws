@@ -27,6 +27,13 @@ function normalizeSlugFromPath(pathname: string): string | null {
   try { return decodeURIComponent(raw) } catch { return raw }
 }
 
+function formatDate(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString()
+}
+
 export default function RuleView() {
   const slug = useMemo(() => normalizeSlugFromPath(window.location.pathname || ''), [])
   const [data, setData] = useState<RuleResponse | null>(null)
@@ -78,62 +85,101 @@ export default function RuleView() {
 
   const current = data.currentVersion
   const versions = Array.isArray(data.versions) ? data.versions : []
+  const publishedLabel = formatDate(current?.createdAt ?? null)
+
+  const sectionStyle: React.CSSProperties = {
+    border: '1px solid rgba(255,255,255,0.16)',
+    borderRadius: 12,
+    padding: '14px 14px 12px 14px',
+    margin: '12px 0',
+    background: 'rgba(255,255,255,0.04)',
+  }
+  const sectionTitleStyle: React.CSSProperties = {
+    fontSize: 12,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    opacity: 0.78,
+    marginBottom: 10,
+  }
+  const sectionBodyStyle: React.CSSProperties = {
+    color: '#fff',
+    lineHeight: 1.6,
+  }
 
   return (
     <div style={{ minHeight: '100%', background: '#000', padding: '16px 0 32px 0' }}>
       <main style={{ flex: '1 1 auto', maxWidth: 900, margin: '0 auto' }}>
         <div style={{ padding: '14px 20px 0 20px', maxWidth: 840, margin: '0 auto' }}>
-          <h1 style={{ margin: '0 0 8px 0', fontSize: 22, color: '#fff' }}>{data.title || data.slug}</h1>
+          <h1 style={{ margin: '0 0 6px 0', fontSize: 22, color: '#fff' }}>{data.title || data.slug}</h1>
+        </div>
+
+        <div style={{ padding: '0 20px 10px 20px', maxWidth: 840, margin: '0 auto' }}>
+          <section style={sectionStyle}>
+            <div style={sectionTitleStyle}>Version Summary</div>
+            <div style={{ ...sectionBodyStyle, opacity: 0.9, fontSize: 13 }}>
+              <div>
+                v{current?.version ?? '–'}
+                {publishedLabel ? ` — published ${publishedLabel}` : ''}
+                {current?.url ? (
+                  <>
+                    {' '}
+                    <a href={current.url} style={{ color: '#9cf' }}>(permalink)</a>
+                  </>
+                ) : null}
+              </div>
+              {current?.changeSummary ? <div style={{ marginTop: 6, opacity: 0.9 }}>{current.changeSummary}</div> : null}
+              {versions.length > 1 ? (
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ cursor: 'pointer', color: '#9cf' }}>All versions</summary>
+                  <ul style={{ margin: '8px 0 0 0', paddingLeft: 18, lineHeight: 1.55 }}>
+                    {versions.map((v) => (
+                      <li key={v.version}>
+                        <a href={v.url} style={{ color: '#9cf' }}>v{v.version}</a>
+                        {v.changeSummary ? <span style={{ opacity: 0.75 }}> — {v.changeSummary}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </div>
+          </section>
+
           {data.shortDescription ? (
-            <div style={{ marginBottom: 10, opacity: 0.9, color: '#fff' }}>{data.shortDescription}</div>
+            <section style={sectionStyle}>
+              <div style={sectionTitleStyle}>Short Description</div>
+              <div style={{ ...sectionBodyStyle, opacity: 0.95 }}>{data.shortDescription}</div>
+            </section>
+          ) : null}
+
+          <section style={sectionStyle}>
+            <div style={sectionTitleStyle}>Long Description</div>
+            <div style={sectionBodyStyle} dangerouslySetInnerHTML={{ __html: data.html }} />
+          </section>
+
+          {data.allowedExamplesHtml ? (
+            <section style={sectionStyle}>
+              <div style={sectionTitleStyle}>Allowed Examples</div>
+              <div style={sectionBodyStyle} dangerouslySetInnerHTML={{ __html: data.allowedExamplesHtml }} />
+            </section>
+          ) : null}
+
+          {data.disallowedExamplesHtml ? (
+            <section style={sectionStyle}>
+              <div style={sectionTitleStyle}>Disallowed Examples</div>
+              <div style={sectionBodyStyle} dangerouslySetInnerHTML={{ __html: data.disallowedExamplesHtml }} />
+            </section>
+          ) : null}
+
+          {data.guidanceHtml ? (
+            <section style={sectionStyle}>
+              <div style={sectionTitleStyle}>Guidance (moderators only)</div>
+              <details>
+                <summary style={{ cursor: 'pointer', color: '#9cf' }}>Show guidance</summary>
+                <div style={{ ...sectionBodyStyle, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceHtml }} />
+              </details>
+            </section>
           ) : null}
         </div>
-        <div style={{ padding: '0 20px 6px 20px', maxWidth: 840, margin: '0 auto', opacity: 0.85, fontSize: 13 }}>
-          <div>
-            Current version v{current?.version ?? '–'}{' '}
-            {current?.url ? (
-              <a href={current.url} style={{ color: '#9cf' }}>(permalink)</a>
-            ) : null}
-          </div>
-          {current?.changeSummary ? <div style={{ marginTop: 4, opacity: 0.85 }}>{current.changeSummary}</div> : null}
-          {versions.length > 1 ? (
-            <details style={{ marginTop: 8 }}>
-              <summary style={{ cursor: 'pointer', color: '#9cf' }}>Versions</summary>
-              <ul style={{ margin: '8px 0 0 0', paddingLeft: 18, lineHeight: 1.55 }}>
-                {versions.map((v) => (
-                  <li key={v.version}>
-                    <a href={v.url} style={{ color: '#9cf' }}>v{v.version}</a>
-                    {v.changeSummary ? <span style={{ opacity: 0.75 }}> — {v.changeSummary}</span> : null}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </div>
-        <div
-          style={{ padding: 20, maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}
-          dangerouslySetInnerHTML={{ __html: data.html }}
-        />
-        {data.allowedExamplesHtml ? (
-          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}>
-            <h2 style={{ margin: '18px 0 10px 0', fontSize: 18 }}>Allowed Examples</h2>
-            <div dangerouslySetInnerHTML={{ __html: data.allowedExamplesHtml }} />
-          </div>
-        ) : null}
-        {data.disallowedExamplesHtml ? (
-          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6 }}>
-            <h2 style={{ margin: '18px 0 10px 0', fontSize: 18 }}>Disallowed Examples</h2>
-            <div dangerouslySetInnerHTML={{ __html: data.disallowedExamplesHtml }} />
-          </div>
-        ) : null}
-        {data.guidanceHtml ? (
-          <div style={{ padding: '0 20px 20px 20px', maxWidth: 840, margin: '0 auto', color: '#fff', lineHeight: 1.6, opacity: 0.95 }}>
-            <details style={{ marginTop: 6 }}>
-              <summary style={{ cursor: 'pointer', color: '#9cf' }}>Guidance (moderators only)</summary>
-              <div style={{ marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceHtml }} />
-            </details>
-          </div>
-        ) : null}
       </main>
     </div>
   )

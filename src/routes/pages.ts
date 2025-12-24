@@ -50,6 +50,9 @@ function renderPageDocument(title: string, bodyHtml: string): string {
       code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 0.9em; }
       pre { background: rgba(0,0,0,0.75); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 0.9em; }
       hr { border: 0; border-top: 1px solid rgba(255,255,255,0.15); margin: 1.5rem 0; }
+      .rule-meta { margin: 0 0 0.55rem; opacity: 0.85; font-size: 0.92rem; }
+      .section { border: 1px solid rgba(255,255,255,0.16); border-radius: 12px; padding: 14px 14px 12px; margin: 14px 0; background: rgba(0,0,0,0.35); }
+      .section-title { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.78; margin: 0 0 10px; }
     </style>
   </head>
   <body>
@@ -444,31 +447,47 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
     const createdLabel = created && !isNaN(created.getTime()) ? created.toLocaleDateString() : '';
     let body = '';
     body += `<h1>${escapeHtml(String(titleText))}</h1>\n`;
+    body += `<div class="section">\n`;
+    body += `<div class="section-title">Version Summary</div>\n`;
     body += `<p class="rule-meta">Version v${escapeHtml(String(version.version))}`;
-    if (createdLabel) {
-      body += ` — published ${escapeHtml(createdLabel)}`;
-    }
+    if (createdLabel) body += ` — published ${escapeHtml(createdLabel)}`;
     body += `</p>\n`;
     if (version.change_summary) {
       body += `<p class="rule-meta">${escapeHtml(String(version.change_summary))}</p>\n`;
     }
+    body += `</div>\n`;
+
     if (version.short_description) {
-      body += `<p class="rule-meta">${escapeHtml(String(version.short_description))}</p>\n`;
+      body += `<div class="section">\n`;
+      body += `<div class="section-title">Short Description</div>\n`;
+      body += `<div>${escapeHtml(String(version.short_description))}</div>\n`;
+      body += `</div>\n`;
     }
+
+    body += `<div class="section">\n`;
+    body += `<div class="section-title">Long Description</div>\n`;
     body += String(version.html || '');
+    body += `</div>\n`;
+
     if (version.allowed_examples_html) {
-      body += `<h2>Allowed Examples</h2>\n`;
+      body += `<div class="section">\n`;
+      body += `<div class="section-title">Allowed Examples</div>\n`;
       body += String(version.allowed_examples_html || '');
+      body += `</div>\n`;
     }
     if (version.disallowed_examples_html) {
-      body += `<h2>Disallowed Examples</h2>\n`;
+      body += `<div class="section">\n`;
+      body += `<div class="section-title">Disallowed Examples</div>\n`;
       body += String(version.disallowed_examples_html || '');
+      body += `</div>\n`;
     }
     if (version.guidance_html) {
       const showGuidance = await canViewGuidance(req);
       if (showGuidance) {
-        body += `<h2>Guidance (moderators only)</h2>\n`;
+        body += `<div class="section">\n`;
+        body += `<div class="section-title">Guidance (moderators only)</div>\n`;
         body += String(version.guidance_html || '');
+        body += `</div>\n`;
       }
     }
 
