@@ -809,14 +809,55 @@ function renderRuleDraftEditPage(opts: {
   return renderAdminPage('Edit Rule Draft', body);
 }
 
-function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
-  const csrf = csrfToken ? String(csrfToken) : '';
+function renderRuleListPage(
+  rules: any[],
+  opts: {
+    csrfToken?: string | null;
+    categories: Array<{ id: number; name: string }>;
+    selectedCategoryId: string;
+    sort: string;
+    dir: 'asc' | 'desc';
+  }
+): string {
+  const csrf = opts.csrfToken ? String(opts.csrfToken) : '';
+  const categories = Array.isArray(opts.categories) ? opts.categories : [];
+  const selectedCategoryId = String(opts.selectedCategoryId || '');
+  const sort = String(opts.sort || '');
+  const dir: 'asc' | 'desc' = opts.dir === 'desc' ? 'desc' : 'asc';
+
+  const headerLink = (label: string, key: string) => {
+    const isActive = sort === key;
+    const nextDir: 'asc' | 'desc' = isActive && dir === 'asc' ? 'desc' : 'asc';
+    const qs = new URLSearchParams();
+    if (selectedCategoryId) qs.set('categoryId', selectedCategoryId);
+    qs.set('sort', key);
+    qs.set('dir', nextDir);
+    const arrow = isActive ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<a href="/admin/rules?${escapeHtml(qs.toString())}">${escapeHtml(label)}${arrow}</a>`;
+  };
+
   let body = '<h1>Rules</h1>';
   body += '<div class="toolbar"><div><span class="pill">Rules</span></div><div><a href="/admin/rules/new">New rule</a></div></div>';
+  body += `<div class="toolbar" style="margin-top: 10px"><div><label style="display:flex; gap:10px; align-items:center; margin:0"><span style="opacity:0.85">Category</span><select name="categoryId" onchange="(function(sel){const qs=new URLSearchParams(window.location.search); if(sel.value){qs.set('categoryId', sel.value)} else {qs.delete('categoryId')} window.location.search=qs.toString()})(this)"><option value=""${selectedCategoryId === '' ? ' selected' : ''}>All</option>${categories
+    .map((c) => {
+      const id = String(c.id);
+      const sel = id === selectedCategoryId ? ' selected' : '';
+      return `<option value="${escapeHtml(id)}"${sel}>${escapeHtml(c.name)}</option>`;
+    })
+    .join('')}</select></label></div></div>`;
   if (!rules.length) {
     body += '<p>No rules have been created yet.</p>';
   } else {
-    body += '<table><thead><tr><th>Slug</th><th>Category</th><th>Title</th><th>Visibility</th><th>Current Version</th><th>Draft</th><th>Updated</th><th></th></tr></thead><tbody>';
+    body += `<table><thead><tr>
+      <th>${headerLink('Slug', 'slug')}</th>
+      <th>${headerLink('Category', 'category')}</th>
+      <th>${headerLink('Title', 'title')}</th>
+      <th>${headerLink('Visibility', 'visibility')}</th>
+      <th>${headerLink('Current Version', 'version')}</th>
+      <th>${headerLink('Draft', 'draft')}</th>
+      <th>${headerLink('Updated', 'updated')}</th>
+      <th></th>
+    </tr></thead><tbody>`;
     for (const row of rules) {
       const slug = escapeHtml(String(row.slug || ''));
       const category = escapeHtml(String(row.category_name || ''));
@@ -824,9 +865,7 @@ function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
       const vis = escapeHtml(String(row.visibility || 'public'));
       const ver = row.current_version ?? row.current_version_id ?? null;
       const versionLabel = ver != null ? escapeHtml(String(ver)) : '';
-      const draftUpdatedAt = row.draft_updated_at ? String(row.draft_updated_at) : '';
-      const currentPublishedAt = row.current_published_at ? String(row.current_published_at) : '';
-      const hasUnpublishedDraft = !!draftUpdatedAt && (currentPublishedAt ? draftUpdatedAt > currentPublishedAt : true);
+      const draftPending = row.draft_pending != null ? Number(row.draft_pending) === 1 : false;
       const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
       body += `<tr>`;
       body += `<td><a href="/admin/rules/${row.id}">${slug}</a></td>`;
@@ -834,7 +873,7 @@ function renderRuleListPage(rules: any[], csrfToken?: string | null): string {
       body += `<td>${title}</td>`;
       body += `<td>${vis}</td>`;
       body += `<td>${versionLabel}</td>`;
-      body += `<td>${hasUnpublishedDraft ? '<span class="pill">Draft pending</span>' : ''}</td>`;
+      body += `<td>${draftPending ? '<span class="pill">Draft pending</span>' : ''}</td>`;
       body += `<td>${updated}</td>`;
       body += `<td style="text-align: right; white-space: nowrap">`;
       body += `<a href="/admin/rules/${row.id}/edit" style="margin-right: 10px">Edit Draft</a>`;
@@ -987,21 +1026,60 @@ function renderRuleForm(opts: {
 pagesRouter.get('/admin/rules', async (req: any, res: any) => {
   try {
     const db = getPool();
+    const categories = await listRuleCategories();
+    const rawCategoryId = req.query && (req.query as any).categoryId != null ? String((req.query as any).categoryId) : '';
+    const selectedCategoryId = rawCategoryId && /^\d+$/.test(rawCategoryId) ? rawCategoryId : '';
+
+    const rawSort = req.query && (req.query as any).sort != null ? String((req.query as any).sort) : '';
+    const rawDir = req.query && (req.query as any).dir != null ? String((req.query as any).dir) : '';
+    const dir: 'asc' | 'desc' = rawDir.toLowerCase() === 'desc' ? 'desc' : 'asc';
+
+    const sortKey = rawSort || 'slug';
+    const sortExprByKey: Record<string, string> = {
+      slug: 'r.slug',
+      category: "COALESCE(c.name, '')",
+      title: 'r.title',
+      visibility: 'r.visibility',
+      version: 'rv.version',
+      draft: 'draft_pending',
+      updated: 'r.updated_at',
+    };
+    const sortExpr = sortExprByKey[sortKey] || sortExprByKey.slug;
+
+    const where: string[] = [];
+    const params: any[] = [];
+    if (selectedCategoryId) {
+      where.push('r.category_id = ?');
+      params.push(Number(selectedCategoryId));
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const orderSql =
+      sortKey === 'draft'
+        ? `ORDER BY ${sortExpr} ${dir}, d.updated_at ${dir}, r.slug ASC`
+        : `ORDER BY ${sortExpr} ${dir}, r.slug ASC`;
+
     const [rows] = await db.query(
       `SELECT r.id, r.slug, r.title, r.visibility, r.updated_at,
               rv.version AS current_version, rv.created_at AS current_published_at,
               c.name AS category_name,
-              d.updated_at AS draft_updated_at
+              d.updated_at AS draft_updated_at,
+              CASE
+                WHEN d.updated_at IS NOT NULL AND (rv.created_at IS NULL OR d.updated_at > rv.created_at) THEN 1
+                ELSE 0
+              END AS draft_pending
          FROM rules r
          LEFT JOIN rule_versions rv ON rv.id = r.current_version_id
          LEFT JOIN rule_categories c ON c.id = r.category_id
          LEFT JOIN rule_drafts d ON d.rule_id = r.id
-        ORDER BY r.slug`
+         ${whereSql}
+         ${orderSql}`,
+      params
     );
     const rules = rows as any[];
     const cookies = parseCookies(req.headers.cookie);
     const csrfToken = cookies['csrf'] || '';
-    const doc = renderRuleListPage(rules, csrfToken);
+    const doc = renderRuleListPage(rules, { csrfToken, categories, selectedCategoryId, sort: sortKey, dir });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
