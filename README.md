@@ -19,6 +19,24 @@ Useful Pages
 - Publisher: /publish.html
 - Player: /videos?id=123, /mobile?id=123
 
+Admin + CMS surfaces (server-rendered)
+- Admin pages editor: /admin/pages
+- Admin rules editor: /admin/rules
+- Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
+- Public rules: /rules/:slug and /rules/:slug/v:1
+
+API testing (authenticated)
+- Use `scripts/auth_curl.sh` for authenticated requests (session + CSRF).
+- Store local creds in `.codex-local/auth_profiles.env` (gitignored; see `.codex-local/auth_profiles.env.example`).
+- Typical flow:
+  - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super login`
+  - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /api/me`
+
+One-off admin scripts
+- `npm run admin:backfill-rule-drafts` — ensure `rule_drafts` exists for each rule (optional; drafts are lazily created on first edit).
+- `npm run admin:own-uploads -- --email=user@example.com` — promote user to admin and claim unowned uploads.
+- `npm run admin:backfill-spaces-ulid` — backfill `spaces.ulid` for older rows.
+
 Notes
 - Profiles live under jobs/profiles with a $extends mixin system; see docs/Jobs.md
 - Request logs: logs/request/YYYY-MM-DD_hh:mm:ss.log (final CreateJob payloads)
