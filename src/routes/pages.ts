@@ -282,7 +282,9 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
               short_description,
               allowed_examples_html,
               disallowed_examples_html,
-              guidance_html
+              guidance_html,
+              guidance_moderators_html,
+              guidance_agents_html
          FROM rule_versions
         WHERE id = ? AND rule_id = ?
         LIMIT 1`,
@@ -311,6 +313,10 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
 
     const createdAt = current.created_at ? new Date(current.created_at) : null;
     const includeGuidance = await canViewGuidance(req);
+    const moderatorsGuidanceHtml =
+      current.guidance_moderators_html != null ? String(current.guidance_moderators_html) :
+      (current.guidance_html != null ? String(current.guidance_html) : '');
+    const agentsGuidanceHtml = current.guidance_agents_html != null ? String(current.guidance_agents_html) : '';
     jsonNoStore(res);
     res.json({
       slug,
@@ -319,7 +325,8 @@ pagesRouter.get(/^\/api\/rules\/(.+)$/, async (req: any, res: any) => {
       ...(current.short_description ? { shortDescription: String(current.short_description) } : {}),
       ...(current.allowed_examples_html ? { allowedExamplesHtml: String(current.allowed_examples_html) } : {}),
       ...(current.disallowed_examples_html ? { disallowedExamplesHtml: String(current.disallowed_examples_html) } : {}),
-      ...(includeGuidance && current.guidance_html ? { guidanceHtml: String(current.guidance_html) } : {}),
+      ...(includeGuidance && moderatorsGuidanceHtml ? { guidanceModeratorsHtml: moderatorsGuidanceHtml } : {}),
+      ...(includeGuidance && agentsGuidanceHtml ? { guidanceAgentsHtml: agentsGuidanceHtml } : {}),
       visibility: String(rule.visibility || 'public'),
       currentVersion: {
         version: Number(current.version),
@@ -428,7 +435,9 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
               short_description,
               allowed_examples_html,
               disallowed_examples_html,
-              guidance_html
+              guidance_html,
+              guidance_moderators_html,
+              guidance_agents_html
          FROM rule_versions
         WHERE rule_id = ? AND version = ?
         LIMIT 1`,
@@ -481,12 +490,23 @@ pagesRouter.get(/^\/rules\/(.+?)\/v:(\d+)\/?$/, async (req: any, res: any) => {
       body += String(version.disallowed_examples_html || '');
       body += `</div>\n`;
     }
-    if (version.guidance_html) {
-      const showGuidance = await canViewGuidance(req);
-      if (showGuidance) {
+    const showGuidance = await canViewGuidance(req);
+    if (showGuidance) {
+      const moderatorsGuidanceHtml =
+        version.guidance_moderators_html != null ? String(version.guidance_moderators_html) :
+        (version.guidance_html != null ? String(version.guidance_html) : '');
+      const agentsGuidanceHtml = version.guidance_agents_html != null ? String(version.guidance_agents_html) : '';
+
+      if (moderatorsGuidanceHtml) {
         body += `<div class="section">\n`;
-        body += `<div class="section-title">Guidance (moderators only)</div>\n`;
-        body += String(version.guidance_html || '');
+        body += `<div class="section-title">Guidance for Moderators</div>\n`;
+        body += moderatorsGuidanceHtml;
+        body += `</div>\n`;
+      }
+      if (agentsGuidanceHtml) {
+        body += `<div class="section">\n`;
+        body += `<div class="section-title">Guidance for AI Agents</div>\n`;
+        body += agentsGuidanceHtml;
         body += `</div>\n`;
       }
     }
@@ -658,7 +678,9 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
             rv.short_description,
             rv.allowed_examples_markdown, rv.allowed_examples_html,
             rv.disallowed_examples_markdown, rv.disallowed_examples_html,
-            rv.guidance_markdown, rv.guidance_html
+            rv.guidance_markdown, rv.guidance_html,
+            rv.guidance_moderators_markdown, rv.guidance_moderators_html,
+            rv.guidance_agents_markdown, rv.guidance_agents_html
        FROM rules r
        JOIN rule_versions rv ON rv.id = r.current_version_id
       WHERE r.id = ?
@@ -668,6 +690,19 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
   const base = (baseRows as any[])[0];
   if (!base) return null;
 
+  const moderatorsGuidanceMarkdown =
+    base.guidance_moderators_markdown != null ? String(base.guidance_moderators_markdown) :
+    (base.guidance_markdown != null ? String(base.guidance_markdown) : null);
+  const moderatorsGuidanceHtml =
+    base.guidance_moderators_html != null ? String(base.guidance_moderators_html) :
+    (base.guidance_html != null ? String(base.guidance_html) : null);
+
+  const agentsGuidanceMarkdown = base.guidance_agents_markdown != null ? String(base.guidance_agents_markdown) : null;
+  const agentsGuidanceHtml = base.guidance_agents_html != null ? String(base.guidance_agents_html) : null;
+
+  const legacyGuidanceMarkdown = base.guidance_markdown != null ? String(base.guidance_markdown) : moderatorsGuidanceMarkdown;
+  const legacyGuidanceHtml = base.guidance_html != null ? String(base.guidance_html) : moderatorsGuidanceHtml;
+
   await db.query(
     `INSERT IGNORE INTO rule_drafts (
        rule_id, markdown, html,
@@ -675,9 +710,11 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
        allowed_examples_markdown, allowed_examples_html,
        disallowed_examples_markdown, disallowed_examples_html,
        guidance_markdown, guidance_html,
+       guidance_moderators_markdown, guidance_moderators_html,
+       guidance_agents_markdown, guidance_agents_html,
        updated_by
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     [
       ruleId,
       String(base.markdown || ''),
@@ -687,8 +724,12 @@ async function getOrCreateRuleDraft(ruleId: number): Promise<any | null> {
       base.allowed_examples_html != null ? String(base.allowed_examples_html) : null,
       base.disallowed_examples_markdown != null ? String(base.disallowed_examples_markdown) : null,
       base.disallowed_examples_html != null ? String(base.disallowed_examples_html) : null,
-      base.guidance_markdown != null ? String(base.guidance_markdown) : null,
-      base.guidance_html != null ? String(base.guidance_html) : null,
+      legacyGuidanceMarkdown,
+      legacyGuidanceHtml,
+      moderatorsGuidanceMarkdown,
+      moderatorsGuidanceHtml,
+      agentsGuidanceMarkdown,
+      agentsGuidanceHtml,
     ]
   );
 
@@ -720,15 +761,22 @@ function renderRuleDraftEditPage(opts: {
   const disallowedExamplesValue = draft.disallowed_examples_markdown ? String(draft.disallowed_examples_markdown) : '';
   const disallowedExamplesHtmlValue = draft.disallowed_examples_html ? String(draft.disallowed_examples_html) : '';
 
-  const guidanceValue = draft.guidance_markdown ? String(draft.guidance_markdown) : '';
-  const guidanceHtmlValue = draft.guidance_html ? String(draft.guidance_html) : '';
+  const guidanceModeratorsValue = draft.guidance_moderators_markdown
+    ? String(draft.guidance_moderators_markdown)
+    : (draft.guidance_markdown ? String(draft.guidance_markdown) : '');
+  const guidanceModeratorsHtmlValue = draft.guidance_moderators_html
+    ? String(draft.guidance_moderators_html)
+    : (draft.guidance_html ? String(draft.guidance_html) : '');
+  const guidanceAgentsValue = draft.guidance_agents_markdown ? String(draft.guidance_agents_markdown) : '';
+  const guidanceAgentsHtmlValue = draft.guidance_agents_html ? String(draft.guidance_agents_html) : '';
 
   const changeSummaryId = `rule_draft_change_summary_${String(rule.id)}`;
 
   const mdId = `rule_draft_markdown_${String(rule.id)}`;
   const allowedId = `rule_draft_allowed_${String(rule.id)}`;
   const disallowedId = `rule_draft_disallowed_${String(rule.id)}`;
-  const guidanceId = `rule_draft_guidance_${String(rule.id)}`;
+  const guidanceModeratorsId = `rule_draft_guidance_moderators_${String(rule.id)}`;
+  const guidanceAgentsId = `rule_draft_guidance_agents_${String(rule.id)}`;
 
   let body = `<h1>Edit Draft: ${escapeHtml(String(rule.slug || rule.title || 'Rule'))}</h1>`;
   body += '<div class="toolbar"><div><a href="/admin/rules">\u2190 Back to rules</a></div></div>';
@@ -769,9 +817,12 @@ function renderRuleDraftEditPage(opts: {
   body += `<label for="${escapeHtml(disallowedId)}">Disallowed Examples</label>`;
   body += `<textarea id="${escapeHtml(disallowedId)}" name="disallowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(disallowedExamplesHtmlValue)}">${escapeHtml(disallowedExamplesValue)}</textarea>`;
 
-  body += `<label for="${escapeHtml(guidanceId)}">Guidance</label>`;
-  body += `<textarea id="${escapeHtml(guidanceId)}" name="guidance" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceHtmlValue)}">${escapeHtml(guidanceValue)}</textarea>`;
-  body += `<div class="field-hint">Guidance is intended for moderators and automated agents; do not expose it to regular users.</div>`;
+  body += `<label for="${escapeHtml(guidanceModeratorsId)}">Guidance for Moderators</label>`;
+  body += `<textarea id="${escapeHtml(guidanceModeratorsId)}" name="guidanceModerators" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceModeratorsHtmlValue)}">${escapeHtml(guidanceModeratorsValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(guidanceAgentsId)}">Guidance for AI Agents</label>`;
+  body += `<textarea id="${escapeHtml(guidanceAgentsId)}" name="guidanceAgents" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceAgentsHtmlValue)}">${escapeHtml(guidanceAgentsValue)}</textarea>`;
+  body += `<div class="field-hint">These fields are intended for moderators/admin and automated agents; do not expose them to regular users.</div>`;
 
   body += `<label for="${escapeHtml(changeSummaryId)}">Change summary (optional; used on Publish)</label>`;
   body += `<input id="${escapeHtml(changeSummaryId)}" type="text" name="changeSummary" value="" />`;
@@ -918,8 +969,22 @@ function renderRuleForm(opts: {
   const allowedExamplesHtmlValue = rule.allowed_examples_html ? String(rule.allowed_examples_html) : '';
   const disallowedExamplesValue = rule.disallowed_examples_markdown ? String(rule.disallowed_examples_markdown) : (rule.disallowedExamples ? String(rule.disallowedExamples) : '');
   const disallowedExamplesHtmlValue = rule.disallowed_examples_html ? String(rule.disallowed_examples_html) : '';
-  const guidanceValue = rule.guidance_markdown ? String(rule.guidance_markdown) : (rule.guidance ? String(rule.guidance) : '');
-  const guidanceHtmlValue = rule.guidance_html ? String(rule.guidance_html) : '';
+  const guidanceModeratorsValue = rule.guidance_moderators_markdown
+    ? String(rule.guidance_moderators_markdown)
+    : (rule.guidanceModerators
+      ? String(rule.guidanceModerators)
+      : (rule.guidance_markdown
+        ? String(rule.guidance_markdown)
+        : (rule.guidance ? String(rule.guidance) : '')));
+  const guidanceModeratorsHtmlValue = rule.guidance_moderators_html
+    ? String(rule.guidance_moderators_html)
+    : (rule.guidance_html ? String(rule.guidance_html) : '');
+  const guidanceAgentsValue = rule.guidance_agents_markdown
+    ? String(rule.guidance_agents_markdown)
+    : (rule.guidanceAgents ? String(rule.guidanceAgents) : '');
+  const guidanceAgentsHtmlValue = rule.guidance_agents_html
+    ? String(rule.guidance_agents_html)
+    : '';
   const changeSummaryValue = rule.change_summary ? String(rule.change_summary) : '';
   const baseAction = isEdit ? `/admin/rules/${rule.id}` : '/admin/rules';
   const action = isNewVersion ? `/admin/rules/${rule.id}/versions/new` : baseAction;
@@ -976,7 +1041,8 @@ function renderRuleForm(opts: {
   const mdId = `rule_markdown_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
   const allowedId = `rule_allowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
   const disallowedId = `rule_disallowed_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
-  const guidanceId = `rule_guidance_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  const guidanceModeratorsId = `rule_guidance_moderators_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
+  const guidanceAgentsId = `rule_guidance_agents_${isNewVersion ? 'v' : 'r'}_${rule.id ? String(rule.id) : 'new'}`;
   body += `<label for="${escapeHtml(mdId)}">Long Description</label>`;
   body += `<textarea id="${escapeHtml(mdId)}" name="markdown" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(htmlValue)}">${escapeHtml(markdownValue)}</textarea>`;
   body += `<div class="field-hint">Markdown is rendered server-side using the restricted contract in <code>agents/requirements/markdown.md</code>.</div>`;
@@ -987,9 +1053,12 @@ function renderRuleForm(opts: {
   body += `<label for="${escapeHtml(disallowedId)}">Disallowed Examples</label>`;
   body += `<textarea id="${escapeHtml(disallowedId)}" name="disallowedExamples" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(disallowedExamplesHtmlValue)}">${escapeHtml(disallowedExamplesValue)}</textarea>`;
 
-  body += `<label for="${escapeHtml(guidanceId)}">Guidance</label>`;
-  body += `<textarea id="${escapeHtml(guidanceId)}" name="guidance" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceHtmlValue)}">${escapeHtml(guidanceValue)}</textarea>`;
-  body += `<div class="field-hint">This field is intended for moderators and automated agents; do not expose it to regular users.</div>`;
+  body += `<label for="${escapeHtml(guidanceModeratorsId)}">Guidance for Moderators</label>`;
+  body += `<textarea id="${escapeHtml(guidanceModeratorsId)}" name="guidanceModerators" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceModeratorsHtmlValue)}">${escapeHtml(guidanceModeratorsValue)}</textarea>`;
+
+  body += `<label for="${escapeHtml(guidanceAgentsId)}">Guidance for AI Agents</label>`;
+  body += `<textarea id="${escapeHtml(guidanceAgentsId)}" name="guidanceAgents" data-md-wysiwyg="1" data-md-initial-html="${escapeHtml(guidanceAgentsHtmlValue)}">${escapeHtml(guidanceAgentsValue)}</textarea>`;
+  body += `<div class="field-hint">These fields are intended for moderators/admin and automated agents; do not expose them to regular users.</div>`;
   body += `<label>Change summary (optional)
     <input type="text" name="changeSummary" value="${escapeHtml(changeSummaryValue)}" />
     <div class="field-hint">Short description of what changed for this version (e.g., “Clarify harassment examples”).</div>
@@ -1140,7 +1209,8 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
     const markdown = String(body.markdown || '');
     const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
     const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
-    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
+    const guidanceModeratorsMarkdown = body.guidanceModerators ? String(body.guidanceModerators) : '';
+    const guidanceAgentsMarkdown = body.guidanceAgents ? String(body.guidanceAgents) : '';
     const changeSummary = body.changeSummary ? String(body.changeSummary) : '';
 
     const db = getPool() as any;
@@ -1178,7 +1248,9 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
                 short_description,
                 allowed_examples_markdown, allowed_examples_html,
                 disallowed_examples_markdown, disallowed_examples_html,
-                guidance_markdown, guidance_html
+                guidance_markdown, guidance_html,
+                guidance_moderators_markdown, guidance_moderators_html,
+                guidance_agents_markdown, guidance_agents_html
            FROM rule_versions
           WHERE id = ? AND rule_id = ?
           LIMIT 1`,
@@ -1189,6 +1261,19 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
         await conn.rollback();
         return res.status(404).send('Rule version not found');
       }
+
+      const moderatorsGuidanceMarkdown =
+        base.guidance_moderators_markdown != null ? String(base.guidance_moderators_markdown) :
+        (base.guidance_markdown != null ? String(base.guidance_markdown) : null);
+      const moderatorsGuidanceHtml =
+        base.guidance_moderators_html != null ? String(base.guidance_moderators_html) :
+        (base.guidance_html != null ? String(base.guidance_html) : null);
+      const agentsGuidanceMarkdown = base.guidance_agents_markdown != null ? String(base.guidance_agents_markdown) : null;
+      const agentsGuidanceHtml = base.guidance_agents_html != null ? String(base.guidance_agents_html) : null;
+
+      const legacyGuidanceMarkdown = base.guidance_markdown != null ? String(base.guidance_markdown) : moderatorsGuidanceMarkdown;
+      const legacyGuidanceHtml = base.guidance_html != null ? String(base.guidance_html) : moderatorsGuidanceHtml;
+
       await conn.query(
         `INSERT INTO rule_drafts (
            rule_id, markdown, html,
@@ -1196,9 +1281,11 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
            allowed_examples_markdown, allowed_examples_html,
            disallowed_examples_markdown, disallowed_examples_html,
            guidance_markdown, guidance_html,
+           guidance_moderators_markdown, guidance_moderators_html,
+           guidance_agents_markdown, guidance_agents_html,
            updated_by
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           String(base.markdown || ''),
@@ -1208,8 +1295,12 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
           base.allowed_examples_html != null ? String(base.allowed_examples_html) : null,
           base.disallowed_examples_markdown != null ? String(base.disallowed_examples_markdown) : null,
           base.disallowed_examples_html != null ? String(base.disallowed_examples_html) : null,
-          base.guidance_markdown != null ? String(base.guidance_markdown) : null,
-          base.guidance_html != null ? String(base.guidance_html) : null,
+          legacyGuidanceMarkdown,
+          legacyGuidanceHtml,
+          moderatorsGuidanceMarkdown,
+          moderatorsGuidanceHtml,
+          agentsGuidanceMarkdown,
+          agentsGuidanceHtml,
           userId,
         ]
       );
@@ -1218,7 +1309,12 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
     const html = renderMarkdown(markdown).html;
     const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
     const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
-    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
+    const guidanceModeratorsHtml = guidanceModeratorsMarkdown ? renderMarkdown(guidanceModeratorsMarkdown).html : '';
+    const guidanceAgentsHtml = guidanceAgentsMarkdown ? renderMarkdown(guidanceAgentsMarkdown).html : '';
+
+    // Keep legacy guidance columns in sync (legacy guidance == moderators guidance) until the explicit drop step lands.
+    const legacyGuidanceMarkdown = guidanceModeratorsMarkdown;
+    const legacyGuidanceHtml = guidanceModeratorsMarkdown ? guidanceModeratorsHtml : '';
 
     await conn.query(
       `UPDATE rules
@@ -1234,6 +1330,8 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
               allowed_examples_markdown = ?, allowed_examples_html = ?,
               disallowed_examples_markdown = ?, disallowed_examples_html = ?,
               guidance_markdown = ?, guidance_html = ?,
+              guidance_moderators_markdown = ?, guidance_moderators_html = ?,
+              guidance_agents_markdown = ?, guidance_agents_html = ?,
               updated_by = ?, updated_at = CURRENT_TIMESTAMP
         WHERE rule_id = ?`,
       [
@@ -1244,8 +1342,12 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
         allowedExamplesMarkdown ? allowedExamplesHtml : null,
         disallowedExamplesMarkdown || null,
         disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
-        guidanceMarkdown || null,
-        guidanceMarkdown ? guidanceHtml : null,
+        legacyGuidanceMarkdown || null,
+        legacyGuidanceMarkdown ? legacyGuidanceHtml : null,
+        guidanceModeratorsMarkdown || null,
+        guidanceModeratorsMarkdown ? guidanceModeratorsHtml : null,
+        guidanceAgentsMarkdown || null,
+        guidanceAgentsMarkdown ? guidanceAgentsHtml : null,
         userId,
         id,
       ]
@@ -1270,10 +1372,12 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
            allowed_examples_markdown, allowed_examples_html,
            disallowed_examples_markdown, disallowed_examples_html,
            guidance_markdown, guidance_html,
+           guidance_moderators_markdown, guidance_moderators_html,
+           guidance_agents_markdown, guidance_agents_html,
            change_summary,
            created_by
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           nextVersion,
@@ -1284,8 +1388,12 @@ pagesRouter.post('/admin/rules/:id/edit', async (req: any, res: any) => {
           allowedExamplesMarkdown ? allowedExamplesHtml : null,
           disallowedExamplesMarkdown || null,
           disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
-          guidanceMarkdown || null,
-          guidanceMarkdown ? guidanceHtml : null,
+          legacyGuidanceMarkdown || null,
+          legacyGuidanceMarkdown ? legacyGuidanceHtml : null,
+          guidanceModeratorsMarkdown || null,
+          guidanceModeratorsMarkdown ? guidanceModeratorsHtml : null,
+          guidanceAgentsMarkdown || null,
+          guidanceAgentsMarkdown ? guidanceAgentsHtml : null,
           changeSummary.trim() ? changeSummary.trim().slice(0, 512) : null,
           userId,
         ]
@@ -1381,7 +1489,8 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
     const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
     const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
     const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
-    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
+    const guidanceModeratorsMarkdown = body.guidanceModerators ? String(body.guidanceModerators) : '';
+    const guidanceAgentsMarkdown = body.guidanceAgents ? String(body.guidanceAgents) : '';
     const rawCategoryId = body.categoryId != null ? String(body.categoryId) : '';
 
     const slug = normalizePageSlug(rawSlug);
@@ -1401,7 +1510,12 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
     const { html } = renderMarkdown(rawMarkdown);
     const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
     const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
-    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
+    const guidanceModeratorsHtml = guidanceModeratorsMarkdown ? renderMarkdown(guidanceModeratorsMarkdown).html : '';
+    const guidanceAgentsHtml = guidanceAgentsMarkdown ? renderMarkdown(guidanceAgentsMarkdown).html : '';
+
+    // Keep legacy guidance columns in sync (legacy guidance == moderators guidance) until the explicit drop step lands.
+    const legacyGuidanceMarkdown = guidanceModeratorsMarkdown;
+    const legacyGuidanceHtml = guidanceModeratorsMarkdown ? guidanceModeratorsHtml : '';
     const db = getPool();
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
     let categoryId: number | null = rawCategoryId && /^\d+$/.test(rawCategoryId) ? Number(rawCategoryId) : null;
@@ -1430,11 +1544,15 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
            allowed_examples_markdown, allowed_examples_html,
            disallowed_examples_markdown, disallowed_examples_html,
            guidance_markdown, guidance_html,
+           guidance_moderators_markdown, guidance_moderators_html,
+           guidance_agents_markdown, guidance_agents_html,
            change_summary, created_by
          )
          VALUES (
            ?, 1, ?, ?,
            ?,
+           ?, ?,
+           ?, ?,
            ?, ?,
            ?, ?,
            ?, ?,
@@ -1449,8 +1567,12 @@ pagesRouter.post('/admin/rules', async (req: any, res: any) => {
           allowedExamplesMarkdown ? allowedExamplesHtml : null,
           disallowedExamplesMarkdown || null,
           disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
-          guidanceMarkdown || null,
-          guidanceMarkdown ? guidanceHtml : null,
+          legacyGuidanceMarkdown || null,
+          legacyGuidanceMarkdown ? legacyGuidanceHtml : null,
+          guidanceModeratorsMarkdown || null,
+          guidanceModeratorsMarkdown ? guidanceModeratorsHtml : null,
+          guidanceAgentsMarkdown || null,
+          guidanceAgentsMarkdown ? guidanceAgentsHtml : null,
           changeSummary || null,
           userId,
         ]
@@ -1559,7 +1681,9 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
         `SELECT markdown, html, change_summary, short_description,
                 allowed_examples_markdown, allowed_examples_html,
                 disallowed_examples_markdown, disallowed_examples_html,
-                guidance_markdown, guidance_html
+                guidance_markdown, guidance_html,
+                guidance_moderators_markdown, guidance_moderators_html,
+                guidance_agents_markdown, guidance_agents_html
            FROM rule_versions
           WHERE id = ?
           LIMIT 1`,
@@ -1567,6 +1691,13 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
       );
       const v = (verRows as any[])[0];
       if (v) {
+        const moderatorsGuidanceMarkdown =
+          v.guidance_moderators_markdown != null ? String(v.guidance_moderators_markdown) :
+          (v.guidance_markdown != null ? String(v.guidance_markdown) : null);
+        const moderatorsGuidanceHtml =
+          v.guidance_moderators_html != null ? String(v.guidance_moderators_html) :
+          (v.guidance_html != null ? String(v.guidance_html) : null);
+
         draft = {
           ...draft,
           markdown: v.markdown,
@@ -1577,8 +1708,10 @@ pagesRouter.get('/admin/rules/:id/versions/new', async (req: any, res: any) => {
           allowed_examples_html: v.allowed_examples_html,
           disallowed_examples_markdown: v.disallowed_examples_markdown,
           disallowed_examples_html: v.disallowed_examples_html,
-          guidance_markdown: v.guidance_markdown,
-          guidance_html: v.guidance_html,
+          guidance_moderators_markdown: moderatorsGuidanceMarkdown,
+          guidance_moderators_html: moderatorsGuidanceHtml,
+          guidance_agents_markdown: v.guidance_agents_markdown,
+          guidance_agents_html: v.guidance_agents_html,
         };
       }
     }
@@ -1603,7 +1736,8 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
     const shortDescription = body.shortDescription ? String(body.shortDescription) : '';
     const allowedExamplesMarkdown = body.allowedExamples ? String(body.allowedExamples) : '';
     const disallowedExamplesMarkdown = body.disallowedExamples ? String(body.disallowedExamples) : '';
-    const guidanceMarkdown = body.guidance ? String(body.guidance) : '';
+    const guidanceModeratorsMarkdown = body.guidanceModerators ? String(body.guidanceModerators) : '';
+    const guidanceAgentsMarkdown = body.guidanceAgents ? String(body.guidanceAgents) : '';
 
     const db = getPool();
     const [ruleRows] = await db.query(
@@ -1626,8 +1760,13 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
     const { html } = renderMarkdown(rawMarkdown);
     const allowedExamplesHtml = allowedExamplesMarkdown ? renderMarkdown(allowedExamplesMarkdown).html : '';
     const disallowedExamplesHtml = disallowedExamplesMarkdown ? renderMarkdown(disallowedExamplesMarkdown).html : '';
-    const guidanceHtml = guidanceMarkdown ? renderMarkdown(guidanceMarkdown).html : '';
+    const guidanceModeratorsHtml = guidanceModeratorsMarkdown ? renderMarkdown(guidanceModeratorsMarkdown).html : '';
+    const guidanceAgentsHtml = guidanceAgentsMarkdown ? renderMarkdown(guidanceAgentsMarkdown).html : '';
     const userId = req.user && req.user.id ? Number(req.user.id) : null;
+
+    // Keep legacy guidance columns in sync (legacy guidance == moderators guidance) until the explicit drop step lands.
+    const legacyGuidanceMarkdown = guidanceModeratorsMarkdown;
+    const legacyGuidanceHtml = guidanceModeratorsMarkdown ? guidanceModeratorsHtml : '';
 
     const [insVersion] = await db.query(
       `INSERT INTO rule_versions (
@@ -1636,11 +1775,15 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
          allowed_examples_markdown, allowed_examples_html,
          disallowed_examples_markdown, disallowed_examples_html,
          guidance_markdown, guidance_html,
+         guidance_moderators_markdown, guidance_moderators_html,
+         guidance_agents_markdown, guidance_agents_html,
          change_summary, created_by
        )
        VALUES (
          ?, ?, ?, ?,
          ?,
+         ?, ?,
+         ?, ?,
          ?, ?,
          ?, ?,
          ?, ?,
@@ -1656,8 +1799,12 @@ pagesRouter.post('/admin/rules/:id/versions/new', async (req: any, res: any) => 
         allowedExamplesMarkdown ? allowedExamplesHtml : null,
         disallowedExamplesMarkdown || null,
         disallowedExamplesMarkdown ? disallowedExamplesHtml : null,
-        guidanceMarkdown || null,
-        guidanceMarkdown ? guidanceHtml : null,
+        legacyGuidanceMarkdown || null,
+        legacyGuidanceMarkdown ? legacyGuidanceHtml : null,
+        guidanceModeratorsMarkdown || null,
+        guidanceModeratorsMarkdown ? guidanceModeratorsHtml : null,
+        guidanceAgentsMarkdown || null,
+        guidanceAgentsMarkdown ? guidanceAgentsHtml : null,
         changeSummary || null,
         userId,
       ]

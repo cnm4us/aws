@@ -477,6 +477,10 @@ export async function ensureSchema(db: DB) {
       disallowed_examples_html MEDIUMTEXT NULL,
       guidance_markdown MEDIUMTEXT NULL,
       guidance_html MEDIUMTEXT NULL,
+      guidance_moderators_markdown MEDIUMTEXT NULL,
+      guidance_moderators_html MEDIUMTEXT NULL,
+      guidance_agents_markdown MEDIUMTEXT NULL,
+      guidance_agents_html MEDIUMTEXT NULL,
       change_summary VARCHAR(512) NULL,
       created_by BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -504,6 +508,10 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS disallowed_examples_html MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_markdown MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_moderators_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_moderators_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_agents_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS guidance_agents_html MEDIUMTEXT NULL`);
 
   // Ensure rule drafts exist and can evolve (idempotent)
   await db.query(`
@@ -518,6 +526,10 @@ export async function ensureSchema(db: DB) {
       disallowed_examples_html MEDIUMTEXT NULL,
       guidance_markdown MEDIUMTEXT NULL,
       guidance_html MEDIUMTEXT NULL,
+      guidance_moderators_markdown MEDIUMTEXT NULL,
+      guidance_moderators_html MEDIUMTEXT NULL,
+      guidance_agents_markdown MEDIUMTEXT NULL,
+      guidance_agents_html MEDIUMTEXT NULL,
       updated_by BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -530,7 +542,37 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS disallowed_examples_html MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_markdown MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_moderators_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_moderators_html MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_agents_markdown MEDIUMTEXT NULL`);
+  await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS guidance_agents_html MEDIUMTEXT NULL`);
   await db.query(`ALTER TABLE rule_drafts ADD COLUMN IF NOT EXISTS updated_by BIGINT UNSIGNED NULL`);
+
+  // Best-effort backfill: legacy guidance -> moderators guidance.
+  await db.query(
+    `UPDATE rule_versions
+        SET guidance_moderators_markdown = guidance_markdown
+      WHERE guidance_moderators_markdown IS NULL
+        AND guidance_markdown IS NOT NULL`
+  );
+  await db.query(
+    `UPDATE rule_versions
+        SET guidance_moderators_html = guidance_html
+      WHERE guidance_moderators_html IS NULL
+        AND guidance_html IS NOT NULL`
+  );
+  await db.query(
+    `UPDATE rule_drafts
+        SET guidance_moderators_markdown = guidance_markdown
+      WHERE guidance_moderators_markdown IS NULL
+        AND guidance_markdown IS NOT NULL`
+  );
+  await db.query(
+    `UPDATE rule_drafts
+        SET guidance_moderators_html = guidance_html
+      WHERE guidance_moderators_html IS NULL
+        AND guidance_html IS NOT NULL`
+  );
 
   // Best-effort foreign key from rules to categories
   try {

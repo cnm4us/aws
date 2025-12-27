@@ -14,7 +14,8 @@ type RuleResponse = {
   shortDescription?: string
   allowedExamplesHtml?: string
   disallowedExamplesHtml?: string
-  guidanceHtml?: string
+  guidanceModeratorsHtml?: string
+  guidanceAgentsHtml?: string
   visibility: string
   currentVersion: RuleVersionMeta
   versions: RuleVersionMeta[]
@@ -170,13 +171,21 @@ export default function RuleView() {
             </section>
           ) : null}
 
-          {data.guidanceHtml ? (
+          {data.guidanceModeratorsHtml || data.guidanceAgentsHtml ? (
             <section style={sectionStyle}>
-              <div style={sectionTitleStyle}>Guidance (moderators only)</div>
-              <details>
-                <summary style={{ cursor: 'pointer', color: '#9cf' }}>Show guidance</summary>
-                <div style={{ ...sectionBodyStyle, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceHtml }} />
-              </details>
+              <div style={sectionTitleStyle}>Guidance</div>
+              {data.guidanceModeratorsHtml ? (
+                <details>
+                  <summary style={{ cursor: 'pointer', color: '#9cf' }}>Guidance for Moderators</summary>
+                  <div style={{ ...sectionBodyStyle, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceModeratorsHtml }} />
+                </details>
+              ) : null}
+              {data.guidanceAgentsHtml ? (
+                <details style={{ marginTop: data.guidanceModeratorsHtml ? 12 : 0 }}>
+                  <summary style={{ cursor: 'pointer', color: '#9cf' }}>Guidance for AI Agents</summary>
+                  <div style={{ ...sectionBodyStyle, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: data.guidanceAgentsHtml }} />
+                </details>
+              ) : null}
             </section>
           ) : null}
         </div>

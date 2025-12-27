@@ -13,6 +13,8 @@ async function main() {
        allowed_examples_markdown, allowed_examples_html,
        disallowed_examples_markdown, disallowed_examples_html,
        guidance_markdown, guidance_html,
+       guidance_moderators_markdown, guidance_moderators_html,
+       guidance_agents_markdown, guidance_agents_html,
        updated_by
      )
      SELECT r.id,
@@ -20,7 +22,9 @@ async function main() {
             rv.short_description,
             rv.allowed_examples_markdown, rv.allowed_examples_html,
             rv.disallowed_examples_markdown, rv.disallowed_examples_html,
-            rv.guidance_markdown, rv.guidance_html,
+            COALESCE(rv.guidance_markdown, rv.guidance_moderators_markdown), COALESCE(rv.guidance_html, rv.guidance_moderators_html),
+            COALESCE(rv.guidance_moderators_markdown, rv.guidance_markdown), COALESCE(rv.guidance_moderators_html, rv.guidance_html),
+            rv.guidance_agents_markdown, rv.guidance_agents_html,
             NULL
        FROM rules r
        JOIN rule_versions rv ON rv.id = r.current_version_id
@@ -38,4 +42,3 @@ main().catch(async (err) => {
   try { await getPool().end() } catch {}
   process.exit(1)
 })
-
