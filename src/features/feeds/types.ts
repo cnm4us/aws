@@ -7,6 +7,7 @@ export type FeedPublication = {
   comments_count: number
   liked_by_me: boolean
   commented_by_me: boolean
+  reported_by_me?: boolean
   production_id?: number | null
   production_ulid?: string | null
   space_id: number

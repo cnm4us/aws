@@ -94,11 +94,23 @@ const updateSpaceSchema = z.object({
   name: z.string().min(1).optional(),
   commentsPolicy: z.enum(['on','off','inherit']).optional(),
   requireReview: z.boolean().optional(),
+  cultureIds: z.array(z.number().int().positive()).max(200).optional(),
 })
 
 const rolesSchema = z.object({ roles: z.array(z.string()).optional() })
 
 const addMemberSchema = z.object({ userId: z.number().int().positive(), roles: z.array(z.string()).optional() })
+
+// ---------- Cultures ----------
+adminRouter.get('/cultures', async (_req, res) => {
+  try {
+    const result = await adminSvc.listCultures()
+    res.json(result)
+  } catch (err: any) {
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list_cultures', detail: String(err?.message || err) })
+  }
+})
 
 // ---------- Roles ----------
 adminRouter.get('/roles', async (_req, res) => {

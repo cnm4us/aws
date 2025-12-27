@@ -468,6 +468,17 @@ export async function ensureSchema(db: DB) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  // Spaces ↔ Cultures (many-to-many)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_cultures (
+      space_id BIGINT UNSIGNED NOT NULL,
+      culture_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (space_id, culture_id),
+      KEY idx_space_cultures_culture (culture_id, space_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
   // Versioned rules metadata and content
   await db.query(`
     CREATE TABLE IF NOT EXISTS rules (
@@ -526,6 +537,22 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE cultures ADD COLUMN IF NOT EXISTS description TEXT NULL`);
   try {
     await db.query(`ALTER TABLE cultures ADD UNIQUE KEY uniq_cultures_name (name)`);
+  } catch {}
+
+  // Best-effort foreign keys for space/culture joins
+  try {
+    await db.query(`
+      ALTER TABLE space_cultures
+      ADD CONSTRAINT fk_space_cultures_space
+      FOREIGN KEY (space_id) REFERENCES spaces(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_cultures
+      ADD CONSTRAINT fk_space_cultures_culture
+      FOREIGN KEY (culture_id) REFERENCES cultures(id)
+    `);
   } catch {}
 
   // Best-effort foreign keys for culture/category joins
@@ -749,6 +776,69 @@ export async function ensureSchema(db: DB) {
       KEY idx_pc_user_created (user_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
+
+  // Publication Reports (end-user reporting for moderation; scoped to a specific publication in a specific space)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS space_publication_reports (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      space_publication_id BIGINT UNSIGNED NOT NULL,
+      space_id BIGINT UNSIGNED NOT NULL,
+      production_id BIGINT UNSIGNED NULL,
+      reporter_user_id BIGINT UNSIGNED NOT NULL,
+      rule_id BIGINT UNSIGNED NOT NULL,
+      rule_version_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_space_publication_reports_pub_reporter (space_publication_id, reporter_user_id),
+      KEY idx_space_publication_reports_pub_created (space_publication_id, created_at),
+      KEY idx_space_publication_reports_space_created (space_id, created_at),
+      KEY idx_space_publication_reports_reporter_created (reporter_user_id, created_at),
+      KEY idx_space_publication_reports_rule_created (rule_id, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Best-effort foreign keys for publication reports
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_publication
+      FOREIGN KEY (space_publication_id) REFERENCES space_publications(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_space
+      FOREIGN KEY (space_id) REFERENCES spaces(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_production
+      FOREIGN KEY (production_id) REFERENCES productions(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_reporter
+      FOREIGN KEY (reporter_user_id) REFERENCES users(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_rule
+      FOREIGN KEY (rule_id) REFERENCES rules(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE space_publication_reports
+      ADD CONSTRAINT fk_space_publication_reports_rule_version
+      FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
+    `);
+  } catch {}
 }
 
 // Seed baseline roles/permissions mappings for RBAC+

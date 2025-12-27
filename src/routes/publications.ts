@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import * as pubsSvc from '../features/publications/service'
 import * as likesSvc from '../features/likes/service'
 import * as commentsSvc from '../features/comments/service'
+import * as reportsSvc from '../features/reports/service'
 // Legacy models removed from route usage; publications now delegate to service/repo
 
 // legacy type aliases removed
@@ -17,6 +18,7 @@ import * as commentsSvc from '../features/comments/service'
 export const publicationsRouter = Router();
 
 const visibilityEnum = z.enum(['inherit', 'members', 'public']);
+const reportSchema = z.object({ ruleId: z.number().int().positive() })
 
 const createPublicationSchema = z.object({
   spaceId: z.number().int().positive(),
@@ -101,6 +103,35 @@ publicationsRouter.get('/api/publications/:id', requireAuth, async (req, res, ne
     res.json({ publication, events, canRepublishOwner })
   } catch (err: any) { next(err) }
 });
+
+// Reporting options for end users (derived from the publication's space cultures)
+publicationsRouter.get('/api/publications/:id/reporting/options', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' })
+    }
+    const userId = Number(req.user!.id)
+    const data = await reportsSvc.getReportingOptionsForPublication(publicationId, userId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+publicationsRouter.post('/api/publications/:id/report', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' })
+    }
+    const parsed = reportSchema.safeParse(req.body || {})
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    }
+    const userId = Number(req.user!.id)
+    const data = await reportsSvc.submitPublicationReport(publicationId, userId, parsed.data)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
 
 const noteSchema = z.object({
   note: z.string().max(2000).optional(),

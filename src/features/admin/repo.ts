@@ -1,6 +1,11 @@
 import { getPool } from '../../db'
 import { ulidMonotonic as genSpaceUlid } from '../../utils/ulid'
 
+type DbLike = { query: (sql: string, params?: any[]) => Promise<any> }
+function dbOrPool(db?: DbLike) {
+  return (db as any) || getPool()
+}
+
 export async function listRoles(): Promise<Array<{ id: number; name: string; scope: string | null; spaceType: string | null }>> {
   const db = getPool()
   try {
@@ -173,23 +178,23 @@ export async function listSpaces(type?: 'group' | 'channel'): Promise<Array<{ id
   return rows as any[]
 }
 
-export async function getSpace(spaceId: number): Promise<{ id: number; type: string; owner_user_id: number | null; name: string; slug: string; settings: any } | null> {
-  const db = getPool()
-  const [rows] = await db.query(`SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+export async function getSpace(spaceId: number, db?: DbLike): Promise<{ id: number; type: string; owner_user_id: number | null; name: string; slug: string; settings: any } | null> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(`SELECT id, type, owner_user_id, name, slug, settings FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
   const s = (rows as any[])[0]
   if (!s) return null
   return { id: Number(s.id), type: String(s.type), owner_user_id: s.owner_user_id != null ? Number(s.owner_user_id) : null, name: s.name, slug: s.slug, settings: s.settings }
 }
 
-export async function updateSpace(spaceId: number, fields: { name?: string; settingsJson?: string }): Promise<number> {
-  const db = getPool()
+export async function updateSpace(spaceId: number, fields: { name?: string; settingsJson?: string }, db?: DbLike): Promise<number> {
+  const q = dbOrPool(db)
   const sets: string[] = []
   const params: any[] = []
   if (fields.name) { sets.push('name = ?'); params.push(fields.name) }
   if (fields.settingsJson !== undefined) { sets.push('settings = ?'); params.push(fields.settingsJson) }
   if (!sets.length) return 0
   params.push(spaceId)
-  const [result] = await db.query(`UPDATE spaces SET ${sets.join(', ')} WHERE id = ?`, params)
+  const [result] = await q.query(`UPDATE spaces SET ${sets.join(', ')} WHERE id = ?`, params)
   return Number((result as any).affectedRows || 0)
 }
 
@@ -200,4 +205,42 @@ export async function getSpaceUserRoleNames(spaceId: number, userId: number): Pr
     [spaceId, userId]
   )
   return (rows as any[]).map((r) => String(r.name))
+}
+
+export async function listCultures(db?: DbLike): Promise<Array<{ id: number; name: string; description: string | null; category_count: any }>> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(
+    `SELECT c.id,
+            c.name,
+            c.description,
+            COUNT(cc.category_id) AS category_count
+       FROM cultures c
+       LEFT JOIN culture_categories cc ON cc.culture_id = c.id
+      GROUP BY c.id
+      ORDER BY c.name`
+  )
+  return rows as any[]
+}
+
+export async function getSpaceCultureIds(spaceId: number, db?: DbLike): Promise<number[]> {
+  const q = dbOrPool(db)
+  const [rows] = await q.query(`SELECT culture_id FROM space_cultures WHERE space_id = ? ORDER BY culture_id`, [spaceId])
+  return (rows as any[]).map((r) => Number(r.culture_id))
+}
+
+export async function listExistingCultureIds(cultureIds: number[], db?: DbLike): Promise<number[]> {
+  const q = dbOrPool(db)
+  const ids = (Array.isArray(cultureIds) ? cultureIds : []).filter((id) => Number.isFinite(id))
+  if (!ids.length) return []
+  const placeholders = ids.map(() => '?').join(',')
+  const [rows] = await q.query(`SELECT id FROM cultures WHERE id IN (${placeholders})`, ids)
+  return (rows as any[]).map((r) => Number(r.id))
+}
+
+export async function replaceSpaceCultureIds(spaceId: number, cultureIds: number[], db: DbLike): Promise<void> {
+  const q = dbOrPool(db)
+  await q.query(`DELETE FROM space_cultures WHERE space_id = ?`, [spaceId])
+  for (const cultureId of cultureIds) {
+    await q.query(`INSERT IGNORE INTO space_cultures (space_id, culture_id) VALUES (?, ?)`, [spaceId, cultureId])
+  }
 }

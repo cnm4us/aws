@@ -7,12 +7,16 @@ type SpaceDetail = {
   name: string
   slug: string
   settings: any
+  cultureIds?: number[]
 }
 
 type MembersResp = { spaceId: number; members: Array<{ userId: number; email: string | null; displayName: string | null; roles: string[] }> }
 
 type SiteFlags = { requireGroupReview: boolean; requireChannelReview: boolean; siteEnforced: boolean }
 type SettingsResponse = { id: number; name: string | null; type: 'personal'|'group'|'channel'; settings: any; site: SiteFlags }
+
+type Culture = { id: number; name: string; description: string | null; categoryCount: number }
+type CulturesResponse = { cultures: Culture[] }
 
 function parsePath(): { kind: 'group'|'channel', id: number } | null {
   const p = typeof window !== 'undefined' ? window.location.pathname : ''
@@ -35,13 +39,21 @@ export default function AdminSpaceDetailPage() {
   const [detail, setDetail] = useState<SpaceDetail | null>(null)
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
   const [members, setMembers] = useState<MembersResp | null>(null)
+  const [cultures, setCultures] = useState<Culture[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  function normalizeCultureIds(ids: number[]): number[] {
+    return Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => Number(id))))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .sort((a, b) => a - b)
+  }
 
   // Form state
   const [name, setName] = useState('')
   const [requireReview, setRequireReview] = useState(false)
   const [commentsPolicy, setCommentsPolicy] = useState<'inherit'|'on'|'off'>('inherit')
+  const [cultureIds, setCultureIds] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
 
@@ -60,25 +72,29 @@ export default function AdminSpaceDetailPage() {
       if (!parsed) { setError('Bad id'); setLoading(false); return }
       setLoading(true); setError(null)
       try {
-        const [dRes, sRes, mRes] = await Promise.all([
+        const [dRes, sRes, mRes, cRes] = await Promise.all([
           fetch(`/api/admin/spaces/${parsed.id}`, { credentials: 'same-origin' }),
           fetch(`/api/spaces/${parsed.id}/settings`, { credentials: 'same-origin' }),
-          fetch(`/api/admin/spaces/${parsed.id}/members`, { credentials: 'same-origin' })
+          fetch(`/api/admin/spaces/${parsed.id}/members`, { credentials: 'same-origin' }),
+          fetch(`/api/admin/cultures`, { credentials: 'same-origin' }),
         ])
-        if (!dRes.ok || !sRes.ok || !mRes.ok) throw new Error('fetch_failed')
+        if (!dRes.ok || !sRes.ok || !mRes.ok || !cRes.ok) throw new Error('fetch_failed')
         const dJson = (await dRes.json()) as SpaceDetail
         const sJson = (await sRes.json()) as SettingsResponse
         const mJson = (await mRes.json()) as MembersResp
+        const cJson = (await cRes.json()) as CulturesResponse
         if (canceled) return
         setDetail(dJson)
         setSettings(sJson)
         setMembers(mJson)
+        setCultures(Array.isArray(cJson?.cultures) ? cJson.cultures : [])
         setName(dJson.name || '')
         const setts = sJson.settings || {}
         const c = typeof setts.comments === 'string' ? setts.comments.toLowerCase() : 'inherit'
         setCommentsPolicy(c === 'on' || c === 'off' ? c : 'inherit')
         const rr = !!(setts.publishing && typeof setts.publishing === 'object' && setts.publishing.requireApproval === true)
         setRequireReview(rr)
+        setCultureIds(normalizeCultureIds(Array.isArray(dJson.cultureIds) ? dJson.cultureIds : []))
       } catch (e) {
         if (!canceled) setError('Failed to load')
       } finally { if (!canceled) setLoading(false) }
@@ -103,6 +119,13 @@ export default function AdminSpaceDetailPage() {
       if (detail && name !== detail.name) body.name = name
       body.commentsPolicy = commentsPolicy
       if (!settings?.site?.siteEnforced) body.requireReview = requireReview
+      if (detail) {
+        const existingIds = Array.isArray(detail.cultureIds) ? detail.cultureIds : []
+        const existing = new Set(existingIds.map((id) => Number(id)))
+        const next = normalizeCultureIds(cultureIds)
+        const changed = next.length !== existing.size || next.some((id) => !existing.has(id))
+        if (changed) body.cultureIds = next
+      }
       const res = await fetch(`/api/admin/spaces/${parsed.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) },
@@ -110,6 +133,10 @@ export default function AdminSpaceDetailPage() {
         body: JSON.stringify(body)
       })
       if (!res.ok) throw new Error('save_failed')
+      setDetail((d) => {
+        if (!d) return d
+        return { ...d, name, cultureIds: normalizeCultureIds(cultureIds) }
+      })
       setSaved('Saved')
       setTimeout(() => setSaved(null), 1200)
     } catch (e) {
@@ -208,6 +235,37 @@ export default function AdminSpaceDetailPage() {
                   <option value="off">Off</option>
                 </select>
               </label>
+              <div style={{ display: 'grid', gap: 6 }}>
+                <span>Cultures</span>
+                {cultures.length ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {cultures.map((c) => {
+                      const checked = cultureIds.includes(c.id)
+                      return (
+                        <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.02)' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked ? [...cultureIds, c.id] : cultureIds.filter((id) => id !== c.id)
+                              setCultureIds(normalizeCultureIds(next))
+                            }}
+                          />
+                          <span>
+                            <span style={{ fontWeight: 600 }}>{c.name}</span>
+                            <span style={{ fontSize: 12, opacity: 0.8, marginLeft: 8 }}>{c.categoryCount} categories</span>
+                            {c.description ? <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>{c.description}</div> : null}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    No cultures yet. <a href="/admin/cultures" style={{ color: '#9cf' }}>Create one</a>.
+                  </div>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                 <button onClick={save} disabled={saving} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: '#1976d2', color: '#fff' }}>{saving ? 'Saving…' : 'Save Settings'}</button>
                 <a href={backHref} style={{ color: '#9cf', textDecoration: 'none', display: 'inline-block', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.04)' }}>Back</a>

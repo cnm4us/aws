@@ -312,9 +312,21 @@ export async function listSpaces(type?: 'group' | 'channel') {
   return { spaces }
 }
 
+export async function listCultures() {
+  const rows = await repo.listCultures()
+  const cultures = (rows as any[]).map((row) => ({
+    id: Number(row.id),
+    name: String(row.name || ''),
+    description: row.description != null ? String(row.description) : null,
+    categoryCount: Number(row.category_count || 0),
+  }))
+  return { cultures }
+}
+
 export async function getSpace(spaceId: number) {
   const s = await repo.getSpace(spaceId)
   if (!s) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+  const cultureIds = await repo.getSpaceCultureIds(spaceId)
   return {
     id: Number(s.id),
     type: String(s.type),
@@ -322,44 +334,81 @@ export async function getSpace(spaceId: number) {
     name: s.name,
     slug: s.slug,
     settings: typeof s.settings === 'string' ? JSON.parse(s.settings) : s.settings,
+    cultureIds,
   }
 }
 
-export async function updateSpace(spaceId: number, input: { name?: string; commentsPolicy?: string; requireReview?: boolean }) {
-  const s = await repo.getSpace(spaceId)
-  if (!s) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
-  let settings: any = {}
-  try { settings = typeof s.settings === 'string' ? JSON.parse(s.settings) : (s.settings || {}) } catch { settings = {} }
-  const updates: { name?: string; settingsJson?: string } = {}
-  if (input.name) updates.name = String(input.name).trim()
+export async function updateSpace(
+  spaceId: number,
+  input: { name?: string; commentsPolicy?: string; requireReview?: boolean; cultureIds?: number[] }
+) {
+  const pool = getPool()
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
 
-  let settingsChanged = false
-  if (input.commentsPolicy !== undefined) {
-    const cp = String(input.commentsPolicy || '').toLowerCase()
-    if (!['on','off','inherit'].includes(cp)) throw Object.assign(new Error('bad_comments_policy'), { code: 'bad_comments_policy', status: 400 })
-    settings = { ...(settings || {}), comments: cp }
-    settingsChanged = true
-  }
-  if (input.requireReview !== undefined) {
-    const site = await repo.readSiteSettings()
-    if (!site) throw Object.assign(new Error('missing_site_settings'), { code: 'missing_site_settings', status: 500 })
-    const dbBool = (v: any) => Boolean(Number(v))
-    const isGroup = String(s.type) === 'group'
-    const isChannel = String(s.type) === 'channel'
-    const siteRequires = isGroup ? dbBool(site.require_group_review) : isChannel ? dbBool(site.require_channel_review) : false
-    if (siteRequires && input.requireReview === false) {
-      throw Object.assign(new Error('cannot_override_site_policy'), { code: 'cannot_override_site_policy', status: 400 })
+    const s = await repo.getSpace(spaceId, conn as any)
+    if (!s) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+
+    let settings: any = {}
+    try { settings = typeof s.settings === 'string' ? JSON.parse(s.settings) : (s.settings || {}) } catch { settings = {} }
+    const updates: { name?: string; settingsJson?: string } = {}
+    if (input.name) updates.name = String(input.name).trim()
+
+    let settingsChanged = false
+    if (input.commentsPolicy !== undefined) {
+      const cp = String(input.commentsPolicy || '').toLowerCase()
+      if (!['on','off','inherit'].includes(cp)) throw Object.assign(new Error('bad_comments_policy'), { code: 'bad_comments_policy', status: 400 })
+      settings = { ...(settings || {}), comments: cp }
+      settingsChanged = true
     }
-    const pub = { ...(settings?.publishing || {}) }
-    pub.requireApproval = Boolean(input.requireReview)
-    settings = { ...(settings || {}), publishing: pub }
-    settingsChanged = true
+    if (input.requireReview !== undefined) {
+      const site = await repo.readSiteSettings()
+      if (!site) throw Object.assign(new Error('missing_site_settings'), { code: 'missing_site_settings', status: 500 })
+      const dbBool = (v: any) => Boolean(Number(v))
+      const isGroup = String(s.type) === 'group'
+      const isChannel = String(s.type) === 'channel'
+      const siteRequires = isGroup ? dbBool(site.require_group_review) : isChannel ? dbBool(site.require_channel_review) : false
+      if (siteRequires && input.requireReview === false) {
+        throw Object.assign(new Error('cannot_override_site_policy'), { code: 'cannot_override_site_policy', status: 400 })
+      }
+      const pub = { ...(settings?.publishing || {}) }
+      pub.requireApproval = Boolean(input.requireReview)
+      settings = { ...(settings || {}), publishing: pub }
+      settingsChanged = true
+    }
+    if (settingsChanged) updates.settingsJson = JSON.stringify(settings)
+
+    const cultureIdsProvided = input.cultureIds !== undefined
+    const cultureIdsUnique = cultureIdsProvided ? Array.from(new Set((input.cultureIds || []).map((id) => Number(id)))) : []
+
+    if (!updates.name && updates.settingsJson === undefined && !cultureIdsProvided) {
+      throw Object.assign(new Error('no_fields_to_update'), { code: 'no_fields_to_update', status: 400 })
+    }
+
+    if (updates.name || updates.settingsJson !== undefined) {
+      const affected = await repo.updateSpace(spaceId, updates, conn as any)
+      if (!affected) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
+    }
+
+    if (cultureIdsProvided) {
+      const existing = await repo.listExistingCultureIds(cultureIdsUnique, conn as any)
+      const existingSet = new Set(existing.map((id) => Number(id)))
+      const missing = cultureIdsUnique.filter((id) => !existingSet.has(id))
+      if (missing.length) {
+        throw Object.assign(new Error('unknown_culture_ids'), { code: 'unknown_culture_ids', status: 400, missing })
+      }
+      await repo.replaceSpaceCultureIds(spaceId, cultureIdsUnique, conn as any)
+    }
+
+    await conn.commit()
+    return { ok: true }
+  } catch (err) {
+    try { await conn.rollback() } catch {}
+    throw err
+  } finally {
+    try { conn.release() } catch {}
   }
-  if (settingsChanged) updates.settingsJson = JSON.stringify(settings)
-  if (!updates.name && updates.settingsJson === undefined) throw Object.assign(new Error('no_fields_to_update'), { code: 'no_fields_to_update', status: 400 })
-  const affected = await repo.updateSpace(spaceId, updates)
-  if (!affected) throw Object.assign(new Error('space_not_found'), { code: 'space_not_found', status: 404 })
-  return { ok: true }
 }
 
 export async function getUserSpaceRoles(spaceId: number, userId: number) {

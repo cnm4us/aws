@@ -7,6 +7,8 @@ import styles from '../styles/feed.module.css'
 import debug from '../debug'
 import useRenderDebug from '../debug/useRenderDebug'
 
+const LazyReportModal = React.lazy(() => import('./ReportModal'))
+
 type UploadItem = {
   id: number
   url: string
@@ -27,6 +29,7 @@ type UploadItem = {
   commentsCount?: number | null
    likedByMe?: boolean | null
    commentedByMe?: boolean | null
+   reportedByMe?: boolean | null
 }
 
 type MeResponse = {
@@ -101,6 +104,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const commentsCount = typeof publication?.comments_count === 'number' ? Number(publication.comments_count) : null
   const likedByMe = typeof (publication as any)?.liked_by_me === 'boolean' ? Boolean((publication as any).liked_by_me) : null
   const commentedByMe = typeof (publication as any)?.commented_by_me === 'boolean' ? Boolean((publication as any).commented_by_me) : null
+  const reportedByMe = typeof (publication as any)?.reported_by_me === 'boolean' ? Boolean((publication as any).reported_by_me) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -124,6 +128,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     commentsCount,
     likedByMe,
     commentedByMe,
+    reportedByMe,
   }
 }
 
@@ -255,6 +260,10 @@ export default function Feed() {
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentRows, setCommentRows] = useState<number>(1)
   const [commentsOrder, setCommentsOrder] = useState<'oldest' | 'newest'>('newest')
+  // Reporting state keyed by publicationId
+  const [reportedMap, setReportedMap] = useState<Record<number, boolean>>({})
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportForPub, setReportForPub] = useState<number | null>(null)
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -926,6 +935,7 @@ export default function Feed() {
         try {
           const likeSeeds: Record<number, boolean> = {}
           const commentSeeds: Record<number, boolean> = {}
+          const reportSeeds: Record<number, boolean> = {}
           for (const it of fetchedItems) {
             if (it.publicationId != null) {
               if (typeof it.likedByMe === 'boolean') {
@@ -934,6 +944,9 @@ export default function Feed() {
               if (typeof it.commentedByMe === 'boolean') {
                 commentSeeds[it.publicationId] = it.commentedByMe
               }
+              if (typeof it.reportedByMe === 'boolean') {
+                reportSeeds[it.publicationId] = it.reportedByMe
+              }
             }
           }
           if (Object.keys(likeSeeds).length) {
@@ -941,6 +954,9 @@ export default function Feed() {
           }
           if (Object.keys(commentSeeds).length) {
             setCommentedByMeMap((prev) => ({ ...prev, ...commentSeeds }))
+          }
+          if (Object.keys(reportSeeds).length) {
+            setReportedMap((prev) => ({ ...prev, ...reportSeeds }))
           }
         } catch {}
         // Tag the feed key for which these items belong so we can guard saves
@@ -1396,6 +1412,10 @@ export default function Feed() {
           it.ownerId != null &&
           it.ownerId !== myUserId
         const showInlineFollow = canInlineFollow && !slideFollowing
+        const alreadyReported =
+          it.publicationId != null
+            ? (reportedMap[it.publicationId] ?? (typeof it.reportedByMe === 'boolean' ? it.reportedByMe : false))
+            : false
         return (
           <div
             key={slideId}
@@ -1759,6 +1779,39 @@ export default function Feed() {
                       {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
                     </button>
                   </div>
+                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                    <button
+                      aria-label={alreadyReported ? 'Reported' : 'Report'}
+                      aria-pressed={alreadyReported ? true : false}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (it.publicationId == null) return
+                        setReportForPub(it.publicationId)
+                        setReportOpen(true)
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {alreadyReported ? (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#ff7043" stroke="#ff7043" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 3h11a1 1 0 0 1 1 1v17l-6-3-6 3V4a1 1 0 0 1 1-1z" />
+                        </svg>
+                      ) : (
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 3h11a1 1 0 0 1 1 1v17l-6-3-6 3V4a1 1 0 0 1 1-1z" />
+                        </svg>
+                      )}
+                    </button>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>{alreadyReported ? 'Sent' : 'Flag'}</div>
+                  </div>
                 </div>
               )}
               {/* Fullscreen toggle (active slide only) */}
@@ -1803,7 +1856,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, isAuthed, feedMode, followMap, spaceList, myUserId]
+    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -2691,6 +2744,21 @@ export default function Feed() {
             )}
           </div>
         </div>
+      )}
+      {reportOpen && reportForPub != null && (
+        <React.Suspense
+          fallback={
+            <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.82)', color: '#fff', display: 'grid', placeItems: 'center' }}>
+              Loading…
+            </div>
+          }
+        >
+          <LazyReportModal
+            publicationId={reportForPub}
+            onClose={() => { setReportOpen(false); setReportForPub(null) }}
+            onReported={(pubId) => setReportedMap((m) => ({ ...m, [pubId]: true }))}
+          />
+        </React.Suspense>
       )}
       {restoring && (
         <div
