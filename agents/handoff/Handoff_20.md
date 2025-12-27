@@ -25,6 +25,7 @@ Priority Backlog (Refactor Objectives)
 Summary
 - [init] New thread. Reconstructed context from `agents/handoff/Handoff_19.md`.
 - [feat] Implemented plan_11: split rule “Guidance” into separate Moderators vs AI Agents fields across DB, admin editing, API, SPA rule viewing, and historical rule pages.
+- [feat] Implemented plan_12 (partial): admin-only Cultures CRUD (create/list/detail/edit) + category assignment + safe delete (blocked if any category associations exist).
 
 Decisions (carried + new)
 - Carried:
@@ -49,6 +50,10 @@ Decisions (carried + new)
     - (and the corresponding `rule_drafts` columns).
   - Access control: both guidance fields are gated identically via `canViewGuidance` (same as legacy guidance behavior).
   - `/api/rules/:slug` now returns `guidanceModeratorsHtml` and `guidanceAgentsHtml` (instead of `guidanceHtml`).
+  - Cultures (admin-only, Phase 1):
+    - `cultures` defines a named moderation culture (name unique, optional description).
+    - `culture_categories` assigns 0..N `rule_categories` to a culture.
+    - Delete culture is only allowed when it has 0 assigned categories (future: also require no space associations).
 
 Changes Since Last
 - Affects: `src/db.ts`; `src/routes/pages.ts`; `frontend/src/app/RuleView.tsx`; `scripts/backfill-rule-drafts.ts`; `agents/implementation/plan_11.md`; `agents/implementation/tests/plan_11/*`
@@ -65,6 +70,20 @@ Changes Since Last
   - Backfill: legacy `guidance_*` copied → `guidance_moderators_*` when new columns are NULL
 - Flags: none
 
+Changes Since Last (cultures)
+- Affects: `src/db.ts`; `src/routes/pages.ts`; `agents/implementation/plan_12.md`; `agents/implementation/tests/plan_12/*`; `README.md`
+- Routes:
+  - GET `/admin/cultures`
+  - GET `/admin/cultures/new`
+  - POST `/admin/cultures`
+  - GET `/admin/cultures/:id`
+  - POST `/admin/cultures/:id` (edit + assign categories)
+  - POST `/admin/cultures/:id/delete` (blocked if any category associations)
+- DB:
+  - Added: `cultures`
+  - Added: `culture_categories`
+- Flags: none
+
 Open Questions / Deferred
 - plan_10: draft refresh/clear-on-publish is not implemented (draft remains; “Draft pending” uses timestamps vs current published version).
 - Moderation workflows and reporting UI remain deferred (flagging, sanctions, per-space rule sets).
@@ -74,5 +93,6 @@ Thread Plan (subset of Backlog)
 - [ ] Optional: execute plan_11 Step 7 (drop legacy columns) after verification and explicit approval.
 
 Work Log (reverse‑chronological)
+- 2025-12-27 — plan_12 Steps 1–4 completed (schema + admin list/create + detail/assignment + delete guard); tests logged under `agents/implementation/tests/plan_12/`.
 - 2025-12-26 16:05Z — plan_11 Steps 1–6 completed (schema + admin UI + save/publish + new version form + viewing surfaces + backfill script); tests logged under `agents/implementation/tests/plan_11/`.
 - 2025-12-26 14:55Z — Read `agents/README.md`; read `agents/handoff/Handoff_19.md`; created `agents/handoff/Handoff_20.md`.

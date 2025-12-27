@@ -655,6 +655,431 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
   }
 });
 
+// -------- Admin: Cultures (server-rendered, minimal JS) --------
+
+function renderCultureForm(opts: { error?: string | null; csrfToken?: string | null; name?: string; description?: string }): string {
+  const error = opts.error ? String(opts.error) : '';
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
+  const name = opts.name ? String(opts.name) : '';
+  const description = opts.description ? String(opts.description) : '';
+
+  let body = `<h1>New Culture</h1>`;
+  body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+  body += `<form method="post" action="/admin/cultures">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(name)}" />
+    <div class="field-hint">Unique label for this culture (used by admins; not currently shown to end users).</div>
+  </label>`;
+  body += `<label>Description
+    <textarea name="description" style="min-height: 120px">${escapeHtml(description)}</textarea>
+  </label>`;
+  body += `<div class="actions">
+    <button type="submit">Create culture</button>
+  </div>`;
+  body += `</form>`;
+  return renderAdminPage('New Culture', body);
+}
+
+pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
+
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT c.id, c.name, c.updated_at, COUNT(cc.category_id) AS category_count
+         FROM cultures c
+         LEFT JOIN culture_categories cc ON cc.culture_id = c.id
+        GROUP BY c.id
+        ORDER BY c.name`
+    );
+    const items = rows as any[];
+
+    let body = '<h1>Cultures</h1>';
+    body += '<div class="toolbar"><div><span class="pill">Cultures</span></div><div><a href="/admin/cultures/new">New culture</a></div></div>';
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+
+    if (!items.length) {
+      body += '<p>No cultures have been created yet.</p>';
+    } else {
+      body += '<table><thead><tr><th>Name</th><th>Categories</th><th>Updated</th></tr></thead><tbody>';
+      for (const row of items) {
+        const id = Number(row.id);
+        const name = escapeHtml(String(row.name || ''));
+        const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
+        const categoryCount = row.category_count != null ? escapeHtml(String(row.category_count)) : '0';
+        const href = `/admin/cultures/${encodeURIComponent(String(id))}`;
+        body += `<tr><td><a href="${href}">${name}</a></td><td>${categoryCount}</td><td>${updated}</td></tr>`;
+      }
+      body += '</tbody></table>';
+      body += `<div class="field-hint" style="margin-top: 10px">Category assignment is configured in the culture detail page.</div>`;
+    }
+
+    const doc = renderAdminPage('Cultures', body);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    console.error('admin cultures list failed', err);
+    res.status(500).send('Failed to load cultures');
+  }
+});
+
+pagesRouter.get('/admin/cultures/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const csrfToken = cookies['csrf'] || '';
+  const doc = renderCultureForm({ csrfToken });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(doc);
+});
+
+pagesRouter.post('/admin/cultures', async (req: any, res: any) => {
+  try {
+    const body = (req.body || {}) as any;
+    const rawName = body.name != null ? String(body.name) : '';
+    const rawDescription = body.description != null ? String(body.description) : '';
+    const name = rawName.trim();
+    const description = rawDescription.trim();
+
+    if (!name) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCultureForm({ csrfToken, error: 'Name is required.', name: rawName, description: rawDescription });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    if (name.length > 255) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCultureForm({ csrfToken, error: 'Name is too long (max 255 characters).', name: rawName, description: rawDescription });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+
+    const db = getPool();
+    try {
+      await db.query(`INSERT INTO cultures (name, description) VALUES (?, ?)`, [name, description ? description : null]);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_cultures_name')) {
+        const cookies = parseCookies(req.headers.cookie);
+        const csrfToken = cookies['csrf'] || '';
+        const doc = renderCultureForm({ csrfToken, error: 'A culture with that name already exists.', name: rawName, description: rawDescription });
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        return res.status(400).send(doc);
+      }
+      throw err;
+    }
+
+    res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture created.')}`);
+  } catch (err) {
+    console.error('admin create culture failed', err);
+    res.status(500).send('Failed to create culture');
+  }
+});
+
+async function listRuleCategoriesForCultures(): Promise<Array<{ id: number; name: string; description: string }>> {
+  try {
+    const db = getPool();
+    const [rows] = await db.query(`SELECT id, name, description FROM rule_categories ORDER BY name`);
+    return (rows as any[])
+      .map((r) => ({
+        id: Number(r.id),
+        name: String(r.name || ''),
+        description: r.description != null ? String(r.description) : '',
+      }))
+      .filter((c) => Number.isFinite(c.id) && c.id > 0 && c.name);
+  } catch {
+    return [];
+  }
+}
+
+function renderCultureDetailPage(opts: {
+  culture: any;
+  categories: Array<{ id: number; name: string; description: string }>;
+  assignedCategoryIds: Set<number>;
+  csrfToken?: string | null;
+  notice?: string | null;
+  error?: string | null;
+}): string {
+  const culture = opts.culture ?? {};
+  const categories = Array.isArray(opts.categories) ? opts.categories : [];
+  const assigned = opts.assignedCategoryIds ?? new Set<number>();
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
+  const notice = opts.notice ? String(opts.notice) : '';
+  const error = opts.error ? String(opts.error) : '';
+
+  const id = culture.id != null ? String(culture.id) : '';
+  const nameValue = culture.name ? String(culture.name) : '';
+  const descriptionValue = culture.description ? String(culture.description) : '';
+
+  let body = `<h1>Culture: ${escapeHtml(nameValue || '(unnamed)')}</h1>`;
+  body += '<div class="toolbar"><div><a href="/admin/cultures">\u2190 Back to cultures</a></div></div>';
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+
+  body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+  </label>`;
+  body += `<label>Description
+    <textarea name="description" style="min-height: 120px">${escapeHtml(descriptionValue)}</textarea>
+  </label>`;
+
+  body += `<div class="section" style="margin-top: 14px">`;
+  body += `<div class="section-title">Categories</div>`;
+  body += `<div class="field-hint">Select which rule categories are included in this culture. Users will only see rules from these categories once cultures are attached to spaces.</div>`;
+
+  if (!categories.length) {
+    body += `<p>No categories exist yet.</p>`;
+  } else {
+    body += `<div style="margin-top: 10px">`;
+    for (const c of categories) {
+      const cid = Number(c.id);
+      const checked = assigned.has(cid) ? ' checked' : '';
+      body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 8px">`;
+      body += `<input type="checkbox" name="categoryIds" value="${escapeHtml(String(cid))}"${checked} style="margin-top: 3px" />`;
+      body += `<div><div>${escapeHtml(c.name)}</div>`;
+      if (c.description) {
+        body += `<div class="field-hint">${escapeHtml(c.description)}</div>`;
+      }
+      body += `</div></label>`;
+    }
+    body += `</div>`;
+  }
+  body += `</div>`;
+
+  body += `<div class="actions">
+    <button type="submit">Save</button>
+  </div>`;
+  body += `</form>`;
+
+  const assignedCount = assigned.size;
+  body += `<div class="section" style="margin-top: 18px">`;
+  body += `<div class="section-title">Danger Zone</div>`;
+  if (assignedCount > 0) {
+    body += `<div class="field-hint">To delete this culture, remove all category associations first.</div>`;
+  } else {
+    body += `<form method="post" action="/admin/cultures/${escapeHtml(id)}/delete" style="margin-top: 10px" onsubmit="return confirm('Delete culture \\'${escapeHtml(nameValue || 'this culture')}\\'? This cannot be undone.');">`;
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+    body += `<button type="submit" class="danger">Delete culture</button>`;
+    body += `</form>`;
+  }
+  body += `</div>`;
+
+  return renderAdminPage('Culture', body);
+}
+
+pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Culture not found');
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
+
+    const db = getPool();
+    const [cultureRows] = await db.query(`SELECT id, name, description, updated_at FROM cultures WHERE id = ? LIMIT 1`, [id]);
+    const culture = (cultureRows as any[])[0];
+    if (!culture) return res.status(404).send('Culture not found');
+
+    const categories = await listRuleCategoriesForCultures();
+    const [assignedRows] = await db.query(`SELECT category_id FROM culture_categories WHERE culture_id = ?`, [id]);
+    const assignedCategoryIds = new Set<number>((assignedRows as any[]).map((r) => Number(r.category_id)).filter((n) => Number.isFinite(n) && n > 0));
+
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+
+    const doc = renderCultureDetailPage({ culture, categories, assignedCategoryIds, csrfToken, notice, error });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    console.error('admin culture detail failed', err);
+    res.status(500).send('Failed to load culture');
+  }
+});
+
+pagesRouter.post('/admin/cultures/:id', async (req: any, res: any) => {
+  let conn: any = null;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Culture not found');
+
+    const body = (req.body || {}) as any;
+    const rawName = body.name != null ? String(body.name) : '';
+    const rawDescription = body.description != null ? String(body.description) : '';
+    const name = rawName.trim();
+    const description = rawDescription.trim();
+
+    const rawCategoryIds = (body as any).categoryIds;
+    const submittedIds: number[] = Array.isArray(rawCategoryIds)
+      ? rawCategoryIds.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0)
+      : (rawCategoryIds != null && String(rawCategoryIds).trim() !== '')
+        ? [Number(rawCategoryIds)].filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+
+    if (!name) {
+      const db = getPool();
+      const [cultureRows] = await db.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1`, [id]);
+      const culture = (cultureRows as any[])[0];
+      if (!culture) return res.status(404).send('Culture not found');
+
+      const categories = await listRuleCategoriesForCultures();
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const assignedCategoryIds = new Set<number>(submittedIds);
+      const doc = renderCultureDetailPage({ culture: { ...culture, name: rawName, description: rawDescription }, categories, assignedCategoryIds, csrfToken, error: 'Name is required.' });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    if (name.length > 255) {
+      const db = getPool();
+      const [cultureRows] = await db.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1`, [id]);
+      const culture = (cultureRows as any[])[0];
+      if (!culture) return res.status(404).send('Culture not found');
+
+      const categories = await listRuleCategoriesForCultures();
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const assignedCategoryIds = new Set<number>(submittedIds);
+      const doc = renderCultureDetailPage({ culture: { ...culture, name: rawName, description: rawDescription }, categories, assignedCategoryIds, csrfToken, error: 'Name is too long (max 255 characters).' });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+
+    const db = getPool() as any;
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [cultureRows] = await conn.query(`SELECT id, name, description FROM cultures WHERE id = ? LIMIT 1 FOR UPDATE`, [id]);
+    const culture = (cultureRows as any[])[0];
+    if (!culture) {
+      await conn.rollback();
+      return res.status(404).send('Culture not found');
+    }
+
+    const uniqueSubmittedIds = Array.from(new Set(submittedIds));
+    let validIds: number[] = [];
+    if (uniqueSubmittedIds.length) {
+      const [catRows] = await conn.query(
+        `SELECT id FROM rule_categories WHERE id IN (${uniqueSubmittedIds.map(() => '?').join(',')})`,
+        uniqueSubmittedIds
+      );
+      validIds = (catRows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0);
+    }
+
+    try {
+      await conn.query(
+        `UPDATE cultures
+            SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [name, description ? description : null, id]
+      );
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_cultures_name')) {
+        await conn.rollback();
+        const categories = await listRuleCategoriesForCultures();
+        const cookies = parseCookies(req.headers.cookie);
+        const csrfToken = cookies['csrf'] || '';
+        const assignedCategoryIds = new Set<number>(validIds);
+        const doc = renderCultureDetailPage({
+          culture: { ...culture, name: rawName, description: rawDescription },
+          categories,
+          assignedCategoryIds,
+          csrfToken,
+          error: 'A culture with that name already exists.',
+        });
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        return res.status(400).send(doc);
+      }
+      throw err;
+    }
+
+    const [existingRows] = await conn.query(`SELECT category_id FROM culture_categories WHERE culture_id = ? FOR UPDATE`, [id]);
+    const existingIds = new Set<number>((existingRows as any[]).map((r) => Number(r.category_id)).filter((n) => Number.isFinite(n) && n > 0));
+    const nextIds = new Set<number>(validIds);
+
+    const toAdd: number[] = [];
+    const toRemove: number[] = [];
+    for (const cid of nextIds) {
+      if (!existingIds.has(cid)) toAdd.push(cid);
+    }
+    for (const cid of existingIds) {
+      if (!nextIds.has(cid)) toRemove.push(cid);
+    }
+
+    if (toRemove.length) {
+      await conn.query(
+        `DELETE FROM culture_categories
+          WHERE culture_id = ?
+            AND category_id IN (${toRemove.map(() => '?').join(',')})`,
+        [id, ...toRemove]
+      );
+    }
+    if (toAdd.length) {
+      await conn.query(
+        `INSERT IGNORE INTO culture_categories (culture_id, category_id) VALUES ${toAdd.map(() => '(?, ?)').join(',')}`,
+        toAdd.flatMap((cid) => [id, cid])
+      );
+    }
+
+    await conn.commit();
+    res.redirect(`/admin/cultures/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
+  } catch (err) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error('admin update culture failed', err);
+    res.status(500).send('Failed to save culture');
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+pagesRouter.post('/admin/cultures/:id/delete', async (req: any, res: any) => {
+  let conn: any = null;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Culture not found');
+
+    const db = getPool() as any;
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [cultureRows] = await conn.query(`SELECT id, name FROM cultures WHERE id = ? LIMIT 1 FOR UPDATE`, [id]);
+    const culture = (cultureRows as any[])[0];
+    if (!culture) {
+      await conn.rollback();
+      return res.status(404).send('Culture not found');
+    }
+
+    const [assocRows] = await conn.query(
+      `SELECT COUNT(*) AS cnt FROM culture_categories WHERE culture_id = ? FOR UPDATE`,
+      [id]
+    );
+    const cnt = Number((assocRows as any[])[0]?.cnt ?? 0);
+    if (Number.isFinite(cnt) && cnt > 0) {
+      await conn.rollback();
+      const msg = 'Cannot delete: this culture is still associated with one or more categories.';
+      return res.redirect(`/admin/cultures/${encodeURIComponent(String(id))}?error=${encodeURIComponent(msg)}`);
+    }
+
+    await conn.query(`DELETE FROM cultures WHERE id = ?`, [id]);
+    await conn.commit();
+
+    res.redirect(`/admin/cultures?notice=${encodeURIComponent('Culture deleted.')}`);
+  } catch (err) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error('admin delete culture failed', err);
+    res.status(500).send('Failed to delete culture');
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
 // -------- Admin: Rules (server-rendered, minimal JS) --------
 
 async function listRuleCategories(): Promise<Array<{ id: number; name: string }>> {

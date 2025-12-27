@@ -444,6 +444,30 @@ export async function ensureSchema(db: DB) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  // Cultures (collections of rule categories; used for per-space moderation configuration)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS cultures (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_cultures_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  // Cultures ↔ Categories (many-to-many)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS culture_categories (
+      culture_id BIGINT UNSIGNED NOT NULL,
+      category_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (culture_id, category_id),
+      KEY idx_culture_categories_category (category_id, culture_id),
+      KEY idx_culture_categories_culture (culture_id, category_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
   // Versioned rules metadata and content
   await db.query(`
     CREATE TABLE IF NOT EXISTS rules (
@@ -495,6 +519,28 @@ export async function ensureSchema(db: DB) {
       ALTER TABLE moderation_actions
       ADD CONSTRAINT fk_moderation_actions_rule_version
       FOREIGN KEY (rule_version_id) REFERENCES rule_versions(id)
+    `);
+  } catch {}
+
+  // Ensure cultures can evolve (idempotent best-effort)
+  await db.query(`ALTER TABLE cultures ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+  try {
+    await db.query(`ALTER TABLE cultures ADD UNIQUE KEY uniq_cultures_name (name)`);
+  } catch {}
+
+  // Best-effort foreign keys for culture/category joins
+  try {
+    await db.query(`
+      ALTER TABLE culture_categories
+      ADD CONSTRAINT fk_culture_categories_culture
+      FOREIGN KEY (culture_id) REFERENCES cultures(id)
+    `);
+  } catch {}
+  try {
+    await db.query(`
+      ALTER TABLE culture_categories
+      ADD CONSTRAINT fk_culture_categories_category
+      FOREIGN KEY (category_id) REFERENCES rule_categories(id)
     `);
   } catch {}
 

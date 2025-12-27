@@ -22,6 +22,7 @@ Useful Pages
 Admin + CMS surfaces (server-rendered)
 - Admin pages editor: /admin/pages
 - Admin rules editor: /admin/rules
+- Admin cultures editor: /admin/cultures
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
 - Public rules: /rules/:slug and /rules/:slug/v:1
 
