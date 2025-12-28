@@ -32,6 +32,7 @@ Summary
 - Implemented plan_15 step 6: renamed space pre-publish queue to “review” (`/api/spaces/:id/review/queue`, `/spaces/:id/review`) with legacy “moderation” aliases.
 - Implemented plan_15 step 7: added `/space/review/*` SPA routes + menu context and `/api/space/review/*` endpoints for space_admin review overviews.
 - Implemented plan_15 step 8: removed legacy space_admin “moderation” aliases (`/api/spaces/:id/moderation/queue`, `/spaces/:id/moderation`, slug-based variants); kept site_admin `/admin/moderation/*` for now.
+- Commit: `b68aeaa` (feat(admin): split site_admin UI and space review)
 
 Decisions (carried + new)
 - Carried (from Handoff_21 / Handoff_20):

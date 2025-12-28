@@ -23,9 +23,14 @@ Admin + CMS surfaces (server-rendered)
 - Admin pages editor: /admin/pages
 - Admin rules editor: /admin/rules
 - Admin cultures editor: /admin/cultures
-- Admin space detail (SPA, site admin): /admin/groups/:id and /admin/channels/:id (includes Culture assignment)
+- Admin categories: /admin/categories
+- Admin groups/channels: /admin/groups and /admin/channels (create/edit includes Culture assignment + review settings)
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
 - Public rules: /rules/:slug and /rules/:slug/v:1
+
+Space review (SPA, space_admin / space_moderator)
+- Review overviews: /space/review/groups and /space/review/channels
+- Per-space review queue: /spaces/:id/review
 
 Moderation reporting (SPA)
 - Feed flag/report modal is driven by Space → Cultures → Categories → Rules.
