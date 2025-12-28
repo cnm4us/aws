@@ -23,8 +23,13 @@ Admin + CMS surfaces (server-rendered)
 - Admin pages editor: /admin/pages
 - Admin rules editor: /admin/rules
 - Admin cultures editor: /admin/cultures
+- Admin space detail (SPA, site admin): /admin/groups/:id and /admin/channels/:id (includes Culture assignment)
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
 - Public rules: /rules/:slug and /rules/:slug/v:1
+
+Moderation reporting (SPA)
+- Feed flag/report modal is driven by Space → Cultures → Categories → Rules.
+- Reporting is per Space Publication (space_publications.id) and is visible as “Sent” for the reporting user across devices.
 
 API testing (authenticated)
 - Use `scripts/auth_curl.sh` for authenticated requests (session + CSRF).
