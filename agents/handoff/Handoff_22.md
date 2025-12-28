@@ -25,6 +25,7 @@ Priority Backlog (Refactor Objectives)
 Summary
 - Thread start: re-read `agents/README.md` and seeded new handoff; awaiting user direction.
 - Inherited state (Handoff_21): per-space cultures and end-user reporting (“Flag”) modal implemented (commit 2312cdc).
+- Implemented plan_16 (site_admin console): server-rendered `/admin/users*`, `/admin/settings` (stub), `/admin/dev`, `/admin/review/*` (global/personal/groups/channels) and removed SPA ownership so these features do not ship in the normal user bundle.
 - Implemented plan_15 step 2: added shared site_admin slide drawer shell for server-rendered `/admin/*` pages.
 - Implemented plan_15 step 3: added server-rendered `/admin/categories` CRUD with safe delete rules + usage counts.
 - Implemented plan_15 step 4: replaced `/admin/groups` + `/admin/channels` SPA shells with server-rendered pages (list/new/detail/edit).
@@ -34,6 +35,7 @@ Summary
 - Implemented plan_15 step 8: removed legacy space_admin “moderation” aliases (`/api/spaces/:id/moderation/queue`, `/spaces/:id/moderation`, slug-based variants); kept site_admin `/admin/moderation/*` for now.
 - Commit: `b68aeaa` (feat(admin): split site_admin UI and space review)
 - Commit: `43e5462` (docs: update README for admin + review routes)
+- Commit: `d0472f6` (feat(admin): server-render users/dev/review)
 
 Decisions (carried + new)
 - Carried (from Handoff_21 / Handoff_20):
@@ -43,6 +45,7 @@ Decisions (carried + new)
   - Reporting identity: authenticated users only.
   - Reporting scope: a report is per `space_publications.id` (publication in a space), not global to a production.
   - Reporting selection: single rule (radio) + 409 on duplicate reports by the same user for the same publication.
+  - Naming: site_admin pre-publish approval UI is now `/admin/review/*`; `/admin/moderation/*` now redirects to review and “moderation” is reserved for future flags/reports tooling.
 
 Changes Since Last
 - Affects: `agents/handoff/Handoff_22.md`; `agents/implementation/plan_15.md`; `src/routes/pages.ts`; `src/routes/spaces.ts`; `public/admin-nav.css`; `frontend/src/main.tsx`; `frontend/src/app/SpaceModeration.tsx`; `frontend/src/app/AdminModerationList.tsx`; `public/js/space-admin.js`; `public/js/space-admin-user.js`; `public/js/space-members.js`; `agents/implementation/tests/plan_15/step_02_admin_shell.md`; `agents/implementation/tests/plan_15/step_03_categories_admin.md`; `agents/implementation/tests/plan_15/step_04_admin_spaces.md`; `agents/implementation/tests/plan_15/step_05_web_build.md`; `agents/implementation/tests/plan_15/step_06_review_queue.md`
@@ -51,15 +54,21 @@ Changes Since Last
 - Routes: removed `/api/spaces/:id/moderation/queue`; removed `/spaces/:id/moderation`, `/groups/:slug/moderation`, `/channels/:slug/moderation` (legacy aliases)
 - DB: none
 - Flags: none
+- Affects (plan_16): `agents/implementation/plan_16.md`; `agents/implementation/tests/plan_16/*`; `src/routes/pages.ts`; `public/admin-nav.css`; `frontend/src/main.tsx`; `frontend/src/menu/contexts/AdminMenu.tsx`; `frontend/src/ui/routes.ts`; `README.md`
+- Routes (plan_16): added `/admin/users*`, `/admin/settings`, `/admin/dev`, `/admin/review/*`; added approve/reject posts under `/admin/review/publications/:id/(approve|reject)`; redirected `/admin/moderation/*` → `/admin/review/*`; redirected `/adminx/*` → `/admin/*`
 
 Commit Messages (ready to paste)
-- none (no changes prepared in this thread yet)
+- `d0472f6` feat(admin): server-render users/dev/review
 
 Open Questions / Deferred
 - Optional Step 7: add a site-admin view/API for listing recent reports and selected rules.
 - Consider whether to allow “edit report” (replace selection) vs current `409 already_reported`.
+- Follow-up: decide whether to build separate SPA bundles for site_admin (`/admin/*`) and space console (`/space/*`, `/spaces/*`) vs continue with server-rendered pages.
+- Follow-up: implement real post-publish moderation queues under `/admin/moderation/*` (flags/reports) and keep analytics there.
+- Follow-up: `/admin/settings` and `/admin/users/new` are stubs (“coming soon”).
 
 Work Log (reverse‑chronological)
+- 2025-12-28 — Implemented plan_16: moved site_admin Users/Settings/Dev/Review to server-rendered `/admin/*`, updated the admin drawer, and removed the admin SPA routes from the user bundle.
 - 2025-12-28 — Removed legacy space_admin “moderation” route aliases for review; rebuilt SPA bundle to drop the client-side redirect.
 - 2025-12-28 — Added space_admin “Review” menu context + `/space/review/groups|channels` pages driven by `/api/space/review/groups|channels`.
 - 2025-12-28 — Renamed space pre-publish “moderation queue” to “review” across API + UI; kept legacy redirects/aliases.
