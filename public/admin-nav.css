@@ -199,6 +199,25 @@ table{ width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95
 th, td{ border-bottom: 1px solid rgba(255,255,255,0.15); padding: 7px 6px; text-align:left; vertical-align: top; }
 th{ font-weight: 650; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.85; }
 
+.pager{
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pager a{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.22);
+  text-decoration: none;
+  background: rgba(255,255,255,0.06);
+}
+.pager a:hover{ filter: brightness(1.05); }
+
 /* Mobile drawer behavior */
 @media (max-width: 860px){
   body.admin-shell{

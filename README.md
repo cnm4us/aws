@@ -20,6 +20,10 @@ Useful Pages
 - Player: /videos?id=123, /mobile?id=123
 
 Admin + CMS surfaces (server-rendered)
+- Admin review console: /admin/review (Global Feed, Personal Spaces, Groups, Channels)
+- Admin users: /admin/users
+- Admin settings: /admin/settings (stub; coming soon)
+- Admin dev: /admin/dev
 - Admin pages editor: /admin/pages
 - Admin rules editor: /admin/rules
 - Admin cultures editor: /admin/cultures

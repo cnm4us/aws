@@ -8,6 +8,8 @@ import { parseCookies } from '../utils/cookies'
 import { can } from '../security/permissions'
 import { PERM } from '../security/perm'
 import * as adminSvc from '../features/admin/service'
+import * as spacesSvc from '../features/spaces/service'
+import * as pubsSvc from '../features/publications/service'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -563,15 +565,19 @@ function isReservedPageSlug(slug: string): boolean {
   return RESERVED_PAGE_ROOT_SLUGS.has(root);
 }
 
-type AdminNavKey = 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages';
+type AdminNavKey = 'review' | 'users' | 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages' | 'settings' | 'dev';
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
+  { key: 'review', label: 'Review', href: '/admin/review' },
+  { key: 'users', label: 'Users', href: '/admin/users' },
   { key: 'groups', label: 'Groups', href: '/admin/groups' },
   { key: 'channels', label: 'Channels', href: '/admin/channels' },
   { key: 'rules', label: 'Rules', href: '/admin/rules' },
   { key: 'categories', label: 'Categories', href: '/admin/categories' },
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
+  { key: 'settings', label: 'Settings', href: '/admin/settings' },
+  { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
 
 function renderAdminPage(opts: { title: string; bodyHtml: string; active?: AdminNavKey }): string {
@@ -2839,29 +2845,1237 @@ pagesRouter.get('/forbidden', (_req, res) => {
 });
 
 // Split admin pages
-pagesRouter.get('/admin/settings', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/admin/settings', async (_req: any, res: any) => {
+  const body = [
+    '<h1>Settings</h1>',
+    '<div class="section">',
+    '<div class="section-title">Coming Soon</div>',
+    '<p>This admin page is not implemented yet.</p>',
+    '<p class="field-hint">We are keeping site_admin tooling out of the user SPA bundle; settings will return here when we decide what is still used and what should be editable.</p>',
+    '</div>',
+  ].join('')
+  const doc = renderAdminPage({ title: 'Settings', bodyHtml: body, active: 'settings' })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
 });
 
-pagesRouter.get('/admin/users', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/admin/review', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, name, slug
+         FROM spaces
+        WHERE slug IN ('global', 'global-feed')
+        ORDER BY slug = 'global' DESC
+        LIMIT 1`
+    )
+    const global = (rows as any[])[0] || null
+
+    let body = '<h1>Review</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Review</span></div><div></div></div>'
+    body += '<div class="section">'
+    body += '<div class="section-title">Queues</div>'
+    body += '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px">'
+    body += `<div class="section" style="margin:0"><div class="section-title">Global Feed</div>`
+    if (global) {
+      body += `<div style="opacity:.85; margin-bottom:10px">${escapeHtml(String(global.name || 'Global Feed'))}</div>`
+      body += `<a class="btn" href="/admin/review/global">Open Queue</a>`
+    } else {
+      body += `<div class="error">No global feed space found (slug global/global-feed).</div>`
+    }
+    body += `</div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Personal Spaces</div><div style="opacity:.85; margin-bottom:10px">Coming next (Plan 16 Step 7)</div><a class="btn" href="/admin/review/personal">Open List</a></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Groups</div><div style="opacity:.85; margin-bottom:10px">Coming next (Plan 16 Step 8)</div><a class="btn" href="/admin/review/groups">Open List</a></div>`
+    body += `<div class="section" style="margin:0"><div class="section-title">Channels</div><div style="opacity:.85; margin-bottom:10px">Coming next (Plan 16 Step 8)</div><a class="btn" href="/admin/review/channels">Open List</a></div>`
+    body += '</div></div>'
+
+    const doc = renderAdminPage({ title: 'Review', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin review landing failed', err)
+    res.status(500).send('Failed to load review')
+  }
+})
+
+pagesRouter.get('/admin/review/global', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, name, slug
+         FROM spaces
+        WHERE slug IN ('global', 'global-feed')
+        ORDER BY slug = 'global' DESC
+        LIMIT 1`
+    )
+    const global = (rows as any[])[0] || null
+    if (!global) {
+      const doc = renderAdminPage({
+        title: 'Review • Global Feed',
+        bodyHtml: '<h1>Global Feed</h1><div class="error">No global feed space found (slug global/global-feed).</div>',
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(404).send(doc)
+    }
+
+    const userId = Number(req.user!.id)
+    const data = await spacesSvc.moderationQueue(Number(global.id), userId)
+    const items = Array.isArray((data as any)?.items) ? (data as any).items : []
+
+    let body = '<h1>Global Feed</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Review Queue</span></div><div><a href="/admin/review">All queues</a></div></div>'
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+    body += `<div class="section"><div class="section-title">Space</div><div>${escapeHtml(String(global.name || global.slug || 'Global Feed'))} <span style="opacity:.7">#${escapeHtml(String(global.id))}</span></div></div>`
+
+    if (!items.length) {
+      body += '<p>No pending videos.</p>'
+    } else {
+      body += `<div class="section"><div class="section-title">Pending</div>`
+      body += `<div style="display:grid; gap: 12px">`
+      for (const row of items as any[]) {
+        const pub = row.publication || {}
+        const upload = row.upload || {}
+        const owner = row.owner || null
+        const requester = row.requester || null
+        const production = row.production || {}
+
+        const pubId = Number(pub.id)
+        const uploadId = Number(upload.id)
+        const title = production && production.name ? String(production.name) : upload && upload.modified_filename ? String(upload.modified_filename) : upload && upload.original_filename ? String(upload.original_filename) : `Upload #${uploadId}`
+        const createdAt = pub.created_at ? String(pub.created_at) : ''
+
+        body += `<div class="section" style="margin:0">`
+        body += `<div style="display:flex; justify-content:space-between; gap: 10px; flex-wrap:wrap">`
+        body += `<div><div style="font-weight:650">${escapeHtml(title)}</div><div style="opacity:.8; font-size:.92rem">Publication #${escapeHtml(String(pubId))}${createdAt ? ` • ${escapeHtml(createdAt)}` : ''}</div></div>`
+        body += `<div style="display:flex; gap: 10px; align-items:center; flex-wrap:wrap">`
+        if (Number.isFinite(uploadId) && uploadId > 0) {
+          body += `<a class="btn" href="/videos?id=${encodeURIComponent(String(uploadId))}">Preview</a>`
+          body += `<a class="btn" href="/mobile?id=${encodeURIComponent(String(uploadId))}">Mobile</a>`
+        }
+        body += `</div></div>`
+
+        const ownerTxt = owner && (owner.email || owner.displayName) ? `${owner.displayName ? escapeHtml(String(owner.displayName)) : ''}${owner.email ? ` <span style="opacity:.8">(${escapeHtml(String(owner.email))})</span>` : ''}` : '<span style="opacity:.7">Unknown</span>'
+        const reqTxt = requester && (requester.email || requester.displayName) ? `${requester.displayName ? escapeHtml(String(requester.displayName)) : ''}${requester.email ? ` <span style="opacity:.8">(${escapeHtml(String(requester.email))})</span>` : ''}` : '<span style="opacity:.7">—</span>'
+        body += `<div style="margin-top:10px; display:grid; gap:6px">`
+        body += `<div><span style="opacity:.8">Owner:</span> ${ownerTxt}</div>`
+        body += `<div><span style="opacity:.8">Requested by:</span> ${reqTxt}</div>`
+        body += `</div>`
+
+        body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/approve" style="margin-top:12px">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<input type="hidden" name="returnTo" value="${escapeHtml('/admin/review/global')}" />`
+        body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+        body += `<div class="actions"><button type="submit">Approve</button></div>`
+        body += `</form>`
+
+        body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/reject" style="margin-top:10px">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<input type="hidden" name="returnTo" value="${escapeHtml('/admin/review/global')}" />`
+        body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+        body += `<div class="actions"><button class="danger" type="submit">Reject</button></div>`
+        body += `</form>`
+
+        body += `</div>`
+      }
+      body += `</div></div>`
+    }
+
+    const doc = renderAdminPage({ title: 'Review • Global Feed', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    console.error('admin review global failed', err)
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('Forbidden')
+    res.status(500).send('Failed to load global review queue')
+  }
+})
+
+function getAdminReviewReturnTo(raw: any): string {
+  const val = raw != null ? String(raw) : ''
+  if (!val) return '/admin/review'
+  if (!val.startsWith('/admin/review')) return '/admin/review'
+  return val
+}
+
+pagesRouter.get('/admin/review/personal', async (req: any, res: any) => {
+  try {
+    const q = req.query && (req.query as any).q != null ? String((req.query as any).q).trim() : ''
+    const limitRaw = req.query && (req.query as any).limit != null ? Number((req.query as any).limit) : 50
+    const offsetRaw = req.query && (req.query as any).offset != null ? Number((req.query as any).offset) : 0
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0
+
+    const db = getPool()
+    const where: string[] = [`s.type = 'personal'`]
+    const params: any[] = []
+    if (q) {
+      where.push(`(s.name LIKE ? OR s.slug LIKE ? OR u.email LIKE ? OR u.display_name LIKE ?)`)
+      const like = `%${q}%`
+      params.push(like, like, like, like)
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, s.owner_user_id,
+              u.email AS owner_email, u.display_name AS owner_display_name,
+              COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN users u ON u.id = s.owner_user_id
+         LEFT JOIN (
+           SELECT space_id, COUNT(*) AS pending
+             FROM space_publications
+            WHERE status = 'pending'
+            GROUP BY space_id
+         ) cnt ON cnt.space_id = s.id
+        ${whereSql}
+        ORDER BY pending DESC, s.id DESC
+        LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    )
+
+    const baseQuery = (next: { q?: string; limit?: number; offset?: number }) => {
+      const qq = next.q != null ? String(next.q) : q
+      const lim = next.limit != null ? Number(next.limit) : limit
+      const off = next.offset != null ? Number(next.offset) : offset
+      const parts: string[] = []
+      if (qq) parts.push(`q=${encodeURIComponent(qq)}`)
+      if (lim !== 50) parts.push(`limit=${encodeURIComponent(String(lim))}`)
+      if (off) parts.push(`offset=${encodeURIComponent(String(off))}`)
+      return parts.length ? `?${parts.join('&')}` : ''
+    }
+
+    let body = '<h1>Personal Spaces</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Review List</span></div><div><a href="/admin/review">All queues</a></div></div>'
+    body += `<form method="GET" action="/admin/review/personal" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">`
+    body += `<label style="display:flex; flex-direction:column; gap:6px; min-width:260px; flex: 1 1 260px">`
+    body += `<span style="font-size:12px; opacity:.85">Search</span>`
+    body += `<input name="q" value="${escapeHtml(q)}" placeholder="Space name, slug, or owner email" />`
+    body += `</label>`
+    body += `<input type="hidden" name="limit" value="${escapeHtml(String(limit))}" />`
+    body += `<button type="submit">Search</button>`
+    body += `</div>`
+    body += `</form>`
+
+    const items = rows as any[]
+    if (!items.length) {
+      body += '<p>No personal spaces found.</p>'
+    } else {
+      body += '<table><thead><tr><th>Space</th><th>Owner</th><th>Pending</th></tr></thead><tbody>'
+      for (const row of items) {
+        const id = Number(row.id)
+        const href = `/admin/review/personal/${encodeURIComponent(String(id))}`
+        const name = escapeHtml(String(row.name || row.slug || 'Personal'))
+        const slug = escapeHtml(String(row.slug || ''))
+        const pending = escapeHtml(String(Number(row.pending || 0)))
+        const ownerName = row.owner_display_name ? escapeHtml(String(row.owner_display_name)) : ''
+        const ownerEmail = row.owner_email ? escapeHtml(String(row.owner_email)) : ''
+        const ownerTxt = ownerEmail ? `${ownerName ? ownerName + ' ' : ''}<span style="opacity:.8">(${ownerEmail})</span>` : (ownerName || '<span style="opacity:.7">Unknown</span>')
+        body += `<tr><td><a href="${href}">${name}</a><div style="opacity:.7; font-size:.9rem">${slug} <span style="opacity:.7">#${escapeHtml(String(id))}</span></div></td><td>${ownerTxt}</td><td>${pending}</td></tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const prevOffset = Math.max(0, offset - limit)
+    const nextOffset = offset + limit
+    const hasPrev = offset > 0
+    const hasNext = items.length === limit
+    if (hasPrev || hasNext) {
+      body += '<div class="pager">'
+      if (hasPrev) body += `<a href="/admin/review/personal${baseQuery({ offset: prevOffset })}">← Prev</a>`
+      if (hasNext) body += `<a href="/admin/review/personal${baseQuery({ offset: nextOffset })}">Next →</a>`
+      body += '</div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Review • Personal', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin review personal list failed', err)
+    res.status(500).send('Failed to load personal spaces')
+  }
+})
+
+pagesRouter.get('/admin/review/personal/:spaceId', async (req: any, res: any) => {
+  try {
+    const spaceId = Number(req.params.spaceId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(404).send('Space not found')
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, s.type, s.owner_user_id,
+              u.email AS owner_email, u.display_name AS owner_display_name
+         FROM spaces s
+         LEFT JOIN users u ON u.id = s.owner_user_id
+        WHERE s.id = ? AND s.type = 'personal'
+        LIMIT 1`,
+      [spaceId]
+    )
+    const sp = (rows as any[])[0] || null
+    if (!sp) return res.status(404).send('Space not found')
+
+    const userId = Number(req.user!.id)
+    const data = await spacesSvc.moderationQueue(spaceId, userId)
+    const items = Array.isArray((data as any)?.items) ? (data as any).items : []
+
+    const ownerEmail = sp.owner_email ? String(sp.owner_email) : ''
+    const ownerName = sp.owner_display_name ? String(sp.owner_display_name) : ''
+    const ownerTxt = ownerEmail ? `${ownerName ? escapeHtml(ownerName) + ' ' : ''}<span style="opacity:.8">(${escapeHtml(ownerEmail)})</span>` : (ownerName ? escapeHtml(ownerName) : '<span style="opacity:.7">Unknown</span>')
+
+    let body = `<h1>${escapeHtml(String(sp.name || sp.slug || 'Personal Space'))}</h1>`
+    body += '<div class="toolbar"><div><span class="pill">Review Queue</span></div><div><a href="/admin/review/personal">Back to personal spaces</a></div></div>'
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+    body += `<div class="section"><div class="section-title">Space</div><div>${escapeHtml(String(sp.name || sp.slug || 'Personal'))} <span style="opacity:.7">#${escapeHtml(String(sp.id))}</span></div><div style="margin-top:6px"><span style="opacity:.8">Owner:</span> ${ownerTxt}</div></div>`
+
+    if (!items.length) {
+      body += '<p>No pending videos.</p>'
+    } else {
+      body += `<div class="section"><div class="section-title">Pending</div>`
+      body += `<div style="display:grid; gap: 12px">`
+      for (const row of items as any[]) {
+        const pub = row.publication || {}
+        const upload = row.upload || {}
+        const owner = row.owner || null
+        const requester = row.requester || null
+        const production = row.production || {}
+
+        const pubId = Number(pub.id)
+        const uploadId = Number(upload.id)
+        const title = production && production.name ? String(production.name) : upload && upload.modified_filename ? String(upload.modified_filename) : upload && upload.original_filename ? String(upload.original_filename) : `Upload #${uploadId}`
+        const createdAt = pub.created_at ? String(pub.created_at) : ''
+
+        body += `<div class="section" style="margin:0">`
+        body += `<div style="display:flex; justify-content:space-between; gap: 10px; flex-wrap:wrap">`
+        body += `<div><div style="font-weight:650">${escapeHtml(title)}</div><div style="opacity:.8; font-size:.92rem">Publication #${escapeHtml(String(pubId))}${createdAt ? ` • ${escapeHtml(createdAt)}` : ''}</div></div>`
+        body += `<div style="display:flex; gap: 10px; align-items:center; flex-wrap:wrap">`
+        if (Number.isFinite(uploadId) && uploadId > 0) {
+          body += `<a class="btn" href="/videos?id=${encodeURIComponent(String(uploadId))}">Preview</a>`
+          body += `<a class="btn" href="/mobile?id=${encodeURIComponent(String(uploadId))}">Mobile</a>`
+        }
+        body += `</div></div>`
+
+        const ownerTxt2 = owner && (owner.email || owner.displayName) ? `${owner.displayName ? escapeHtml(String(owner.displayName)) : ''}${owner.email ? ` <span style="opacity:.8">(${escapeHtml(String(owner.email))})</span>` : ''}` : '<span style="opacity:.7">Unknown</span>'
+        const reqTxt = requester && (requester.email || requester.displayName) ? `${requester.displayName ? escapeHtml(String(requester.displayName)) : ''}${requester.email ? ` <span style="opacity:.8">(${escapeHtml(String(requester.email))})</span>` : ''}` : '<span style="opacity:.7">—</span>'
+        body += `<div style="margin-top:10px; display:grid; gap:6px">`
+        body += `<div><span style="opacity:.8">Owner:</span> ${ownerTxt2}</div>`
+        body += `<div><span style="opacity:.8">Requested by:</span> ${reqTxt}</div>`
+        body += `</div>`
+
+        const returnTo = `/admin/review/personal/${encodeURIComponent(String(spaceId))}`
+        body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/approve" style="margin-top:12px">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />`
+        body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+        body += `<div class="actions"><button type="submit">Approve</button></div>`
+        body += `</form>`
+
+        body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/reject" style="margin-top:10px">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />`
+        body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+        body += `<div class="actions"><button class="danger" type="submit">Reject</button></div>`
+        body += `</form>`
+
+        body += `</div>`
+      }
+      body += `</div></div>`
+    }
+
+    const doc = renderAdminPage({ title: 'Review • Personal Space', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    console.error('admin review personal queue failed', err)
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('Forbidden')
+    res.status(500).send('Failed to load personal review queue')
+  }
+})
+
+function getReviewSpaceLabel(space: any): string {
+  if (!space) return 'Space'
+  const type = String(space.type || '').toLowerCase()
+  if (type === 'group') return 'Group'
+  if (type === 'channel') return 'Channel'
+  if (type === 'personal') return 'Personal Space'
+  return 'Space'
+}
+
+async function renderAdminReviewSpaceQueuePage(opts: {
+  req: any;
+  res: any;
+  spaceId: number;
+  titlePrefix: string;
+  backHref: string;
+  returnTo: string;
+}): Promise<void> {
+  const { req, res, spaceId, titlePrefix, backHref, returnTo } = opts
+  const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+  const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+
+  const db = getPool()
+  const [rows] = await db.query(`SELECT id, name, slug, type FROM spaces WHERE id = ? LIMIT 1`, [spaceId])
+  const sp = (rows as any[])[0] || null
+  if (!sp) return res.status(404).send('Space not found')
+
+  const userId = Number(req.user!.id)
+  const data = await spacesSvc.moderationQueue(spaceId, userId)
+  const items = Array.isArray((data as any)?.items) ? (data as any).items : []
+
+  const label = getReviewSpaceLabel(sp)
+  const display = escapeHtml(String(sp.name || sp.slug || label))
+
+  let body = `<h1>${display}</h1>`
+  body += `<div class="toolbar"><div><span class="pill">Review Queue</span></div><div><a href="${escapeHtml(backHref)}">Back</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+  body += `<div class="section"><div class="section-title">${escapeHtml(label)}</div><div>${display} <span style="opacity:.7">#${escapeHtml(String(sp.id))}</span></div></div>`
+
+  if (!items.length) {
+    body += '<p>No pending videos.</p>'
+  } else {
+    body += `<div class="section"><div class="section-title">Pending</div>`
+    body += `<div style="display:grid; gap: 12px">`
+    for (const row of items as any[]) {
+      const pub = row.publication || {}
+      const upload = row.upload || {}
+      const owner = row.owner || null
+      const requester = row.requester || null
+      const production = row.production || {}
+
+      const pubId = Number(pub.id)
+      const uploadId = Number(upload.id)
+      const title = production && production.name ? String(production.name) : upload && upload.modified_filename ? String(upload.modified_filename) : upload && upload.original_filename ? String(upload.original_filename) : `Upload #${uploadId}`
+      const createdAt = pub.created_at ? String(pub.created_at) : ''
+
+      body += `<div class="section" style="margin:0">`
+      body += `<div style="display:flex; justify-content:space-between; gap: 10px; flex-wrap:wrap">`
+      body += `<div><div style="font-weight:650">${escapeHtml(title)}</div><div style="opacity:.8; font-size:.92rem">Publication #${escapeHtml(String(pubId))}${createdAt ? ` • ${escapeHtml(createdAt)}` : ''}</div></div>`
+      body += `<div style="display:flex; gap: 10px; align-items:center; flex-wrap:wrap">`
+      if (Number.isFinite(uploadId) && uploadId > 0) {
+        body += `<a class="btn" href="/videos?id=${encodeURIComponent(String(uploadId))}">Preview</a>`
+        body += `<a class="btn" href="/mobile?id=${encodeURIComponent(String(uploadId))}">Mobile</a>`
+      }
+      body += `</div></div>`
+
+      const ownerTxt = owner && (owner.email || owner.displayName) ? `${owner.displayName ? escapeHtml(String(owner.displayName)) : ''}${owner.email ? ` <span style="opacity:.8">(${escapeHtml(String(owner.email))})</span>` : ''}` : '<span style="opacity:.7">Unknown</span>'
+      const reqTxt = requester && (requester.email || requester.displayName) ? `${requester.displayName ? escapeHtml(String(requester.displayName)) : ''}${requester.email ? ` <span style="opacity:.8">(${escapeHtml(String(requester.email))})</span>` : ''}` : '<span style="opacity:.7">—</span>'
+      body += `<div style="margin-top:10px; display:grid; gap:6px">`
+      body += `<div><span style="opacity:.8">Owner:</span> ${ownerTxt}</div>`
+      body += `<div><span style="opacity:.8">Requested by:</span> ${reqTxt}</div>`
+      body += `</div>`
+
+      body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/approve" style="margin-top:12px">`
+      body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />`
+      body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+      body += `<div class="actions"><button type="submit">Approve</button></div>`
+      body += `</form>`
+
+      body += `<form method="POST" action="/admin/review/publications/${encodeURIComponent(String(pubId))}/reject" style="margin-top:10px">`
+      body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+      body += `<input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}" />`
+      body += `<label>Note (optional)<textarea name="note" rows="2" placeholder="Optional note for the action"></textarea></label>`
+      body += `<div class="actions"><button class="danger" type="submit">Reject</button></div>`
+      body += `</form>`
+
+      body += `</div>`
+    }
+    body += `</div></div>`
+  }
+
+  const doc = renderAdminPage({ title: `${titlePrefix}: ${sp.name || sp.slug || label}`, bodyHtml: body, active: 'review' })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+}
+
+pagesRouter.get('/admin/review/groups', async (req: any, res: any) => {
+  try {
+    const q = req.query && (req.query as any).q != null ? String((req.query as any).q).trim() : ''
+    const limitRaw = req.query && (req.query as any).limit != null ? Number((req.query as any).limit) : 50
+    const offsetRaw = req.query && (req.query as any).offset != null ? Number((req.query as any).offset) : 0
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0
+
+    const db = getPool()
+    const where: string[] = [`s.type = 'group'`]
+    const params: any[] = []
+    if (q) {
+      where.push(`(s.name LIKE ? OR s.slug LIKE ?)`)
+      const like = `%${q}%`
+      params.push(like, like)
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN (
+           SELECT space_id, COUNT(*) AS pending
+             FROM space_publications
+            WHERE status = 'pending'
+            GROUP BY space_id
+         ) cnt ON cnt.space_id = s.id
+        ${whereSql}
+        ORDER BY pending DESC, s.name ASC
+        LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    )
+
+    const baseQuery = (next: { q?: string; limit?: number; offset?: number }) => {
+      const qq = next.q != null ? String(next.q) : q
+      const lim = next.limit != null ? Number(next.limit) : limit
+      const off = next.offset != null ? Number(next.offset) : offset
+      const parts: string[] = []
+      if (qq) parts.push(`q=${encodeURIComponent(qq)}`)
+      if (lim !== 50) parts.push(`limit=${encodeURIComponent(String(lim))}`)
+      if (off) parts.push(`offset=${encodeURIComponent(String(off))}`)
+      return parts.length ? `?${parts.join('&')}` : ''
+    }
+
+    let body = '<h1>Groups</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Review List</span></div><div><a href="/admin/review">All queues</a></div></div>'
+    body += `<form method="GET" action="/admin/review/groups" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">`
+    body += `<label style="display:flex; flex-direction:column; gap:6px; min-width:260px; flex: 1 1 260px">`
+    body += `<span style="font-size:12px; opacity:.85">Search</span>`
+    body += `<input name="q" value="${escapeHtml(q)}" placeholder="Group name or slug" />`
+    body += `</label>`
+    body += `<input type="hidden" name="limit" value="${escapeHtml(String(limit))}" />`
+    body += `<button type="submit">Search</button>`
+    body += `</div>`
+    body += `</form>`
+
+    const items = rows as any[]
+    if (!items.length) {
+      body += '<p>No groups found.</p>'
+    } else {
+      body += '<table><thead><tr><th>Group</th><th>Pending</th></tr></thead><tbody>'
+      for (const row of items) {
+        const id = Number(row.id)
+        const href = `/admin/review/groups/${encodeURIComponent(String(id))}`
+        const name = escapeHtml(String(row.name || row.slug || 'Group'))
+        const slug = escapeHtml(String(row.slug || ''))
+        const pending = escapeHtml(String(Number(row.pending || 0)))
+        body += `<tr><td><a href="${href}">${name}</a><div style="opacity:.7; font-size:.9rem">${slug} <span style="opacity:.7">#${escapeHtml(String(id))}</span></div></td><td>${pending}</td></tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const prevOffset = Math.max(0, offset - limit)
+    const nextOffset = offset + limit
+    const hasPrev = offset > 0
+    const hasNext = items.length === limit
+    if (hasPrev || hasNext) {
+      body += '<div class="pager">'
+      if (hasPrev) body += `<a href="/admin/review/groups${baseQuery({ offset: prevOffset })}">← Prev</a>`
+      if (hasNext) body += `<a href="/admin/review/groups${baseQuery({ offset: nextOffset })}">Next →</a>`
+      body += '</div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Review • Groups', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin review groups list failed', err)
+    res.status(500).send('Failed to load groups')
+  }
+})
+
+pagesRouter.get('/admin/review/channels', async (req: any, res: any) => {
+  try {
+    const q = req.query && (req.query as any).q != null ? String((req.query as any).q).trim() : ''
+    const limitRaw = req.query && (req.query as any).limit != null ? Number((req.query as any).limit) : 50
+    const offsetRaw = req.query && (req.query as any).offset != null ? Number((req.query as any).offset) : 0
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0
+
+    const db = getPool()
+    const where: string[] = [`s.type = 'channel'`, `s.slug NOT IN ('global', 'global-feed')`]
+    const params: any[] = []
+    if (q) {
+      where.push(`(s.name LIKE ? OR s.slug LIKE ?)`)
+      const like = `%${q}%`
+      params.push(like, like)
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN (
+           SELECT space_id, COUNT(*) AS pending
+             FROM space_publications
+            WHERE status = 'pending'
+            GROUP BY space_id
+         ) cnt ON cnt.space_id = s.id
+        ${whereSql}
+        ORDER BY pending DESC, s.name ASC
+        LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    )
+
+    const baseQuery = (next: { q?: string; limit?: number; offset?: number }) => {
+      const qq = next.q != null ? String(next.q) : q
+      const lim = next.limit != null ? Number(next.limit) : limit
+      const off = next.offset != null ? Number(next.offset) : offset
+      const parts: string[] = []
+      if (qq) parts.push(`q=${encodeURIComponent(qq)}`)
+      if (lim !== 50) parts.push(`limit=${encodeURIComponent(String(lim))}`)
+      if (off) parts.push(`offset=${encodeURIComponent(String(off))}`)
+      return parts.length ? `?${parts.join('&')}` : ''
+    }
+
+    let body = '<h1>Channels</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Review List</span></div><div><a href="/admin/review">All queues</a></div></div>'
+    body += `<form method="GET" action="/admin/review/channels" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">`
+    body += `<label style="display:flex; flex-direction:column; gap:6px; min-width:260px; flex: 1 1 260px">`
+    body += `<span style="font-size:12px; opacity:.85">Search</span>`
+    body += `<input name="q" value="${escapeHtml(q)}" placeholder="Channel name or slug" />`
+    body += `</label>`
+    body += `<input type="hidden" name="limit" value="${escapeHtml(String(limit))}" />`
+    body += `<button type="submit">Search</button>`
+    body += `</div>`
+    body += `</form>`
+
+    const items = rows as any[]
+    if (!items.length) {
+      body += '<p>No channels found.</p>'
+    } else {
+      body += '<table><thead><tr><th>Channel</th><th>Pending</th></tr></thead><tbody>'
+      for (const row of items) {
+        const id = Number(row.id)
+        const href = `/admin/review/channels/${encodeURIComponent(String(id))}`
+        const name = escapeHtml(String(row.name || row.slug || 'Channel'))
+        const slug = escapeHtml(String(row.slug || ''))
+        const pending = escapeHtml(String(Number(row.pending || 0)))
+        body += `<tr><td><a href="${href}">${name}</a><div style="opacity:.7; font-size:.9rem">${slug} <span style="opacity:.7">#${escapeHtml(String(id))}</span></div></td><td>${pending}</td></tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const prevOffset = Math.max(0, offset - limit)
+    const nextOffset = offset + limit
+    const hasPrev = offset > 0
+    const hasNext = items.length === limit
+    if (hasPrev || hasNext) {
+      body += '<div class="pager">'
+      if (hasPrev) body += `<a href="/admin/review/channels${baseQuery({ offset: prevOffset })}">← Prev</a>`
+      if (hasNext) body += `<a href="/admin/review/channels${baseQuery({ offset: nextOffset })}">Next →</a>`
+      body += '</div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Review • Channels', bodyHtml: body, active: 'review' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin review channels list failed', err)
+    res.status(500).send('Failed to load channels')
+  }
+})
+
+pagesRouter.get('/admin/review/groups/:spaceId', async (req: any, res: any) => {
+  try {
+    const spaceId = Number(req.params.spaceId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(404).send('Space not found')
+    await renderAdminReviewSpaceQueuePage({
+      req,
+      res,
+      spaceId,
+      titlePrefix: 'Review • Group',
+      backHref: '/admin/review/groups',
+      returnTo: `/admin/review/groups/${encodeURIComponent(String(spaceId))}`,
+    })
+  } catch (err: any) {
+    console.error('admin review group queue failed', err)
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('Forbidden')
+    res.status(500).send('Failed to load group review queue')
+  }
+})
+
+pagesRouter.get('/admin/review/channels/:spaceId', async (req: any, res: any) => {
+  try {
+    const spaceId = Number(req.params.spaceId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(404).send('Space not found')
+    await renderAdminReviewSpaceQueuePage({
+      req,
+      res,
+      spaceId,
+      titlePrefix: 'Review • Channel',
+      backHref: '/admin/review/channels',
+      returnTo: `/admin/review/channels/${encodeURIComponent(String(spaceId))}`,
+    })
+  } catch (err: any) {
+    console.error('admin review channel queue failed', err)
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('Forbidden')
+    res.status(500).send('Failed to load channel review queue')
+  }
+})
+
+pagesRouter.post('/admin/review/publications/:id/approve', async (req: any, res: any) => {
+  const publicationId = Number(req.params.id)
+  if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).send('Bad publication id')
+  try {
+    const userId = Number(req.user!.id)
+    const note = (req.body && (req.body as any).note != null) ? String((req.body as any).note) : ''
+    const updated = await pubsSvc.approve(publicationId, { userId })
+    if (note && note.trim()) {
+      try { await pubsSvc.recordNoteEvent(publicationId, userId, 'approve_publication', note) } catch {}
+    }
+    const to = getAdminReviewReturnTo(req.body && (req.body as any).returnTo)
+    res.redirect(`${to}?notice=${encodeURIComponent(`Approved #${updated.id}.`)}`)
+  } catch (err: any) {
+    const to = getAdminReviewReturnTo(req.body && (req.body as any).returnTo)
+    const status = err?.status || 500
+    const msg = status === 403 ? 'Forbidden.' : 'Failed to approve.'
+    res.redirect(`${to}?error=${encodeURIComponent(msg)}`)
+  }
+})
+
+pagesRouter.post('/admin/review/publications/:id/reject', async (req: any, res: any) => {
+  const publicationId = Number(req.params.id)
+  if (!Number.isFinite(publicationId) || publicationId <= 0) return res.status(400).send('Bad publication id')
+  try {
+    const userId = Number(req.user!.id)
+    const note = (req.body && (req.body as any).note != null) ? String((req.body as any).note) : ''
+    const updated = await pubsSvc.reject(publicationId, { userId })
+    if (note && note.trim()) {
+      try { await pubsSvc.recordNoteEvent(publicationId, userId, 'reject_publication', note) } catch {}
+    }
+    const to = getAdminReviewReturnTo(req.body && (req.body as any).returnTo)
+    res.redirect(`${to}?notice=${encodeURIComponent(`Rejected #${updated.id}.`)}`)
+  } catch (err: any) {
+    const to = getAdminReviewReturnTo(req.body && (req.body as any).returnTo)
+    const status = err?.status || 500
+    const msg = status === 403 ? 'Forbidden.' : 'Failed to reject.'
+    res.redirect(`${to}?error=${encodeURIComponent(msg)}`)
+  }
+})
+
+pagesRouter.get('/admin/users', async (req: any, res: any) => {
+  try {
+    const q = req.query && ((req.query as any).q != null ? String((req.query as any).q) : (req.query as any).search != null ? String((req.query as any).search) : '').trim()
+    const includeDeleted = req.query && (String((req.query as any).includeDeleted || '') === '1' || String((req.query as any).includeDeleted || '') === 'true')
+    const limitRaw = req.query && (req.query as any).limit != null ? Number((req.query as any).limit) : 50
+    const offsetRaw = req.query && (req.query as any).offset != null ? Number((req.query as any).offset) : 0
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50
+    const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+
+    const result = await adminSvc.listUsers({ search: q || undefined, includeDeleted, limit, offset })
+
+    const ids = result.users.map((u: any) => Number(u.id)).filter((n: number) => Number.isFinite(n) && n > 0)
+    const rolesByUser = new Map<number, string[]>()
+    if (ids.length) {
+      const db = getPool()
+      const placeholders = ids.map(() => '?').join(',')
+      const [rows] = await db.query(
+        `SELECT ur.user_id, r.name
+           FROM user_roles ur
+           JOIN roles r ON r.id = ur.role_id
+          WHERE ur.user_id IN (${placeholders})
+            AND (r.scope = 'site' OR r.name LIKE 'site\\_%')
+          ORDER BY ur.user_id, r.name`,
+        ids
+      )
+      for (const row of rows as any[]) {
+        const uid = Number(row.user_id)
+        if (!Number.isFinite(uid) || uid <= 0) continue
+        const name = String(row.name || '')
+        if (!rolesByUser.has(uid)) rolesByUser.set(uid, [])
+        rolesByUser.get(uid)!.push(name)
+      }
+    }
+
+    const baseQuery = (next: { q?: string; includeDeleted?: boolean; limit?: number; offset?: number }) => {
+      const params: string[] = []
+      const qq = next.q != null ? String(next.q) : q
+      const inc = next.includeDeleted != null ? Boolean(next.includeDeleted) : includeDeleted
+      const lim = next.limit != null ? Number(next.limit) : limit
+      const off = next.offset != null ? Number(next.offset) : offset
+      if (qq) params.push(`q=${encodeURIComponent(qq)}`)
+      if (inc) params.push(`includeDeleted=1`)
+      if (lim !== 50) params.push(`limit=${encodeURIComponent(String(lim))}`)
+      if (off) params.push(`offset=${encodeURIComponent(String(off))}`)
+      return params.length ? `?${params.join('&')}` : ''
+    }
+
+    let body = '<h1>Users</h1>'
+    body += '<div class="toolbar">'
+    body += '<div><span class="pill">Users</span></div>'
+    body += '<div><a href="/admin/users/new">New user</a></div>'
+    body += '</div>'
+
+    body += `<form method="GET" action="/admin/users" class="section" style="margin:12px 0">`
+    body += `<div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">`
+    body += `<label style="display:flex; flex-direction:column; gap:6px; min-width:260px; flex: 1 1 260px">`
+      body += `<span style="font-size:12px; opacity:.85">Search</span>`
+    body += `<input name="q" value="${escapeHtml(q)}" placeholder="Email or display name" />`
+    body += `</label>`
+    body += `<label style="display:flex; gap:8px; align-items:center; padding:6px 0">`
+    body += `<input type="checkbox" name="includeDeleted" value="1" ${includeDeleted ? 'checked' : ''} />`
+    body += `<span>Include deleted</span>`
+    body += `</label>`
+    body += `<input type="hidden" name="limit" value="${escapeHtml(String(limit))}" />`
+    body += `<button type="submit">Search</button>`
+    body += `</div>`
+    body += `</form>`
+
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+    if (!result.users.length) {
+      body += '<p>No users found.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Email</th><th>Display Name</th><th>Site Roles</th><th>Created</th><th>Deleted</th></tr></thead><tbody>'
+      for (const u of result.users as any[]) {
+        const id = Number(u.id)
+        const href = `/admin/users/${encodeURIComponent(String(id))}`
+        const email = escapeHtml(String(u.email || ''))
+        const name = escapeHtml(String(u.displayName || ''))
+        const created = u.createdAt ? escapeHtml(String(u.createdAt)) : ''
+        const deleted = u.deletedAt ? escapeHtml(String(u.deletedAt)) : ''
+
+        const roles = rolesByUser.get(id) || []
+        const shown = roles.filter((r) => r && r !== 'site_member')
+        const rolesText = shown.length ? escapeHtml(shown.join(', ')) : ''
+        body += `<tr><td>${escapeHtml(String(id))}</td><td><a href="${href}">${email}</a></td><td>${name}</td><td>${rolesText}</td><td>${created}</td><td>${deleted}</td></tr>`
+      }
+      body += '</tbody></table>'
+    }
+
+    const prevOffset = Math.max(0, offset - limit)
+    const nextOffset = offset + limit
+    const hasPrev = offset > 0
+    const hasNext = result.users.length === limit
+    if (hasPrev || hasNext) {
+      body += '<div class="pager">'
+      if (hasPrev) body += `<a href="/admin/users${baseQuery({ offset: prevOffset })}">← Prev</a>`
+      if (hasNext) body += `<a href="/admin/users${baseQuery({ offset: nextOffset })}">Next →</a>`
+      body += '</div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Users', bodyHtml: body, active: 'users' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin users list failed', err)
+    res.status(500).send('Failed to load users')
+  }
 });
 // SPA Admin (beta) — users list and (later) detail
 pagesRouter.get('/adminx/users', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect('/admin/users')
 });
 pagesRouter.get('/adminx/users/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect(`/admin/users/${encodeURIComponent(String(_req.params.id || ''))}`)
 });
 pagesRouter.get('/adminx/settings', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect('/admin/settings')
 });
 pagesRouter.get('/admin/users/new', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  const body = [
+    '<h1>New User</h1>',
+    '<div class="section">',
+    '<div class="section-title">Coming Soon</div>',
+    '<p>User creation will move here once we migrate the admin UI fully off the SPA bundle.</p>',
+    '<div class="actions"><a class="btn" href="/admin/users">Back to Users</a></div>',
+    '</div>',
+  ].join('')
+  const doc = renderAdminPage({ title: 'New User', bodyHtml: body, active: 'users' })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
 });
-pagesRouter.get('/admin/users/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/admin/users/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('User not found')
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const user = await adminSvc.getUserDetail(id)
+    const siteRolesResp = await adminSvc.getUserSiteRoles(id).catch(() => ({ roles: [] as string[] }))
+    const rolesCatalogResp = await adminSvc.listRoles().catch(() => ({ roles: [] as any[] }))
+
+    const roleCatalog = Array.isArray((rolesCatalogResp as any)?.roles) ? (rolesCatalogResp as any).roles as Array<{ name: string; scope: string | null }> : []
+    const siteRoleNames = Array.from(
+      new Set(
+        roleCatalog
+          .filter((r) => {
+            const name = String((r as any).name || '')
+            const scope = String((r as any).scope || '').toLowerCase()
+            return scope === 'site' || /^site_/i.test(name)
+          })
+          .map((r) => String((r as any).name || '').trim())
+          .filter((n) => n.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b))
+
+    const currentSiteRoles: string[] = Array.isArray((siteRolesResp as any)?.roles) ? (siteRolesResp as any).roles.map((r: any) => String(r)) : []
+    const currentSiteRoleSet = new Set(currentSiteRoles)
+    const baselineSiteRole = 'site_member'
+
+    const db = getPool()
+    const [modRows] = await db.query(`SELECT require_review_global, credibility_score FROM users WHERE id = ? LIMIT 1`, [id])
+    const mod = (modRows as any[])[0]
+    if (!mod) return res.status(404).send('User not found')
+    const [sRows] = await db.query(
+      `SELECT id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by, created_at
+         FROM suspensions
+        WHERE user_id = ? AND (ends_at IS NULL OR ends_at >= NOW())
+        ORDER BY created_at DESC`,
+      [id]
+    )
+    const activeSuspensions = (sRows as any[]).map((r) => ({
+      id: Number(r.id),
+      targetType: String(r.target_type || ''),
+      targetId: r.target_id != null ? Number(r.target_id) : null,
+      kind: String(r.kind || ''),
+      degree: Number(r.degree || 1),
+      endsAt: r.ends_at ? String(r.ends_at) : null,
+      reason: r.reason ? String(r.reason) : null,
+    }))
+
+    const [spaceRoleRows] = await db.query(
+      `SELECT s.id AS space_id, s.type, s.name, s.slug, r.name AS role_name
+         FROM user_space_roles usr
+         JOIN roles r ON r.id = usr.role_id
+         JOIN spaces s ON s.id = usr.space_id
+        WHERE usr.user_id = ?
+        ORDER BY s.type, s.name, r.name`,
+      [id]
+    )
+    const spaceMap: Record<number, { id: number; type: string; name: string; slug: string; roles: string[] }> = {}
+    const normalizeSpaceRole = (n: string): string | null => {
+      const name = String(n || '').toLowerCase()
+      if (name === 'group_admin' || name === 'channel_admin' || name === 'space_admin') return 'space_admin'
+      if (name === 'group_member' || name === 'channel_member' || name === 'member' || name === 'viewer' || name === 'subscriber' || name === 'uploader' || name === 'space_member') return 'space_member'
+      if (name === 'publisher' || name === 'contributor' || name === 'space_poster') return 'space_poster'
+      if (name === 'space_moderator' || name === 'moderator') return 'space_moderator'
+      if (name === 'space_subscriber') return 'space_subscriber'
+      return null
+    }
+    for (const row of spaceRoleRows as any[]) {
+      const sid = Number(row.space_id)
+      if (!Number.isFinite(sid) || sid <= 0) continue
+      if (!spaceMap[sid]) spaceMap[sid] = { id: sid, type: String(row.type || ''), name: String(row.name || ''), slug: String(row.slug || ''), roles: [] }
+      const norm = normalizeSpaceRole(String(row.role_name || ''))
+      if (norm) spaceMap[sid].roles.push(norm)
+    }
+    const spaceRoleOrder = ['space_admin', 'space_moderator', 'space_member', 'space_poster', 'space_subscriber']
+    for (const sid of Object.keys(spaceMap)) {
+      const set = new Set(spaceMap[Number(sid)].roles)
+      spaceMap[Number(sid)].roles = spaceRoleOrder.filter((r) => set.has(r))
+    }
+    const userSpaces = Object.values(spaceMap).sort((a, b) => (a.type + a.name).localeCompare(b.type + b.name))
+
+    const isChecked = (set: Set<string>, name: string) => (set.has(name) ? 'checked' : '')
+
+    let body = `<h1>User #${escapeHtml(String(user.id))}</h1>`
+    body += '<div class="toolbar"><div><span class="pill">User</span></div><div><a href="/admin/users">Back to users</a></div></div>'
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+    body += `<div class="section"><div class="section-title">Profile</div>`
+    body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/profile">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<label>Email<input type="text" name="email" value="${escapeHtml(String(user.email || ''))}" /></label>`
+    body += `<label>Display Name<input type="text" name="displayName" value="${escapeHtml(String(user.displayName || ''))}" /></label>`
+    body += `<label>Password (optional)<input type="password" name="password" value="" placeholder="Leave blank to keep" /></label>`
+    body += `<div class="actions"><button type="submit">Save Profile</button></div>`
+    body += `</form></div>`
+
+    body += `<div class="section"><div class="section-title">Site Roles</div>`
+    body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/site-roles">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<div style="margin: 6px 0 10px"><label style="display:flex; gap:10px; align-items:center; margin: 0"><input type="checkbox" checked disabled /><span>${escapeHtml(baselineSiteRole)} (baseline)</span></label></div>`
+    body += `<input type="hidden" name="roles" value="${escapeHtml(baselineSiteRole)}" />`
+    const siteRoleChoices = siteRoleNames.filter((r) => r !== baselineSiteRole)
+    if (!siteRoleChoices.length) {
+      body += `<p>No site roles configured.</p>`
+    } else {
+      body += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px">`
+      for (const r of siteRoleChoices) {
+        body += `<label style="display:flex; gap:10px; align-items:center; margin: 0"><input type="checkbox" name="roles" value="${escapeHtml(r)}" ${isChecked(currentSiteRoleSet, r)} /><span>${escapeHtml(r)}</span></label>`
+      }
+      body += `</div>`
+    }
+    body += `<div class="actions"><button type="submit">Save Roles</button></div>`
+    body += `</form></div>`
+
+    const requireReviewGlobal = Boolean(Number(mod.require_review_global))
+    body += `<div class="section"><div class="section-title">Review Holds</div>`
+    body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/moderation">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<label style="display:flex; gap:10px; align-items:center; margin: 0"><input type="checkbox" name="requireReviewGlobal" value="1" ${requireReviewGlobal ? 'checked' : ''} /><span>Require review globally (user’s publications require approval)</span></label>`
+    body += `<div class="actions"><button type="submit">Save Holds</button></div>`
+    body += `</form>`
+    body += `<div style="margin-top:10px; opacity:.85; font-size: 0.92rem">Credibility score: ${escapeHtml(String(mod.credibility_score != null ? Number(mod.credibility_score) : 0))}</div>`
+    body += `</div>`
+
+    body += `<div class="section"><div class="section-title">Suspensions</div>`
+    if (!activeSuspensions.length) {
+      body += `<p>No active suspensions.</p>`
+    } else {
+      body += `<table><thead><tr><th>ID</th><th>Kind</th><th>Scope</th><th>Degree</th><th>Ends</th><th>Reason</th><th></th></tr></thead><tbody>`
+      for (const s of activeSuspensions) {
+        const endTxt = s.endsAt ? escapeHtml(s.endsAt) : '<em>never</em>'
+        const scopeTxt = s.targetType === 'space' && s.targetId ? `space:${escapeHtml(String(s.targetId))}` : escapeHtml(s.targetType || 'site')
+        body += `<tr><td>${escapeHtml(String(s.id))}</td><td>${escapeHtml(String(s.kind))}</td><td>${scopeTxt}</td><td>${escapeHtml(String(s.degree))}</td><td>${endTxt}</td><td>${escapeHtml(String(s.reason || ''))}</td><td>`
+        body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/suspensions/${encodeURIComponent(String(s.id))}/end" style="margin:0">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<button class="danger" type="submit">End</button>`
+        body += `</form>`
+        body += `</td></tr>`
+      }
+      body += `</tbody></table>`
+    }
+    body += `<div class="section" style="margin-top:14px"><div class="section-title">Add Suspension / Ban</div>`
+    body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/suspensions">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<label>Kind<select name="kind"><option value="posting">posting_suspension</option><option value="ban">ban</option></select></label>`
+    body += `<label>Scope<select name="scope"><option value="site">site</option><option value="space">space</option></select></label>`
+    body += `<label>Space ID (when scope=space)<input type="text" name="spaceId" value="" placeholder="e.g. 21" /></label>`
+    body += `<label>Degree<select name="degree"><option value="1">1 (1 day)</option><option value="2">2 (7 days)</option><option value="3">3 (30 days)</option></select></label>`
+    body += `<label style="display:flex; gap:10px; align-items:center"><input type="checkbox" name="indefinite" value="1" /> Indefinite (ban only)</label>`
+    body += `<label>Reason<input type="text" name="reason" value="" placeholder="(optional)" /></label>`
+    body += `<div class="actions"><button class="danger" type="submit">Apply</button></div>`
+    body += `</form></div>`
+    body += `</div>`
+
+    body += `<div class="section"><div class="section-title">Space Roles</div>`
+    body += `<div class="field-hint">Set roles for specific spaces (adds membership if needed). Roles are normalized to the app’s space roles.</div>`
+    body += `<div class="section" style="margin-top:10px"><div class="section-title">Set roles for a space ID</div>`
+    body += `<form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/spaces/roles">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<label>Space ID<input type="text" name="spaceId" value="" placeholder="e.g. 21" /></label>`
+    body += `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px">`
+    for (const r of spaceRoleOrder) {
+      body += `<label style="display:flex; gap:10px; align-items:center; margin: 0"><input type="checkbox" name="roles" value="${escapeHtml(r)}" /><span>${escapeHtml(r)}</span></label>`
+    }
+    body += `</div>`
+    body += `<div class="actions"><button type="submit">Save Space Roles</button></div>`
+    body += `</form></div>`
+
+    if (userSpaces.length) {
+      body += `<div class="section" style="margin-top:14px"><div class="section-title">Existing Space Memberships</div>`
+      body += `<table><thead><tr><th>Space</th><th>Type</th><th>Roles</th></tr></thead><tbody>`
+      for (const sp of userSpaces) {
+        body += `<tr>`
+        body += `<td>${escapeHtml(sp.name || sp.slug)} <span style="opacity:.7">#${escapeHtml(String(sp.id))}</span></td>`
+        body += `<td>${escapeHtml(String(sp.type || ''))}</td>`
+        body += `<td><form method="POST" action="/admin/users/${encodeURIComponent(String(id))}/spaces/${encodeURIComponent(String(sp.id))}/roles" style="margin:0">`
+        body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+        body += `<div style="display:flex; gap:12px; flex-wrap:wrap">`
+        const set = new Set(sp.roles || [])
+        for (const r of spaceRoleOrder) {
+          body += `<label style="display:flex; gap:10px; align-items:center; margin: 0"><input type="checkbox" name="roles" value="${escapeHtml(r)}" ${set.has(r) ? 'checked' : ''} /><span>${escapeHtml(r)}</span></label>`
+        }
+        body += `</div>`
+        body += `<div class="actions" style="margin-top:10px"><button type="submit">Save</button></div>`
+        body += `</form></td></tr>`
+      }
+      body += `</tbody></table></div>`
+    } else {
+      body += `<p>No space roles assigned yet.</p>`
+    }
+    body += `</div>`
+
+    const doc = renderAdminPage({ title: `User #${user.id}`, bodyHtml: body, active: 'users' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    console.error('admin user detail failed', err)
+    const status = err?.status || 500
+    if (status === 404) return res.status(404).send('User not found')
+    res.status(500).send('Failed to load user')
+  }
 });
+
+pagesRouter.post('/admin/users/:id/profile', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(404).send('User not found')
+  try {
+    const body = (req.body || {}) as any
+    const email = body.email != null ? String(body.email).trim() : undefined
+    const displayName = body.displayName != null ? String(body.displayName).trim() : undefined
+    const password = body.password != null ? String(body.password) : undefined
+
+    const input: any = {}
+    if (email !== undefined) input.email = email
+    if (displayName !== undefined) input.displayName = displayName
+    if (password && password.trim()) input.password = password
+
+    await adminSvc.updateUser(id, input)
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Profile saved.')}`)
+  } catch (err: any) {
+    const code = String(err?.code || '')
+    const msg =
+      code === 'invalid_email' ? 'Invalid email.' :
+      code === 'weak_password' ? 'Weak password (min 8 chars).' :
+      'Failed to save profile.'
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?error=${encodeURIComponent(msg)}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/site-roles', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(404).send('User not found')
+  try {
+    const roles = toStringList((req.body || {}).roles)
+    if (!roles.includes('site_member')) roles.push('site_member')
+    await adminSvc.setUserSiteRoles(id, roles)
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Roles saved.')}`)
+  } catch (err) {
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?error=${encodeURIComponent('Failed to save roles.')}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/moderation', async (req: any, res: any) => {
+  const id = Number(req.params.id)
+  if (!Number.isFinite(id) || id <= 0) return res.status(404).send('User not found')
+  try {
+    const raw = (req.body || {}) as any
+    const flag = toFormBool(raw.requireReviewGlobal) ? 1 : 0
+    const db = getPool()
+    await db.query(`UPDATE users SET require_review_global = ? WHERE id = ?`, [flag, id])
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Holds saved.')}`)
+  } catch {
+    res.redirect(`/admin/users/${encodeURIComponent(String(id))}?error=${encodeURIComponent('Failed to save holds.')}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/suspensions', async (req: any, res: any) => {
+  const userId = Number(req.params.id)
+  if (!Number.isFinite(userId) || userId <= 0) return res.status(404).send('User not found')
+  try {
+    const raw = (req.body || {}) as any
+    const kind = String(raw.kind || 'posting').trim().toLowerCase()
+    const scope = String(raw.scope || 'site').trim().toLowerCase()
+    const deg = Number(raw.degree || 1)
+    const reason = raw.reason != null ? String(raw.reason).slice(0, 255) : null
+    const indefinite = toFormBool(raw.indefinite)
+
+    if (!['posting', 'ban'].includes(kind)) {
+      return res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Invalid kind.')}`)
+    }
+    if (!['site', 'space'].includes(scope)) {
+      return res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Invalid scope.')}`)
+    }
+    if (![1, 2, 3].includes(deg)) {
+      return res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Invalid degree.')}`)
+    }
+
+    let targetId: number | null = null
+    if (scope === 'space') {
+      const sid = Number(raw.spaceId)
+      if (!Number.isFinite(sid) || sid <= 0) {
+        return res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Space ID required for space scope.')}`)
+      }
+      targetId = sid
+    }
+
+    const days = deg === 1 ? 1 : deg === 2 ? 7 : 30
+    const ends = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+    const endsAt = kind === 'ban' && indefinite ? null : ends
+
+    const db = getPool()
+    const [ins] = await db.query(
+      `INSERT INTO suspensions (user_id, target_type, target_id, kind, degree, starts_at, ends_at, reason, created_by)
+       VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+      [userId, scope, targetId, kind, deg, endsAt, reason, req.user ? Number(req.user.id) : null]
+    )
+    const suspensionId = Number((ins as any).insertId || 0)
+    try {
+      const actionType = kind === 'ban' ? 'suspension_ban' : 'suspension_posting'
+      await db.query(
+        `INSERT INTO moderation_actions (actor_user_id, target_type, target_id, action_type, reason, rule_version_id, detail)
+         VALUES (?, ?, ?, ?, ?, NULL, JSON_OBJECT('suspension_id', ?, 'scope', ?, 'degree', ?, 'ends_at', ?))`,
+        [
+          req.user ? Number(req.user.id) : null,
+          scope,
+          targetId,
+          actionType,
+          reason,
+          suspensionId || null,
+          scope,
+          deg,
+          endsAt ? endsAt.toISOString() : null,
+        ]
+      )
+    } catch {}
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?notice=${encodeURIComponent('Suspension saved.')}`)
+  } catch (err) {
+    console.error('admin create suspension failed', err)
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Failed to create suspension.')}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/suspensions/:sid/end', async (req: any, res: any) => {
+  const userId = Number(req.params.id)
+  const sid = Number(req.params.sid)
+  if (!Number.isFinite(userId) || userId <= 0) return res.status(404).send('User not found')
+  if (!Number.isFinite(sid) || sid <= 0) return res.status(400).send('Bad suspension id')
+  try {
+    const db = getPool()
+    await db.query(`UPDATE suspensions SET ends_at = NOW() WHERE id = ? AND user_id = ?`, [sid, userId])
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?notice=${encodeURIComponent('Suspension ended.')}`)
+  } catch {
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Failed to end suspension.')}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/spaces/roles', async (req: any, res: any) => {
+  const userId = Number(req.params.id)
+  if (!Number.isFinite(userId) || userId <= 0) return res.status(404).send('User not found')
+  try {
+    const body = (req.body || {}) as any
+    const spaceId = Number(body.spaceId)
+    if (!Number.isFinite(spaceId) || spaceId <= 0) {
+      return res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Bad space id.')}`)
+    }
+    const roles = toStringList(body.roles).map((r) => r.toLowerCase())
+    await adminSvc.setUserSpaceRoles(spaceId, userId, roles)
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?notice=${encodeURIComponent('Space roles saved.')}`)
+  } catch (err: any) {
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Failed to save space roles.')}`)
+  }
+})
+
+pagesRouter.post('/admin/users/:id/spaces/:spaceId/roles', async (req: any, res: any) => {
+  const userId = Number(req.params.id)
+  const spaceId = Number(req.params.spaceId)
+  if (!Number.isFinite(userId) || userId <= 0) return res.status(404).send('User not found')
+  if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).send('Bad space id')
+  try {
+    const roles = toStringList((req.body || {}).roles).map((r) => r.toLowerCase())
+    await adminSvc.setUserSpaceRoles(spaceId, userId, roles)
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?notice=${encodeURIComponent('Space roles saved.')}`)
+  } catch {
+    res.redirect(`/admin/users/${encodeURIComponent(String(userId))}?error=${encodeURIComponent('Failed to save space roles.')}`)
+  }
+})
 
 function parseJsonSettings(raw: any): any {
   if (raw == null) return {};
@@ -2893,6 +4107,14 @@ function toIdList(raw: any): number[] {
     .map((v) => Number(v))
     .filter((n) => Number.isFinite(n) && n > 0)
   return Array.from(new Set(ids))
+}
+
+function toStringList(raw: any): string[] {
+  const items = Array.isArray(raw) ? raw : raw != null ? [raw] : []
+  const out = items
+    .map((v) => (typeof v === 'string' ? v : String(v ?? '')).trim())
+    .filter((v) => v.length > 0)
+  return Array.from(new Set(out))
 }
 
 function renderAdminSpaceListPage(opts: {
@@ -3419,16 +4641,73 @@ pagesRouter.get('/admin/channels/:id/user/:userId', (req, res) => {
 });
 
 // Dev utilities page
-pagesRouter.get('/admin/dev', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/admin/dev', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const stats = await adminSvc.getDevStats()
+    const rows = [
+      ['Uploads', stats.uploads],
+      ['Productions', stats.productions],
+      ['Space Publications', stats.spacePublications],
+      ['Publication Events', stats.spacePublicationEvents],
+    ]
+
+    let body = '<h1>Dev</h1>'
+    body += '<div class="toolbar"><div><span class="pill">Dev</span></div><div></div></div>'
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+    body += '<div class="section"><div class="section-title">Stats</div>'
+    body += '<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>'
+    for (const [label, value] of rows) {
+      body += `<tr><td>${escapeHtml(String(label))}</td><td>${escapeHtml(String(value))}</td></tr>`
+    }
+    body += '</tbody></table></div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Danger Zone</div>'
+    body += '<p class="field-hint">Truncate deletes content tables (uploads, productions, publications). Use only in local/dev.</p>'
+    body += `<form method="POST" action="/admin/dev/truncate">`
+    body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+    body += `<label>Confirmation<input type="text" name="confirm" value="" placeholder="Type TRUNCATE to confirm" /></label>`
+    body += `<div class="actions"><button class="danger" type="submit">Truncate Content</button></div>`
+    body += `</form>`
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: 'Dev', bodyHtml: body, active: 'dev' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin dev page failed', err)
+    res.status(500).send('Failed to load dev page')
+  }
+});
+
+pagesRouter.post('/admin/dev/truncate', async (req: any, res: any) => {
+  try {
+    const body = (req.body || {}) as any
+    const confirm = String(body.confirm || '').trim().toUpperCase()
+    if (confirm !== 'TRUNCATE') {
+      return res.redirect(`/admin/dev?error=${encodeURIComponent('Confirmation required: type TRUNCATE.')}`)
+    }
+    await adminSvc.truncateContent()
+    res.redirect(`/admin/dev?notice=${encodeURIComponent('Content truncated.')}`)
+  } catch (err) {
+    console.error('admin dev truncate failed', err)
+    res.redirect(`/admin/dev?error=${encodeURIComponent('Failed to truncate content.')}`)
+  }
 });
 
 // Admin moderation overviews (SPA)
 pagesRouter.get('/admin/moderation/groups', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect('/admin/review/groups')
 });
 pagesRouter.get('/admin/moderation/channels', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect('/admin/review/channels')
 });
 
 // -------- Space-level Admin & Moderation UI --------

@@ -5,16 +5,11 @@ import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
 import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
-const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
-const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
-const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
 const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
 const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
 const SpaceReviewGroupsPage = React.lazy(() => import('./app/SpaceReviewGroups'))
 const SpaceReviewChannelsPage = React.lazy(() => import('./app/SpaceReviewChannels'))
-const AdminModerationGroupsPage = React.lazy(() => import('./app/AdminModerationGroups'))
-const AdminModerationChannelsPage = React.lazy(() => import('./app/AdminModerationChannels'))
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
 const PageView = React.lazy(loadPageView)
@@ -29,7 +24,7 @@ const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
 const ProfileAvatarPage = React.lazy(loadProfileAvatar)
 import Layout from './ui/Layout'
-import { AdminPlaceholder, SpaceAdminPlaceholder } from './app/Placeholders'
+import { SpaceAdminPlaceholder } from './app/Placeholders'
 import debug from './debug'
 import { preloadHelpDocs } from './help/helpDocs'
 
@@ -190,107 +185,31 @@ if (path === '/' || path === '') {
       </Suspense>
     </Layout>
   )
-} else if (path === '/profile' || path === '/profile/') {
-  root.render(
-    <Layout label="Profile">
-      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading profile…</div>}> 
-        <ProfilePage />
-      </Suspense>
-    </Layout>
-  )
-} else if (path.startsWith('/adminx/users')) {
-  if (/^\/adminx\/users\/(\d+)/.test(path)) {
-    root.render(
-      <Layout label="Admin • User (SPA)">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-          <AdminUserPage />
-        </Suspense>
-      </Layout>
-    )
-  } else {
-    root.render(
-      <Layout label="Admin • Users (SPA)">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-          <AdminUsersPage />
-        </Suspense>
-      </Layout>
-    )
-  }
-} else {
-  if (path.startsWith('/adminx/settings')) {
-    root.render(
-      <Layout label="Admin • Site Settings (SPA)">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-          <AdminSiteSettingsPage />
-        </Suspense>
-      </Layout>
-    )
-} else if (path.startsWith('/admin/')) {
-    // Map legacy admin routes to SPA pages or placeholder
-    if (path.startsWith('/admin/moderation/groups')) {
-      root.render(
-        <Layout label="Admin • Group Moderation (SPA)">
-          <Suspense fallback={<div />}> 
-            <AdminModerationGroupsPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (path.startsWith('/admin/moderation/channels')) {
-      root.render(
-        <Layout label="Admin • Channel Moderation (SPA)">
-          <Suspense fallback={<div />}> 
-            <AdminModerationChannelsPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (/^\/admin\/users\/(\d+)/.test(path)) {
-      root.render(
-        <Layout label="Admin • User (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <AdminUserPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (path.startsWith('/admin/users')) {
-      root.render(
-        <Layout label="Admin • Users (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <AdminUsersPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (path.startsWith('/admin/settings')) {
-      root.render(
-        <Layout label="Admin • Site Settings (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <AdminSiteSettingsPage />
-          </Suspense>
-        </Layout>
-      )
-    } else {
-      root.render(
-        <Layout label="Admin (SPA)">
-          <AdminPlaceholder />
-        </Layout>
-      )
-    }
-  } else if (path === '/help' || path === '/help/') {
-    root.render(
-      <Layout label="Help">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-          <HelpPage />
-        </Suspense>
-      </Layout>
-    )
-} else if (/^\/help\/(?:[^/]+)\/?$/.test(path)) {
-    root.render(
-      <Layout label="Help">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-          <HelpPage />
-        </Suspense>
-      </Layout>
-    )
-  } else if (path === '/space/review/groups' || path === '/space/review/groups/') {
+	} else if (path === '/profile' || path === '/profile/') {
+	  root.render(
+	    <Layout label="Profile">
+	      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading profile…</div>}> 
+	        <ProfilePage />
+	      </Suspense>
+	    </Layout>
+	  )
+	} else if (path === '/help' || path === '/help/') {
+	    root.render(
+	      <Layout label="Help">
+	        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+	          <HelpPage />
+	        </Suspense>
+	      </Layout>
+	    )
+	} else if (/^\/help\/(?:[^/]+)\/?$/.test(path)) {
+	    root.render(
+	      <Layout label="Help">
+	        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
+	          <HelpPage />
+	        </Suspense>
+	      </Layout>
+	    )
+	  } else if (path === '/space/review/groups' || path === '/space/review/groups/') {
     root.render(
       <Layout label="Review • Groups">
         <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
@@ -347,12 +266,11 @@ if (path === '/' || path === '') {
         </Layout>
       )
     }
-  } else {
-  // Fallback: render Feed for unknown routes while preserving shell behavior.
-  root.render(
-    <Suspense fallback={<FullscreenFallback label="Loading…" />}> 
-      <Feed />
-    </Suspense>
-  )
-  }
-}
+	  } else {
+	  // Fallback: render Feed for unknown routes while preserving shell behavior.
+	  root.render(
+	    <Suspense fallback={<FullscreenFallback label="Loading…" />}> 
+	      <Feed />
+	    </Suspense>
+	  )
+	  }

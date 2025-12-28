@@ -33,8 +33,8 @@ export default function AdminMenu(props: { onNavigate?: () => void }) {
   }, [])
 
   const items = [
-    { label: 'Group Moderation', href: '/admin/moderation/groups', count: groupCount },
-    { label: 'Channel Moderation', href: '/admin/moderation/channels', count: channelCount },
+    { label: 'Group Review', href: '/admin/review/groups', count: groupCount },
+    { label: 'Channel Review', href: '/admin/review/channels', count: channelCount },
   ]
   return (
     <div className={styles.list}>
