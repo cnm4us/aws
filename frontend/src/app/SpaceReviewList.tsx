@@ -3,7 +3,7 @@ import styles from '../styles/adminModerationList.module.css'
 
 type Item = { id: number; name: string; slug: string; pending: number }
 
-export default function AdminModerationList(props: { kind: 'group' | 'channel' }) {
+export default function SpaceReviewList(props: { kind: 'group' | 'channel' }) {
   const { kind } = props
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -14,7 +14,7 @@ export default function AdminModerationList(props: { kind: 'group' | 'channel' }
     let canceled = false
     let spinnerTimer: any = null
     setError(null)
-    const cacheKey = `admin:modlist:${kind}`
+    const cacheKey = `space:reviewlist:${kind}`
     let hadCache = false
     try {
       const raw = sessionStorage.getItem(cacheKey)
@@ -36,7 +36,7 @@ export default function AdminModerationList(props: { kind: 'group' | 'channel' }
         spinnerTimer = setTimeout(() => { if (!canceled) setShowSpinner(true) }, 220)
       }
       try {
-        const url = kind === 'group' ? '/api/admin/moderation/groups' : '/api/admin/moderation/channels'
+        const url = kind === 'group' ? '/api/space/review/groups' : '/api/space/review/channels'
         const res = await fetch(url, { credentials: 'same-origin' })
         if (!res.ok) throw new Error('failed_to_load')
         const data = await res.json()
@@ -58,7 +58,7 @@ export default function AdminModerationList(props: { kind: 'group' | 'channel' }
     return () => { canceled = true; if (spinnerTimer) clearTimeout(spinnerTimer) }
   }, [kind])
 
-  const title = useMemo(() => (kind === 'group' ? 'Group Moderation' : 'Channel Moderation'), [kind])
+  const title = useMemo(() => (kind === 'group' ? 'Group Review' : 'Channel Review'), [kind])
 
   return (
     <div className={styles.container}>
@@ -85,3 +85,4 @@ export default function AdminModerationList(props: { kind: 'group' | 'channel' }
     </div>
   )
 }
+

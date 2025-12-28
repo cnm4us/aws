@@ -1,7 +1,7 @@
 (function() {
   function parseContext() {
     var p = location.pathname;
-    var m = p.match(/^\/(spaces|groups|channels)\/(\d+)\/(admin|moderation)/);
+    var m = p.match(/^\/(spaces|groups|channels)\/(\d+)\/(admin|review|moderation)/);
     if (!m) return { type: 'spaces', id: null };
     return { type: m[1], id: Number(m[2]) };
   }
@@ -10,7 +10,7 @@
   var label = document.getElementById('spaceLabel');
   if (label && sid) label.textContent = '(space #' + sid + ')';
   var link = document.getElementById('modLink');
-  if (link && sid) link.href = '/spaces/' + sid + '/moderation';
+  if (link && sid) link.href = '/spaces/' + sid + '/review';
 
   async function fetchJson(url) {
     const r = await fetch(url, { credentials: 'include' });
@@ -182,4 +182,3 @@
   }
   if (sid) init();
 })();
-

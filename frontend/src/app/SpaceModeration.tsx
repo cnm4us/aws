@@ -63,7 +63,7 @@ export default function SpaceModerationPage() {
       if (!spaceId) { setError('Bad space id'); setLoading(false); return }
       setLoading(true); setError(null)
       try {
-        const res = await fetch(`/api/spaces/${spaceId}/moderation/queue`, { credentials: 'same-origin' })
+        const res = await fetch(`/api/spaces/${spaceId}/review/queue`, { credentials: 'same-origin' })
         if (!res.ok) throw new Error('fetch_failed')
         const data = await res.json()
         if (canceled) return
@@ -129,7 +129,7 @@ export default function SpaceModerationPage() {
 
   return (
     <div className={styles.container}>
-      <div className={styles.title}>Moderation Queue</div>
+      <div className={styles.title}>Review Queue</div>
       {error ? <div className={styles.error}>{error}</div> : null}
       {!items.length && !loading ? (
         <div className={styles.empty}>No pending items.</div>

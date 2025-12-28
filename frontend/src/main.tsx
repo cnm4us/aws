@@ -8,12 +8,11 @@ import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleto
 const AdminUsersPage = React.lazy(() => import('./app/AdminUsers'))
 const AdminUserPage = React.lazy(() => import('./app/AdminUser'))
 const AdminSiteSettingsPage = React.lazy(() => import('./app/AdminSiteSettings'))
-const AdminSpacesPage = React.lazy(() => import('./app/AdminSpaces'))
-const AdminSpaceCreatePage = React.lazy(() => import('./app/AdminSpaceCreate'))
 const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
 const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
 const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
-const AdminSpaceDetailPage = React.lazy(() => import('./app/AdminSpaceDetail'))
+const SpaceReviewGroupsPage = React.lazy(() => import('./app/SpaceReviewGroups'))
+const SpaceReviewChannelsPage = React.lazy(() => import('./app/SpaceReviewChannels'))
 const AdminModerationGroupsPage = React.lazy(() => import('./app/AdminModerationGroups'))
 const AdminModerationChannelsPage = React.lazy(() => import('./app/AdminModerationChannels'))
 const HelpPage = React.lazy(() => import('./app/Help'))
@@ -226,7 +225,7 @@ if (path === '/' || path === '') {
         </Suspense>
       </Layout>
     )
-  } else if (path.startsWith('/admin/')) {
+} else if (path.startsWith('/admin/')) {
     // Map legacy admin routes to SPA pages or placeholder
     if (path.startsWith('/admin/moderation/groups')) {
       root.render(
@@ -269,48 +268,11 @@ if (path === '/' || path === '') {
         </Layout>
       )
     } else {
-      // New → Detail → List ordering to avoid prefix collisions
-      if (/^\/admin\/(groups|channels)\/new\/?$/.test(path)) {
-        const isGroup = /^\/admin\/groups\//.test(path)
-        root.render(
-          <Layout label={`Add ${isGroup ? 'Group' : 'Channel'}`}>
-            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-              <AdminSpaceCreatePage />
-            </Suspense>
-          </Layout>
-        )
-      } else if (/^\/admin\/(groups|channels)\/\d+\/?$/.test(path)) {
-        const isGroup = /^\/admin\/groups\//.test(path)
-        root.render(
-          <Layout label={`Admin • ${isGroup ? 'Group' : 'Channel'} (SPA)`}>
-            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-              <AdminSpaceDetailPage />
-            </Suspense>
-          </Layout>
-        )
-      } else if (path.startsWith('/admin/groups')) {
-        root.render(
-          <Layout label="Admin • Groups (SPA)">
-            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-              <AdminSpacesPage />
-            </Suspense>
-          </Layout>
-        )
-      } else if (path.startsWith('/admin/channels')) {
-        root.render(
-          <Layout label="Admin • Channels (SPA)">
-            <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-              <AdminSpacesPage />
-            </Suspense>
-          </Layout>
-        )
-      } else {
-        root.render(
-          <Layout label="Admin (SPA)">
-            <AdminPlaceholder />
-          </Layout>
-        )
-      }
+      root.render(
+        <Layout label="Admin (SPA)">
+          <AdminPlaceholder />
+        </Layout>
+      )
     }
   } else if (path === '/help' || path === '/help/') {
     root.render(
@@ -328,6 +290,22 @@ if (path === '/' || path === '') {
         </Suspense>
       </Layout>
     )
+  } else if (path === '/space/review/groups' || path === '/space/review/groups/') {
+    root.render(
+      <Layout label="Review • Groups">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+          <SpaceReviewGroupsPage />
+        </Suspense>
+      </Layout>
+    )
+  } else if (path === '/space/review/channels' || path === '/space/review/channels/') {
+    root.render(
+      <Layout label="Review • Channels">
+        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+          <SpaceReviewChannelsPage />
+        </Suspense>
+      </Layout>
+    )
   } else if (/^\/users\/(?:[^/]+)\/?$/.test(path)) {
     root.render(
       <Layout label="Profile">
@@ -336,7 +314,7 @@ if (path === '/' || path === '') {
         </Suspense>
       </Layout>
     )
-  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/moderation'))) {
+  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/review'))) {
     // For now, show Space Members for /spaces/:id/admin and .../members
     if (/^\/spaces\/\d+\/(admin(\/members)?\/?$)/.test(path)) {
       root.render(
@@ -354,9 +332,9 @@ if (path === '/' || path === '') {
           </Suspense>
         </Layout>
       )
-    } else if (/^\/spaces\/\d+\/moderation\/?$/.test(path)) {
+    } else if (/^\/spaces\/\d+\/review\/?$/.test(path)) {
       root.render(
-        <Layout label="Space Moderation (SPA)">
+        <Layout label="Space Review (SPA)">
           <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
             <SpaceModerationPage />
           </Suspense>

@@ -7,6 +7,7 @@ import { renderMarkdown } from '../utils/markdown'
 import { parseCookies } from '../utils/cookies'
 import { can } from '../security/permissions'
 import { PERM } from '../security/perm'
+import * as adminSvc from '../features/admin/service'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -562,62 +563,57 @@ function isReservedPageSlug(slug: string): boolean {
   return RESERVED_PAGE_ROOT_SLUGS.has(root);
 }
 
-function renderAdminPage(title: string, bodyHtml: string): string {
-  const safeTitle = escapeHtml(title || 'Pages Admin');
+type AdminNavKey = 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages';
+
+const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
+  { key: 'groups', label: 'Groups', href: '/admin/groups' },
+  { key: 'channels', label: 'Channels', href: '/admin/channels' },
+  { key: 'rules', label: 'Rules', href: '/admin/rules' },
+  { key: 'categories', label: 'Categories', href: '/admin/categories' },
+  { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
+  { key: 'pages', label: 'Pages', href: '/admin/pages' },
+];
+
+function renderAdminPage(opts: { title: string; bodyHtml: string; active?: AdminNavKey }): string {
+  const safeTitle = escapeHtml(opts.title || 'Admin');
+  const active = opts.active;
+
+  const nav = ADMIN_NAV_ITEMS
+    .map((it) => {
+      const cls = it.key === active ? 'active' : '';
+      return `<a href="${escapeHtml(it.href)}" class="${cls}">${escapeHtml(it.label)}</a>`;
+    })
+    .join('');
+
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>${safeTitle}</title>
-    <style>
-      html, body { margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #05070a; color: #f5f5f5; }
-      a { color: #9cf; }
-      main { max-width: 880px; margin: 0 auto; padding: 20px 16px 40px; line-height: 1.5; }
-      h1 { font-size: 1.7rem; margin-bottom: 0.5rem; }
-      table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
-      th, td { border-bottom: 1px solid rgba(255,255,255,0.15); padding: 6px 4px; text-align: left; }
-      th { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.8; }
-      input[type="text"], textarea, select {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 6px 8px;
-        border-radius: 6px;
-        border: 1px solid rgba(255,255,255,0.3);
-        background: rgba(0,0,0,0.6);
-        color: #f5f5f5;
-        font-family: inherit;
-        font-size: 0.95rem;
-      }
-      textarea { min-height: 220px; resize: vertical; }
-      label { display: block; margin-top: 10px; font-size: 0.9rem; }
-      .field-hint { font-size: 0.8rem; opacity: 0.7; margin-top: 2px; }
-      .actions { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
-      button {
-        padding: 6px 12px;
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,0.35);
-        background: #1976d2;
-        color: #fff;
-        cursor: pointer;
-        font-size: 0.9rem;
-      }
-      button.danger {
-        background: #b71c1c;
-        border-color: rgba(255,255,255,0.35);
-      }
-      button.danger:hover { background: #c62828; }
-      .error { margin-top: 8px; color: #ffb3b3; font-size: 0.85rem; }
-      .success { margin-top: 8px; color: #b3ffd2; font-size: 0.85rem; }
-      .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
-      .toolbar a { font-size: 0.9rem; }
-      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.85; }
-    </style>
+    <link rel="stylesheet" href="/admin-nav.css" />
   </head>
-  <body>
-    <main>
-${bodyHtml}
-    </main>
+  <body class="admin-shell">
+    <input id="adminNavToggle" class="admin-nav-toggle" type="checkbox" aria-hidden="true" />
+    <aside class="sidebar" aria-label="Admin navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Site Admin</div>
+        <label for="adminNavToggle" class="sidebar-close">Close</label>
+      </div>
+      <nav class="sidebar-nav">
+        ${nav}
+      </nav>
+    </aside>
+    <label for="adminNavToggle" class="admin-nav-overlay" aria-hidden="true"></label>
+    <div class="main">
+      <div class="topbar">
+        <label for="adminNavToggle" class="sidebar-open" aria-label="Open navigation">Menu</label>
+        <div class="topbar-title">${safeTitle}</div>
+      </div>
+      <main class="content">
+${opts.bodyHtml}
+      </main>
+    </div>
   </body>
 </html>`;
 }
@@ -646,12 +642,346 @@ pagesRouter.get('/admin/pages', async (req: any, res: any) => {
       }
       body += '</tbody></table>';
     }
-    const doc = renderAdminPage('Pages', body);
+    const doc = renderAdminPage({ title: 'Pages', bodyHtml: body, active: 'pages' });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
     console.error('admin pages list failed', err);
     res.status(500).send('Failed to load pages');
+  }
+});
+
+// -------- Admin: Categories (server-rendered, minimal JS) --------
+
+function renderCategoryForm(opts: { error?: string | null; csrfToken?: string | null; name?: string; description?: string }): string {
+  const error = opts.error ? String(opts.error) : '';
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
+  const name = opts.name ? String(opts.name) : '';
+  const description = opts.description ? String(opts.description) : '';
+
+  let body = `<h1>New Category</h1>`;
+  body += '<div class="toolbar"><div><a href="/admin/categories">\u2190 Back to categories</a></div></div>';
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+  body += `<form method="post" action="/admin/categories">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(name)}" />
+    <div class="field-hint">Unique label for this category (used by cultures and rules).</div>
+  </label>`;
+  body += `<label>Description
+    <textarea name="description" style="min-height: 120px">${escapeHtml(description)}</textarea>
+  </label>`;
+  body += `<div class="actions">
+    <button type="submit">Create category</button>
+  </div>`;
+  body += `</form>`;
+  return renderAdminPage({ title: 'New Category', bodyHtml: body, active: 'categories' });
+}
+
+function renderCategoryDetailPage(opts: {
+  category: any;
+  cultureCount: number;
+  ruleCount: number;
+  csrfToken?: string | null;
+  notice?: string | null;
+  error?: string | null;
+}): string {
+  const category = opts.category ?? {};
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : '';
+  const notice = opts.notice ? String(opts.notice) : '';
+  const error = opts.error ? String(opts.error) : '';
+  const cultureCount = Number.isFinite(opts.cultureCount) ? Number(opts.cultureCount) : 0;
+  const ruleCount = Number.isFinite(opts.ruleCount) ? Number(opts.ruleCount) : 0;
+
+  const id = category.id != null ? String(category.id) : '';
+  const nameValue = category.name ? String(category.name) : '';
+  const descriptionValue = category.description ? String(category.description) : '';
+
+  let body = `<h1>Category: ${escapeHtml(nameValue || '(unnamed)')}</h1>`;
+  body += '<div class="toolbar"><div><a href="/admin/categories">\u2190 Back to categories</a></div></div>';
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+
+  body += `<div class="section">`;
+  body += `<div class="section-title">Usage</div>`;
+  body += `<div class="field-hint">Cultures using this category: <strong>${escapeHtml(String(cultureCount))}</strong> &nbsp;•&nbsp; Rules in this category: <strong>${escapeHtml(String(ruleCount))}</strong></div>`;
+  body += `</div>`;
+
+  body += `<form method="post" action="/admin/categories/${escapeHtml(id)}">`;
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+  </label>`;
+  body += `<label>Description
+    <textarea name="description" style="min-height: 120px">${escapeHtml(descriptionValue)}</textarea>
+  </label>`;
+
+  body += `<div class="actions">
+    <button type="submit">Save</button>
+  </div>`;
+  body += `</form>`;
+
+  body += `<div class="section" style="margin-top: 18px">`;
+  body += `<div class="section-title">Danger Zone</div>`;
+  if (cultureCount > 0 || ruleCount > 0) {
+    body += `<div class="field-hint">To delete this category, remove it from all cultures and rules first.</div>`;
+  } else {
+    body += `<form method="post" action="/admin/categories/${escapeHtml(id)}/delete" style="margin-top: 10px" onsubmit="return confirm('Delete category \\'${escapeHtml(nameValue || 'this category')}\\'? This cannot be undone.');">`;
+    if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`;
+    body += `<button type="submit" class="danger">Delete category</button>`;
+    body += `</form>`;
+  }
+  body += `</div>`;
+
+  return renderAdminPage({ title: 'Category', bodyHtml: body, active: 'categories' });
+}
+
+pagesRouter.get('/admin/categories', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
+
+    const db = getPool();
+    const [rows] = await db.query(
+      `SELECT rc.id, rc.name, rc.description, rc.updated_at,
+              COUNT(DISTINCT cc.culture_id) AS culture_count,
+              COUNT(DISTINCT r.id) AS rule_count
+         FROM rule_categories rc
+         LEFT JOIN culture_categories cc ON cc.category_id = rc.id
+         LEFT JOIN rules r ON r.category_id = rc.id
+        GROUP BY rc.id
+        ORDER BY rc.name`
+    );
+    const items = rows as any[];
+
+    let body = '<h1>Categories</h1>';
+    body += '<div class="toolbar"><div><span class="pill">Categories</span></div><div><a href="/admin/categories/new">New category</a></div></div>';
+    if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`;
+    if (error) body += `<div class="error">${escapeHtml(error)}</div>`;
+
+    if (!items.length) {
+      body += '<p>No categories have been created yet.</p>';
+    } else {
+      body += '<table><thead><tr><th>Name</th><th>Cultures</th><th>Rules</th><th>Updated</th></tr></thead><tbody>';
+      for (const row of items) {
+        const id = Number(row.id);
+        const name = escapeHtml(String(row.name || ''));
+        const updated = row.updated_at ? escapeHtml(String(row.updated_at)) : '';
+        const cultures = row.culture_count != null ? escapeHtml(String(row.culture_count)) : '0';
+        const rules = row.rule_count != null ? escapeHtml(String(row.rule_count)) : '0';
+        const href = `/admin/categories/${encodeURIComponent(String(id))}`;
+        body += `<tr><td><a href="${href}">${name}</a></td><td>${cultures}</td><td>${rules}</td><td>${updated}</td></tr>`;
+      }
+      body += '</tbody></table>';
+    }
+
+    const doc = renderAdminPage({ title: 'Categories', bodyHtml: body, active: 'categories' });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    console.error('admin categories list failed', err);
+    res.status(500).send('Failed to load categories');
+  }
+});
+
+pagesRouter.get('/admin/categories/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const csrfToken = cookies['csrf'] || '';
+  const doc = renderCategoryForm({ csrfToken });
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(doc);
+});
+
+pagesRouter.post('/admin/categories', async (req: any, res: any) => {
+  try {
+    const body = (req.body || {}) as any;
+    const rawName = body.name != null ? String(body.name) : '';
+    const rawDescription = body.description != null ? String(body.description) : '';
+    const name = rawName.trim();
+    const description = rawDescription.trim();
+
+    if (!name) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCategoryForm({ csrfToken, error: 'Name is required.', name: rawName, description: rawDescription });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    if (name.length > 255) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCategoryForm({ csrfToken, error: 'Name is too long (max 255 characters).', name: rawName, description: rawDescription });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+
+    const db = getPool();
+    try {
+      await db.query(`INSERT INTO rule_categories (name, description) VALUES (?, ?)`, [name, description || null]);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_rule_categories_name')) {
+        const cookies = parseCookies(req.headers.cookie);
+        const csrfToken = cookies['csrf'] || '';
+        const doc = renderCategoryForm({ csrfToken, error: 'A category with that name already exists.', name: rawName, description: rawDescription });
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        return res.status(400).send(doc);
+      }
+      throw err;
+    }
+
+    res.redirect(`/admin/categories?notice=${encodeURIComponent('Category created.')}`);
+  } catch (err) {
+    console.error('admin create category failed', err);
+    res.status(500).send('Failed to create category');
+  }
+});
+
+pagesRouter.get('/admin/categories/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : '';
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : '';
+
+    const db = getPool();
+    const [catRows] = await db.query(`SELECT id, name, description, updated_at FROM rule_categories WHERE id = ? LIMIT 1`, [id]);
+    const category = (catRows as any[])[0];
+    if (!category) return res.status(404).send('Category not found');
+
+    const [[cCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM culture_categories WHERE category_id = ?`, [id]);
+    const [[rCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM rules WHERE category_id = ?`, [id]);
+
+    const cookies = parseCookies(req.headers.cookie);
+    const csrfToken = cookies['csrf'] || '';
+
+    const doc = renderCategoryDetailPage({
+      category,
+      cultureCount: Number(cCount?.c || 0),
+      ruleCount: Number(rCount?.c || 0),
+      csrfToken,
+      notice,
+      error,
+    });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(doc);
+  } catch (err) {
+    console.error('admin category detail failed', err);
+    res.status(500).send('Failed to load category');
+  }
+});
+
+pagesRouter.post('/admin/categories/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
+
+    const body = (req.body || {}) as any;
+    const rawName = body.name != null ? String(body.name) : '';
+    const rawDescription = body.description != null ? String(body.description) : '';
+    const name = rawName.trim();
+    const description = rawDescription.trim();
+
+    const db = getPool();
+    const [catRows] = await db.query(`SELECT id, name, description FROM rule_categories WHERE id = ? LIMIT 1`, [id]);
+    const category = (catRows as any[])[0];
+    if (!category) return res.status(404).send('Category not found');
+
+    const [[cCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM culture_categories WHERE category_id = ?`, [id]);
+    const [[rCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM rules WHERE category_id = ?`, [id]);
+    const cultureCount = Number(cCount?.c || 0);
+    const ruleCount = Number(rCount?.c || 0);
+
+    if (!name) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCategoryDetailPage({
+        category: { ...category, name: rawName, description: rawDescription },
+        cultureCount,
+        ruleCount,
+        csrfToken,
+        error: 'Name is required.',
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+    if (name.length > 255) {
+      const cookies = parseCookies(req.headers.cookie);
+      const csrfToken = cookies['csrf'] || '';
+      const doc = renderCategoryDetailPage({
+        category: { ...category, name: rawName, description: rawDescription },
+        cultureCount,
+        ruleCount,
+        csrfToken,
+        error: 'Name is too long (max 255 characters).',
+      });
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.status(400).send(doc);
+    }
+
+    try {
+      await db.query(`UPDATE rule_categories SET name = ?, description = ? WHERE id = ?`, [name, description || null, id]);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      if (msg.includes('ER_DUP_ENTRY') || msg.includes('uniq_rule_categories_name')) {
+        const cookies = parseCookies(req.headers.cookie);
+        const csrfToken = cookies['csrf'] || '';
+        const doc = renderCategoryDetailPage({
+          category: { ...category, name: rawName, description: rawDescription },
+          cultureCount,
+          ruleCount,
+          csrfToken,
+          error: 'A category with that name already exists.',
+        });
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        return res.status(400).send(doc);
+      }
+      throw err;
+    }
+
+    res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`);
+  } catch (err) {
+    console.error('admin update category failed', err);
+    res.status(500).send('Failed to save category');
+  }
+});
+
+pagesRouter.post('/admin/categories/:id/delete', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Category not found');
+
+    const db = getPool();
+    const [catRows] = await db.query(`SELECT id, name FROM rule_categories WHERE id = ? LIMIT 1`, [id]);
+    const category = (catRows as any[])[0];
+    if (!category) return res.status(404).send('Category not found');
+
+    const [[cCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM culture_categories WHERE category_id = ?`, [id]);
+    const [[rCount]]: any = await db.query(`SELECT COUNT(*) AS c FROM rules WHERE category_id = ?`, [id]);
+    const cultureCount = Number(cCount?.c || 0);
+    const ruleCount = Number(rCount?.c || 0);
+
+    if (cultureCount > 0 || ruleCount > 0) {
+      const msg = 'Category is used by cultures and/or rules.';
+      return res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?error=${encodeURIComponent(msg)}`);
+    }
+
+    try {
+      await db.query(`DELETE FROM rule_categories WHERE id = ?`, [id]);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const safe = msg.includes('a foreign key constraint fails')
+        ? 'Category is used by cultures and/or rules.'
+        : 'Failed to delete category.';
+      return res.redirect(`/admin/categories/${encodeURIComponent(String(id))}?error=${encodeURIComponent(safe)}`);
+    }
+
+    res.redirect(`/admin/categories?notice=${encodeURIComponent('Category deleted.')}`);
+  } catch (err) {
+    console.error('admin delete category failed', err);
+    res.status(500).send('Failed to delete category');
   }
 });
 
@@ -679,7 +1009,7 @@ function renderCultureForm(opts: { error?: string | null; csrfToken?: string | n
     <button type="submit">Create culture</button>
   </div>`;
   body += `</form>`;
-  return renderAdminPage('New Culture', body);
+  return renderAdminPage({ title: 'New Culture', bodyHtml: body, active: 'cultures' });
 }
 
 pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
@@ -718,7 +1048,7 @@ pagesRouter.get('/admin/cultures', async (req: any, res: any) => {
       body += `<div class="field-hint" style="margin-top: 10px">Category assignment is configured in the culture detail page.</div>`;
     }
 
-    const doc = renderAdminPage('Cultures', body);
+    const doc = renderAdminPage({ title: 'Cultures', bodyHtml: body, active: 'cultures' });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -871,7 +1201,7 @@ function renderCultureDetailPage(opts: {
   }
   body += `</div>`;
 
-  return renderAdminPage('Culture', body);
+  return renderAdminPage({ title: 'Culture', bodyHtml: body, active: 'cultures' });
 }
 
 pagesRouter.get('/admin/cultures/:id', async (req: any, res: any) => {
@@ -1282,7 +1612,7 @@ function renderRuleDraftEditPage(opts: {
 <script src="/admin/ckeditor_markdown.js"></script>
 `;
 
-  return renderAdminPage('Edit Rule Draft', body);
+  return renderAdminPage({ title: 'Edit Rule Draft', bodyHtml: body, active: 'rules' });
 }
 
 function renderRuleListPage(
@@ -1364,7 +1694,7 @@ function renderRuleListPage(
     }
     body += '</tbody></table>';
   }
-  return renderAdminPage('Rules', body);
+  return renderAdminPage({ title: 'Rules', bodyHtml: body, active: 'rules' });
 }
 
 function renderRuleForm(opts: {
@@ -1514,7 +1844,7 @@ function renderRuleForm(opts: {
 <script src="/admin/ckeditor_markdown.js"></script>
 `;
 
-  return renderAdminPage(title, body);
+  return renderAdminPage({ title, bodyHtml: body, active: 'rules' });
 }
 
 pagesRouter.get('/admin/rules', async (req: any, res: any) => {
@@ -2075,7 +2405,7 @@ pagesRouter.get('/admin/rules/:id', async (req: any, res: any) => {
       body += '</tbody></table>';
     }
 
-    const doc = renderAdminPage('Rule detail', body);
+    const doc = renderAdminPage({ title: 'Rule detail', bodyHtml: body, active: 'rules' });
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(doc);
   } catch (err) {
@@ -2321,7 +2651,7 @@ function renderPageForm(opts: {
 <script src="/admin/ckeditor_markdown.js"></script>
 `;
 
-  return renderAdminPage(title, body);
+  return renderAdminPage({ title, bodyHtml: body, active: 'pages' });
 }
 
 pagesRouter.get('/admin/pages/new', async (req: any, res: any) => {
@@ -2495,6 +2825,14 @@ pagesRouter.get(/^\/help\/([^/.]+)\/?$/, (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+// Space review (pre-publish approval) — standard SPA bundle
+pagesRouter.get('/space/review/groups', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/space/review/channels', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 // Forbidden page (shows message and requested URL via querystring)
 pagesRouter.get('/forbidden', (_req, res) => {
   serveHtml(res, 'forbidden.html');
@@ -2525,43 +2863,559 @@ pagesRouter.get('/admin/users/:id', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
-pagesRouter.get('/admin/groups', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
-});
-// Singular fallbacks for convenience
-pagesRouter.get('/admin/group', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
-});
-pagesRouter.get('/admin/groups/new', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
-});
-pagesRouter.get('/admin/groups/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
-});
-pagesRouter.get('/admin/group/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
-});
-pagesRouter.get('/admin/groups/:id/user/:userId', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+function parseJsonSettings(raw: any): any {
+  if (raw == null) return {};
+  if (typeof raw === 'object') return raw;
+  const text = String(raw || '');
+  if (!text.trim()) return {};
+  try { return JSON.parse(text) } catch { return {} }
+}
+
+function getRequireApproval(settings: any): boolean {
+  try { return Boolean(settings?.publishing?.requireApproval) } catch { return false }
+}
+
+function getCommentsPolicy(settings: any): 'on' | 'off' | 'inherit' {
+  const v = String(settings?.comments || '').toLowerCase()
+  if (v === 'on' || v === 'off' || v === 'inherit') return v as any
+  return 'inherit'
+}
+
+function toFormBool(raw: any): boolean {
+  const last = Array.isArray(raw) ? raw[raw.length - 1] : raw
+  const v = String(last ?? '').trim().toLowerCase()
+  return v === '1' || v === 'true' || v === 'on' || v === 'yes'
+}
+
+function toIdList(raw: any): number[] {
+  const items = Array.isArray(raw) ? raw : raw != null ? [raw] : []
+  const ids = items
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return Array.from(new Set(ids))
+}
+
+function renderAdminSpaceListPage(opts: {
+  kind: 'group' | 'channel';
+  items: Array<{ id: number; name: string; slug: string; requireReview: boolean; cultureCount: number; owner: string | null }>;
+  notice?: string | null;
+  error?: string | null;
+}): string {
+  const kindLabel = opts.kind === 'group' ? 'Groups' : 'Channels'
+  const notice = opts.notice ? String(opts.notice) : ''
+  const error = opts.error ? String(opts.error) : ''
+
+  let body = `<h1>${escapeHtml(kindLabel)}</h1>`
+  body += `<div class="toolbar"><div><span class="pill">${escapeHtml(kindLabel)}</span></div><div><a href="/admin/${escapeHtml(kindLabel.toLowerCase())}/new">New ${escapeHtml(opts.kind)}</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+  if (!opts.items.length) {
+    body += `<p>No ${escapeHtml(opts.kind)}s exist yet.</p>`
+  } else {
+    body += '<table><thead><tr><th>Name</th><th>Slug</th><th>Review</th><th>Cultures</th><th>Owner</th></tr></thead><tbody>'
+    for (const it of opts.items) {
+      const href = `/admin/${opts.kind === 'group' ? 'groups' : 'channels'}/${encodeURIComponent(String(it.id))}`
+      body += `<tr>`
+      body += `<td><a href="${escapeHtml(href)}">${escapeHtml(it.name || '')}</a></td>`
+      body += `<td>${escapeHtml(it.slug || '')}</td>`
+      body += `<td>${it.requireReview ? 'Yes' : 'No'}</td>`
+      body += `<td>${escapeHtml(String(it.cultureCount || 0))}</td>`
+      body += `<td>${escapeHtml(it.owner || '—')}</td>`
+      body += `</tr>`
+    }
+    body += '</tbody></table>'
+  }
+
+  return renderAdminPage({ title: kindLabel, bodyHtml: body, active: opts.kind === 'group' ? 'groups' : 'channels' })
+}
+
+function renderAdminSpaceCreatePage(opts: { kind: 'group' | 'channel'; csrfToken?: string | null; error?: string | null; name?: string; slug?: string }): string {
+  const kindLabel = opts.kind === 'group' ? 'Group' : 'Channel'
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const error = opts.error ? String(opts.error) : ''
+  const name = opts.name ? String(opts.name) : ''
+  const slug = opts.slug ? String(opts.slug) : ''
+
+  let body = `<h1>New ${escapeHtml(kindLabel)}</h1>`
+  body += `<div class="toolbar"><div><a href="/admin/${opts.kind === 'group' ? 'groups' : 'channels'}">\u2190 Back to ${escapeHtml(kindLabel.toLowerCase())}s</a></div></div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+  body += `<form method="post" action="/admin/${opts.kind === 'group' ? 'groups' : 'channels'}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(name)}" />
+  </label>`
+  body += `<label>Slug
+    <input type="text" name="slug" value="${escapeHtml(slug)}" />
+    <div class="field-hint">Lowercase, letters/numbers/dashes. Used in URLs.</div>
+  </label>`
+  body += `<div class="actions">
+    <button type="submit">Create ${escapeHtml(kindLabel.toLowerCase())}</button>
+  </div>`
+  body += `</form>`
+
+  return renderAdminPage({ title: `New ${kindLabel}`, bodyHtml: body, active: opts.kind === 'group' ? 'groups' : 'channels' })
+}
+
+function renderAdminSpaceDetailPage(opts: {
+  kind: 'group' | 'channel';
+  space: { id: number; name: string; slug: string; settings: any; cultureIds: number[] };
+  cultures: Array<{ id: number; name: string; description: string | null; categoryCount: number }>;
+  csrfToken?: string | null;
+  notice?: string | null;
+  error?: string | null;
+  draft?: { name?: string; commentsPolicy?: 'on' | 'off' | 'inherit'; requireReview?: boolean; cultureIds?: number[] };
+}): string {
+  const kindLabel = opts.kind === 'group' ? 'Group' : 'Channel'
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const notice = opts.notice ? String(opts.notice) : ''
+  const error = opts.error ? String(opts.error) : ''
+
+  const space = opts.space
+  const settings = space.settings || {}
+
+  const nameValue = opts.draft?.name != null ? String(opts.draft.name) : String(space.name || '')
+  const commentsPolicy = opts.draft?.commentsPolicy ?? getCommentsPolicy(settings)
+  const requireReview = opts.draft?.requireReview ?? getRequireApproval(settings)
+  const selectedCultureIds = new Set<number>((opts.draft?.cultureIds ?? space.cultureIds ?? []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))
+
+  let body = `<h1>${escapeHtml(kindLabel)}: ${escapeHtml(space.name || '(unnamed)')}</h1>`
+  body += `<div class="toolbar"><div><a href="/admin/${opts.kind === 'group' ? 'groups' : 'channels'}">\u2190 Back to ${escapeHtml(kindLabel.toLowerCase())}s</a></div></div>`
+  if (notice) body += `<div class="success">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+
+  body += `<div class="section">`
+  body += `<div class="section-title">Identity</div>`
+  body += `<div class="field-hint">ID: <strong>${escapeHtml(String(space.id))}</strong> &nbsp;•&nbsp; Slug: <strong>${escapeHtml(space.slug || '')}</strong></div>`
+  body += `</div>`
+
+  body += `<form method="post" action="/admin/${opts.kind === 'group' ? 'groups' : 'channels'}/${escapeHtml(String(space.id))}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+  </label>`
+
+  body += `<div class="section" style="margin-top: 14px">`
+  body += `<div class="section-title">Publishing</div>`
+  body += `<input type="hidden" name="requireReview" value="0" />`
+  body += `<label style="display:flex; gap:10px; align-items:center; margin-top: 6px">`
+  body += `<input type="checkbox" name="requireReview" value="1"${requireReview ? ' checked' : ''} />`
+  body += `<div>Require approval before appearing in this ${escapeHtml(kindLabel.toLowerCase())}'s feed</div>`
+  body += `</label>`
+  body += `</div>`
+
+  body += `<div class="section" style="margin-top: 14px">`
+  body += `<div class="section-title">Comments</div>`
+  body += `<label>Policy
+    <select name="commentsPolicy">
+      <option value="inherit"${commentsPolicy === 'inherit' ? ' selected' : ''}>Inherit (default)</option>
+      <option value="on"${commentsPolicy === 'on' ? ' selected' : ''}>On</option>
+      <option value="off"${commentsPolicy === 'off' ? ' selected' : ''}>Off</option>
+    </select>
+  </label>`
+  body += `</div>`
+
+  body += `<div class="section" style="margin-top: 14px">`
+  body += `<div class="section-title">Cultures</div>`
+  body += `<div class="field-hint">Controls which reporting categories/rules are available for content in this space.</div>`
+  if (!opts.cultures.length) {
+    body += `<p>No cultures exist yet.</p>`
+  } else {
+    body += `<div style="margin-top: 10px">`
+    for (const c of opts.cultures) {
+      const cid = Number(c.id)
+      const checked = selectedCultureIds.has(cid) ? ' checked' : ''
+      body += `<label style="display:flex; gap:10px; align-items:flex-start; margin-top: 8px">`
+      body += `<input type="checkbox" name="cultureIds" value="${escapeHtml(String(cid))}"${checked} style="margin-top: 3px" />`
+      body += `<div><div>${escapeHtml(c.name)}</div>`
+      if (c.description) body += `<div class="field-hint">${escapeHtml(c.description)}</div>`
+      body += `</div></label>`
+    }
+    body += `</div>`
+  }
+  body += `</div>`
+
+  body += `<div class="actions">
+    <button type="submit">Save</button>
+  </div>`
+  body += `</form>`
+
+  return renderAdminPage({ title: `${kindLabel}: ${space.name || 'Space'}`, bodyHtml: body, active: opts.kind === 'group' ? 'groups' : 'channels' })
+}
+
+async function listSpacesForAdmin(kind: 'group' | 'channel'): Promise<Array<{ id: number; name: string; slug: string; requireReview: boolean; cultureCount: number; owner: string | null }>> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT s.id,
+            s.name,
+            s.slug,
+            s.settings,
+            COALESCE(u.display_name, '') AS owner_display_name,
+            COUNT(DISTINCT sc.culture_id) AS culture_count
+       FROM spaces s
+       LEFT JOIN users u ON u.id = s.owner_user_id
+       LEFT JOIN space_cultures sc ON sc.space_id = s.id
+      WHERE s.type = ?
+      GROUP BY s.id
+      ORDER BY s.name`,
+    [kind]
+  )
+  return (rows as any[]).map((r) => {
+    const settings = parseJsonSettings(r.settings)
+    return {
+      id: Number(r.id),
+      name: String(r.name || ''),
+      slug: String(r.slug || ''),
+      requireReview: getRequireApproval(settings),
+      cultureCount: Number(r.culture_count || 0),
+      owner: String(r.owner_display_name || '') || null,
+    }
+  })
+}
+
+pagesRouter.get('/admin/groups', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+    const items = await listSpacesForAdmin('group')
+    const doc = renderAdminSpaceListPage({ kind: 'group', items, notice, error })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin groups list failed', err)
+    res.status(500).send('Failed to load groups')
+  }
 });
 
-pagesRouter.get('/admin/channels', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+// Singular fallbacks for convenience
+pagesRouter.get('/admin/group', (_req, res) => {
+  res.redirect('/admin/groups')
 });
+
+pagesRouter.get('/admin/groups/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminSpaceCreatePage({ kind: 'group', csrfToken })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+});
+
+pagesRouter.post('/admin/groups', async (req: any, res: any) => {
+  try {
+    const body = (req.body || {}) as any
+    const rawName = body.name != null ? String(body.name) : ''
+    const rawSlug = body.slug != null ? String(body.slug) : ''
+    const name = rawName.trim()
+    const slug = rawSlug.trim()
+
+    if (!name) {
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceCreatePage({ kind: 'group', csrfToken, error: 'Name is required.', name: rawName, slug: rawSlug })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (!slug) {
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceCreatePage({ kind: 'group', csrfToken, error: 'Slug is required.', name: rawName, slug: rawSlug })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    const actorUserId = Number(req.user?.id)
+    const result = await adminSvc.createSpace({ type: 'group', name, slug }, actorUserId)
+    res.redirect(`/admin/groups/${encodeURIComponent(String(result.id))}?notice=${encodeURIComponent('Group created.')}`)
+  } catch (err: any) {
+    const msg = String(err?.code || err?.message || err)
+    const friendly =
+      msg.includes('slug_taken') ? 'Slug is already taken.' :
+      msg.includes('invalid_slug') ? 'Invalid slug.' :
+      'Failed to create group.'
+    const body = (req.body || {}) as any
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminSpaceCreatePage({ kind: 'group', csrfToken, error: friendly, name: body.name, slug: body.slug })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
+});
+
+pagesRouter.get('/admin/groups/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Group not found')
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+
+    const space = await adminSvc.getSpace(id)
+    if (space.type !== 'group') return res.status(404).send('Group not found')
+
+    const { cultures } = await adminSvc.listCultures()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const doc = renderAdminSpaceDetailPage({
+      kind: 'group',
+      space: { id: space.id, name: space.name, slug: space.slug, settings: space.settings, cultureIds: space.cultureIds },
+      cultures,
+      csrfToken,
+      notice,
+      error,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin group detail failed', err)
+    res.status(500).send('Failed to load group')
+  }
+});
+
+pagesRouter.post('/admin/groups/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Group not found')
+    const space = await adminSvc.getSpace(id)
+    if (space.type !== 'group') return res.status(404).send('Group not found')
+
+    const body = (req.body || {}) as any
+    const rawName = body.name != null ? String(body.name) : ''
+    const name = rawName.trim()
+    const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
+    const requireReview = toFormBool(body.requireReview)
+    const cultureIds = toIdList(body.cultureIds)
+
+    if (!name) {
+      const { cultures } = await adminSvc.listCultures()
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceDetailPage({
+        kind: 'group',
+        space: { id: space.id, name: space.name, slug: space.slug, settings: space.settings, cultureIds: space.cultureIds },
+        cultures,
+        csrfToken,
+        error: 'Name is required.',
+        draft: { name: rawName, commentsPolicy, requireReview, cultureIds },
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    await adminSvc.updateSpace(id, { name, commentsPolicy, requireReview, cultureIds })
+    res.redirect(`/admin/groups/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const id = Number(req.params.id)
+    const fallback = Number.isFinite(id) && id > 0 ? id : null
+    const detail = fallback != null ? await adminSvc.getSpace(fallback).catch(() => null) : null
+    const { cultures } = await adminSvc.listCultures().catch(() => ({ cultures: [] as any[] }))
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const body = (req.body || {}) as any
+
+    const code = String(err?.code || '')
+    const msg =
+      code === 'cannot_override_site_policy' ? 'Cannot disable review due to site policy.' :
+      code === 'bad_comments_policy' ? 'Invalid comments policy.' :
+      code === 'unknown_culture_ids' ? 'Unknown culture selected.' :
+      'Failed to save.'
+
+    if (!detail || detail.type !== 'group') return res.status(500).send('Failed to save group')
+    const draftName = body.name != null ? String(body.name) : ''
+    const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
+    const requireReview = toFormBool(body.requireReview)
+    const cultureIds = toIdList(body.cultureIds)
+    const doc = renderAdminSpaceDetailPage({
+      kind: 'group',
+      space: { id: detail.id, name: detail.name, slug: detail.slug, settings: detail.settings, cultureIds: detail.cultureIds },
+      cultures,
+      csrfToken,
+      error: msg,
+      draft: { name: draftName, commentsPolicy, requireReview, cultureIds },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
+});
+
+pagesRouter.get('/admin/group/:id', (req, res) => {
+  res.redirect(`/admin/groups/${encodeURIComponent(String(req.params.id || ''))}`)
+});
+pagesRouter.get('/admin/groups/:id/user/:userId', (req, res) => {
+  res.redirect(`/admin/groups/${encodeURIComponent(String(req.params.id || ''))}`)
+});
+
+pagesRouter.get('/admin/channels', async (req: any, res: any) => {
+  try {
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+    const items = await listSpacesForAdmin('channel')
+    const doc = renderAdminSpaceListPage({ kind: 'channel', items, notice, error })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin channels list failed', err)
+    res.status(500).send('Failed to load channels')
+  }
+});
+
 pagesRouter.get('/admin/channel', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  res.redirect('/admin/channels')
 });
-pagesRouter.get('/admin/channels/new', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+
+pagesRouter.get('/admin/channels/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminSpaceCreatePage({ kind: 'channel', csrfToken })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
 });
-pagesRouter.get('/admin/channels/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+
+pagesRouter.post('/admin/channels', async (req: any, res: any) => {
+  try {
+    const body = (req.body || {}) as any
+    const rawName = body.name != null ? String(body.name) : ''
+    const rawSlug = body.slug != null ? String(body.slug) : ''
+    const name = rawName.trim()
+    const slug = rawSlug.trim()
+
+    if (!name) {
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceCreatePage({ kind: 'channel', csrfToken, error: 'Name is required.', name: rawName, slug: rawSlug })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (!slug) {
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceCreatePage({ kind: 'channel', csrfToken, error: 'Slug is required.', name: rawName, slug: rawSlug })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    const actorUserId = Number(req.user?.id)
+    const result = await adminSvc.createSpace({ type: 'channel', name, slug }, actorUserId)
+    res.redirect(`/admin/channels/${encodeURIComponent(String(result.id))}?notice=${encodeURIComponent('Channel created.')}`)
+  } catch (err: any) {
+    const msg = String(err?.code || err?.message || err)
+    const friendly =
+      msg.includes('slug_taken') ? 'Slug is already taken.' :
+      msg.includes('invalid_slug') ? 'Invalid slug.' :
+      'Failed to create channel.'
+    const body = (req.body || {}) as any
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminSpaceCreatePage({ kind: 'channel', csrfToken, error: friendly, name: body.name, slug: body.slug })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
 });
-pagesRouter.get('/admin/channel/:id', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+
+pagesRouter.get('/admin/channels/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Channel not found')
+
+    const notice = req.query && (req.query as any).notice != null ? String((req.query as any).notice) : ''
+    const error = req.query && (req.query as any).error != null ? String((req.query as any).error) : ''
+
+    const space = await adminSvc.getSpace(id)
+    if (space.type !== 'channel') return res.status(404).send('Channel not found')
+
+    const { cultures } = await adminSvc.listCultures()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const doc = renderAdminSpaceDetailPage({
+      kind: 'channel',
+      space: { id: space.id, name: space.name, slug: space.slug, settings: space.settings, cultureIds: space.cultureIds },
+      cultures,
+      csrfToken,
+      notice,
+      error,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin channel detail failed', err)
+    res.status(500).send('Failed to load channel')
+  }
 });
-pagesRouter.get('/admin/channels/:id/user/:userId', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+
+pagesRouter.post('/admin/channels/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Channel not found')
+    const space = await adminSvc.getSpace(id)
+    if (space.type !== 'channel') return res.status(404).send('Channel not found')
+
+    const body = (req.body || {}) as any
+    const rawName = body.name != null ? String(body.name) : ''
+    const name = rawName.trim()
+    const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
+    const requireReview = toFormBool(body.requireReview)
+    const cultureIds = toIdList(body.cultureIds)
+
+    if (!name) {
+      const { cultures } = await adminSvc.listCultures()
+      const cookies = parseCookies(req.headers.cookie)
+      const csrfToken = cookies['csrf'] || ''
+      const doc = renderAdminSpaceDetailPage({
+        kind: 'channel',
+        space: { id: space.id, name: space.name, slug: space.slug, settings: space.settings, cultureIds: space.cultureIds },
+        cultures,
+        csrfToken,
+        error: 'Name is required.',
+        draft: { name: rawName, commentsPolicy, requireReview, cultureIds },
+      })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    await adminSvc.updateSpace(id, { name, commentsPolicy, requireReview, cultureIds })
+    res.redirect(`/admin/channels/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`)
+  } catch (err: any) {
+    const id = Number(req.params.id)
+    const fallback = Number.isFinite(id) && id > 0 ? id : null
+    const detail = fallback != null ? await adminSvc.getSpace(fallback).catch(() => null) : null
+    const { cultures } = await adminSvc.listCultures().catch(() => ({ cultures: [] as any[] }))
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const body = (req.body || {}) as any
+
+    const code = String(err?.code || '')
+    const msg =
+      code === 'cannot_override_site_policy' ? 'Cannot disable review due to site policy.' :
+      code === 'bad_comments_policy' ? 'Invalid comments policy.' :
+      code === 'unknown_culture_ids' ? 'Unknown culture selected.' :
+      'Failed to save.'
+
+    if (!detail || detail.type !== 'channel') return res.status(500).send('Failed to save channel')
+    const draftName = body.name != null ? String(body.name) : ''
+    const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
+    const requireReview = toFormBool(body.requireReview)
+    const cultureIds = toIdList(body.cultureIds)
+    const doc = renderAdminSpaceDetailPage({
+      kind: 'channel',
+      space: { id: detail.id, name: detail.name, slug: detail.slug, settings: detail.settings, cultureIds: detail.cultureIds },
+      cultures,
+      csrfToken,
+      error: msg,
+      draft: { name: draftName, commentsPolicy, requireReview, cultureIds },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
+});
+
+pagesRouter.get('/admin/channel/:id', (req, res) => {
+  res.redirect(`/admin/channels/${encodeURIComponent(String(req.params.id || ''))}`)
+});
+pagesRouter.get('/admin/channels/:id/user/:userId', (req, res) => {
+  res.redirect(`/admin/channels/${encodeURIComponent(String(req.params.id || ''))}`)
 });
 
 // Dev utilities page
@@ -2637,7 +3491,7 @@ pagesRouter.get('/spaces/:id/admin/users/:userId', requireSpaceAdminPage, (_req,
 pagesRouter.get('/spaces/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
-pagesRouter.get('/spaces/:id/moderation', requireSpaceModeratorPage, (_req, res) => {
+pagesRouter.get('/spaces/:id/review', requireSpaceModeratorPage, (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
@@ -2659,10 +3513,6 @@ pagesRouter.get('/groups/:slug/admin/settings', resolveIdFromSlug('group'), requ
   const id = req.params.id;
   res.redirect(`/spaces/${id}/admin/settings`);
 });
-pagesRouter.get('/groups/:slug/moderation', resolveIdFromSlug('group'), requireSpaceModeratorPage, (req: any, res) => {
-  const id = req.params.id;
-  res.redirect(`/spaces/${id}/moderation`);
-});
 
 // Slug-based admin pages (channels)
 pagesRouter.get('/channels/:slug/admin', resolveIdFromSlug('channel'), requireSpaceAdminPage, (req: any, res) => {
@@ -2681,10 +3531,6 @@ pagesRouter.get('/channels/:slug/admin/users/:userId', resolveIdFromSlug('channe
 pagesRouter.get('/channels/:slug/admin/settings', resolveIdFromSlug('channel'), requireSpaceAdminPage, (req: any, res) => {
   const id = req.params.id;
   res.redirect(`/spaces/${id}/admin/settings`);
-});
-pagesRouter.get('/channels/:slug/moderation', resolveIdFromSlug('channel'), requireSpaceModeratorPage, (req: any, res) => {
-  const id = req.params.id;
-  res.redirect(`/spaces/${id}/moderation`);
 });
 // Aliases for readability (same underlying pages)
 pagesRouter.get('/groups/:id', requireSpaceAdminPage, (req: any, res) => {
@@ -2734,14 +3580,6 @@ pagesRouter.get('/channels/:id/admin/users/:userId', requireSpaceAdminPage, (req
 pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (req: any, res) => {
   const id = req.params.id;
   res.redirect(`/spaces/${id}/admin/settings`);
-});
-pagesRouter.get('/groups/:id/moderation', requireSpaceModeratorPage, (req: any, res) => {
-  const id = req.params.id;
-  res.redirect(`/spaces/${id}/moderation`);
-});
-pagesRouter.get('/channels/:id/moderation', requireSpaceModeratorPage, (req: any, res) => {
-  const id = req.params.id;
-  res.redirect(`/spaces/${id}/moderation`);
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {

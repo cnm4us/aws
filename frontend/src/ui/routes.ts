@@ -10,6 +10,8 @@ export const loadProfile = () => import('../app/Profile')
 export const loadProfileAvatar = () => import('../app/ProfileAvatar')
 export const loadAdminModerationGroups = () => import('../app/AdminModerationGroups')
 export const loadAdminModerationChannels = () => import('../app/AdminModerationChannels')
+export const loadSpaceReviewGroups = () => import('../app/SpaceReviewGroups')
+export const loadSpaceReviewChannels = () => import('../app/SpaceReviewChannels')
 export const loadHomePage = () => import('../app/HomePage')
 export const loadPageView = () => import('../app/PageView')
 export const loadRuleView = () => import('../app/RuleView')
@@ -26,6 +28,8 @@ export function prefetchForHref(href: string) {
      else if (href.startsWith('/profile')) { void loadProfile() }
     else if (href.startsWith('/admin/moderation/groups')) { void loadAdminModerationGroups() }
     else if (href.startsWith('/admin/moderation/channels')) { void loadAdminModerationChannels() }
+    else if (href.startsWith('/space/review/groups')) { void loadSpaceReviewGroups() }
+    else if (href.startsWith('/space/review/channels')) { void loadSpaceReviewChannels() }
     else if (href.startsWith('/pages/')) { void loadPageView() }
     else if (href === '/rules' || href === '/rules/') { void loadRulesIndex() }
     else if (href.startsWith('/rules/')) { void loadRuleView() }

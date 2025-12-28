@@ -4,6 +4,9 @@ import * as feedsSvc from '../features/feeds/service'
 import * as followsSvc from '../features/follows/service'
 import * as spacesSvc from '../features/spaces/service'
 import { DomainError } from '../core/errors'
+import { getPool } from '../db'
+import { can, resolveChecker } from '../security/permissions'
+import { PERM } from '../security/perm'
 import {
   assignDefaultAdminRoles,
   assignDefaultMemberRoles,
@@ -112,11 +115,85 @@ function mergeChannelEntries(
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function listReviewableSpaces(currentUserId: number, type: 'group' | 'channel') {
+  const db = getPool()
+  const checker = await resolveChecker(currentUserId)
+  const canAny =
+    (await can(currentUserId, PERM.VIDEO_REVIEW_SPACE, { checker })) ||
+    (await can(currentUserId, PERM.VIDEO_APPROVE_SPACE, { checker })) ||
+    (await can(currentUserId, PERM.VIDEO_PUBLISH_SPACE, { checker }))
+
+  const pendingSql = `
+    SELECT space_id, COUNT(*) AS pending
+      FROM space_publications
+     WHERE status = 'pending'
+     GROUP BY space_id`
+
+  if (canAny) {
+    const [rows] = await db.query(
+      `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+         FROM spaces s
+         LEFT JOIN (${pendingSql}) cnt ON cnt.space_id = s.id
+        WHERE s.type = ?
+        ORDER BY pending DESC, s.name ASC`,
+      [type]
+    )
+    return (rows as any[]).map((r) => ({
+      id: Number(r.id),
+      name: String(r.name || ''),
+      slug: String(r.slug || ''),
+      pending: Number(r.pending || 0),
+    }))
+  }
+
+  const perms = [PERM.VIDEO_REVIEW_SPACE, PERM.VIDEO_APPROVE_SPACE, PERM.VIDEO_PUBLISH_SPACE]
+  const placeholders = perms.map(() => '?').join(',')
+  const [rows] = await db.query(
+    `SELECT s.id, s.name, s.slug, COALESCE(cnt.pending, 0) AS pending
+       FROM spaces s
+       JOIN (
+         SELECT DISTINCT usr.space_id
+           FROM user_space_roles usr
+           JOIN role_permissions rp ON rp.role_id = usr.role_id
+           JOIN permissions p ON p.id = rp.permission_id
+          WHERE usr.user_id = ?
+            AND p.name IN (${placeholders})
+       ) allowed ON allowed.space_id = s.id
+       LEFT JOIN (${pendingSql}) cnt ON cnt.space_id = s.id
+      WHERE s.type = ?
+      ORDER BY pending DESC, s.name ASC`,
+    [currentUserId, ...perms, type]
+  )
+  return (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    name: String(r.name || ''),
+    slug: String(r.slug || ''),
+    pending: Number(r.pending || 0),
+  }))
+}
+
 spacesRouter.get('/api/me/spaces', requireAuth, async (req, res, next) => {
   try {
     const userId = Number(req.user!.id)
     const data = await spacesSvc.getMySpaces(userId)
     res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+// Review overviews for the current user (spaces they can review/approve/publish)
+spacesRouter.get('/api/space/review/groups', requireAuth, async (req, res, next) => {
+  try {
+    const userId = Number(req.user!.id)
+    const items = await listReviewableSpaces(userId, 'group')
+    res.json({ items })
+  } catch (err: any) { next(err) }
+})
+
+spacesRouter.get('/api/space/review/channels', requireAuth, async (req, res, next) => {
+  try {
+    const userId = Number(req.user!.id)
+    const items = await listReviewableSpaces(userId, 'channel')
+    res.json({ items })
   } catch (err: any) { next(err) }
 })
 
@@ -170,8 +247,8 @@ spacesRouter.delete('/api/spaces/:id/suspensions/:sid', requireAuth, async (req,
     res.json(result)
   } catch (err: any) { next(err) }
 })
-// Moderation queue for a space (pending publications)
-spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, res, next) => {
+// Review queue for a space (pending publications) — canonical route
+spacesRouter.get('/api/spaces/:id/review/queue', requireAuth, async (req, res, next) => {
   try {
     const spaceId = Number(req.params.id)
     if (!Number.isFinite(spaceId) || spaceId <= 0) return res.status(400).json({ error: 'bad_space_id' })
@@ -180,6 +257,7 @@ spacesRouter.get('/api/spaces/:id/moderation/queue', requireAuth, async (req, re
     res.json(data)
   } catch (err: any) { next(err) }
 })
+
 // Create new group/channel space
 spacesRouter.post('/api/spaces', requireAuth, async (req, res, next) => {
   try {

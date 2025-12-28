@@ -14,7 +14,7 @@
     var title = document.getElementById('navTitle'); if (title) title.textContent = label + ' Admin';
     var s = document.getElementById('navSettings'); if (s) s.href = base + '/admin/settings';
     var m = document.getElementById('navMembers'); if (m) m.href = base + '/admin/members';
-    var mod = document.getElementById('navModeration'); if (mod) mod.href = base + '/moderation';
+    var mod = document.getElementById('navModeration'); if (mod) mod.href = base + '/review';
   }
 
   async function loadSpaceTitle(){

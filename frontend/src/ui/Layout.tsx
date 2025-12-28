@@ -10,6 +10,7 @@ export default function Layout(props: { label: string; children: React.ReactNode
   const [drawerMode, setDrawerMode] = useState<DrawerMode>('nav')
   const [isAuthed, setIsAuthed] = useState(false)
   const [isSiteAdmin, setIsSiteAdmin] = useState(false)
+  const [hasSpaceReview, setHasSpaceReview] = useState(false)
   const [authLoaded, setAuthLoaded] = useState(false)
 
   useEffect(() => {
@@ -22,11 +23,16 @@ export default function Layout(props: { label: string; children: React.ReactNode
         if (!canceled) {
           setIsAuthed(!!me && me.userId != null)
           setIsSiteAdmin(Boolean(me?.isSiteAdmin))
+          const roles = me?.spaceRoles && typeof me.spaceRoles === 'object' ? me.spaceRoles : {}
+          const values = Object.values(roles)
+          const canReview = values.some((v: any) => Array.isArray(v) && (v.includes('space_admin') || v.includes('space_moderator')))
+          setHasSpaceReview(Boolean(canReview))
         }
       } catch {
         if (!canceled) {
           setIsAuthed(false)
           setIsSiteAdmin(false)
+          setHasSpaceReview(false)
         }
       } finally {
         if (!canceled) setAuthLoaded(true)
@@ -77,6 +83,7 @@ export default function Layout(props: { label: string; children: React.ReactNode
         isAuthed={isAuthed}
         authLoaded={authLoaded}
         isSiteAdmin={isSiteAdmin}
+        hasSpaceReview={hasSpaceReview}
         mineOnly={false}
         onChangeMineOnly={() => { /* no-op outside feed */ }}
         navLinks={navLinks}

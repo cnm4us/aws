@@ -11,7 +11,7 @@
     var title = document.getElementById('navTitle'); if (title) title.textContent = label + ' Admin';
     var s = document.getElementById('navSettings'); if (s) s.href = base + '/admin/settings';
     var m = document.getElementById('navMembers'); if (m) m.href = base + '/admin/members';
-    var mod = document.getElementById('navModeration'); if (mod) mod.href = base + '/moderation';
+    var mod = document.getElementById('navModeration'); if (mod) mod.href = base + '/review';
   }
   function csrf(){ const m=document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/); return m?decodeURIComponent(m[1]):null }
   function headers(){ const h={'Content-Type':'application/json'}; const t=csrf(); if(t) h['x-csrf-token']=t; return h }
