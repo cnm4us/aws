@@ -27,6 +27,7 @@ Summary
 - Inherited state (Handoff_21): per-space cultures and end-user reporting (“Flag”) modal implemented (commit 2312cdc).
 - Implemented plan_16 (site_admin console): server-rendered `/admin/users*`, `/admin/settings` (stub), `/admin/dev`, `/admin/review/*` (global/personal/groups/channels) and removed SPA ownership so these features do not ship in the normal user bundle.
 - Implemented plan_17 (space console split): new `space-app` bundle for `/space/*` + `/spaces/*`, removed space console routes from the normal feed bundle, and updated the feed menu to link out to `/space/admin`, `/space/moderation`, and `/admin`.
+- Implemented plan_18 (Global Feed billboard): remove Like/Comment actions and add “Jump” modal listing Group/Channel spaces for the same `production_id`.
 - Implemented plan_15 step 2: added shared site_admin slide drawer shell for server-rendered `/admin/*` pages.
 - Implemented plan_15 step 3: added server-rendered `/admin/categories` CRUD with safe delete rules + usage counts.
 - Implemented plan_15 step 4: replaced `/admin/groups` + `/admin/channels` SPA shells with server-rendered pages (list/new/detail/edit).
@@ -38,6 +39,7 @@ Summary
 - Commit: `43e5462` (docs: update README for admin + review routes)
 - Commit: `d0472f6` (feat(admin): server-render users/dev/review)
 - Commit: `d926238` (feat(space): split space console bundle)
+- Commit: `8cbc984` (feat(feed): global feed jump modal)
 
 Decisions (carried + new)
 - Carried (from Handoff_21 / Handoff_20):
@@ -60,9 +62,12 @@ Changes Since Last
 - Flags: none
 - Affects (plan_16): `agents/implementation/plan_16.md`; `agents/implementation/tests/plan_16/*`; `src/routes/pages.ts`; `public/admin-nav.css`; `frontend/src/main.tsx`; `frontend/src/menu/contexts/AdminMenu.tsx`; `frontend/src/ui/routes.ts`; `README.md`
 - Routes (plan_16): added `/admin/users*`, `/admin/settings`, `/admin/dev`, `/admin/review/*`; added approve/reject posts under `/admin/review/publications/:id/(approve|reject)`; redirected `/admin/moderation/*` → `/admin/review/*`; redirected `/adminx/*` → `/admin/*`
+- Affects (plan_18): `agents/implementation/plan_18.md`; `agents/implementation/tests/plan_18/*`; `frontend/src/app/Feed.tsx`; `frontend/src/app/JumpToSpaceModal.tsx`; `src/routes/publications.ts`; `src/features/publications/service.ts`; `src/features/publications/repo.ts`; `README.md`
+- Routes (plan_18): added `GET /api/publications/:id/jump-spaces`
 
 Commit Messages (ready to paste)
 - `d0472f6` feat(admin): server-render users/dev/review
+- `8cbc984` feat(feed): global feed jump modal
 
 Open Questions / Deferred
 - Optional Step 7: add a site-admin view/API for listing recent reports and selected rules.
@@ -73,6 +78,7 @@ Open Questions / Deferred
 - Follow-up (plan_17): add optional redirect aliases `/space/moderator/*` → `/space/moderation/*`.
 
 Work Log (reverse‑chronological)
+- 2025-12-29 — Implemented plan_18: Global Feed billboard “Jump to Space” modal + `/api/publications/:id/jump-spaces`.
 - 2025-12-28 — Implemented plan_16: moved site_admin Users/Settings/Dev/Review to server-rendered `/admin/*`, updated the admin drawer, and removed the admin SPA routes from the user bundle.
 - 2025-12-28 — Removed legacy space_admin “moderation” route aliases for review; rebuilt SPA bundle to drop the client-side redirect.
 - 2025-12-28 — Added space_admin “Review” menu context + `/space/review/groups|channels` pages driven by `/api/space/review/groups|channels`.
