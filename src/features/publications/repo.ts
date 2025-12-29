@@ -247,6 +247,39 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
   }))
 }
 
+export async function listJumpSpacesForProduction(productionId: number, opts: { excludeSpaceIds?: number[] } = {}, conn?: any): Promise<Array<{
+  space_id: number
+  space_ulid: string | null
+  space_name: string
+  space_slug: string
+  space_type: string
+}>> {
+  const db = conn || getPool()
+  const exclude = (opts.excludeSpaceIds || []).filter((n) => Number.isFinite(n) && Number(n) > 0).map((n) => Number(n))
+  const excludeSql = exclude.length ? `AND sp.space_id NOT IN (${exclude.map(() => '?').join(',')})` : ''
+  const params: any[] = [productionId, ...exclude]
+  const [rows] = await db.query(
+    `SELECT s.id AS space_id, s.ulid AS space_ulid, s.name AS space_name, s.slug AS space_slug, s.type AS space_type
+       FROM space_publications sp
+       JOIN spaces s ON s.id = sp.space_id
+      WHERE sp.production_id = ?
+        AND sp.status = 'published'
+        AND sp.visible_in_space = 1
+        AND s.type IN ('group', 'channel')
+        ${excludeSql}
+      GROUP BY s.id, s.ulid, s.name, s.slug, s.type
+      ORDER BY s.name ASC, s.id ASC`,
+    params
+  )
+  return (rows as any[]).map((r) => ({
+    space_id: Number(r.space_id),
+    space_ulid: r.space_ulid == null ? null : String(r.space_ulid),
+    space_name: String(r.space_name || ''),
+    space_slug: String(r.space_slug || ''),
+    space_type: String(r.space_type || ''),
+  }))
+}
+
 export async function findLatestCompletedProductionForUpload(uploadId: number, conn?: any): Promise<number | null> {
   const db = conn || getPool()
   const [rows] = await db.query(`SELECT id FROM productions WHERE upload_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 1`, [uploadId])

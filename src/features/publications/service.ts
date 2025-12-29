@@ -1,5 +1,6 @@
 import { ForbiddenError, InvalidStateError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
+import * as spacesRepo from '../spaces/repo'
 import { resolveChecker, can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { type CreateFromProductionInput, type CreateFromUploadInput, type Publication, type PublicationEvent, type ServiceContext } from './types'
@@ -337,6 +338,39 @@ export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Pr
     publishedAt: r.published_at,
     unpublishedAt: r.unpublished_at,
   }))
+}
+
+export async function listJumpSpacesDto(publicationId: number, ctx: ServiceContext): Promise<{
+  items: Array<{
+    spaceId: number
+    spaceUlid: string | null
+    spaceName: string
+    spaceSlug: string
+    spaceType: string
+  }>
+}> {
+  // Auth is enforced at the route layer; keep this method read-only and safe.
+  if (!ctx.userId) throw new ForbiddenError()
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  if (pub.production_id == null) return { items: [] }
+
+  const globalCandidate = await spacesRepo.findGlobalSpaceCandidate()
+  const globalSpaceId = globalCandidate?.id != null ? Number(globalCandidate.id) : null
+
+  const excludeSpaceIds: number[] = [Number(pub.space_id)]
+  if (globalSpaceId != null && Number.isFinite(globalSpaceId) && globalSpaceId > 0) excludeSpaceIds.push(globalSpaceId)
+
+  const rows = await repo.listJumpSpacesForProduction(pub.production_id, { excludeSpaceIds })
+  return {
+    items: rows.map((r) => ({
+      spaceId: r.space_id,
+      spaceUlid: r.space_ulid,
+      spaceName: r.space_name,
+      spaceSlug: r.space_slug,
+      spaceType: r.space_type,
+    })),
+  }
 }
 
 export type NoteEventAction = 'approve_publication' | 'reject_publication' | 'unpublish_publication'

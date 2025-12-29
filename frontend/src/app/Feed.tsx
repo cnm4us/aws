@@ -8,6 +8,7 @@ import debug from '../debug'
 import useRenderDebug from '../debug/useRenderDebug'
 
 const LazyReportModal = React.lazy(() => import('./ReportModal'))
+const LazyJumpToSpaceModal = React.lazy(() => import('./JumpToSpaceModal'))
 
 type UploadItem = {
   id: number
@@ -64,6 +65,11 @@ type MySpacesResponse = {
 type FeedMode =
   | { kind: 'global' }
   | { kind: 'space'; spaceId: number; spaceUlid?: string | null }
+
+function isGlobalFeedSlug(slug: string | null | undefined): boolean {
+  const s = String(slug || '').trim().toLowerCase()
+  return s === 'global' || s === 'global-feed'
+}
 
 function parseCanonicalFromPath(): { kind: 'group' | 'channel'; slug: string } | null {
   try {
@@ -266,6 +272,9 @@ export default function Feed() {
   const [reportedMap, setReportedMap] = useState<Record<number, boolean>>({})
   const [reportOpen, setReportOpen] = useState(false)
   const [reportForPub, setReportForPub] = useState<number | null>(null)
+  // Global feed "jump to space" modal state
+  const [jumpOpen, setJumpOpen] = useState(false)
+  const [jumpForPub, setJumpForPub] = useState<number | null>(null)
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -301,6 +310,24 @@ export default function Feed() {
   const itemsFeedKeyRef = useRef<string>('')
   const indexReasonRef = useRef<string>('initial')
   const [commentsSortOpen, setCommentsSortOpen] = useState(false)
+
+  const isGlobalBillboard = useMemo(() => {
+    if (feedMode.kind === 'global') return true
+    if (feedMode.kind !== 'space') return false
+
+    const activeSpace = flattenSpaces(spaceList).find((s) => s.id === feedMode.spaceId) || null
+    if (activeSpace && activeSpace.type === 'channel' && isGlobalFeedSlug(activeSpace.slug)) return true
+
+    try {
+      const p = typeof window !== 'undefined' ? (window.location.pathname || '') : ''
+      const m = p.match(/^\/channels\/([^\/]+)\/?$/)
+      if (!m) return false
+      const slug = decodeURIComponent(m[1] || '').trim()
+      return isGlobalFeedSlug(slug)
+    } catch {
+      return false
+    }
+  }, [feedMode, spaceList])
 
   // Optional per-component render tracing (DEBUG_RENDER)
   useRenderDebug('Feed', {
@@ -1622,7 +1649,7 @@ export default function Feed() {
                   }}
                 />
               )}
-              {/* Avatar, Like, and Comment controls (right side) */}
+              {/* Right-side action column */}
               {it.publicationId != null && (
                 <div
                   style={{
@@ -1700,87 +1727,119 @@ export default function Feed() {
                       )}
                     </div>
                   )}
-                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
-                    <button
-                      aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
-                      aria-pressed={likedMap[it.publicationId] ? true : false}
-                      onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); toggleLike(it.publicationId) }}
-                      disabled={!!likeBusy[it.publicationId]}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        margin: 0,
-                        display: 'grid',
-                        placeItems: 'center',
-                        color: '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {likedMap[it.publicationId] ? (
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#e53935" stroke="#e53935" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M12.1 21.35l-1.1-1.02C5.14 15.24 2 12.36 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.86-3.14 6.74-8.9 11.83l-1 1.02z" />
+                  {isGlobalBillboard ? (
+                    <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                      <button
+                        aria-label={'Jump to space'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (it.publicationId == null) return
+                          setJumpForPub(it.publicationId)
+                          setJumpOpen(true)
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          padding: 0,
+                          margin: 0,
+                          display: 'grid',
+                          placeItems: 'center',
+                          color: '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M7 17L17 7" />
+                          <path d="M9 7h8v8" />
                         </svg>
-                      ) : (
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.86 3.14 6.74 8.9 11.83l1.1 1.02 1.1-1.02C20.86 15.24 24 12.36 24 8.5 24 5.42 21.58 3 18.5 3c-1.74 0-3.41.81-4.5 2.09C13.91 3.81 12.24 3 10.5 3z" />
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); openLikers(it.publicationId) }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        margin: 0,
-                        color: '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
-                    </button>
-                  </div>
-                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
-                    {/* Comment icon */}
-                    <button
-                      aria-label={'Comments'}
-                      onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        margin: 0,
-                        display: 'grid',
-                        placeItems: 'center',
-                        color: '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {it.publicationId != null && commentedByMeMap[it.publicationId] ? (
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#f5c518" stroke="#f5c518" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
-                        </svg>
-                      ) : (
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        padding: 0,
-                        margin: 0,
-                        color: '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
-                    </button>
-                  </div>
+                      </button>
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>Jump</div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                        <button
+                          aria-label={likedMap[it.publicationId] ? 'Unlike' : 'Like'}
+                          aria-pressed={likedMap[it.publicationId] ? true : false}
+                          onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); toggleLike(it.publicationId) }}
+                          disabled={!!likeBusy[it.publicationId]}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {likedMap[it.publicationId] ? (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="#e53935" stroke="#e53935" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M12.1 21.35l-1.1-1.02C5.14 15.24 2 12.36 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.86-3.14 6.74-8.9 11.83l-1 1.02z" />
+                            </svg>
+                          ) : (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.86 3.14 6.74 8.9 11.83l1.1 1.02 1.1-1.02C20.86 15.24 24 12.36 24 8.5 24 5.42 21.58 3 18.5 3c-1.74 0-3.41.81-4.5 2.09C13.91 3.81 12.24 3 10.5 3z" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); ensureLikeSummary(it.publicationId); openLikers(it.publicationId) }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            color: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {likesCountMap[it.publicationId] != null ? likesCountMap[it.publicationId] : (typeof it.likesCount === 'number' ? it.likesCount : 0)}
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+                        {/* Comment icon */}
+                        <button
+                          aria-label={'Comments'}
+                          onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {it.publicationId != null && commentedByMeMap[it.publicationId] ? (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="#f5c518" stroke="#f5c518" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                            </svg>
+                          ) : (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.5" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9z" />
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); ensureCommentCountHydrated(it.publicationId, it.commentsCount ?? null); openComments(it.publicationId) }}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            color: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
+                        </button>
+                      </div>
+                    </>
+                  )}
                   <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
                     <button
                       aria-label={alreadyReported ? 'Reported' : 'Report'}
@@ -1921,11 +1980,12 @@ export default function Feed() {
   // Load likes summary for the active slide when index changes
   useEffect(() => {
     if (!isAuthed) return
+    if (isGlobalBillboard) return
     const it = items[index]
     if (it && it.publicationId != null) {
       ensureLikeSummary(it.publicationId)
     }
-  }, [index, items, isAuthed])
+  }, [index, items, isAuthed, isGlobalBillboard])
 
   // LocalStorage disabled: no dwell-based persistence
   const persistTimerRef = useRef<number | null>(null)
@@ -2208,7 +2268,7 @@ export default function Feed() {
         renderSpacesPanel={renderSpacesPanel}
         onPrefetch={prefetchForHref}
         activeSpaceId={activeSpaceId}
-        isGlobalActive={feedMode.kind === 'global'}
+        isGlobalActive={isGlobalBillboard}
         onSelectGlobal={() => {
           handleSelectGlobal()
           setDrawerOpen(false)
@@ -2761,6 +2821,21 @@ export default function Feed() {
             publicationId={reportForPub}
             onClose={() => { setReportOpen(false); setReportForPub(null) }}
             onReported={(pubId) => setReportedMap((m) => ({ ...m, [pubId]: true }))}
+          />
+        </React.Suspense>
+      )}
+      {jumpOpen && (
+        <React.Suspense
+          fallback={
+            <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'transparent', color: '#fff', display: 'grid', placeItems: 'center' }}>
+              Loading…
+            </div>
+          }
+        >
+          <LazyJumpToSpaceModal
+            open={jumpOpen}
+            publicationId={jumpForPub}
+            onClose={() => { setJumpOpen(false); setJumpForPub(null) }}
           />
         </React.Suspense>
       )}
