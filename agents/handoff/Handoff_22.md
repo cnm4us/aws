@@ -26,6 +26,7 @@ Summary
 - Thread start: re-read `agents/README.md` and seeded new handoff; awaiting user direction.
 - Inherited state (Handoff_21): per-space cultures and end-user reporting (“Flag”) modal implemented (commit 2312cdc).
 - Implemented plan_16 (site_admin console): server-rendered `/admin/users*`, `/admin/settings` (stub), `/admin/dev`, `/admin/review/*` (global/personal/groups/channels) and removed SPA ownership so these features do not ship in the normal user bundle.
+- Implemented plan_17 (space console split): new `space-app` bundle for `/space/*` + `/spaces/*`, removed space console routes from the normal feed bundle, and updated the feed menu to link out to `/space/admin`, `/space/moderation`, and `/admin`.
 - Implemented plan_15 step 2: added shared site_admin slide drawer shell for server-rendered `/admin/*` pages.
 - Implemented plan_15 step 3: added server-rendered `/admin/categories` CRUD with safe delete rules + usage counts.
 - Implemented plan_15 step 4: replaced `/admin/groups` + `/admin/channels` SPA shells with server-rendered pages (list/new/detail/edit).
@@ -36,6 +37,7 @@ Summary
 - Commit: `b68aeaa` (feat(admin): split site_admin UI and space review)
 - Commit: `43e5462` (docs: update README for admin + review routes)
 - Commit: `d0472f6` (feat(admin): server-render users/dev/review)
+- Commit: `d926238` (feat(space): split space console bundle)
 
 Decisions (carried + new)
 - Carried (from Handoff_21 / Handoff_20):
@@ -46,6 +48,8 @@ Decisions (carried + new)
   - Reporting scope: a report is per `space_publications.id` (publication in a space), not global to a production.
   - Reporting selection: single rule (radio) + 409 on duplicate reports by the same user for the same publication.
   - Naming: site_admin pre-publish approval UI is now `/admin/review/*`; `/admin/moderation/*` now redirects to review and “moderation” is reserved for future flags/reports tooling.
+  - Space console split: `/space/*` + `/spaces/*` are served by a separate Vite build (`public/space-app`) so space_admin/review/moderation UI is not shipped in `public/app`.
+  - Feed menu behavior: feed bundle uses plain links to `/space/admin` + `/space/moderation` gated by `/api/me` flags (`hasAnySpaceAdmin`, `hasAnySpaceModerator`); site_admin uses plain link to `/admin`.
 
 Changes Since Last
 - Affects: `agents/handoff/Handoff_22.md`; `agents/implementation/plan_15.md`; `src/routes/pages.ts`; `src/routes/spaces.ts`; `public/admin-nav.css`; `frontend/src/main.tsx`; `frontend/src/app/SpaceModeration.tsx`; `frontend/src/app/AdminModerationList.tsx`; `public/js/space-admin.js`; `public/js/space-admin-user.js`; `public/js/space-members.js`; `agents/implementation/tests/plan_15/step_02_admin_shell.md`; `agents/implementation/tests/plan_15/step_03_categories_admin.md`; `agents/implementation/tests/plan_15/step_04_admin_spaces.md`; `agents/implementation/tests/plan_15/step_05_web_build.md`; `agents/implementation/tests/plan_15/step_06_review_queue.md`
@@ -66,6 +70,7 @@ Open Questions / Deferred
 - Follow-up: decide whether to build separate SPA bundles for site_admin (`/admin/*`) and space console (`/space/*`, `/spaces/*`) vs continue with server-rendered pages.
 - Follow-up: implement real post-publish moderation queues under `/admin/moderation/*` (flags/reports) and keep analytics there.
 - Follow-up: `/admin/settings` and `/admin/users/new` are stubs (“coming soon”).
+- Follow-up (plan_17): add optional redirect aliases `/space/moderator/*` → `/space/moderation/*`.
 
 Work Log (reverse‑chronological)
 - 2025-12-28 — Implemented plan_16: moved site_admin Users/Settings/Dev/Review to server-rendered `/admin/*`, updated the admin drawer, and removed the admin SPA routes from the user bundle.
