@@ -79,6 +79,7 @@ Open Questions / Deferred
 
 Work Log (reverse‑chronological)
 - 2025-12-29 — Implemented plan_18: Global Feed billboard “Jump to Space” modal + `/api/publications/:id/jump-spaces`.
+- 2025-12-29 — Implemented plan_19: `?pin=<production_ulid>` support to pin the jumped video at the top of the destination space feed (first page only).
 - 2025-12-28 — Implemented plan_16: moved site_admin Users/Settings/Dev/Review to server-rendered `/admin/*`, updated the admin drawer, and removed the admin SPA routes from the user bundle.
 - 2025-12-28 — Removed legacy space_admin “moderation” route aliases for review; rebuilt SPA bundle to drop the client-side redirect.
 - 2025-12-28 — Added space_admin “Review” menu context + `/space/review/groups|channels` pages driven by `/api/space/review/groups|channels`.
