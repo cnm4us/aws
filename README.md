@@ -52,6 +52,7 @@ API testing (authenticated)
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super login`
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /api/me`
 - Useful endpoint: `GET /api/publications/:id/jump-spaces` (lists Group/Channel spaces where the same `production_id` is published; used by the Global Feed “Jump” modal).
+- Space feed supports optional `?pin=<production_ulid>` on `/groups/:slug` and `/channels/:slug` to show that production first (pins only on initial load).
 
 One-off admin scripts
 - `npm run admin:backfill-rule-drafts` — ensure `rule_drafts` exists for each rule (optional; drafts are lazily created on first edit).
