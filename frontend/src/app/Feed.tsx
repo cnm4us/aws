@@ -38,6 +38,8 @@ type MeResponse = {
   displayName: string | null
   roles: string[]
   isSiteAdmin?: boolean
+  hasAnySpaceAdmin?: boolean
+  hasAnySpaceModerator?: boolean
   spaceRoles: Record<string, string[]>
   personalSpace: { id: number; slug: string } | null
 }
@@ -2197,6 +2199,8 @@ export default function Feed() {
         isAuthed={isAuthed}
         authLoaded={meLoaded}
         isSiteAdmin={Boolean(me?.isSiteAdmin)}
+        hasAnySpaceAdmin={Boolean(me?.hasAnySpaceAdmin)}
+        hasAnySpaceModerator={Boolean(me?.hasAnySpaceModerator)}
         mineOnly={mineOnly}
         onChangeMineOnly={(checked) => setMineOnly(checked)}
         navLinks={navLinks}

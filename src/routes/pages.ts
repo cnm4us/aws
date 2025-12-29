@@ -19,6 +19,14 @@ function serveHtml(res: any, relativePath: string) {
   res.sendFile(path.join(publicDir, relativePath));
 }
 
+function serveAppSpa(res: any) {
+  serveHtml(res, path.join('app', 'index.html'));
+}
+
+function serveSpaceSpa(res: any) {
+  serveHtml(res, path.join('space-app', 'index.html'));
+}
+
 export const pagesRouter = Router();
 
 function escapeHtml(text: string): string {
@@ -100,6 +108,34 @@ async function hasAnySpaceModerator(userId: number): Promise<boolean> {
 }
 
 type PageVisibility = 'public' | 'authenticated' | 'space_moderator' | 'space_admin';
+
+async function requireAnySpaceAdminPage(req: any, res: any, next: any) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
+    // Site admin always allowed
+    if (await can(req.user.id, PERM.VIDEO_DELETE_ANY)) return next();
+    if (await hasAnySpaceAdmin(req.user.id)) return next();
+    return res.redirect(`/forbidden?from=${from}`);
+  } catch {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`/forbidden?from=${from}`);
+  }
+}
+
+async function requireAnySpaceModeratorPage(req: any, res: any, next: any) {
+  try {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`);
+    // Site admin always allowed
+    if (await can(req.user.id, PERM.VIDEO_DELETE_ANY)) return next();
+    if (await hasAnySpaceModerator(req.user.id)) return next();
+    return res.redirect(`/forbidden?from=${from}`);
+  } catch {
+    const from = encodeURIComponent(req.originalUrl || '/');
+    return res.redirect(`/forbidden?from=${from}`);
+  }
+}
 
 async function ensurePageVisibility(req: any, res: any, visibility: PageVisibility): Promise<boolean> {
   if (visibility === 'public') return true;
@@ -532,10 +568,10 @@ pagesRouter.get(/^\/rules\/(.+)\/?$/, (_req: any, res: any) => {
 
 pagesRouter.get('/rules', (_req: any, res: any) => {
   // Phase 2: SPA owns /rules index view.
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 pagesRouter.get('/rules/', (_req: any, res: any) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 
 // -------- Admin: Pages (server-rendered, minimal JS) --------
@@ -2831,12 +2867,32 @@ pagesRouter.get(/^\/help\/([^/.]+)\/?$/, (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
-// Space review (pre-publish approval) — standard SPA bundle
-pagesRouter.get('/space/review/groups', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+// Space console (separate bundle; not shipped in the main feed SPA)
+pagesRouter.get('/space/admin', requireAnySpaceAdminPage, (_req, res) => {
+  serveSpaceSpa(res);
 });
-pagesRouter.get('/space/review/channels', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+pagesRouter.get('/space/admin/groups', requireAnySpaceAdminPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+pagesRouter.get('/space/admin/channels', requireAnySpaceAdminPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+
+pagesRouter.get('/space/review/groups', requireAnySpaceModeratorPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+pagesRouter.get('/space/review/channels', requireAnySpaceModeratorPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+
+pagesRouter.get('/space/moderation', requireAnySpaceModeratorPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+pagesRouter.get('/space/moderation/groups', requireAnySpaceModeratorPage, (_req, res) => {
+  serveSpaceSpa(res);
+});
+pagesRouter.get('/space/moderation/channels', requireAnySpaceModeratorPage, (_req, res) => {
+  serveSpaceSpa(res);
 });
 
 // Forbidden page (shows message and requested URL via querystring)
@@ -2845,6 +2901,39 @@ pagesRouter.get('/forbidden', (_req, res) => {
 });
 
 // Split admin pages
+pagesRouter.get('/admin', async (_req: any, res: any) => {
+  const tiles: Array<{ title: string; href: string; desc: string }> = [
+    { title: 'Review', href: '/admin/review', desc: 'Queues: Global Feed, Personal Spaces, Groups, Channels' },
+    { title: 'Users', href: '/admin/users', desc: 'Manage user roles, suspensions, and space roles' },
+    { title: 'Groups', href: '/admin/groups', desc: 'Manage group spaces (settings, cultures, review)' },
+    { title: 'Channels', href: '/admin/channels', desc: 'Manage channel spaces (settings, cultures, review)' },
+    { title: 'Rules', href: '/admin/rules', desc: 'Edit rules and drafts; view versions' },
+    { title: 'Categories', href: '/admin/categories', desc: 'Create/update/delete categories (safe delete)' },
+    { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
+    { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
+    { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
+    { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
+  ]
+
+  let body = '<h1>Site Admin</h1>'
+  body += '<div class="toolbar"><div><span class="pill">Admin</span></div><div></div></div>'
+  body += '<div class="section">'
+  body += '<div class="section-title">Sections</div>'
+  body += '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px">'
+  for (const t of tiles) {
+    body += `<div class="section" style="margin:0">`
+    body += `<div class="section-title">${escapeHtml(t.title)}</div>`
+    body += `<div style="opacity:.85; margin-bottom:10px">${escapeHtml(t.desc)}</div>`
+    body += `<a class="btn" href="${escapeHtml(t.href)}">Open</a>`
+    body += `</div>`
+  }
+  body += '</div></div>'
+
+  const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
 pagesRouter.get('/admin/settings', async (_req: any, res: any) => {
   const body = [
     '<h1>Settings</h1>',
@@ -4742,36 +4831,36 @@ pagesRouter.get('/spaces/:id', requireSpaceAdminPage, (req: any, res) => {
 
 // Canonical feed routes for groups/channels by slug (SPA shell, no redirect)
 pagesRouter.get('/groups', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 pagesRouter.get('/channels', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 // Exact one-segment slug (avoid matching admin/moderation subpaths)
 pagesRouter.get(/^\/groups\/([^\/]+)\/?$/, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 pagesRouter.get(/^\/channels\/([^\/]+)\/?$/, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 
 // Members default and explicit route
 pagesRouter.get('/spaces/:id/admin', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveSpaceSpa(res);
 });
 pagesRouter.get('/spaces/:id/admin/members', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveSpaceSpa(res);
 });
 // Per-member admin page
 pagesRouter.get('/spaces/:id/admin/users/:userId', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveSpaceSpa(res);
 });
 // Space settings
 pagesRouter.get('/spaces/:id/admin/settings', requireSpaceAdminPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveSpaceSpa(res);
 });
 pagesRouter.get('/spaces/:id/review', requireSpaceModeratorPage, (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveSpaceSpa(res);
 });
 
 // Slug-based admin pages (groups)
@@ -4862,7 +4951,7 @@ pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (req: any
 });
 
 pagesRouter.get('/uploads/new', (_req, res) => {
-  serveHtml(res, path.join('app', 'index.html'));
+  serveAppSpa(res);
 });
 
 pagesRouter.get('/publish', (_req, res) => {

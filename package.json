@@ -13,6 +13,8 @@
     "test:naming": "ts-node scripts/test-naming.ts",
     "web:clean": "node scripts/clean-web.js",
     "web:build": "npm run build && npm run web:clean && vite build --config frontend/vite.config.ts",
+    "space:web:clean": "node scripts/clean-space-web.js",
+    "space:web:build": "npm run build && npm run space:web:clean && vite build --config frontend/vite.space.config.ts",
     "port-clear": "node scripts/port-clear.js",
     "web:deploy": "node scripts/web-deploy.js root",
     "web:build:scoped": "npm run build && vite build --config frontend/vite.config.ts",

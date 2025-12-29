@@ -79,6 +79,8 @@ export function buildServer(): express.Application {
           displayName: null,
           roles: [],
           isSiteAdmin: false,
+          hasAnySpaceAdmin: false,
+          hasAnySpaceModerator: false,
           spaceRoles: {},
           personalSpace: null,
         });
@@ -136,12 +138,20 @@ export function buildServer(): express.Application {
         isSiteAdmin = await can(user.id, PERM.VIDEO_DELETE_ANY)
       } catch {}
 
+      const hasAnySpaceAdmin =
+        isSiteAdmin || Object.values(spaceRoles).some((roles) => Array.isArray(roles) && roles.includes('space_admin'))
+      const hasAnySpaceModerator =
+        isSiteAdmin ||
+        Object.values(spaceRoles).some((roles) => Array.isArray(roles) && (roles.includes('space_moderator') || roles.includes('space_admin')))
+
       res.json({
         userId: user.id,
         email: user.email,
         displayName: user.display_name,
         roles: roles.filter((r: string) => /^site_/.test(String(r))),
         isSiteAdmin,
+        hasAnySpaceAdmin,
+        hasAnySpaceModerator,
         spaceRoles,
         personalSpace,
       });

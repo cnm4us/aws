@@ -5,11 +5,6 @@ import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
 import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
-const SpaceMembersPage = React.lazy(() => import('./app/SpaceMembers'))
-const SpaceSettingsPage = React.lazy(() => import('./app/SpaceSettings'))
-const SpaceModerationPage = React.lazy(() => import('./app/SpaceModeration'))
-const SpaceReviewGroupsPage = React.lazy(() => import('./app/SpaceReviewGroups'))
-const SpaceReviewChannelsPage = React.lazy(() => import('./app/SpaceReviewChannels'))
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
 const PageView = React.lazy(loadPageView)
@@ -24,7 +19,6 @@ const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
 const ProfileAvatarPage = React.lazy(loadProfileAvatar)
 import Layout from './ui/Layout'
-import { SpaceAdminPlaceholder } from './app/Placeholders'
 import debug from './debug'
 import { preloadHelpDocs } from './help/helpDocs'
 
@@ -209,22 +203,6 @@ if (path === '/' || path === '') {
 	        </Suspense>
 	      </Layout>
 	    )
-	  } else if (path === '/space/review/groups' || path === '/space/review/groups/') {
-    root.render(
-      <Layout label="Review • Groups">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
-          <SpaceReviewGroupsPage />
-        </Suspense>
-      </Layout>
-    )
-  } else if (path === '/space/review/channels' || path === '/space/review/channels/') {
-    root.render(
-      <Layout label="Review • Channels">
-        <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
-          <SpaceReviewChannelsPage />
-        </Suspense>
-      </Layout>
-    )
   } else if (/^\/users\/(?:[^/]+)\/?$/.test(path)) {
     root.render(
       <Layout label="Profile">
@@ -233,39 +211,6 @@ if (path === '/' || path === '') {
         </Suspense>
       </Layout>
     )
-  } else if (/^\/(spaces|groups|channels)\//.test(path) && (path.includes('/admin') || path.includes('/review'))) {
-    // For now, show Space Members for /spaces/:id/admin and .../members
-    if (/^\/spaces\/\d+\/(admin(\/members)?\/?$)/.test(path)) {
-      root.render(
-        <Layout label="Space Members (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <SpaceMembersPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (/^\/spaces\/\d+\/admin\/settings\/?$/.test(path)) {
-      root.render(
-        <Layout label="Space Settings (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <SpaceSettingsPage />
-          </Suspense>
-        </Layout>
-      )
-    } else if (/^\/spaces\/\d+\/review\/?$/.test(path)) {
-      root.render(
-        <Layout label="Space Review (SPA)">
-          <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}> 
-            <SpaceModerationPage />
-          </Suspense>
-        </Layout>
-      )
-    } else {
-      root.render(
-        <Layout label="Space Admin (SPA)">
-          <SpaceAdminPlaceholder />
-        </Layout>
-      )
-    }
 	  } else {
 	  // Fallback: render Feed for unknown routes while preserving shell behavior.
 	  root.render(

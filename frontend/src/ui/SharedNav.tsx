@@ -3,12 +3,10 @@ import styles from '../styles/sharedNav.module.css'
 import ContextDrawer from '../menu/ContextDrawer'
 import ChannelSwitcher from '../menu/contexts/ChannelSwitcher'
 import MyAssets from '../menu/contexts/MyAssets'
-import AdminMenu from '../menu/contexts/AdminMenu'
 import ContextPicker, { type ContextId } from '../menu/ContextPicker'
 import HelpMenu from '../menu/contexts/HelpMenu'
 import ProfileMenu from '../menu/contexts/ProfileMenu'
 import InfoMenu from '../menu/contexts/InfoMenu'
-import ReviewMenu from '../menu/contexts/ReviewMenu'
 // useEffect already imported above
 
 type DrawerMode = 'nav' | 'spaces'
@@ -37,7 +35,8 @@ export default function SharedNav(props: {
   onSelectSpace?: (spaceId: number) => void
   // Admin gating
   isSiteAdmin?: boolean
-  hasSpaceReview?: boolean
+  hasAnySpaceAdmin?: boolean
+  hasAnySpaceModerator?: boolean
   authLoaded?: boolean
 }) {
   const {
@@ -66,21 +65,20 @@ export default function SharedNav(props: {
   const [activeContext, setActiveContext] = useState<ContextId>(() => {
     try {
       const v = localStorage.getItem('menu:context') as ContextId | null
-      if (v === 'info' || v === 'channel' || v === 'review' || v === 'assets' || v === 'space-admin' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
+      if (v === 'info' || v === 'channel' || v === 'assets' || v === 'help' || v === 'settings' || v === 'messages' || v === 'profile') return v
     } catch {}
     return 'channel'
   })
   const [pickerOpen, setPickerOpen] = useState(false)
   const isSiteAdmin = props.isSiteAdmin === true
-  const hasSpaceReview = props.hasSpaceReview === true
+  const hasAnySpaceAdmin = props.hasAnySpaceAdmin === true
+  const hasAnySpaceModerator = props.hasAnySpaceModerator === true
   const authLoaded = props.authLoaded === true
 
   // Normalize context when admin not allowed
   useEffect(() => {
     if (!authLoaded) return
-    if (!isSiteAdmin && activeContext === 'space-admin') setActiveContext('channel')
-    if (!hasSpaceReview && activeContext === 'review') setActiveContext('channel')
-  }, [authLoaded, isSiteAdmin, hasSpaceReview, activeContext])
+  }, [authLoaded, isSiteAdmin, activeContext])
 
   // No edge-swipe opener; open via hamburger, close via overlay or swipe-right on drawer.
 
@@ -113,10 +111,6 @@ export default function SharedNav(props: {
             ? 'My Assets'
             : activeContext === 'channel'
             ? 'Channel Changer'
-            : activeContext === 'review'
-            ? 'Review'
-            : activeContext === 'space-admin'
-            ? 'Admin'
             : activeContext === 'profile'
             ? 'Profile'
             : activeContext === 'help'
@@ -132,7 +126,8 @@ export default function SharedNav(props: {
               setPickerOpen(false)
             }}
             showAdmin={isSiteAdmin}
-            showReview={hasSpaceReview}
+            showSpaceAdminLink={hasAnySpaceAdmin}
+            showSpaceModerationLink={hasAnySpaceModerator}
           />
         ) : activeContext === 'info' ? (
           <InfoMenu onNavigate={() => setMenuOpen(false)} />
@@ -147,10 +142,6 @@ export default function SharedNav(props: {
           />
         ) : activeContext === 'assets' ? (
           <MyAssets onNavigate={() => setMenuOpen(false)} />
-        ) : activeContext === 'review' ? (
-          <ReviewMenu onNavigate={() => setMenuOpen(false)} />
-        ) : activeContext === 'space-admin' ? (
-          <AdminMenu onNavigate={() => setMenuOpen(false)} />
         ) : activeContext === 'profile' ? (
           <ProfileMenu onNavigate={() => setMenuOpen(false)} />
         ) : activeContext === 'help' ? (

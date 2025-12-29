@@ -12,6 +12,7 @@ Start Here
 Build & Run (local development)
 - `npm run build` — compile the Node.js/TypeScript service.
 - `npm run web:build` — compile the service and rebuild the frontend SPA bundle under `public/app` (run this after UI changes).
+- `npm run space:web:build` — build the Space Console bundle under `public/space-app` (run this after space console UI changes).
 - `npm run serve` — start the development server (serves the API and SPA shell).
 
 Useful Pages
@@ -20,6 +21,7 @@ Useful Pages
 - Player: /videos?id=123, /mobile?id=123
 
 Admin + CMS surfaces (server-rendered)
+- Admin landing: /admin
 - Admin review console: /admin/review (Global Feed, Personal Spaces, Groups, Channels)
 - Admin users: /admin/users
 - Admin settings: /admin/settings (stub; coming soon)
@@ -32,8 +34,11 @@ Admin + CMS surfaces (server-rendered)
 - Public pages: / and /pages/:slug (path-like slugs, max 4 segments)
 - Public rules: /rules/:slug and /rules/:slug/v:1
 
-Space review (SPA, space_admin / space_moderator)
+Space console (separate bundle, space_admin / space_moderator)
+- Space admin landing: /space/admin
+- Space moderation landing: /space/moderation
 - Review overviews: /space/review/groups and /space/review/channels
+- Per-space admin UI: /spaces/:id/admin
 - Per-space review queue: /spaces/:id/review
 
 Moderation reporting (SPA)

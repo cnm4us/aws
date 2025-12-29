@@ -19,6 +19,10 @@ logs/
 public/app/assets/
 public/app/index.html
 
+# Ignore built space console assets (output of `npm run space:web:build`)
+public/space-app/assets/
+public/space-app/index.html
+
 # Ignore PlayWright Artificats.
 playwright-report/
 test-results/
