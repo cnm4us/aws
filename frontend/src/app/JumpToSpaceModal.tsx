@@ -15,9 +15,10 @@ type JumpSpacesResponse = {
 export default function JumpToSpaceModal(props: {
   open: boolean
   publicationId: number | null
+  pinProductionUlid?: string | null
   onClose: () => void
 }) {
-  const { open, publicationId, onClose } = props
+  const { open, publicationId, pinProductionUlid, onClose } = props
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -128,7 +129,9 @@ export default function JumpToSpaceModal(props: {
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
               {items.map((s) => {
-                const href = s.spaceType === 'group' ? `/groups/${encodeURIComponent(s.spaceSlug)}` : `/channels/${encodeURIComponent(s.spaceSlug)}`
+                const baseHref = s.spaceType === 'group' ? `/groups/${encodeURIComponent(s.spaceSlug)}` : `/channels/${encodeURIComponent(s.spaceSlug)}`
+                const pin = String(pinProductionUlid || '').trim()
+                const href = pin ? `${baseHref}?pin=${encodeURIComponent(pin)}` : baseHref
                 const meta = s.spaceType === 'group' ? 'Group' : s.spaceType === 'channel' ? 'Channel' : s.spaceType
                 return (
                   <a

@@ -17,6 +17,7 @@ type UploadItem = {
   posterLandscape?: string
   masterPortrait?: string
   masterLandscape?: string
+  productionUlid?: string | null
   // Stable, public video identifier (prefer production ULID; fallback to asset UUID)
   videoId?: string | null
   ownerId?: number | null
@@ -69,6 +70,20 @@ type FeedMode =
 function isGlobalFeedSlug(slug: string | null | undefined): boolean {
   const s = String(slug || '').trim().toLowerCase()
   return s === 'global' || s === 'global-feed'
+}
+
+function readPinFromUrl(): string | null {
+  try {
+    const search = typeof window !== 'undefined' ? (window.location.search || '') : ''
+    if (!search) return null
+    const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+    const pin = params.get('pin')
+    if (!pin) return null
+    const decoded = String(pin).trim()
+    return decoded ? decoded : null
+  } catch {
+    return null
+  }
 }
 
 function parseCanonicalFromPath(): { kind: 'group' | 'channel'; slug: string } | null {
@@ -124,6 +139,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     posterLandscape,
     masterPortrait,
     masterLandscape,
+    productionUlid,
     videoId,
     ownerId,
     ownerName,
@@ -142,9 +158,10 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
 
 // Legacy feed removed: feeds are driven by publications only.
 
-async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; limit?: number } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
+async function fetchSpaceFeed(spaceId: number, opts: { cursor?: string | null; limit?: number; pinProductionUlid?: string | null } = {}): Promise<{ items: UploadItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ limit: String(opts.limit ?? 20) })
   if (opts.cursor) params.set('cursor', opts.cursor)
+  if (!opts.cursor && opts.pinProductionUlid) params.set('pin', String(opts.pinProductionUlid))
   const res = await fetch(`/api/spaces/${spaceId}/feed?${params.toString()}`)
   if (!res.ok) throw new Error('failed to fetch space feed')
   const payload = await res.json()
@@ -275,6 +292,7 @@ export default function Feed() {
   // Global feed "jump to space" modal state
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpForPub, setJumpForPub] = useState<number | null>(null)
+  const [jumpPinUlid, setJumpPinUlid] = useState<string | null>(null)
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -946,7 +964,8 @@ export default function Feed() {
         let nextCursor: string | null = null
         let fetchedItems: UploadItem[] = []
         if (feedMode.kind === 'space') {
-          const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId)
+          const pin = readPinFromUrl()
+          const { items: page, nextCursor: cursorStr } = await fetchSpaceFeed(feedMode.spaceId, { pinProductionUlid: pin })
           fetchedItems = applyMineFilter(page, mineOnly, myUserId)
           nextCursor = cursorStr
         } else if (feedMode.kind === 'global') {
@@ -1735,6 +1754,7 @@ export default function Feed() {
                           e.stopPropagation()
                           if (it.publicationId == null) return
                           setJumpForPub(it.publicationId)
+                          setJumpPinUlid(it.productionUlid ?? null)
                           setJumpOpen(true)
                         }}
                         style={{
@@ -2835,7 +2855,8 @@ export default function Feed() {
           <LazyJumpToSpaceModal
             open={jumpOpen}
             publicationId={jumpForPub}
-            onClose={() => { setJumpOpen(false); setJumpForPub(null) }}
+            pinProductionUlid={jumpPinUlid}
+            onClose={() => { setJumpOpen(false); setJumpForPub(null); setJumpPinUlid(null) }}
           />
         </React.Suspense>
       )}
