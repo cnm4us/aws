@@ -11,6 +11,20 @@ export function pickExtension(contentType?: string, originalName?: string): stri
     ? '.webm'
     : lowerCt.includes('quicktime') || lowerCt.includes('mov')
     ? '.mov'
+    : lowerCt.includes('png')
+    ? '.png'
+    : lowerCt.includes('jpeg') || lowerCt.includes('jpg')
+    ? '.jpg'
+    : lowerCt.includes('svg')
+    ? '.svg'
+    : lowerCt.includes('audio/mpeg') || lowerCt.includes('audio/mp3') || lowerCt.includes('mpeg')
+    ? '.mp3'
+    : lowerCt.includes('audio/wav') || lowerCt.includes('wav')
+    ? '.wav'
+    : lowerCt.includes('audio/aac') || lowerCt.includes('aac')
+    ? '.aac'
+    : lowerCt.includes('audio/mp4') || lowerCt.includes('m4a')
+    ? '.m4a'
     : extFromName || '.mp4';
 }
 
@@ -27,9 +41,17 @@ export function dateYmdToFolder(ymd: string): string {
   return m ? `${m[1]}/${m[2]}` : ymd;
 }
 
-export function buildUploadKey(basePrefix: string, dateFolder: string, uuid: string, ext: string): string {
+export function buildUploadKey(
+  basePrefix: string,
+  dateFolder: string,
+  uuid: string,
+  ext: string,
+  kind: 'video' | 'logo' | 'audio' = 'video'
+): string {
   const prefix = basePrefix ? (basePrefix.endsWith('/') ? basePrefix : basePrefix + '/') : '';
-  return `${prefix}${dateFolder}/${uuid}/video${ext}`;
+  const root = kind === 'video' ? 'videos' : kind === 'logo' ? 'logos' : 'audio';
+  const leaf = kind === 'video' ? 'video' : kind === 'logo' ? 'logo' : 'audio';
+  return `${prefix}${root}/${dateFolder}/${uuid}/${leaf}${ext}`;
 }
 
 export function baseFromS3Key(key: string, fallbackName = 'video'): string {
@@ -42,4 +64,3 @@ export function outputPrefix(dateYmd: string, uuid: string, orientation: 'portra
   const dateFolder = dateYmdToFolder(dateYmd);
   return `${dateFolder}/${uuid}/${orientation}/`;
 }
-

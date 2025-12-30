@@ -233,6 +233,7 @@ export async function createSignedUpload(input: {
   durationSeconds?: number | null
   modifiedFilename?: string
   description?: string
+  kind?: 'video' | 'logo' | 'audio'
   ownerUserId?: number | null
 }, ctx: ServiceContext): Promise<{ id: number; key: string; bucket: string; post: any }> {
   const filename = String(input.filename)
@@ -248,30 +249,60 @@ export async function createSignedUpload(input: {
   const safe = sanitizeFilename(filename)
   const { ymd: dateYmd, folder: datePrefix } = nowDateYmd()
   const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
+  const kind = input.kind || 'video'
 
   const ext = pickExtension(contentType, safe)
   const assetUuid = randomUUID()
-  const key = buildUploadKey(basePrefix, datePrefix, assetUuid, ext)
+  const key = buildUploadKey(basePrefix, datePrefix, assetUuid, ext, kind)
 
   const db = getPool()
-  const [result] = await db.query(
-    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`,
-    [
-      UPLOAD_BUCKET,
-      key,
-      filename,
-      modifiedFilename,
-      description,
-      contentType ?? null,
-      sizeBytes ?? null,
-      width ?? null,
-      height ?? null,
-      durationSeconds ?? null,
-      assetUuid,
-      dateYmd,
-    ]
-  )
+  let result: any
+  try {
+    ;[result] = await db.query(
+      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`,
+      [
+        UPLOAD_BUCKET,
+        key,
+        filename,
+        modifiedFilename,
+        description,
+        contentType ?? null,
+        sizeBytes ?? null,
+        width ?? null,
+        height ?? null,
+        durationSeconds ?? null,
+        assetUuid,
+        dateYmd,
+        kind,
+      ]
+    )
+  } catch (e: any) {
+    const msg = String(e?.message || '')
+    // Backward compatibility for environments where the `uploads.kind` column isn't deployed yet.
+    if (msg.includes('Unknown column') && msg.includes('kind')) {
+      ;[result] = await db.query(
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed')`,
+        [
+          UPLOAD_BUCKET,
+          key,
+          filename,
+          modifiedFilename,
+          description,
+          contentType ?? null,
+          sizeBytes ?? null,
+          width ?? null,
+          height ?? null,
+          durationSeconds ?? null,
+          assetUuid,
+          dateYmd,
+        ]
+      )
+    } else {
+      throw e
+    }
+  }
   const id = Number((result as any).insertId)
 
   // Determine owner: prefer session user; otherwise explicit ownerUserId (admin token flow)
