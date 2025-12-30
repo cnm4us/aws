@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HLSVideo from '../components/HLSVideo'
 
 type PublicationSummary = {
   spaceId: number
@@ -26,6 +27,8 @@ type UploadDetail = {
   poster_portrait_s3?: string
   poster_landscape_s3?: string
   poster_s3?: string
+  cdn_master?: string | null
+  s3_master?: string | null
   publications?: PublicationSummary[]
 }
 
@@ -103,6 +106,9 @@ const PublishPage: React.FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const inlineVideoRef = useRef<HTMLVideoElement | null>(null)
+  const modalVideoRef = useRef<HTMLVideoElement | null>(null)
 
 
   useEffect(() => {
@@ -143,6 +149,8 @@ const PublishPage: React.FC = () => {
             poster_portrait_s3: up.poster_portrait_s3 || up.poster_s3 || undefined,
             poster_landscape_s3: up.poster_landscape_s3 || undefined,
             poster_s3: up.poster_s3 || undefined,
+            cdn_master: up.cdn_master || null,
+            s3_master: up.s3_master || null,
             publications: [],
           }
           const pubsRes = await fetch(`/api/productions/${productionId}/publications`, { credentials: 'same-origin' })
@@ -393,6 +401,7 @@ const PublishPage: React.FC = () => {
 
   const poster = pickPoster(upload)
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
+  const master = String(upload.cdn_master || upload.s3_master || '').trim()
 
   const backHref = productionId ? `/productions?id=${productionId}` : '/uploads'
 
@@ -421,7 +430,26 @@ const PublishPage: React.FC = () => {
 
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div>
-            {poster ? (
+            {master ? (
+              <div style={{ width: 280, borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+                <HLSVideo
+                  src={master}
+                  controls
+                  autoPlay={false}
+                  muted={false}
+                  playsInline
+                  onReady={(v) => {
+                    inlineVideoRef.current = v
+                    try { v.controls = true } catch {}
+                  }}
+                  onPlay={() => {
+                    try { inlineVideoRef.current?.pause() } catch {}
+                    setPreviewOpen(true)
+                  }}
+                  style={{ width: '100%', height: 'auto', display: 'block' }}
+                />
+              </div>
+            ) : poster ? (
               <img src={poster} alt="poster" style={{ width: 280, borderRadius: 12, background: '#111', objectFit: 'cover' }} />
             ) : (
               <div style={{ width: 280, height: 158, borderRadius: 12, background: '#222' }} />
@@ -555,6 +583,88 @@ const PublishPage: React.FC = () => {
             </section>
           </div>
         </div>
+
+        {previewOpen ? (
+          <div
+            onClick={() => {
+              try { modalVideoRef.current?.pause() } catch {}
+              setPreviewOpen(false)
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 120,
+              background: 'rgba(0,0,0,0.96)',
+              display: 'grid',
+              gridTemplateRows: 'auto 1fr',
+              paddingTop: 'env(safe-area-inset-top, 0px)',
+              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                padding: '12px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px))',
+              }}
+            >
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  try { modalVideoRef.current?.pause() } catch {}
+                  setPreviewOpen(false)
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  borderRadius: 999,
+                  width: 42,
+                  height: 42,
+                  fontSize: 18,
+                  lineHeight: '42px',
+                  cursor: 'pointer',
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'grid',
+                placeItems: 'center',
+                width: '100%',
+                height: '100%',
+              }}
+            >
+              {master ? (
+                <HLSVideo
+                  src={master}
+                  controls
+                  autoPlay
+                  muted={false}
+                  playsInline
+                  onReady={(v) => {
+                    modalVideoRef.current = v
+                    try { v.play() } catch {}
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    background: '#000',
+                    borderRadius: 0,
+                    objectFit: 'contain',
+                  }}
+                />
+              ) : (
+                <div style={{ color: '#bbb' }}>Preview not available yet.</div>
+              )}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

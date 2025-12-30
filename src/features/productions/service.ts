@@ -66,6 +66,8 @@ export async function list(currentUserId: number, targetUserId?: number) {
         ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
         ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
         ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
+        ;(rec.upload as any).cdn_master = enhancedUpload.cdn_master
+        ;(rec.upload as any).s3_master = enhancedUpload.s3_master
       }
     } catch {}
     return rec
@@ -95,6 +97,8 @@ export async function get(id: number, currentUserId: number) {
       ;(rec.upload as any).poster_cdn = enhancedUpload.poster_cdn
       ;(rec.upload as any).poster_portrait_s3 = enhancedUpload.poster_portrait_s3
       ;(rec.upload as any).poster_s3 = enhancedUpload.poster_s3
+      ;(rec.upload as any).cdn_master = enhancedUpload.cdn_master
+      ;(rec.upload as any).s3_master = enhancedUpload.s3_master
     }
   } catch {}
   return rec
