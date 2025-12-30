@@ -6,6 +6,7 @@ type JumpSpaceItem = {
   spaceName: string
   spaceSlug: string
   spaceType: 'group' | 'channel' | string
+  spaceDescription: string | null
 }
 
 type JumpSpacesResponse = {
@@ -61,6 +62,7 @@ export default function JumpToSpaceModal(props: {
               spaceName: String(it.spaceName || ''),
               spaceSlug: String(it.spaceSlug || ''),
               spaceType: String(it.spaceType || ''),
+              spaceDescription: it.spaceDescription == null ? null : String(it.spaceDescription),
             }))
             .filter((it) => Number.isFinite(it.spaceId) && it.spaceId > 0 && it.spaceSlug.length > 0 && it.spaceName.length > 0)
         )
@@ -133,6 +135,10 @@ export default function JumpToSpaceModal(props: {
                 const pin = String(pinProductionUlid || '').trim()
                 const href = pin ? `${baseHref}?pin=${encodeURIComponent(pin)}` : baseHref
                 const meta = s.spaceType === 'group' ? 'Group' : s.spaceType === 'channel' ? 'Channel' : s.spaceType
+                const secondary =
+                  s.spaceType === 'channel'
+                    ? String(s.spaceDescription || '').trim() || 'No description'
+                    : s.spaceUlid
                 return (
                   <a
                     key={String(s.spaceId)}
@@ -154,7 +160,7 @@ export default function JumpToSpaceModal(props: {
                       <div style={{ fontWeight: 650 }}>{s.spaceName}</div>
                       <div style={{ fontSize: 12, opacity: 0.75 }}>
                         {meta}
-                        {s.spaceUlid ? <span style={{ opacity: 0.7 }}> · {s.spaceUlid}</span> : null}
+                        {secondary ? <span style={{ opacity: 0.7 }}> · {secondary}</span> : null}
                       </div>
                     </div>
                     <div style={{ fontSize: 18, opacity: 0.85 }}>→</div>

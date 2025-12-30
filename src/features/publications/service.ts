@@ -347,6 +347,7 @@ export async function listJumpSpacesDto(publicationId: number, ctx: ServiceConte
     spaceName: string
     spaceSlug: string
     spaceType: string
+    spaceDescription: string | null
   }>
 }> {
   // Auth is enforced at the route layer; keep this method read-only and safe.
@@ -364,6 +365,18 @@ export async function listJumpSpacesDto(publicationId: number, ctx: ServiceConte
   const rows = await repo.listJumpSpacesForProduction(pub.production_id, { excludeSpaceIds })
   return {
     items: rows.map((r) => ({
+      spaceDescription: (() => {
+        try {
+          const raw = r.space_settings
+          const settings = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
+          const desc = settings?.profile?.description
+          const trimmed = typeof desc === 'string' ? desc.trim() : ''
+          if (!trimmed) return null
+          return trimmed.length > 280 ? trimmed.slice(0, 280) : trimmed
+        } catch {
+          return null
+        }
+      })(),
       spaceId: r.space_id,
       spaceUlid: r.space_ulid,
       spaceName: r.space_name,

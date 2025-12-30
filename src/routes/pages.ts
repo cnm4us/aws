@@ -4276,7 +4276,7 @@ function renderAdminSpaceDetailPage(opts: {
   csrfToken?: string | null;
   notice?: string | null;
   error?: string | null;
-  draft?: { name?: string; commentsPolicy?: 'on' | 'off' | 'inherit'; requireReview?: boolean; cultureIds?: number[] };
+  draft?: { name?: string; description?: string; commentsPolicy?: 'on' | 'off' | 'inherit'; requireReview?: boolean; cultureIds?: number[] };
 }): string {
   const kindLabel = opts.kind === 'group' ? 'Group' : 'Channel'
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
@@ -4287,6 +4287,12 @@ function renderAdminSpaceDetailPage(opts: {
   const settings = space.settings || {}
 
   const nameValue = opts.draft?.name != null ? String(opts.draft.name) : String(space.name || '')
+  const descriptionValue =
+    opts.kind === 'channel'
+      ? opts.draft?.description != null
+        ? String(opts.draft.description)
+        : String(settings?.profile?.description || '')
+      : ''
   const commentsPolicy = opts.draft?.commentsPolicy ?? getCommentsPolicy(settings)
   const requireReview = opts.draft?.requireReview ?? getRequireApproval(settings)
   const selectedCultureIds = new Set<number>((opts.draft?.cultureIds ?? space.cultureIds ?? []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))
@@ -4307,6 +4313,13 @@ function renderAdminSpaceDetailPage(opts: {
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
   </label>`
+
+  if (opts.kind === 'channel') {
+    body += `<label>Description
+      <textarea name="description" rows="3" maxlength="280">${escapeHtml(descriptionValue)}</textarea>
+      <div class="field-hint">Shown in the Global Feed “Jump” modal. Max 280 characters.</div>
+    </label>`
+  }
 
   body += `<div class="section" style="margin-top: 14px">`
   body += `<div class="section-title">Publishing</div>`
@@ -4666,6 +4679,7 @@ pagesRouter.post('/admin/channels/:id', async (req: any, res: any) => {
     const body = (req.body || {}) as any
     const rawName = body.name != null ? String(body.name) : ''
     const name = rawName.trim()
+    const rawDescription = body.description != null ? String(body.description) : ''
     const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
     const requireReview = toFormBool(body.requireReview)
     const cultureIds = toIdList(body.cultureIds)
@@ -4680,13 +4694,13 @@ pagesRouter.post('/admin/channels/:id', async (req: any, res: any) => {
         cultures,
         csrfToken,
         error: 'Name is required.',
-        draft: { name: rawName, commentsPolicy, requireReview, cultureIds },
+        draft: { name: rawName, description: rawDescription, commentsPolicy, requireReview, cultureIds },
       })
       res.set('Content-Type', 'text/html; charset=utf-8')
       return res.status(400).send(doc)
     }
 
-    await adminSvc.updateSpace(id, { name, commentsPolicy, requireReview, cultureIds })
+    await adminSvc.updateSpace(id, { name, description: rawDescription, commentsPolicy, requireReview, cultureIds })
     res.redirect(`/admin/channels/${encodeURIComponent(String(id))}?notice=${encodeURIComponent('Saved.')}`)
   } catch (err: any) {
     const id = Number(req.params.id)
@@ -4702,10 +4716,12 @@ pagesRouter.post('/admin/channels/:id', async (req: any, res: any) => {
       code === 'cannot_override_site_policy' ? 'Cannot disable review due to site policy.' :
       code === 'bad_comments_policy' ? 'Invalid comments policy.' :
       code === 'unknown_culture_ids' ? 'Unknown culture selected.' :
+      code === 'description_too_long' ? 'Description is too long (max 280 characters).' :
       'Failed to save.'
 
     if (!detail || detail.type !== 'channel') return res.status(500).send('Failed to save channel')
     const draftName = body.name != null ? String(body.name) : ''
+    const draftDescription = body.description != null ? String(body.description) : ''
     const commentsPolicy = String(body.commentsPolicy || 'inherit').toLowerCase() as any
     const requireReview = toFormBool(body.requireReview)
     const cultureIds = toIdList(body.cultureIds)
@@ -4715,7 +4731,7 @@ pagesRouter.post('/admin/channels/:id', async (req: any, res: any) => {
       cultures,
       csrfToken,
       error: msg,
-      draft: { name: draftName, commentsPolicy, requireReview, cultureIds },
+      draft: { name: draftName, description: draftDescription, commentsPolicy, requireReview, cultureIds },
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.status(400).send(doc)

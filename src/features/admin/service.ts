@@ -340,7 +340,7 @@ export async function getSpace(spaceId: number) {
 
 export async function updateSpace(
   spaceId: number,
-  input: { name?: string; commentsPolicy?: string; requireReview?: boolean; cultureIds?: number[] }
+  input: { name?: string; description?: string | null; commentsPolicy?: string; requireReview?: boolean; cultureIds?: number[] }
 ) {
   const pool = getPool()
   const conn = await pool.getConnection()
@@ -375,6 +375,14 @@ export async function updateSpace(
       const pub = { ...(settings?.publishing || {}) }
       pub.requireApproval = Boolean(input.requireReview)
       settings = { ...(settings || {}), publishing: pub }
+      settingsChanged = true
+    }
+    if (input.description !== undefined) {
+      const trimmed = String(input.description || '').trim()
+      if (trimmed.length > 280) throw Object.assign(new Error('description_too_long'), { code: 'description_too_long', status: 400 })
+      const profile = { ...(settings?.profile || {}) }
+      profile.description = trimmed.length ? trimmed : null
+      settings = { ...(settings || {}), profile }
       settingsChanged = true
     }
     if (settingsChanged) updates.settingsJson = JSON.stringify(settings)
