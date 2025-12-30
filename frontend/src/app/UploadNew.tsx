@@ -59,6 +59,11 @@ const UploadNewPage: React.FC = () => {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const kind = (() => {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('kind') || '').toLowerCase()
+    return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : 'video'
+  })()
 
   useEffect(() => {
     let cancelled = false
@@ -115,13 +120,14 @@ const UploadNewPage: React.FC = () => {
       setUploadProgress(0)
 
       try {
-        const meta = await probeVideo(file)
+        const meta = kind === 'video' ? await probeVideo(file) : { width: null, height: null, durationSeconds: null }
         const body = {
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
           sizeBytes: file.size,
           modifiedFilename: trimmedName,
           description: trimmedDescription || undefined,
+          kind,
           ...meta,
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -201,7 +207,7 @@ const UploadNewPage: React.FC = () => {
   if (me === null) {
     return (
       <div style={{ color: '#fff', padding: 24, fontFamily: 'system-ui, sans-serif', minHeight: '100vh', background: '#050505' }}>
-        <h2>Upload Files</h2>
+        <h2>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}</h2>
         <p>Checking your session…</p>
       </div>
     )
@@ -212,11 +218,11 @@ const UploadNewPage: React.FC = () => {
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 16px 80px' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>Upload Files</h1>
+            <h1 style={{ margin: 0, fontSize: 28 }}>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}</h1>
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Choose a file, add a friendly title, and describe it for your team.</p>
           </div>
           <a
-            href="/uploads"
+            href={kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(kind)}`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -246,7 +252,9 @@ const UploadNewPage: React.FC = () => {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
-              <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>Select Video File</label>
+              <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+                {kind === 'video' ? 'Select Video File' : kind === 'logo' ? 'Select Logo File' : 'Select Audio File'}
+              </label>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <button
                   type="button"

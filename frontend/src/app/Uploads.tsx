@@ -18,6 +18,7 @@ type UploadListItem = {
   width: number | null
   height: number | null
   status: string
+  kind?: 'video' | 'logo' | 'audio' | string
   created_at: string
   uploaded_at: string | null
   poster_portrait_cdn?: string
@@ -100,6 +101,12 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
 }
 
 const UploadsPage: React.FC = () => {
+  const kind = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('kind') || '').toLowerCase()
+    return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : 'video'
+  }, [])
+
   const [me, setMe] = useState<MeResponse | null>(null)
   const [uploads, setUploads] = useState<UploadListItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -114,6 +121,7 @@ const UploadsPage: React.FC = () => {
           limit: '100',
           user_id: String(userId),
           include_publications: '1',
+          kind,
         })
         const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
         if (!res.ok) throw new Error('failed_to_fetch_uploads')
@@ -125,7 +133,7 @@ const UploadsPage: React.FC = () => {
         setLoading(false)
       }
     },
-    []
+    [kind]
   )
 
   useEffect(() => {
@@ -180,7 +188,7 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
-const uploadCards = useMemo(() => {
+  const uploadCards = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
       const image = poster ? (
@@ -202,6 +210,12 @@ const uploadCards = useMemo(() => {
       const metaPieces = [date, size, dimensions].filter((value) => value && value.length)
       const metaLine = metaPieces.join(' / ')
       const publicationLines = renderPublicationLines(upload)
+      const detailHref =
+        kind === 'video'
+          ? productionHref
+          : kind === 'logo'
+            ? '#'
+            : '#'
 
       return (
         <div
@@ -227,7 +241,7 @@ const uploadCards = useMemo(() => {
             }}
           >
             <a
-              href={productionHref}
+              href={detailHref}
               style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none', lineHeight: 1.3 }}
             >
               {displayName}
@@ -242,12 +256,12 @@ const uploadCards = useMemo(() => {
                 {metaLine}
               </div>
             )}
-            {publicationLines.length > 0 && publicationLines}
+            {kind === 'video' && publicationLines.length > 0 && publicationLines}
           </div>
         </div>
       )
     })
-  }, [uploads, renderPublicationLines])
+  }, [uploads, renderPublicationLines, kind])
 
   if (me === null) {
     return (
@@ -263,14 +277,53 @@ const uploadCards = useMemo(() => {
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+          {[
+            { label: 'Videos', kind: 'video' },
+            { label: 'Logos', kind: 'logo' },
+            { label: 'Audio', kind: 'audio' },
+          ].map((t) => {
+            const active = kind === t.kind
+            const href = t.kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(t.kind)}`
+            return (
+              <a
+                key={t.kind}
+                href={href}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.16)',
+                  background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                  fontWeight: 650,
+                }}
+              >
+                {t.label}
+              </a>
+            )
+          })}
+        </div>
+
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>My Uploads</h1>
-            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Upload new videos and manage where they’re published.</p>
+            <h1 style={{ margin: 0, fontSize: 28 }}>
+              {kind === 'video' ? 'My Videos' : kind === 'logo' ? 'My Logos' : 'My Audio'}
+            </h1>
+            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
+              {kind === 'video'
+                ? 'Upload new videos and manage where they’re published.'
+                : kind === 'logo'
+                  ? 'Upload logos to use as watermarks in future productions.'
+                  : 'Upload audio to mix into future productions.'}
+            </p>
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <a
-              href="/uploads/new"
+              href={kind === 'video' ? '/uploads/new' : `/uploads/new?kind=${encodeURIComponent(kind)}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -285,25 +338,27 @@ const uploadCards = useMemo(() => {
                 boxShadow: '0 6px 16px rgba(10,132,255,0.35)',
               }}
             >
-              Upload Files
+              {kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}
             </a>
-            <a
-              href="/productions"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '10px 18px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
-                textDecoration: 'none',
-                fontWeight: 600,
-                background: 'rgba(255,255,255,0.06)',
-              }}
-            >
-              View Productions
-            </a>
+            {kind === 'video' ? (
+              <a
+                href="/productions"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '10px 18px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  background: 'rgba(255,255,255,0.06)',
+                }}
+              >
+                View Productions
+              </a>
+            ) : null}
           </div>
         </header>
 
@@ -312,7 +367,13 @@ const uploadCards = useMemo(() => {
         ) : error ? (
           <div style={{ color: '#ff6b6b', padding: '12px 0' }}>{error}</div>
         ) : uploads.length === 0 ? (
-          <div style={{ color: '#bbb', padding: '12px 0' }}>No uploads yet. Get started by uploading your first video.</div>
+          <div style={{ color: '#bbb', padding: '12px 0' }}>
+            {kind === 'video'
+              ? 'No videos yet. Get started by uploading your first video.'
+              : kind === 'logo'
+                ? 'No logos yet. Upload a logo to use as a watermark in future productions.'
+                : 'No audio yet. Upload audio to mix into future productions.'}
+          </div>
         ) : (
           <div
             style={{
