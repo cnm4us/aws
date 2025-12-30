@@ -422,47 +422,40 @@ const ProductionsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 style={{ fontSize: 18, marginBottom: 12 }}>Existing Productions</h2>
+            <h2 style={{ fontSize: 18, marginBottom: 12 }}>Current Productions</h2>
             {productionsForUpload.length === 0 ? (
               <div style={{ color: '#777' }}>No productions yet for this upload.</div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', color: '#aaa' }}>
-                      <th style={{ padding: 12 }}>Name</th>
-                      <th style={{ padding: 12 }}>Status</th>
-                      <th style={{ padding: 12 }}>Created</th>
-                      <th style={{ padding: 12 }}>Job ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productionsForUpload.map((prod) => {
-                      const publishHref = `/publish?production=${prod.id}`
-                      const detailHref = `/productions?id=${prod.id}`
-                      return (
-                        <tr key={prod.id}>
-                          <td style={{ padding: 12 }}>
-                            <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
-                              {prod.name && prod.name.trim() ? prod.name : `Production #${prod.id}`}
-                            </a>
-                          </td>
-                          <td style={{ padding: 12 }}>{prod.status}</td>
-                          <td style={{ padding: 12 }}>{formatDate(prod.created_at)}</td>
-                          <td style={{ padding: 12 }}>
-                            {prod.mediaconvert_job_id ? (
-                              <a href={detailHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
-                                {prod.mediaconvert_job_id}
-                              </a>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {productionsForUpload.map((prod) => {
+                  const publishHref = `/publish?production=${prod.id}`
+                  const name = prod.name && prod.name.trim() ? prod.name : `Production #${prod.id}`
+                  return (
+                    <div
+                      key={prod.id}
+                      style={{
+                        border: '1px solid #1f1f1f',
+                        borderRadius: 12,
+                        padding: 12,
+                        background: '#0e0e0e',
+                        display: 'grid',
+                        gap: 6,
+                      }}
+                    >
+                      <a href={publishHref} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 650 }}>
+                        {name}
+                      </a>
+                      <div style={{ color: '#bbb' }}>
+                        <span style={{ color: '#888' }}>Created On: </span>
+                        {formatDate(prod.created_at)}
+                      </div>
+                      <div style={{ color: '#bbb' }}>
+                        <span style={{ color: '#888' }}>Status: </span>
+                        {prod.status}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </section>
