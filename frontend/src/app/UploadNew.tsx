@@ -49,6 +49,36 @@ function getCsrfToken(): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+function extLower(name: string): string {
+  const base = String(name || '')
+  const m = base.match(/(\.[^.]+)$/)
+  return (m ? m[1] : '').toLowerCase()
+}
+
+function isAllowedFile(kind: 'video' | 'logo' | 'audio', file: File): boolean {
+  const ct = String(file.type || '').toLowerCase()
+  const ext = extLower(file.name)
+  if (kind === 'video') {
+    if (ct.startsWith('video/')) return true
+    return ['.mp4', '.webm', '.mov'].includes(ext)
+  }
+  if (kind === 'logo') {
+    if (ct.startsWith('image/')) return true
+    return ['.png', '.jpg', '.jpeg', '.svg'].includes(ext)
+  }
+  if (kind === 'audio') {
+    if (ct.startsWith('audio/')) return true
+    return ['.mp3', '.wav', '.aac', '.m4a', '.mp4', '.ogg', '.opus'].includes(ext)
+  }
+  return false
+}
+
+function acceptForKind(kind: 'video' | 'logo' | 'audio'): string {
+  if (kind === 'logo') return 'image/png,image/jpeg,image/svg+xml'
+  if (kind === 'audio') return 'audio/*'
+  return 'video/*'
+}
+
 const UploadNewPage: React.FC = () => {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -72,7 +102,7 @@ const UploadNewPage: React.FC = () => {
       if (cancelled) return
       setMe(user)
       if (!user) {
-        setUploadError('Please sign in to upload videos.')
+        setUploadError(kind === 'video' ? 'Please sign in to upload videos.' : kind === 'logo' ? 'Please sign in to upload logos.' : 'Please sign in to upload audio.')
       }
     })()
     return () => {
@@ -87,6 +117,19 @@ const UploadNewPage: React.FC = () => {
   const handleFileSelected = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files && event.target.files[0]
     if (!selected) return
+    if (!isAllowedFile(kind, selected)) {
+      setUploadError(
+        kind === 'video'
+          ? 'Unsupported video type. Use MP4, MOV, or WebM.'
+          : kind === 'logo'
+            ? 'Unsupported logo type. Use PNG, JPG, or SVG.'
+            : 'Unsupported audio type. Use MP3, WAV, AAC, or M4A.'
+      )
+      setUploadMessage(null)
+      setUploadProgress(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
     setFile(selected)
     setUploadMessage(null)
     setUploadError(null)
@@ -108,7 +151,7 @@ const UploadNewPage: React.FC = () => {
         return
       }
       if (!me?.userId) {
-        setUploadError('Please sign in to upload videos.')
+        setUploadError(kind === 'video' ? 'Please sign in to upload videos.' : kind === 'logo' ? 'Please sign in to upload logos.' : 'Please sign in to upload audio.')
         return
       }
 
@@ -140,7 +183,10 @@ const UploadNewPage: React.FC = () => {
           headers,
           body: JSON.stringify(body),
         })
-        if (!signRes.ok) throw new Error('Failed to prepare upload')
+        if (!signRes.ok) {
+          const data = await signRes.json().catch(() => ({}))
+          throw new Error(data?.detail || data?.error || 'Failed to prepare upload')
+        }
         const signJson = await signRes.json()
         const { id, post } = signJson
 
@@ -189,7 +235,7 @@ const UploadNewPage: React.FC = () => {
           body: JSON.stringify({ id, sizeBytes: file.size, etag }),
         })
 
-        setUploadMessage('Upload complete! The file will appear in your uploads once processing finishes.')
+        setUploadMessage(kind === 'video' ? 'Upload complete! The file will appear in your videos once processing finishes.' : 'Upload complete! The file will appear in your uploads shortly.')
         setUploadProgress(100)
         setModifiedName('')
         setDescription('')
@@ -276,7 +322,7 @@ const UploadNewPage: React.FC = () => {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="video/*"
+                  accept={acceptForKind(kind)}
                   style={{ display: 'none' }}
                   onChange={handleFileSelected}
                 />
@@ -352,7 +398,7 @@ const UploadNewPage: React.FC = () => {
                 }}
                 disabled={uploading || !file}
               >
-                {uploading ? 'Uploading…' : 'Upload New Video'}
+                {uploading ? 'Uploading…' : kind === 'video' ? 'Upload New Video' : kind === 'logo' ? 'Upload New Logo' : 'Upload New Audio'}
               </button>
             </div>
           </div>

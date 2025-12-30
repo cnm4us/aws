@@ -269,9 +269,24 @@ export async function createSignedUpload(input: {
   const rawDescription = (input.description || '').trim()
   const description = rawDescription.length ? rawDescription : null
   const safe = sanitizeFilename(filename)
+  const lowerCt = String(contentType || '').toLowerCase()
+  const extFromName = ((safe || '').match(/\.[^.]+$/) || [''])[0].toLowerCase()
   const { ymd: dateYmd, folder: datePrefix } = nowDateYmd()
   const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
   const kind = input.kind || 'video'
+
+  // Basic file type validation per kind (best-effort: uses content-type when present, otherwise file extension).
+  const allowed =
+    kind === 'video'
+      ? (lowerCt ? lowerCt.startsWith('video/') : false) || ['.mp4', '.webm', '.mov'].includes(extFromName)
+      : kind === 'logo'
+        ? (lowerCt ? lowerCt.startsWith('image/') : false) || ['.png', '.jpg', '.jpeg', '.svg'].includes(extFromName)
+        : (lowerCt ? lowerCt.startsWith('audio/') : false) || ['.mp3', '.wav', '.aac', '.m4a', '.mp4', '.ogg', '.opus'].includes(extFromName)
+  if (!allowed) {
+    const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
+    err.detail = { kind, contentType: contentType || null, ext: extFromName || null }
+    throw err
+  }
 
   const ext = pickExtension(contentType, safe)
   const assetUuid = randomUUID()
@@ -353,6 +368,13 @@ export async function createSignedUpload(input: {
   const fields: Record<string, string> = { key, success_action_status: '201' }
   if (contentType) fields['Content-Type'] = contentType
   fields['x-amz-meta-original-filename'] = filename
+
+  // Add a best-effort guardrail on Content-Type category when provided.
+  if (contentType) {
+    if (kind === 'video' && lowerCt.startsWith('video/')) conditions.push(['starts-with', '$Content-Type', 'video/'])
+    if (kind === 'logo' && lowerCt.startsWith('image/')) conditions.push(['starts-with', '$Content-Type', 'image/'])
+    if (kind === 'audio' && lowerCt.startsWith('audio/')) conditions.push(['starts-with', '$Content-Type', 'audio/'])
+  }
 
   const presigned = await createPresignedPost(s3, {
     Bucket: UPLOAD_BUCKET,
