@@ -471,7 +471,7 @@ const PublishPage: React.FC = () => {
                     ? {
                         position: 'fixed',
                         inset: 0,
-                        zIndex: 120,
+                        zIndex: 10000,
                         background: '#000',
                         display: 'grid',
                         placeItems: 'stretch',
@@ -513,9 +513,10 @@ const PublishPage: React.FC = () => {
                     }}
                     style={{
                       position: 'fixed',
-                      top: 'max(12px, env(safe-area-inset-top, 0px))',
+                      // iOS Safari's top chrome can overlap fixed elements; keep this below it.
+                      top: 'max(72px, calc(env(safe-area-inset-top, 0px) + 12px))',
                       right: 'max(12px, env(safe-area-inset-right, 0px))',
-                      zIndex: 130,
+                      zIndex: 10020,
                       background: 'rgba(255,255,255,0.08)',
                       color: '#fff',
                       border: '1px solid rgba(255,255,255,0.22)',
