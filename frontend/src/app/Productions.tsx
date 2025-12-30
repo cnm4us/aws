@@ -428,7 +428,10 @@ const ProductionsPage: React.FC = () => {
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
                 {productionsForUpload.map((prod) => {
-                  const publishHref = `/publish?production=${prod.id}`
+                  const currentFrom = typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : ''
+                  const publishHref = currentFrom
+                    ? `/publish?production=${prod.id}&from=${encodeURIComponent(currentFrom)}`
+                    : `/publish?production=${prod.id}`
                   const name = prod.name && prod.name.trim() ? prod.name : `Production #${prod.id}`
                   return (
                     <div
@@ -508,7 +511,7 @@ const ProductionsPage: React.FC = () => {
             <div style={{ color: '#bbb' }}>Completed: {formatDate(selectedProduction.completed_at)}</div>
             <div style={{ marginTop: 12 }}>
               {upload ? (
-                <a href={`/publish?production=${selectedProduction.id}`} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>Open publish page</a>
+                <a href={`/publish?production=${selectedProduction.id}&from=${encodeURIComponent(`/productions?id=${selectedProduction.id}`)}`} style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}>Open publish page</a>
               ) : (
                 <span style={{ color: '#777' }}>Source upload #{selectedProduction.upload_id}</span>
               )}

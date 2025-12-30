@@ -60,6 +60,20 @@ function parseProductionId(): number | null {
   return Number.isFinite(num) ? num : null
 }
 
+function parseFromHref(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('from')
+    if (!raw) return null
+    const s = String(raw)
+    if (!s.startsWith('/')) return null
+    if (s.startsWith('//')) return null
+    return s
+  } catch {
+    return null
+  }
+}
+
 function pickPoster(upload: UploadDetail): string | undefined {
   return (
     upload.poster_portrait_cdn ||
@@ -98,6 +112,7 @@ function getCsrfToken(): string | null {
 const PublishPage: React.FC = () => {
   const uploadId = useMemo(() => parseUploadId(), [])
   const productionId = useMemo(() => parseProductionId(), [])
+  const fromHref = useMemo(() => parseFromHref(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
   const [selectedSpaces, setSelectedSpaces] = useState<Record<number, boolean>>({})
@@ -437,7 +452,7 @@ const PublishPage: React.FC = () => {
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
   const master = String(upload.cdn_master || upload.s3_master || '').trim()
 
-  const backHref = productionId ? `/productions?id=${productionId}` : '/uploads'
+  const backHref = fromHref || (productionId ? `/productions?upload=${encodeURIComponent(String(upload.id))}` : '/uploads')
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
