@@ -188,18 +188,26 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
-  const uploadCards = useMemo(() => {
+const uploadCards = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
-      const image = poster ? (
-        <img
-          src={poster}
-          alt="poster"
-          style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
-        />
-      ) : (
-        <div style={{ width: 96, height: 96, borderRadius: 8, background: '#1c1c1c' }} />
-      )
+      const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
+      const image =
+        kind === 'logo' ? (
+          <img
+            src={logoSrc as string}
+            alt="logo"
+            style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
+          />
+        ) : poster ? (
+          <img
+            src={poster}
+            alt="poster"
+            style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
+          />
+        ) : (
+          <div style={{ width: 96, height: 96, borderRadius: 8, background: '#1c1c1c' }} />
+        )
 
       const productionHref = `/productions?upload=${encodeURIComponent(String(upload.id))}`
       const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
@@ -214,7 +222,7 @@ const UploadsPage: React.FC = () => {
         kind === 'video'
           ? productionHref
           : kind === 'logo'
-            ? '#'
+            ? logoSrc || '#'
             : '#'
 
       return (

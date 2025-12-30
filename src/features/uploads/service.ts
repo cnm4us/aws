@@ -11,7 +11,7 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
 import { OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
-import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
+import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
 
 export type ServiceContext = { userId?: number | null }
@@ -78,6 +78,28 @@ export async function get(id: number, params: { includePublications?: boolean },
     }
   }
   return enhanced
+}
+
+export async function getUploadFileStream(uploadId: number, ctx: ServiceContext): Promise<{ contentType: string | null; body: any }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const bucket = String(row.s3_bucket || UPLOAD_BUCKET || '')
+  const key = String(row.s3_key || '')
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  return {
+    contentType: row.content_type != null ? String(row.content_type) : (resp.ContentType ? String(resp.ContentType) : null),
+    body: resp.Body,
+  }
 }
 
 export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
