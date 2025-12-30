@@ -9,6 +9,9 @@ const createProductionSchema = z.object({
   uploadId: z.number().int().positive(),
   name: z.string().min(1).max(255).optional(),
   config: z.any().optional(),
+  // Optional future enhancements (stored in production config; not yet used by renderer)
+  musicUploadId: z.union([z.number().int().positive(), z.null()]).optional(),
+  logoUploadId: z.union([z.number().int().positive(), z.null()]).optional(),
   profile: z.string().optional(),
   quality: z.string().optional(),
   sound: z.string().optional(),
@@ -39,9 +42,9 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res, next) =
   try {
     const parsed = createProductionSchema.safeParse(req.body || {})
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
-    const { uploadId, name, config, profile, quality, sound } = parsed.data
+    const { uploadId, name, config, musicUploadId, logoUploadId, profile, quality, sound } = parsed.data
     const currentUserId = req.user!.id
-    const result = await prodSvc.create({ uploadId, name, config, profile, quality, sound }, currentUserId)
+    const result = await prodSvc.create({ uploadId, name, config, musicUploadId, logoUploadId, profile, quality, sound }, currentUserId)
     res.status(201).json(result)
   } catch (err: any) { next(err) }
 })

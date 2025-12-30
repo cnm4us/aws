@@ -104,7 +104,19 @@ export async function get(id: number, currentUserId: number) {
   return rec
 }
 
-export async function create(input: { uploadId: number; name?: string | null; profile?: string | null; quality?: string | null; sound?: string | null; config?: any }, currentUserId: number) {
+export async function create(
+  input: {
+    uploadId: number
+    name?: string | null
+    profile?: string | null
+    quality?: string | null
+    sound?: string | null
+    config?: any
+    musicUploadId?: number | null
+    logoUploadId?: number | null
+  },
+  currentUserId: number
+) {
   const upload = await repo.loadUpload(input.uploadId)
   if (!upload) throw new NotFoundError('upload_not_found')
   const upStatus = String(upload.status || '').toLowerCase()
@@ -117,6 +129,11 @@ export async function create(input: { uploadId: number; name?: string | null; pr
   const canProduceAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   if (!isOwner && !canProduceAny) throw new ForbiddenError()
 
+  const baseConfig = input.config && typeof input.config === 'object' ? input.config : {}
+  const mergedConfig: any = { ...baseConfig }
+  if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
+  if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
+
   const { jobId, outPrefix, productionId } = await startProductionRender({
     upload,
     userId: currentUserId,
@@ -124,7 +141,7 @@ export async function create(input: { uploadId: number; name?: string | null; pr
     profile: input.profile ?? null,
     quality: input.quality ?? null,
     sound: input.sound ?? null,
-    config: input.config,
+    config: mergedConfig,
   })
   if (input.name) {
     try { await repo.updateProductionNameIfEmpty(productionId, input.name) } catch {}
