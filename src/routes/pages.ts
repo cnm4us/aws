@@ -4978,6 +4978,10 @@ pagesRouter.get('/publish/:id', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/produce', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/productions', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
