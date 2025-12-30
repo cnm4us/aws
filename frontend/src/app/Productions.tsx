@@ -125,9 +125,6 @@ const ProductionsPage: React.FC = () => {
   const [uploadDetail, setUploadDetail] = useState<UploadSummary | null>(null)
   const [uploadDetailLoading, setUploadDetailLoading] = useState(false)
   const [uploadDetailError, setUploadDetailError] = useState<string | null>(null)
-  const [creatingProduction, setCreatingProduction] = useState(false)
-  const [createProductionError, setCreateProductionError] = useState<string | null>(null)
-  const [newProductionName, setNewProductionName] = useState<string>('')
 
   const loadProductions = useCallback(async (userId: number) => {
     setLoading(true)
@@ -282,45 +279,6 @@ const ProductionsPage: React.FC = () => {
     return productions.filter((prod) => prod.upload_id === uploadContextId)
   }, [productions, uploadContextId])
 
-  const handleCreateProductionForUpload = useCallback(async () => {
-    if (!uploadContextId) return
-    setCreatingProduction(true)
-    setCreateProductionError(null)
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const csrf = getCsrfToken()
-      if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch('/api/productions', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ uploadId: uploadContextId, name: newProductionName && newProductionName.trim() ? newProductionName.trim() : undefined }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to start production')
-      }
-      const production = data?.production as ProductionRow | undefined
-      if (production) {
-        setProductions((prev) => [production, ...prev.filter((p) => p.id !== production.id)])
-      } else if (me?.userId) {
-        await loadProductions(me.userId)
-      }
-      const newId = production?.id
-      if (newId) {
-        window.history.replaceState(null, '', `/productions?id=${newId}`)
-        setSelectedId(newId)
-        setSelectedProduction(production || null)
-        setUploadContextId(null)
-        setNewProductionName('')
-      }
-    } catch (err: any) {
-      setCreateProductionError(err?.message || 'Failed to start production')
-    } finally {
-      setCreatingProduction(false)
-    }
-  }, [uploadContextId, me?.userId, loadProductions, newProductionName])
-
   if (me === null) {
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: 24 }}>
@@ -350,6 +308,7 @@ const ProductionsPage: React.FC = () => {
     const upload = uploadDetail
     const poster = pickPoster(upload)
     const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : null
+    const builderHref = uploadContextId ? `/produce?upload=${encodeURIComponent(String(uploadContextId))}` : '/produce'
 
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -357,7 +316,7 @@ const ProductionsPage: React.FC = () => {
           <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
             <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
             <div>
-              <h1 style={{ margin: 0, fontSize: 28 }}>Produce Video</h1>
+              <h1 style={{ margin: 0, fontSize: 28 }}>Build Production</h1>
               {upload && (
                 <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
                   {displayName} • {upload.status}
@@ -365,10 +324,6 @@ const ProductionsPage: React.FC = () => {
               )}
             </div>
           </header>
-
-          {createProductionError && (
-            <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 12, background: '#2a1010', color: '#ff9b9b' }}>{createProductionError}</div>
-          )}
 
           <section style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24 }}>
             <div>
@@ -384,40 +339,21 @@ const ProductionsPage: React.FC = () => {
                 <div>Resolution: {(upload?.width || 0)}×{upload?.height || 0}</div>
                 <div>Uploaded: {formatDate(upload?.created_at || null)}</div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  placeholder="Name this production (optional)"
-                  value={newProductionName}
-                  onChange={(e) => setNewProductionName(e.target.value)}
-                  style={{
-                    flex: '1 1 220px',
-                    minWidth: 220,
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid #2a2a2a',
-                    background: '#0c0c0c',
-                    color: '#fff',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-              <button
-                onClick={handleCreateProductionForUpload}
-                disabled={creatingProduction}
+              <a
+                href={builderHref}
                 style={{
+                  display: 'inline-block',
                   background: '#0a84ff',
                   color: '#fff',
-                  border: 'none',
+                  border: '1px solid transparent',
                   borderRadius: 10,
                   padding: '10px 18px',
                   fontWeight: 600,
-                  cursor: creatingProduction ? 'default' : 'pointer',
-                  opacity: creatingProduction ? 0.7 : 1,
+                  textDecoration: 'none',
                 }}
               >
-                {creatingProduction ? 'Starting…' : 'Create Production'}
-              </button>
+                Create Production
+              </a>
             </div>
           </section>
 
