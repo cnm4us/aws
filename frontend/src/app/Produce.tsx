@@ -135,10 +135,8 @@ export default function ProducePage() {
 
       const body: any = {
         uploadId,
-        config: {
-          musicUploadId: null,
-          logoUploadId: null,
-        },
+        musicUploadId: null,
+        logoUploadId: null,
       }
       const trimmedName = productionName.trim()
       if (trimmedName) body.name = trimmedName
