@@ -107,8 +107,42 @@ const PublishPage: React.FC = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
-  const inlineVideoRef = useRef<HTMLVideoElement | null>(null)
-  const modalVideoRef = useRef<HTMLVideoElement | null>(null)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    if (!previewOpen) return
+
+    const body = document.body
+    const prev = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+    }
+    const scrollY = window.scrollY || 0
+
+    body.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.width = '100%'
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        try { previewVideoRef.current?.pause() } catch {}
+        setPreviewOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      body.style.overflow = prev.overflow
+      body.style.position = prev.position
+      body.style.top = prev.top
+      body.style.width = prev.width
+      try { window.scrollTo(0, scrollY) } catch {}
+    }
+  }, [previewOpen])
 
 
   useEffect(() => {
@@ -431,7 +465,25 @@ const PublishPage: React.FC = () => {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div>
             {master ? (
-              <div style={{ width: 280, borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+              <div
+                style={
+                  previewOpen
+                    ? {
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 120,
+                        background: '#000',
+                        display: 'grid',
+                        placeItems: 'stretch',
+                      }
+                    : {
+                        width: 280,
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                        background: '#000',
+                      }
+                }
+              >
                 <HLSVideo
                   src={master}
                   controls
@@ -439,15 +491,46 @@ const PublishPage: React.FC = () => {
                   muted={false}
                   playsInline
                   onReady={(v) => {
-                    inlineVideoRef.current = v
-                    try { v.controls = true } catch {}
+                    previewVideoRef.current = v
                   }}
                   onPlay={() => {
-                    try { inlineVideoRef.current?.pause() } catch {}
                     setPreviewOpen(true)
                   }}
-                  style={{ width: '100%', height: 'auto', display: 'block' }}
+                  style={{
+                    width: '100%',
+                    height: previewOpen ? '100%' : 'auto',
+                    display: 'block',
+                    background: '#000',
+                    objectFit: 'contain',
+                  }}
                 />
+                {previewOpen ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      try { previewVideoRef.current?.pause() } catch {}
+                      setPreviewOpen(false)
+                    }}
+                    style={{
+                      position: 'fixed',
+                      top: 'max(12px, env(safe-area-inset-top, 0px))',
+                      right: 'max(12px, env(safe-area-inset-right, 0px))',
+                      zIndex: 130,
+                      background: 'rgba(255,255,255,0.08)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.22)',
+                      borderRadius: 999,
+                      width: 42,
+                      height: 42,
+                      fontSize: 18,
+                      lineHeight: '42px',
+                      cursor: 'pointer',
+                    }}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                ) : null}
               </div>
             ) : poster ? (
               <img src={poster} alt="poster" style={{ width: 280, borderRadius: 12, background: '#111', objectFit: 'cover' }} />
@@ -583,88 +666,6 @@ const PublishPage: React.FC = () => {
             </section>
           </div>
         </div>
-
-        {previewOpen ? (
-          <div
-            onClick={() => {
-              try { modalVideoRef.current?.pause() } catch {}
-              setPreviewOpen(false)
-            }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 120,
-              background: 'rgba(0,0,0,0.96)',
-              display: 'grid',
-              gridTemplateRows: 'auto 1fr',
-              paddingTop: 'env(safe-area-inset-top, 0px)',
-              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                padding: '12px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px))',
-              }}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  try { modalVideoRef.current?.pause() } catch {}
-                  setPreviewOpen(false)
-                }}
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.22)',
-                  borderRadius: 999,
-                  width: 42,
-                  height: 42,
-                  fontSize: 18,
-                  lineHeight: '42px',
-                  cursor: 'pointer',
-                }}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                display: 'grid',
-                placeItems: 'center',
-                width: '100%',
-                height: '100%',
-              }}
-            >
-              {master ? (
-                <HLSVideo
-                  src={master}
-                  controls
-                  autoPlay
-                  muted={false}
-                  playsInline
-                  onReady={(v) => {
-                    modalVideoRef.current = v
-                    try { v.play() } catch {}
-                  }}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    background: '#000',
-                    borderRadius: 0,
-                    objectFit: 'contain',
-                  }}
-                />
-              ) : (
-                <div style={{ color: '#bbb' }}>Preview not available yet.</div>
-              )}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   )
