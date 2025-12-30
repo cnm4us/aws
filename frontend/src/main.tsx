@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProduce, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProduce, loadLogoConfigs, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -15,6 +15,7 @@ const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProducePage = React.lazy(loadProduce)
+const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
@@ -177,6 +178,14 @@ if (path === '/' || path === '') {
     <Layout label="Produce">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <ProducePage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/logo-configs')) {
+  root.render(
+    <Layout label="Logo Configs">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <LogoConfigsPage />
       </Suspense>
     </Layout>
   )

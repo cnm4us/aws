@@ -4982,6 +4982,10 @@ pagesRouter.get('/produce', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/logo-configs', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/productions', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

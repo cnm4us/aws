@@ -19,6 +19,7 @@ Useful Pages
 - Uploader: / (upload.html)
 - Publisher: /publish.html
 - Player: /videos?id=123, /mobile?id=123
+- Logo configs (branding presets): /logo-configs
 
 Admin + CMS surfaces (server-rendered)
 - Admin landing: /admin
@@ -52,6 +53,7 @@ API testing (authenticated)
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super login`
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /api/me`
 - Useful endpoint: `GET /api/publications/:id/jump-spaces` (lists Group/Channel spaces where the same `production_id` is published; used by the Global Feed “Jump” modal).
+- Logo configs API: `GET /api/logo-configs`, `POST /api/logo-configs`, `PATCH /api/logo-configs/:id`, `POST /api/logo-configs/:id/duplicate`, `DELETE /api/logo-configs/:id` (archive).
 - Space feed supports optional `?pin=<production_ulid>` on `/groups/:slug` and `/channels/:slug` to show that production first (pins only on initial load).
 
 One-off admin scripts

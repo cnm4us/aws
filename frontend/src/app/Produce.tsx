@@ -45,6 +45,17 @@ type AssetItem = {
   created_at?: string | null
 }
 
+type LogoConfig = {
+  id: number
+  name: string
+  position: string
+  sizePctWidth: number
+  opacityPct: number
+  timingRule: string
+  timingSeconds: number | null
+  fade: string
+}
+
 function parseUploadId(): number | null {
   const params = new URLSearchParams(window.location.search)
   const raw = params.get('upload')
@@ -98,10 +109,13 @@ export default function ProducePage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [logos, setLogos] = useState<AssetItem[]>([])
   const [audios, setAudios] = useState<AssetItem[]>([])
+  const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(null)
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(null)
+  const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(null)
+  const [initLogoConfigDone, setInitLogoConfigDone] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -146,17 +160,30 @@ export default function ProducePage() {
         logoParams.set('kind', 'logo')
         const audioParams = new URLSearchParams(base)
         audioParams.set('kind', 'audio')
-        const [logoRes, audioRes] = await Promise.all([
+        const [logoRes, audioRes, cfgRes] = await Promise.all([
           fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
           fetch(`/api/uploads?${audioParams.toString()}`, { credentials: 'same-origin' }),
+          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
         ])
         const logoJson = await logoRes.json().catch(() => [])
         const audioJson = await audioRes.json().catch(() => [])
+        const cfgJson = await cfgRes.json().catch(() => [])
         if (!logoRes.ok) throw new Error('Failed to load logos')
         if (!audioRes.ok) throw new Error('Failed to load audio')
+        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
         if (cancelled) return
         setLogos(Array.isArray(logoJson) ? logoJson : [])
         setAudios(Array.isArray(audioJson) ? audioJson : [])
+        const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
+        setLogoConfigs(cfgs as any)
+
+        if (!initLogoConfigDone) {
+          const standard = cfgs.find((c) => String(c?.name || '').trim().toLowerCase() === 'standard watermark')
+          if (standard && standard.id && selectedLogoConfigId == null) {
+            setSelectedLogoConfigId(Number(standard.id))
+          }
+          setInitLogoConfigDone(true)
+        }
       } catch (e: any) {
         if (!cancelled) setAssetsError(e?.message || 'Failed to load assets')
       } finally {
@@ -166,7 +193,7 @@ export default function ProducePage() {
     return () => {
       cancelled = true
     }
-  }, [authChecked, me?.userId])
+  }, [authChecked, me?.userId, initLogoConfigDone, selectedLogoConfigId])
 
   const backHref = uploadId ? `/productions?upload=${encodeURIComponent(String(uploadId))}` : '/productions'
 
@@ -211,6 +238,7 @@ export default function ProducePage() {
         uploadId,
         musicUploadId: selectedAudioId ?? null,
         logoUploadId: selectedLogoId ?? null,
+        logoConfigId: selectedLogoConfigId ?? null,
       }
       const trimmedName = productionName.trim()
       if (trimmedName) body.name = trimmedName
@@ -318,6 +346,49 @@ export default function ProducePage() {
                       )
                     })}
                     {audios.length > 20 ? <div style={{ color: '#777', fontSize: 13 }}>Showing first 20. Manage audio to pick others.</div> : null}
+                  </div>
+                )}
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo Config</div>
+                  <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
+                </div>
+                {assetsLoading ? (
+                  <div style={{ color: '#777' }}>Loading logo configurations…</div>
+                ) : assetsError ? (
+                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+                ) : logoConfigs.length === 0 ? (
+                  <div style={{ color: '#777' }}>
+                    No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create a preset</a>.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input type="radio" name="logoCfg" checked={selectedLogoConfigId == null} onChange={() => setSelectedLogoConfigId(null)} />
+                      <div style={{ color: '#bbb' }}>None</div>
+                    </label>
+                    {logoConfigs.slice(0, 12).map((c) => {
+                      const name = (c.name || `Config ${c.id}`).trim()
+                      const summary = [
+                        c.position ? String(c.position).replace('_', '-') : null,
+                        c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
+                        c.opacityPct != null ? `${c.opacityPct}%` : null,
+                        c.timingRule ? String(c.timingRule).replace('_', ' ') : null,
+                        c.fade ? String(c.fade).replace('_', ' ') : null,
+                      ].filter(Boolean).join(' • ')
+                      return (
+                        <label key={c.id} style={{ display: 'grid', gap: 6, padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <input type="radio" name="logoCfg" checked={selectedLogoConfigId === c.id} onChange={() => setSelectedLogoConfigId(c.id)} />
+                            <div style={{ fontWeight: 650 }}>{name}</div>
+                          </div>
+                          {summary ? <div style={{ color: '#777', fontSize: 13 }}>{summary}</div> : null}
+                        </label>
+                      )
+                    })}
+                    {logoConfigs.length > 12 ? <div style={{ color: '#777', fontSize: 13 }}>Showing first 12. Manage configs to pick others.</div> : null}
                   </div>
                 )}
 

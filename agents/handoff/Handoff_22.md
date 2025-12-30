@@ -28,6 +28,7 @@ Summary
 - Implemented plan_16 (site_admin console): server-rendered `/admin/users*`, `/admin/settings` (stub), `/admin/dev`, `/admin/review/*` (global/personal/groups/channels) and removed SPA ownership so these features do not ship in the normal user bundle.
 - Implemented plan_17 (space console split): new `space-app` bundle for `/space/*` + `/spaces/*`, removed space console routes from the normal feed bundle, and updated the feed menu to link out to `/space/admin`, `/space/moderation`, and `/admin`.
 - Implemented plan_18 (Global Feed billboard): remove Like/Comment actions and add “Jump” modal listing Group/Channel spaces for the same `production_id`.
+- Implemented plan_23 (logo configs) through step 5: added user-owned Logo Configuration presets (CRUD + default “Standard watermark” on first logo upload), new `/logo-configs` SPA page with preview, and `/produce` selection that persists `logoConfigId` + `logoConfigSnapshot` into `productions.config`.
 - Implemented plan_15 step 2: added shared site_admin slide drawer shell for server-rendered `/admin/*` pages.
 - Implemented plan_15 step 3: added server-rendered `/admin/categories` CRUD with safe delete rules + usage counts.
 - Implemented plan_15 step 4: replaced `/admin/groups` + `/admin/channels` SPA shells with server-rendered pages (list/new/detail/edit).
@@ -76,8 +77,10 @@ Open Questions / Deferred
 - Follow-up: implement real post-publish moderation queues under `/admin/moderation/*` (flags/reports) and keep analytics there.
 - Follow-up: `/admin/settings` and `/admin/users/new` are stubs (“coming soon”).
 - Follow-up (plan_17): add optional redirect aliases `/space/moderator/*` → `/space/moderation/*`.
+- Remaining (plan_23): Step 6 — add “Logo Configs” link in `/uploads` nav (Videos | Logos | Logo Configs | Audio).
 
 Work Log (reverse‑chronological)
+- 2025-12-30 — Implemented plan_23 steps 1–5: logo configuration presets (CRUD + default) + `/logo-configs` UI + `/produce` integration with config snapshot persistence.
 - 2025-12-29 — Implemented plan_18: Global Feed billboard “Jump to Space” modal + `/api/publications/:id/jump-spaces`.
 - 2025-12-29 — Implemented plan_19: `?pin=<production_ulid>` support to pin the jumped video at the top of the destination space feed (first page only).
 - 2025-12-28 — Implemented plan_16: moved site_admin Users/Settings/Dev/Review to server-rendered `/admin/*`, updated the admin drawer, and removed the admin SPA routes from the user bundle.

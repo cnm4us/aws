@@ -6,6 +6,7 @@ import { startProductionRender } from '../../services/productionRunner'
 import * as repo from './repo'
 import { type ProductionRecord } from './types'
 import { NotFoundError, ForbiddenError } from '../../core/errors'
+import * as logoConfigsSvc from '../logo-configs/service'
 
 function mapProduction(row: any): ProductionRecord {
   return {
@@ -114,6 +115,7 @@ export async function create(
     config?: any
     musicUploadId?: number | null
     logoUploadId?: number | null
+    logoConfigId?: number | null
   },
   currentUserId: number
 ) {
@@ -133,6 +135,25 @@ export async function create(
   const mergedConfig: any = { ...baseConfig }
   if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
+  if (input.logoConfigId !== undefined) {
+    if (input.logoConfigId == null) {
+      mergedConfig.logoConfigId = null
+      mergedConfig.logoConfigSnapshot = null
+    } else {
+      const cfg = await logoConfigsSvc.getActiveForUser(Number(input.logoConfigId), currentUserId)
+      mergedConfig.logoConfigId = cfg.id
+      mergedConfig.logoConfigSnapshot = {
+        id: cfg.id,
+        name: cfg.name,
+        position: cfg.position,
+        sizePctWidth: cfg.sizePctWidth,
+        opacityPct: cfg.opacityPct,
+        timingRule: cfg.timingRule,
+        timingSeconds: cfg.timingSeconds,
+        fade: cfg.fade,
+      }
+    }
+  }
 
   const { jobId, outPrefix, productionId } = await startProductionRender({
     upload,

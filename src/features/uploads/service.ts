@@ -2,6 +2,7 @@ import { enhanceUploadRow } from '../../utils/enhance'
 import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
+import * as logoConfigsSvc from '../logo-configs/service'
 import * as spacesRepo from '../spaces/repo'
 import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
@@ -379,6 +380,11 @@ export async function createSignedUpload(input: {
         [ownerId, spaceId, spaceId, id]
       )
     } catch {}
+
+    // First-time convenience: ensure the user has at least one logo configuration once they upload a logo.
+    if (kind === 'logo') {
+      try { await logoConfigsSvc.ensureDefaultForUser(Number(ownerId)) } catch {}
+    }
   }
 
   const maxBytes = MAX_UPLOAD_MB * 1024 * 1024
