@@ -7,12 +7,13 @@ export const uploadsRouter = Router();
 
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
-    const { status, limit, cursor, user_id, space_id, include_publications } = req.query as any
+    const { status, kind, limit, cursor, user_id, space_id, include_publications } = req.query as any
     const includePubs = include_publications === '1' || include_publications === 'true'
     const lim = clampLimit(limit, 50, 1, 500)
     const curId = parseNumberCursor(cursor) ?? undefined
     const result = await uploadsSvc.list({
       status: status ? String(status) : undefined,
+      kind: kind ? (String(kind).toLowerCase() as any) : undefined,
       userId: user_id ? Number(user_id) : undefined,
       spaceId: space_id ? Number(space_id) : undefined,
       cursorId: curId,

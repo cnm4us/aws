@@ -16,14 +16,36 @@ import { clampLimit } from '../../core/pagination'
 
 export type ServiceContext = { userId?: number | null }
 
-export async function list(params: { status?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean }, ctx: ServiceContext) {
-  const rows = await repo.list({
-    status: params.status,
-    userId: params.userId,
-    spaceId: params.spaceId,
-    cursorId: params.cursorId,
-    limit: clampLimit(params.limit, 50, 1, 500),
-  })
+export async function list(
+  params: { status?: string; kind?: 'video' | 'logo' | 'audio'; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean },
+  ctx: ServiceContext
+) {
+  let rows: any[] = []
+  try {
+    rows = await repo.list({
+      status: params.status,
+      kind: params.kind,
+      userId: params.userId,
+      spaceId: params.spaceId,
+      cursorId: params.cursorId,
+      limit: clampLimit(params.limit, 50, 1, 500),
+    })
+  } catch (e: any) {
+    const msg = String(e?.message || '')
+    // Backward compatibility when `uploads.kind` is not deployed yet.
+    if (msg.includes('Unknown column') && msg.includes('kind')) {
+      if (params.kind && params.kind !== 'video') return []
+      rows = await repo.list({
+        status: params.status,
+        userId: params.userId,
+        spaceId: params.spaceId,
+        cursorId: params.cursorId,
+        limit: clampLimit(params.limit, 50, 1, 500),
+      } as any)
+    } else {
+      throw e
+    }
+  }
   const includePubs = Boolean(params.includePublications)
   const userId = ctx.userId && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
   const result = await Promise.all(rows.map(async (row) => {
