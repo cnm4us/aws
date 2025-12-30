@@ -100,6 +100,15 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
   }
 }
 
+function getCsrfToken(): string | null {
+  try {
+    const match = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
+    return match ? decodeURIComponent(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
 const UploadsPage: React.FC = () => {
   const kind = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
@@ -111,6 +120,8 @@ const UploadsPage: React.FC = () => {
   const [uploads, setUploads] = useState<UploadListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<Record<number, boolean>>({})
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const loadUploads = useCallback(
     async (userId: number) => {
@@ -188,7 +199,7 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
-const uploadCards = useMemo(() => {
+  const uploadCards = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
       const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
@@ -224,6 +235,7 @@ const uploadCards = useMemo(() => {
           : kind === 'logo'
             ? logoSrc || '#'
             : '#'
+      const isDeleting = !!deleting[upload.id]
 
       return (
         <div
@@ -264,12 +276,57 @@ const uploadCards = useMemo(() => {
                 {metaLine}
               </div>
             )}
+            {kind === 'logo' ? (
+              <div style={{ marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (isDeleting) return
+                    const ok = window.confirm('Delete this logo? This cannot be undone.')
+                    if (!ok) return
+                    setDeleteError(null)
+                    setDeleting((prev) => ({ ...prev, [upload.id]: true }))
+                    try {
+                      const headers: Record<string, string> = {}
+                      const csrf = getCsrfToken()
+                      if (csrf) headers['x-csrf-token'] = csrf
+                      const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                      setUploads((prev) => prev.filter((u) => u.id !== upload.id))
+                    } catch (err: any) {
+                      setDeleteError(err?.message || 'Failed to delete')
+                    } finally {
+                      setDeleting((prev) => {
+                        const next = { ...prev }
+                        delete next[upload.id]
+                        return next
+                      })
+                    }
+                  }}
+                  style={{
+                    background: 'transparent',
+                    color: '#ff9b9b',
+                    border: '1px solid rgba(255,155,155,0.35)',
+                    borderRadius: 10,
+                    padding: '6px 10px',
+                    fontWeight: 650,
+                    cursor: isDeleting ? 'default' : 'pointer',
+                    opacity: isDeleting ? 0.6 : 1,
+                  }}
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            ) : null}
             {kind === 'video' && publicationLines.length > 0 && publicationLines}
           </div>
         </div>
       )
     })
-  }, [uploads, renderPublicationLines, kind])
+  }, [uploads, renderPublicationLines, kind, deleting])
 
   if (me === null) {
     return (
@@ -374,6 +431,8 @@ const uploadCards = useMemo(() => {
           <div style={{ color: '#888', padding: '12px 0' }}>Loading uploads…</div>
         ) : error ? (
           <div style={{ color: '#ff6b6b', padding: '12px 0' }}>{error}</div>
+        ) : deleteError ? (
+          <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{deleteError}</div>
         ) : uploads.length === 0 ? (
           <div style={{ color: '#bbb', padding: '12px 0' }}>
             {kind === 'video'
