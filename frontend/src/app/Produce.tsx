@@ -50,11 +50,23 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
 }
 
+function getCsrfToken(): string | null {
+  try {
+    const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
+    return m ? decodeURIComponent(m[1]) : null
+  } catch {
+    return null
+  }
+}
+
 export default function ProducePage() {
   const uploadId = useMemo(() => parseUploadId(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [productionName, setProductionName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -111,6 +123,44 @@ export default function ProducePage() {
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
   const poster = pickPoster(upload)
 
+  const onProduce = async () => {
+    if (!uploadId) return
+    if (creating) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+
+      const body: any = {
+        uploadId,
+        config: {
+          musicUploadId: null,
+          logoUploadId: null,
+        },
+      }
+      const trimmedName = productionName.trim()
+      if (trimmedName) body.name = trimmedName
+
+      const res = await fetch('/api/productions', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to create production')
+      const id = Number(data?.production?.id)
+      if (!Number.isFinite(id) || id <= 0) throw new Error('Missing production id')
+      window.location.href = `/productions?id=${encodeURIComponent(String(id))}`
+    } catch (e: any) {
+      setCreateError(e?.message || 'Failed to create production')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
@@ -141,6 +191,23 @@ export default function ProducePage() {
               </div>
 
               <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                <div style={{ color: '#bbb' }}>Production Name (optional)</div>
+                <input
+                  value={productionName}
+                  onChange={(e) => setProductionName(e.target.value)}
+                  placeholder="Name this production"
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid #2a2a2a',
+                    background: '#0c0c0c',
+                    color: '#fff',
+                    outline: 'none',
+                  }}
+                />
+              </label>
+
+              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
                 <div style={{ color: '#bbb' }}>Music</div>
                 <select disabled style={{ padding: '10px 12px', borderRadius: 10, background: '#111', border: '1px solid #2a2a2a', color: '#777' }}>
                   <option>Coming soon</option>
@@ -157,7 +224,8 @@ export default function ProducePage() {
 
             <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <button
-                disabled
+                onClick={onProduce}
+                disabled={creating}
                 style={{
                   background: '#0a84ff',
                   color: '#fff',
@@ -165,13 +233,13 @@ export default function ProducePage() {
                   borderRadius: 10,
                   padding: '10px 18px',
                   fontWeight: 700,
-                  opacity: 0.5,
-                  cursor: 'default',
+                  opacity: creating ? 0.7 : 1,
+                  cursor: creating ? 'default' : 'pointer',
                 }}
               >
-                Produce
+                {creating ? 'Starting…' : 'Produce'}
               </button>
-              <div style={{ color: '#888', fontSize: 13 }}>Produce on this page will be enabled in the next step.</div>
+              {createError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{createError}</div> : <div style={{ color: '#888', fontSize: 13 }}>Uses video-only for now; music/logo coming soon.</div>}
             </div>
           </div>
         </div>
@@ -179,4 +247,3 @@ export default function ProducePage() {
     </div>
   )
 }
-
