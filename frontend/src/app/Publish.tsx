@@ -114,6 +114,7 @@ const PublishPage: React.FC = () => {
   const productionId = useMemo(() => parseProductionId(), [])
   const fromHref = useMemo(() => parseFromHref(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
+  const [productionName, setProductionName] = useState<string | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
   const [selectedSpaces, setSelectedSpaces] = useState<Record<number, boolean>>({})
   const [loading, setLoading] = useState(true)
@@ -170,6 +171,7 @@ const PublishPage: React.FC = () => {
     const run = async () => {
       setLoading(true)
       setError(null)
+      setProductionName(null)
       try {
         let uploadJson: UploadDetail | null = null
         let pubs: PublicationSummary[] = []
@@ -178,6 +180,8 @@ const PublishPage: React.FC = () => {
           const prodRes = await fetch(`/api/productions/${productionId}`, { credentials: 'same-origin' })
           const prodJson = await prodRes.json().catch(() => ({}))
           if (!prodRes.ok) throw new Error(prodJson?.error || 'Failed to load production')
+          const prodName = String(prodJson?.production?.name || '').trim()
+          if (!cancelled) setProductionName(prodName.length ? prodName : null)
           const up = (prodJson?.production?.upload || null) as any
           if (!up) throw new Error('Production missing upload context')
           uploadJson = {
@@ -211,6 +215,7 @@ const PublishPage: React.FC = () => {
           if (!uploadRes.ok) throw new Error('Failed to load upload')
           uploadJson = (await uploadRes.json()) as UploadDetail
           pubs = Array.isArray(uploadJson?.publications) ? uploadJson.publications : []
+          if (!cancelled) setProductionName(null)
         }
         const optionsRes = await fetch(`/api/uploads/${uploadJson!.id}/publish-options`, { credentials: 'same-origin' })
         if (!optionsRes.ok) throw new Error('Failed to load publish options')
@@ -451,6 +456,7 @@ const PublishPage: React.FC = () => {
   const poster = pickPoster(upload)
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
   const master = String(upload.cdn_master || upload.s3_master || '').trim()
+  const title = productionId ? (productionName || displayName) : displayName
 
   const backHref = fromHref || (productionId ? `/productions?upload=${encodeURIComponent(String(upload.id))}` : '/uploads')
 
@@ -459,7 +465,12 @@ const PublishPage: React.FC = () => {
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <header style={{ marginBottom: 24 }}>
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back</a>
-          <h1 style={{ margin: '12px 0 4px', fontSize: 28 }}>{displayName}</h1>
+          <h1 style={{ margin: '12px 0 4px', fontSize: 28 }}>{title}</h1>
+          {productionId && productionName ? (
+            <div style={{ color: '#888', marginTop: 2 }}>
+              Asset: {displayName}
+            </div>
+          ) : null}
           {upload.description && (
             <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', margin: '4px 0 8px 0' }}>
               {upload.description}

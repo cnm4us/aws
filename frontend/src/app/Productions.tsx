@@ -263,7 +263,7 @@ const ProductionsPage: React.FC = () => {
               </a>
               {upload && (
                 <div style={{ marginTop: 2, color: '#777' }}>
-                  {upload.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
+                  {prod.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
                 </div>
               )}
             </div>
