@@ -199,12 +199,17 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
-  const uploadCards = useMemo(() => {
+const uploadCards = useMemo(() => {
     return uploads.map((upload) => {
       const poster = pickPoster(upload)
       const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
+      const audioSrc = kind === 'audio' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
       const image =
-        kind === 'logo' ? (
+        kind === 'audio' ? (
+          <div style={{ width: 280, maxWidth: '100%' }}>
+            <audio controls preload="none" src={audioSrc as string} style={{ width: '100%' }} />
+          </div>
+        ) : kind === 'logo' ? (
           <img
             src={logoSrc as string}
             alt="logo"
@@ -234,7 +239,9 @@ const UploadsPage: React.FC = () => {
           ? productionHref
           : kind === 'logo'
             ? logoSrc || '#'
-            : '#'
+            : kind === 'audio'
+              ? audioSrc || '#'
+              : '#'
       const isDeleting = !!deleting[upload.id]
 
       return (
