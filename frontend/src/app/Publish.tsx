@@ -671,7 +671,7 @@ const PublishPage: React.FC = () => {
               <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <button
                   onClick={() => handlePublish()}
-                  disabled={saving || selectedSpaceIds.length === 0}
+                  disabled={saving}
                   style={{
                     background: '#0a84ff',
                     color: '#fff',
