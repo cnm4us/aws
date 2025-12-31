@@ -21,10 +21,19 @@ export async function list(
   params: { status?: string; kind?: 'video' | 'logo' | 'audio'; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean },
   ctx: ServiceContext
 ) {
+  const statusParam = params.status ? String(params.status) : undefined
+  const statuses = statusParam
+    ? statusParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
+  const statusList = statuses.length ? statuses : undefined
+
   let rows: any[] = []
   try {
     rows = await repo.list({
-      status: params.status,
+      status: statusList,
       kind: params.kind,
       userId: params.userId,
       spaceId: params.spaceId,
@@ -37,7 +46,7 @@ export async function list(
     if (msg.includes('Unknown column') && msg.includes('kind')) {
       if (params.kind && params.kind !== 'video') return []
       rows = await repo.list({
-        status: params.status,
+        status: statusList,
         userId: params.userId,
         spaceId: params.spaceId,
         cursorId: params.cursorId,

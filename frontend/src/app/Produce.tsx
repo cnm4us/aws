@@ -66,11 +66,12 @@ function parseUploadId(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parsePick(): 'audio' | 'logoConfig' | null {
+function parsePick(): 'audio' | 'logo' | 'logoConfig' | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('pick') || '').toLowerCase()
     if (raw === 'audio') return 'audio'
+    if (raw === 'logo') return 'logo'
     if (raw === 'logoconfig') return 'logoConfig'
   } catch {}
   return null
@@ -80,6 +81,18 @@ function parseMusicUploadId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = params.get('musicUploadId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseLogoUploadId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('logoUploadId')
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -146,6 +159,13 @@ function formatBytes(bytes: number | null | undefined): string {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
 }
 
+function formatDate(input: string | null | undefined): string {
+  if (!input) return ''
+  const d = new Date(input)
+  if (Number.isNaN(d.getTime())) return String(input)
+  return d.toISOString().slice(0, 10)
+}
+
 function getCsrfToken(): string | null {
   try {
     const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
@@ -157,6 +177,7 @@ function getCsrfToken(): string | null {
 
 type AudioSortMode = 'recent' | 'alpha'
 type LogoConfigSortMode = 'recent' | 'alpha'
+type LogoSortMode = 'recent' | 'alpha'
 
 export default function ProducePage() {
   const uploadId = useMemo(() => parseUploadId(), [])
@@ -173,12 +194,13 @@ export default function ProducePage() {
   const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetsError, setAssetsError] = useState<string | null>(null)
-  const [selectedLogoId, setSelectedLogoId] = useState<number | null>(null)
+  const [selectedLogoId, setSelectedLogoId] = useState<number | null>(() => parseLogoUploadId())
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
-  const [pick, setPick] = useState<'audio' | 'logoConfig' | null>(() => parsePick())
+  const [pick, setPick] = useState<'audio' | 'logo' | 'logoConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
+  const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
 
   useEffect(() => {
     let cancelled = false
@@ -237,7 +259,19 @@ export default function ProducePage() {
           return
         }
       } catch {}
+      try {
+        const pendingRaw = sessionStorage.getItem('produce:pendingLogoUploadId')
+        if (pendingRaw !== null) {
+          sessionStorage.removeItem('produce:pendingLogoUploadId')
+          const pending = pendingRaw === '' ? null : Number(pendingRaw)
+          const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
+          setSelectedLogoId(nextId)
+          replaceQueryParams({ logoUploadId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          return
+        }
+      } catch {}
       setSelectedAudioId(parseMusicUploadId())
+      setSelectedLogoId(parseLogoUploadId())
       setSelectedLogoConfigId(parseLogoConfigId())
     }
     window.addEventListener('popstate', applyFromLocation)
@@ -251,7 +285,7 @@ export default function ProducePage() {
       setAssetsLoading(true)
       setAssetsError(null)
       try {
-        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded' })
+	        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
         const logoParams = new URLSearchParams(base)
         logoParams.set('kind', 'logo')
         const audioParams = new URLSearchParams(base)
@@ -314,10 +348,30 @@ export default function ProducePage() {
     return items
   }, [logoConfigs, logoConfigSort])
 
+  const sortedLogos = useMemo(() => {
+    const items = Array.isArray(logos) ? [...logos] : []
+    const nameFor = (l: AssetItem) => String((l.modified_filename || l.original_filename || '')).trim().toLowerCase()
+    if (logoSort === 'alpha') {
+      items.sort((a, b) => nameFor(a).localeCompare(nameFor(b)))
+      return items
+    }
+    items.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+      return tb - ta
+    })
+    return items
+  }, [logos, logoSort])
+
   const selectedLogoConfig = useMemo(() => {
     if (selectedLogoConfigId == null) return null
     return logoConfigs.find((c) => c.id === selectedLogoConfigId) || null
   }, [logoConfigs, selectedLogoConfigId])
+
+  const selectedLogo = useMemo(() => {
+    if (selectedLogoId == null) return null
+    return logos.find((l) => l.id === selectedLogoId) || null
+  }, [logos, selectedLogoId])
 
   const formatLogoConfigSummary = (c: LogoConfig | null): string => {
     if (!c) return ''
@@ -341,6 +395,11 @@ export default function ProducePage() {
     pushQueryParams({ pick: 'audio' }, { ...(window.history.state || {}), modal: 'audioPicker' })
   }
 
+  const openLogoPicker = () => {
+    setPick('logo')
+    pushQueryParams({ pick: 'logo' }, { ...(window.history.state || {}), modal: 'logoPicker' })
+  }
+
   const openLogoConfigPicker = () => {
     setPick('logoConfig')
     pushQueryParams({ pick: 'logoConfig' }, { ...(window.history.state || {}), modal: 'logoConfigPicker' })
@@ -354,6 +413,11 @@ export default function ProducePage() {
   const applyMusicSelection = (id: number | null) => {
     setSelectedAudioId(id)
     replaceQueryParams({ musicUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+  }
+
+  const applyLogoSelection = (id: number | null) => {
+    setSelectedLogoId(id)
+    replaceQueryParams({ logoUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLogoConfigSelection = (id: number | null) => {
@@ -397,6 +461,23 @@ export default function ProducePage() {
     }
     // Direct-entry into ?pick=logoConfig (no modal history state): just close in-place.
     applyLogoConfigSelection(id)
+    closePicker()
+  }
+
+  const chooseLogoFromPicker = (id: number | null) => {
+    setPick(null)
+    const modal = (window.history.state as any)?.modal
+    if (modal === 'logoPicker') {
+      try {
+        sessionStorage.setItem('produce:pendingLogoUploadId', id == null ? '' : String(id))
+      } catch {}
+      try {
+        window.history.back()
+        return
+      } catch {}
+    }
+    // Direct-entry into ?pick=logo (no modal history state): just close in-place.
+    applyLogoSelection(id)
     closePicker()
   }
 
@@ -673,29 +754,62 @@ export default function ProducePage() {
                     No logo uploaded yet. <a href="/uploads/new?kind=logo" style={{ color: '#9cf' }}>Upload a logo</a>.
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <input type="radio" name="logo" checked={selectedLogoId == null} onChange={() => setSelectedLogoId(null)} />
-                      <div style={{ color: '#bbb' }}>None</div>
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-                      {logos.slice(0, 12).map((l) => {
-                        const name = (l.modified_filename || l.original_filename || `Logo ${l.id}`).trim()
-                        const src = `/api/uploads/${encodeURIComponent(String(l.id))}/file`
-                        return (
-                          <label key={l.id} style={{ display: 'grid', gap: 8, padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <input type="radio" name="logo" checked={selectedLogoId === l.id} onChange={() => setSelectedLogoId(l.id)} />
-                              <div style={{ fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'center' }}>
-                              <img src={src} alt="logo" style={{ width: 96, height: 96, objectFit: 'contain', background: '#111', borderRadius: 10 }} />
-                            </div>
-                          </label>
-                        )
-                      })}
+                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
+                        {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={openLogoPicker}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.85)',
+                            background: 'rgba(212,175,55,0.14)',
+                            color: '#d4af37',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Choose
+                        </button>
+                        {selectedLogoId != null ? (
+                          <button
+                            type="button"
+                            onClick={() => applyLogoSelection(null)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(212,175,55,0.65)',
+                              background: 'rgba(212,175,55,0.10)',
+                              color: '#d4af37',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
-                    {logos.length > 12 ? <div style={{ color: '#777', fontSize: 13 }}>Showing first 12. Manage logos to pick others.</div> : null}
+                    {selectedLogo ? (
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <img
+                          src={`/api/uploads/${encodeURIComponent(String(selectedLogo.id))}/file`}
+                          alt="logo"
+                          style={{ width: 72, height: 72, objectFit: 'contain', background: '#111', borderRadius: 10 }}
+                        />
+                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                          {formatBytes(selectedLogo.size_bytes)}{selectedLogo.created_at ? ` • ${formatDate(selectedLogo.created_at)}` : ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#777', fontSize: 13 }}>
+                        Select a logo to watermark the video (optional).
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -870,6 +984,170 @@ export default function ProducePage() {
                         {formatBytes(a.size_bytes)}{a.created_at ? ` • ${String(a.created_at).slice(0, 10)}` : ''}
                       </div>
                       <CompactAudioPlayer src={src} />
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      ) : pick === 'logo' ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#050505',
+            color: '#fff',
+            zIndex: 10050,
+            overflow: 'auto',
+          }}
+        >
+          <div style={{ maxWidth: 960, margin: '0 auto', padding: 'max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const modal = (window.history.state as any)?.modal
+                  if (modal === 'logoPicker') {
+                    try { window.history.back(); return } catch {}
+                  }
+                  closePicker()
+                }}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Back
+              </button>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Logo</div>
+              <div style={{ width: 84 }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
+              <button
+                type="button"
+                onClick={() => setLogoSort('recent')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: logoSort === 'recent' ? '#0a84ff' : '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Recent
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogoSort('alpha')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: logoSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Alphabetical
+              </button>
+              <a href="/uploads?kind=logo" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage logos</a>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => chooseLogoFromPicker(null)}
+                style={{
+                  textAlign: 'left',
+                  padding: 12,
+                  borderRadius: 12,
+                  border: selectedLogoId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                  background: selectedLogoId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                None
+              </button>
+
+              {assetsLoading ? (
+                <div style={{ color: '#888' }}>Loading logos…</div>
+              ) : assetsError ? (
+                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+              ) : sortedLogos.length === 0 ? (
+                <div style={{ color: '#bbb' }}>
+                  No logos uploaded yet. <a href="/uploads/new?kind=logo" style={{ color: '#9cf' }}>Upload a logo</a>.
+                </div>
+              ) : (
+                sortedLogos.map((l) => {
+                  const selected = selectedLogoId === l.id
+                  const name = (l.modified_filename || l.original_filename || `Logo ${l.id}`).trim()
+                  const src = `/api/uploads/${encodeURIComponent(String(l.id))}/file`
+                  const meta = [
+                    l.size_bytes != null ? formatBytes(l.size_bytes) : null,
+                    l.created_at ? formatDate(l.created_at) : null,
+                  ].filter(Boolean).join(' • ')
+                  return (
+                    <div
+                      key={l.id}
+                      style={{
+                        padding: '10px 12px 12px',
+                        borderRadius: 12,
+                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                        background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
+                        display: 'grid',
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                          {name}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => chooseLogoFromPicker(l.id)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+                            color: selected ? '#fff' : '#d4af37',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {selected ? 'Selected' : 'Select'}
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <img src={src} alt="logo" style={{ width: 96, height: 96, objectFit: 'contain', background: '#111', borderRadius: 10 }} />
+                        <div style={{ minWidth: 0 }}>
+                          {meta ? <div style={{ color: '#888', fontSize: 13 }}>{meta}</div> : null}
+                          <div style={{ marginTop: 6, color: '#777', fontSize: 13 }}>
+                            Tip: choose a logo and a logo config preset to apply a watermark.
+                          </div>
+                          <div style={{ marginTop: 8 }}>
+                            <a href="/uploads/new?kind=logo" style={{ color: '#9cf', textDecoration: 'none', fontWeight: 650 }}>
+                              Upload logo
+                            </a>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )
                 })

@@ -2,11 +2,21 @@ import { getPool } from '../../db'
 
 export type UploadRow = any
 
-export async function list(params: { status?: string; kind?: string; userId?: number; spaceId?: number; cursorId?: number; limit: number }): Promise<UploadRow[]> {
+export async function list(params: { status?: string | string[]; kind?: string; userId?: number; spaceId?: number; cursorId?: number; limit: number }): Promise<UploadRow[]> {
   const db = getPool()
   const where: string[] = []
   const args: any[] = []
-  if (params.status) { where.push('status = ?'); args.push(String(params.status)) }
+  if (params.status) {
+    const statuses = Array.isArray(params.status) ? params.status : [params.status]
+    const cleaned = statuses.map((s) => String(s).trim()).filter(Boolean)
+    if (cleaned.length === 1) {
+      where.push('status = ?')
+      args.push(String(cleaned[0]))
+    } else if (cleaned.length > 1) {
+      where.push(`status IN (${cleaned.map(() => '?').join(', ')})`)
+      args.push(...cleaned)
+    }
+  }
   if (params.kind) { where.push('kind = ?'); args.push(String(params.kind)) }
   if (params.userId != null) { where.push('user_id = ?'); args.push(Number(params.userId)) }
   if (params.spaceId != null) { where.push('space_id = ?'); args.push(Number(params.spaceId)) }

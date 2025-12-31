@@ -66,7 +66,7 @@ Out of scope:
    Checkpoint: Wait for developer approval before proceeding.
 
 5. Ensure production creation uses the selected `logoConfigId` consistently  
-   Status: Pending  
+   Status: Completed  
    Implementation:
    - Confirm `onProduce()` sends `logoConfigId` from state (or `null`) and that the selection is stable across refresh.
    Testing:
@@ -74,7 +74,7 @@ Out of scope:
    Checkpoint: Wait for developer approval before proceeding.
 
 6. Build + commit  
-   Status: Pending  
+   Status: Completed  
    Testing:
    - `npm run build`
    - `npm run web:build:scoped`
