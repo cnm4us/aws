@@ -323,7 +323,7 @@ const uploadCards = useMemo(() => {
             key={upload.id}
             style={{
               borderRadius: 16,
-              border: '1px solid #161616',
+              border: '1px solid rgba(255,255,255,0.22)',
               background: 'rgba(255,255,255,0.03)',
               overflow: 'hidden',
             }}
