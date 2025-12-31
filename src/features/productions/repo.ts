@@ -60,3 +60,8 @@ export async function updateProductionNameIfEmpty(id: number, name: string) {
   await db.query(`UPDATE productions SET name = ? WHERE id = ? AND (name IS NULL OR name = '')`, [name, id])
 }
 
+export async function countSpacePublicationsForProduction(productionId: number): Promise<number> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT COUNT(*) AS c FROM space_publications WHERE production_id = ?`, [productionId])
+  return Number((rows as any[])[0]?.c || 0)
+}

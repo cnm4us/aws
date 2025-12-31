@@ -2,11 +2,14 @@ import { can, resolveChecker } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { enhanceUploadRow } from '../../utils/enhance'
 import { OUTPUT_BUCKET } from '../../config'
+import { getPool } from '../../db'
 import { startProductionRender } from '../../services/productionRunner'
 import * as repo from './repo'
 import { type ProductionRecord } from './types'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
+import { s3 } from '../../services/s3'
+import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
 function mapProduction(row: any): ProductionRecord {
   return {
@@ -47,6 +50,50 @@ function safeJson(input: any) {
 
 function normalizeUploadStatus(status: any): string {
   return String(status || '').toLowerCase()
+}
+
+type DeleteSummary = { bucket: string; prefix: string; deleted: number; batches: number; samples: string[]; errors: string[] }
+
+async function deletePrefix(bucket: string, prefix: string): Promise<DeleteSummary> {
+  let token: string | undefined = undefined
+  let totalDeleted = 0
+  let batches = 0
+  const samples: string[] = []
+  const errors: string[] = []
+  do {
+    let list: ListObjectsV2CommandOutput
+    try {
+      list = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }))
+    } catch (e: any) {
+      errors.push(`list:${bucket}:${prefix}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+      break
+    }
+    const contents = list.Contents ?? []
+    if (contents.length) {
+      const Objects = contents.map((o: _Object) => ({ Key: o.Key! }))
+      for (let i = 0; i < Math.min(10, contents.length); i++) {
+        const k = contents[i]?.Key; if (k && samples.length < 10) samples.push(String(k))
+      }
+      try {
+        await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }))
+      } catch (e: any) {
+        errors.push(`delete:${bucket}:${prefix}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+        break
+      }
+      totalDeleted += Objects.length
+      batches += 1
+    }
+    token = list.IsTruncated ? list.NextContinuationToken : undefined
+  } while (token)
+  return { bucket, prefix, deleted: totalDeleted, batches, samples, errors }
+}
+
+function normalizeProductionOutputPrefix(prefix: string): string {
+  let p = String(prefix || '')
+  if (!p.endsWith('/')) p += '/'
+  p = p.replace(/(?:portrait|landscape)\/$/, '')
+  if (!p.endsWith('/')) p += '/'
+  return p
 }
 
 async function loadAssetUploadOrThrow(
@@ -249,4 +296,38 @@ export async function createForPublishRoute(input: { uploadId: number; profile?:
   if (!row) throw new NotFoundError('not_found')
   const production = mapProduction(row)
   return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
+}
+
+export async function remove(id: number, currentUserId: number): Promise<{ ok: true }> {
+  const row = await repo.getWithUpload(id)
+  if (!row) throw new NotFoundError('not_found')
+
+  const ownerId = Number(row.user_id)
+  const isOwner = ownerId === currentUserId
+  const checker = await resolveChecker(currentUserId)
+  const isAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const pubsCount = await repo.countSpacePublicationsForProduction(id)
+  if (pubsCount > 0) {
+    const err: any = new DomainError('production_has_publications', 'production_has_publications', 409)
+    err.detail = { publications: pubsCount }
+    throw err
+  }
+
+  const outPrefixRaw = row.output_prefix ? String(row.output_prefix) : null
+  if (outPrefixRaw) {
+    const prefix = normalizeProductionOutputPrefix(outPrefixRaw)
+    const del = await deletePrefix(OUTPUT_BUCKET, prefix)
+    if (del.errors.length) {
+      const err: any = new DomainError('s3_delete_failed', 's3_delete_failed', 502)
+      err.detail = del
+      throw err
+    }
+  }
+
+  // Safe now: no publications should reference this production.
+  const db = getPool()
+  await db.query(`DELETE FROM productions WHERE id = ?`, [id])
+  return { ok: true }
 }

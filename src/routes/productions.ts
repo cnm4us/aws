@@ -50,4 +50,14 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res, next) =
   } catch (err: any) { next(err) }
 })
 
+productionsRouter.delete('/api/productions/:id', requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const currentUserId = req.user!.id
+    const result = await prodSvc.remove(id, currentUserId)
+    res.json(result)
+  } catch (err: any) { next(err) }
+})
+
 export default productionsRouter

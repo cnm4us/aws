@@ -125,6 +125,7 @@ const ProductionsPage: React.FC = () => {
   const [uploadDetail, setUploadDetail] = useState<UploadSummary | null>(null)
   const [uploadDetailLoading, setUploadDetailLoading] = useState(false)
   const [uploadDetailError, setUploadDetailError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const loadProductions = useCallback(async (userId: number) => {
     setLoading(true)
@@ -238,6 +239,31 @@ const ProductionsPage: React.FC = () => {
     }
   }, [uploadContextId])
 
+  const deleteProduction = useCallback(async (productionId: number) => {
+    const confirmed = window.confirm('Delete this production? This deletes the produced video only (not your logo/audio uploads).')
+    if (!confirmed) return
+    setDeletingId(productionId)
+    try {
+      const csrf = getCsrfToken()
+      const res = await fetch(`/api/productions/${productionId}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: csrf ? { 'x-csrf-token': csrf } : undefined,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete production')
+      setProductions((prev) => prev.filter((p) => p.id !== productionId))
+      if (selectedId === productionId) {
+        window.history.pushState({}, '', '/productions')
+        setSelectedId(null)
+      }
+    } catch (err: any) {
+      window.alert(err?.message || 'Failed to delete production')
+    } finally {
+      setDeletingId((cur) => (cur === productionId ? null : cur))
+    }
+  }, [selectedId])
+
   const rows = useMemo(() => {
     return productions.map((prod) => {
       const upload = prod.upload
@@ -245,6 +271,7 @@ const ProductionsPage: React.FC = () => {
       const publishHref = `/publish?production=${prod.id}`
       const poster = pickPoster(upload || null)
       const displayName = (prod.name && prod.name.trim()) || (upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`)
+      const completedText = `Completed: ${prod.completed_at ? formatDate(prod.completed_at) : '—'}`
       return (
         <tr key={prod.id}>
           <td style={{ padding: 12, width: 96 }}>
@@ -263,16 +290,34 @@ const ProductionsPage: React.FC = () => {
               </a>
               {upload && (
                 <div style={{ marginTop: 2, color: '#777' }}>
-                  {prod.status} • {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
+                  {formatBytes(upload.size_bytes)} • {upload.width || 0}×{upload.height || 0}
                 </div>
               )}
+              <div style={{ marginTop: 6, color: '#888' }}>{completedText}</div>
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => deleteProduction(prod.id)}
+                  disabled={deletingId === prod.id}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid #3a1a1a',
+                    background: deletingId === prod.id ? '#2a1414' : '#1a0f0f',
+                    color: '#ffb3b3',
+                    fontWeight: 700,
+                    cursor: deletingId === prod.id ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {deletingId === prod.id ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
             </div>
           </td>
-          <td style={{ padding: 12 }}>{prod.completed_at ? formatDate(prod.completed_at) : '—'}</td>
         </tr>
       )
     })
-  }, [productions])
+  }, [productions, deleteProduction, deletingId])
 
   const productionsForUpload = useMemo(() => {
     if (!uploadContextId) return []
@@ -495,12 +540,11 @@ const ProductionsPage: React.FC = () => {
           <div style={{ color: '#bbb' }}>No productions yet. Select an upload to start a new production.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: '#aaa' }}>
-                  <th style={{ padding: 12 }}>Preview</th>
-                  <th style={{ padding: 12 }}>Name</th>
-                  <th style={{ padding: 12 }}>Completed</th>
+                  <th style={{ padding: 12 }} />
+                  <th style={{ padding: 12 }} />
                 </tr>
               </thead>
               <tbody>{rows}</tbody>
