@@ -303,7 +303,7 @@ export async function createSignedUpload(input: {
     kind === 'video'
       ? (lowerCt ? lowerCt.startsWith('video/') : false) || ['.mp4', '.webm', '.mov'].includes(extFromName)
       : kind === 'logo'
-        ? (lowerCt ? lowerCt.startsWith('image/') : false) || ['.png', '.jpg', '.jpeg', '.svg'].includes(extFromName)
+        ? (lowerCt ? ['image/png', 'image/jpeg', 'image/jpg'].includes(lowerCt) : false) || ['.png', '.jpg', '.jpeg'].includes(extFromName)
         : (lowerCt ? lowerCt.startsWith('audio/') : false) || ['.mp3', '.wav', '.aac', '.m4a', '.mp4', '.ogg', '.opus'].includes(extFromName)
   if (!allowed) {
     const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
@@ -400,7 +400,9 @@ export async function createSignedUpload(input: {
   // Add a best-effort guardrail on Content-Type category when provided.
   if (contentType) {
     if (kind === 'video' && lowerCt.startsWith('video/')) conditions.push(['starts-with', '$Content-Type', 'video/'])
-    if (kind === 'logo' && lowerCt.startsWith('image/')) conditions.push(['starts-with', '$Content-Type', 'image/'])
+    if (kind === 'logo' && ['image/png', 'image/jpeg', 'image/jpg'].includes(lowerCt)) {
+      conditions.push(['starts-with', '$Content-Type', 'image/'])
+    }
     if (kind === 'audio' && lowerCt.startsWith('audio/')) conditions.push(['starts-with', '$Content-Type', 'audio/'])
   }
 

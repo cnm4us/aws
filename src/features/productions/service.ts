@@ -5,7 +5,7 @@ import { OUTPUT_BUCKET } from '../../config'
 import { startProductionRender } from '../../services/productionRunner'
 import * as repo from './repo'
 import { type ProductionRecord } from './types'
-import { NotFoundError, ForbiddenError } from '../../core/errors'
+import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
 
 function mapProduction(row: any): ProductionRecord {
@@ -43,6 +43,38 @@ function safeJson(input: any) {
   if (!input) return null
   if (typeof input === 'object') return input
   try { return JSON.parse(String(input)) } catch { return null }
+}
+
+function normalizeUploadStatus(status: any): string {
+  return String(status || '').toLowerCase()
+}
+
+async function loadAssetUploadOrThrow(
+  uploadId: number,
+  currentUserId: number,
+  opts: { expectedKind: 'logo' | 'audio'; allowAdmin: boolean; requireReadyStatus?: boolean }
+) {
+  const row = await repo.loadUpload(uploadId)
+  if (!row) {
+    const code = `${opts.expectedKind}_upload_not_found`
+    throw new DomainError(code, code, 404)
+  }
+  const kind = String((row as any).kind || '').toLowerCase()
+  if (kind !== opts.expectedKind) {
+    const code = `invalid_${opts.expectedKind}_upload_kind`
+    throw new DomainError(code, code, 400)
+  }
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(currentUserId)
+  if (!isOwner && !opts.allowAdmin) throw new ForbiddenError()
+  if (opts.requireReadyStatus !== false) {
+    const st = normalizeUploadStatus(row.status)
+    if (st !== 'uploaded' && st !== 'completed') {
+      const code = `invalid_${opts.expectedKind}_upload_state`
+      throw new DomainError(code, code, 422)
+    }
+  }
+  return row
 }
 
 export async function list(currentUserId: number, targetUserId?: number) {
@@ -130,6 +162,15 @@ export async function create(
   const checker = await resolveChecker(currentUserId)
   const canProduceAny = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
   if (!isOwner && !canProduceAny) throw new ForbiddenError()
+
+  // Validate referenced enhancement assets early (so we fail fast with clear 4xx errors).
+  // Ownership rule: must be owned by the producing user unless site admin (VIDEO_DELETE_ANY).
+  if (input.logoUploadId != null) {
+    await loadAssetUploadOrThrow(Number(input.logoUploadId), currentUserId, { expectedKind: 'logo', allowAdmin: canProduceAny })
+  }
+  if (input.musicUploadId != null) {
+    await loadAssetUploadOrThrow(Number(input.musicUploadId), currentUserId, { expectedKind: 'audio', allowAdmin: canProduceAny })
+  }
 
   const baseConfig = input.config && typeof input.config === 'object' ? input.config : {}
   const mergedConfig: any = { ...baseConfig }

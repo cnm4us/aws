@@ -44,6 +44,27 @@ async function probeVideo(file: File): Promise<{ width: number | null; height: n
   })
 }
 
+async function probeImage(file: File): Promise<{ width: number | null; height: number | null }> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        const meta = { width: (img.naturalWidth || img.width) || null, height: (img.naturalHeight || img.height) || null }
+        URL.revokeObjectURL(url)
+        resolve(meta)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve({ width: null, height: null })
+      }
+      img.src = url
+    } catch {
+      resolve({ width: null, height: null })
+    }
+  })
+}
+
 function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : null
@@ -63,8 +84,8 @@ function isAllowedFile(kind: 'video' | 'logo' | 'audio', file: File): boolean {
     return ['.mp4', '.webm', '.mov'].includes(ext)
   }
   if (kind === 'logo') {
-    if (ct.startsWith('image/')) return true
-    return ['.png', '.jpg', '.jpeg', '.svg'].includes(ext)
+    if (ct === 'image/png' || ct === 'image/jpeg' || ct === 'image/jpg') return true
+    return ['.png', '.jpg', '.jpeg'].includes(ext)
   }
   if (kind === 'audio') {
     if (ct.startsWith('audio/')) return true
@@ -74,7 +95,7 @@ function isAllowedFile(kind: 'video' | 'logo' | 'audio', file: File): boolean {
 }
 
 function acceptForKind(kind: 'video' | 'logo' | 'audio'): string {
-  if (kind === 'logo') return 'image/png,image/jpeg,image/svg+xml'
+  if (kind === 'logo') return 'image/png,image/jpeg'
   if (kind === 'audio') return 'audio/*'
   return 'video/*'
 }
@@ -122,7 +143,7 @@ const UploadNewPage: React.FC = () => {
         kind === 'video'
           ? 'Unsupported video type. Use MP4, MOV, or WebM.'
           : kind === 'logo'
-            ? 'Unsupported logo type. Use PNG, JPG, or SVG.'
+            ? 'Unsupported logo type. Use PNG or JPG.'
             : 'Unsupported audio type. Use MP3, WAV, AAC, or M4A.'
       )
       setUploadMessage(null)
@@ -163,7 +184,12 @@ const UploadNewPage: React.FC = () => {
       setUploadProgress(0)
 
       try {
-        const meta = kind === 'video' ? await probeVideo(file) : { width: null, height: null, durationSeconds: null }
+        const meta =
+          kind === 'video'
+            ? await probeVideo(file)
+            : kind === 'logo'
+              ? { ...(await probeImage(file)), durationSeconds: null }
+              : { width: null, height: null, durationSeconds: null }
         const body = {
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
