@@ -66,11 +66,12 @@ function parseUploadId(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parsePick(): 'audio' | null {
+function parsePick(): 'audio' | 'logoConfig' | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('pick') || '').toLowerCase()
     if (raw === 'audio') return 'audio'
+    if (raw === 'logoconfig') return 'logoConfig'
   } catch {}
   return null
 }
@@ -79,6 +80,18 @@ function parseMusicUploadId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = params.get('musicUploadId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseLogoConfigId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('logoConfigId')
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -143,6 +156,7 @@ function getCsrfToken(): string | null {
 }
 
 type AudioSortMode = 'recent' | 'alpha'
+type LogoConfigSortMode = 'recent' | 'alpha'
 
 export default function ProducePage() {
   const uploadId = useMemo(() => parseUploadId(), [])
@@ -161,10 +175,10 @@ export default function ProducePage() {
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(null)
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
-  const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(null)
-  const [initLogoConfigDone, setInitLogoConfigDone] = useState(false)
-  const [pick, setPick] = useState<'audio' | null>(() => parsePick())
+  const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
+  const [pick, setPick] = useState<'audio' | 'logoConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
+  const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
 
   useEffect(() => {
     let cancelled = false
@@ -212,7 +226,19 @@ export default function ProducePage() {
           return
         }
       } catch {}
+      try {
+        const pendingRaw = sessionStorage.getItem('produce:pendingLogoConfigId')
+        if (pendingRaw !== null) {
+          sessionStorage.removeItem('produce:pendingLogoConfigId')
+          const pending = pendingRaw === '' ? null : Number(pendingRaw)
+          const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
+          setSelectedLogoConfigId(nextId)
+          replaceQueryParams({ logoConfigId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          return
+        }
+      } catch {}
       setSelectedAudioId(parseMusicUploadId())
+      setSelectedLogoConfigId(parseLogoConfigId())
     }
     window.addEventListener('popstate', applyFromLocation)
     return () => window.removeEventListener('popstate', applyFromLocation)
@@ -246,14 +272,6 @@ export default function ProducePage() {
         setAudios(Array.isArray(audioJson) ? audioJson : [])
         const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
         setLogoConfigs(cfgs as any)
-
-        if (!initLogoConfigDone) {
-          const standard = cfgs.find((c) => String(c?.name || '').trim().toLowerCase() === 'standard watermark')
-          if (standard && standard.id && selectedLogoConfigId == null) {
-            setSelectedLogoConfigId(Number(standard.id))
-          }
-          setInitLogoConfigDone(true)
-        }
       } catch (e: any) {
         if (!cancelled) setAssetsError(e?.message || 'Failed to load assets')
       } finally {
@@ -263,7 +281,7 @@ export default function ProducePage() {
     return () => {
       cancelled = true
     }
-  }, [authChecked, me?.userId, initLogoConfigDone, selectedLogoConfigId])
+  }, [authChecked, me?.userId])
 
   const selectedAudio = useMemo(() => {
     if (selectedAudioId == null) return null
@@ -285,9 +303,47 @@ export default function ProducePage() {
     return items
   }, [audios, audioSort])
 
+  const sortedLogoConfigs = useMemo(() => {
+    const items = Array.isArray(logoConfigs) ? [...logoConfigs] : []
+    const nameFor = (c: LogoConfig) => String(c.name || '').trim().toLowerCase()
+    if (logoConfigSort === 'alpha') {
+      items.sort((a, b) => nameFor(a).localeCompare(nameFor(b)))
+      return items
+    }
+    items.sort((a, b) => Number(b.id) - Number(a.id))
+    return items
+  }, [logoConfigs, logoConfigSort])
+
+  const selectedLogoConfig = useMemo(() => {
+    if (selectedLogoConfigId == null) return null
+    return logoConfigs.find((c) => c.id === selectedLogoConfigId) || null
+  }, [logoConfigs, selectedLogoConfigId])
+
+  const formatLogoConfigSummary = (c: LogoConfig | null): string => {
+    if (!c) return ''
+    const timing =
+      c.timingRule === 'entire'
+        ? 'entire'
+        : c.timingSeconds != null
+          ? `${String(c.timingRule).replace('_', ' ')} @ ${c.timingSeconds}s`
+          : String(c.timingRule).replace('_', ' ')
+    return [
+      c.position ? String(c.position).replace('_', '-') : null,
+      c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
+      c.opacityPct != null ? `${c.opacityPct}%` : null,
+      timing || null,
+      c.fade ? String(c.fade).replace('_', ' ') : null,
+    ].filter(Boolean).join(' • ')
+  }
+
   const openAudioPicker = () => {
     setPick('audio')
     pushQueryParams({ pick: 'audio' }, { ...(window.history.state || {}), modal: 'audioPicker' })
+  }
+
+  const openLogoConfigPicker = () => {
+    setPick('logoConfig')
+    pushQueryParams({ pick: 'logoConfig' }, { ...(window.history.state || {}), modal: 'logoConfigPicker' })
   }
 
   const closePicker = () => {
@@ -298,6 +354,11 @@ export default function ProducePage() {
   const applyMusicSelection = (id: number | null) => {
     setSelectedAudioId(id)
     replaceQueryParams({ musicUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+  }
+
+  const applyLogoConfigSelection = (id: number | null) => {
+    setSelectedLogoConfigId(id)
+    replaceQueryParams({ logoConfigId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const chooseAudio = (id: number | null) => {
@@ -319,6 +380,23 @@ export default function ProducePage() {
     }
     // Direct-entry into ?pick=audio (no modal history state): just close in-place.
     applyMusicSelection(id)
+    closePicker()
+  }
+
+  const chooseLogoConfigFromPicker = (id: number | null) => {
+    setPick(null)
+    const modal = (window.history.state as any)?.modal
+    if (modal === 'logoConfigPicker') {
+      try {
+        sessionStorage.setItem('produce:pendingLogoConfigId', id == null ? '' : String(id))
+      } catch {}
+      try {
+        window.history.back()
+        return
+      } catch {}
+    }
+    // Direct-entry into ?pick=logoConfig (no modal history state): just close in-place.
+    applyLogoConfigSelection(id)
     closePicker()
   }
 
@@ -513,48 +591,72 @@ export default function ProducePage() {
                   </div>
                 )}
 
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
-
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo Config</div>
-                  <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
-                </div>
-                {assetsLoading ? (
-                  <div style={{ color: '#777' }}>Loading logo configurations…</div>
-                ) : assetsError ? (
-                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
-                ) : logoConfigs.length === 0 ? (
-                  <div style={{ color: '#777' }}>
-                    No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create a preset</a>.
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <input type="radio" name="logoCfg" checked={selectedLogoConfigId == null} onChange={() => setSelectedLogoConfigId(null)} />
-                      <div style={{ color: '#bbb' }}>None</div>
-                    </label>
-                    {logoConfigs.slice(0, 12).map((c) => {
-                      const name = (c.name || `Config ${c.id}`).trim()
-                      const summary = [
-                        c.position ? String(c.position).replace('_', '-') : null,
-                        c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
-                        c.opacityPct != null ? `${c.opacityPct}%` : null,
-                        c.timingRule ? String(c.timingRule).replace('_', ' ') : null,
-                        c.fade ? String(c.fade).replace('_', ' ') : null,
-                      ].filter(Boolean).join(' • ')
-                      return (
-                        <label key={c.id} style={{ display: 'grid', gap: 6, padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <input type="radio" name="logoCfg" checked={selectedLogoConfigId === c.id} onChange={() => setSelectedLogoConfigId(c.id)} />
-                            <div style={{ fontWeight: 650 }}>{name}</div>
-                          </div>
-                          {summary ? <div style={{ color: '#777', fontSize: 13 }}>{summary}</div> : null}
-                        </label>
-                      )
-                    })}
-                    {logoConfigs.length > 12 ? <div style={{ color: '#777', fontSize: 13 }}>Showing first 12. Manage configs to pick others.</div> : null}
-                  </div>
-                )}
+	                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+	
+		                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+		                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo Config</div>
+		                  <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
+		                </div>
+		                {assetsLoading ? (
+		                  <div style={{ color: '#777' }}>Loading logo configurations…</div>
+		                ) : assetsError ? (
+		                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+		                ) : logoConfigs.length === 0 ? (
+		                  <div style={{ color: '#777' }}>
+		                    No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create a preset</a>.
+		                  </div>
+		                ) : (
+		                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+		                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+		                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
+		                        {selectedLogoConfig ? (selectedLogoConfig.name || `Config ${selectedLogoConfig.id}`) : 'None'}
+		                      </div>
+		                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+		                        <button
+		                          type="button"
+		                          onClick={openLogoConfigPicker}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(212,175,55,0.85)',
+		                            background: 'rgba(212,175,55,0.14)',
+		                            color: '#d4af37',
+		                            fontWeight: 700,
+		                            cursor: 'pointer',
+		                          }}
+		                        >
+		                          Choose
+		                        </button>
+		                        {selectedLogoConfigId != null ? (
+		                          <button
+		                            type="button"
+		                            onClick={() => applyLogoConfigSelection(null)}
+		                            style={{
+		                              padding: '10px 12px',
+		                              borderRadius: 10,
+		                              border: '1px solid rgba(212,175,55,0.65)',
+		                              background: 'rgba(212,175,55,0.10)',
+		                              color: '#d4af37',
+		                              fontWeight: 800,
+		                              cursor: 'pointer',
+		                            }}
+		                          >
+		                            Clear
+		                          </button>
+		                        ) : null}
+		                      </div>
+		                    </div>
+		                    {selectedLogoConfig ? (
+		                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+		                        {formatLogoConfigSummary(selectedLogoConfig)}
+		                      </div>
+		                    ) : (
+		                      <div style={{ color: '#777', fontSize: 13 }}>
+		                        Select a logo config preset for watermarking (optional).
+		                      </div>
+		                    )}
+		                  </div>
+		                )}
 
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
 
@@ -768,6 +870,154 @@ export default function ProducePage() {
                         {formatBytes(a.size_bytes)}{a.created_at ? ` • ${String(a.created_at).slice(0, 10)}` : ''}
                       </div>
                       <CompactAudioPlayer src={src} />
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      ) : pick === 'logoConfig' ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#050505',
+            color: '#fff',
+            zIndex: 10050,
+            overflow: 'auto',
+          }}
+        >
+          <div style={{ maxWidth: 960, margin: '0 auto', padding: 'max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const modal = (window.history.state as any)?.modal
+                  if (modal === 'logoConfigPicker') {
+                    try { window.history.back(); return } catch {}
+                  }
+                  closePicker()
+                }}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Back
+              </button>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Logo Config</div>
+              <div style={{ width: 84 }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
+              <button
+                type="button"
+                onClick={() => setLogoConfigSort('recent')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: logoConfigSort === 'recent' ? '#0a84ff' : '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Recent
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogoConfigSort('alpha')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: logoConfigSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Alphabetical
+              </button>
+              <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => chooseLogoConfigFromPicker(null)}
+                style={{
+                  textAlign: 'left',
+                  padding: 12,
+                  borderRadius: 12,
+                  border: selectedLogoConfigId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                  background: selectedLogoConfigId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                None
+              </button>
+
+              {assetsLoading ? (
+                <div style={{ color: '#888' }}>Loading logo configurations…</div>
+              ) : assetsError ? (
+                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+              ) : sortedLogoConfigs.length === 0 ? (
+                <div style={{ color: '#bbb' }}>
+                  No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create one</a>.
+                </div>
+              ) : (
+                sortedLogoConfigs.map((c) => {
+                  const selected = selectedLogoConfigId === c.id
+                  const name = (c.name || `Config ${c.id}`).trim()
+                  const summary = formatLogoConfigSummary(c)
+                  return (
+                    <div
+                      key={c.id}
+                      style={{
+                        padding: '10px 12px 12px',
+                        borderRadius: 12,
+                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                        background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
+                        display: 'grid',
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {name}
+                          </div>
+                          {summary ? <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>{summary}</div> : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => chooseLogoConfigFromPicker(c.id)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+                            color: selected ? '#fff' : '#d4af37',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {selected ? 'Selected' : 'Select'}
+                        </button>
+                      </div>
                     </div>
                   )
                 })
