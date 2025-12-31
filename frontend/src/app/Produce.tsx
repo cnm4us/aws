@@ -693,7 +693,7 @@ export default function ProducePage() {
                   textAlign: 'left',
                   padding: 12,
                   borderRadius: 12,
-                  border: selectedAudioId == null ? '1px solid rgba(10,132,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                  border: selectedAudioId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
                   background: selectedAudioId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
                   color: '#fff',
                   cursor: 'pointer',
@@ -721,7 +721,7 @@ export default function ProducePage() {
                       style={{
                         padding: '8px 12px 12px',
                         borderRadius: 12,
-                        border: selected ? '1px solid rgba(10,132,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
                         background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
                       }}
                     >
@@ -733,9 +733,9 @@ export default function ProducePage() {
                           style={{
                             padding: '8px 12px',
                             borderRadius: 10,
-                            border: '1px solid rgba(212,175,55,0.55)',
-                            background: selected ? 'rgba(212,175,55,0.16)' : 'rgba(212,175,55,0.10)',
-                            color: '#d4af37',
+                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+                            color: selected ? '#fff' : '#d4af37',
                             fontWeight: 800,
                             cursor: 'pointer',
                             flexShrink: 0,

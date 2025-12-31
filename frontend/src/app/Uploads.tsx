@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type PublicationSummary = {
   spaceId: number
@@ -205,11 +206,7 @@ const uploadCards = useMemo(() => {
       const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
       const audioSrc = kind === 'audio' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
       const image =
-        kind === 'audio' ? (
-          <div style={{ width: 280, maxWidth: '100%' }}>
-            <audio controls preload="none" src={audioSrc as string} style={{ width: '100%' }} />
-          </div>
-        ) : kind === 'logo' ? (
+        kind === 'logo' ? (
           <img
             src={logoSrc as string}
             alt="logo"
@@ -243,6 +240,81 @@ const uploadCards = useMemo(() => {
               ? audioSrc || '#'
               : '#'
       const isDeleting = !!deleting[upload.id]
+
+      if (kind === 'audio') {
+        return (
+          <div
+            key={upload.id}
+            style={{
+              borderRadius: 16,
+              border: '1px solid rgba(212,175,55,0.45)',
+              background: 'rgba(255,255,255,0.03)',
+              padding: '14px 12px',
+            }}
+          >
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ fontWeight: 800, color: '#d4af37', lineHeight: 1.2 }}>
+                  {displayName}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (isDeleting) return
+                    const ok = window.confirm('Delete this audio? This cannot be undone.')
+                    if (!ok) return
+                    setDeleteError(null)
+                    setDeleting((prev) => ({ ...prev, [upload.id]: true }))
+                    try {
+                      const headers: Record<string, string> = {}
+                      const csrf = getCsrfToken()
+                      if (csrf) headers['x-csrf-token'] = csrf
+                      const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                      setUploads((prev) => prev.filter((u) => u.id !== upload.id))
+                    } catch (err: any) {
+                      setDeleteError(err?.message || 'Failed to delete')
+                    } finally {
+                      setDeleting((prev) => {
+                        const next = { ...prev }
+                        delete next[upload.id]
+                        return next
+                      })
+                    }
+                  }}
+                  style={{
+                    background: 'transparent',
+                    color: '#ff9b9b',
+                    border: '1px solid rgba(255,155,155,0.35)',
+                    borderRadius: 10,
+                    padding: '6px 10px',
+                    fontWeight: 650,
+                    cursor: isDeleting ? 'default' : 'pointer',
+                    opacity: isDeleting ? 0.6 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+              {description && (
+                <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                  {description}
+                </div>
+              )}
+              {metaLine && (
+                <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                  {metaLine}
+                </div>
+              )}
+              <div style={{ marginTop: 6 }}>
+                <CompactAudioPlayer src={audioSrc as string} />
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       return (
         <div
@@ -390,7 +462,7 @@ const uploadCards = useMemo(() => {
                 ? 'Upload new videos and manage where they’re published.'
                 : kind === 'logo'
                   ? 'Upload logos to use as watermarks in future productions.'
-                  : 'Upload audio to mix into future productions.'}
+                  : 'Upload audio to mix into future productions. .mp3 and .wav files only.'}
             </p>
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -410,7 +482,7 @@ const uploadCards = useMemo(() => {
                 boxShadow: '0 6px 16px rgba(10,132,255,0.35)',
               }}
             >
-              {kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}
+              Upload
             </a>
             {kind === 'video' ? (
               <a
@@ -449,16 +521,22 @@ const uploadCards = useMemo(() => {
                 : 'No audio yet. Upload audio to mix into future productions.'}
           </div>
         ) : (
-          <div
-            style={{
-              background: '#080808',
-              borderRadius: 16,
-              border: '1px solid #161616',
-              overflow: 'hidden',
-            }}
-          >
-            {uploadCards}
-          </div>
+          kind === 'audio' ? (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {uploadCards}
+            </div>
+          ) : (
+            <div
+              style={{
+                background: '#080808',
+                borderRadius: 16,
+                border: '1px solid #161616',
+                overflow: 'hidden',
+              }}
+            >
+              {uploadCards}
+            </div>
+          )
         )}
       </div>
     </div>
