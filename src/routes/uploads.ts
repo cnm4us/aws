@@ -101,3 +101,18 @@ uploadsRouter.delete('/api/uploads/:id', requireAuth, async (req, res) => {
     res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
   }
 });
+
+uploadsRouter.post('/api/uploads/:id/delete-source', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const currentUserId = Number(req.user!.id)
+    const result = await uploadsSvc.deleteSourceVideo(id, currentUserId)
+    res.json(result)
+  } catch (err: any) {
+    console.error('delete source upload error', err)
+    const status = err?.status || 500
+    const code = err?.code || 'failed_to_delete_source'
+    res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
+  }
+})

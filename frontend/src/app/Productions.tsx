@@ -334,22 +334,6 @@ const ProductionsPage: React.FC = () => {
   }
 
   if (uploadContextId && !selectedId) {
-    if (uploadDetailLoading) {
-      return (
-        <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: 24 }}>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
-          <p style={{ marginTop: 24 }}>Loading upload…</p>
-        </div>
-      )
-    }
-    if (uploadDetailError) {
-      return (
-        <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif', padding: 24 }}>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
-          <p style={{ marginTop: 24, color: '#ff9b9b' }}>{uploadDetailError}</p>
-        </div>
-      )
-    }
     const upload = uploadDetail
     const poster = pickPoster(upload)
     const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : null
@@ -362,9 +346,17 @@ const ProductionsPage: React.FC = () => {
             <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
             <div>
               <h1 style={{ margin: 0, fontSize: 28 }}>Build Production</h1>
-              {upload && (
+              {uploadDetailLoading ? (
+                <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Loading upload…</p>
+              ) : uploadDetailError ? (
+                <p style={{ margin: '4px 0 0 0', color: '#ff9b9b' }}>{uploadDetailError}</p>
+              ) : upload ? (
                 <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
                   {displayName} • {upload.status}
+                </p>
+              ) : (
+                <p style={{ margin: '4px 0 0 0', color: '#ff9b9b' }}>
+                  Upload not found.
                 </p>
               )}
             </div>
@@ -384,21 +376,27 @@ const ProductionsPage: React.FC = () => {
                 <div>Resolution: {(upload?.width || 0)}×{upload?.height || 0}</div>
                 <div>Uploaded: {formatDate(upload?.created_at || null)}</div>
               </div>
-              <a
-                href={builderHref}
-                style={{
-                  display: 'inline-block',
-                  background: '#0a84ff',
-                  color: '#fff',
-                  border: '1px solid transparent',
-                  borderRadius: 10,
-                  padding: '10px 18px',
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                }}
-              >
-                Create Production
-              </a>
+              {upload ? (
+                <a
+                  href={builderHref}
+                  style={{
+                    display: 'inline-block',
+                    background: '#0a84ff',
+                    color: '#fff',
+                    border: '1px solid transparent',
+                    borderRadius: 10,
+                    padding: '10px 18px',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Create Production
+                </a>
+              ) : (
+                <div style={{ color: '#888', fontSize: 13 }}>
+                  Can’t create a new production because the source upload is missing.
+                </div>
+              )}
             </div>
           </section>
 

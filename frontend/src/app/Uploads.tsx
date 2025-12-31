@@ -22,6 +22,7 @@ type UploadListItem = {
   kind?: 'video' | 'logo' | 'audio' | string
   created_at: string
   uploaded_at: string | null
+  source_deleted_at?: string | null
   poster_portrait_cdn?: string
   poster_landscape_cdn?: string
   poster_cdn?: string
@@ -122,6 +123,7 @@ const UploadsPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Record<number, boolean>>({})
+  const [deletingSource, setDeletingSource] = useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const loadUploads = useCallback(
@@ -138,7 +140,9 @@ const UploadsPage: React.FC = () => {
         const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
         if (!res.ok) throw new Error('failed_to_fetch_uploads')
         const data = (await res.json()) as UploadListItem[]
-        setUploads(Array.isArray(data) ? data : [])
+        const items = Array.isArray(data) ? data : []
+        // Hide uploads whose source file was deleted (keeps DB rows + publications intact, but removes them from the "Uploads" view).
+        setUploads(kind === 'video' ? items.filter((u) => !u.source_deleted_at) : items)
       } catch (err: any) {
         setError(err?.message ?? 'Failed to load uploads')
       } finally {
@@ -318,6 +322,8 @@ const uploadCards = useMemo(() => {
 
       if (kind === 'video') {
         const href = productionHref
+        const sourceDeleted = !!upload.source_deleted_at
+        const isDeletingSource = !!deletingSource[upload.id]
         return (
           <div
             key={upload.id}
@@ -362,12 +368,17 @@ const uploadCards = useMemo(() => {
                   {metaLine}
                 </div>
               )}
+              {sourceDeleted ? (
+                <div style={{ marginTop: 8, color: '#ff9b9b', fontSize: 13, lineHeight: 1.35 }}>
+                  Source deleted (existing productions/publications still work).
+                </div>
+              ) : null}
               {publicationLines.length ? (
                 <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 13 }}>
                   {publicationLines}
                 </div>
               ) : null}
-              <div style={{ marginTop: 10 }}>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <a
                   href={href}
                   style={{
@@ -385,6 +396,57 @@ const uploadCards = useMemo(() => {
                 >
                   View Productions
                 </a>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (sourceDeleted || isDeletingSource) return
+                    const ok = window.confirm(
+                      'Delete source video file?\n\nExisting productions and published videos will keep working, but you will NOT be able to create new productions from this upload.'
+                    )
+                    if (!ok) return
+                    setDeleteError(null)
+                    setDeletingSource((prev) => ({ ...prev, [upload.id]: true }))
+                    try {
+                      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                      const csrf = getCsrfToken()
+                      if (csrf) headers['x-csrf-token'] = csrf
+                      const res = await fetch(`/api/uploads/${upload.id}/delete-source`, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers,
+                        body: '{}',
+                      })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete source')
+                      // Redirect to productions for this upload (so the user can still manage productions after the source is gone).
+                      window.location.href = productionHref
+                    } catch (err: any) {
+                      setDeleteError(err?.message || 'Failed to delete source')
+                    } finally {
+                      setDeletingSource((prev) => {
+                        const next = { ...prev }
+                        delete next[upload.id]
+                        return next
+                      })
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: sourceDeleted ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,155,155,0.35)',
+                    background: sourceDeleted ? 'rgba(255,255,255,0.04)' : 'rgba(255,155,155,0.08)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    cursor: sourceDeleted || isDeletingSource ? 'default' : 'pointer',
+                    opacity: sourceDeleted || isDeletingSource ? 0.6 : 1,
+                  }}
+                  disabled={sourceDeleted || isDeletingSource}
+                >
+                  {sourceDeleted ? 'Source Deleted' : isDeletingSource ? 'Deleting…' : 'Delete Source'}
+                </button>
               </div>
             </div>
           </div>
@@ -480,7 +542,7 @@ const uploadCards = useMemo(() => {
         </div>
       )
     })
-  }, [uploads, renderPublicationLines, kind, deleting])
+  }, [uploads, renderPublicationLines, kind, deleting, deletingSource])
 
   if (me === null) {
     return (

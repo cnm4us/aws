@@ -29,6 +29,7 @@ type UploadDetail = {
   width?: number | null
   height?: number | null
   created_at?: string | null
+  source_deleted_at?: string | null
   poster_portrait_cdn?: string | null
   poster_landscape_cdn?: string | null
   poster_cdn?: string | null
@@ -349,10 +350,15 @@ export default function ProducePage() {
 
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
   const poster = pickPoster(upload)
+  const sourceDeleted = !!upload.source_deleted_at
 
   const onProduce = async () => {
     if (!uploadId) return
     if (creating) return
+    if (sourceDeleted) {
+      setCreateError('Source video was deleted for this upload. Existing productions still work, but you cannot produce again from this upload.')
+      return
+    }
     setCreating(true)
     setCreateError(null)
     try {
@@ -376,7 +382,13 @@ export default function ProducePage() {
         body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || 'Failed to create production')
+      if (!res.ok) {
+        const code = data?.error ? String(data.error) : null
+        if (code === 'source_deleted') {
+          throw new Error('Source video was deleted for this upload. Existing productions still work, but you cannot produce again from this upload.')
+        }
+        throw new Error(code || 'Failed to create production')
+      }
       const id = Number(data?.production?.id)
       if (!Number.isFinite(id) || id <= 0) throw new Error('Missing production id')
       window.location.href = `/productions?id=${encodeURIComponent(String(id))}`
@@ -587,25 +599,33 @@ export default function ProducePage() {
               </div>
             </section>
 
-            <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button
-                onClick={onProduce}
-                disabled={creating}
-                style={{
-                  background: '#0a84ff',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '10px 18px',
-                  fontWeight: 700,
-                  opacity: creating ? 0.7 : 1,
-                  cursor: creating ? 'default' : 'pointer',
-                }}
-              >
-                {creating ? 'Starting…' : 'Produce'}
-              </button>
-              {createError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{createError}</div> : <div style={{ color: '#888', fontSize: 13 }}>Selections are saved to the production for future rendering.</div>}
-            </div>
+	            <div style={{ marginTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+	              <button
+	                onClick={onProduce}
+	                disabled={creating || sourceDeleted}
+	                style={{
+	                  background: '#0a84ff',
+	                  color: '#fff',
+	                  border: 'none',
+	                  borderRadius: 10,
+	                  padding: '10px 18px',
+	                  fontWeight: 700,
+	                  opacity: creating || sourceDeleted ? 0.7 : 1,
+	                  cursor: creating || sourceDeleted ? 'default' : 'pointer',
+	                }}
+	              >
+	                {sourceDeleted ? 'Source Deleted' : creating ? 'Starting…' : 'Produce'}
+	              </button>
+	              {createError ? (
+	                <div style={{ color: '#ff9b9b', fontSize: 13 }}>{createError}</div>
+	              ) : sourceDeleted ? (
+	                <div style={{ color: '#ff9b9b', fontSize: 13 }}>
+	                  Source video was deleted for this upload. Existing productions still work, but you can’t produce again from this upload.
+	                </div>
+	              ) : (
+	                <div style={{ color: '#888', fontSize: 13 }}>Selections are saved to the production for future rendering.</div>
+	              )}
+	            </div>
           </div>
         </div>
       </div>

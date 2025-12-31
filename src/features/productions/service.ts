@@ -200,6 +200,9 @@ export async function create(
 ) {
   const upload = await repo.loadUpload(input.uploadId)
   if (!upload) throw new NotFoundError('upload_not_found')
+  if ((upload as any).source_deleted_at) {
+    throw new DomainError('source_deleted', 'source_deleted', 409)
+  }
   const upStatus = String(upload.status || '').toLowerCase()
   if (upStatus !== 'uploaded' && upStatus !== 'completed') {
     throw new ForbiddenError('invalid_state')

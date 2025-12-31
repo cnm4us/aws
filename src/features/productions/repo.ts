@@ -16,7 +16,7 @@ export async function listForUser(userId: number) {
             u.profile AS upload_profile,
             COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
        FROM productions p
-       JOIN uploads u ON u.id = p.upload_id
+       LEFT JOIN uploads u ON u.id = p.upload_id
       WHERE p.user_id = ?
       ORDER BY p.created_at DESC
       LIMIT 200`,
@@ -41,7 +41,7 @@ export async function getWithUpload(id: number) {
             u.profile AS upload_profile,
             COALESCE(p.output_prefix, u.output_prefix) AS upload_output_prefix
        FROM productions p
-       JOIN uploads u ON u.id = p.upload_id
+       LEFT JOIN uploads u ON u.id = p.upload_id
       WHERE p.id = ?
       LIMIT 1`,
     [id]

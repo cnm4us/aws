@@ -14,6 +14,8 @@ dist/
 
 logs/
 
+schema_backups/
+
 
 # Ignore built web assets (output of `npm run web:build`)
 public/app/assets/

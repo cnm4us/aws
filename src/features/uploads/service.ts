@@ -276,6 +276,59 @@ export async function remove(id: number, currentUserId: number): Promise<{ ok: t
   return { ok: true }
 }
 
+export async function deleteSourceVideo(id: number, currentUserId: number): Promise<{ ok: true; alreadyDeleted?: true }> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [id])
+  const u = (rows as any[])[0]
+  if (!u) throw new NotFoundError('not_found')
+
+  const kind = String(u.kind || 'video').toLowerCase()
+  if (kind !== 'video') {
+    const err: any = new DomainError('invalid_kind', 'invalid_kind', 400)
+    err.detail = { expected: 'video', got: kind }
+    throw err
+  }
+
+  if (u.source_deleted_at) return { ok: true, alreadyDeleted: true }
+
+  const checker = await resolveChecker(currentUserId)
+  const ownerId = u.user_id ? Number(u.user_id) : null
+  const allowed =
+    (ownerId && (await can(currentUserId, PERM.VIDEO_DELETE_OWN, { ownerId, checker }))) ||
+    (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
+  if (!allowed) throw new ForbiddenError()
+
+  let delUp: DeleteSummary | null = null
+  try {
+    if (u.s3_key) {
+      const key: string = String(u.s3_key)
+      const byRegex = extractUuidDirPrefix(key)
+      let dirPrefix = byRegex
+      if (!dirPrefix) {
+        const lastSlash = key.lastIndexOf('/')
+        dirPrefix = lastSlash > 0 ? key.slice(0, lastSlash + 1) : key
+      }
+      if (dirPrefix) { delUp = await deletePrefix(UPLOAD_BUCKET, dirPrefix) }
+    }
+  } catch (e) { /* ignore */ }
+
+  if (delUp && delUp.errors.length) {
+    const err: any = new DomainError('s3_delete_failed', 's3_delete_failed', 502)
+    err.detail = delUp
+    throw err
+  }
+
+  await db.query(`UPDATE uploads SET source_deleted_at = NOW() WHERE id = ? AND source_deleted_at IS NULL`, [id])
+  try {
+    await db.query(
+      `INSERT INTO action_log (user_id, action, resource_type, resource_id, detail)
+       VALUES (?, 'delete_source', 'upload', ?, ?)`,
+      [currentUserId, id, JSON.stringify({ s3_key: u.s3_key, s3_ops: delUp ? [delUp] : [] })]
+    )
+  } catch {}
+  return { ok: true }
+}
+
 export async function createSignedUpload(input: {
   filename: string
   contentType?: string
