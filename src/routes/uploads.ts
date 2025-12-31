@@ -47,9 +47,22 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
-    const { contentType, body } = await uploadsSvc.getUploadFileStream(id, { userId: Number(req.user!.id) })
+    const range = typeof req.headers.range === 'string' ? String(req.headers.range) : undefined
+    const { contentType, body, contentLength, contentRange } = await uploadsSvc.getUploadFileStream(
+      id,
+      { range },
+      { userId: Number(req.user!.id) }
+    )
     res.set('Cache-Control', 'no-store')
+    res.set('Accept-Ranges', 'bytes')
     if (contentType) res.set('Content-Type', contentType)
+    if (contentRange) {
+      res.status(206)
+      res.set('Content-Range', contentRange)
+      if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
+    } else {
+      if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
+    }
     // Body is a readable stream (Node) in AWS SDK v3
     return (body as any).pipe(res)
   } catch (err: any) {

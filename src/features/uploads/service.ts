@@ -81,7 +81,11 @@ export async function get(id: number, params: { includePublications?: boolean },
   return enhanced
 }
 
-export async function getUploadFileStream(uploadId: number, ctx: ServiceContext): Promise<{ contentType: string | null; body: any }> {
+export async function getUploadFileStream(
+  uploadId: number,
+  opts: { range?: string } | undefined,
+  ctx: ServiceContext
+): Promise<{ contentType: string | null; body: any; contentLength?: number | null; contentRange?: string | null }> {
   if (!ctx.userId) throw new ForbiddenError()
   const row = await repo.getById(uploadId)
   if (!row) throw new NotFoundError('not_found')
@@ -96,10 +100,13 @@ export async function getUploadFileStream(uploadId: number, ctx: ServiceContext)
   const key = String(row.s3_key || '')
   if (!bucket || !key) throw new NotFoundError('not_found')
 
-  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  const range = opts?.range ? String(opts.range) : undefined
+  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) }))
   return {
     contentType: row.content_type != null ? String(row.content_type) : (resp.ContentType ? String(resp.ContentType) : null),
     body: resp.Body,
+    contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : (row.size_bytes != null ? Number(row.size_bytes) : null),
+    contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
   }
 }
 
