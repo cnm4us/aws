@@ -62,6 +62,14 @@ export async function updateProductionNameIfEmpty(id: number, name: string) {
 
 export async function countSpacePublicationsForProduction(productionId: number): Promise<number> {
   const db = getPool()
-  const [rows] = await db.query(`SELECT COUNT(*) AS c FROM space_publications WHERE production_id = ?`, [productionId])
+  // Only count "active" publications that should block deleting a production.
+  // Unpublished/rejected entries are safe to leave as history and should not block deletion.
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS c
+       FROM space_publications
+      WHERE production_id = ?
+        AND status NOT IN ('unpublished','rejected')`,
+    [productionId]
+  )
   return Number((rows as any[])[0]?.c || 0)
 }

@@ -295,10 +295,6 @@ const PublishPage: React.FC = () => {
   const handlePublish = useCallback(async () => {
     if (!uploadId && !productionId) return
     const spaces = selectedSpaceIds
-    if (!spaces.length) {
-      setSaveError('Select at least one space')
-      return
-    }
     setSaving(true)
     setSaveMessage(null)
     setSaveError(null)

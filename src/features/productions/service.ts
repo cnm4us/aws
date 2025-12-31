@@ -311,7 +311,7 @@ export async function remove(id: number, currentUserId: number): Promise<{ ok: t
   const pubsCount = await repo.countSpacePublicationsForProduction(id)
   if (pubsCount > 0) {
     const err: any = new DomainError('production_has_publications', 'production_has_publications', 409)
-    err.detail = { publications: pubsCount }
+    err.detail = { activePublications: pubsCount }
     throw err
   }
 
