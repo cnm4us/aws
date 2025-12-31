@@ -316,6 +316,81 @@ const uploadCards = useMemo(() => {
         )
       }
 
+      if (kind === 'video') {
+        const href = productionHref
+        return (
+          <div
+            key={upload.id}
+            style={{
+              borderRadius: 16,
+              border: '1px solid #161616',
+              background: 'rgba(255,255,255,0.03)',
+              overflow: 'hidden',
+            }}
+          >
+            <a href={href} style={{ display: 'block', textDecoration: 'none' }}>
+              {poster ? (
+                <img
+                  src={poster}
+                  alt="poster"
+                  style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#111' }}
+                />
+              ) : (
+                <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#111' }} />
+              )}
+            </a>
+            <div style={{ padding: '12px 12px 14px' }}>
+              <a
+                href={href}
+                style={{
+                  color: '#fff',
+                  fontWeight: 750,
+                  textDecoration: 'none',
+                  lineHeight: 1.25,
+                  display: 'block',
+                }}
+              >
+                {displayName}
+              </a>
+              {description && (
+                <div style={{ marginTop: 6, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                  {description}
+                </div>
+              )}
+              {metaLine && (
+                <div style={{ marginTop: 6, color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                  {metaLine}
+                </div>
+              )}
+              {publicationLines.length ? (
+                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 13 }}>
+                  {publicationLines}
+                </div>
+              ) : null}
+              <div style={{ marginTop: 10 }}>
+                <a
+                  href={href}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(10,132,255,0.55)',
+                    background: 'rgba(10,132,255,0.12)',
+                    color: '#fff',
+                    textDecoration: 'none',
+                    fontWeight: 700,
+                  }}
+                >
+                  View Productions
+                </a>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
       return (
         <div
           key={upload.id}
@@ -523,6 +598,10 @@ const uploadCards = useMemo(() => {
         ) : (
           kind === 'audio' ? (
             <div style={{ display: 'grid', gap: 12 }}>
+              {uploadCards}
+            </div>
+          ) : kind === 'video' ? (
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
               {uploadCards}
             </div>
           ) : (
