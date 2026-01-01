@@ -6,7 +6,6 @@ export default function MyAssets(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
   const items = [
     { label: 'Uploads', href: '/uploads' },
-    { label: 'Audio', href: '/uploads?kind=audio' },
     { label: 'Logos', href: '/uploads?kind=logo' },
     { label: 'Logo Configs', href: '/logo-configs' },
     { label: 'Productions', href: '/productions' },

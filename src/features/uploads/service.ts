@@ -99,11 +99,17 @@ export async function getUploadFileStream(
   const row = await repo.getById(uploadId)
   if (!row) throw new NotFoundError('not_found')
 
-  const ownerId = row.user_id != null ? Number(row.user_id) : null
-  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
-  const checker = await resolveChecker(Number(ctx.userId))
-  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
-  if (!isOwner && !isAdmin) throw new ForbiddenError()
+  const kind = String(row.kind || 'video').toLowerCase()
+  const isSystem = Number((row as any).is_system || 0) === 1
+
+  // System audio is selectable by any logged-in user.
+  if (!(isSystem && kind === 'audio')) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
 
   const bucket = String(row.s3_bucket || UPLOAD_BUCKET || '')
   const key = String(row.s3_key || '')
@@ -116,6 +122,32 @@ export async function getUploadFileStream(
     body: resp.Body,
     contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : (row.size_bytes != null ? Number(row.size_bytes) : null),
     contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
+  }
+}
+
+export async function listSystemAudio(
+  params: { cursorId?: number; limit?: number } | undefined,
+  ctx: ServiceContext
+) {
+  if (!ctx.userId) throw new ForbiddenError()
+
+  const lim = clampLimit(params?.limit, 50, 1, 200)
+  const cursorId = params?.cursorId && Number.isFinite(params.cursorId) ? Number(params.cursorId) : undefined
+
+  try {
+    const rows = await repo.list({
+      status: ['uploaded', 'completed'],
+      kind: 'audio',
+      isSystem: true,
+      cursorId,
+      limit: lim,
+    })
+    return rows.map((row) => enhanceUploadRow(row))
+  } catch (e: any) {
+    const msg = String(e?.message || '')
+    // Backward compatibility when `uploads.is_system` is not deployed yet.
+    if (msg.includes('Unknown column') && msg.includes('is_system')) return []
+    throw e
   }
 }
 
@@ -366,6 +398,19 @@ export async function createSignedUpload(input: {
   const { ymd: dateYmd, folder: datePrefix } = nowDateYmd()
   const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
   const kind = input.kind || 'video'
+  const actorId = ctx.userId != null && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
+  const isSystem = kind === 'audio'
+    ? (() => {
+        if (!actorId) throw new ForbiddenError()
+        return 1
+      })()
+    : 0
+
+  if (kind === 'audio') {
+    // System audio is curated by site_admin only (copyright risk).
+    const ok = await can(actorId!, PERM.VIDEO_DELETE_ANY).catch(() => false)
+    if (!ok) throw new ForbiddenError()
+  }
 
   // Basic file type validation per kind (best-effort: uses content-type when present, otherwise file extension).
   const allowed =
@@ -388,8 +433,8 @@ export async function createSignedUpload(input: {
   let result: any
   try {
     ;[result] = await db.query(
-      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`,
+      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, is_system)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?)`,
       [
         UPLOAD_BUCKET,
         key,
@@ -404,6 +449,7 @@ export async function createSignedUpload(input: {
         assetUuid,
         dateYmd,
         kind,
+        isSystem,
       ]
     )
   } catch (e: any) {
@@ -426,6 +472,26 @@ export async function createSignedUpload(input: {
           durationSeconds ?? null,
           assetUuid,
           dateYmd,
+        ]
+      )
+    } else if (msg.includes('Unknown column') && msg.includes('is_system')) {
+      ;[result] = await db.query(
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`,
+        [
+          UPLOAD_BUCKET,
+          key,
+          filename,
+          modifiedFilename,
+          description,
+          contentType ?? null,
+          sizeBytes ?? null,
+          width ?? null,
+          height ?? null,
+          durationSeconds ?? null,
+          assetUuid,
+          dateYmd,
+          kind,
         ]
       )
     } else {

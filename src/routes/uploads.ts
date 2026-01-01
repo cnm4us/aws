@@ -42,6 +42,23 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
   }
 })
 
+uploadsRouter.get('/api/system-audio', requireAuth, async (req, res) => {
+  try {
+    const { limit, cursor } = req.query as any
+    const lim = clampLimit(limit, 50, 1, 200)
+    const curId = parseNumberCursor(cursor) ?? undefined
+    const data = await uploadsSvc.listSystemAudio(
+      { cursorId: curId, limit: lim },
+      { userId: Number(req.user!.id) }
+    )
+    return res.json(data)
+  } catch (err: any) {
+    console.error('list system audio error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
+  }
+})
+
 // Authenticated file access for private upload objects (used for logo thumbnails, etc.)
 uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   try {

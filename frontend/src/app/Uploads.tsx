@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type PublicationSummary = {
   spaceId: number
@@ -19,7 +18,7 @@ type UploadListItem = {
   width: number | null
   height: number | null
   status: string
-  kind?: 'video' | 'logo' | 'audio' | string
+  kind?: 'video' | 'logo' | string
   created_at: string
   uploaded_at: string | null
   source_deleted_at?: string | null
@@ -115,7 +114,7 @@ const UploadsPage: React.FC = () => {
   const kind = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('kind') || '').toLowerCase()
-    return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : 'video'
+    return raw === 'logo' ? 'logo' : 'video'
   }, [])
 
   const [me, setMe] = useState<MeResponse | null>(null)
@@ -204,15 +203,14 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
-const uploadCards = useMemo(() => {
-    return uploads.map((upload) => {
-      const poster = pickPoster(upload)
-      const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
-      const audioSrc = kind === 'audio' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
-      const image =
-        kind === 'logo' ? (
-          <img
-            src={logoSrc as string}
+	const uploadCards = useMemo(() => {
+	    return uploads.map((upload) => {
+	      const poster = pickPoster(upload)
+	      const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
+	      const image =
+	        kind === 'logo' ? (
+	          <img
+	            src={logoSrc as string}
             alt="logo"
             style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
           />
@@ -234,95 +232,18 @@ const uploadCards = useMemo(() => {
       const dimensions = upload.width && upload.height ? `${upload.width}×${upload.height}` : null
       const metaPieces = [date, size, dimensions].filter((value) => value && value.length)
       const metaLine = metaPieces.join(' / ')
-      const publicationLines = renderPublicationLines(upload)
-      const detailHref =
-        kind === 'video'
-          ? productionHref
-          : kind === 'logo'
-            ? logoSrc || '#'
-            : kind === 'audio'
-              ? audioSrc || '#'
-              : '#'
-      const isDeleting = !!deleting[upload.id]
+	      const publicationLines = renderPublicationLines(upload)
+	      const detailHref =
+	        kind === 'video'
+	          ? productionHref
+	          : kind === 'logo'
+	            ? logoSrc || '#'
+	              : '#'
+	      const isDeleting = !!deleting[upload.id]
 
-      if (kind === 'audio') {
-        return (
-          <div
-            key={upload.id}
-            style={{
-              borderRadius: 16,
-              border: '1px solid rgba(212,175,55,0.45)',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '14px 12px',
-            }}
-          >
-            <div style={{ display: 'grid', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ fontWeight: 800, color: '#d4af37', lineHeight: 1.2 }}>
-                  {displayName}
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (isDeleting) return
-                    const ok = window.confirm('Delete this audio? This cannot be undone.')
-                    if (!ok) return
-                    setDeleteError(null)
-                    setDeleting((prev) => ({ ...prev, [upload.id]: true }))
-                    try {
-                      const headers: Record<string, string> = {}
-                      const csrf = getCsrfToken()
-                      if (csrf) headers['x-csrf-token'] = csrf
-                      const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
-                      const data = await res.json().catch(() => ({}))
-                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
-                      setUploads((prev) => prev.filter((u) => u.id !== upload.id))
-                    } catch (err: any) {
-                      setDeleteError(err?.message || 'Failed to delete')
-                    } finally {
-                      setDeleting((prev) => {
-                        const next = { ...prev }
-                        delete next[upload.id]
-                        return next
-                      })
-                    }
-                  }}
-                  style={{
-                    background: 'transparent',
-                    color: '#ff9b9b',
-                    border: '1px solid rgba(255,155,155,0.35)',
-                    borderRadius: 10,
-                    padding: '6px 10px',
-                    fontWeight: 650,
-                    cursor: isDeleting ? 'default' : 'pointer',
-                    opacity: isDeleting ? 0.6 : 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {isDeleting ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-              {description && (
-                <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
-                  {description}
-                </div>
-              )}
-              {metaLine && (
-                <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                  {metaLine}
-                </div>
-              )}
-              <div style={{ marginTop: 6 }}>
-                <CompactAudioPlayer src={audioSrc as string} />
-              </div>
-            </div>
-          </div>
-        )
-      }
-
-      if (kind === 'video') {
-        const href = productionHref
-        const sourceDeleted = !!upload.source_deleted_at
+	      if (kind === 'video') {
+	        const href = productionHref
+	        const sourceDeleted = !!upload.source_deleted_at
         const isDeletingSource = !!deletingSource[upload.id]
         return (
           <div
@@ -557,16 +478,15 @@ const uploadCards = useMemo(() => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-          {[
-            { label: 'Videos', kind: 'video' },
-            { label: 'Logos', kind: 'logo' },
-            { label: 'Audio', kind: 'audio' },
-          ].map((t) => {
-            const active = kind === t.kind
-            const href = t.kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(t.kind)}`
-            return (
+	        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
+	        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+	          {[
+	            { label: 'Videos', kind: 'video' },
+	            { label: 'Logos', kind: 'logo' },
+	          ].map((t) => {
+	            const active = kind === t.kind
+	            const href = t.kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(t.kind)}`
+	            return (
               <a
                 key={t.kind}
                 href={href}
@@ -591,18 +511,18 @@ const uploadCards = useMemo(() => {
 
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>
-              {kind === 'video' ? 'My Videos' : kind === 'logo' ? 'My Logos' : 'My Audio'}
-            </h1>
-            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
-              {kind === 'video'
-                ? 'Upload new videos and manage where they’re published.'
-                : kind === 'logo'
-                  ? 'Upload logos to use as watermarks in future productions.'
-                  : 'Upload audio to mix into future productions. .mp3 and .wav files only.'}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+	            <h1 style={{ margin: 0, fontSize: 28 }}>
+	              {kind === 'video' ? 'My Videos' : 'My Logos'}
+	            </h1>
+	            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
+	              {kind === 'video'
+	                ? 'Upload new videos and manage where they’re published.'
+	                : kind === 'logo'
+	                  ? 'Upload logos to use as watermarks in future productions.'
+	                  : ''}
+	            </p>
+	          </div>
+	          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <a
               href={kind === 'video' ? '/uploads/new' : `/uploads/new?kind=${encodeURIComponent(kind)}`}
               style={{
@@ -649,23 +569,19 @@ const uploadCards = useMemo(() => {
           <div style={{ color: '#ff6b6b', padding: '12px 0' }}>{error}</div>
         ) : deleteError ? (
           <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{deleteError}</div>
-        ) : uploads.length === 0 ? (
-          <div style={{ color: '#bbb', padding: '12px 0' }}>
-            {kind === 'video'
-              ? 'No videos yet. Get started by uploading your first video.'
-              : kind === 'logo'
-                ? 'No logos yet. Upload a logo to use as a watermark in future productions.'
-                : 'No audio yet. Upload audio to mix into future productions.'}
-          </div>
-        ) : (
-          kind === 'audio' ? (
-            <div style={{ display: 'grid', gap: 12 }}>
-              {uploadCards}
-            </div>
-          ) : kind === 'video' ? (
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-              {uploadCards}
-            </div>
+	        ) : uploads.length === 0 ? (
+	          <div style={{ color: '#bbb', padding: '12px 0' }}>
+	            {kind === 'video'
+	              ? 'No videos yet. Get started by uploading your first video.'
+	              : kind === 'logo'
+	                ? 'No logos yet. Upload a logo to use as a watermark in future productions.'
+	                : ''}
+	          </div>
+	        ) : (
+	          kind === 'video' ? (
+	            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+	              {uploadCards}
+	            </div>
           ) : (
             <div
               style={{

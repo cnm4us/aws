@@ -10,6 +10,7 @@ import { PERM } from '../security/perm'
 import * as adminSvc from '../features/admin/service'
 import * as spacesSvc from '../features/spaces/service'
 import * as pubsSvc from '../features/publications/service'
+import * as uploadsSvc from '../features/uploads/service'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -601,7 +602,7 @@ function isReservedPageSlug(slug: string): boolean {
   return RESERVED_PAGE_ROOT_SLUGS.has(root);
 }
 
-type AdminNavKey = 'review' | 'users' | 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages' | 'settings' | 'dev';
+type AdminNavKey = 'review' | 'users' | 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages' | 'audio' | 'settings' | 'dev';
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
   { key: 'review', label: 'Review', href: '/admin/review' },
@@ -612,6 +613,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'categories', label: 'Categories', href: '/admin/categories' },
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
+  { key: 'audio', label: 'Audio', href: '/admin/audio' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2841,7 +2843,17 @@ pagesRouter.post('/admin/pages/:id', async (req: any, res: any) => {
   }
 });
 
-pagesRouter.get('/uploads', (_req, res) => {
+pagesRouter.get('/uploads', async (req: any, res: any) => {
+  try {
+    const kind = String(req.query?.kind || '').trim().toLowerCase()
+    if (kind === 'audio') {
+      const from = encodeURIComponent(req.originalUrl || '/uploads')
+      if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`)
+      const ok = await can(req.user.id, PERM.VIDEO_DELETE_ANY).catch(() => false)
+      if (!ok) return res.redirect(`/forbidden?from=${from}`)
+      return res.redirect('/admin/audio')
+    }
+  } catch {}
   serveHtml(res, path.join('app', 'index.html'));
 });
 
@@ -2911,6 +2923,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Categories', href: '/admin/categories', desc: 'Create/update/delete categories (safe delete)' },
     { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
+    { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -2932,6 +2945,185 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
   const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
+})
+
+pagesRouter.get('/admin/audio', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, original_filename, modified_filename, description, status, size_bytes, created_at
+         FROM uploads
+        WHERE kind = 'audio' AND is_system = 1
+        ORDER BY id DESC
+        LIMIT 500`
+    )
+    const items = rows as any[]
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const playerCss = `
+<style>
+  .adm-audio-player { display:flex; align-items:center; gap:10px; }
+  .adm-audio-btn { appearance:none; border:0; background:transparent; color:#d4af37; font-weight:900; font-size:16px; line-height:1; padding:6px 8px; cursor:pointer; }
+  .adm-audio-btn:disabled { opacity:.55; cursor:default; }
+  .adm-audio-meta { display:flex; align-items:center; gap:10px; min-width:220px; flex:1; }
+  .adm-audio-range { width:180px; max-width:100%; -webkit-appearance:none; appearance:none; background:transparent; height:18px; cursor:pointer; }
+  .adm-audio-range:disabled { opacity:.6; cursor:default; }
+  .adm-audio-range::-webkit-slider-runnable-track { height:2px; background: rgba(212,175,55,0.35); border-radius:999px; }
+  .adm-audio-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:10px; height:10px; border-radius:999px; background:#d4af37; border:0; margin-top:-4px; }
+  .adm-audio-range::-moz-range-track { height:2px; background: rgba(212,175,55,0.35); border-radius:999px; }
+  .adm-audio-range::-moz-range-progress { height:2px; background: rgba(10,132,255,0.95); border-radius:999px; }
+  .adm-audio-range::-moz-range-thumb { width:10px; height:10px; border-radius:999px; background:#d4af37; border:0; }
+  .adm-audio-time { font-size:12px; color: rgba(255,255,255,0.72); font-variant-numeric: tabular-nums; }
+</style>`
+
+    const playerJs = `
+<script>
+  (function(){
+    function pad2(n){ return String(n).padStart(2,'0'); }
+    function fmt(t){
+      if(!isFinite(t) || t < 0) t = 0;
+      var m = Math.floor(t/60);
+      var s = Math.floor(t%60);
+      return m + ':' + pad2(s);
+    }
+    var active = null;
+    function stopActive(){
+      if(!active) return;
+      try { active.audio.pause(); } catch {}
+      try { active.btn.textContent = '▶'; } catch {}
+      active = null;
+    }
+    document.querySelectorAll('.adm-audio-player').forEach(function(root){
+      var src = root.getAttribute('data-src') || '';
+      var audio = root.querySelector('audio');
+      var btn = root.querySelector('.adm-audio-btn');
+      var range = root.querySelector('.adm-audio-range');
+      var time = root.querySelector('.adm-audio-time');
+      if(!audio || !btn || !range || !time || !src) return;
+
+      audio.preload = 'metadata';
+      audio.src = src;
+
+      function sync(){
+        var dur = isFinite(audio.duration) ? audio.duration : 0;
+        var cur = isFinite(audio.currentTime) ? audio.currentTime : 0;
+        range.max = String(Math.max(0, Math.floor(dur * 1000)));
+        range.value = String(Math.max(0, Math.floor(cur * 1000)));
+        time.textContent = fmt(cur) + ' / ' + fmt(dur);
+      }
+
+      audio.addEventListener('loadedmetadata', sync);
+      audio.addEventListener('timeupdate', sync);
+      audio.addEventListener('ended', function(){ btn.textContent = '▶'; });
+      audio.addEventListener('pause', function(){ btn.textContent = '▶'; });
+      audio.addEventListener('play', function(){ btn.textContent = '❚❚'; });
+
+      btn.addEventListener('click', function(){
+        if(audio.paused){
+          if(active && active.audio !== audio) stopActive();
+          active = { audio: audio, btn: btn };
+          audio.play().catch(function(){});
+        } else {
+          audio.pause();
+        }
+      });
+
+      range.addEventListener('input', function(){
+        var ms = Number(range.value || '0');
+        var dur = isFinite(audio.duration) ? audio.duration : 0;
+        if(!dur) return;
+        audio.currentTime = Math.max(0, Math.min(dur, ms / 1000));
+        sync();
+      });
+
+      sync();
+    });
+
+    window.addEventListener('pagehide', stopActive);
+  })();
+</script>`
+
+    let body = '<h1>Audio</h1>'
+    body += '<div class="toolbar"><div><span class="pill">System Audio</span></div><div><a href="/admin/audio/new">Upload</a></div></div>'
+    body += '<div class="section">'
+    body += '<div class="section-title">Library</div>'
+    body += '<p class="field-hint">These audio files are curated by site_admin and are selectable by any logged-in user when producing videos.</p>'
+    if (!items.length) {
+      body += '<p>No system audio uploaded yet.</p>'
+    } else {
+      body += playerCss
+      body += '<table><thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Size</th><th>Preview</th><th></th></tr></thead><tbody>'
+      for (const row of items) {
+        const id = Number(row.id)
+        const name = escapeHtml(String(row.modified_filename || row.original_filename || `Audio ${id}`))
+        const status = escapeHtml(String(row.status || ''))
+        const created = row.created_at ? escapeHtml(String(row.created_at)) : ''
+        const size = row.size_bytes != null ? escapeHtml(String(row.size_bytes)) : ''
+        body += '<tr>'
+        body += `<td>${name}</td>`
+        body += `<td>${status}</td>`
+        body += `<td>${created}</td>`
+        body += `<td>${size}</td>`
+        body += `<td style="min-width:260px">
+          <div class="adm-audio-player" data-src="/api/uploads/${id}/file">
+            <button type="button" class="adm-audio-btn" aria-label="Play">▶</button>
+            <div class="adm-audio-meta">
+              <input class="adm-audio-range" type="range" min="0" max="0" value="0" />
+              <div class="adm-audio-time">0:00 / 0:00</div>
+            </div>
+            <audio></audio>
+          </div>
+        </td>`
+        body += `<td style="text-align:right">
+          <form method="post" action="/admin/audio/${id}/delete" onsubmit="return confirm('Delete this system audio? Existing productions keep working, but users will not be able to select this audio for new productions.')">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Delete</button>
+          </form>
+        </td>`
+        body += '</tr>'
+      }
+      body += '</tbody></table>'
+      body += playerJs
+    }
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: 'Audio', bodyHtml: body, active: 'audio' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin audio list failed', err)
+    res.status(500).send('Failed to load audio')
+  }
+})
+
+pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
+  const body = [
+    '<h1>Upload Audio</h1>',
+    '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>',
+    '<div class="section">',
+    '<div class="section-title">System Audio</div>',
+    '<p class="field-hint">Uploads here become system audio, selectable by any logged-in user during production. Users cannot upload their own audio.</p>',
+    '<a class="btn" href="/uploads/new?kind=audio">Upload</a>',
+    '</div>',
+  ].join('')
+  const doc = renderAdminPage({ title: 'Upload Audio', bodyHtml: body, active: 'audio' })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/audio/:id/delete', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio')}`)
+    await uploadsSvc.remove(id, currentUserId)
+    res.redirect('/admin/audio')
+  } catch (err: any) {
+    console.error('admin audio delete failed', err)
+    res.status(500).send('Failed to delete audio')
+  }
 })
 
 pagesRouter.get('/admin/settings', async (_req: any, res: any) => {
@@ -4966,7 +5158,16 @@ pagesRouter.get('/channels/:id/admin/settings', requireSpaceAdminPage, (req: any
   res.redirect(`/spaces/${id}/admin/settings`);
 });
 
-pagesRouter.get('/uploads/new', (_req, res) => {
+pagesRouter.get('/uploads/new', async (req: any, res) => {
+  try {
+    const kind = String(req.query?.kind || '').trim().toLowerCase()
+    if (kind === 'audio') {
+      const from = encodeURIComponent(req.originalUrl || '/uploads/new')
+      if (!req.user || !req.session) return res.redirect(`/forbidden?from=${from}`)
+      const ok = await can(req.user.id, PERM.VIDEO_DELETE_ANY).catch(() => false)
+      if (!ok) return res.redirect(`/forbidden?from=${from}`)
+    }
+  } catch {}
   serveAppSpa(res);
 });
 

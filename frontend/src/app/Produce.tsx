@@ -307,21 +307,19 @@ export default function ProducePage() {
       setAssetsLoading(true)
       setAssetsError(null)
       try {
-	        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
+		        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
         const logoParams = new URLSearchParams(base)
         logoParams.set('kind', 'logo')
-        const audioParams = new URLSearchParams(base)
-        audioParams.set('kind', 'audio')
         const [logoRes, audioRes, cfgRes] = await Promise.all([
           fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
-          fetch(`/api/uploads?${audioParams.toString()}`, { credentials: 'same-origin' }),
+          fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
           fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
         ])
         const logoJson = await logoRes.json().catch(() => [])
         const audioJson = await audioRes.json().catch(() => [])
         const cfgJson = await cfgRes.json().catch(() => [])
         if (!logoRes.ok) throw new Error('Failed to load logos')
-        if (!audioRes.ok) throw new Error('Failed to load audio')
+        if (!audioRes.ok) throw new Error('Failed to load system audio')
         if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
         if (cancelled) return
         setLogos(Array.isArray(logoJson) ? logoJson : [])
@@ -633,29 +631,35 @@ export default function ProducePage() {
                 />
               </label>
 
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 650 }}>Audio</div>
-                  <a href="/uploads?kind=audio" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage audio</a>
-                </div>
-                {assetsLoading ? (
-                  <div style={{ color: '#777' }}>Loading audio…</div>
-                ) : assetsError ? (
-                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
-                ) : audios.length === 0 ? (
-                  <div style={{ color: '#777' }}>
-                    No audio uploaded yet. <a href="/uploads/new?kind=audio" style={{ color: '#9cf' }}>Upload audio</a>.
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
-                        {selectedAudio ? (selectedAudio.modified_filename || selectedAudio.original_filename || `Audio ${selectedAudio.id}`) : 'None'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <button
-                          type="button"
-                          onClick={openAudioPicker}
+	              <div style={{ display: 'grid', gap: 10 }}>
+	                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+	                  <div style={{ color: '#bbb', fontWeight: 650 }}>Audio</div>
+	                </div>
+	                {assetsLoading ? (
+	                  <div style={{ color: '#777' }}>Loading audio…</div>
+	                ) : assetsError ? (
+	                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+	                ) : audios.length === 0 ? (
+	                  <div style={{ color: '#777' }}>
+	                    No system audio available yet.
+	                  </div>
+	                ) : (
+	                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+	                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+	                      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
+	                        <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          {selectedAudio ? (selectedAudio.modified_filename || selectedAudio.original_filename || `Audio ${selectedAudio.id}`) : 'None'}
+	                        </div>
+	                        {selectedAudio ? (
+	                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.22)', color: '#ddd' }}>
+	                            System Audio
+	                          </span>
+	                        ) : null}
+	                      </div>
+	                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+	                      <button
+	                          type="button"
+	                          onClick={openAudioPicker}
                           style={{
                             padding: '10px 12px',
                             borderRadius: 10,
@@ -687,13 +691,13 @@ export default function ProducePage() {
                         ) : null}
                       </div>
                     </div>
-                    {selectedAudioId != null ? (
-                      <CompactAudioPlayer src={`/api/uploads/${encodeURIComponent(String(selectedAudioId))}/file`} />
-                    ) : (
-                      <div style={{ color: '#777', fontSize: 13 }}>Select an audio track to replace the production audio (optional).</div>
-                    )}
-                  </div>
-                )}
+	                    {selectedAudioId != null ? (
+	                      <CompactAudioPlayer src={`/api/uploads/${encodeURIComponent(String(selectedAudioId))}/file`} />
+	                    ) : (
+	                      <div style={{ color: '#777', fontSize: 13 }}>Select a system audio track to replace the production audio (optional).</div>
+	                    )}
+	                  </div>
+	                )}
 
 	                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
 	
@@ -926,9 +930,9 @@ export default function ProducePage() {
               >
                 Recent
               </button>
-              <button
-                type="button"
-                onClick={() => setAudioSort('alpha')}
+	              <button
+	                type="button"
+	                onClick={() => setAudioSort('alpha')}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 999,
@@ -938,11 +942,10 @@ export default function ProducePage() {
                   fontWeight: 800,
                   cursor: 'pointer',
                 }}
-              >
-                Alphabetical
-              </button>
-              <a href="/uploads?kind=audio" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage audio</a>
-            </div>
+	              >
+	                Alphabetical
+	              </button>
+	            </div>
 
             <div style={{ display: 'grid', gap: 10 }}>
               <button
@@ -970,11 +973,11 @@ export default function ProducePage() {
                   No audio uploaded yet. <a href="/uploads/new?kind=audio" style={{ color: '#9cf' }}>Upload audio</a>.
                 </div>
               ) : (
-                sortedAudios.map((a) => {
-                  const name = (a.modified_filename || a.original_filename || `Audio ${a.id}`).trim()
-                  const src = `/api/uploads/${encodeURIComponent(String(a.id))}/file`
-                  const selected = selectedAudioId === a.id
-                  return (
+	                sortedAudios.map((a) => {
+	                  const name = (a.modified_filename || a.original_filename || `Audio ${a.id}`).trim()
+	                  const src = `/api/uploads/${encodeURIComponent(String(a.id))}/file`
+	                  const selected = selectedAudioId === a.id
+	                  return (
                     <div
                       key={a.id}
                       style={{
@@ -982,14 +985,19 @@ export default function ProducePage() {
                         borderRadius: 12,
                         border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
                         background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-                        <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                        <button
-                          type="button"
-                          onClick={() => chooseAudioFromPicker(a.id)}
-                          style={{
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
+	                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
+	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+	                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.22)', color: '#ddd' }}>
+	                            System Audio
+	                          </span>
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => chooseAudioFromPicker(a.id)}
+	                          style={{
                             padding: '8px 12px',
                             borderRadius: 10,
                             border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
