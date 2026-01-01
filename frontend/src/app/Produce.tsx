@@ -5,6 +5,7 @@ type MeResponse = {
   userId: number | null
   email: string | null
   displayName: string | null
+  isSiteAdmin?: boolean
 }
 
 async function ensureLoggedIn(): Promise<MeResponse | null> {
@@ -58,6 +59,19 @@ type LogoConfig = {
   fade: string
 }
 
+type AudioConfig = {
+  id: number
+  name: string
+  mode: 'replace' | 'mix'
+  videoGainDb: number
+  musicGainDb: number
+  duckingEnabled: boolean
+  duckingAmountDb: number
+  createdAt?: string
+  updatedAt?: string
+  archivedAt?: string | null
+}
+
 function parseUploadId(): number | null {
   const params = new URLSearchParams(window.location.search)
   const raw = params.get('upload')
@@ -66,11 +80,12 @@ function parseUploadId(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parsePick(): 'audio' | 'logo' | 'logoConfig' | null {
+function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('pick') || '').toLowerCase()
     if (raw === 'audio') return 'audio'
+    if (raw === 'audioconfig') return 'audioConfig'
     if (raw === 'logo') return 'logo'
     if (raw === 'logoconfig') return 'logoConfig'
   } catch {}
@@ -105,6 +120,18 @@ function parseLogoConfigId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = params.get('logoConfigId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseAudioConfigId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('audioConfigId')
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -198,6 +225,7 @@ function getCsrfToken(): string | null {
 }
 
 type AudioSortMode = 'recent' | 'alpha'
+type AudioConfigSortMode = 'recent' | 'alpha'
 type LogoConfigSortMode = 'recent' | 'alpha'
 type LogoSortMode = 'recent' | 'alpha'
 
@@ -214,13 +242,16 @@ export default function ProducePage() {
   const [logos, setLogos] = useState<AssetItem[]>([])
   const [audios, setAudios] = useState<AssetItem[]>([])
   const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
+  const [audioConfigs, setAudioConfigs] = useState<AudioConfig[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(() => parseLogoUploadId())
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
-  const [pick, setPick] = useState<'audio' | 'logo' | 'logoConfig' | null>(() => parsePick())
+  const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
+  const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
+  const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
 
@@ -271,6 +302,17 @@ export default function ProducePage() {
         }
       } catch {}
       try {
+        const pendingRaw = sessionStorage.getItem('produce:pendingAudioConfigId')
+        if (pendingRaw !== null) {
+          sessionStorage.removeItem('produce:pendingAudioConfigId')
+          const pending = pendingRaw === '' ? null : Number(pendingRaw)
+          const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
+          setSelectedAudioConfigId(nextId)
+          replaceQueryParams({ audioConfigId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          return
+        }
+      } catch {}
+      try {
         const pendingRaw = sessionStorage.getItem('produce:pendingLogoConfigId')
         if (pendingRaw !== null) {
           sessionStorage.removeItem('produce:pendingLogoConfigId')
@@ -295,6 +337,7 @@ export default function ProducePage() {
       setSelectedAudioId(parseMusicUploadId())
       setSelectedLogoId(parseLogoUploadId())
       setSelectedLogoConfigId(parseLogoConfigId())
+      setSelectedAudioConfigId(parseAudioConfigId())
     }
     window.addEventListener('popstate', applyFromLocation)
     return () => window.removeEventListener('popstate', applyFromLocation)
@@ -310,22 +353,31 @@ export default function ProducePage() {
 		        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
         const logoParams = new URLSearchParams(base)
         logoParams.set('kind', 'logo')
-        const [logoRes, audioRes, cfgRes] = await Promise.all([
+        const [logoRes, audioRes, cfgRes, audioCfgRes] = await Promise.all([
           fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
           fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
           fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
+          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
         ])
         const logoJson = await logoRes.json().catch(() => [])
         const audioJson = await audioRes.json().catch(() => [])
         const cfgJson = await cfgRes.json().catch(() => [])
+        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
         if (!logoRes.ok) throw new Error('Failed to load logos')
         if (!audioRes.ok) throw new Error('Failed to load system audio')
         if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
+        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
         if (cancelled) return
         setLogos(Array.isArray(logoJson) ? logoJson : [])
         setAudios(Array.isArray(audioJson) ? audioJson : [])
         const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
         setLogoConfigs(cfgs as any)
+        const audioCfgItems = Array.isArray(audioCfgJson)
+          ? (audioCfgJson as any[])
+          : Array.isArray((audioCfgJson as any)?.items)
+            ? ((audioCfgJson as any).items as any[])
+            : []
+        setAudioConfigs(audioCfgItems as any)
       } catch (e: any) {
         if (!cancelled) setAssetsError(e?.message || 'Failed to load assets')
       } finally {
@@ -356,6 +408,22 @@ export default function ProducePage() {
     })
     return items
   }, [audios, audioSort])
+
+  const selectedAudioConfig = useMemo(() => {
+    if (selectedAudioConfigId == null) return null
+    return audioConfigs.find((c) => c.id === selectedAudioConfigId) || null
+  }, [audioConfigs, selectedAudioConfigId])
+
+  const sortedAudioConfigs = useMemo(() => {
+    const items = Array.isArray(audioConfigs) ? [...audioConfigs] : []
+    const nameFor = (c: AudioConfig) => String(c.name || '').trim().toLowerCase()
+    if (audioConfigSort === 'alpha') {
+      items.sort((a, b) => nameFor(a).localeCompare(nameFor(b)))
+      return items
+    }
+    items.sort((a, b) => Number(b.id) - Number(a.id))
+    return items
+  }, [audioConfigs, audioConfigSort])
 
   const sortedLogoConfigs = useMemo(() => {
     const items = Array.isArray(logoConfigs) ? [...logoConfigs] : []
@@ -411,9 +479,24 @@ export default function ProducePage() {
     ].filter(Boolean).join(' • ')
   }
 
+  const formatAudioConfigSummary = (c: AudioConfig | null): string => {
+    const mode = c?.mode ? String(c.mode) : 'mix'
+    const videoDb = c?.videoGainDb != null && Number.isFinite(c.videoGainDb) ? Math.round(Number(c.videoGainDb)) : 0
+    const musicDb = c?.musicGainDb != null && Number.isFinite(c.musicGainDb) ? Math.round(Number(c.musicGainDb)) : -18
+    const duck = Boolean(c && c.duckingEnabled)
+    const duckAmt = c?.duckingAmountDb != null && Number.isFinite(c.duckingAmountDb) ? Math.round(Number(c.duckingAmountDb)) : 12
+    if (mode === 'replace') return `Replace • Video ${videoDb} dB`
+    return `Mix • Video ${videoDb} dB • Music ${musicDb} dB${duck ? ` • Ducking ${duckAmt} dB` : ''}`
+  }
+
   const openAudioPicker = () => {
     setPick('audio')
     pushQueryParams({ pick: 'audio' }, { ...(window.history.state || {}), modal: 'audioPicker' })
+  }
+
+  const openAudioConfigPicker = () => {
+    setPick('audioConfig')
+    pushQueryParams({ pick: 'audioConfig' }, { ...(window.history.state || {}), modal: 'audioConfigPicker' })
   }
 
   const openLogoPicker = () => {
@@ -433,12 +516,22 @@ export default function ProducePage() {
 
   const applyMusicSelection = (id: number | null) => {
     setSelectedAudioId(id)
-    replaceQueryParams({ musicUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+    if (id == null) {
+      setSelectedAudioConfigId(null)
+      replaceQueryParams({ musicUploadId: null, audioConfigId: null }, { ...(window.history.state || {}), modal: null })
+      return
+    }
+    replaceQueryParams({ musicUploadId: String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLogoSelection = (id: number | null) => {
     setSelectedLogoId(id)
     replaceQueryParams({ logoUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+  }
+
+  const applyAudioConfigSelection = (id: number | null) => {
+    setSelectedAudioConfigId(id)
+    replaceQueryParams({ audioConfigId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLogoConfigSelection = (id: number | null) => {
@@ -465,6 +558,22 @@ export default function ProducePage() {
     }
     // Direct-entry into ?pick=audio (no modal history state): just close in-place.
     applyMusicSelection(id)
+    closePicker()
+  }
+
+  const chooseAudioConfigFromPicker = (id: number | null) => {
+    setPick(null)
+    const modal = (window.history.state as any)?.modal
+    if (modal === 'audioConfigPicker') {
+      try {
+        sessionStorage.setItem('produce:pendingAudioConfigId', id == null ? '' : String(id))
+      } catch {}
+      try {
+        window.history.back()
+        return
+      } catch {}
+    }
+    applyAudioConfigSelection(id)
     closePicker()
   }
 
@@ -549,6 +658,7 @@ export default function ProducePage() {
       const body: any = {
         uploadId,
         musicUploadId: selectedAudioId ?? null,
+        audioConfigId: selectedAudioConfigId ?? null,
         logoUploadId: selectedLogoId ?? null,
         logoConfigId: selectedLogoConfigId ?? null,
       }
@@ -689,8 +799,69 @@ export default function ProducePage() {
 	                    {selectedAudioId != null ? (
 	                      <CompactAudioPlayer src={`/api/uploads/${encodeURIComponent(String(selectedAudioId))}/file`} />
 	                    ) : (
-	                      <div style={{ color: '#777', fontSize: 13 }}>Select a system audio track to replace the production audio (optional).</div>
+	                      <div style={{ color: '#777', fontSize: 13 }}>Select a system audio track to mix into the production audio (optional).</div>
 	                    )}
+	                  </div>
+	                )}
+
+	                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+
+	                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+	                  <div style={{ color: '#bbb', fontWeight: 650 }}>Audio Config</div>
+	                  {me?.isSiteAdmin ? (
+	                    <a href="/admin/audio-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
+	                  ) : null}
+	                </div>
+	                {assetsLoading ? (
+	                  <div style={{ color: '#777' }}>Loading audio presets…</div>
+	                ) : assetsError ? (
+	                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+	                ) : audioConfigs.length === 0 ? (
+	                  <div style={{ color: '#777' }}>No audio presets available yet.</div>
+	                ) : (
+	                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+	                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+	                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+	                        {selectedAudioConfig ? (selectedAudioConfig.name || `Preset ${selectedAudioConfig.id}`) : 'Default (Mix Medium)'}
+	                      </div>
+	                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+	                        <button
+	                          type="button"
+	                          onClick={openAudioConfigPicker}
+	                          style={{
+	                            padding: '10px 12px',
+	                            borderRadius: 10,
+	                            border: '1px solid rgba(212,175,55,0.85)',
+	                            background: 'rgba(212,175,55,0.14)',
+	                            color: '#d4af37',
+	                            fontWeight: 700,
+	                            cursor: 'pointer',
+	                          }}
+	                        >
+	                          Choose
+	                        </button>
+	                        {selectedAudioConfigId != null ? (
+	                          <button
+	                            type="button"
+	                            onClick={() => applyAudioConfigSelection(null)}
+	                            style={{
+	                              padding: '10px 12px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(212,175,55,0.65)',
+	                              background: 'rgba(212,175,55,0.10)',
+	                              color: '#d4af37',
+	                              fontWeight: 800,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Clear
+	                          </button>
+	                        ) : null}
+	                      </div>
+	                    </div>
+	                    <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+	                      {selectedAudioConfig ? formatAudioConfigSummary(selectedAudioConfig) : 'Default: Mix • Video 0 dB • Music -18 dB'}
+	                    </div>
 	                  </div>
 	                )}
 
@@ -965,10 +1136,10 @@ export default function ProducePage() {
                 <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
               ) : sortedAudios.length === 0 ? (
                 <div style={{ color: '#bbb' }}>
-                  No audio uploaded yet. <a href="/uploads/new?kind=audio" style={{ color: '#9cf' }}>Upload audio</a>.
+                  No system audio available yet.
                 </div>
               ) : (
-	                sortedAudios.map((a) => {
+		                sortedAudios.map((a) => {
 	                  const name = (a.modified_filename || a.original_filename || `Audio ${a.id}`).trim()
 	                  const src = `/api/uploads/${encodeURIComponent(String(a.id))}/file`
 	                  const selected = selectedAudioId === a.id
@@ -1011,13 +1182,163 @@ export default function ProducePage() {
                   )
                 })
               )}
-            </div>
-          </div>
-        </div>
-      ) : pick === 'logo' ? (
-        <div
-          role="dialog"
-          aria-modal="true"
+	            </div>
+	          </div>
+	        </div>
+	      ) : pick === 'audioConfig' ? (
+	        <div
+	          role="dialog"
+	          aria-modal="true"
+	          style={{
+	            position: 'fixed',
+	            inset: 0,
+	            background: '#050505',
+	            color: '#fff',
+	            zIndex: 10050,
+	            overflow: 'auto',
+	          }}
+	        >
+	          <div style={{ maxWidth: 960, margin: '0 auto', padding: 'max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px))' }}>
+	            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  const modal = (window.history.state as any)?.modal
+	                  if (modal === 'audioConfigPicker') {
+	                    try { window.history.back(); return } catch {}
+	                  }
+	                  closePicker()
+	                }}
+	                style={{
+	                  padding: '10px 12px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 700,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                ← Back
+	              </button>
+	              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Audio Preset</div>
+	              <div style={{ width: 84 }} />
+	            </div>
+
+	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+	              <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
+	              <button
+	                type="button"
+	                onClick={() => setAudioConfigSort('recent')}
+	                style={{
+	                  padding: '8px 12px',
+	                  borderRadius: 999,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: audioConfigSort === 'recent' ? '#0a84ff' : '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 800,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                Recent
+	              </button>
+	              <button
+	                type="button"
+	                onClick={() => setAudioConfigSort('alpha')}
+	                style={{
+	                  padding: '8px 12px',
+	                  borderRadius: 999,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: audioConfigSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 800,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                Alphabetical
+	              </button>
+	              {me?.isSiteAdmin ? (
+	                <a href="/admin/audio-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage presets</a>
+	              ) : null}
+	            </div>
+
+	            <div style={{ display: 'grid', gap: 10 }}>
+	              <button
+	                type="button"
+	                onClick={() => chooseAudioConfigFromPicker(null)}
+	                style={{
+	                  textAlign: 'left',
+	                  padding: 12,
+	                  borderRadius: 12,
+	                  border: selectedAudioConfigId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                  background: selectedAudioConfigId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
+	                  color: '#fff',
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                Default (Mix Medium)
+	              </button>
+
+	              {assetsLoading ? (
+	                <div style={{ color: '#888' }}>Loading audio presets…</div>
+	              ) : assetsError ? (
+	                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+	              ) : sortedAudioConfigs.length === 0 ? (
+	                <div style={{ color: '#bbb' }}>
+	                  No audio presets available yet.
+	                </div>
+	              ) : (
+	                sortedAudioConfigs.map((c) => {
+	                  const selected = selectedAudioConfigId === c.id
+	                  const name = (c.name || `Preset ${c.id}`).trim()
+	                  const summary = formatAudioConfigSummary(c)
+	                  return (
+	                    <div
+	                      key={c.id}
+	                      style={{
+	                        padding: '10px 12px 12px',
+	                        borderRadius: 12,
+	                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                        background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
+	                        display: 'grid',
+	                        gap: 6,
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+	                        <div style={{ minWidth: 0 }}>
+	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                            {name}
+	                          </div>
+	                          {summary ? <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>{summary}</div> : null}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => chooseAudioConfigFromPicker(c.id)}
+	                          style={{
+	                            padding: '8px 12px',
+	                            borderRadius: 10,
+	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                            color: selected ? '#fff' : '#d4af37',
+	                            fontWeight: 800,
+	                            cursor: 'pointer',
+	                            flexShrink: 0,
+	                          }}
+	                        >
+	                          {selected ? 'Selected' : 'Select'}
+	                        </button>
+	                      </div>
+	                    </div>
+	                  )
+	                })
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      ) : pick === 'logo' ? (
+	        <div
+	          role="dialog"
+	          aria-modal="true"
           style={{
             position: 'fixed',
             inset: 0,

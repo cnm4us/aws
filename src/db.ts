@@ -127,6 +127,24 @@ export async function ensureSchema(db: DB) {
 	          ) NOT NULL`
 	    )
 	  } catch {}
+
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS audio_configurations (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      owner_user_id BIGINT UNSIGNED NOT NULL,
+	      name VARCHAR(120) NOT NULL,
+	      mode ENUM('replace','mix') NOT NULL DEFAULT 'mix',
+	      video_gain_db SMALLINT NOT NULL DEFAULT 0,
+	      music_gain_db SMALLINT NOT NULL DEFAULT -18,
+	      ducking_enabled TINYINT(1) NOT NULL DEFAULT 0,
+	      ducking_amount_db SMALLINT NOT NULL DEFAULT 12,
+	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	      archived_at TIMESTAMP NULL DEFAULT NULL,
+	      KEY idx_audio_cfg_owner_archived (owner_user_id, archived_at, id),
+	      KEY idx_audio_cfg_archived (archived_at, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `);
 	
 	  await db.query(`
 	    CREATE TABLE IF NOT EXISTS productions (

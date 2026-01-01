@@ -8,6 +8,7 @@ import * as repo from './repo'
 import { type ProductionRecord } from './types'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
+import * as audioConfigsSvc from '../audio-configs/service'
 import { s3 } from '../../services/s3'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
@@ -113,7 +114,8 @@ async function loadAssetUploadOrThrow(
   }
   const ownerId = row.user_id != null ? Number(row.user_id) : null
   const isOwner = ownerId != null && ownerId === Number(currentUserId)
-  if (!isOwner && !opts.allowAdmin) throw new ForbiddenError()
+  const isSystemAudio = opts.expectedKind === 'audio' && Number((row as any).is_system || 0) === 1
+  if (!isOwner && !opts.allowAdmin && !isSystemAudio) throw new ForbiddenError()
   if (opts.requireReadyStatus !== false) {
     const st = normalizeUploadStatus(row.status)
     if (st !== 'uploaded' && st !== 'completed') {
@@ -195,6 +197,7 @@ export async function create(
     musicUploadId?: number | null
     logoUploadId?: number | null
     logoConfigId?: number | null
+    audioConfigId?: number | null
   },
   currentUserId: number
 ) {
@@ -226,6 +229,25 @@ export async function create(
   const mergedConfig: any = { ...baseConfig }
   if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
+  if (input.audioConfigId !== undefined) {
+    if (input.audioConfigId == null) {
+      mergedConfig.audioConfigId = null
+      mergedConfig.audioConfigSnapshot = null
+    } else {
+      const cfg = await audioConfigsSvc.getActiveForUser(Number(input.audioConfigId), currentUserId)
+      mergedConfig.audioConfigId = cfg.id
+      mergedConfig.audioConfigSnapshot = {
+        id: cfg.id,
+        name: cfg.name,
+        mode: cfg.mode,
+        videoGainDb: cfg.videoGainDb,
+        musicGainDb: cfg.musicGainDb,
+        duckingEnabled: cfg.duckingEnabled,
+        duckingAmountDb: cfg.duckingAmountDb,
+        overlays: [],
+      }
+    }
+  }
   if (input.logoConfigId !== undefined) {
     if (input.logoConfigId == null) {
       mergedConfig.logoConfigId = null
@@ -246,6 +268,44 @@ export async function create(
         insetYPreset: (cfg as any).insetYPreset ?? null,
       }
     }
+  }
+
+  // Audio configs are optional, but if music is selected we default to the system "Mix (Medium)" preset.
+  // This keeps behavior predictable for creators even if they don't explicitly choose a preset.
+  const musicId = mergedConfig.musicUploadId != null ? Number(mergedConfig.musicUploadId) : null
+  if (musicId && Number.isFinite(musicId) && musicId > 0) {
+    const snapshot = mergedConfig.audioConfigSnapshot && typeof mergedConfig.audioConfigSnapshot === 'object' ? mergedConfig.audioConfigSnapshot : null
+    if (!snapshot) {
+      const def = await audioConfigsSvc.getDefaultForUser(currentUserId)
+      if (def) {
+        mergedConfig.audioConfigId = def.id
+        mergedConfig.audioConfigSnapshot = {
+          id: def.id,
+          name: def.name,
+          mode: def.mode,
+          videoGainDb: def.videoGainDb,
+          musicGainDb: def.musicGainDb,
+          duckingEnabled: def.duckingEnabled,
+          duckingAmountDb: def.duckingAmountDb,
+          overlays: [],
+        }
+      } else {
+        mergedConfig.audioConfigId = null
+        mergedConfig.audioConfigSnapshot = {
+          id: null,
+          name: 'Default (Mix Medium)',
+          mode: 'mix',
+          videoGainDb: 0,
+          musicGainDb: -18,
+          duckingEnabled: false,
+          duckingAmountDb: 12,
+          overlays: [],
+        }
+      }
+    }
+  } else {
+    mergedConfig.audioConfigId = null
+    mergedConfig.audioConfigSnapshot = null
   }
 
   const { jobId, outPrefix, productionId } = await startProductionRender({

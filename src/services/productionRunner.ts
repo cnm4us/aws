@@ -6,15 +6,9 @@ import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, 
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
-import { s3 } from './s3'
-import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
-import { randomUUID } from 'crypto'
-import fs from 'fs'
-import os from 'os'
 import path from 'path'
-import { pipeline } from 'stream/promises'
-import { spawn } from 'child_process'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
+import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
 
 export type RenderOptions = {
   upload: any
@@ -394,54 +388,17 @@ async function applyLogoWatermarkIfConfigured(settings: any, opts: { config: any
   }
 }
 
-async function downloadS3ObjectToFile(bucket: string, key: string, filePath: string) {
-  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
-  const body = resp.Body as any
-  if (!body) throw new Error('missing_s3_body')
-  await pipeline(body, fs.createWriteStream(filePath))
-}
-
-async function uploadFileToS3(bucket: string, key: string, filePath: string, contentType: string) {
-  const body = fs.createReadStream(filePath)
-  await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'no-store' }))
-}
-
-async function runFfmpeg(args: string[]) {
-  await new Promise<void>((resolve, reject) => {
-    const p = spawn('ffmpeg', ['-hide_banner', '-y', ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
-    let stderr = ''
-    p.stderr.on('data', (d) => { stderr += String(d) })
-    p.on('error', reject)
-    p.on('close', (code) => {
-      if (code === 0) return resolve()
-      reject(new Error(`ffmpeg_failed:${code}:${stderr.slice(0, 800)}`))
-    })
-  })
-}
-
-function ymdToFolder(ymd: string): string {
-  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!m) return String(ymd || '')
-  return `${m[1]}-${m[2]}/${m[3]}`
-}
-
-function parseS3Url(url: string): { bucket: string; key: string } | null {
-  const u = String(url || '')
-  if (!u.startsWith('s3://')) return null
-  const rest = u.slice('s3://'.length)
-  const idx = rest.indexOf('/')
-  if (idx <= 0) return null
-  const bucket = rest.slice(0, idx)
-  const key = rest.slice(idx + 1)
-  if (!bucket || !key) return null
-  return { bucket, key }
-}
-
 async function applyMusicReplacementIfConfigured(settings: any, opts: { config: any; videoDurationSeconds: number | null; dateYmd: string; productionUlid: string }) {
   const cfgObj = opts.config && typeof opts.config === 'object' ? opts.config : null
   if (!cfgObj) return
   const musicUploadId = cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
   if (!musicUploadId) return
+  const audioCfg = (cfgObj.audioConfigSnapshot && typeof cfgObj.audioConfigSnapshot === 'object') ? cfgObj.audioConfigSnapshot : null
+  const mode = audioCfg && typeof audioCfg.mode === 'string' ? String(audioCfg.mode).toLowerCase() : 'replace'
+  const videoGainDb = audioCfg && audioCfg.videoGainDb != null ? Number(audioCfg.videoGainDb) : 0
+  const musicGainDb = audioCfg && audioCfg.musicGainDb != null ? Number(audioCfg.musicGainDb) : -18
+  const duckingEnabled = Boolean(audioCfg && (audioCfg.duckingEnabled === true || String(audioCfg.duckingEnabled || '').toLowerCase() === 'true' || String(audioCfg.duckingEnabled || '') === '1'))
+  const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
 
   const db = getPool()
   const [rows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, content_type FROM uploads WHERE id = ? LIMIT 1`, [musicUploadId])
@@ -465,62 +422,46 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   if (!videoS3) return
   const originalLeaf = path.posix.basename(videoS3.key) || 'video.mp4'
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-replace-'))
-  const videoPath = path.join(tmpDir, 'video')
-  const audioPath = path.join(tmpDir, 'music')
-  const outPath = path.join(tmpDir, 'muxed.mp4')
   try {
-    await downloadS3ObjectToFile(videoS3.bucket, videoS3.key, videoPath)
-    await downloadS3ObjectToFile(srcBucket, srcKey, audioPath)
-
-    // Loop music indefinitely; stop output at end of video.
-    try {
-      await runFfmpeg([
-        '-i', videoPath,
-        '-stream_loop', '-1',
-        '-i', audioPath,
-        '-map', '0:v:0',
-        '-map', '1:a:0',
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        '-ar', '48000',
-        '-ac', '2',
-        '-movflags', '+faststart',
-        '-shortest',
-        outPath,
-      ])
-    } catch {
-      // Fallback: if stream copy fails, re-encode video (best-effort).
-      await runFfmpeg([
-        '-i', videoPath,
-        '-stream_loop', '-1',
-        '-i', audioPath,
-        '-map', '0:v:0',
-        '-map', '1:a:0',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-crf', '20',
-        '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        '-ar', '48000',
-        '-ac', '2',
-        '-movflags', '+faststart',
-        '-shortest',
-        outPath,
-      ])
+    if (mode === 'mix') {
+      try {
+        const out = await createMuxedMp4WithLoopedMixedAudio({
+          uploadBucket: UPLOAD_BUCKET,
+          dateYmd: opts.dateYmd,
+          productionUlid: opts.productionUlid,
+          originalLeaf,
+          video: { bucket: videoS3.bucket, key: videoS3.key },
+          audio: { bucket: srcBucket, key: srcKey },
+          videoGainDb,
+          musicGainDb,
+          duckingEnabled,
+          duckingAmountDb,
+        })
+        videoInput.FileInput = out.s3Url
+      } catch {
+        // If mixing fails (e.g. no input audio stream), fall back to replace-mode behavior.
+        const out = await createMuxedMp4WithLoopedReplacementAudio({
+          uploadBucket: UPLOAD_BUCKET,
+          dateYmd: opts.dateYmd,
+          productionUlid: opts.productionUlid,
+          originalLeaf,
+          video: { bucket: videoS3.bucket, key: videoS3.key },
+          audio: { bucket: srcBucket, key: srcKey },
+        })
+        videoInput.FileInput = out.s3Url
+      }
+    } else {
+      const out = await createMuxedMp4WithLoopedReplacementAudio({
+        uploadBucket: UPLOAD_BUCKET,
+        dateYmd: opts.dateYmd,
+        productionUlid: opts.productionUlid,
+        originalLeaf,
+        video: { bucket: videoS3.bucket, key: videoS3.key },
+        audio: { bucket: srcBucket, key: srcKey },
+      })
+      videoInput.FileInput = out.s3Url
     }
-
-    // Preserve the original input basename so MediaConvert output names stay stable (e.g. "video.m3u8"),
-    // since the app derives master/poster URLs from the upload's original key leaf.
-    const folder = ymdToFolder(opts.dateYmd)
-    const key = `music-replace/${folder}/${opts.productionUlid}/${randomUUID()}/${originalLeaf}`
-    await uploadFileToS3(UPLOAD_BUCKET, key, outPath, 'video/mp4')
-    videoInput.FileInput = `s3://${UPLOAD_BUCKET}/${key}`
   } catch (e) {
     // Best-effort: if we can't mux, keep original audio/video.
-  } finally {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }
 }

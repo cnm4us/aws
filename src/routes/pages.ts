@@ -11,6 +11,7 @@ import * as adminSvc from '../features/admin/service'
 import * as spacesSvc from '../features/spaces/service'
 import * as pubsSvc from '../features/publications/service'
 import * as uploadsSvc from '../features/uploads/service'
+import * as audioConfigsSvc from '../features/audio-configs/service'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -602,7 +603,19 @@ function isReservedPageSlug(slug: string): boolean {
   return RESERVED_PAGE_ROOT_SLUGS.has(root);
 }
 
-type AdminNavKey = 'review' | 'users' | 'groups' | 'channels' | 'rules' | 'categories' | 'cultures' | 'pages' | 'audio' | 'settings' | 'dev';
+type AdminNavKey =
+  | 'review'
+  | 'users'
+  | 'groups'
+  | 'channels'
+  | 'rules'
+  | 'categories'
+  | 'cultures'
+  | 'pages'
+  | 'audio'
+  | 'audio_configs'
+  | 'settings'
+  | 'dev';
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
   { key: 'review', label: 'Review', href: '/admin/review' },
@@ -614,6 +627,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
   { key: 'audio', label: 'Audio', href: '/admin/audio' },
+  { key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2924,6 +2938,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
+    { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -3240,6 +3255,270 @@ pagesRouter.post('/admin/audio/:id/delete', async (req: any, res: any) => {
   } catch (err: any) {
     console.error('admin audio delete failed', err)
     res.status(500).send('Failed to delete audio')
+  }
+})
+
+function renderAdminAudioConfigForm(opts: {
+  title: string
+  action: string
+  backHref: string
+  csrfToken?: string
+  error?: string | null
+  notice?: string | null
+  config?: any
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const error = opts.error ? String(opts.error) : ''
+  const notice = opts.notice ? String(opts.notice) : ''
+  const cfg = opts.config || {}
+  const nameValue = String(cfg.name || '').trim()
+  const modeValue = String(cfg.mode || 'mix')
+  const musicGainDb = cfg.musicGainDb != null ? Number(cfg.musicGainDb) : (cfg.music_gain_db != null ? Number(cfg.music_gain_db) : -18)
+  const duckingEnabled = Boolean(cfg.duckingEnabled ?? cfg.ducking_enabled)
+
+  let body = `<h1>${escapeHtml(opts.title)}</h1>`
+  body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">\u2190 Back to audio configs</a></div><div></div></div>`
+  if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+  body += `<form method="post" action="${escapeHtml(opts.action)}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+    <div class="field-hint">Creators pick this preset when producing.</div>
+  </label>`
+  body += `<label>Mode
+    <select name="mode">
+      <option value="mix"${modeValue === 'mix' ? ' selected' : ''}>Mix (recommended)</option>
+      <option value="replace"${modeValue === 'replace' ? ' selected' : ''}>Replace</option>
+    </select>
+    <div class="field-hint">Mix overlays music under the original audio. Replace swaps the original audio out.</div>
+  </label>`
+	  body += `<label>Music Level
+	    <select name="musicGainDb">
+	      <option value="-24"${musicGainDb === -24 ? ' selected' : ''}>Quiet (-24 dB)</option>
+	      <option value="-22"${musicGainDb === -22 ? ' selected' : ''}>Quiet+ (-22 dB)</option>
+	      <option value="-20"${musicGainDb === -20 ? ' selected' : ''}>Quiet++ (-20 dB)</option>
+	      <option value="-18"${musicGainDb === -18 ? ' selected' : ''}>Medium (-18 dB)</option>
+	      <option value="-16"${musicGainDb === -16 ? ' selected' : ''}>Medium+ (-16 dB)</option>
+	      <option value="-14"${musicGainDb === -14 ? ' selected' : ''}>Medium++ (-14 dB)</option>
+	      <option value="-12"${musicGainDb === -12 ? ' selected' : ''}>Loud (-12 dB)</option>
+	    </select>
+	  </label>`
+  body += `<input type="hidden" name="videoGainDb" value="0" />`
+  body += `<label style="margin-top:10px">
+    <input type="checkbox" name="duckingEnabled" value="1"${duckingEnabled ? ' checked' : ''} />
+    Ducking (music lowers when original audio is loud)
+    <div class="field-hint">Applies only in Mix mode. Fine-tuning comes later.</div>
+  </label>`
+  body += `<div class="actions">
+    <button type="submit">Save</button>
+  </div>`
+  body += `</form>`
+  return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'audio_configs' })
+}
+
+pagesRouter.get('/admin/audio-configs', async (req: any, res: any) => {
+  try {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const includeArchived = req.query?.include_archived === '1' || req.query?.include_archived === 'true'
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
+
+    let notice: string | null = null
+    try {
+      const seeded = await audioConfigsSvc.ensureDefaultsIfNoneActive(currentUserId)
+      if (seeded.created) notice = 'Default presets created.'
+    } catch {}
+
+    const items = await audioConfigsSvc.listForOwner(currentUserId, { includeArchived: Boolean(includeArchived), limit: 500 })
+
+    let body = '<h1>Audio Configs</h1>'
+    body += `
+<style>
+  .adm-ac-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .adm-ac-card { border-radius: 16px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.03); padding: 12px; }
+  .adm-ac-title { font-weight: 850; color: #fff; line-height: 1.2; }
+  .adm-ac-line { margin-top: 4px; color: rgba(255,255,255,0.72); font-size: 12px; }
+  .adm-ac-actions { display:flex; justify-content:flex-end; gap: 8px; margin-top: 12px; }
+  .adm-ac-actions .btn { padding: 6px 10px; font-size: 12px; font-weight: 800; }
+</style>`
+    body += '<div class="toolbar">'
+    body += '<div><span class="pill">Audio Configs</span></div>'
+    body += '<div style="display:flex; gap:12px; align-items:center">'
+    body += `<a href="/admin/audio-configs/new">New</a>`
+    body += `<a href="/admin/audio-configs?include_archived=${includeArchived ? '0' : '1'}">${includeArchived ? 'Hide archived' : 'Show archived'}</a>`
+    body += '</div></div>'
+    if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+
+    if (!items.length) {
+      body += '<p>No audio configs yet.</p>'
+    } else {
+      body += '<div class="adm-ac-grid">'
+      for (const it of items as any[]) {
+        const id = Number(it.id)
+        const name = escapeHtml(String(it.name || ''))
+        const mode = escapeHtml(String(it.mode || 'mix'))
+        const musicDb = it.musicGainDb != null ? Number(it.musicGainDb) : Number(it.music_gain_db ?? -18)
+        const duck = Boolean(it.duckingEnabled ?? it.ducking_enabled)
+        const archivedAt = it.archivedAt != null ? String(it.archivedAt) : (it.archived_at != null ? String(it.archived_at) : '')
+        body += `<div class="adm-ac-card">`
+        body += `<div class="adm-ac-title">${name || '(unnamed)'}</div>`
+        body += `<div class="adm-ac-line">Mode: <strong>${mode}</strong> &nbsp;•&nbsp; Music: <strong>${escapeHtml(String(musicDb))} dB</strong></div>`
+        body += `<div class="adm-ac-line">Ducking: <strong>${duck ? 'on' : 'off'}</strong>${archivedAt ? ` &nbsp;•&nbsp; Archived: <strong>${escapeHtml(archivedAt)}</strong>` : ''}</div>`
+        body += `<div class="adm-ac-actions">`
+        body += `<a class="btn" href="/admin/audio-configs/${id}">Edit</a>`
+        if (!archivedAt) {
+          body += `<form method="post" action="/admin/audio-configs/${id}/archive" style="display:inline" onsubmit="return confirm('Archive audio config \\'${name || 'this preset'}\\'?');">`
+          if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+          body += `<button type="submit" class="btn danger">Archive</button>`
+          body += `</form>`
+        }
+        body += `</div>`
+        body += `</div>`
+      }
+      body += '</div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Audio Configs', bodyHtml: body, active: 'audio_configs' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin audio-configs list failed', err)
+    res.status(500).send('Failed to load audio configs')
+  }
+})
+
+pagesRouter.get('/admin/audio-configs/new', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const doc = renderAdminAudioConfigForm({
+    title: 'New Audio Config',
+    action: '/admin/audio-configs',
+    backHref: '/admin/audio-configs',
+    csrfToken,
+    config: { name: '', mode: 'mix', musicGainDb: -18, duckingEnabled: false },
+  })
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(doc)
+})
+
+pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const body = req.body || {}
+    const input = {
+      name: body.name,
+      mode: body.mode,
+      videoGainDb: body.videoGainDb,
+      musicGainDb: body.musicGainDb,
+      duckingEnabled: body.duckingEnabled,
+    }
+    const created = await audioConfigsSvc.createForOwner(input as any, currentUserId)
+    res.redirect(`/admin/audio-configs/${created.id}`)
+  } catch (err: any) {
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const msg = String(err?.code || err?.message || err)
+    const doc = renderAdminAudioConfigForm({
+      title: 'New Audio Config',
+      action: '/admin/audio-configs',
+      backHref: '/admin/audio-configs',
+      csrfToken,
+      error: msg,
+      config: { name: req.body?.name, mode: req.body?.mode, musicGainDb: req.body?.musicGainDb, duckingEnabled: req.body?.duckingEnabled },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
+})
+
+pagesRouter.get('/admin/audio-configs/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
+
+    const config = await audioConfigsSvc.getForOwner(id, currentUserId)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminAudioConfigForm({
+      title: 'Edit Audio Config',
+      action: `/admin/audio-configs/${id}`,
+      backHref: '/admin/audio-configs',
+      csrfToken,
+      config,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    console.error('admin audio-config edit page failed', err)
+    res.status(500).send('Failed to load audio config')
+  }
+})
+
+pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
+
+    const body = req.body || {}
+    const config = await audioConfigsSvc.updateForOwner(id, {
+      name: body.name,
+      mode: body.mode,
+      videoGainDb: body.videoGainDb,
+      musicGainDb: body.musicGainDb,
+      duckingEnabled: body.duckingEnabled,
+    }, currentUserId)
+
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminAudioConfigForm({
+      title: 'Edit Audio Config',
+      action: `/admin/audio-configs/${id}`,
+      backHref: '/admin/audio-configs',
+      csrfToken,
+      notice: 'Saved.',
+      config,
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    const id = Number(req.params.id)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const msg = String(err?.code || err?.message || err)
+    const doc = renderAdminAudioConfigForm({
+      title: 'Edit Audio Config',
+      action: `/admin/audio-configs/${id}`,
+      backHref: '/admin/audio-configs',
+      csrfToken,
+      error: msg,
+      config: { id, name: req.body?.name, mode: req.body?.mode, musicGainDb: req.body?.musicGainDb, duckingEnabled: req.body?.duckingEnabled },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.status(400).send(doc)
+  }
+})
+
+pagesRouter.post('/admin/audio-configs/:id/archive', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
+    await audioConfigsSvc.archiveForOwner(id, currentUserId)
+    res.redirect('/admin/audio-configs')
+  } catch (err: any) {
+    console.error('admin audio-config archive failed', err)
+    res.status(500).send('Failed to archive audio config')
   }
 })
 
