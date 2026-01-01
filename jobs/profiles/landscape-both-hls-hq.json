@@ -3,7 +3,6 @@
     "templates/base-hls",
     "mixins/output/portrait-1080-720-540",
     "mixins/output/landscape-1080-720-480",
-    "mixins/quality/h264-qvbr-hq",
-    "mixins/audio/normalize-lufs-16"
+    "mixins/quality/h264-qvbr-hq"
   ]
 }

@@ -2,7 +2,5 @@
   "$extends": [
     "templates/base-hls",
     "mixins/output/portrait-cmaf-1080-720-540",
-    "mixins/audio/normalize-lufs-16"
   ]
 }
-

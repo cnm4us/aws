@@ -75,9 +75,21 @@ Acceptance:
 
 ### 3) Clean up profile normalization mixin usage (non-breaking)
 
+Status: Completed
+
 To avoid confusion and double sources of truth:
 - Option A (preferred): remove `mixins/audio/normalize-lufs-16` from all `jobs/profiles/*.json` and rely on code policy only.
 - Option B: keep mixin files but treat them as legacy; ensure code still controls the real behavior.
+
+Implementation:
+- Removed `mixins/audio/normalize-lufs-16` from:
+  - `jobs/profiles/landscape-both-hls-hq.json`
+  - `jobs/profiles/landscape-both-cmaf-hq.json`
+  - `jobs/profiles/portrait-cmaf-hq.json`
+  - `jobs/profiles/portrait-cmaf.json`
+  - `jobs/profiles/portrait-hls-hq.json`
+  - `jobs/profiles/landscape-both-cmaf.json`
+  - `jobs/profiles/simple-hls-hq.json`
 
 Acceptance:
 - The job settings are correct regardless of profile selection.
@@ -120,4 +132,3 @@ Optional: add a small debug endpoint/script that returns the resolved job settin
    - If you expect to toggle for cost/quality experiments, we can default to disabled and require explicit `1`.
 2) Target loudness:
    - Keep `-16 LKFS` for now (common for streaming/mobile). If we later need broadcast, we can add an env override.
-
