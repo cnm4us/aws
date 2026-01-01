@@ -650,11 +650,6 @@ export default function ProducePage() {
 	                        <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
 	                          {selectedAudio ? (selectedAudio.modified_filename || selectedAudio.original_filename || `Audio ${selectedAudio.id}`) : 'None'}
 	                        </div>
-	                        {selectedAudio ? (
-	                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.22)', color: '#ddd' }}>
-	                            System Audio
-	                          </span>
-	                        ) : null}
 	                      </div>
 	                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
 	                      <button
@@ -990,9 +985,6 @@ export default function ProducePage() {
 	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
 	                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
 	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-	                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.22)', color: '#ddd' }}>
-	                            System Audio
-	                          </span>
 	                        </div>
 	                        <button
 	                          type="button"

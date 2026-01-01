@@ -2951,7 +2951,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   try {
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description, status, size_bytes, created_at
+      `SELECT id, original_filename, modified_filename, description, size_bytes
          FROM uploads
         WHERE kind = 'audio' AND is_system = 1
         ORDER BY id DESC
@@ -2961,20 +2961,35 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
 
+    const formatMb = (bytes: any): string => {
+      const n = Number(bytes)
+      if (!Number.isFinite(n) || n <= 0) return ''
+      const mb = n / (1024 * 1024)
+      if (mb < 10) return `${mb.toFixed(2)} MB`
+      if (mb < 100) return `${mb.toFixed(1)} MB`
+      return `${Math.round(mb)} MB`
+    }
+
     const playerCss = `
 <style>
-  .adm-audio-player { display:flex; align-items:center; gap:10px; }
+  .adm-audio-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .adm-audio-card { border-radius: 16px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.03); padding: 12px; }
+  .adm-audio-title { font-weight: 850; color: #fff; line-height: 1.2; }
+  .adm-audio-size { margin-top: 2px; color: rgba(255,255,255,0.72); font-size: 12px; }
+  .adm-audio-player { display:flex; align-items:flex-start; gap:10px; margin-top: 10px; }
   .adm-audio-btn { appearance:none; border:0; background:transparent; color:#d4af37; font-weight:900; font-size:16px; line-height:1; padding:6px 8px; cursor:pointer; }
   .adm-audio-btn:disabled { opacity:.55; cursor:default; }
-  .adm-audio-meta { display:flex; align-items:center; gap:10px; min-width:220px; flex:1; }
-  .adm-audio-range { width:180px; max-width:100%; -webkit-appearance:none; appearance:none; background:transparent; height:18px; cursor:pointer; }
+  .adm-audio-track { display:grid; gap: 4px; flex: 1; min-width: 0; }
+  .adm-audio-range { width:100%; -webkit-appearance:none; appearance:none; background:transparent; height:18px; cursor:pointer; }
   .adm-audio-range:disabled { opacity:.6; cursor:default; }
   .adm-audio-range::-webkit-slider-runnable-track { height:2px; background: rgba(212,175,55,0.35); border-radius:999px; }
   .adm-audio-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:10px; height:10px; border-radius:999px; background:#d4af37; border:0; margin-top:-4px; }
   .adm-audio-range::-moz-range-track { height:2px; background: rgba(212,175,55,0.35); border-radius:999px; }
   .adm-audio-range::-moz-range-progress { height:2px; background: rgba(10,132,255,0.95); border-radius:999px; }
   .adm-audio-range::-moz-range-thumb { width:10px; height:10px; border-radius:999px; background:#d4af37; border:0; }
-  .adm-audio-time { font-size:12px; color: rgba(255,255,255,0.72); font-variant-numeric: tabular-nums; }
+  .adm-audio-time { font-size:12px; color: rgba(255,255,255,0.72); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .adm-audio-actions { display:flex; justify-content:flex-end; gap: 8px; margin-top: 12px; }
+  .adm-audio-actions .btn { padding: 6px 10px; font-size: 12px; font-weight: 800; }
 </style>`
 
     const playerJs = `
@@ -3053,37 +3068,32 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
       body += '<p>No system audio uploaded yet.</p>'
     } else {
       body += playerCss
-      body += '<table><thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Size</th><th>Preview</th><th></th></tr></thead><tbody>'
+      body += '<div class="adm-audio-grid">'
       for (const row of items) {
         const id = Number(row.id)
         const name = escapeHtml(String(row.modified_filename || row.original_filename || `Audio ${id}`))
-        const status = escapeHtml(String(row.status || ''))
-        const created = row.created_at ? escapeHtml(String(row.created_at)) : ''
-        const size = row.size_bytes != null ? escapeHtml(String(row.size_bytes)) : ''
-        body += '<tr>'
-        body += `<td>${name}</td>`
-        body += `<td>${status}</td>`
-        body += `<td>${created}</td>`
-        body += `<td>${size}</td>`
-        body += `<td style="min-width:260px">
-          <div class="adm-audio-player" data-src="/api/uploads/${id}/file">
-            <button type="button" class="adm-audio-btn" aria-label="Play">▶</button>
-            <div class="adm-audio-meta">
-              <input class="adm-audio-range" type="range" min="0" max="0" value="0" />
-              <div class="adm-audio-time">0:00 / 0:00</div>
-            </div>
-            <audio></audio>
+        const size = formatMb(row.size_bytes)
+        body += '<div class="adm-audio-card">'
+        body += `<div class="adm-audio-title">${name}</div>`
+        if (size) body += `<div class="adm-audio-size">${escapeHtml(size)}</div>`
+        body += `<div class="adm-audio-player" data-src="/api/uploads/${id}/file">
+          <button type="button" class="adm-audio-btn" aria-label="Play">▶</button>
+          <div class="adm-audio-track">
+            <input class="adm-audio-range" type="range" min="0" max="0" value="0" />
+            <div class="adm-audio-time">0:00 / 0:00</div>
           </div>
-        </td>`
-        body += `<td style="text-align:right">
+          <audio></audio>
+        </div>`
+        body += `<div class="adm-audio-actions">
+          <a class="btn" href="/admin/audio/${id}" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Edit</a>
           <form method="post" action="/admin/audio/${id}/delete" onsubmit="return confirm('Delete this system audio? Existing productions keep working, but users will not be able to select this audio for new productions.')">
             ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
             <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Delete</button>
           </form>
-        </td>`
-        body += '</tr>'
+        </div>`
+        body += '</div>'
       }
-      body += '</tbody></table>'
+      body += '</div>'
       body += playerJs
     }
     body += '</div>'
@@ -3094,6 +3104,113 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   } catch (err) {
     console.error('admin audio list failed', err)
     res.status(500).send('Failed to load audio')
+  }
+})
+
+function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null }): string {
+  const audio = opts.audio || {}
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const error = opts.error ? String(opts.error) : ''
+  const notice = opts.notice ? String(opts.notice) : ''
+  const id = Number(audio.id)
+  const nameValue = String(audio.modified_filename || audio.original_filename || '').trim()
+  const descValue = audio.description != null ? String(audio.description) : ''
+
+  let body = `<h1>Edit Audio</h1>`
+  body += '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>'
+  if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+  body += `<form method="post" action="/admin/audio/${id}">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += `<label>Name
+    <input type="text" name="name" value="${escapeHtml(nameValue)}" />
+    <div class="field-hint">Displayed to users when choosing audio for productions.</div>
+  </label>`
+  body += `<label>Description
+    <textarea name="description" style="min-height: 120px">${escapeHtml(descValue)}</textarea>
+    <div class="field-hint">Optional.</div>
+  </label>`
+  body += `<div class="actions">
+    <button type="submit">Save</button>
+  </div>`
+  body += `</form>`
+
+  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
+}
+
+pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, original_filename, modified_filename, description
+         FROM uploads
+        WHERE id = ? AND kind = 'audio' AND is_system = 1
+        LIMIT 1`,
+      [id]
+    )
+    const audio = (rows as any[])[0]
+    if (!audio) return res.status(404).send('Not found')
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const doc = renderAdminAudioEditPage({ audio, csrfToken })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin audio edit page failed', err)
+    res.status(500).send('Failed to load audio')
+  }
+})
+
+pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+
+    const rawName = String(req.body?.name || '').trim()
+    const rawDesc = String(req.body?.description || '')
+    const desc = rawDesc.trim().length ? rawDesc.trim() : null
+
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, original_filename, modified_filename, description
+         FROM uploads
+        WHERE id = ? AND kind = 'audio' AND is_system = 1
+        LIMIT 1`,
+      [id]
+    )
+    const audio = (rows as any[])[0]
+    if (!audio) return res.status(404).send('Not found')
+
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    if (!rawName) {
+      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc }, csrfToken, error: 'Name is required.' })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+    if (rawName.length > 512) {
+      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc }, csrfToken, error: 'Name is too long (max 512 characters).' })
+      res.set('Content-Type', 'text/html; charset=utf-8')
+      return res.status(400).send(doc)
+    }
+
+    await db.query(
+      `UPDATE uploads
+          SET modified_filename = ?,
+              description = ?
+        WHERE id = ? AND kind = 'audio' AND is_system = 1`,
+      [rawName, desc, id]
+    )
+
+    const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: desc }, csrfToken, notice: 'Saved.' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin audio update failed', err)
+    res.status(500).send('Failed to save audio')
   }
 })
 
