@@ -34,12 +34,14 @@ export async function create(input: {
   timingRule: string
   timingSeconds: number | null
   fade: string
+  insetXPreset?: string | null
+  insetYPreset?: string | null
 }): Promise<LogoConfigRow> {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO logo_configurations
-      (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -49,6 +51,8 @@ export async function create(input: {
       input.timingRule,
       input.timingSeconds,
       input.fade,
+      input.insetXPreset ?? null,
+      input.insetYPreset ?? null,
     ]
   )
   const id = Number((result as any).insertId)
@@ -65,6 +69,8 @@ export async function update(id: number, patch: {
   timingRule?: string
   timingSeconds?: number | null
   fade?: string
+  insetXPreset?: string | null
+  insetYPreset?: string | null
 }): Promise<LogoConfigRow> {
   const db = getPool()
   const sets: string[] = []
@@ -76,6 +82,8 @@ export async function update(id: number, patch: {
   if (patch.timingRule !== undefined) { sets.push('timing_rule = ?'); args.push(patch.timingRule) }
   if (patch.timingSeconds !== undefined) { sets.push('timing_seconds = ?'); args.push(patch.timingSeconds) }
   if (patch.fade !== undefined) { sets.push('fade = ?'); args.push(patch.fade) }
+  if (patch.insetXPreset !== undefined) { sets.push('inset_x_preset = ?'); args.push(patch.insetXPreset) }
+  if (patch.insetYPreset !== undefined) { sets.push('inset_y_preset = ?'); args.push(patch.insetYPreset) }
   if (!sets.length) {
     const row = await getById(id)
     if (!row) throw new Error('not_found')
@@ -95,8 +103,8 @@ export async function archive(id: number): Promise<void> {
 export async function ensureDefaultForOwner(ownerUserId: number): Promise<{ created: boolean }> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT INTO logo_configurations (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade)
-     SELECT ?, 'Standard watermark', 'bottom_right', 15, 35, 'entire', NULL, 'none'
+    `INSERT INTO logo_configurations (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
+     SELECT ?, 'Standard watermark', 'bottom_right', 15, 35, 'entire', NULL, 'none', 'medium', 'medium'
       WHERE NOT EXISTS (
         SELECT 1 FROM logo_configurations WHERE owner_user_id = ? AND archived_at IS NULL LIMIT 1
       )`,

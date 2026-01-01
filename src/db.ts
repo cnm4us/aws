@@ -88,27 +88,47 @@ export async function ensureSchema(db: DB) {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_source_deleted_at ON uploads (source_deleted_at, id)`); } catch {}
 
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS logo_configurations (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      owner_user_id BIGINT UNSIGNED NOT NULL,
-      name VARCHAR(120) NOT NULL,
-      position ENUM('top_left','top_right','bottom_left','bottom_right','center') NOT NULL,
-      size_pct_width TINYINT UNSIGNED NOT NULL,
-      opacity_pct TINYINT UNSIGNED NOT NULL,
-      timing_rule ENUM('entire','start_after','first_only','last_only') NOT NULL,
-      timing_seconds INT UNSIGNED NULL,
-      fade ENUM('none','in','out','in_out') NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      archived_at TIMESTAMP NULL DEFAULT NULL,
-      KEY idx_logo_cfg_owner_archived (owner_user_id, archived_at, id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `);
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS productions (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS logo_configurations (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      owner_user_id BIGINT UNSIGNED NOT NULL,
+	      name VARCHAR(120) NOT NULL,
+	      position ENUM(
+	        'top_left','top_center','top_right',
+	        'middle_left','middle_center','middle_right',
+	        'bottom_left','bottom_center','bottom_right',
+	        'center'
+	      ) NOT NULL,
+	      size_pct_width TINYINT UNSIGNED NOT NULL,
+	      opacity_pct TINYINT UNSIGNED NOT NULL,
+	      timing_rule ENUM('entire','start_after','first_only','last_only') NOT NULL,
+	      timing_seconds INT UNSIGNED NULL,
+	      fade ENUM('none','in','out','in_out') NOT NULL,
+	      inset_x_preset VARCHAR(16) NULL,
+	      inset_y_preset VARCHAR(16) NULL,
+	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	      archived_at TIMESTAMP NULL DEFAULT NULL,
+	      KEY idx_logo_cfg_owner_archived (owner_user_id, archived_at, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `);
+	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_x_preset VARCHAR(16) NULL`);
+	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_y_preset VARCHAR(16) NULL`);
+	  try {
+	    await db.query(
+	      `ALTER TABLE logo_configurations
+	          MODIFY COLUMN position ENUM(
+	            'top_left','top_center','top_right',
+	            'middle_left','middle_center','middle_right',
+	            'bottom_left','bottom_center','bottom_right',
+	            'center'
+	          ) NOT NULL`
+	    )
+	  } catch {}
+	
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS productions (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       ulid CHAR(26) NULL,

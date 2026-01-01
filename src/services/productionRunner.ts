@@ -210,16 +210,24 @@ export async function startProductionRender(options: RenderOptions) {
 type LogoConfigSnapshot = {
   id?: number
   name?: string
-  position?: 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center'
+  position?: 'top_left' | 'top_center' | 'top_right' | 'middle_left' | 'middle_center' | 'middle_right' | 'bottom_left' | 'bottom_center' | 'bottom_right' | 'center'
   sizePctWidth?: number
   opacityPct?: number
   timingRule?: 'entire' | 'start_after' | 'first_only' | 'last_only'
   timingSeconds?: number | null
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  insetXPreset?: 'small' | 'medium' | 'large' | null
+  insetYPreset?: 'small' | 'medium' | 'large' | null
 }
 
 function clampInt(n: any, min: number, max: number): number {
   const v = Math.round(Number(n))
+  if (!Number.isFinite(v)) return min
+  return Math.min(Math.max(v, min), max)
+}
+
+function clampNum(n: any, min: number, max: number): number {
+  const v = Number(n)
   if (!Number.isFinite(v)) return min
   return Math.min(Math.max(v, min), max)
 }
@@ -233,22 +241,47 @@ function secondsToTimecode(seconds: number): string {
   return `${pad(hh)}:${pad(mm)}:${pad(ss)}:00`
 }
 
+function normalizeLegacyPosition(pos: string): string {
+  return pos === 'center' ? 'middle_center' : pos
+}
+
+function insetPctForPreset(preset: any): number {
+  const p = String(preset || '').toLowerCase()
+  if (p === 'small') return 0.06
+  if (p === 'large') return 0.14
+  return 0.10 // medium default
+}
+
 function computeOverlayRect(outputW: number, outputH: number, logoW: number, logoH: number, cfg: LogoConfigSnapshot) {
   const pct = clampInt(cfg.sizePctWidth ?? 15, 1, 100)
   const opacity = clampInt(cfg.opacityPct ?? 35, 0, 100)
-  const margin = Math.max(8, Math.round(outputW * 0.02))
   const renderW = Math.max(1, Math.round(outputW * (pct / 100)))
   const aspect = logoW > 0 && logoH > 0 ? (logoH / logoW) : 1
   const renderH = Math.max(1, Math.round(renderW * aspect))
 
-  let x = margin
-  let y = margin
-  const pos = cfg.position || 'bottom_right'
-  if (pos === 'top_left') { x = margin; y = margin }
-  else if (pos === 'top_right') { x = Math.max(0, outputW - renderW - margin); y = margin }
-  else if (pos === 'bottom_left') { x = margin; y = Math.max(0, outputH - renderH - margin) }
-  else if (pos === 'bottom_right') { x = Math.max(0, outputW - renderW - margin); y = Math.max(0, outputH - renderH - margin) }
-  else { x = Math.max(0, Math.round((outputW - renderW) / 2)); y = Math.max(0, Math.round((outputH - renderH) / 2)) }
+  const posRaw = cfg.position || 'bottom_right'
+  const pos = normalizeLegacyPosition(posRaw)
+  const [row, col] = String(pos).split('_') as [string, string]
+  const yMode = row === 'top' ? 'top' : row === 'bottom' ? 'bottom' : 'middle'
+  const xMode = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
+
+  // Percent-of-frame insets to protect against cover-crop in players.
+  const marginX = xMode === 'center' ? 0 : Math.round(outputW * insetPctForPreset(cfg.insetXPreset))
+  const marginY = yMode === 'middle' ? 0 : Math.round(outputH * insetPctForPreset(cfg.insetYPreset))
+
+  let x = 0
+  let y = 0
+  if (xMode === 'left') x = marginX
+  else if (xMode === 'right') x = outputW - renderW - marginX
+  else x = Math.round((outputW - renderW) / 2)
+
+  if (yMode === 'top') y = marginY
+  else if (yMode === 'bottom') y = outputH - renderH - marginY
+  else y = Math.round((outputH - renderH) / 2)
+
+  // Clamp within the output frame.
+  x = clampNum(x, 0, Math.max(0, outputW - renderW))
+  y = clampNum(y, 0, Math.max(0, outputH - renderH))
 
   return { x, y, width: renderW, height: renderH, opacity }
 }

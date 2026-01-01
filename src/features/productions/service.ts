@@ -242,6 +242,8 @@ export async function create(
         timingRule: cfg.timingRule,
         timingSeconds: cfg.timingSeconds,
         fade: cfg.fade,
+        insetXPreset: (cfg as any).insetXPreset ?? null,
+        insetYPreset: (cfg as any).insetYPreset ?? null,
       }
     }
   }

@@ -27,6 +27,8 @@ logoConfigsRouter.post('/api/logo-configs', requireAuth, async (req, res, next) 
       timingRule: body.timingRule,
       timingSeconds: body.timingSeconds,
       fade: body.fade,
+      insetXPreset: body.insetXPreset,
+      insetYPreset: body.insetYPreset,
     }, Number(req.user!.id))
     res.status(201).json({ config })
   } catch (err: any) {
@@ -58,6 +60,8 @@ async function handleUpdate(req: any, res: any, next: any) {
       timingRule: body.timingRule,
       timingSeconds: body.timingSeconds,
       fade: body.fade,
+      insetXPreset: body.insetXPreset,
+      insetYPreset: body.insetYPreset,
     }, Number(req.user!.id))
     res.json({ config })
   } catch (err: any) {

@@ -6,9 +6,14 @@ type MeResponse = {
   displayName: string | null
 }
 
-type LogoPosition = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right' | 'center'
+type LogoPosition =
+  | 'top_left' | 'top_center' | 'top_right'
+  | 'middle_left' | 'middle_center' | 'middle_right'
+  | 'bottom_left' | 'bottom_center' | 'bottom_right'
+  | 'center'
 type LogoTimingRule = 'entire' | 'start_after' | 'first_only' | 'last_only'
 type LogoFade = 'none' | 'in' | 'out' | 'in_out'
+type InsetPreset = 'small' | 'medium' | 'large'
 
 type LogoConfig = {
   id: number
@@ -19,6 +24,8 @@ type LogoConfig = {
   timingRule: LogoTimingRule
   timingSeconds: number | null
   fade: LogoFade
+  insetXPreset?: InsetPreset | null
+  insetYPreset?: InsetPreset | null
   createdAt: string
   updatedAt: string
   archivedAt: string | null
@@ -30,6 +37,24 @@ const SIZE_PRESETS: Array<{ label: string; pct: number }> = [
   { label: 'Medium', pct: 22 },
   { label: 'Large', pct: 30 },
 ]
+
+const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
+  { label: 'Small', value: 'small' },
+  { label: 'Medium', value: 'medium' },
+  { label: 'Large', value: 'large' },
+]
+
+function normalizeLegacyPosition(pos: LogoPosition): Exclude<LogoPosition, 'center'> {
+  return (pos === 'center' ? 'middle_center' : pos) as any
+}
+
+function positionAxes(posRaw: LogoPosition): { x: 'left' | 'center' | 'right'; y: 'top' | 'middle' | 'bottom' } {
+  const pos = normalizeLegacyPosition(posRaw)
+  const [row, col] = String(pos).split('_') as [string, string]
+  const y = row === 'top' ? 'top' : row === 'bottom' ? 'bottom' : 'middle'
+  const x = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
+  return { x, y }
+}
 
 function getCsrfToken(): string | null {
   try {
@@ -70,10 +95,15 @@ function formatFade(f: LogoFade): string {
 
 function positionLabel(p: LogoPosition): string {
   if (p === 'top_left') return 'Top-left'
+  if (p === 'top_center') return 'Top-center'
   if (p === 'top_right') return 'Top-right'
+  if (p === 'middle_left') return 'Middle-left'
+  if (p === 'middle_center') return 'Middle-center'
+  if (p === 'middle_right') return 'Middle-right'
   if (p === 'bottom_left') return 'Bottom-left'
+  if (p === 'bottom_center') return 'Bottom-center'
   if (p === 'bottom_right') return 'Bottom-right'
-  return 'Center'
+  return 'Middle-center'
 }
 
 function defaultDraft(): Omit<LogoConfig, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> {
@@ -85,6 +115,8 @@ function defaultDraft(): Omit<LogoConfig, 'id' | 'createdAt' | 'updatedAt' | 'ar
     timingRule: 'entire',
     timingSeconds: null,
     fade: 'none',
+    insetXPreset: 'medium',
+    insetYPreset: 'medium',
   }
 }
 
@@ -164,6 +196,8 @@ export default function LogoConfigsPage() {
       timingRule: selected.timingRule,
       timingSeconds: selected.timingSeconds,
       fade: selected.fade,
+      insetXPreset: selected.insetXPreset ?? null,
+      insetYPreset: selected.insetYPreset ?? null,
     })
   }, [selectedId, selected])
 
@@ -189,6 +223,8 @@ export default function LogoConfigsPage() {
         timingRule: draft.timingRule,
         timingSeconds: draft.timingRule === 'entire' ? null : draft.timingSeconds,
         fade: draft.fade,
+        insetXPreset: draft.insetXPreset ?? null,
+        insetYPreset: draft.insetYPreset ?? null,
       })
 
       if (selectedId === 'new' || selectedId == null) {
@@ -276,12 +312,25 @@ export default function LogoConfigsPage() {
     const sizePct = Math.min(Math.max(draft.sizePctWidth, 1), 100)
 
     const posStyle: React.CSSProperties = { position: 'absolute' }
-    const pad = 12
-    if (draft.position === 'top_left') { posStyle.left = pad; posStyle.top = pad }
-    else if (draft.position === 'top_right') { posStyle.right = pad; posStyle.top = pad }
-    else if (draft.position === 'bottom_left') { posStyle.left = pad; posStyle.bottom = pad }
-    else if (draft.position === 'bottom_right') { posStyle.right = pad; posStyle.bottom = pad }
-    else { posStyle.left = '50%'; posStyle.top = '50%'; posStyle.transform = 'translate(-50%, -50%)' }
+    const { x, y } = positionAxes(draft.position)
+    const padFor = (preset: InsetPreset | null | undefined) => {
+      if (preset === 'small') return 12
+      if (preset === 'large') return 28
+      return 20
+    }
+    const padX = x === 'center' ? 0 : padFor(draft.insetXPreset ?? null)
+    const padY = y === 'middle' ? 0 : padFor(draft.insetYPreset ?? null)
+
+    if (x === 'left') posStyle.left = padX
+    else if (x === 'right') posStyle.right = padX
+    else { posStyle.left = '50%'; posStyle.transform = 'translateX(-50%)' }
+
+    if (y === 'top') posStyle.top = padY
+    else if (y === 'bottom') posStyle.bottom = padY
+    else {
+      posStyle.top = '50%'
+      posStyle.transform = posStyle.transform ? `${posStyle.transform} translateY(-50%)` : 'translateY(-50%)'
+    }
 
     return (
       <div style={{ borderRadius: 14, border: '1px solid rgba(255,255,255,0.10)', background: '#070707', padding: 12 }}>
@@ -536,40 +585,133 @@ export default function LogoConfigsPage() {
                   />
                 </label>
 
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                    {([
-                      { value: 'top_left', label: 'Top-left' },
-                      { value: 'top_right', label: 'Top-right' },
-                      { value: 'bottom_left', label: 'Bottom-left' },
-                      { value: 'bottom_right', label: 'Bottom-right' },
-                      { value: 'center', label: 'Center' },
-                    ] as Array<{ value: LogoPosition; label: string }>).map((p) => {
-                      const active = draft.position === p.value
-                      return (
-                        <button
-                          key={p.value}
-                          type="button"
-                          onClick={() => setDraft((prev) => ({ ...prev, position: p.value }))}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 12,
-                            border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
-                            background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
-                            color: '#fff',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                        >
-                          {p.label}
-                        </button>
-                      )
-                    })}
-                  </div>
+	                <div style={{ display: 'grid', gap: 10 }}>
+	                  <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
+	                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+	                    {([
+	                      { value: 'top_left', label: '↖' },
+	                      { value: 'top_center', label: '↑' },
+	                      { value: 'top_right', label: '↗' },
+	                      { value: 'middle_left', label: '←' },
+	                      { value: 'middle_center', label: '•' },
+	                      { value: 'middle_right', label: '→' },
+	                      { value: 'bottom_left', label: '↙' },
+	                      { value: 'bottom_center', label: '↓' },
+	                      { value: 'bottom_right', label: '↘' },
+	                    ] as Array<{ value: LogoPosition; label: string }>).map((p) => {
+	                      const active = normalizeLegacyPosition(draft.position) === p.value
+	                      return (
+	                        <button
+	                          key={p.value}
+	                          type="button"
+	                          onClick={() => {
+	                            setDraft((prev) => {
+	                              const nextPos = p.value
+	                              const axes = positionAxes(nextPos)
+	                              // Safeguard: only keep inset values relevant to the active axes.
+	                              const nextInsetX = axes.x === 'center' ? null : (prev.insetXPreset ?? 'medium')
+	                              const nextInsetY = axes.y === 'middle' ? null : (prev.insetYPreset ?? 'medium')
+	                              return {
+	                                ...prev,
+	                                position: nextPos,
+	                                insetXPreset: nextInsetX,
+	                                insetYPreset: nextInsetY,
+	                              }
+	                            })
+	                          }}
+	                          title={positionLabel(p.value)}
+	                          style={{
+	                            padding: '12px 10px',
+	                            borderRadius: 12,
+	                            border: active ? '1px solid rgba(10,132,255,0.85)' : '1px solid rgba(255,255,255,0.14)',
+	                            background: active ? 'rgba(10,132,255,0.18)' : 'rgba(255,255,255,0.04)',
+	                            color: '#fff',
+	                            fontWeight: 900,
+	                            cursor: 'pointer',
+	                            textAlign: 'center',
+	                            fontSize: 16,
+	                            lineHeight: 1,
+	                          }}
+	                        >
+	                          {p.label}
+	                        </button>
+	                      )
+	                    })}
+	                  </div>
+	                  <div style={{ color: '#888', fontSize: 12 }}>
+	                    Selected: {positionLabel(draft.position)}
+	                  </div>
 
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
+	                  {(() => {
+	                    const axes = positionAxes(draft.position)
+	                    const showX = axes.x !== 'center'
+	                    const showY = axes.y !== 'middle'
+	                    const xLabel = axes.x === 'left' ? 'Left inset' : axes.x === 'right' ? 'Right inset' : ''
+	                    const yLabel = axes.y === 'top' ? 'Top inset' : axes.y === 'bottom' ? 'Bottom inset' : ''
+	                    return (
+	                      <div style={{ display: 'grid', gap: 10 }}>
+	                        {showY ? (
+	                          <div style={{ display: 'grid', gap: 8 }}>
+	                            <div style={{ color: '#bbb', fontWeight: 750 }}>{yLabel}</div>
+	                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                              {INSET_PRESETS.map((p) => {
+	                                const active = (draft.insetYPreset || 'medium') === p.value
+	                                return (
+	                                  <button
+	                                    key={p.value}
+	                                    type="button"
+	                                    onClick={() => setDraft((prev) => ({ ...prev, insetYPreset: p.value }))}
+	                                    style={{
+	                                      padding: '10px 12px',
+	                                      borderRadius: 999,
+	                                      border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+	                                      background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+	                                      color: '#fff',
+	                                      fontWeight: 850,
+	                                      cursor: 'pointer',
+	                                    }}
+	                                  >
+	                                    {p.label}
+	                                  </button>
+	                                )
+	                              })}
+	                            </div>
+	                          </div>
+	                        ) : null}
+
+	                        {showX ? (
+	                          <div style={{ display: 'grid', gap: 8 }}>
+	                            <div style={{ color: '#bbb', fontWeight: 750 }}>{xLabel}</div>
+	                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                              {INSET_PRESETS.map((p) => {
+	                                const active = (draft.insetXPreset || 'medium') === p.value
+	                                return (
+	                                  <button
+	                                    key={p.value}
+	                                    type="button"
+	                                    onClick={() => setDraft((prev) => ({ ...prev, insetXPreset: p.value }))}
+	                                    style={{
+	                                      padding: '10px 12px',
+	                                      borderRadius: 999,
+	                                      border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+	                                      background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+	                                      color: '#fff',
+	                                      fontWeight: 850,
+	                                      cursor: 'pointer',
+	                                    }}
+	                                  >
+	                                    {p.label}
+	                                  </button>
+	                                )
+	                              })}
+	                            </div>
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                    )
+	                  })()}
+
+	                  <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
 
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Size</div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -702,4 +844,3 @@ export default function LogoConfigsPage() {
     </div>
   )
 }
-

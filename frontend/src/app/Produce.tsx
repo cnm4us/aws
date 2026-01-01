@@ -166,6 +166,28 @@ function formatDate(input: string | null | undefined): string {
   return d.toISOString().slice(0, 10)
 }
 
+function formatLogoPosition(pos: string | null | undefined): string {
+  if (!pos) return ''
+  const p = String(pos)
+  const labels: Record<string, string> = {
+    top_left: 'Top-left',
+    top_center: 'Top-center',
+    top_right: 'Top-right',
+    middle_left: 'Middle-left',
+    middle_center: 'Middle-center',
+    middle_right: 'Middle-right',
+    bottom_left: 'Bottom-left',
+    bottom_center: 'Bottom-center',
+    bottom_right: 'Bottom-right',
+    center: 'Middle-center',
+  }
+  if (labels[p]) return labels[p]
+  const words = p.split('_').filter(Boolean)
+  if (!words.length) return p
+  const titled = words.map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+  return titled.join(' ')
+}
+
 function getCsrfToken(): string | null {
   try {
     const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
@@ -375,18 +397,19 @@ export default function ProducePage() {
 
   const formatLogoConfigSummary = (c: LogoConfig | null): string => {
     if (!c) return ''
+    const timingRuleLabel = String(c.timingRule).split('_').join(' ')
     const timing =
       c.timingRule === 'entire'
         ? 'entire'
         : c.timingSeconds != null
-          ? `${String(c.timingRule).replace('_', ' ')} @ ${c.timingSeconds}s`
-          : String(c.timingRule).replace('_', ' ')
+          ? `${timingRuleLabel} @ ${c.timingSeconds}s`
+          : timingRuleLabel
     return [
-      c.position ? String(c.position).replace('_', '-') : null,
+      c.position ? formatLogoPosition(c.position) : null,
       c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
       c.opacityPct != null ? `${c.opacityPct}%` : null,
       timing || null,
-      c.fade ? String(c.fade).replace('_', ' ') : null,
+      c.fade ? String(c.fade).split('_').join(' ') : null,
     ].filter(Boolean).join(' • ')
   }
 
