@@ -13,6 +13,7 @@ Environment variables (with defaults)
 - MC_QUEUE_ARN — optional MediaConvert queue
 - ACCELERATION_MODE (PREFERRED) — DISABLED | ENABLED | PREFERRED
 - MC_PRIORITY (0) — -50..50
+- MEDIA_CONVERT_NORMALIZE_AUDIO (1) — normalize integrated loudness across produced videos (set 0 to disable)
 - STATUS_POLL_MS (30000) — status sync cadence
 - REQUEST_LOGS_DIR (logs/request)
 

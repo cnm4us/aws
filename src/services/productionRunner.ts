@@ -1,7 +1,7 @@
 import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
-import { applyAudioNormalization, applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
+import { applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
 import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
@@ -14,6 +14,7 @@ import os from 'os'
 import path from 'path'
 import { pipeline } from 'stream/promises'
 import { spawn } from 'child_process'
+import { applyConfiguredTransforms } from './mediaconvert/transforms'
 
 export type RenderOptions = {
   upload: any
@@ -87,9 +88,12 @@ export async function startProductionRender(options: RenderOptions) {
   // Ensure QVBR + MaxBitrate with no Bitrate across outputs to avoid MC validation error
   enforceQvbr(settings)
   if (isHq) applyHqTuning(settings)
-  if (typeof sound === 'string' && sound.toLowerCase().startsWith('norm')) {
-    applyAudioNormalization(settings, { targetLkfs: -16, aacBitrate: 128000 })
-  }
+  await applyConfiguredTransforms(settings, {
+    config: configPayload,
+    upload,
+    videoDurationSeconds: upload?.duration_seconds != null ? Number(upload.duration_seconds) : null,
+    productionUlid: prodUlid,
+  })
 
   // Optional: logo watermark overlay (applies to video outputs only; posters remain unwatermarked).
   await applyLogoWatermarkIfConfigured(settings, {
