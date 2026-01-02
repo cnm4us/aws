@@ -169,6 +169,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   audioDurationSeconds?: number | null
   audioFadeEnabled?: boolean
   duckingEnabled?: boolean
+  duckingMode?: 'none' | 'rolling' | 'abrupt'
+  duckingGate?: 'sensitive' | 'normal' | 'strict'
   duckingAmountDb?: number
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-mix-'))
@@ -179,6 +181,12 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   const vDb = Math.round(Number.isFinite(opts.videoGainDb) ? opts.videoGainDb : 0)
   const mDb = Math.round(Number.isFinite(opts.musicGainDb) ? opts.musicGainDb : -18)
   const duckingEnabled = Boolean(opts.duckingEnabled)
+  const duckingModeRaw = String(opts.duckingMode || (duckingEnabled ? 'rolling' : 'none')).toLowerCase()
+  const duckingMode: 'none' | 'rolling' | 'abrupt' =
+    duckingModeRaw === 'abrupt' || duckingModeRaw === 'rolling' || duckingModeRaw === 'none' ? duckingModeRaw : 'none'
+  const duckingGateRaw = String(opts.duckingGate || 'normal').toLowerCase()
+  const duckingGate: 'sensitive' | 'normal' | 'strict' =
+    duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal' ? duckingGateRaw : 'normal'
   const duckingAmountDb = Math.round(
     Number.isFinite(opts.duckingAmountDb) ? Number(opts.duckingAmountDb) : 12
   )
@@ -213,25 +221,36 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     // Use normalize=0 and add a limiter to avoid clipping (keeps gain presets audible/predictable).
     let origChain = `[0:a]volume=${vVol},apad[orig]`
     let musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
-    if (duckingEnabled) {
+    const thresholdForGate = (gate: string): number => {
+      if (gate === 'sensitive') return 0.06
+      if (gate === 'strict') return 0.14
+      return 0.1
+    }
+
+    if (duckingEnabled && duckingMode !== 'none') {
       const dbToLinear = (db: number): number => Math.pow(10, db / 20)
       const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n))
 
-      // Heuristic mapping from "duckingAmountDb" into a reasonable ratio range.
-      const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckingAmountDb / 2)))
-      // Conservative defaults; we can expose tuning later if needed.
-      // sidechaincompress uses a linear threshold (0..1), not dB.
-      const threshold = 0.1
-      const attack = 20
-      const release = 250
-
+      const threshold = thresholdForGate(duckingGate)
       const levelIn = clamp(dbToLinear(mDb), 0.015625, 64)
       const levelSc = clamp(dbToLinear(vDb), 0.015625, 64)
 
-      // IMPORTANT: sidechaincompress appears to not accept intermediate labels as input on this ffmpeg build.
-      // Use direct input streams ([1:a] and [0:a]) for sidechaincompress, and only use labels for amix.
       origChain = `[0:a]volume=${vVol},apad[orig]`
-      musicChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+      if (duckingMode === 'abrupt') {
+        // Abrupt Ducking: sidechain gate that quickly drops the music toward silence.
+        const attack = 5
+        const release = 400
+        const range = 0.001 // ~ -60 dB max attenuation (near-silence)
+        musicChain = `[1:a][0:a]sidechaingate=threshold=${threshold}:attack=${attack}:release=${release}:range=${range}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+      } else {
+        // Rolling Ducking: sidechain compression (smooth reduction).
+        const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckingAmountDb / 2)))
+        const attack = 20
+        const release = 250
+        // IMPORTANT: sidechaincompress appears to not accept intermediate labels as input on this ffmpeg build.
+        // Use direct input streams ([1:a] and [0:a]) for sidechaincompress, and only use labels for amix.
+        musicChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+      }
     }
 
     const filter = `${origChain};${musicChain};[orig][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[out]`
@@ -265,7 +284,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     await runFfmpeg(args)
 
     const folder = ymdToFolder(opts.dateYmd)
-    const prefix = duckingEnabled ? 'music-mix-duck' : 'music-mix'
+    const prefix = duckingEnabled ? (duckingMode === 'abrupt' ? 'music-mix-gate' : 'music-mix-duck') : 'music-mix'
     const keyPrefix = seconds != null ? `${prefix}-clip` : prefix
     const key = `${keyPrefix}/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
     await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')

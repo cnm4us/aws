@@ -128,28 +128,45 @@ export async function ensureSchema(db: DB) {
 	    )
 	  } catch {}
 
-		  await db.query(`
-		    CREATE TABLE IF NOT EXISTS audio_configurations (
-		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		      owner_user_id BIGINT UNSIGNED NOT NULL,
-		      name VARCHAR(120) NOT NULL,
-		      mode ENUM('replace','mix') NOT NULL DEFAULT 'mix',
-		      video_gain_db SMALLINT NOT NULL DEFAULT 0,
-		      music_gain_db SMALLINT NOT NULL DEFAULT -18,
-		      ducking_enabled TINYINT(1) NOT NULL DEFAULT 0,
-		      ducking_amount_db SMALLINT NOT NULL DEFAULT 12,
-		      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-		      archived_at TIMESTAMP NULL DEFAULT NULL,
-		      KEY idx_audio_cfg_owner_archived (owner_user_id, archived_at, id),
-		      KEY idx_audio_cfg_archived (archived_at, id)
-		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-		  `);
+			  await db.query(`
+			    CREATE TABLE IF NOT EXISTS audio_configurations (
+			      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			      owner_user_id BIGINT UNSIGNED NOT NULL,
+			      name VARCHAR(120) NOT NULL,
+			      mode ENUM('replace','mix') NOT NULL DEFAULT 'mix',
+			      video_gain_db SMALLINT NOT NULL DEFAULT 0,
+			      music_gain_db SMALLINT NOT NULL DEFAULT -18,
+			      ducking_enabled TINYINT(1) NOT NULL DEFAULT 0,
+			      ducking_amount_db SMALLINT NOT NULL DEFAULT 12,
+			      ducking_mode ENUM('none','rolling','abrupt') NOT NULL DEFAULT 'none',
+			      ducking_gate ENUM('sensitive','normal','strict') NOT NULL DEFAULT 'normal',
+			      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			      archived_at TIMESTAMP NULL DEFAULT NULL,
+			      KEY idx_audio_cfg_owner_archived (owner_user_id, archived_at, id),
+			      KEY idx_audio_cfg_archived (archived_at, id)
+			    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+			  `);
 
-		  // Plan 34: optional intro SFX overlay config (idempotent best-effort).
-		  // NOTE: uploads.kind + uploads.is_system are created by earlier migrations/scripts.
-		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_upload_id BIGINT UNSIGNED NULL`);
-		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_seconds INT UNSIGNED NULL`);
+			  // Plan 35: ducking modes + sensitivity (idempotent best-effort).
+			  // Use NULL default first so we can backfill safely, then enforce NOT NULL defaults.
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_mode ENUM('none','rolling','abrupt') NULL DEFAULT NULL`);
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_gate ENUM('sensitive','normal','strict') NULL DEFAULT NULL`);
+			  try {
+			    await db.query(
+			      `UPDATE audio_configurations
+			          SET ducking_mode = CASE WHEN ducking_enabled = 1 THEN 'rolling' ELSE 'none' END
+			        WHERE ducking_mode IS NULL`
+			    )
+			  } catch {}
+			  try { await db.query(`UPDATE audio_configurations SET ducking_gate = 'normal' WHERE ducking_gate IS NULL`); } catch {}
+			  try { await db.query(`ALTER TABLE audio_configurations MODIFY COLUMN ducking_mode ENUM('none','rolling','abrupt') NOT NULL DEFAULT 'none'`); } catch {}
+			  try { await db.query(`ALTER TABLE audio_configurations MODIFY COLUMN ducking_gate ENUM('sensitive','normal','strict') NOT NULL DEFAULT 'normal'`); } catch {}
+
+			  // Plan 34: optional intro SFX overlay config (idempotent best-effort).
+			  // NOTE: uploads.kind + uploads.is_system are created by earlier migrations/scripts.
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_upload_id BIGINT UNSIGNED NULL`);
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_seconds INT UNSIGNED NULL`);
 		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_gain_db SMALLINT NOT NULL DEFAULT 0`);
 		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_fade_enabled TINYINT(1) NOT NULL DEFAULT 1`);
 		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_enabled TINYINT(1) NOT NULL DEFAULT 0`);

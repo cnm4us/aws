@@ -1,6 +1,6 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
-import type { AudioConfigDto, AudioConfigRow, AudioMode } from './types'
+import type { AudioConfigDto, AudioConfigRow, AudioMode, DuckingGate, DuckingMode } from './types'
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -9,14 +9,27 @@ function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value
 function mapRow(row: AudioConfigRow): AudioConfigDto {
   const audioDurationSeconds = row.intro_sfx_seconds != null ? Number(row.intro_sfx_seconds) : null
   const audioFadeEnabled = Boolean(Number(row.intro_sfx_fade_enabled ?? 1))
+  const mode = (String(row.mode || 'mix') as AudioMode)
+  const duckingModeRaw = String((row as any).ducking_mode ?? '').toLowerCase()
+  const duckingMode: DuckingMode =
+    duckingModeRaw === 'rolling' || duckingModeRaw === 'abrupt' || duckingModeRaw === 'none'
+      ? (duckingModeRaw as DuckingMode)
+      : (Number(row.ducking_enabled || 0) ? 'rolling' : 'none')
+  const duckingGateRaw = String((row as any).ducking_gate ?? '').toLowerCase()
+  const duckingGate: DuckingGate =
+    duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal'
+      ? (duckingGateRaw as DuckingGate)
+      : 'normal'
 
   return {
     id: Number(row.id),
     name: String(row.name || ''),
-    mode: (String(row.mode || 'mix') as AudioMode),
+    mode,
     videoGainDb: Number(row.video_gain_db ?? 0),
     musicGainDb: Number(row.music_gain_db ?? -18),
-    duckingEnabled: Boolean(Number(row.ducking_enabled || 0)),
+    duckingMode: mode === 'mix' ? duckingMode : 'none',
+    duckingGate,
+    duckingEnabled: mode === 'mix' ? duckingMode !== 'none' : false,
     duckingAmountDb: Number(row.ducking_amount_db ?? 12),
     audioDurationSeconds: audioDurationSeconds != null && Number.isFinite(audioDurationSeconds) ? audioDurationSeconds : null,
     audioFadeEnabled,
@@ -41,6 +54,8 @@ export async function getDefaultForUser(userId: number): Promise<AudioConfigDto 
 }
 
 const MODES: readonly AudioMode[] = ['replace', 'mix']
+const DUCKING_MODES: readonly DuckingMode[] = ['none', 'rolling', 'abrupt']
+const DUCKING_GATES: readonly DuckingGate[] = ['sensitive', 'normal', 'strict']
 
 function normalizeName(raw: any): string {
   const name = String(raw ?? '').trim()
@@ -110,7 +125,9 @@ export async function createForOwner(input: {
   mode: any
   videoGainDb?: any
   musicGainDb?: any
-  duckingEnabled?: any
+  duckingMode?: any
+  duckingGate?: any
+  duckingEnabled?: any // legacy
   audioDurationSeconds?: any
   audioFadeEnabled?: any
 }, userId: number): Promise<AudioConfigDto> {
@@ -120,8 +137,15 @@ export async function createForOwner(input: {
   const mode = input.mode
   const videoGainDb = normalizeDb(input.videoGainDb, 0)
   const musicGainDb = normalizeDb(input.musicGainDb, -18)
-  let duckingEnabled = normalizeBool(input.duckingEnabled)
-  if (mode !== 'mix') duckingEnabled = false
+  let duckingMode: DuckingMode =
+    isEnumValue(input.duckingMode, DUCKING_MODES)
+      ? input.duckingMode
+      : (normalizeBool(input.duckingEnabled) ? 'rolling' : 'none')
+  let duckingGate: DuckingGate =
+    isEnumValue(input.duckingGate, DUCKING_GATES)
+      ? input.duckingGate
+      : 'normal'
+  if (mode !== 'mix') duckingMode = 'none'
 
   const audioDurationSeconds =
     input.audioDurationSeconds === '' || input.audioDurationSeconds == null ? null : normalizeSeconds2to20(input.audioDurationSeconds, 3)
@@ -133,7 +157,8 @@ export async function createForOwner(input: {
     mode,
     videoGainDb,
     musicGainDb,
-    duckingEnabled,
+    duckingMode,
+    duckingGate,
     duckingAmountDb: 12,
     audioDurationSeconds,
     audioFadeEnabled,
@@ -148,7 +173,9 @@ export async function updateForOwner(
     mode?: any
     videoGainDb?: any
     musicGainDb?: any
-    duckingEnabled?: any
+    duckingMode?: any
+    duckingGate?: any
+    duckingEnabled?: any // legacy
     audioDurationSeconds?: any
     audioFadeEnabled?: any
   },
@@ -164,7 +191,9 @@ export async function updateForOwner(
     mode: patch.mode !== undefined ? patch.mode : existing.mode,
     videoGainDb: patch.videoGainDb !== undefined ? patch.videoGainDb : existing.video_gain_db,
     musicGainDb: patch.musicGainDb !== undefined ? patch.musicGainDb : existing.music_gain_db,
-    duckingEnabled: patch.duckingEnabled !== undefined ? patch.duckingEnabled : existing.ducking_enabled,
+    duckingMode: patch.duckingMode !== undefined ? patch.duckingMode : (existing as any).ducking_mode,
+    duckingGate: patch.duckingGate !== undefined ? patch.duckingGate : (existing as any).ducking_gate,
+    duckingEnabled: patch.duckingEnabled !== undefined ? patch.duckingEnabled : existing.ducking_enabled, // legacy fallback
     audioDurationSeconds: patch.audioDurationSeconds !== undefined ? patch.audioDurationSeconds : existing.intro_sfx_seconds,
     audioFadeEnabled: patch.audioFadeEnabled !== undefined ? patch.audioFadeEnabled : existing.intro_sfx_fade_enabled,
   }
@@ -174,8 +203,15 @@ export async function updateForOwner(
   const mode = next.mode
   const videoGainDb = normalizeDb(next.videoGainDb, 0)
   const musicGainDb = normalizeDb(next.musicGainDb, -18)
-  let duckingEnabled = normalizeBool(next.duckingEnabled)
-  if (mode !== 'mix') duckingEnabled = false
+  let duckingMode: DuckingMode =
+    isEnumValue(next.duckingMode, DUCKING_MODES)
+      ? next.duckingMode
+      : (normalizeBool(next.duckingEnabled) ? 'rolling' : 'none')
+  let duckingGate: DuckingGate =
+    isEnumValue(next.duckingGate, DUCKING_GATES)
+      ? next.duckingGate
+      : 'normal'
+  if (mode !== 'mix') duckingMode = 'none'
 
   const audioDurationSeconds =
     next.audioDurationSeconds === '' || next.audioDurationSeconds == null ? null : normalizeSeconds2to20(next.audioDurationSeconds, 3)
@@ -186,7 +222,8 @@ export async function updateForOwner(
     mode,
     videoGainDb,
     musicGainDb,
-    duckingEnabled,
+    duckingMode,
+    duckingGate,
     audioDurationSeconds,
     audioFadeEnabled,
   })

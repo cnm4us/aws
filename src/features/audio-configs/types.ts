@@ -1,4 +1,6 @@
 export type AudioMode = 'replace' | 'mix'
+export type DuckingMode = 'none' | 'rolling' | 'abrupt'
+export type DuckingGate = 'sensitive' | 'normal' | 'strict'
 
 export type AudioConfigRow = {
   id: number
@@ -9,6 +11,8 @@ export type AudioConfigRow = {
   music_gain_db: number
   ducking_enabled: number
   ducking_amount_db: number
+  ducking_mode: DuckingMode
+  ducking_gate: DuckingGate
   intro_sfx_upload_id: number | null
   intro_sfx_seconds: number | null
   intro_sfx_gain_db: number
@@ -26,6 +30,8 @@ export type AudioConfigDto = {
   mode: AudioMode
   videoGainDb: number
   musicGainDb: number
+  duckingMode: DuckingMode
+  duckingGate: DuckingGate
   duckingEnabled: boolean
   duckingAmountDb: number
   audioDurationSeconds: number | null

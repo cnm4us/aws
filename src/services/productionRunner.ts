@@ -396,7 +396,17 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const mode = audioCfg && typeof audioCfg.mode === 'string' ? String(audioCfg.mode).toLowerCase() : 'replace'
   const videoGainDb = audioCfg && audioCfg.videoGainDb != null ? Number(audioCfg.videoGainDb) : 0
   const musicGainDb = audioCfg && audioCfg.musicGainDb != null ? Number(audioCfg.musicGainDb) : -18
-  const duckingEnabled = Boolean(audioCfg && (audioCfg.duckingEnabled === true || String(audioCfg.duckingEnabled || '').toLowerCase() === 'true' || String(audioCfg.duckingEnabled || '') === '1'))
+  const duckingModeRaw = audioCfg && typeof audioCfg.duckingMode === 'string'
+    ? String(audioCfg.duckingMode).toLowerCase()
+    : (audioCfg && (audioCfg.duckingEnabled === true || String(audioCfg.duckingEnabled || '').toLowerCase() === 'true' || String(audioCfg.duckingEnabled || '') === '1') ? 'rolling' : 'none')
+  const duckingMode: 'none' | 'rolling' | 'abrupt' =
+    duckingModeRaw === 'abrupt' || duckingModeRaw === 'rolling' || duckingModeRaw === 'none' ? duckingModeRaw : 'none'
+  const duckingGateRaw = audioCfg && typeof audioCfg.duckingGate === 'string'
+    ? String(audioCfg.duckingGate).toLowerCase()
+    : 'normal'
+  const duckingGate: 'sensitive' | 'normal' | 'strict' =
+    duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal' ? duckingGateRaw : 'normal'
+  const duckingEnabled = duckingMode !== 'none'
   const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
   const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
   const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
@@ -444,6 +454,8 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
           audioDurationSeconds,
           audioFadeEnabled,
           duckingEnabled,
+          duckingMode,
+          duckingGate,
           duckingAmountDb,
         })
         videoInput.FileInput = out.s3Url

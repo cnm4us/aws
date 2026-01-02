@@ -3264,7 +3264,8 @@ function renderAdminAudioConfigForm(opts: {
   const nameValue = String(cfg.name || '').trim()
   const modeValue = String(cfg.mode || 'mix')
   const musicGainDb = cfg.musicGainDb != null ? Number(cfg.musicGainDb) : (cfg.music_gain_db != null ? Number(cfg.music_gain_db) : -18)
-  const duckingEnabled = Boolean(cfg.duckingEnabled ?? cfg.ducking_enabled)
+  const duckingModeValue = String(cfg.duckingMode ?? cfg.ducking_mode ?? (Number(cfg.ducking_enabled || 0) ? 'rolling' : 'none'))
+  const duckingGateValue = String(cfg.duckingGate ?? cfg.ducking_gate ?? 'normal')
   const audioDurationSeconds =
     cfg.audioDurationSeconds != null ? Number(cfg.audioDurationSeconds)
       : (cfg.intro_sfx_seconds != null ? Number(cfg.intro_sfx_seconds) : null)
@@ -3322,9 +3323,22 @@ function renderAdminAudioConfigForm(opts: {
   </label>`
   body += `</div>`
   body += `<label style="margin-top:10px">
-    <input type="checkbox" name="duckingEnabled" value="1"${duckingEnabled ? ' checked' : ''} />
-    Ducking (music lowers when original audio is loud)
-    <div class="field-hint">Applies only in Mix mode. Fine-tuning comes later.</div>
+    Ducking
+    <select name="duckingMode">
+      <option value="none"${duckingModeValue === 'none' ? ' selected' : ''}>None</option>
+      <option value="rolling"${duckingModeValue === 'rolling' ? ' selected' : ''}>Rolling Ducking</option>
+      <option value="abrupt"${duckingModeValue === 'abrupt' ? ' selected' : ''}>Abrupt Ducking</option>
+    </select>
+    <div class="field-hint">Applies only in Mix mode. Rolling = smooth reduction. Abrupt = quickly drops toward silence.</div>
+  </label>`
+  body += `<label style="margin-top:10px">
+    Ducking Sensitivity
+    <select name="duckingGate">
+      <option value="sensitive"${duckingGateValue === 'sensitive' ? ' selected' : ''}>Sensitive</option>
+      <option value="normal"${duckingGateValue === 'normal' ? ' selected' : ''}>Normal</option>
+      <option value="strict"${duckingGateValue === 'strict' ? ' selected' : ''}>Strict</option>
+    </select>
+    <div class="field-hint">Sensitive triggers sooner; Strict triggers later.</div>
   </label>`
   body += `<div class="actions">
     <button type="submit">Save</button>
@@ -3413,15 +3427,16 @@ pagesRouter.get('/admin/audio-configs/new', async (req: any, res: any) => {
     action: '/admin/audio-configs',
     backHref: '/admin/audio-configs',
     csrfToken,
-    config: {
-      name: '',
-      mode: 'mix',
-      musicGainDb: -18,
-      duckingEnabled: false,
-      audioDurationSeconds: null,
-      audioFadeEnabled: true,
-    },
-  })
+	    config: {
+	      name: '',
+	      mode: 'mix',
+	      musicGainDb: -18,
+	      duckingMode: 'none',
+	      duckingGate: 'normal',
+	      audioDurationSeconds: null,
+	      audioFadeEnabled: true,
+	    },
+	  })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
 })
@@ -3433,16 +3448,17 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
 
-    const body = req.body || {}
-	    const input = {
-	      name: body.name,
-	      mode: body.mode,
-	      videoGainDb: body.videoGainDb,
-	      musicGainDb: body.musicGainDb,
-	      duckingEnabled: Boolean(body.duckingEnabled),
-	      audioDurationSeconds: body.audioDurationSeconds,
-	      audioFadeEnabled: Boolean(body.audioFadeEnabled),
-	    }
+	    const body = req.body || {}
+		    const input = {
+		      name: body.name,
+		      mode: body.mode,
+		      videoGainDb: body.videoGainDb,
+		      musicGainDb: body.musicGainDb,
+		      duckingMode: body.duckingMode,
+		      duckingGate: body.duckingGate,
+		      audioDurationSeconds: body.audioDurationSeconds,
+		      audioFadeEnabled: Boolean(body.audioFadeEnabled),
+		    }
     const created = await audioConfigsSvc.createForOwner(input as any, currentUserId)
     res.redirect(`/admin/audio-configs/${created.id}`)
   } catch (err: any) {
@@ -3455,15 +3471,16 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
       backHref: '/admin/audio-configs',
       csrfToken,
       error: msg,
-	      config: {
-	        name: req.body?.name,
-	        mode: req.body?.mode,
-	        musicGainDb: req.body?.musicGainDb,
-	        duckingEnabled: Boolean(req.body?.duckingEnabled),
-	        audioDurationSeconds: req.body?.audioDurationSeconds,
-	        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
-	      },
-	    })
+		      config: {
+		        name: req.body?.name,
+		        mode: req.body?.mode,
+		        musicGainDb: req.body?.musicGainDb,
+		        duckingMode: req.body?.duckingMode,
+		        duckingGate: req.body?.duckingGate,
+		        audioDurationSeconds: req.body?.audioDurationSeconds,
+		        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
+		      },
+		    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.status(400).send(doc)
   }
@@ -3501,16 +3518,17 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
     const currentUserId = req.user?.id ? Number(req.user.id) : null
     if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
 
-    const body = req.body || {}
-		    const config = await audioConfigsSvc.updateForOwner(id, {
-		      name: body.name,
-		      mode: body.mode,
-		      videoGainDb: body.videoGainDb,
-		      musicGainDb: body.musicGainDb,
-		      duckingEnabled: Boolean(body.duckingEnabled),
-		      audioDurationSeconds: body.audioDurationSeconds,
-		      audioFadeEnabled: Boolean(body.audioFadeEnabled),
-		    }, currentUserId)
+		    const body = req.body || {}
+			    const config = await audioConfigsSvc.updateForOwner(id, {
+			      name: body.name,
+			      mode: body.mode,
+			      videoGainDb: body.videoGainDb,
+			      musicGainDb: body.musicGainDb,
+			      duckingMode: body.duckingMode,
+			      duckingGate: body.duckingGate,
+			      audioDurationSeconds: body.audioDurationSeconds,
+			      audioFadeEnabled: Boolean(body.audioFadeEnabled),
+			    }, currentUserId)
 
 	    const cookies = parseCookies(req.headers.cookie)
 	    const csrfToken = cookies['csrf'] || ''
@@ -3535,16 +3553,17 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
 	      backHref: '/admin/audio-configs',
 	      csrfToken,
 	      error: msg,
-		      config: {
-		        id,
-		        name: req.body?.name,
-		        mode: req.body?.mode,
-		        musicGainDb: req.body?.musicGainDb,
-		        duckingEnabled: Boolean(req.body?.duckingEnabled),
-		        audioDurationSeconds: req.body?.audioDurationSeconds,
-		        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
-		      },
-		    })
+			      config: {
+			        id,
+			        name: req.body?.name,
+			        mode: req.body?.mode,
+			        musicGainDb: req.body?.musicGainDb,
+			        duckingMode: req.body?.duckingMode,
+			        duckingGate: req.body?.duckingGate,
+			        audioDurationSeconds: req.body?.audioDurationSeconds,
+			        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
+			      },
+			    })
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.status(400).send(doc)
 	  }
