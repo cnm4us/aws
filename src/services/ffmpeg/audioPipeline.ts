@@ -223,8 +223,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     let musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
     const thresholdForGate = (gate: string): number => {
       if (gate === 'sensitive') return 0.06
-      if (gate === 'strict') return 0.14
-      return 0.1
+      if (gate === 'strict') return 0.10
+      return 0.08 // normal
     }
 
     if (duckingEnabled && duckingMode !== 'none') {
