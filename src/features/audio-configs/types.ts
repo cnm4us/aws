@@ -28,14 +28,8 @@ export type AudioConfigDto = {
   musicGainDb: number
   duckingEnabled: boolean
   duckingAmountDb: number
-  introSfx: null | {
-    uploadId: number
-    seconds: number
-    gainDb: number
-    fadeEnabled: boolean
-    duckingEnabled: boolean
-    duckingAmountDb: number
-  }
+  audioDurationSeconds: number | null
+  audioFadeEnabled: boolean
   createdAt: string
   updatedAt: string
   archivedAt: string | null

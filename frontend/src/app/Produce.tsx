@@ -67,14 +67,8 @@ type AudioConfig = {
   musicGainDb: number
   duckingEnabled: boolean
   duckingAmountDb: number
-  introSfx?: null | {
-    uploadId: number
-    seconds: number
-    gainDb: number
-    fadeEnabled: boolean
-    duckingEnabled: boolean
-    duckingAmountDb: number
-  }
+  audioDurationSeconds?: number | null
+  audioFadeEnabled?: boolean
   createdAt?: string
   updatedAt?: string
   archivedAt?: string | null
@@ -489,18 +483,23 @@ export default function ProducePage() {
 
   const formatAudioConfigSummary = (c: AudioConfig | null): string => {
     const mode = c?.mode ? String(c.mode) : 'mix'
-    const videoDb = c?.videoGainDb != null && Number.isFinite(c.videoGainDb) ? Math.round(Number(c.videoGainDb)) : 0
     const musicDb = c?.musicGainDb != null && Number.isFinite(c.musicGainDb) ? Math.round(Number(c.musicGainDb)) : -18
     const duck = Boolean(c && c.duckingEnabled)
     const duckAmt = c?.duckingAmountDb != null && Number.isFinite(c.duckingAmountDb) ? Math.round(Number(c.duckingAmountDb)) : 12
-    const intro = c?.introSfx && typeof c.introSfx === 'object' ? c.introSfx : null
-    const introLabel = intro ? `Intro SFX (${Math.max(2, Math.min(5, Math.round(Number(intro.seconds) || 3)))}s)` : null
-    const introDuck = intro && intro.duckingEnabled ? 'Intro ducking' : null
-    if (mode === 'replace') return `Replace • Video ${videoDb} dB`
+
+    const durRaw = c?.audioDurationSeconds != null ? Number(c.audioDurationSeconds) : null
+    const dur = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(5, Math.round(durRaw))) : null
+    const fade = Boolean(c?.audioFadeEnabled ?? true)
+    const durLabel = dur != null ? `Duration ${dur}s` : null
+    const fadeLabel = dur != null && fade ? 'Fade' : null
+
+    if (mode === 'replace') {
+      return ['Replace', `Music ${musicDb} dB`, durLabel, fadeLabel].filter(Boolean).join(' • ')
+    }
     return [
-      `Mix • Video ${videoDb} dB • Music ${musicDb} dB${duck ? ` • Ducking ${duckAmt} dB` : ''}`,
-      introLabel,
-      introDuck,
+      `Mix • Music ${musicDb} dB${duck ? ` • Ducking ${duckAmt} dB` : ''}`,
+      durLabel,
+      fadeLabel,
     ].filter(Boolean).join(' • ')
   }
 

@@ -47,12 +47,8 @@ export async function create(input: {
   musicGainDb: number
   duckingEnabled: boolean
   duckingAmountDb: number
-  introSfxUploadId: number | null
-  introSfxSeconds: number | null
-  introSfxGainDb: number
-  introSfxFadeEnabled: boolean
-  introSfxDuckingEnabled: boolean
-  introSfxDuckingAmountDb: number
+  audioDurationSeconds: number | null
+  audioFadeEnabled: boolean
 }): Promise<AudioConfigRow> {
   const db = getPool()
   const [result] = await db.query(
@@ -68,12 +64,12 @@ export async function create(input: {
       input.musicGainDb,
       input.duckingEnabled ? 1 : 0,
       input.duckingAmountDb,
-      input.introSfxUploadId,
-      input.introSfxSeconds,
-      input.introSfxGainDb,
-      input.introSfxFadeEnabled ? 1 : 0,
-      input.introSfxDuckingEnabled ? 1 : 0,
-      input.introSfxDuckingAmountDb,
+      null,
+      input.audioDurationSeconds,
+      0,
+      input.audioFadeEnabled ? 1 : 0,
+      0,
+      12,
     ]
   )
   const id = Number((result as any).insertId)
@@ -89,12 +85,8 @@ export async function update(id: number, patch: {
   musicGainDb?: number
   duckingEnabled?: boolean
   duckingAmountDb?: number
-  introSfxUploadId?: number | null
-  introSfxSeconds?: number | null
-  introSfxGainDb?: number
-  introSfxFadeEnabled?: boolean
-  introSfxDuckingEnabled?: boolean
-  introSfxDuckingAmountDb?: number
+  audioDurationSeconds?: number | null
+  audioFadeEnabled?: boolean
 }): Promise<AudioConfigRow> {
   const db = getPool()
   const sets: string[] = []
@@ -105,12 +97,10 @@ export async function update(id: number, patch: {
   if (patch.musicGainDb !== undefined) { sets.push('music_gain_db = ?'); args.push(patch.musicGainDb) }
   if (patch.duckingEnabled !== undefined) { sets.push('ducking_enabled = ?'); args.push(patch.duckingEnabled ? 1 : 0) }
   if (patch.duckingAmountDb !== undefined) { sets.push('ducking_amount_db = ?'); args.push(patch.duckingAmountDb) }
-  if (patch.introSfxUploadId !== undefined) { sets.push('intro_sfx_upload_id = ?'); args.push(patch.introSfxUploadId) }
-  if (patch.introSfxSeconds !== undefined) { sets.push('intro_sfx_seconds = ?'); args.push(patch.introSfxSeconds) }
-  if (patch.introSfxGainDb !== undefined) { sets.push('intro_sfx_gain_db = ?'); args.push(patch.introSfxGainDb) }
-  if (patch.introSfxFadeEnabled !== undefined) { sets.push('intro_sfx_fade_enabled = ?'); args.push(patch.introSfxFadeEnabled ? 1 : 0) }
-  if (patch.introSfxDuckingEnabled !== undefined) { sets.push('intro_sfx_ducking_enabled = ?'); args.push(patch.introSfxDuckingEnabled ? 1 : 0) }
-  if (patch.introSfxDuckingAmountDb !== undefined) { sets.push('intro_sfx_ducking_amount_db = ?'); args.push(patch.introSfxDuckingAmountDb) }
+  // Intro SFX is removed; keep upload_id NULL and repurpose seconds/fade columns.
+  sets.push('intro_sfx_upload_id = NULL')
+  if (patch.audioDurationSeconds !== undefined) { sets.push('intro_sfx_seconds = ?'); args.push(patch.audioDurationSeconds) }
+  if (patch.audioFadeEnabled !== undefined) { sets.push('intro_sfx_fade_enabled = ?'); args.push(patch.audioFadeEnabled ? 1 : 0) }
   if (!sets.length) {
     const row = await getById(id)
     if (!row) throw new Error('not_found')

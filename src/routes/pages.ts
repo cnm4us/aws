@@ -3267,7 +3267,6 @@ function renderAdminAudioConfigForm(opts: {
   error?: string | null
   notice?: string | null
   config?: any
-  systemAudio?: Array<{ id: number; name: string }>
 }): string {
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const error = opts.error ? String(opts.error) : ''
@@ -3277,23 +3276,12 @@ function renderAdminAudioConfigForm(opts: {
   const modeValue = String(cfg.mode || 'mix')
   const musicGainDb = cfg.musicGainDb != null ? Number(cfg.musicGainDb) : (cfg.music_gain_db != null ? Number(cfg.music_gain_db) : -18)
   const duckingEnabled = Boolean(cfg.duckingEnabled ?? cfg.ducking_enabled)
-  const introSfxUploadId =
-    cfg.introSfx?.uploadId != null ? Number(cfg.introSfx.uploadId)
-      : (cfg.introSfxUploadId != null ? Number(cfg.introSfxUploadId)
-        : (cfg.intro_sfx_upload_id != null ? Number(cfg.intro_sfx_upload_id) : null))
-  const introSfxSeconds =
-    cfg.introSfx?.seconds != null ? Number(cfg.introSfx.seconds)
-      : (cfg.introSfxSeconds != null ? Number(cfg.introSfxSeconds)
-        : (cfg.intro_sfx_seconds != null ? Number(cfg.intro_sfx_seconds) : 3))
-  const introSfxFadeEnabled =
-    cfg.introSfx?.fadeEnabled != null ? Boolean(cfg.introSfx.fadeEnabled)
-      : (cfg.introSfxFadeEnabled != null ? Boolean(cfg.introSfxFadeEnabled)
-        : Boolean(cfg.intro_sfx_fade_enabled ?? true))
-  const introSfxDuckingEnabled =
-    cfg.introSfx?.duckingEnabled != null ? Boolean(cfg.introSfx.duckingEnabled)
-      : (cfg.introSfxDuckingEnabled != null ? Boolean(cfg.introSfxDuckingEnabled)
-        : Boolean(cfg.intro_sfx_ducking_enabled ?? false))
-  const systemAudio = Array.isArray(opts.systemAudio) ? opts.systemAudio : []
+  const audioDurationSeconds =
+    cfg.audioDurationSeconds != null ? Number(cfg.audioDurationSeconds)
+      : (cfg.intro_sfx_seconds != null ? Number(cfg.intro_sfx_seconds) : null)
+  const audioFadeEnabled =
+    cfg.audioFadeEnabled != null ? Boolean(cfg.audioFadeEnabled)
+      : Boolean(cfg.intro_sfx_fade_enabled ?? true)
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">\u2190 Back to audio configs</a></div><div></div></div>`
@@ -3325,36 +3313,20 @@ function renderAdminAudioConfigForm(opts: {
 	  </label>`
   body += `<input type="hidden" name="videoGainDb" value="0" />`
   body += `<div class="section" style="margin-top: 14px">
-    <div class="section-title">Intro SFX (optional)</div>`
-  body += `<label>Intro SFX Audio
-    <select name="introSfxUploadId">
-      <option value=""${introSfxUploadId == null ? ' selected' : ''}>None</option>`
-  for (const a of systemAudio) {
-    const id = Number(a.id)
-    const label = escapeHtml(String(a.name || `Audio ${id}`))
-    body += `<option value="${escapeHtml(String(id))}"${introSfxUploadId === id ? ' selected' : ''}>${label}</option>`
-  }
-  body += `</select>
-    <div class="field-hint">Uses a system audio upload from <a href="/admin/audio">/admin/audio</a>. (One file, for now.)</div>
-  </label>`
-  body += `<label>Intro Duration
-    <select name="introSfxSeconds">
-      <option value="2"${introSfxSeconds === 2 ? ' selected' : ''}>2 seconds</option>
-      <option value="3"${introSfxSeconds === 3 ? ' selected' : ''}>3 seconds</option>
-      <option value="4"${introSfxSeconds === 4 ? ' selected' : ''}>4 seconds</option>
-      <option value="5"${introSfxSeconds === 5 ? ' selected' : ''}>5 seconds</option>
+    <div class="section-title">Audio Timing</div>`
+  body += `<label>Audio Duration
+    <select name="audioDurationSeconds">
+      <option value=""${audioDurationSeconds == null ? ' selected' : ''}>Full (loop)</option>
+      <option value="2"${audioDurationSeconds === 2 ? ' selected' : ''}>First 2 seconds</option>
+      <option value="3"${audioDurationSeconds === 3 ? ' selected' : ''}>First 3 seconds</option>
+      <option value="4"${audioDurationSeconds === 4 ? ' selected' : ''}>First 4 seconds</option>
+      <option value="5"${audioDurationSeconds === 5 ? ' selected' : ''}>First 5 seconds</option>
     </select>
-    <div class="field-hint">Assumes creator pauses briefly before speaking.</div>
-  </label>`
-  body += `<input type="hidden" name="introSfxGainDb" value="0" />`
-  body += `<label style="margin-top:10px">
-    <input type="checkbox" name="introSfxFadeEnabled" value="1"${introSfxFadeEnabled ? ' checked' : ''} />
-    Fade in/out (0.35s)
+    <div class="field-hint">Use this for intro stings (e.g. newsroom SFX). Full (loop) keeps playing under the video.</div>
   </label>`
   body += `<label style="margin-top:10px">
-    <input type="checkbox" name="introSfxDuckingEnabled" value="1"${introSfxDuckingEnabled ? ' checked' : ''} />
-    Ducking (SFX lowers when original audio is loud)
-    <div class="field-hint">Sidechain = video audio. If speech starts early, SFX ducks under it.</div>
+    <input type="checkbox" name="audioFadeEnabled" value="1"${audioFadeEnabled ? ' checked' : ''} />
+    Fade in/out (0.35s) when duration is set
   </label>`
   body += `</div>`
   body += `<label style="margin-top:10px">
@@ -3367,25 +3339,6 @@ function renderAdminAudioConfigForm(opts: {
   </div>`
   body += `</form>`
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'audio_configs' })
-}
-
-async function loadSystemAudioOptions(): Promise<Array<{ id: number; name: string }>> {
-  const db = getPool()
-  try {
-    const [rows] = await db.query(
-      `SELECT id, COALESCE(modified_filename, original_filename) AS name
-         FROM uploads
-        WHERE kind = 'audio'
-          AND is_system = 1
-          AND (status = 'uploaded' OR status = 'completed')
-          AND source_deleted_at IS NULL
-        ORDER BY id DESC
-        LIMIT 200`
-    )
-    return (rows as any[]).map((r) => ({ id: Number(r.id), name: String(r.name || `Audio ${r.id}`) }))
-  } catch {
-    return []
-  }
 }
 
 pagesRouter.get('/admin/audio-configs', async (req: any, res: any) => {
@@ -3463,22 +3416,18 @@ pagesRouter.get('/admin/audio-configs', async (req: any, res: any) => {
 pagesRouter.get('/admin/audio-configs/new', async (req: any, res: any) => {
   const cookies = parseCookies(req.headers.cookie)
   const csrfToken = cookies['csrf'] || ''
-  const systemAudio = await loadSystemAudioOptions()
   const doc = renderAdminAudioConfigForm({
     title: 'New Audio Config',
     action: '/admin/audio-configs',
     backHref: '/admin/audio-configs',
     csrfToken,
-    systemAudio,
     config: {
       name: '',
       mode: 'mix',
       musicGainDb: -18,
       duckingEnabled: false,
-      introSfxUploadId: null,
-      introSfxSeconds: 3,
-      introSfxFadeEnabled: true,
-      introSfxDuckingEnabled: false,
+      audioDurationSeconds: null,
+      audioFadeEnabled: true,
     },
   })
   res.set('Content-Type', 'text/html; charset=utf-8')
@@ -3499,35 +3448,28 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
 	      videoGainDb: body.videoGainDb,
 	      musicGainDb: body.musicGainDb,
 	      duckingEnabled: Boolean(body.duckingEnabled),
-	      introSfxUploadId: body.introSfxUploadId,
-	      introSfxSeconds: body.introSfxSeconds,
-	      introSfxGainDb: body.introSfxGainDb,
-	      introSfxFadeEnabled: Boolean(body.introSfxFadeEnabled),
-	      introSfxDuckingEnabled: Boolean(body.introSfxDuckingEnabled),
+	      audioDurationSeconds: body.audioDurationSeconds,
+	      audioFadeEnabled: Boolean(body.audioFadeEnabled),
 	    }
     const created = await audioConfigsSvc.createForOwner(input as any, currentUserId)
     res.redirect(`/admin/audio-configs/${created.id}`)
   } catch (err: any) {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
-    const systemAudio = await loadSystemAudioOptions()
     const msg = String(err?.code || err?.message || err)
     const doc = renderAdminAudioConfigForm({
       title: 'New Audio Config',
       action: '/admin/audio-configs',
       backHref: '/admin/audio-configs',
       csrfToken,
-      systemAudio,
       error: msg,
 	      config: {
 	        name: req.body?.name,
 	        mode: req.body?.mode,
 	        musicGainDb: req.body?.musicGainDb,
 	        duckingEnabled: Boolean(req.body?.duckingEnabled),
-	        introSfxUploadId: req.body?.introSfxUploadId,
-	        introSfxSeconds: req.body?.introSfxSeconds,
-	        introSfxFadeEnabled: Boolean(req.body?.introSfxFadeEnabled),
-	        introSfxDuckingEnabled: Boolean(req.body?.introSfxDuckingEnabled),
+	        audioDurationSeconds: req.body?.audioDurationSeconds,
+	        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
 	      },
 	    })
     res.set('Content-Type', 'text/html; charset=utf-8')
@@ -3545,13 +3487,11 @@ pagesRouter.get('/admin/audio-configs/:id', async (req: any, res: any) => {
     const config = await audioConfigsSvc.getForOwner(id, currentUserId)
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
-    const systemAudio = await loadSystemAudioOptions()
     const doc = renderAdminAudioConfigForm({
       title: 'Edit Audio Config',
       action: `/admin/audio-configs/${id}`,
       backHref: '/admin/audio-configs',
       csrfToken,
-      systemAudio,
       config,
     })
     res.set('Content-Type', 'text/html; charset=utf-8')
@@ -3570,62 +3510,53 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
     if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
 
     const body = req.body || {}
-	    const config = await audioConfigsSvc.updateForOwner(id, {
-	      name: body.name,
-	      mode: body.mode,
-	      videoGainDb: body.videoGainDb,
-	      musicGainDb: body.musicGainDb,
-	      duckingEnabled: Boolean(body.duckingEnabled),
-	      introSfxUploadId: body.introSfxUploadId,
-	      introSfxSeconds: body.introSfxSeconds,
-	      introSfxGainDb: body.introSfxGainDb,
-	      introSfxFadeEnabled: Boolean(body.introSfxFadeEnabled),
-	      introSfxDuckingEnabled: Boolean(body.introSfxDuckingEnabled),
-	    }, currentUserId)
+		    const config = await audioConfigsSvc.updateForOwner(id, {
+		      name: body.name,
+		      mode: body.mode,
+		      videoGainDb: body.videoGainDb,
+		      musicGainDb: body.musicGainDb,
+		      duckingEnabled: Boolean(body.duckingEnabled),
+		      audioDurationSeconds: body.audioDurationSeconds,
+		      audioFadeEnabled: Boolean(body.audioFadeEnabled),
+		    }, currentUserId)
 
-    const cookies = parseCookies(req.headers.cookie)
-    const csrfToken = cookies['csrf'] || ''
-    const systemAudio = await loadSystemAudioOptions()
-    const doc = renderAdminAudioConfigForm({
-      title: 'Edit Audio Config',
-      action: `/admin/audio-configs/${id}`,
-      backHref: '/admin/audio-configs',
-      csrfToken,
-      systemAudio,
-      notice: 'Saved.',
-      config,
-    })
+	    const cookies = parseCookies(req.headers.cookie)
+	    const csrfToken = cookies['csrf'] || ''
+	    const doc = renderAdminAudioConfigForm({
+	      title: 'Edit Audio Config',
+	      action: `/admin/audio-configs/${id}`,
+	      backHref: '/admin/audio-configs',
+	      csrfToken,
+	      notice: 'Saved.',
+	      config,
+	    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err: any) {
-    const id = Number(req.params.id)
-    const cookies = parseCookies(req.headers.cookie)
-    const csrfToken = cookies['csrf'] || ''
-    const systemAudio = await loadSystemAudioOptions()
-    const msg = String(err?.code || err?.message || err)
-    const doc = renderAdminAudioConfigForm({
-      title: 'Edit Audio Config',
-      action: `/admin/audio-configs/${id}`,
-      backHref: '/admin/audio-configs',
-      csrfToken,
-      systemAudio,
-      error: msg,
-	      config: {
-	        id,
-	        name: req.body?.name,
-	        mode: req.body?.mode,
-	        musicGainDb: req.body?.musicGainDb,
-	        duckingEnabled: Boolean(req.body?.duckingEnabled),
-	        introSfxUploadId: req.body?.introSfxUploadId,
-	        introSfxSeconds: req.body?.introSfxSeconds,
-	        introSfxFadeEnabled: Boolean(req.body?.introSfxFadeEnabled),
-	        introSfxDuckingEnabled: Boolean(req.body?.introSfxDuckingEnabled),
-	      },
-	    })
-    res.set('Content-Type', 'text/html; charset=utf-8')
-    res.status(400).send(doc)
-  }
-})
+	    const id = Number(req.params.id)
+	    const cookies = parseCookies(req.headers.cookie)
+	    const csrfToken = cookies['csrf'] || ''
+	    const msg = String(err?.code || err?.message || err)
+	    const doc = renderAdminAudioConfigForm({
+	      title: 'Edit Audio Config',
+	      action: `/admin/audio-configs/${id}`,
+	      backHref: '/admin/audio-configs',
+	      csrfToken,
+	      error: msg,
+		      config: {
+		        id,
+		        name: req.body?.name,
+		        mode: req.body?.mode,
+		        musicGainDb: req.body?.musicGainDb,
+		        duckingEnabled: Boolean(req.body?.duckingEnabled),
+		        audioDurationSeconds: req.body?.audioDurationSeconds,
+		        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
+		      },
+		    })
+	    res.set('Content-Type', 'text/html; charset=utf-8')
+	    res.status(400).send(doc)
+	  }
+	})
 
 pagesRouter.post('/admin/audio-configs/:id/archive', async (req: any, res: any) => {
   try {

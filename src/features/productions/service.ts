@@ -244,16 +244,8 @@ export async function create(
         musicGainDb: cfg.musicGainDb,
         duckingEnabled: cfg.duckingEnabled,
         duckingAmountDb: cfg.duckingAmountDb,
-        introSfx: cfg.introSfx
-          ? {
-              uploadId: cfg.introSfx.uploadId,
-              seconds: cfg.introSfx.seconds,
-              gainDb: cfg.introSfx.gainDb,
-              fadeEnabled: cfg.introSfx.fadeEnabled,
-              duckingEnabled: cfg.introSfx.duckingEnabled,
-              duckingAmountDb: cfg.introSfx.duckingAmountDb,
-            }
-          : null,
+        audioDurationSeconds: cfg.audioDurationSeconds ?? null,
+        audioFadeEnabled: cfg.audioFadeEnabled ?? true,
         overlays: [],
       }
     }
@@ -281,12 +273,8 @@ export async function create(
   }
 
   // Audio configs are optional, but if music is selected we default to the system "Mix (Medium)" preset.
-  // If no music is selected, we still allow an audio config to be stored when it contains an Intro SFX,
-  // so productions can use an intro sting without background music.
   const musicId = mergedConfig.musicUploadId != null ? Number(mergedConfig.musicUploadId) : null
   const snapshot = mergedConfig.audioConfigSnapshot && typeof mergedConfig.audioConfigSnapshot === 'object' ? mergedConfig.audioConfigSnapshot : null
-  const hasIntroSfx =
-    !!(snapshot && snapshot.introSfx && typeof snapshot.introSfx === 'object' && Number(snapshot.introSfx.uploadId) > 0)
   if (musicId && Number.isFinite(musicId) && musicId > 0) {
     if (!snapshot) {
       const def = await audioConfigsSvc.getDefaultForUser(currentUserId)
@@ -300,16 +288,8 @@ export async function create(
           musicGainDb: def.musicGainDb,
           duckingEnabled: def.duckingEnabled,
           duckingAmountDb: def.duckingAmountDb,
-          introSfx: def.introSfx
-            ? {
-                uploadId: def.introSfx.uploadId,
-                seconds: def.introSfx.seconds,
-                gainDb: def.introSfx.gainDb,
-                fadeEnabled: def.introSfx.fadeEnabled,
-                duckingEnabled: def.introSfx.duckingEnabled,
-                duckingAmountDb: def.introSfx.duckingAmountDb,
-              }
-            : null,
+          audioDurationSeconds: def.audioDurationSeconds ?? null,
+          audioFadeEnabled: def.audioFadeEnabled ?? true,
           overlays: [],
         }
       } else {
@@ -322,12 +302,13 @@ export async function create(
           musicGainDb: -18,
           duckingEnabled: false,
           duckingAmountDb: 12,
-          introSfx: null,
+          audioDurationSeconds: null,
+          audioFadeEnabled: true,
           overlays: [],
         }
       }
     }
-  } else if (!hasIntroSfx) {
+  } else {
     mergedConfig.audioConfigId = null
     mergedConfig.audioConfigSnapshot = null
   }

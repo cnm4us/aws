@@ -14,4 +14,3 @@ audioConfigsRouter.get('/api/audio-configs', requireAuth, async (req, res, next)
     next(err)
   }
 })
-
