@@ -3075,7 +3075,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
 </script>`
 
     let body = '<h1>Audio</h1>'
-    body += '<div class="toolbar"><div><span class="pill">System Audio</span></div><div><a href="/admin/audio/new">Upload</a></div></div>'
+	    body += '<div class="toolbar"><div><span class="pill">System Audio</span></div><div><a href="/uploads/new?kind=audio">Upload</a></div></div>'
     body += '<div class="section">'
     body += '<div class="section-title">Library</div>'
     body += '<p class="field-hint">These audio files are curated by site_admin and are selectable by any logged-in user when producing videos.</p>'
@@ -3153,21 +3153,10 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
 	  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
 	}
 
-	// IMPORTANT: define /admin/audio/new before /admin/audio/:id so "new" doesn't match the :id param route.
-	pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
-	  const body = [
-	    '<h1>Upload Audio</h1>',
-	    '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>',
-	    '<div class="section">',
-	    '<div class="section-title">System Audio</div>',
-	    '<p class="field-hint">Uploads here become system audio, selectable by any logged-in user during production. Users cannot upload their own audio.</p>',
-	    '<a class="btn" href="/uploads/new?kind=audio">Upload</a>',
-	    '</div>',
-	  ].join('')
-	  const doc = renderAdminPage({ title: 'Upload Audio', bodyHtml: body, active: 'audio' })
-	  res.set('Content-Type', 'text/html; charset=utf-8')
-	  res.send(doc)
-	})
+		// IMPORTANT: define /admin/audio/new before /admin/audio/:id so "new" doesn't match the :id param route.
+		pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
+		  res.redirect('/uploads/new?kind=audio')
+		})
 
 	pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
 	  try {
