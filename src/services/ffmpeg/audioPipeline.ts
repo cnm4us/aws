@@ -74,7 +74,7 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
     await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
     await downloadS3ObjectToFile(opts.audio.bucket, opts.audio.key, audioPath)
     const secondsRaw = opts.audioDurationSeconds != null ? Number(opts.audioDurationSeconds) : null
-    const seconds = secondsRaw != null && Number.isFinite(secondsRaw) ? Math.max(2, Math.min(5, Math.round(secondsRaw))) : null
+    const seconds = secondsRaw != null && Number.isFinite(secondsRaw) ? Math.max(2, Math.min(20, Math.round(secondsRaw))) : null
     const fadeEnabled = opts.audioFadeEnabled !== false
     const mDb = Math.round(Number.isFinite(opts.musicGainDb) ? Number(opts.musicGainDb) : -18)
     const mVol = `${mDb}dB`
@@ -190,7 +190,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
     await downloadS3ObjectToFile(opts.audio.bucket, opts.audio.key, audioPath)
     const secondsRaw = opts.audioDurationSeconds != null ? Number(opts.audioDurationSeconds) : null
-    const seconds = secondsRaw != null && Number.isFinite(secondsRaw) ? Math.max(2, Math.min(5, Math.round(secondsRaw))) : null
+    const seconds = secondsRaw != null && Number.isFinite(secondsRaw) ? Math.max(2, Math.min(20, Math.round(secondsRaw))) : null
     const fadeEnabled = opts.audioFadeEnabled !== false
 
     const fadeBase = 0.35

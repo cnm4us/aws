@@ -399,7 +399,7 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const duckingEnabled = Boolean(audioCfg && (audioCfg.duckingEnabled === true || String(audioCfg.duckingEnabled || '').toLowerCase() === 'true' || String(audioCfg.duckingEnabled || '') === '1'))
   const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
   const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
-  const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(5, Math.round(durRaw))) : null
+  const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
   const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
     ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
     : true

@@ -3303,16 +3303,19 @@ function renderAdminAudioConfigForm(opts: {
   body += `<input type="hidden" name="videoGainDb" value="0" />`
   body += `<div class="section" style="margin-top: 14px">
     <div class="section-title">Audio Timing</div>`
-  body += `<label>Audio Duration
-    <select name="audioDurationSeconds">
-      <option value=""${audioDurationSeconds == null ? ' selected' : ''}>Full (loop)</option>
-      <option value="2"${audioDurationSeconds === 2 ? ' selected' : ''}>First 2 seconds</option>
-      <option value="3"${audioDurationSeconds === 3 ? ' selected' : ''}>First 3 seconds</option>
-      <option value="4"${audioDurationSeconds === 4 ? ' selected' : ''}>First 4 seconds</option>
-      <option value="5"${audioDurationSeconds === 5 ? ' selected' : ''}>First 5 seconds</option>
-    </select>
-    <div class="field-hint">Use this for intro stings (e.g. newsroom SFX). Full (loop) keeps playing under the video.</div>
-  </label>`
+	  body += `<label>Audio Duration
+	    <select name="audioDurationSeconds">
+	      <option value=""${audioDurationSeconds == null ? ' selected' : ''}>Full (loop)</option>
+	      <option value="2"${audioDurationSeconds === 2 ? ' selected' : ''}>First 2 seconds</option>
+	      <option value="3"${audioDurationSeconds === 3 ? ' selected' : ''}>First 3 seconds</option>
+	      <option value="4"${audioDurationSeconds === 4 ? ' selected' : ''}>First 4 seconds</option>
+	      <option value="5"${audioDurationSeconds === 5 ? ' selected' : ''}>First 5 seconds</option>
+	      <option value="10"${audioDurationSeconds === 10 ? ' selected' : ''}>First 10 seconds</option>
+	      <option value="15"${audioDurationSeconds === 15 ? ' selected' : ''}>First 15 seconds</option>
+	      <option value="20"${audioDurationSeconds === 20 ? ' selected' : ''}>First 20 seconds</option>
+	    </select>
+	    <div class="field-hint">Use this for intro stings (e.g. newsroom SFX). Full (loop) keeps playing under the video.</div>
+	  </label>`
   body += `<label style="margin-top:10px">
     <input type="checkbox" name="audioFadeEnabled" value="1"${audioFadeEnabled ? ' checked' : ''} />
     Fade in/out (0.35s) when duration is set

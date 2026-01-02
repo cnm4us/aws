@@ -57,11 +57,11 @@ function normalizeDb(raw: any, fallback: number): number {
   return rounded
 }
 
-function normalizeSeconds2to5(raw: any, fallback: number): number {
+function normalizeSeconds2to20(raw: any, fallback: number): number {
   const n = raw === '' || raw == null ? fallback : Number(raw)
   if (!Number.isFinite(n)) throw new DomainError('invalid_seconds', 'invalid_seconds', 400)
   const rounded = Math.round(n)
-  if (rounded < 2 || rounded > 5) throw new DomainError('invalid_seconds', 'invalid_seconds', 400)
+  if (rounded < 2 || rounded > 20) throw new DomainError('invalid_seconds', 'invalid_seconds', 400)
   return rounded
 }
 
@@ -124,7 +124,7 @@ export async function createForOwner(input: {
   if (mode !== 'mix') duckingEnabled = false
 
   const audioDurationSeconds =
-    input.audioDurationSeconds === '' || input.audioDurationSeconds == null ? null : normalizeSeconds2to5(input.audioDurationSeconds, 3)
+    input.audioDurationSeconds === '' || input.audioDurationSeconds == null ? null : normalizeSeconds2to20(input.audioDurationSeconds, 3)
   const audioFadeEnabled = input.audioFadeEnabled === undefined ? true : normalizeBool(input.audioFadeEnabled)
 
   const row = await repo.create({
@@ -178,7 +178,7 @@ export async function updateForOwner(
   if (mode !== 'mix') duckingEnabled = false
 
   const audioDurationSeconds =
-    next.audioDurationSeconds === '' || next.audioDurationSeconds == null ? null : normalizeSeconds2to5(next.audioDurationSeconds, 3)
+    next.audioDurationSeconds === '' || next.audioDurationSeconds == null ? null : normalizeSeconds2to20(next.audioDurationSeconds, 3)
   const audioFadeEnabled = next.audioFadeEnabled === undefined ? true : normalizeBool(next.audioFadeEnabled)
 
   const row = await repo.update(id, {

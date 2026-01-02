@@ -488,7 +488,7 @@ export default function ProducePage() {
     const duckAmt = c?.duckingAmountDb != null && Number.isFinite(c.duckingAmountDb) ? Math.round(Number(c.duckingAmountDb)) : 12
 
     const durRaw = c?.audioDurationSeconds != null ? Number(c.audioDurationSeconds) : null
-    const dur = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(5, Math.round(durRaw))) : null
+    const dur = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
     const fade = Boolean(c?.audioFadeEnabled ?? true)
     const durLabel = dur != null ? `Duration ${dur}s` : null
     const fadeLabel = dur != null && fade ? 'Fade' : null
