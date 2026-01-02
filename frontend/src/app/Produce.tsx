@@ -67,6 +67,14 @@ type AudioConfig = {
   musicGainDb: number
   duckingEnabled: boolean
   duckingAmountDb: number
+  introSfx?: null | {
+    uploadId: number
+    seconds: number
+    gainDb: number
+    fadeEnabled: boolean
+    duckingEnabled: boolean
+    duckingAmountDb: number
+  }
   createdAt?: string
   updatedAt?: string
   archivedAt?: string | null
@@ -485,8 +493,15 @@ export default function ProducePage() {
     const musicDb = c?.musicGainDb != null && Number.isFinite(c.musicGainDb) ? Math.round(Number(c.musicGainDb)) : -18
     const duck = Boolean(c && c.duckingEnabled)
     const duckAmt = c?.duckingAmountDb != null && Number.isFinite(c.duckingAmountDb) ? Math.round(Number(c.duckingAmountDb)) : 12
+    const intro = c?.introSfx && typeof c.introSfx === 'object' ? c.introSfx : null
+    const introLabel = intro ? `Intro SFX (${Math.max(2, Math.min(5, Math.round(Number(intro.seconds) || 3)))}s)` : null
+    const introDuck = intro && intro.duckingEnabled ? 'Intro ducking' : null
     if (mode === 'replace') return `Replace • Video ${videoDb} dB`
-    return `Mix • Video ${videoDb} dB • Music ${musicDb} dB${duck ? ` • Ducking ${duckAmt} dB` : ''}`
+    return [
+      `Mix • Video ${videoDb} dB • Music ${musicDb} dB${duck ? ` • Ducking ${duckAmt} dB` : ''}`,
+      introLabel,
+      introDuck,
+    ].filter(Boolean).join(' • ')
   }
 
   const openAudioPicker = () => {

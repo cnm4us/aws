@@ -392,13 +392,26 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const cfgObj = opts.config && typeof opts.config === 'object' ? opts.config : null
   if (!cfgObj) return
   const musicUploadId = cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
-  if (!musicUploadId) return
   const audioCfg = (cfgObj.audioConfigSnapshot && typeof cfgObj.audioConfigSnapshot === 'object') ? cfgObj.audioConfigSnapshot : null
   const mode = audioCfg && typeof audioCfg.mode === 'string' ? String(audioCfg.mode).toLowerCase() : 'replace'
   const videoGainDb = audioCfg && audioCfg.videoGainDb != null ? Number(audioCfg.videoGainDb) : 0
   const musicGainDb = audioCfg && audioCfg.musicGainDb != null ? Number(audioCfg.musicGainDb) : -18
   const duckingEnabled = Boolean(audioCfg && (audioCfg.duckingEnabled === true || String(audioCfg.duckingEnabled || '').toLowerCase() === 'true' || String(audioCfg.duckingEnabled || '') === '1'))
   const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
+  const introObj = audioCfg && audioCfg.introSfx && typeof audioCfg.introSfx === 'object' ? audioCfg.introSfx : null
+  const introSfxUploadId = introObj && introObj.uploadId != null ? Number(introObj.uploadId) : null
+  const introSfxSeconds = introObj && introObj.seconds != null ? Number(introObj.seconds) : 3
+  const introSfxGainDb = introObj && introObj.gainDb != null ? Number(introObj.gainDb) : 0
+  const introSfxFadeEnabled = introObj
+    ? (introObj.fadeEnabled === undefined
+      ? true
+      : Boolean(introObj.fadeEnabled === true || String(introObj.fadeEnabled || '').toLowerCase() === 'true' || String(introObj.fadeEnabled || '') === '1'))
+    : true
+  const introSfxDuckingEnabled = Boolean(introObj && (introObj.duckingEnabled === true || String(introObj.duckingEnabled || '').toLowerCase() === 'true' || String(introObj.duckingEnabled || '') === '1'))
+  const introSfxDuckingAmountDb = introObj && introObj.duckingAmountDb != null ? Number(introObj.duckingAmountDb) : 12
+
+  // For now, intro SFX is only applied when music is also configured (the current UX binds audio configs to music selection).
+  if (!musicUploadId) return
 
   const db = getPool()
   const [rows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, content_type FROM uploads WHERE id = ? LIMIT 1`, [musicUploadId])
@@ -411,6 +424,38 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const srcBucket = String(au.s3_bucket || '')
   const srcKey = String(au.s3_key || '')
   if (!srcBucket || !srcKey) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
+
+  let introSfx: null | {
+    audio: { bucket: string; key: string }
+    seconds: number
+    gainDb: number
+    fadeEnabled: boolean
+    duckingEnabled: boolean
+    duckingAmountDb: number
+  } = null
+  if (introSfxUploadId && Number.isFinite(introSfxUploadId) && introSfxUploadId > 0) {
+    const [sfxRows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, is_system FROM uploads WHERE id = ? LIMIT 1`, [introSfxUploadId])
+    const su = (sfxRows as any[])[0]
+    if (su) {
+      const sk = String(su.kind || '').toLowerCase()
+      const ss = String(su.status || '').toLowerCase()
+      const sys = Number(su.is_system || 0)
+      if (sk === 'audio' && sys === 1 && (ss === 'uploaded' || ss === 'completed')) {
+        const b = String(su.s3_bucket || '')
+        const k = String(su.s3_key || '')
+        if (b && k) {
+          introSfx = {
+            audio: { bucket: b, key: k },
+            seconds: Math.max(2, Math.min(5, Math.round(Number.isFinite(introSfxSeconds) ? introSfxSeconds : 3))),
+            gainDb: Math.round(Number.isFinite(introSfxGainDb) ? introSfxGainDb : 0),
+            fadeEnabled: introSfxFadeEnabled !== false,
+            duckingEnabled: introSfxDuckingEnabled,
+            duckingAmountDb: Math.round(Number.isFinite(introSfxDuckingAmountDb) ? introSfxDuckingAmountDb : 12),
+          }
+        }
+      }
+    }
+  }
 
   // MediaConvert selects audio per-input across the timeline; it doesn't "sidechain" audio from a second input
   // into the first input's video. For replace-mode, pre-mux the music into the video input (copy video stream),
@@ -436,6 +481,7 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
           musicGainDb,
           duckingEnabled,
           duckingAmountDb,
+          introSfx,
         })
         videoInput.FileInput = out.s3Url
       } catch {
@@ -447,6 +493,7 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
           originalLeaf,
           video: { bucket: videoS3.bucket, key: videoS3.key },
           audio: { bucket: srcBucket, key: srcKey },
+          introSfx,
         })
         videoInput.FileInput = out.s3Url
       }
@@ -458,6 +505,7 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
         originalLeaf,
         video: { bucket: videoS3.bucket, key: videoS3.key },
         audio: { bucket: srcBucket, key: srcKey },
+        introSfx,
       })
       videoInput.FileInput = out.s3Url
     }

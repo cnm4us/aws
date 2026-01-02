@@ -244,6 +244,16 @@ export async function create(
         musicGainDb: cfg.musicGainDb,
         duckingEnabled: cfg.duckingEnabled,
         duckingAmountDb: cfg.duckingAmountDb,
+        introSfx: cfg.introSfx
+          ? {
+              uploadId: cfg.introSfx.uploadId,
+              seconds: cfg.introSfx.seconds,
+              gainDb: cfg.introSfx.gainDb,
+              fadeEnabled: cfg.introSfx.fadeEnabled,
+              duckingEnabled: cfg.introSfx.duckingEnabled,
+              duckingAmountDb: cfg.introSfx.duckingAmountDb,
+            }
+          : null,
         overlays: [],
       }
     }
@@ -287,6 +297,16 @@ export async function create(
           musicGainDb: def.musicGainDb,
           duckingEnabled: def.duckingEnabled,
           duckingAmountDb: def.duckingAmountDb,
+          introSfx: def.introSfx
+            ? {
+                uploadId: def.introSfx.uploadId,
+                seconds: def.introSfx.seconds,
+                gainDb: def.introSfx.gainDb,
+                fadeEnabled: def.introSfx.fadeEnabled,
+                duckingEnabled: def.introSfx.duckingEnabled,
+                duckingAmountDb: def.introSfx.duckingAmountDb,
+              }
+            : null,
           overlays: [],
         }
       } else {
@@ -299,6 +319,7 @@ export async function create(
           musicGainDb: -18,
           duckingEnabled: false,
           duckingAmountDb: 12,
+          introSfx: null,
           overlays: [],
         }
       }

@@ -128,28 +128,38 @@ export async function ensureSchema(db: DB) {
 	    )
 	  } catch {}
 
-	  await db.query(`
-	    CREATE TABLE IF NOT EXISTS audio_configurations (
-	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-	      owner_user_id BIGINT UNSIGNED NOT NULL,
-	      name VARCHAR(120) NOT NULL,
-	      mode ENUM('replace','mix') NOT NULL DEFAULT 'mix',
-	      video_gain_db SMALLINT NOT NULL DEFAULT 0,
-	      music_gain_db SMALLINT NOT NULL DEFAULT -18,
-	      ducking_enabled TINYINT(1) NOT NULL DEFAULT 0,
-	      ducking_amount_db SMALLINT NOT NULL DEFAULT 12,
-	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	      archived_at TIMESTAMP NULL DEFAULT NULL,
-	      KEY idx_audio_cfg_owner_archived (owner_user_id, archived_at, id),
-	      KEY idx_audio_cfg_archived (archived_at, id)
-	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-	  `);
-	
-	  await db.query(`
-	    CREATE TABLE IF NOT EXISTS productions (
-	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      upload_id BIGINT UNSIGNED NOT NULL,
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS audio_configurations (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		      owner_user_id BIGINT UNSIGNED NOT NULL,
+		      name VARCHAR(120) NOT NULL,
+		      mode ENUM('replace','mix') NOT NULL DEFAULT 'mix',
+		      video_gain_db SMALLINT NOT NULL DEFAULT 0,
+		      music_gain_db SMALLINT NOT NULL DEFAULT -18,
+		      ducking_enabled TINYINT(1) NOT NULL DEFAULT 0,
+		      ducking_amount_db SMALLINT NOT NULL DEFAULT 12,
+		      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		      archived_at TIMESTAMP NULL DEFAULT NULL,
+		      KEY idx_audio_cfg_owner_archived (owner_user_id, archived_at, id),
+		      KEY idx_audio_cfg_archived (archived_at, id)
+		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+		  `);
+
+		  // Plan 34: optional intro SFX overlay config (idempotent best-effort).
+		  // NOTE: uploads.kind + uploads.is_system are created by earlier migrations/scripts.
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_upload_id BIGINT UNSIGNED NULL`);
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_seconds INT UNSIGNED NULL`);
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_gain_db SMALLINT NOT NULL DEFAULT 0`);
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_fade_enabled TINYINT(1) NOT NULL DEFAULT 1`);
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_enabled TINYINT(1) NOT NULL DEFAULT 0`);
+		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_amount_db SMALLINT NOT NULL DEFAULT 12`);
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_audio_cfg_intro_sfx ON audio_configurations (intro_sfx_upload_id, archived_at, id)`); } catch {}
+		
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS productions (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       ulid CHAR(26) NULL,
       name VARCHAR(255) NULL,
