@@ -228,12 +228,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     }
 
     if (duckingEnabled && duckingMode !== 'none') {
-      const dbToLinear = (db: number): number => Math.pow(10, db / 20)
-      const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n))
-
       const threshold = thresholdForGate(duckingGate)
-      const levelIn = clamp(dbToLinear(mDb), 0.015625, 64)
-      const levelSc = clamp(dbToLinear(vDb), 0.015625, 64)
 
       origChain = `[0:a]volume=${vVol},apad[orig]`
       if (duckingMode === 'abrupt') {
@@ -241,7 +236,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
         const attack = 5
         const release = 400
         const range = 0.001 // ~ -60 dB max attenuation (near-silence)
-        musicChain = `[1:a][0:a]sidechaingate=threshold=${threshold}:attack=${attack}:release=${release}:range=${range}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+        musicChain = `[1:a][0:a]sidechaingate=threshold=${threshold}:attack=${attack}:release=${release}:range=${range}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
       } else {
         // Rolling Ducking: sidechain compression (smooth reduction).
         const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckingAmountDb / 2)))
@@ -249,7 +244,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
         const release = 250
         // IMPORTANT: sidechaincompress appears to not accept intermediate labels as input on this ffmpeg build.
         // Use direct input streams ([1:a] and [0:a]) for sidechaincompress, and only use labels for amix.
-        musicChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+        musicChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
       }
     }
 
