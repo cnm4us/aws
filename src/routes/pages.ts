@@ -3122,7 +3122,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   }
 })
 
-function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null }): string {
+	function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null }): string {
   const audio = opts.audio || {}
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const error = opts.error ? String(opts.error) : ''
@@ -3150,13 +3150,29 @@ function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?
   </div>`
   body += `</form>`
 
-  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
-}
+	  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
+	}
 
-pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
-  try {
-    const id = Number(req.params.id)
-    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+	// IMPORTANT: define /admin/audio/new before /admin/audio/:id so "new" doesn't match the :id param route.
+	pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
+	  const body = [
+	    '<h1>Upload Audio</h1>',
+	    '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>',
+	    '<div class="section">',
+	    '<div class="section-title">System Audio</div>',
+	    '<p class="field-hint">Uploads here become system audio, selectable by any logged-in user during production. Users cannot upload their own audio.</p>',
+	    '<a class="btn" href="/uploads/new?kind=audio">Upload</a>',
+	    '</div>',
+	  ].join('')
+	  const doc = renderAdminPage({ title: 'Upload Audio', bodyHtml: body, active: 'audio' })
+	  res.set('Content-Type', 'text/html; charset=utf-8')
+	  res.send(doc)
+	})
+
+	pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
+	  try {
+	    const id = Number(req.params.id)
+	    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
     const db = getPool()
     const [rows] = await db.query(
       `SELECT id, original_filename, modified_filename, description
@@ -3225,28 +3241,13 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
     res.send(doc)
   } catch (err) {
     console.error('admin audio update failed', err)
-    res.status(500).send('Failed to save audio')
-  }
-})
+	    res.status(500).send('Failed to save audio')
+	  }
+	})
 
-pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
-  const body = [
-    '<h1>Upload Audio</h1>',
-    '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>',
-    '<div class="section">',
-    '<div class="section-title">System Audio</div>',
-    '<p class="field-hint">Uploads here become system audio, selectable by any logged-in user during production. Users cannot upload their own audio.</p>',
-    '<a class="btn" href="/uploads/new?kind=audio">Upload</a>',
-    '</div>',
-  ].join('')
-  const doc = renderAdminPage({ title: 'Upload Audio', bodyHtml: body, active: 'audio' })
-  res.set('Content-Type', 'text/html; charset=utf-8')
-  res.send(doc)
-})
-
-pagesRouter.post('/admin/audio/:id/delete', async (req: any, res: any) => {
-  try {
-    const id = Number(req.params.id)
+	pagesRouter.post('/admin/audio/:id/delete', async (req: any, res: any) => {
+	  try {
+	    const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
     const currentUserId = req.user?.id ? Number(req.user.id) : null
     if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio')}`)
