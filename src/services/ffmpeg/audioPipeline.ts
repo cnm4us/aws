@@ -136,7 +136,7 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
           sfxChain = `[2:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[sfxduck];[sfxduck]atrim=0:${seconds},asetpts=N/SR/TB,volume=${gainDb}dB${fadeFilters}[sfx]`
         }
 
-        const filter = `[1:a]volume=0dB[music];${sfxChain};[music][sfx]amix=inputs=2:duration=longest:dropout_transition=0[outa]`
+        const filter = `[1:a]volume=0dB[music];${sfxChain};[music][sfx]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[outa]`
 
         await runFfmpeg([
           '-i',
@@ -227,7 +227,7 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
           sfxChain = `[2:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[sfxduck];[sfxduck]atrim=0:${seconds},asetpts=N/SR/TB,volume=${gainDb}dB${fadeFilters}[sfx]`
         }
 
-        const filter = `[1:a]volume=0dB[music];${sfxChain};[music][sfx]amix=inputs=2:duration=longest:dropout_transition=0[outa]`
+        const filter = `[1:a]volume=0dB[music];${sfxChain};[music][sfx]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[outa]`
 
         await runFfmpeg([
           '-i',
@@ -331,7 +331,11 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     // and `-shortest` to stop output at end of video.
     //
     // Note: if the input video has no audio stream, this filtergraph will fail; callers should fallback to replace-mode.
-    let filter = `[0:a]volume=${vVol},apad[orig];[1:a]volume=${mVol}[music];[orig][music]amix=inputs=2:duration=longest:dropout_transition=0[mix]`
+    //
+    // IMPORTANT: amix defaults to normalize=1 (scales down by input count). That makes background music/SFX hard to hear.
+    // Use normalize=0 and add a limiter to avoid clipping.
+    let origChain = `[0:a]volume=${vVol},apad[orig]`
+    let musicChain = `[1:a]volume=${mVol}[music]`
     if (duckingEnabled) {
       const dbToLinear = (db: number): number => Math.pow(10, db / 20)
       const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n))
@@ -349,7 +353,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
 
       // IMPORTANT: sidechaincompress appears to not accept intermediate labels as input on this ffmpeg build.
       // Use direct input streams ([1:a] and [0:a]) for sidechaincompress, and only use labels for amix.
-      filter = `[0:a]volume=${vVol}[orig];[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}[music];[orig][music]amix=inputs=2:duration=longest:dropout_transition=0[mix]`
+      origChain = `[0:a]volume=${vVol},apad[orig]`
+      musicChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:level_in=${levelIn}:level_sc=${levelSc}:makeup=1[mduck];[mduck]volume=${mVol}[music]`
     }
 
     let outLabel = '[mix]'
@@ -376,10 +381,50 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
         sfxChain = `[2:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[sfxduck];[sfxduck]atrim=0:${seconds},asetpts=N/SR/TB,volume=${gainDb}dB${fadeFilters}[sfx]`
       }
 
-      // Mix intro SFX on top of the existing (orig+music) mix.
-      filter = `${filter};${sfxChain};[mix][sfx]amix=inputs=2:duration=longest:dropout_transition=0[out]`
+      // Mix intro SFX at t=0 on top of (orig+music) in a single amix stage.
+      const filter = `${origChain};${musicChain};${sfxChain};[orig][music][sfx]amix=inputs=3:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[out]`
       outLabel = '[out]'
+
+      await runFfmpeg([
+        '-i',
+        videoPath,
+        '-stream_loop',
+        '-1',
+        '-i',
+        audioPath,
+        '-i',
+        sfxPath,
+        '-filter_complex',
+        filter,
+        '-map',
+        '0:v:0',
+        '-map',
+        outLabel,
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        '-shortest',
+        outPath,
+      ])
+
+      const folder = ymdToFolder(opts.dateYmd)
+      const base = duckingEnabled ? 'music-mix-duck' : 'music-mix'
+      const prefix = `${base}-intro`
+      const key = `${prefix}/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
+      await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')
+      return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
     }
+
+    const filter = `${origChain};${musicChain};[orig][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[out]`
 
     await runFfmpeg([
       '-i',
@@ -388,13 +433,12 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
       '-1',
       '-i',
       audioPath,
-      ...(intro ? ['-i', sfxPath] : []),
       '-filter_complex',
       filter,
       '-map',
       '0:v:0',
       '-map',
-      outLabel,
+      '[out]',
       '-c:v',
       'copy',
       '-c:a',
@@ -412,8 +456,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     ])
 
     const folder = ymdToFolder(opts.dateYmd)
-    const base = duckingEnabled ? 'music-mix-duck' : 'music-mix'
-    const prefix = intro ? `${base}-intro` : base
+    const prefix = duckingEnabled ? 'music-mix-duck' : 'music-mix'
     const key = `${prefix}/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
     await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')
     return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
