@@ -8,7 +8,7 @@ import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
 import path from 'path'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
-import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
+import { createMuxedMp4WithIntroSfxOverlay, createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
 
 export type RenderOptions = {
   upload: any
@@ -410,21 +410,7 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const introSfxDuckingEnabled = Boolean(introObj && (introObj.duckingEnabled === true || String(introObj.duckingEnabled || '').toLowerCase() === 'true' || String(introObj.duckingEnabled || '') === '1'))
   const introSfxDuckingAmountDb = introObj && introObj.duckingAmountDb != null ? Number(introObj.duckingAmountDb) : 12
 
-  // For now, intro SFX is only applied when music is also configured (the current UX binds audio configs to music selection).
-  if (!musicUploadId) return
-
   const db = getPool()
-  const [rows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, content_type FROM uploads WHERE id = ? LIMIT 1`, [musicUploadId])
-  const au = (rows as any[])[0]
-  if (!au) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
-  const kind = String(au.kind || '').toLowerCase()
-  if (kind !== 'audio') throw new DomainError('invalid_audio_upload_kind', 'invalid_audio_upload_kind', 400)
-  const st = String(au.status || '').toLowerCase()
-  if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_audio_upload_state', 'invalid_audio_upload_state', 422)
-  const srcBucket = String(au.s3_bucket || '')
-  const srcKey = String(au.s3_key || '')
-  if (!srcBucket || !srcKey) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
-
   let introSfx: null | {
     audio: { bucket: string; key: string }
     seconds: number
@@ -457,6 +443,8 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
     }
   }
 
+  if (!musicUploadId && !introSfx) return
+
   // MediaConvert selects audio per-input across the timeline; it doesn't "sidechain" audio from a second input
   // into the first input's video. For replace-mode, pre-mux the music into the video input (copy video stream),
   // then run the existing single-input profile unchanged.
@@ -466,6 +454,37 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
   const videoS3 = parseS3Url(videoUrl)
   if (!videoS3) return
   const originalLeaf = path.posix.basename(videoS3.key) || 'video.mp4'
+
+  // Intro-only: apply SFX overlay even without music.
+  if (!musicUploadId && introSfx) {
+    try {
+      const out = await createMuxedMp4WithIntroSfxOverlay({
+        uploadBucket: UPLOAD_BUCKET,
+        dateYmd: opts.dateYmd,
+        productionUlid: opts.productionUlid,
+        originalLeaf,
+        video: { bucket: videoS3.bucket, key: videoS3.key },
+        introSfx,
+        videoGainDb,
+      })
+      videoInput.FileInput = out.s3Url
+    } catch {
+      // best-effort
+    }
+    return
+  }
+
+  // Music present: load the music upload.
+  const [rows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, content_type FROM uploads WHERE id = ? LIMIT 1`, [musicUploadId])
+  const au = (rows as any[])[0]
+  if (!au) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
+  const kind = String(au.kind || '').toLowerCase()
+  if (kind !== 'audio') throw new DomainError('invalid_audio_upload_kind', 'invalid_audio_upload_kind', 400)
+  const st = String(au.status || '').toLowerCase()
+  if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_audio_upload_state', 'invalid_audio_upload_state', 422)
+  const srcBucket = String(au.s3_bucket || '')
+  const srcKey = String(au.s3_key || '')
+  if (!srcBucket || !srcKey) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
 
   try {
     if (mode === 'mix') {

@@ -466,3 +466,93 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     } catch {}
   }
 }
+
+export async function createMuxedMp4WithIntroSfxOverlay(opts: {
+  uploadBucket: string
+  dateYmd: string
+  productionUlid: string
+  originalLeaf: string
+  video: { bucket: string; key: string }
+  introSfx: {
+    audio: { bucket: string; key: string }
+    seconds: number
+    gainDb: number
+    fadeEnabled: boolean
+    duckingEnabled: boolean
+    duckingAmountDb: number
+  }
+  videoGainDb?: number
+}): Promise<{ bucket: string; key: string; s3Url: string }> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-intro-sfx-'))
+  const videoPath = path.join(tmpDir, 'video')
+  const sfxPath = path.join(tmpDir, 'sfx')
+  const outPath = path.join(tmpDir, 'muxed.mp4')
+
+  const vDb = Math.round(Number.isFinite(opts.videoGainDb) ? Number(opts.videoGainDb) : 0)
+  const vVol = `${vDb}dB`
+
+  try {
+    await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
+    await downloadS3ObjectToFile(opts.introSfx.audio.bucket, opts.introSfx.audio.key, sfxPath)
+
+    const seconds = Math.max(2, Math.min(5, Math.round(Number(opts.introSfx.seconds) || 3)))
+    const gainDb = Math.round(Number.isFinite(opts.introSfx.gainDb) ? Number(opts.introSfx.gainDb) : 0)
+    const fadeEnabled = Boolean(opts.introSfx.fadeEnabled)
+    const duckEnabled = Boolean(opts.introSfx.duckingEnabled)
+    const duckAmt = Math.round(Number.isFinite(opts.introSfx.duckingAmountDb) ? Number(opts.introSfx.duckingAmountDb) : 12)
+
+    const fadeBase = 0.35
+    const fadeDur = fadeEnabled ? Math.max(0.05, Math.min(fadeBase, seconds / 2)) : 0
+    const fadeOutStart = Math.max(0, seconds - fadeDur)
+    const fadeFilters = fadeEnabled
+      ? `,afade=t=in:st=0:d=${fadeDur.toFixed(2)},afade=t=out:st=${fadeOutStart.toFixed(2)}:d=${fadeDur.toFixed(2)}`
+      : ''
+
+    let sfxChain = `[1:a]atrim=0:${seconds},asetpts=N/SR/TB,volume=${gainDb}dB${fadeFilters}[sfx]`
+    if (duckEnabled) {
+      const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckAmt / 2)))
+      const threshold = 0.1
+      const attack = 20
+      const release = 250
+      sfxChain = `[1:a][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[sfxduck];[sfxduck]atrim=0:${seconds},asetpts=N/SR/TB,volume=${gainDb}dB${fadeFilters}[sfx]`
+    }
+
+    const filter = `[0:a]volume=${vVol},apad[orig];${sfxChain};[orig][sfx]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[out]`
+
+    await runFfmpeg([
+      '-i',
+      videoPath,
+      '-i',
+      sfxPath,
+      '-filter_complex',
+      filter,
+      '-map',
+      '0:v:0',
+      '-map',
+      '[out]',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-ar',
+      '48000',
+      '-ac',
+      '2',
+      '-movflags',
+      '+faststart',
+      '-shortest',
+      outPath,
+    ])
+
+    const folder = ymdToFolder(opts.dateYmd)
+    const key = `intro-sfx/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
+    await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')
+    return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    } catch {}
+  }
+}

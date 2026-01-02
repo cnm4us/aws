@@ -281,10 +281,13 @@ export async function create(
   }
 
   // Audio configs are optional, but if music is selected we default to the system "Mix (Medium)" preset.
-  // This keeps behavior predictable for creators even if they don't explicitly choose a preset.
+  // If no music is selected, we still allow an audio config to be stored when it contains an Intro SFX,
+  // so productions can use an intro sting without background music.
   const musicId = mergedConfig.musicUploadId != null ? Number(mergedConfig.musicUploadId) : null
+  const snapshot = mergedConfig.audioConfigSnapshot && typeof mergedConfig.audioConfigSnapshot === 'object' ? mergedConfig.audioConfigSnapshot : null
+  const hasIntroSfx =
+    !!(snapshot && snapshot.introSfx && typeof snapshot.introSfx === 'object' && Number(snapshot.introSfx.uploadId) > 0)
   if (musicId && Number.isFinite(musicId) && musicId > 0) {
-    const snapshot = mergedConfig.audioConfigSnapshot && typeof mergedConfig.audioConfigSnapshot === 'object' ? mergedConfig.audioConfigSnapshot : null
     if (!snapshot) {
       const def = await audioConfigsSvc.getDefaultForUser(currentUserId)
       if (def) {
@@ -324,7 +327,7 @@ export async function create(
         }
       }
     }
-  } else {
+  } else if (!hasIntroSfx) {
     mergedConfig.audioConfigId = null
     mergedConfig.audioConfigSnapshot = null
   }
