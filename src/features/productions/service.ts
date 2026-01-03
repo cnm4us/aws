@@ -248,6 +248,8 @@ export async function create(
         duckingAmountDb: cfg.duckingAmountDb,
         audioDurationSeconds: cfg.audioDurationSeconds ?? null,
         audioFadeEnabled: cfg.audioFadeEnabled ?? true,
+        openerCutFadeBeforeSeconds: (cfg as any).openerCutFadeBeforeSeconds ?? null,
+        openerCutFadeAfterSeconds: (cfg as any).openerCutFadeAfterSeconds ?? null,
         overlays: [],
       }
     }
@@ -294,6 +296,8 @@ export async function create(
           duckingAmountDb: def.duckingAmountDb,
           audioDurationSeconds: def.audioDurationSeconds ?? null,
           audioFadeEnabled: def.audioFadeEnabled ?? true,
+          openerCutFadeBeforeSeconds: (def as any).openerCutFadeBeforeSeconds ?? null,
+          openerCutFadeAfterSeconds: (def as any).openerCutFadeAfterSeconds ?? null,
           overlays: [],
         }
       } else {
@@ -310,6 +314,8 @@ export async function create(
           duckingAmountDb: 12,
           audioDurationSeconds: null,
           audioFadeEnabled: true,
+          openerCutFadeBeforeSeconds: null,
+          openerCutFadeAfterSeconds: null,
           overlays: [],
         }
       }

@@ -13,6 +13,8 @@ export type AudioConfigRow = {
   ducking_amount_db: number
   ducking_mode: DuckingMode
   ducking_gate: DuckingGate
+  opener_cut_fade_before_ms: number | null
+  opener_cut_fade_after_ms: number | null
   intro_sfx_upload_id: number | null
   intro_sfx_seconds: number | null
   intro_sfx_gain_db: number
@@ -36,6 +38,8 @@ export type AudioConfigDto = {
   duckingAmountDb: number
   audioDurationSeconds: number | null
   audioFadeEnabled: boolean
+  openerCutFadeBeforeSeconds: number | null
+  openerCutFadeAfterSeconds: number | null
   createdAt: string
   updatedAt: string
   archivedAt: string | null

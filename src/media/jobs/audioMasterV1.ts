@@ -33,6 +33,8 @@ export async function runAudioMasterV1Job(
         duckingMode: input.duckingMode,
         duckingGate: input.duckingGate,
         duckingAmountDb: Number(input.duckingAmountDb || 12),
+        openerCutFadeBeforeSeconds: input.openerCutFadeBeforeSeconds == null ? null : Number(input.openerCutFadeBeforeSeconds),
+        openerCutFadeAfterSeconds: input.openerCutFadeAfterSeconds == null ? null : Number(input.openerCutFadeAfterSeconds),
         normalizeAudio,
         normalizeTargetLkfs,
         logPaths,

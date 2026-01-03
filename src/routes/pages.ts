@@ -3278,6 +3278,12 @@ function renderAdminAudioConfigForm(opts: {
   const audioFadeEnabled =
     cfg.audioFadeEnabled != null ? Boolean(cfg.audioFadeEnabled)
       : Boolean(cfg.intro_sfx_fade_enabled ?? true)
+  const openerCutFadeBeforeSeconds =
+    cfg.openerCutFadeBeforeSeconds != null ? Number(cfg.openerCutFadeBeforeSeconds)
+      : (cfg.opener_cut_fade_before_ms != null ? Number(cfg.opener_cut_fade_before_ms) / 1000 : null)
+  const openerCutFadeAfterSeconds =
+    cfg.openerCutFadeAfterSeconds != null ? Number(cfg.openerCutFadeAfterSeconds)
+      : (cfg.opener_cut_fade_after_ms != null ? Number(cfg.opener_cut_fade_after_ms) / 1000 : null)
 
   let body = `<h1>${escapeHtml(opts.title)}</h1>`
   body += `<div class="toolbar"><div><a href="${escapeHtml(opts.backHref)}">\u2190 Back to audio configs</a></div><div></div></div>`
@@ -3328,28 +3334,58 @@ function renderAdminAudioConfigForm(opts: {
     Fade in/out (0.35s) when duration is set
   </label>`
   body += `</div>`
-  body += `<label style="margin-top:10px">
-    Ducking
-    <select name="duckingMode">
-      <option value="none"${duckingModeValue === 'none' ? ' selected' : ''}>None</option>
-      <option value="rolling"${duckingModeValue === 'rolling' ? ' selected' : ''}>Rolling Ducking</option>
-      <option value="abrupt"${duckingModeValue === 'abrupt' ? ' selected' : ''}>Abrupt Ducking</option>
-    </select>
-    <div class="field-hint">Applies only in Mix mode. Rolling = smooth reduction. Abrupt = quickly drops toward silence.</div>
-  </label>`
-  body += `<label style="margin-top:10px">
-    Ducking Sensitivity
-    <select name="duckingGate">
-      <option value="sensitive"${duckingGateValue === 'sensitive' ? ' selected' : ''}>Sensitive</option>
-      <option value="normal"${duckingGateValue === 'normal' ? ' selected' : ''}>Normal</option>
-      <option value="strict"${duckingGateValue === 'strict' ? ' selected' : ''}>Strict</option>
-    </select>
-    <div class="field-hint">Sensitive triggers sooner; Strict triggers later.</div>
-  </label>`
-  body += `<div class="actions">
-    <button type="submit">Save</button>
-  </div>`
-  body += `</form>`
+	  body += `<label style="margin-top:10px">
+	    Ducking
+	    <select name="duckingMode">
+	      <option value="none"${duckingModeValue === 'none' ? ' selected' : ''}>None</option>
+	      <option value="rolling"${duckingModeValue === 'rolling' ? ' selected' : ''}>Rolling Ducking</option>
+	      <option value="abrupt"${duckingModeValue === 'abrupt' ? ' selected' : ''}>Opener Cutoff</option>
+	    </select>
+	    <div class="field-hint">Applies only in Mix mode. Rolling reduces music under video audio. Opener Cutoff plays music until speech/ambient starts, then cuts it.</div>
+	  </label>`
+	  body += `<label style="margin-top:10px">
+	    Ducking Sensitivity
+	    <select name="duckingGate">
+	      <option value="sensitive"${duckingGateValue === 'sensitive' ? ' selected' : ''}>Sensitive</option>
+	      <option value="normal"${duckingGateValue === 'normal' ? ' selected' : ''}>Normal</option>
+	      <option value="strict"${duckingGateValue === 'strict' ? ' selected' : ''}>Strict</option>
+	    </select>
+	    <div class="field-hint">Sensitive triggers sooner; Strict triggers later.</div>
+	  </label>`
+	  body += `<div class="section" style="margin-top: 14px">
+	    <div class="section-title">Opener Cutoff Fade</div>
+	    <div class="field-hint">Only used when Ducking is set to Opener Cutoff.</div>
+	  `
+	  const fadeOpt = (label: string, value: number | null, selected: number | null) =>
+	    `<option value="${value == null ? '' : value}"${(value == null ? selected == null : selected === value) ? ' selected' : ''}>${label}</option>`
+	  body += `<label>Fade Out Before t
+	    <select name="openerCutFadeBeforeSeconds">
+	      ${fadeOpt('None', null, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('0.5 seconds', 0.5, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('1.0 seconds', 1.0, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('1.5 seconds', 1.5, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('2.0 seconds', 2.0, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('2.5 seconds', 2.5, openerCutFadeBeforeSeconds)}
+	      ${fadeOpt('3.0 seconds', 3.0, openerCutFadeBeforeSeconds)}
+	    </select>
+	  </label>`
+	  body += `<label style="margin-top:10px">Fade Out After t
+	    <select name="openerCutFadeAfterSeconds">
+	      ${fadeOpt('None', null, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('0.5 seconds', 0.5, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('1.0 seconds', 1.0, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('1.5 seconds', 1.5, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('2.0 seconds', 2.0, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('2.5 seconds', 2.5, openerCutFadeAfterSeconds)}
+	      ${fadeOpt('3.0 seconds', 3.0, openerCutFadeAfterSeconds)}
+	    </select>
+	    <div class="field-hint">t = first moment the video audio crosses the sensitivity threshold.</div>
+	  </label>`
+	  body += `</div>`
+	  body += `<div class="actions">
+	    <button type="submit">Save</button>
+	  </div>`
+	  body += `</form>`
   return renderAdminPage({ title: opts.title, bodyHtml: body, active: 'audio_configs' })
 }
 
@@ -3433,16 +3469,18 @@ pagesRouter.get('/admin/audio-configs/new', async (req: any, res: any) => {
     action: '/admin/audio-configs',
     backHref: '/admin/audio-configs',
     csrfToken,
-	    config: {
-	      name: '',
-	      mode: 'mix',
-	      musicGainDb: -18,
-	      duckingMode: 'none',
-	      duckingGate: 'normal',
-	      audioDurationSeconds: null,
-	      audioFadeEnabled: true,
-	    },
-	  })
+		    config: {
+		      name: '',
+		      mode: 'mix',
+		      musicGainDb: -18,
+		      duckingMode: 'none',
+		      duckingGate: 'normal',
+		      audioDurationSeconds: null,
+		      audioFadeEnabled: true,
+		      openerCutFadeBeforeSeconds: null,
+		      openerCutFadeAfterSeconds: null,
+		    },
+		  })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
 })
@@ -3464,6 +3502,8 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
 		      duckingGate: body.duckingGate,
 		      audioDurationSeconds: body.audioDurationSeconds,
 		      audioFadeEnabled: Boolean(body.audioFadeEnabled),
+		      openerCutFadeBeforeSeconds: body.openerCutFadeBeforeSeconds,
+		      openerCutFadeAfterSeconds: body.openerCutFadeAfterSeconds,
 		    }
     const created = await audioConfigsSvc.createForOwner(input as any, currentUserId)
     res.redirect(`/admin/audio-configs/${created.id}`)
@@ -3477,16 +3517,18 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
       backHref: '/admin/audio-configs',
       csrfToken,
       error: msg,
-		      config: {
-		        name: req.body?.name,
-		        mode: req.body?.mode,
-		        musicGainDb: req.body?.musicGainDb,
-		        duckingMode: req.body?.duckingMode,
-		        duckingGate: req.body?.duckingGate,
-		        audioDurationSeconds: req.body?.audioDurationSeconds,
-		        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
-		      },
-		    })
+			      config: {
+			        name: req.body?.name,
+			        mode: req.body?.mode,
+			        musicGainDb: req.body?.musicGainDb,
+			        duckingMode: req.body?.duckingMode,
+			        duckingGate: req.body?.duckingGate,
+			        audioDurationSeconds: req.body?.audioDurationSeconds,
+			        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
+			        openerCutFadeBeforeSeconds: req.body?.openerCutFadeBeforeSeconds,
+			        openerCutFadeAfterSeconds: req.body?.openerCutFadeAfterSeconds,
+			      },
+			    })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.status(400).send(doc)
   }
@@ -3525,16 +3567,18 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
     if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
 
 		    const body = req.body || {}
-			    const config = await audioConfigsSvc.updateForOwner(id, {
-			      name: body.name,
-			      mode: body.mode,
-			      videoGainDb: body.videoGainDb,
-			      musicGainDb: body.musicGainDb,
-			      duckingMode: body.duckingMode,
-			      duckingGate: body.duckingGate,
-			      audioDurationSeconds: body.audioDurationSeconds,
-			      audioFadeEnabled: Boolean(body.audioFadeEnabled),
-			    }, currentUserId)
+				    const config = await audioConfigsSvc.updateForOwner(id, {
+				      name: body.name,
+				      mode: body.mode,
+				      videoGainDb: body.videoGainDb,
+				      musicGainDb: body.musicGainDb,
+				      duckingMode: body.duckingMode,
+				      duckingGate: body.duckingGate,
+				      audioDurationSeconds: body.audioDurationSeconds,
+				      audioFadeEnabled: Boolean(body.audioFadeEnabled),
+				      openerCutFadeBeforeSeconds: body.openerCutFadeBeforeSeconds,
+				      openerCutFadeAfterSeconds: body.openerCutFadeAfterSeconds,
+				    }, currentUserId)
 
 	    const cookies = parseCookies(req.headers.cookie)
 	    const csrfToken = cookies['csrf'] || ''
@@ -3559,17 +3603,19 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
 	      backHref: '/admin/audio-configs',
 	      csrfToken,
 	      error: msg,
-			      config: {
-			        id,
-			        name: req.body?.name,
-			        mode: req.body?.mode,
-			        musicGainDb: req.body?.musicGainDb,
-			        duckingMode: req.body?.duckingMode,
-			        duckingGate: req.body?.duckingGate,
-			        audioDurationSeconds: req.body?.audioDurationSeconds,
-			        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
-			      },
-			    })
+				      config: {
+				        id,
+				        name: req.body?.name,
+				        mode: req.body?.mode,
+				        musicGainDb: req.body?.musicGainDb,
+				        duckingMode: req.body?.duckingMode,
+				        duckingGate: req.body?.duckingGate,
+				        audioDurationSeconds: req.body?.audioDurationSeconds,
+				        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
+				        openerCutFadeBeforeSeconds: req.body?.openerCutFadeBeforeSeconds,
+				        openerCutFadeAfterSeconds: req.body?.openerCutFadeAfterSeconds,
+				      },
+				    })
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.status(400).send(doc)
 	  }

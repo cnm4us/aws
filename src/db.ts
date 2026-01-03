@@ -168,14 +168,18 @@ export async function ensureSchema(db: DB) {
 			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_upload_id BIGINT UNSIGNED NULL`);
 			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_seconds INT UNSIGNED NULL`);
 		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_gain_db SMALLINT NOT NULL DEFAULT 0`);
-		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_fade_enabled TINYINT(1) NOT NULL DEFAULT 1`);
-		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_enabled TINYINT(1) NOT NULL DEFAULT 0`);
-		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_amount_db SMALLINT NOT NULL DEFAULT 12`);
-		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_audio_cfg_intro_sfx ON audio_configurations (intro_sfx_upload_id, archived_at, id)`); } catch {}
-		
-			  await db.query(`
-			    CREATE TABLE IF NOT EXISTS productions (
-		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_fade_enabled TINYINT(1) NOT NULL DEFAULT 1`);
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_enabled TINYINT(1) NOT NULL DEFAULT 0`);
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_amount_db SMALLINT NOT NULL DEFAULT 12`);
+			  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_audio_cfg_intro_sfx ON audio_configurations (intro_sfx_upload_id, archived_at, id)`); } catch {}
+
+			  // Plan: opener cutoff fade controls for abrupt mode (stored as ms offsets around t).
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_before_ms SMALLINT UNSIGNED NULL`);
+			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
+			
+				  await db.query(`
+				    CREATE TABLE IF NOT EXISTS productions (
+			      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	      upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       ulid CHAR(26) NULL,

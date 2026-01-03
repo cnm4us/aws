@@ -252,11 +252,15 @@ export async function startProductionRender(options: RenderOptions) {
     const duckingGateRaw = audioCfg && typeof audioCfg.duckingGate === 'string' ? String(audioCfg.duckingGate).toLowerCase() : 'normal'
     const duckingGate: 'sensitive' | 'normal' | 'strict' =
       duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal' ? duckingGateRaw : 'normal'
-    const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
-    const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
-    const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
-    const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
-      ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
+	    const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
+	    const openerCutFadeBeforeSeconds =
+	      audioCfg && audioCfg.openerCutFadeBeforeSeconds != null ? Number(audioCfg.openerCutFadeBeforeSeconds) : null
+	    const openerCutFadeAfterSeconds =
+	      audioCfg && audioCfg.openerCutFadeAfterSeconds != null ? Number(audioCfg.openerCutFadeAfterSeconds) : null
+	    const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
+	    const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
+	    const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
+	      ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
       : true
 
     const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
@@ -278,13 +282,15 @@ export async function startProductionRender(options: RenderOptions) {
       mode: mode === 'replace' ? 'replace' : 'mix',
       videoGainDb,
       musicGainDb,
-      duckingMode,
-      duckingGate,
-      duckingAmountDb,
-      audioDurationSeconds,
-      audioFadeEnabled,
-      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
-      normalizeTargetLkfs: -16,
+	      duckingMode,
+	      duckingGate,
+	      duckingAmountDb,
+	      openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
+	      openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeAfterSeconds == null ? null : openerCutFadeAfterSeconds) : null,
+	      audioDurationSeconds,
+	      audioFadeEnabled,
+	      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
+	      normalizeTargetLkfs: -16,
       outputBucket: UPLOAD_BUCKET,
     }
   }

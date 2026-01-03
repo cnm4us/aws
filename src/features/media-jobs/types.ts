@@ -56,6 +56,8 @@ export type AudioMasterV1Input = {
   duckingMode: 'none' | 'rolling' | 'abrupt'
   duckingGate: 'sensitive' | 'normal' | 'strict'
   duckingAmountDb: number
+  openerCutFadeBeforeSeconds?: number | null
+  openerCutFadeAfterSeconds?: number | null
   audioDurationSeconds: number | null
   audioFadeEnabled: boolean
   normalizeAudio: boolean

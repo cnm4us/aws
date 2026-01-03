@@ -21,6 +21,11 @@ function mapRow(row: AudioConfigRow): AudioConfigDto {
       ? (duckingGateRaw as DuckingGate)
       : 'normal'
 
+  const beforeMs = row.opener_cut_fade_before_ms != null ? Number(row.opener_cut_fade_before_ms) : null
+  const afterMs = row.opener_cut_fade_after_ms != null ? Number(row.opener_cut_fade_after_ms) : null
+  const openerCutFadeBeforeSeconds = beforeMs != null && Number.isFinite(beforeMs) ? Math.max(0, beforeMs / 1000) : null
+  const openerCutFadeAfterSeconds = afterMs != null && Number.isFinite(afterMs) ? Math.max(0, afterMs / 1000) : null
+
   return {
     id: Number(row.id),
     name: String(row.name || ''),
@@ -33,6 +38,8 @@ function mapRow(row: AudioConfigRow): AudioConfigDto {
     duckingAmountDb: Number(row.ducking_amount_db ?? 12),
     audioDurationSeconds: audioDurationSeconds != null && Number.isFinite(audioDurationSeconds) ? audioDurationSeconds : null,
     audioFadeEnabled,
+    openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? openerCutFadeBeforeSeconds : null,
+    openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? openerCutFadeAfterSeconds : null,
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
     archivedAt: row.archived_at == null ? null : String(row.archived_at),
@@ -88,6 +95,25 @@ function normalizeBool(raw: any): boolean {
   return false
 }
 
+const OPENER_CUTOFF_ALLOWED_SECONDS = new Set(['0.5', '1', '1.0', '1.5', '2', '2.0', '2.5', '3', '3.0'])
+
+function normalizeOpenerFadeSeconds(raw: any): number | null {
+  if (raw === '' || raw == null) return null
+  const s = String(raw).trim()
+  if (!s) return null
+  if (!OPENER_CUTOFF_ALLOWED_SECONDS.has(s)) throw new DomainError('invalid_opener_cut_fade', 'invalid_opener_cut_fade', 400)
+  const n = Number(s)
+  if (!Number.isFinite(n) || n <= 0) throw new DomainError('invalid_opener_cut_fade', 'invalid_opener_cut_fade', 400)
+  return Math.round(n * 10) / 10
+}
+
+function secondsToMs(seconds: number | null): number | null {
+  if (seconds == null) return null
+  const ms = Math.round(Number(seconds) * 1000)
+  if (!Number.isFinite(ms) || ms < 0) return null
+  return ms
+}
+
 function ensureOwned(row: AudioConfigRow, userId: number) {
   const ownerId = Number(row.owner_user_id)
   if (ownerId !== Number(userId)) throw new ForbiddenError()
@@ -130,6 +156,8 @@ export async function createForOwner(input: {
   duckingEnabled?: any // legacy
   audioDurationSeconds?: any
   audioFadeEnabled?: any
+  openerCutFadeBeforeSeconds?: any
+  openerCutFadeAfterSeconds?: any
 }, userId: number): Promise<AudioConfigDto> {
   if (!userId) throw new ForbiddenError()
   const name = normalizeName(input.name)
@@ -151,6 +179,17 @@ export async function createForOwner(input: {
     input.audioDurationSeconds === '' || input.audioDurationSeconds == null ? null : normalizeSeconds2to20(input.audioDurationSeconds, 3)
   const audioFadeEnabled = input.audioFadeEnabled === undefined ? true : normalizeBool(input.audioFadeEnabled)
 
+  const openerCutFadeBeforeSecondsRaw = normalizeOpenerFadeSeconds(input.openerCutFadeBeforeSeconds)
+  const openerCutFadeAfterSecondsRaw = normalizeOpenerFadeSeconds(input.openerCutFadeAfterSeconds)
+  const openerCutFadeBeforeSeconds =
+    mode === 'mix' && duckingMode === 'abrupt'
+      ? (openerCutFadeBeforeSecondsRaw == null && openerCutFadeAfterSecondsRaw == null ? 0.5 : openerCutFadeBeforeSecondsRaw)
+      : null
+  const openerCutFadeAfterSeconds =
+    mode === 'mix' && duckingMode === 'abrupt'
+      ? openerCutFadeAfterSecondsRaw
+      : null
+
   const row = await repo.create({
     ownerUserId: Number(userId),
     name,
@@ -162,6 +201,8 @@ export async function createForOwner(input: {
     duckingAmountDb: 12,
     audioDurationSeconds,
     audioFadeEnabled,
+    openerCutFadeBeforeMs: secondsToMs(openerCutFadeBeforeSeconds),
+    openerCutFadeAfterMs: secondsToMs(openerCutFadeAfterSeconds),
   })
   return mapRow(row)
 }
@@ -178,6 +219,8 @@ export async function updateForOwner(
     duckingEnabled?: any // legacy
     audioDurationSeconds?: any
     audioFadeEnabled?: any
+    openerCutFadeBeforeSeconds?: any
+    openerCutFadeAfterSeconds?: any
   },
   userId: number
 ): Promise<AudioConfigDto> {
@@ -196,6 +239,14 @@ export async function updateForOwner(
     duckingEnabled: patch.duckingEnabled !== undefined ? patch.duckingEnabled : existing.ducking_enabled, // legacy fallback
     audioDurationSeconds: patch.audioDurationSeconds !== undefined ? patch.audioDurationSeconds : existing.intro_sfx_seconds,
     audioFadeEnabled: patch.audioFadeEnabled !== undefined ? patch.audioFadeEnabled : existing.intro_sfx_fade_enabled,
+    openerCutFadeBeforeSeconds:
+      patch.openerCutFadeBeforeSeconds !== undefined
+        ? patch.openerCutFadeBeforeSeconds
+        : ((existing as any).opener_cut_fade_before_ms != null ? Number((existing as any).opener_cut_fade_before_ms) / 1000 : ''),
+    openerCutFadeAfterSeconds:
+      patch.openerCutFadeAfterSeconds !== undefined
+        ? patch.openerCutFadeAfterSeconds
+        : ((existing as any).opener_cut_fade_after_ms != null ? Number((existing as any).opener_cut_fade_after_ms) / 1000 : ''),
   }
 
   const name = normalizeName(next.name)
@@ -217,6 +268,17 @@ export async function updateForOwner(
     next.audioDurationSeconds === '' || next.audioDurationSeconds == null ? null : normalizeSeconds2to20(next.audioDurationSeconds, 3)
   const audioFadeEnabled = next.audioFadeEnabled === undefined ? true : normalizeBool(next.audioFadeEnabled)
 
+  const openerCutFadeBeforeSecondsRaw = normalizeOpenerFadeSeconds(next.openerCutFadeBeforeSeconds)
+  const openerCutFadeAfterSecondsRaw = normalizeOpenerFadeSeconds(next.openerCutFadeAfterSeconds)
+  const openerCutFadeBeforeSeconds =
+    mode === 'mix' && duckingMode === 'abrupt'
+      ? (openerCutFadeBeforeSecondsRaw == null && openerCutFadeAfterSecondsRaw == null ? 0.5 : openerCutFadeBeforeSecondsRaw)
+      : null
+  const openerCutFadeAfterSeconds =
+    mode === 'mix' && duckingMode === 'abrupt'
+      ? openerCutFadeAfterSecondsRaw
+      : null
+
   const row = await repo.update(id, {
     name,
     mode,
@@ -226,6 +288,8 @@ export async function updateForOwner(
     duckingGate,
     audioDurationSeconds,
     audioFadeEnabled,
+    openerCutFadeBeforeMs: secondsToMs(openerCutFadeBeforeSeconds),
+    openerCutFadeAfterMs: secondsToMs(openerCutFadeAfterSeconds),
   })
   return mapRow(row)
 }

@@ -50,14 +50,17 @@ export async function create(input: {
   duckingAmountDb: number
   audioDurationSeconds: number | null
   audioFadeEnabled: boolean
+  openerCutFadeBeforeMs: number | null
+  openerCutFadeAfterMs: number | null
 }): Promise<AudioConfigRow> {
   const db = getPool()
   const duckEnabled = String(input.duckingMode || '').toLowerCase() !== 'none'
   const [result] = await db.query(
     `INSERT INTO audio_configurations
       (owner_user_id, name, mode, video_gain_db, music_gain_db, ducking_enabled, ducking_amount_db, ducking_mode, ducking_gate,
+       opener_cut_fade_before_ms, opener_cut_fade_after_ms,
        intro_sfx_upload_id, intro_sfx_seconds, intro_sfx_gain_db, intro_sfx_fade_enabled, intro_sfx_ducking_enabled, intro_sfx_ducking_amount_db)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -68,6 +71,8 @@ export async function create(input: {
       input.duckingAmountDb,
       input.duckingMode,
       input.duckingGate,
+      input.openerCutFadeBeforeMs,
+      input.openerCutFadeAfterMs,
       null,
       input.audioDurationSeconds,
       0,
@@ -92,6 +97,8 @@ export async function update(id: number, patch: {
   duckingGate?: string
   audioDurationSeconds?: number | null
   audioFadeEnabled?: boolean
+  openerCutFadeBeforeMs?: number | null
+  openerCutFadeAfterMs?: number | null
 }): Promise<AudioConfigRow> {
   const db = getPool()
   const sets: string[] = []
@@ -107,6 +114,8 @@ export async function update(id: number, patch: {
     sets.push('ducking_enabled = ?'); args.push(dm !== 'none' ? 1 : 0)
   }
   if (patch.duckingGate !== undefined) { sets.push('ducking_gate = ?'); args.push(patch.duckingGate) }
+  if (patch.openerCutFadeBeforeMs !== undefined) { sets.push('opener_cut_fade_before_ms = ?'); args.push(patch.openerCutFadeBeforeMs) }
+  if (patch.openerCutFadeAfterMs !== undefined) { sets.push('opener_cut_fade_after_ms = ?'); args.push(patch.openerCutFadeAfterMs) }
   // Intro SFX is removed; keep upload_id NULL and repurpose seconds/fade columns.
   sets.push('intro_sfx_upload_id = NULL')
   if (patch.audioDurationSeconds !== undefined) { sets.push('intro_sfx_seconds = ?'); args.push(patch.audioDurationSeconds) }

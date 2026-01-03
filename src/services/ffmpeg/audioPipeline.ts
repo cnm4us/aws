@@ -282,6 +282,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   duckingMode?: 'none' | 'rolling' | 'abrupt'
   duckingGate?: 'sensitive' | 'normal' | 'strict'
   duckingAmountDb?: number
+  openerCutFadeBeforeSeconds?: number | null
+  openerCutFadeAfterSeconds?: number | null
   logPaths?: { stdoutPath?: string; stderrPath?: string }
   normalizeAudio?: boolean
   normalizeTargetLkfs?: number
@@ -365,19 +367,29 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
         if (effectiveCut != null && effectiveCut <= 0.05) {
           musicChain = `[1:a]volume=0,apad[music]`
         } else if (effectiveCut != null) {
-          const cutSeconds = Number(effectiveCut.toFixed(3))
-          // For opener cutoff, we want the opener to fade out *ending exactly at* the detected speech start (t),
-          // so the audio is already faded out when speaking begins.
-          const fadeBaseCut = 0.5
-          const fadeDurCut = fadeEnabled ? Math.max(0.05, Math.min(fadeBaseCut, cutSeconds)) : 0
-          const fadeOutStartCut = Math.max(0, cutSeconds - fadeDurCut)
+          const t = Number(effectiveCut.toFixed(3))
+
+          const beforeRaw = opts.openerCutFadeBeforeSeconds != null ? Number(opts.openerCutFadeBeforeSeconds) : null
+          const afterRaw = opts.openerCutFadeAfterSeconds != null ? Number(opts.openerCutFadeAfterSeconds) : null
+          const before = beforeRaw != null && Number.isFinite(beforeRaw) ? Math.max(0, Math.min(3, beforeRaw)) : null
+          const after = afterRaw != null && Number.isFinite(afterRaw) ? Math.max(0, Math.min(3, afterRaw)) : null
+
+          // Default behavior if config doesn't specify: fade out over 0.5s ending at t.
+          const beforeSec = before == null && after == null ? 0.5 : (before ?? 0)
+          const afterSec = after == null ? 0 : after
+          const endRaw = t + afterSec
+          const endCapped = seconds != null ? Math.min(Number(seconds), endRaw) : endRaw
+          const end = Number(endCapped.toFixed(3))
+          const start = Number(Math.max(0, t - beforeSec).toFixed(3))
+          const fadeDur = Math.max(0, Math.min(beforeSec + afterSec, Math.max(0, end - start)))
           const fadeFiltersCut =
-            fadeDurCut > 0
-              ? `,afade=t=out:st=${fadeOutStartCut.toFixed(2)}:d=${fadeDurCut.toFixed(2)}`
+            fadeDur > 0
+              ? `,afade=t=out:st=${start.toFixed(2)}:d=${fadeDur.toFixed(2)}`
               : ''
-          // Keep only the opener segment, then pad with silence so amix can run for the full video duration.
+
+          // Keep only the opener segment (through end), then pad with silence so amix can run for the full video duration.
           // Use atrim (not aselect) to avoid per-sample expression evaluation on an infinite looped input.
-          musicChain = `[1:a]volume=${mVol},atrim=0:${cutSeconds},asetpts=N/SR/TB${fadeFiltersCut},apad[music]`
+          musicChain = `[1:a]volume=${mVol},atrim=0:${end.toFixed(3)},asetpts=N/SR/TB${fadeFiltersCut},apad[music]`
         } else {
           // No detectable audio stream → treat like "no ducking" (opener can play for the configured clip duration).
           musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
