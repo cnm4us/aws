@@ -82,6 +82,58 @@ async function probeDurationSeconds(filePath: string): Promise<number | null> {
   })
 }
 
+async function hasAudioStream(filePath: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const p = spawn(
+      'ffprobe',
+      ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    let out = ''
+    p.stdout.on('data', (d) => { out += String(d) })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve(false)
+      resolve(Boolean(String(out || '').trim()))
+    })
+    p.on('error', () => resolve(false))
+  })
+}
+
+async function detectInitialNonSilenceSeconds(filePath: string, gate: 'sensitive' | 'normal' | 'strict'): Promise<number | null> {
+  if (!(await hasAudioStream(filePath))) return null
+
+  const noiseDb = gate === 'sensitive' ? '-50dB' : (gate === 'strict' ? '-38dB' : '-44dB')
+  const minNonSilenceSeconds = 0.12
+
+  return await new Promise<number | null>((resolve) => {
+    const args = [
+      '-hide_banner',
+      '-i',
+      filePath,
+      '-vn',
+      '-af',
+      `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
+      '-f',
+      'null',
+      '-',
+    ]
+    const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    p.stderr.on('data', (d) => { stderr += String(d) })
+    p.on('close', (code) => {
+      // If the audio starts non-silent, silencedetect emits no silence_end.
+      // Treat that as "starts immediately" (cut at t=0).
+      if (code !== 0) return resolve(0)
+      const m = stderr.match(/silence_end:\s*([0-9.]+)/)
+      if (!m) return resolve(0)
+      const v = Number(m[1])
+      if (!Number.isFinite(v) || v < 0) return resolve(0)
+      resolve(v)
+    })
+    p.on('error', () => resolve(0))
+  })
+}
+
 export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   uploadBucket: string
   dateYmd: string
@@ -138,8 +190,9 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
       '-i',
       videoPath,
     ]
-    if (seconds == null) baseArgs.push('-stream_loop', '-1')
-    baseArgs.push('-i', audioPath)
+    // Always loop the music input and trim to our desired length; this avoids “music ends early then silence”
+    // when the selected clip duration exceeds the file duration.
+    baseArgs.push('-stream_loop', '-1', '-i', audioPath)
 
     const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
     const normSuffix = normalizeEnabled ? `,loudnorm=I=${target}:TP=-1.5:LRA=11` : ''
@@ -284,11 +337,32 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
 
       origChain = `[0:a]volume=${vVol},apad[orig]`
       if (duckingMode === 'abrupt') {
-        // Abrupt Ducking: sidechain gate that quickly drops the music toward silence.
-        const attack = 5
-        const release = 400
-        const range = 0.001 // ~ -60 dB max attenuation (near-silence)
-        musicChain = `[1:a][0:a]sidechaingate=threshold=${threshold}:attack=${attack}:release=${release}:range=${range}:makeup=1[mduck];[mduck]volume=${mVol}${musicTail}[music]`
+        // Abrupt Ducking (latched): detect when the video's audio becomes non-silent, then fully cut music
+        // after that point (good for opener SFX/music that should not continue under speech).
+        const cutAt = await detectInitialNonSilenceSeconds(videoPath, duckingGate)
+        const effectiveCutRaw = cutAt == null ? null : cutAt
+        const effectiveCut =
+          effectiveCutRaw == null
+            ? null
+            : Math.max(0, Math.min(seconds != null ? seconds : effectiveCutRaw, effectiveCutRaw))
+
+        if (effectiveCut != null && effectiveCut <= 0.05) {
+          musicChain = `[1:a]volume=0,apad[music]`
+        } else if (effectiveCut != null) {
+          const cutSeconds = Number(effectiveCut.toFixed(3))
+          const fadeBaseCut = 0.35
+          const fadeDurCut = fadeEnabled ? Math.max(0.05, Math.min(fadeBaseCut, cutSeconds / 2)) : 0
+          const fadeOutStartCut = Math.max(0, cutSeconds - fadeDurCut)
+          const fadeFiltersCut =
+            fadeDurCut > 0
+              ? `,afade=t=in:st=0:d=${fadeDurCut.toFixed(2)},afade=t=out:st=${fadeOutStartCut.toFixed(2)}:d=${fadeDurCut.toFixed(2)}`
+              : ''
+          // Select only the opener segment, then pad with silence so amix can run for the full video duration.
+          musicChain = `[1:a]volume=${mVol},aselect='lt(t,${cutSeconds})',asetpts=N/SR/TB${fadeFiltersCut},apad[music]`
+        } else {
+          // No detectable audio stream → treat like "no ducking" (opener can play for the configured clip duration).
+          musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
+        }
       } else {
         // Rolling Ducking: sidechain compression (smooth reduction).
         const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckingAmountDb / 2)))
@@ -307,7 +381,9 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     const filter = `${origChain};${musicChain};[orig][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98${normSuffix}${durTrim}[out]`
 
     const args: string[] = ['-i', videoPath]
-    if (seconds == null) args.push('-stream_loop', '-1')
+    // Always loop the music input; we trim/pad inside the filtergraph to keep behavior stable
+    // when the selected clip duration exceeds the file duration.
+    args.push('-stream_loop', '-1')
     args.push(
       '-i',
       audioPath,
