@@ -117,10 +117,11 @@ async function detectInitialNonSilenceSeconds(
   return await new Promise<number | null>((resolve) => {
     const args = [
       '-hide_banner',
-      '-i',
-      filePath,
+      // Apply -t as an INPUT option so ffmpeg stops demuxing/decoding early.
       '-t',
       String(maxAnalyzeSeconds),
+      '-i',
+      filePath,
       '-vn',
       '-af',
       `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
@@ -132,11 +133,14 @@ async function detectInitialNonSilenceSeconds(
     let stderr = ''
     p.stderr.on('data', (d) => { stderr += String(d) })
     p.on('close', (code) => {
-      // If the audio starts non-silent, silencedetect emits no silence_end.
+      // If the audio starts non-silent, silencedetect emits no silence_start/end.
       // Treat that as "starts immediately" (cut at t=0).
       if (code !== 0) return resolve(0)
+      const hasSilenceStart = /silence_start:\s*([0-9.]+)/.test(stderr)
       const m = stderr.match(/silence_end:\s*([0-9.]+)/)
-      if (!m) return resolve(0)
+      // If we observed silence_start but never got a silence_end, audio stayed silent for the whole window.
+      // In that case, we don't want to cut the opener early.
+      if (!m) return resolve(hasSilenceStart ? null : 0)
       const v = Number(m[1])
       if (!Number.isFinite(v) || v < 0) return resolve(0)
       resolve(v)
@@ -369,8 +373,9 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
             fadeDurCut > 0
               ? `,afade=t=in:st=0:d=${fadeDurCut.toFixed(2)},afade=t=out:st=${fadeOutStartCut.toFixed(2)}:d=${fadeDurCut.toFixed(2)}`
               : ''
-          // Select only the opener segment, then pad with silence so amix can run for the full video duration.
-          musicChain = `[1:a]volume=${mVol},aselect='lt(t,${cutSeconds})',asetpts=N/SR/TB${fadeFiltersCut},apad[music]`
+          // Keep only the opener segment, then pad with silence so amix can run for the full video duration.
+          // Use atrim (not aselect) to avoid per-sample expression evaluation on an infinite looped input.
+          musicChain = `[1:a]volume=${mVol},atrim=0:${cutSeconds},asetpts=N/SR/TB${fadeFiltersCut},apad[music]`
         } else {
           // No detectable audio stream → treat like "no ducking" (opener can play for the configured clip duration).
           musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
