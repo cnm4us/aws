@@ -99,17 +99,28 @@ async function hasAudioStream(filePath: string): Promise<boolean> {
   })
 }
 
-async function detectInitialNonSilenceSeconds(filePath: string, gate: 'sensitive' | 'normal' | 'strict'): Promise<number | null> {
+async function detectInitialNonSilenceSeconds(
+  filePath: string,
+  gate: 'sensitive' | 'normal' | 'strict',
+  opts?: { maxAnalyzeSeconds?: number }
+): Promise<number | null> {
   if (!(await hasAudioStream(filePath))) return null
 
   const noiseDb = gate === 'sensitive' ? '-50dB' : (gate === 'strict' ? '-38dB' : '-44dB')
   const minNonSilenceSeconds = 0.12
+  const maxAnalyzeSecondsRaw = opts?.maxAnalyzeSeconds != null ? Number(opts.maxAnalyzeSeconds) : null
+  const maxAnalyzeSeconds =
+    maxAnalyzeSecondsRaw != null && Number.isFinite(maxAnalyzeSecondsRaw)
+      ? Math.max(3, Math.min(180, maxAnalyzeSecondsRaw))
+      : 30
 
   return await new Promise<number | null>((resolve) => {
     const args = [
       '-hide_banner',
       '-i',
       filePath,
+      '-t',
+      String(maxAnalyzeSeconds),
       '-vn',
       '-af',
       `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
@@ -339,7 +350,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
       if (duckingMode === 'abrupt') {
         // Abrupt Ducking (latched): detect when the video's audio becomes non-silent, then fully cut music
         // after that point (good for opener SFX/music that should not continue under speech).
-        const cutAt = await detectInitialNonSilenceSeconds(videoPath, duckingGate)
+        const analyzeWindow = seconds != null ? Math.max(5, Math.min(60, seconds + 10)) : 30
+        const cutAt = await detectInitialNonSilenceSeconds(videoPath, duckingGate, { maxAnalyzeSeconds: analyzeWindow })
         const effectiveCutRaw = cutAt == null ? null : cutAt
         const effectiveCut =
           effectiveCutRaw == null
