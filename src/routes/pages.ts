@@ -12,6 +12,9 @@ import * as spacesSvc from '../features/spaces/service'
 import * as pubsSvc from '../features/publications/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as audioConfigsSvc from '../features/audio-configs/service'
+import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { s3 } from '../services/s3'
+import { pipeline } from 'stream/promises'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -614,6 +617,7 @@ type AdminNavKey =
   | 'pages'
   | 'audio'
   | 'audio_configs'
+  | 'media_jobs'
   | 'settings'
   | 'dev';
 
@@ -628,6 +632,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
   { key: 'audio', label: 'Audio', href: '/admin/audio' },
   { key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
+  { key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -2939,6 +2944,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
+    { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
     { title: 'Dev', href: '/admin/dev', desc: 'Dev stats and guarded tools' },
   ]
@@ -3580,6 +3586,366 @@ pagesRouter.post('/admin/audio-configs/:id/archive', async (req: any, res: any) 
   } catch (err: any) {
     console.error('admin audio-config archive failed', err)
     res.status(500).send('Failed to archive audio config')
+  }
+})
+
+async function deleteS3Prefix(bucket: string, prefix: string): Promise<{ deleted: number; errors: string[] }> {
+  let token: string | undefined = undefined
+  let totalDeleted = 0
+  const errors: string[] = []
+  do {
+    const list: any = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }))
+    const contents = list.Contents ?? []
+    if (contents.length) {
+      const Objects = contents.map((o: any) => ({ Key: o.Key }))
+      try {
+        await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }))
+      } catch (e: any) {
+        errors.push(`delete:${bucket}:${prefix}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+        break
+      }
+      totalDeleted += Objects.length
+    }
+    token = list.IsTruncated ? list.NextContinuationToken : undefined
+  } while (token)
+  return { deleted: totalDeleted, errors }
+}
+
+async function deleteS3Objects(bucket: string, keys: string[]): Promise<{ deleted: number; errors: string[] }> {
+  const unique = Array.from(new Set(keys.filter(Boolean).map((k) => String(k))))
+  const errors: string[] = []
+  let deleted = 0
+  for (let i = 0; i < unique.length; i += 1000) {
+    const batch = unique.slice(i, i + 1000)
+    try {
+      await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true } }))
+      deleted += batch.length
+    } catch (e: any) {
+      errors.push(`delete:${bucket}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+    }
+  }
+  return { deleted, errors }
+}
+
+pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, type, status, priority, attempts, max_attempts, error_code, error_message, created_at, updated_at, completed_at
+         FROM media_jobs
+        ORDER BY id DESC
+        LIMIT 250`
+    )
+    const items = rows as any[]
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const statusPill = (st: string) => {
+      const s = String(st || '').toLowerCase()
+      const bg =
+        s === 'completed' ? 'rgba(0,150,90,0.28)' :
+        s === 'processing' ? 'rgba(10,132,255,0.22)' :
+        s === 'pending' ? 'rgba(255,255,255,0.08)' :
+        s === 'failed' ? 'rgba(255,120,120,0.25)' :
+        s === 'dead' ? 'rgba(255,120,120,0.25)' :
+        'rgba(255,255,255,0.08)'
+      return `<span class="pill" style="background:${bg}">${escapeHtml(s)}</span>`
+    }
+
+    let body = '<h1>Media Jobs</h1>'
+    body += '<div class="toolbar">'
+    body += '<div><span class="pill">FFmpeg Queue</span></div>'
+    body += `<div style="display:flex; gap:12px; align-items:center">
+      <form method="post" action="/admin/media-jobs/purge" style="display:flex; gap:8px; align-items:center">
+        ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+        <input type="text" name="older_than_days" placeholder="Purge logs older than days" style="width: 220px" />
+        <button type="submit" class="btn danger" style="padding:6px 10px; font-size:12px">Purge</button>
+      </form>
+    </div>`
+    body += '</div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Latest</div>'
+    if (!items.length) {
+      body += '<p>No media jobs yet.</p>'
+    } else {
+      body += '<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Attempts</th><th>Created</th><th>Updated</th><th>Actions</th></tr></thead><tbody>'
+      for (const r of items) {
+        const id = Number(r.id)
+        const st = String(r.status || '')
+        const type = String(r.type || '')
+        const attempts = `${Number(r.attempts || 0)}/${Number(r.max_attempts || 0)}`
+        const created = String(r.created_at || '')
+        const updated = String(r.updated_at || '')
+        body += `<tr>`
+        body += `<td><a href="/admin/media-jobs/${id}">#${id}</a></td>`
+        body += `<td>${statusPill(st)}</td>`
+        body += `<td>${escapeHtml(type)}</td>`
+        body += `<td>${escapeHtml(attempts)}</td>`
+        body += `<td>${escapeHtml(created)}</td>`
+        body += `<td>${escapeHtml(updated)}</td>`
+        body += `<td style="white-space:nowrap">
+          <a class="btn" href="/admin/media-jobs/${id}" style="padding:6px 10px; font-size:12px">View</a>
+          <form method="post" action="/admin/media-jobs/${id}/retry" style="display:inline" onsubmit="return confirm('Retry media job #${id}?');">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="padding:6px 10px; font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Retry</button>
+          </form>
+          <form method="post" action="/admin/media-jobs/${id}/purge" style="display:inline" onsubmit="return confirm('Purge logs/artifacts for media job #${id}?');">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn danger" style="padding:6px 10px; font-size:12px">Purge logs</button>
+          </form>
+        </td>`
+        body += `</tr>`
+      }
+      body += '</tbody></table>'
+    }
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: 'Media Jobs', bodyHtml: body, active: 'media_jobs' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin media-jobs list failed', err)
+    res.status(500).send('Failed to load media jobs')
+  }
+})
+
+pagesRouter.post('/admin/media-jobs/:id/retry', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
+    const db = getPool()
+    await db.query(
+      `UPDATE media_jobs
+          SET status = 'pending',
+              run_after = NULL,
+              locked_at = NULL,
+              locked_by = NULL,
+              error_code = NULL,
+              error_message = NULL,
+              attempts = 0,
+              updated_at = NOW()
+        WHERE id = ?`,
+      [id]
+    )
+    res.redirect(`/admin/media-jobs/${id}`)
+  } catch (err) {
+    console.error('admin media-jobs retry failed', err)
+    res.status(500).send('Failed to retry media job')
+  }
+})
+
+pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const db = getPool()
+    const [jobRows] = await db.query(`SELECT * FROM media_jobs WHERE id = ? LIMIT 1`, [id])
+    const job = (jobRows as any[])[0]
+    if (!job) return res.status(404).send('Not found')
+    const [attemptRows] = await db.query(
+      `SELECT *
+         FROM media_job_attempts
+        WHERE job_id = ?
+        ORDER BY attempt_no ASC, id ASC`,
+      [id]
+    )
+    const attempts = attemptRows as any[]
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    let inputJson: any = job.input_json
+    let resultJson: any = job.result_json
+    try { if (typeof inputJson === 'string') inputJson = JSON.parse(inputJson) } catch {}
+    try { if (typeof resultJson === 'string') resultJson = JSON.parse(resultJson) } catch {}
+
+    let body = `<h1>Media Job #${escapeHtml(String(id))}</h1>`
+    body += `<div class="toolbar"><div><a href="/admin/media-jobs">\u2190 Back</a></div><div style="display:flex; gap:10px; align-items:center">
+      <form method="post" action="/admin/media-jobs/${id}/retry" onsubmit="return confirm('Retry media job #${id}?');">
+        ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+        <button type="submit" class="btn">Retry</button>
+      </form>
+      <form method="post" action="/admin/media-jobs/${id}/purge" onsubmit="return confirm('Purge logs/artifacts for media job #${id}?');">
+        ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+        <button type="submit" class="btn danger">Purge logs</button>
+      </form>
+    </div></div>`
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Summary</div>'
+    body += `<p>Status: <strong>${escapeHtml(String(job.status || ''))}</strong></p>`
+    body += `<p>Type: <strong>${escapeHtml(String(job.type || ''))}</strong></p>`
+    body += `<p>Attempts: <strong>${escapeHtml(String(job.attempts || '0'))}/${escapeHtml(String(job.max_attempts || '0'))}</strong></p>`
+    body += job.error_message ? `<p>Error: <strong>${escapeHtml(String(job.error_code || 'failed'))}</strong> &nbsp;${escapeHtml(String(job.error_message || ''))}</p>` : ''
+    body += '</div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Attempts</div>'
+    if (!attempts.length) {
+      body += '<p>No attempts yet.</p>'
+    } else {
+      body += '<table><thead><tr><th>#</th><th>Started</th><th>Finished</th><th>Exit</th><th>Logs</th></tr></thead><tbody>'
+      for (const a of attempts) {
+        const aid = Number(a.id)
+        const no = Number(a.attempt_no)
+        const started = String(a.started_at || '')
+        const finished = a.finished_at ? String(a.finished_at) : ''
+        const exit = a.exit_code != null ? String(a.exit_code) : ''
+        const hasStdout = a.stdout_s3_bucket && a.stdout_s3_key
+        const hasStderr = a.stderr_s3_bucket && a.stderr_s3_key
+        body += `<tr>`
+        body += `<td>${escapeHtml(String(no))}</td>`
+        body += `<td>${escapeHtml(started)}</td>`
+        body += `<td>${escapeHtml(finished)}</td>`
+        body += `<td>${escapeHtml(exit)}</td>`
+        body += `<td>`
+        body += hasStdout ? `<a href="/admin/media-jobs/${id}/attempts/${aid}/stdout">stdout</a>` : 'stdout: -'
+        body += ' &nbsp; '
+        body += hasStderr ? `<a href="/admin/media-jobs/${id}/attempts/${aid}/stderr">stderr</a>` : 'stderr: -'
+        body += `</td>`
+        body += `</tr>`
+      }
+      body += '</tbody></table>'
+    }
+    body += '</div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Input JSON</div>'
+    body += `<pre style="white-space:pre-wrap; word-break:break-word">${escapeHtml(JSON.stringify(inputJson ?? null, null, 2))}</pre>`
+    body += '</div>'
+
+    body += '<div class="section">'
+    body += '<div class="section-title">Result JSON</div>'
+    body += `<pre style="white-space:pre-wrap; word-break:break-word">${escapeHtml(JSON.stringify(resultJson ?? null, null, 2))}</pre>`
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: `Media Job #${id}`, bodyHtml: body, active: 'media_jobs' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin media-job detail failed', err)
+    res.status(500).send('Failed to load media job')
+  }
+})
+
+pagesRouter.get('/admin/media-jobs/:jobId/attempts/:attemptId/:stream', async (req: any, res: any) => {
+  try {
+    const jobId = Number(req.params.jobId)
+    const attemptId = Number(req.params.attemptId)
+    const stream = String(req.params.stream || '').toLowerCase()
+    if (!Number.isFinite(jobId) || jobId <= 0) return res.status(404).send('Not found')
+    if (!Number.isFinite(attemptId) || attemptId <= 0) return res.status(404).send('Not found')
+    if (stream !== 'stdout' && stream !== 'stderr') return res.status(404).send('Not found')
+    const db = getPool()
+    const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE id = ? AND job_id = ? LIMIT 1`, [attemptId, jobId])
+    const a = (rows as any[])[0]
+    if (!a) return res.status(404).send('Not found')
+    const bucket = stream === 'stdout' ? String(a.stdout_s3_bucket || '') : String(a.stderr_s3_bucket || '')
+    const key = stream === 'stdout' ? String(a.stdout_s3_key || '') : String(a.stderr_s3_key || '')
+    if (!bucket || !key) return res.status(404).send('Not found')
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    const body = resp.Body as any
+    if (!body) return res.status(404).send('Not found')
+    res.set('Content-Type', 'text/plain; charset=utf-8')
+    res.set('Cache-Control', 'no-store')
+    await pipeline(body, res)
+  } catch (err) {
+    console.error('admin media-job log stream failed', err)
+    res.status(500).send('Failed to load log')
+  }
+})
+
+pagesRouter.post('/admin/media-jobs/:id/purge', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
+    const db = getPool()
+    const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE job_id = ?`, [id])
+    const attempts = rows as any[]
+    const toDelete: Array<{ bucket: string; key: string }> = []
+    for (const a of attempts) {
+      if (a.stdout_s3_bucket && a.stdout_s3_key) toDelete.push({ bucket: String(a.stdout_s3_bucket), key: String(a.stdout_s3_key) })
+      if (a.stderr_s3_bucket && a.stderr_s3_key) toDelete.push({ bucket: String(a.stderr_s3_bucket), key: String(a.stderr_s3_key) })
+    }
+    const grouped = new Map<string, string[]>()
+    for (const obj of toDelete) {
+      const arr = grouped.get(obj.bucket) || []
+      arr.push(obj.key)
+      grouped.set(obj.bucket, arr)
+    }
+    for (const [bucket, keys] of grouped.entries()) {
+      await deleteS3Objects(bucket, keys)
+    }
+    // artifacts prefix best-effort
+    for (const a of attempts) {
+      if (a.artifacts_s3_bucket && a.artifacts_s3_prefix) {
+        await deleteS3Prefix(String(a.artifacts_s3_bucket), String(a.artifacts_s3_prefix))
+      }
+    }
+    await db.query(
+      `UPDATE media_job_attempts
+          SET stdout_s3_bucket = NULL, stdout_s3_key = NULL,
+              stderr_s3_bucket = NULL, stderr_s3_key = NULL,
+              artifacts_s3_bucket = NULL, artifacts_s3_prefix = NULL
+        WHERE job_id = ?`,
+      [id]
+    )
+    res.redirect(`/admin/media-jobs/${id}`)
+  } catch (err) {
+    console.error('admin media-job purge failed', err)
+    res.status(500).send('Failed to purge media job logs')
+  }
+})
+
+pagesRouter.post('/admin/media-jobs/purge', async (req: any, res: any) => {
+  try {
+    const days = Math.max(0, Math.min(36500, Math.round(Number(req.body?.older_than_days || 0) || 0)))
+    if (!days) return res.redirect('/admin/media-jobs')
+    const db = getPool()
+    const [jobRows] = await db.query(
+      `SELECT id
+         FROM media_jobs
+        WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)
+        ORDER BY id ASC
+        LIMIT 200`,
+      [days]
+    )
+    const ids = (jobRows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)
+    for (const id of ids) {
+      const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE job_id = ?`, [id])
+      const attempts = rows as any[]
+      const toDelete: Array<{ bucket: string; key: string }> = []
+      for (const a of attempts) {
+        if (a.stdout_s3_bucket && a.stdout_s3_key) toDelete.push({ bucket: String(a.stdout_s3_bucket), key: String(a.stdout_s3_key) })
+        if (a.stderr_s3_bucket && a.stderr_s3_key) toDelete.push({ bucket: String(a.stderr_s3_bucket), key: String(a.stderr_s3_key) })
+      }
+      const grouped = new Map<string, string[]>()
+      for (const obj of toDelete) {
+        const arr = grouped.get(obj.bucket) || []
+        arr.push(obj.key)
+        grouped.set(obj.bucket, arr)
+      }
+      for (const [bucket, keys] of grouped.entries()) {
+        await deleteS3Objects(bucket, keys)
+      }
+      for (const a of attempts) {
+        if (a.artifacts_s3_bucket && a.artifacts_s3_prefix) {
+          await deleteS3Prefix(String(a.artifacts_s3_bucket), String(a.artifacts_s3_prefix))
+        }
+      }
+      await db.query(
+        `UPDATE media_job_attempts
+            SET stdout_s3_bucket = NULL, stdout_s3_key = NULL,
+                stderr_s3_bucket = NULL, stderr_s3_key = NULL,
+                artifacts_s3_bucket = NULL, artifacts_s3_prefix = NULL
+          WHERE job_id = ?`,
+        [id]
+      )
+    }
+    res.redirect('/admin/media-jobs')
+  } catch (err) {
+    console.error('admin media-jobs bulk purge failed', err)
+    res.status(500).send('Failed to purge media jobs logs')
   }
 })
 

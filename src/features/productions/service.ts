@@ -334,7 +334,7 @@ export async function create(
   const row = await repo.getWithUpload(productionId)
   if (!row) throw new NotFoundError('not_found')
   const production = mapProduction(row)
-  return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
+  return { production, jobId, output: outPrefix ? { bucket: OUTPUT_BUCKET, prefix: outPrefix } : null }
 }
 
 // Wrapper used by legacy /api/publish route.
@@ -371,7 +371,7 @@ export async function createForPublishRoute(input: { uploadId: number; profile?:
   const row = await repo.getWithUpload(productionId)
   if (!row) throw new NotFoundError('not_found')
   const production = mapProduction(row)
-  return { production, jobId, output: { bucket: OUTPUT_BUCKET, prefix: outPrefix } }
+  return { production, jobId, output: outPrefix ? { bucket: OUTPUT_BUCKET, prefix: outPrefix } : null }
 }
 
 export async function remove(id: number, currentUserId: number): Promise<{ ok: true }> {

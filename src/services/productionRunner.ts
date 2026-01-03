@@ -2,13 +2,14 @@ import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
 import { applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
-import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
+import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
 import path from 'path'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
 import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
+import { enqueueJob } from '../features/media-jobs/service'
 
 export type RenderOptions = {
   upload: any
@@ -20,24 +21,34 @@ export type RenderOptions = {
   config?: any
 }
 
-export async function startProductionRender(options: RenderOptions) {
-  const { upload, userId, name, profile, quality, sound, config } = options
+export async function startMediaConvertForExistingProduction(opts: {
+  upload: any
+  productionId: number
+  productionUlid: string
+  profile?: string | null
+  quality?: string | null
+  sound?: string | null
+  configPayload: any
+  inputUrlOverride?: string | null
+  skipInlineAudioMux?: boolean
+  skipAudioNormalization?: boolean
+}) {
   if (!MC_ROLE_ARN) throw new Error('MC_ROLE_ARN not configured')
   const db = getPool()
 
-  const inputUrl = `s3://${upload.s3_bucket}/${upload.s3_key}`
-  let chosenProfile = profile || (
-    upload.width && upload.height ? (upload.height > upload.width ? 'portrait-hls' : 'landscape-both-hls') : 'simple-hls'
+  const inputUrl = opts.inputUrlOverride || `s3://${opts.upload.s3_bucket}/${opts.upload.s3_key}`
+  let chosenProfile = opts.profile || (
+    opts.upload.width && opts.upload.height ? (opts.upload.height > opts.upload.width ? 'portrait-hls' : 'landscape-both-hls') : 'simple-hls'
   )
   // Feature flag: prefer CMAF outputs when enabled (keeps same naming for orientation variants)
   try {
     const format = String(process.env.MC_OUTPUT_FORMAT || '').toLowerCase()
-    if (!profile && (format === 'cmaf' || format === 'cmaf+hls' || format === 'cmaf+hls+dash')) {
+    if (!opts.profile && (format === 'cmaf' || format === 'cmaf+hls' || format === 'cmaf+hls+dash')) {
       chosenProfile = chosenProfile.replace(/-hls\b/, '-cmaf')
     }
   } catch {}
-  if (!profile && typeof quality === 'string') {
-    if (quality.toLowerCase().startsWith('hq')) {
+  if (!opts.profile && typeof opts.quality === 'string') {
+    if (opts.quality.toLowerCase().startsWith('hq')) {
       if (!chosenProfile.endsWith('-hq')) chosenProfile = `${chosenProfile}-hq`
     } else {
       chosenProfile = chosenProfile.replace(/-hq$/, '')
@@ -51,57 +62,45 @@ export async function startProductionRender(options: RenderOptions) {
     const baseProfile = isHq ? chosenProfile.replace(/-hq$/, '') : chosenProfile
     raw = loadProfileJson(baseProfile)
   }
-  const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
-  const keyParts = String(upload.s3_key || '').split('/')
-  let assetUuid: string = String(upload.id)
+
+  const createdDate = (opts.upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+  const keyParts = String(opts.upload.s3_key || '').split('/')
+  let assetUuid: string = String(opts.upload.id)
   if (keyParts.length >= 3) {
     assetUuid = keyParts[keyParts.length - 2]
   }
-  // Create a production row first to get ULID
-  const configPayload = {
-    ...(config && typeof config === 'object' ? config : {}),
-    profile: profile ?? null,
-    quality: quality ?? null,
-    sound: sound ?? null,
-  }
-  const prodUlid = genUlid()
-  const [preIns] = await db.query(
-    `INSERT INTO productions (upload_id, user_id, name, status, config, ulid)
-     VALUES (?, ?, ?, 'queued', ?, ?)`,
-    [upload.id, userId, name ?? null, JSON.stringify(configPayload), prodUlid]
-  )
-  const productionId = Number((preIns as any).insertId)
 
   const settings = transformSettings(raw, {
     inputUrl,
     outputBucket: OUTPUT_BUCKET,
     assetId: assetUuid,
     dateYMD: createdDate,
-    productionUlid: prodUlid,
+    productionUlid: opts.productionUlid,
   })
   // Ensure QVBR + MaxBitrate with no Bitrate across outputs to avoid MC validation error
   enforceQvbr(settings)
   if (isHq) applyHqTuning(settings)
   await applyConfiguredTransforms(settings, {
-    config: configPayload,
-    upload,
-    videoDurationSeconds: upload?.duration_seconds != null ? Number(upload.duration_seconds) : null,
-    productionUlid: prodUlid,
+    config: opts.configPayload,
+    upload: opts.upload,
+    videoDurationSeconds: opts.upload?.duration_seconds != null ? Number(opts.upload.duration_seconds) : null,
+    productionUlid: opts.productionUlid,
+    skipAudioNormalization: Boolean(opts.skipAudioNormalization),
   })
 
-  // Optional: logo watermark overlay (applies to video outputs only; posters remain unwatermarked).
   await applyLogoWatermarkIfConfigured(settings, {
-    config: configPayload,
-    videoDurationSeconds: upload?.duration_seconds != null ? Number(upload.duration_seconds) : null,
+    config: opts.configPayload,
+    videoDurationSeconds: opts.upload?.duration_seconds != null ? Number(opts.upload.duration_seconds) : null,
   })
 
-  // Optional: replace output audio with a music track (looped/truncated to video length when possible).
-  await applyMusicReplacementIfConfigured(settings, {
-    config: configPayload,
-    videoDurationSeconds: upload?.duration_seconds != null ? Number(upload.duration_seconds) : null,
-    dateYmd: createdDate,
-    productionUlid: prodUlid,
-  })
+  if (!opts.skipInlineAudioMux) {
+    await applyMusicReplacementIfConfigured(settings, {
+      config: opts.configPayload,
+      videoDurationSeconds: opts.upload?.duration_seconds != null ? Number(opts.upload.duration_seconds) : null,
+      dateYmd: createdDate,
+      productionUlid: opts.productionUlid,
+    })
+  }
 
   try {
     const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : []
@@ -184,25 +183,138 @@ export async function startProductionRender(options: RenderOptions) {
     Queue: MC_QUEUE_ARN,
     AccelerationSettings: { Mode: ACCELERATION_MODE },
     Priority: MC_PRIORITY,
-    UserMetadata: { upload_id: String(upload.id), profile: profile || '' },
+    UserMetadata: { upload_id: String(opts.upload.id), profile: opts.profile || '' },
     Settings: settings,
   }
 
-  writeRequestLog(`upload:${upload.id}:${profile || ''}`, params)
+  writeRequestLog(`upload:${opts.upload.id}:${opts.profile || ''}`, params)
   const resp = await mc.send(new CreateJobCommand(params))
   const jobId = resp.Job?.Id || null
-  const outPrefix = getFirstCmafDestinationPrefix(settings, OUTPUT_BUCKET) || getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${upload.id}/`
+  const outPrefix = getFirstCmafDestinationPrefix(settings, OUTPUT_BUCKET) || getFirstHlsDestinationPrefix(settings, OUTPUT_BUCKET) || `${OUTPUT_PREFIX}${opts.upload.id}/`
 
   await db.query(
     `UPDATE uploads SET status = 'queued', mediaconvert_job_id = ?, output_prefix = ?, profile = ? WHERE id = ?`,
-    [jobId, outPrefix, profile ?? null, upload.id]
+    [jobId, outPrefix, opts.profile ?? null, opts.upload.id]
   )
   await db.query(
-    `UPDATE productions SET mediaconvert_job_id = ?, output_prefix = ? WHERE id = ?`,
-    [jobId, outPrefix, productionId]
+    `UPDATE productions
+        SET status = 'queued',
+            mediaconvert_job_id = ?,
+            output_prefix = ?,
+            error_message = NULL,
+            updated_at = NOW()
+      WHERE id = ?`,
+    [jobId, outPrefix, opts.productionId]
   )
 
-  return { jobId, outPrefix, productionId, profile: profile ?? null }
+  return { jobId, outPrefix, profile: opts.profile ?? null }
+}
+
+export async function startProductionRender(options: RenderOptions) {
+  const { upload, userId, name, profile, quality, sound, config } = options
+  if (!MC_ROLE_ARN) throw new Error('MC_ROLE_ARN not configured')
+  const db = getPool()
+
+  const cfgObj = config && typeof config === 'object' ? config : {}
+  const configPayload = {
+    ...cfgObj,
+    profile: profile ?? null,
+    quality: quality ?? null,
+    sound: sound ?? null,
+  }
+  const prodUlid = genUlid()
+  const musicUploadId = cfgObj && cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
+  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
+  const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
+  let jobInputBase: any = null
+  if (needsMediaJob) {
+    const [rows] = await db.query(
+      `SELECT id, kind, status, s3_bucket, s3_key, content_type
+         FROM uploads
+        WHERE id = ?
+        LIMIT 1`,
+      [musicUploadId]
+    )
+    const au = (rows as any[])[0]
+    if (!au) throw new DomainError('audio_upload_not_found', 'audio_upload_not_found', 404)
+    const kind = String(au.kind || '').toLowerCase()
+    if (kind !== 'audio') throw new DomainError('invalid_audio_upload_kind', 'invalid_audio_upload_kind', 400)
+    const st = String(au.status || '').toLowerCase()
+    if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_audio_upload_state', 'invalid_audio_upload_state', 422)
+
+    const audioCfg = (cfgObj.audioConfigSnapshot && typeof cfgObj.audioConfigSnapshot === 'object') ? cfgObj.audioConfigSnapshot : null
+    const mode = audioCfg && typeof audioCfg.mode === 'string' ? String(audioCfg.mode).toLowerCase() : 'mix'
+    const videoGainDb = audioCfg && audioCfg.videoGainDb != null ? Number(audioCfg.videoGainDb) : 0
+    const musicGainDb = audioCfg && audioCfg.musicGainDb != null ? Number(audioCfg.musicGainDb) : -18
+    const duckingModeRaw = audioCfg && typeof audioCfg.duckingMode === 'string' ? String(audioCfg.duckingMode).toLowerCase() : 'none'
+    const duckingMode: 'none' | 'rolling' | 'abrupt' =
+      duckingModeRaw === 'abrupt' || duckingModeRaw === 'rolling' || duckingModeRaw === 'none' ? duckingModeRaw : 'none'
+    const duckingGateRaw = audioCfg && typeof audioCfg.duckingGate === 'string' ? String(audioCfg.duckingGate).toLowerCase() : 'normal'
+    const duckingGate: 'sensitive' | 'normal' | 'strict' =
+      duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal' ? duckingGateRaw : 'normal'
+    const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
+    const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
+    const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
+    const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
+      ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
+      : true
+
+    const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
+    const videoDurationSeconds =
+      upload?.duration_seconds != null && Number.isFinite(Number(upload.duration_seconds)) && Number(upload.duration_seconds) > 0
+        ? Number(upload.duration_seconds)
+        : null
+
+    jobInputBase = {
+      productionUlid: prodUlid,
+      userId: Number(userId),
+      uploadId: Number(upload.id),
+      dateYmd: createdDate,
+      originalLeaf,
+      videoDurationSeconds,
+      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+      mode: mode === 'replace' ? 'replace' : 'mix',
+      videoGainDb,
+      musicGainDb,
+      duckingMode,
+      duckingGate,
+      duckingAmountDb,
+      audioDurationSeconds,
+      audioFadeEnabled,
+      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
+      normalizeTargetLkfs: -16,
+      outputBucket: UPLOAD_BUCKET,
+    }
+  }
+
+  const [preIns] = await db.query(
+    `INSERT INTO productions (upload_id, user_id, name, status, config, ulid)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [upload.id, userId, name ?? null, initialStatus, JSON.stringify(configPayload), prodUlid]
+  )
+  const productionId = Number((preIns as any).insertId)
+
+  if (needsMediaJob) {
+    const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
+    return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+  }
+
+  const started = await startMediaConvertForExistingProduction({
+    upload,
+    productionId,
+    productionUlid: prodUlid,
+    profile: profile ?? null,
+    quality: quality ?? null,
+    sound: sound ?? null,
+    configPayload,
+    inputUrlOverride: null,
+    skipInlineAudioMux: false,
+    skipAudioNormalization: false,
+  })
+
+  return { ...started, productionId }
 }
 
 type LogoConfigSnapshot = {

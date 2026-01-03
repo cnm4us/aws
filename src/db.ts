@@ -173,14 +173,14 @@ export async function ensureSchema(db: DB) {
 		  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_amount_db SMALLINT NOT NULL DEFAULT 12`);
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_audio_cfg_intro_sfx ON audio_configurations (intro_sfx_upload_id, archived_at, id)`); } catch {}
 		
-		  await db.query(`
-		    CREATE TABLE IF NOT EXISTS productions (
+			  await db.query(`
+			    CREATE TABLE IF NOT EXISTS productions (
 		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	      upload_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
       ulid CHAR(26) NULL,
       name VARCHAR(255) NULL,
-      status ENUM('pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending',
+      status ENUM('pending_media','pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending',
       config JSON NULL,
       output_prefix VARCHAR(1024) NULL,
       mediaconvert_job_id VARCHAR(128) NULL,
@@ -194,11 +194,66 @@ export async function ensureSchema(db: DB) {
       KEY idx_productions_user (user_id),
       KEY idx_productions_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `);
+	  `);
   // Add new columns/indexes for productions table if upgrading
   await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
   await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
-  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
+	  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
+  // Plan 36: allow 'pending_media' status for async ffmpeg mastering jobs.
+  try {
+    await db.query(
+      `ALTER TABLE productions
+         MODIFY COLUMN status ENUM('pending_media','pending','queued','processing','completed','failed') NOT NULL DEFAULT 'pending'`
+    )
+  } catch {}
+
+	  // --- Media processing jobs (Plan 36 / feature_08) ---
+	  // DB-backed queue; logs/artifacts stored in S3 with pointers in DB.
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS media_jobs (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      type VARCHAR(64) NOT NULL,
+	      status ENUM('pending','processing','completed','failed','dead') NOT NULL DEFAULT 'pending',
+	      priority INT NOT NULL DEFAULT 0,
+	      attempts INT NOT NULL DEFAULT 0,
+	      max_attempts INT NOT NULL DEFAULT 3,
+	      run_after TIMESTAMP NULL DEFAULT NULL,
+	      locked_at TIMESTAMP NULL DEFAULT NULL,
+	      locked_by VARCHAR(128) NULL DEFAULT NULL,
+	      input_json JSON NOT NULL,
+	      result_json JSON NULL,
+	      error_code VARCHAR(64) NULL,
+	      error_message TEXT NULL,
+	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	      completed_at TIMESTAMP NULL DEFAULT NULL,
+	      KEY idx_media_jobs_status_run (status, run_after, priority, id),
+	      KEY idx_media_jobs_locked (locked_at, id),
+	      KEY idx_media_jobs_type (type, status, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `);
+
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS media_job_attempts (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      job_id BIGINT UNSIGNED NOT NULL,
+	      attempt_no INT NOT NULL,
+	      worker_id VARCHAR(128) NULL,
+	      started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      finished_at TIMESTAMP NULL DEFAULT NULL,
+	      exit_code INT NULL,
+	      stdout_s3_bucket VARCHAR(255) NULL,
+	      stdout_s3_key VARCHAR(1024) NULL,
+	      stderr_s3_bucket VARCHAR(255) NULL,
+	      stderr_s3_key VARCHAR(1024) NULL,
+	      artifacts_s3_bucket VARCHAR(255) NULL,
+	      artifacts_s3_prefix VARCHAR(1024) NULL,
+	      scratch_manifest_json JSON NULL,
+	      KEY idx_media_job_attempts_job (job_id, attempt_no),
+	      KEY idx_media_job_attempts_started (started_at, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `);
+	  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_media_job_attempt_no ON media_job_attempts (job_id, attempt_no)`); } catch {}
 
   // --- RBAC+ core tables ---
   await db.query(`
@@ -1181,7 +1236,7 @@ export type SpacePublicationEventRow = {
   created_at: string;
 };
 
-export type ProductionStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
+export type ProductionStatus = 'pending_media' | 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
 
 export type ProductionRow = {
   id: number;

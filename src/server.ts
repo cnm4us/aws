@@ -5,6 +5,7 @@ import { buildServer } from './app';
 import { ensureSchema, getPool, seedRbac } from './db';
 import { getMediaConvertClient } from './aws/mediaconvert';
 import { PORT, STATUS_POLL_MS } from './config';
+import { startMediaJobsWorker } from './services/mediaJobs/worker';
 
 const db = getPool();
 
@@ -302,6 +303,7 @@ async function startBackgroundJobs() {
   if (!shuttingDown && !pollTimer) {
     pollTimer = setInterval(pollStatuses, STATUS_POLL_MS);
   }
+  try { startMediaJobsWorker(); } catch (e) { console.warn('media jobs worker start failed', e); }
   backgroundStarted = true;
 }
 

@@ -25,6 +25,13 @@ export const OUTPUT_PREFIX = (process.env.OUTPUT_PREFIX ?? 'hls/').replace(/^\/+
 // Default: enabled unless explicitly set to 0/false/no.
 export const MEDIA_CONVERT_NORMALIZE_AUDIO = envBool('MEDIA_CONVERT_NORMALIZE_AUDIO', true);
 
+// Media jobs worker (Plan 36)
+export const MEDIA_JOBS_ENABLED = envBool('MEDIA_JOBS_ENABLED', false);
+export const MEDIA_JOBS_WORKER_ENABLED = envBool('MEDIA_JOBS_WORKER_ENABLED', MEDIA_JOBS_ENABLED);
+export const MEDIA_JOBS_WORKER_POLL_MS = Number(process.env.MEDIA_JOBS_WORKER_POLL_MS || 2000);
+export const MEDIA_JOBS_LOGS_BUCKET = process.env.MEDIA_JOBS_LOGS_BUCKET || UPLOAD_BUCKET;
+export const MEDIA_JOBS_LOGS_PREFIX = (process.env.MEDIA_JOBS_LOGS_PREFIX ?? 'media-jobs/logs/').replace(/^\/+/, '').replace(/\/+/g, '/');
+
 // MediaConvert job
 export const MC_ROLE_ARN = process.env.MC_ROLE_ARN || '';
 export const MC_QUEUE_ARN = process.env.MC_QUEUE_ARN || undefined;

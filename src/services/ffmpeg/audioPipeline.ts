@@ -39,18 +39,46 @@ export async function uploadFileToS3(bucket: string, key: string, filePath: stri
   )
 }
 
-export async function runFfmpeg(args: string[]): Promise<void> {
+export async function runFfmpeg(
+  args: string[],
+  opts?: { stdoutPath?: string; stderrPath?: string }
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const p = spawn('ffmpeg', ['-hide_banner', '-y', ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const outStream = opts?.stdoutPath ? fs.createWriteStream(opts.stdoutPath, { flags: 'a' }) : null
+    const errStream = opts?.stderrPath ? fs.createWriteStream(opts.stderrPath, { flags: 'a' }) : null
+    if (outStream) p.stdout.pipe(outStream)
+    if (errStream) p.stderr.pipe(errStream)
     let stderr = ''
     p.stderr.on('data', (d) => {
       stderr += String(d)
     })
     p.on('error', reject)
     p.on('close', (code) => {
+      try { outStream?.end() } catch {}
+      try { errStream?.end() } catch {}
       if (code === 0) return resolve()
       reject(new Error(`ffmpeg_failed:${code}:${stderr.slice(0, 800)}`))
     })
+  })
+}
+
+async function probeDurationSeconds(filePath: string): Promise<number | null> {
+  return await new Promise<number | null>((resolve) => {
+    const p = spawn(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    let out = ''
+    p.stdout.on('data', (d) => { out += String(d) })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve(null)
+      const v = Number(String(out || '').trim())
+      if (!Number.isFinite(v) || v <= 0) return resolve(null)
+      resolve(v)
+    })
+    p.on('error', () => resolve(null))
   })
 }
 
@@ -59,11 +87,15 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   dateYmd: string
   productionUlid: string
   originalLeaf: string
+  videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
   musicGainDb: number
   audioDurationSeconds?: number | null
   audioFadeEnabled?: boolean
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  normalizeAudio?: boolean
+  normalizeTargetLkfs?: number
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-replace-'))
   const videoPath = path.join(tmpDir, 'video')
@@ -90,21 +122,31 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
       ? `[1:a]volume=${mVol},atrim=0:${seconds},asetpts=N/SR/TB${fadeFilters},apad[music]`
       : `[1:a]volume=${mVol}[music]`
 
+    const normalizeEnabled = opts.normalizeAudio === true
+    const target = Number.isFinite(Number(opts.normalizeTargetLkfs)) ? Number(opts.normalizeTargetLkfs) : -16
+    // NOTE: On ffmpeg 4.4, loudnorm + -shortest can truncate the tail due to filter latency.
+    // Fix by trimming audio explicitly to video duration and omitting -shortest.
+    const probedDur =
+      normalizeEnabled ? (await probeDurationSeconds(videoPath)) : null
+    const videoDur =
+      normalizeEnabled
+        ? (probedDur != null ? probedDur : (opts.videoDurationSeconds != null ? Number(opts.videoDurationSeconds) : null))
+        : null
+    const useDurTrim = normalizeEnabled && videoDur != null && Number.isFinite(videoDur) && videoDur > 0
+
     const baseArgs: string[] = [
       '-i',
       videoPath,
     ]
     if (seconds == null) baseArgs.push('-stream_loop', '-1')
-    baseArgs.push(
-      '-i',
-      audioPath,
-      '-filter_complex',
-      musicFilter,
-      '-map',
-      '0:v:0',
-      '-map',
-      '[music]'
-    )
+    baseArgs.push('-i', audioPath)
+
+    const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
+    const normSuffix = normalizeEnabled ? `,loudnorm=I=${target}:TP=-1.5:LRA=11` : ''
+    const filterComplex = normalizeEnabled
+      ? `${musicFilter};[music]alimiter=limit=0.98${normSuffix}${durTrim}[out]`
+      : musicFilter
+    baseArgs.push('-filter_complex', filterComplex, '-map', '0:v:0', '-map', '[out]')
 
     const commonTail = [
       '-c:a',
@@ -117,7 +159,6 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
       '2',
       '-movflags',
       '+faststart',
-      '-shortest',
       outPath,
     ]
 
@@ -126,8 +167,8 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
         ...baseArgs,
         '-c:v',
         'copy',
-        ...commonTail,
-      ])
+        ...(useDurTrim ? commonTail : ['-shortest', ...commonTail]),
+      ], opts.logPaths)
     } catch {
       await runFfmpeg([
         ...baseArgs,
@@ -139,8 +180,8 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
         '20',
         '-pix_fmt',
         'yuv420p',
-        ...commonTail,
-      ])
+        ...(useDurTrim ? commonTail : ['-shortest', ...commonTail]),
+      ], opts.logPaths)
     }
 
     // Preserve the original input basename so MediaConvert output names stay stable (e.g. "video.m3u8"),
@@ -162,6 +203,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   dateYmd: string
   productionUlid: string
   originalLeaf: string
+  videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
   videoGainDb: number
@@ -172,6 +214,9 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   duckingMode?: 'none' | 'rolling' | 'abrupt'
   duckingGate?: 'sensitive' | 'normal' | 'strict'
   duckingAmountDb?: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  normalizeAudio?: boolean
+  normalizeTargetLkfs?: number
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-mix-'))
   const videoPath = path.join(tmpDir, 'video')
@@ -197,6 +242,13 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   try {
     await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
     await downloadS3ObjectToFile(opts.audio.bucket, opts.audio.key, audioPath)
+    const probedDur =
+      opts.normalizeAudio === true ? (await probeDurationSeconds(videoPath)) : null
+    const videoDur =
+      opts.normalizeAudio === true
+        ? (probedDur != null ? probedDur : (opts.videoDurationSeconds != null ? Number(opts.videoDurationSeconds) : null))
+        : null
+    const useDurTrim = opts.normalizeAudio === true && videoDur != null && Number.isFinite(videoDur) && videoDur > 0
     const secondsRaw = opts.audioDurationSeconds != null ? Number(opts.audioDurationSeconds) : null
     const seconds = secondsRaw != null && Number.isFinite(secondsRaw) ? Math.max(2, Math.min(20, Math.round(secondsRaw))) : null
     const fadeEnabled = opts.audioFadeEnabled !== false
@@ -248,7 +300,11 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
       }
     }
 
-    const filter = `${origChain};${musicChain};[orig][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98[out]`
+    const normalizeEnabled = opts.normalizeAudio === true
+    const target = Number.isFinite(Number(opts.normalizeTargetLkfs)) ? Number(opts.normalizeTargetLkfs) : -16
+    const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
+    const normSuffix = normalizeEnabled ? `,loudnorm=I=${target}:TP=-1.5:LRA=11` : ''
+    const filter = `${origChain};${musicChain};[orig][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98${normSuffix}${durTrim}[out]`
 
     const args: string[] = ['-i', videoPath]
     if (seconds == null) args.push('-stream_loop', '-1')
@@ -273,10 +329,10 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
       '2',
       '-movflags',
       '+faststart',
-      '-shortest',
       outPath
     )
-    await runFfmpeg(args)
+    if (!useDurTrim) args.splice(args.length - 1, 0, '-shortest')
+    await runFfmpeg(args, opts.logPaths)
 
     const folder = ymdToFolder(opts.dateYmd)
     const prefix = duckingEnabled ? (duckingMode === 'abrupt' ? 'music-mix-gate' : 'music-mix-duck') : 'music-mix'
