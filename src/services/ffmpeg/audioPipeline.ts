@@ -366,12 +366,14 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
           musicChain = `[1:a]volume=0,apad[music]`
         } else if (effectiveCut != null) {
           const cutSeconds = Number(effectiveCut.toFixed(3))
-          const fadeBaseCut = 0.35
-          const fadeDurCut = fadeEnabled ? Math.max(0.05, Math.min(fadeBaseCut, cutSeconds / 2)) : 0
+          // For opener cutoff, we want the opener to fade out *ending exactly at* the detected speech start (t),
+          // so the audio is already faded out when speaking begins.
+          const fadeBaseCut = 0.5
+          const fadeDurCut = fadeEnabled ? Math.max(0.05, Math.min(fadeBaseCut, cutSeconds)) : 0
           const fadeOutStartCut = Math.max(0, cutSeconds - fadeDurCut)
           const fadeFiltersCut =
             fadeDurCut > 0
-              ? `,afade=t=in:st=0:d=${fadeDurCut.toFixed(2)},afade=t=out:st=${fadeOutStartCut.toFixed(2)}:d=${fadeDurCut.toFixed(2)}`
+              ? `,afade=t=out:st=${fadeOutStartCut.toFixed(2)}:d=${fadeDurCut.toFixed(2)}`
               : ''
           // Keep only the opener segment, then pad with silence so amix can run for the full video duration.
           // Use atrim (not aselect) to avoid per-sample expression evaluation on an infinite looped input.
