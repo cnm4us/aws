@@ -53,6 +53,7 @@ API testing (authenticated)
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super login`
   - `BASE_URL="http://localhost:3300" ./scripts/auth_curl.sh --profile super get /api/me`
 - Useful endpoint: `GET /api/publications/:id/jump-spaces` (lists Group/Channel spaces where the same `production_id` is published; used by the Global Feed “Jump” modal).
+- Upload thumbnail endpoint: `GET /api/uploads/:id/thumb` (first-frame thumbnail from the source upload; auth required).
 - Logo configs API: `GET /api/logo-configs`, `POST /api/logo-configs`, `PATCH /api/logo-configs/:id`, `POST /api/logo-configs/:id/duplicate`, `DELETE /api/logo-configs/:id` (archive).
 - Space feed supports optional `?pin=<production_ulid>` on `/groups/:slug` and `/channels/:slug` to show that production first (pins only on initial load).
 
@@ -60,6 +61,7 @@ One-off admin scripts
 - `npm run admin:backfill-rule-drafts` — ensure `rule_drafts` exists for each rule (optional; drafts are lazily created on first edit).
 - `npm run admin:own-uploads -- --email=user@example.com` — promote user to admin and claim unowned uploads.
 - `npm run admin:backfill-spaces-ulid` — backfill `spaces.ulid` for older rows.
+- `ts-node scripts/backfill-upload-thumbs.ts --limit 25 --cursor 0` — enqueue ffmpeg thumbnail jobs for existing video uploads.
 
 Notes
 - Profiles live under jobs/profiles with a $extends mixin system; see docs/Jobs.md

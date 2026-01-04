@@ -59,6 +59,13 @@ Changes Since Last (high level)
   - Audio normalization is controlled solely by env flag, not by production “sound” field.
   - Removed legacy `mixins/audio/normalize-lufs-16` references from `jobs/profiles/*.json` (code is authoritative).
 
+- Upload thumbnails (Plan 39)
+  - Source upload thumbnails are generated from the first frame (t=0) via ffmpeg and stored at `thumbs/uploads/<uploadId>/thumb.jpg` in `UPLOAD_BUCKET`.
+  - New auth endpoint: `GET /api/uploads/:id/thumb` (falls back to production posters in UI when missing).
+  - `media_jobs` type `upload_thumb_v1` generates thumbs asynchronously on upload completion; includes backfill scripts.
+  - `/productions?upload=:id` now supports previewing the original uploaded video in a full-screen modal via `/api/uploads/:id/file`.
+  - Commit: `33d9e4b`
+
 Commits (since `b68aeaa`)
 - `c9b350c` MediaConvert: env-gated audio normalization
 - `c8fb3aa` Admin audio: card layout + edit; remove badges
