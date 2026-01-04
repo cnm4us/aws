@@ -90,6 +90,38 @@ function pickPoster(u: UploadListItem): string | undefined {
   )
 }
 
+function buildUploadThumbUrl(uploadId: number): string {
+  return `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+}
+
+const VideoThumb: React.FC<{
+  uploadId: number
+  fallbackSrc?: string
+  alt: string
+  style: React.CSSProperties
+}> = ({ uploadId, fallbackSrc, alt, style }) => {
+  const [src, setSrc] = useState<string | null>(() => buildUploadThumbUrl(uploadId))
+  useEffect(() => {
+    setSrc(buildUploadThumbUrl(uploadId))
+  }, [uploadId])
+
+  if (!src) {
+    return <div style={{ ...style, background: '#111' }} />
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      style={style}
+      onError={() => {
+        if (fallbackSrc && src !== fallbackSrc) setSrc(fallbackSrc)
+        else setSrc(null)
+      }}
+    />
+  )
+}
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -256,6 +288,7 @@ const UploadsPage: React.FC = () => {
 	        const href = productionHref
 	        const sourceDeleted = !!upload.source_deleted_at
         const isDeletingSource = !!deletingSource[upload.id]
+        const thumbHeightPx = 160
         return (
           <div
             key={upload.id}
@@ -267,15 +300,12 @@ const UploadsPage: React.FC = () => {
             }}
           >
             <a href={href} style={{ display: 'block', textDecoration: 'none' }}>
-              {poster ? (
-                <img
-                  src={poster}
-                  alt="poster"
-                  style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#111' }}
-                />
-              ) : (
-                <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#111' }} />
-              )}
+              <VideoThumb
+                uploadId={upload.id}
+                fallbackSrc={poster}
+                alt="poster"
+                style={{ width: '100%', height: thumbHeightPx, objectFit: 'cover', display: 'block', background: '#111' }}
+              />
             </a>
             <div style={{ padding: '12px 12px 14px' }}>
               <a

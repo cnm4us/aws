@@ -1,4 +1,5 @@
 import { enhanceUploadRow } from '../../utils/enhance'
+import { buildUploadThumbKey } from '../../utils/uploadThumb'
 import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
@@ -10,10 +11,11 @@ import { getPool } from '../../db'
 import { s3 } from '../../services/s3'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
-import { OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
+import { MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
+import { enqueueJob } from '../media-jobs/service'
 
 export type ServiceContext = { userId?: number | null }
 
@@ -123,6 +125,47 @@ export async function getUploadFileStream(
     body: resp.Body,
     contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : (row.size_bytes != null ? Number(row.size_bytes) : null),
     contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
+  }
+}
+
+export async function getUploadThumbStream(
+  uploadId: number,
+  ctx: ServiceContext
+): Promise<{ contentType: string; body: any; contentLength?: number | null }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  const isSystem = Number((row as any).is_system || 0) === 1
+
+  // System audio is selectable by any logged-in user (not relevant for thumbs, but keep parity).
+  if (!(isSystem && kind === 'audio')) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
+
+  // Only video uploads have thumbnails.
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const key = buildUploadThumbKey(Number(uploadId))
+
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    return {
+      contentType: resp.ContentType ? String(resp.ContentType) : 'image/jpeg',
+      body: resp.Body,
+      contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
+    }
+  } catch (e: any) {
+    const name = String(e?.name || e?.Code || '')
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    if (status === 404 || name === 'NoSuchKey' || name === 'NotFound') throw new NotFoundError('not_found')
+    throw e
   }
 }
 
@@ -594,6 +637,8 @@ export async function createSignedUpload(input: {
 
 export async function markComplete(input: { id: number; etag?: string; sizeBytes?: number }, _ctx: ServiceContext): Promise<{ ok: true }> {
   const db = getPool()
+  const prev = await repo.getById(Number(input.id))
+  if (!prev) throw new NotFoundError('not_found')
   await db.query(
     `UPDATE uploads
        SET status = 'uploaded', uploaded_at = CURRENT_TIMESTAMP,
@@ -601,5 +646,30 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
      WHERE id = ?`,
     [input.etag ?? null, input.sizeBytes ?? null, input.id]
   )
+
+  // Generate source thumbnails asynchronously (Plan 39).
+  // Only enqueue when transitioning into uploaded; avoid re-enqueueing on redundant calls.
+  if (MEDIA_JOBS_ENABLED) {
+    const prevStatus = String((prev as any).status || '').toLowerCase()
+    const kind = String((prev as any).kind || 'video').toLowerCase()
+    const ownerUserId = (prev as any).user_id != null ? Number((prev as any).user_id) : null
+    const isSystem = Number((prev as any).is_system || 0) === 1
+    const sourceDeletedAt = (prev as any).source_deleted_at != null ? String((prev as any).source_deleted_at) : null
+    if (!isSystem && !sourceDeletedAt && kind === 'video' && ownerUserId && prevStatus !== 'uploaded') {
+      try {
+        await enqueueJob('upload_thumb_v1', {
+          uploadId: Number(prev.id),
+          userId: ownerUserId,
+          video: { bucket: String(prev.s3_bucket), key: String(prev.s3_key) },
+          outputBucket: String(UPLOAD_BUCKET),
+          outputKey: buildUploadThumbKey(Number(prev.id)),
+          longEdgePx: 640,
+        })
+      } catch (e) {
+        // Best-effort: thumbnails are optional and UI falls back.
+      }
+    }
+  }
+
   return { ok: true }
 }

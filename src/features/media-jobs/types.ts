@@ -1,6 +1,6 @@
 export type MediaJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead'
 
-export type MediaJobType = 'audio_master_v1' | 'video_master_v1'
+export type MediaJobType = 'audio_master_v1' | 'video_master_v1' | 'upload_thumb_v1'
 
 export type MediaJobRow = {
   id: number
@@ -87,7 +87,17 @@ export type VideoMasterV1Input = {
   outputBucket: string
 }
 
+export type UploadThumbV1Input = {
+  uploadId: number
+  userId: number
+  video: S3Pointer
+  outputBucket: string
+  outputKey: string
+  longEdgePx: number
+}
+
 export type MediaJobInputByType = {
   audio_master_v1: AudioMasterV1Input
   video_master_v1: VideoMasterV1Input
+  upload_thumb_v1: UploadThumbV1Input
 }

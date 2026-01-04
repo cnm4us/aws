@@ -7,6 +7,7 @@ import { getPool } from '../../db'
 import * as mediaJobs from '../../features/media-jobs/service'
 import * as mediaJobsRepo from '../../features/media-jobs/repo'
 import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
+import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
 import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
@@ -147,6 +148,21 @@ async function runOne(job: any, attempt: any, workerId: string) {
         stderr: stderrPtr || undefined,
       })
       await mediaJobsRepo.completeJob(jobId, finalResult)
+      return
+    }
+
+    if (String(job.type) === 'upload_thumb_v1') {
+      const input = job.input_json as any
+      const result = await runUploadThumbV1Job(input, { stdoutPath, stderrPath })
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+      })
+      await mediaJobsRepo.completeJob(jobId, result)
       return
     }
 

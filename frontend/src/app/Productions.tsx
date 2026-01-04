@@ -98,6 +98,38 @@ function pickPoster(upload?: UploadSummary | null): string | undefined {
   )
 }
 
+function buildUploadThumbUrl(uploadId: number): string {
+  return `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+}
+
+const UploadThumb: React.FC<{
+  uploadId: number
+  fallbackSrc?: string
+  alt: string
+  style: React.CSSProperties
+}> = ({ uploadId, fallbackSrc, alt, style }) => {
+  const [src, setSrc] = useState<string | null>(() => buildUploadThumbUrl(uploadId))
+  useEffect(() => {
+    setSrc(buildUploadThumbUrl(uploadId))
+  }, [uploadId])
+
+  if (!src) {
+    return <div style={{ ...style, background: '#111' }} />
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      style={style}
+      onError={() => {
+        if (fallbackSrc && src !== fallbackSrc) setSrc(fallbackSrc)
+        else setSrc(null)
+      }}
+    />
+  )
+}
+
 const ProductionsPage: React.FC = () => {
   const paramsInit = new URLSearchParams(window.location.search)
   const initialProductionId = (() => {
@@ -126,6 +158,7 @@ const ProductionsPage: React.FC = () => {
   const [uploadDetailLoading, setUploadDetailLoading] = useState(false)
   const [uploadDetailError, setUploadDetailError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadProductions = useCallback(async (userId: number) => {
     setLoading(true)
@@ -270,18 +303,20 @@ const ProductionsPage: React.FC = () => {
       const detailHref = `/productions?id=${prod.id}`
       const publishHref = `/publish?production=${prod.id}`
       const poster = pickPoster(upload || null)
+      const thumbUploadId = upload?.id != null ? Number(upload.id) : Number(prod.upload_id)
       const displayName = (prod.name && prod.name.trim()) || (upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : `Upload ${prod.upload_id}`)
       const completedText = `Completed: ${prod.completed_at ? formatDate(prod.completed_at) : '—'}`
       return (
         <tr key={prod.id}>
           <td style={{ padding: 12, width: 96 }}>
-            {poster ? (
-              <a href={detailHref} style={{ display: 'inline-block', borderRadius: 8, overflow: 'hidden', lineHeight: 0 }}>
-                <img src={poster} alt={`Production ${prod.id} poster`} style={{ width: 96, height: 96, objectFit: 'cover', display: 'block', background: '#111' }} />
-              </a>
-            ) : (
-              <div style={{ width: 96, height: 96, background: '#1a1a1a', borderRadius: 8 }} />
-            )}
+            <a href={detailHref} style={{ display: 'inline-block', borderRadius: 8, overflow: 'hidden', lineHeight: 0 }}>
+              <UploadThumb
+                uploadId={thumbUploadId}
+                fallbackSrc={poster}
+                alt={`Upload ${thumbUploadId} thumb`}
+                style={{ width: 96, height: 96, objectFit: 'cover', display: 'block', background: '#111' }}
+              />
+            </a>
           </td>
           <td style={{ padding: 12 }}>
             <div style={{ color: '#ddd' }}>
@@ -338,6 +373,11 @@ const ProductionsPage: React.FC = () => {
     const poster = pickPoster(upload)
     const displayName = upload ? (upload.modified_filename || upload.original_filename || `Upload ${upload.id}`) : null
     const builderHref = uploadContextId ? `/produce?upload=${encodeURIComponent(String(uploadContextId))}` : '/produce'
+    const aspectRatio =
+      upload && upload.width && upload.height
+        ? `${upload.width} / ${upload.height}`
+        : '16 / 9'
+    const previewSrc = uploadContextId ? `/api/uploads/${encodeURIComponent(String(uploadContextId))}/file` : null
 
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -364,11 +404,27 @@ const ProductionsPage: React.FC = () => {
 
           <section style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24 }}>
             <div>
-              {poster ? (
-                <img src={poster} alt="poster" style={{ width: 320, borderRadius: 12, background: '#111', objectFit: 'cover' }} />
-              ) : (
-                <div style={{ width: 320, height: 180, borderRadius: 12, background: '#222' }} />
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!previewSrc) return
+                  setPreviewOpen(true)
+                }}
+                style={{
+                  padding: 0,
+                  border: 0,
+                  background: 'transparent',
+                  cursor: previewSrc ? 'pointer' : 'default',
+                }}
+                aria-label="Preview original upload"
+              >
+                <UploadThumb
+                  uploadId={Number(uploadContextId)}
+                  fallbackSrc={poster}
+                  alt="Upload thumbnail"
+                  style={{ width: 320, aspectRatio, borderRadius: 12, background: '#111', objectFit: 'cover' }}
+                />
+              </button>
             </div>
             <div style={{ flex: 1, minWidth: 280 }}>
               <div style={{ marginBottom: 16, color: '#bbb' }}>
@@ -442,6 +498,27 @@ const ProductionsPage: React.FC = () => {
             )}
           </section>
         </div>
+        {previewOpen && previewSrc && (
+          <div
+            onClick={() => setPreviewOpen(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.96)', zIndex: 50, display: 'grid', placeItems: 'center' }}
+          >
+            <video
+              src={previewSrc}
+              playsInline
+              controls
+              autoPlay
+              style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              onClick={(e) => { e.stopPropagation(); setPreviewOpen(false) }}
+              style={{ position: 'fixed', top: 14, right: 14, zIndex: 51, background: 'rgba(0,0,0,0.5)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 16, padding: '6px 10px' }}
+            >
+              Close
+            </button>
+          </div>
+        )}
       </div>
     )
   }
