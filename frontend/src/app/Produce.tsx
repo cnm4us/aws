@@ -142,6 +142,21 @@ function parseAudioConfigId(): number | null {
   }
 }
 
+function parseIntroSeconds(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('introSeconds')
+    if (!raw) return null
+    const n = Number(raw)
+    const rounded = Math.round(n)
+    if (!Number.isFinite(rounded) || rounded <= 0) return null
+    if (![2, 3, 4, 5].includes(rounded)) return null
+    return rounded
+  } catch {
+    return null
+  }
+}
+
 function pushQueryParams(updates: Record<string, string | null>, state: any = {}) {
   const params = new URLSearchParams(window.location.search)
   for (const [k, v] of Object.entries(updates)) {
@@ -251,6 +266,7 @@ export default function ProducePage() {
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
   const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
+  const [introSeconds, setIntroSeconds] = useState<number | null>(() => parseIntroSeconds())
   const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
@@ -655,7 +671,7 @@ export default function ProducePage() {
   const poster = pickPoster(upload)
   const sourceDeleted = !!upload.source_deleted_at
 
-  const onProduce = async () => {
+	  const onProduce = async () => {
     if (!uploadId) return
     if (creating) return
     if (sourceDeleted) {
@@ -669,15 +685,18 @@ export default function ProducePage() {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
 
-      const body: any = {
-        uploadId,
-        musicUploadId: selectedAudioId ?? null,
-        audioConfigId: selectedAudioConfigId ?? null,
-        logoUploadId: selectedLogoId ?? null,
-        logoConfigId: selectedLogoConfigId ?? null,
-      }
-      const trimmedName = productionName.trim()
-      if (trimmedName) body.name = trimmedName
+	      const body: any = {
+	        uploadId,
+	        musicUploadId: selectedAudioId ?? null,
+	        audioConfigId: selectedAudioConfigId ?? null,
+	        logoUploadId: selectedLogoId ?? null,
+	        logoConfigId: selectedLogoConfigId ?? null,
+	      }
+	      if (introSeconds != null) {
+	        body.config = { intro: { kind: 'freeze_first_frame', seconds: introSeconds } }
+	      }
+	      const trimmedName = productionName.trim()
+	      if (trimmedName) body.name = trimmedName
 
       const res = await fetch('/api/productions', {
         method: 'POST',
@@ -726,11 +745,11 @@ export default function ProducePage() {
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <section style={{ padding: 14, borderRadius: 12, background: '#0e0e0e', border: '1px solid #1f1f1f' }}>
-              <div style={{ fontSize: 13, fontWeight: 650, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8, marginBottom: 10 }}>
-                Optional Enhancements
-              </div>
+	          <div style={{ flex: 1, minWidth: 260 }}>
+	            <section style={{ padding: 14, borderRadius: 12, background: '#0e0e0e', border: '1px solid #1f1f1f' }}>
+	              <div style={{ fontSize: 13, fontWeight: 650, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8, marginBottom: 10 }}>
+	                Optional Enhancements
+	              </div>
 
               {authChecked && !me?.userId ? (
                 <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', marginBottom: 12 }}>
@@ -738,8 +757,8 @@ export default function ProducePage() {
                 </div>
               ) : null}
 
-              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-                <div style={{ color: '#bbb' }}>Production Name (optional)</div>
+	              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+	                <div style={{ color: '#bbb' }}>Production Name (optional)</div>
                 <input
                   value={productionName}
                   onChange={(e) => setProductionName(e.target.value)}
@@ -753,12 +772,44 @@ export default function ProducePage() {
                     outline: 'none',
                   }}
                 />
-              </label>
+	              </label>
 
-	              <div style={{ display: 'grid', gap: 10 }}>
-	                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-	                  <div style={{ color: '#bbb', fontWeight: 650 }}>Audio</div>
+	              <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+	                <div style={{ color: '#bbb' }}>Freeze first frame (optional)</div>
+	                <select
+	                  value={introSeconds == null ? '' : String(introSeconds)}
+	                  onChange={(e) => {
+	                    const raw = e.target.value
+	                    const next = raw ? Number(raw) : null
+	                    const normalized = next != null && Number.isFinite(next) ? Math.round(next) : null
+	                    const final = normalized != null && [2, 3, 4, 5].includes(normalized) ? normalized : null
+	                    setIntroSeconds(final)
+	                    pushQueryParams({ introSeconds: final == null ? null : String(final) })
+	                  }}
+	                  style={{
+	                    padding: '10px 12px',
+	                    borderRadius: 10,
+	                    border: '1px solid #2a2a2a',
+	                    background: '#0c0c0c',
+	                    color: '#fff',
+	                    outline: 'none',
+	                  }}
+	                >
+	                  <option value="">None</option>
+	                  <option value="2">2 seconds</option>
+	                  <option value="3">3 seconds</option>
+	                  <option value="4">4 seconds</option>
+	                  <option value="5">5 seconds</option>
+	                </select>
+	                <div style={{ color: '#777', fontSize: 13 }}>
+	                  Extends the production with a frozen first frame. Audio/video start after this intro.
 	                </div>
+	              </label>
+
+		              <div style={{ display: 'grid', gap: 10 }}>
+		                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+		                  <div style={{ color: '#bbb', fontWeight: 650 }}>Audio</div>
+		                </div>
 	                {assetsLoading ? (
 	                  <div style={{ color: '#777' }}>Loading audio…</div>
 	                ) : assetsError ? (

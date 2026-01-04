@@ -7,6 +7,7 @@ import { getPool } from '../../db'
 import * as mediaJobs from '../../features/media-jobs/service'
 import * as mediaJobsRepo from '../../features/media-jobs/repo'
 import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
+import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
 
@@ -87,6 +88,48 @@ async function runOne(job: any, attempt: any, workerId: string) {
         inputUrlOverride: String(masteredUrl),
         skipInlineAudioMux: true,
         skipAudioNormalization: true,
+      })
+      const finalResult = { ...result, mediaconvert: mc }
+
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+      })
+      await mediaJobsRepo.completeJob(jobId, finalResult)
+      return
+    }
+
+    if (String(job.type) === 'video_master_v1') {
+      const input = job.input_json as any
+      const result = await runVideoMasterV1Job(input, { stdoutPath, stderrPath })
+
+      const pool = getPool()
+      const [prodRows] = await pool.query(`SELECT id, ulid, config FROM productions WHERE id = ? LIMIT 1`, [Number(input.productionId)])
+      const prod = (prodRows as any[])[0]
+      if (!prod) throw new Error('production_not_found')
+      const cfg = typeof prod.config === 'string' ? JSON.parse(prod.config) : (prod.config || {})
+      const [upRows] = await pool.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [Number(input.uploadId)])
+      const upload = (upRows as any[])[0]
+      if (!upload) throw new Error('upload_not_found')
+
+      const masteredUrl = result?.output?.s3Url
+      if (!masteredUrl) throw new Error('missing_master_output')
+
+      const mc = await startMediaConvertForExistingProduction({
+        upload,
+        productionId: Number(input.productionId),
+        productionUlid: String(prod.ulid || input.productionUlid || ''),
+        profile: cfg.profile ?? null,
+        quality: cfg.quality ?? null,
+        sound: cfg.sound ?? null,
+        configPayload: cfg,
+        inputUrlOverride: String(masteredUrl),
+        skipInlineAudioMux: false,
+        skipAudioNormalization: false,
       })
       const finalResult = { ...result, mediaconvert: mc }
 

@@ -9,6 +9,7 @@ import { DomainError } from '../core/errors'
 import path from 'path'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
 import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
+import { createMp4WithFrozenFirstFrame } from './ffmpeg/introPipeline'
 import { enqueueJob } from '../features/media-jobs/service'
 
 export type RenderOptions = {
@@ -224,10 +225,15 @@ export async function startProductionRender(options: RenderOptions) {
   }
   const prodUlid = genUlid()
   const musicUploadId = cfgObj && cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
-  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
+  const introSecondsRaw =
+    cfgObj && cfgObj.intro && typeof cfgObj.intro === 'object' ? Number((cfgObj.intro as any).seconds)
+      : (cfgObj && cfgObj.intro != null && (typeof cfgObj.intro === 'number' || typeof cfgObj.intro === 'string') ? Number(cfgObj.intro) : 0)
+  const introSeconds = Number.isFinite(introSecondsRaw) ? Math.max(0, Math.min(30, Math.round(introSecondsRaw))) : 0
+  const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
+  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introSeconds > 0))
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
-  if (needsMediaJob) {
+  if (needsMediaJob && hasMusic) {
     const [rows] = await db.query(
       `SELECT id, kind, status, s3_bucket, s3_key, content_type
          FROM uploads
@@ -252,15 +258,15 @@ export async function startProductionRender(options: RenderOptions) {
     const duckingGateRaw = audioCfg && typeof audioCfg.duckingGate === 'string' ? String(audioCfg.duckingGate).toLowerCase() : 'normal'
     const duckingGate: 'sensitive' | 'normal' | 'strict' =
       duckingGateRaw === 'sensitive' || duckingGateRaw === 'strict' || duckingGateRaw === 'normal' ? duckingGateRaw : 'normal'
-	    const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
-	    const openerCutFadeBeforeSeconds =
-	      audioCfg && audioCfg.openerCutFadeBeforeSeconds != null ? Number(audioCfg.openerCutFadeBeforeSeconds) : null
-	    const openerCutFadeAfterSeconds =
-	      audioCfg && audioCfg.openerCutFadeAfterSeconds != null ? Number(audioCfg.openerCutFadeAfterSeconds) : null
-	    const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
-	    const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
-	    const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
-	      ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
+    const duckingAmountDb = audioCfg && audioCfg.duckingAmountDb != null ? Number(audioCfg.duckingAmountDb) : 12
+    const openerCutFadeBeforeSeconds =
+      audioCfg && audioCfg.openerCutFadeBeforeSeconds != null ? Number(audioCfg.openerCutFadeBeforeSeconds) : null
+    const openerCutFadeAfterSeconds =
+      audioCfg && audioCfg.openerCutFadeAfterSeconds != null ? Number(audioCfg.openerCutFadeAfterSeconds) : null
+    const durRaw = audioCfg && audioCfg.audioDurationSeconds != null ? Number(audioCfg.audioDurationSeconds) : null
+    const audioDurationSeconds = durRaw != null && Number.isFinite(durRaw) ? Math.max(2, Math.min(20, Math.round(durRaw))) : null
+    const audioFadeEnabled = audioCfg && audioCfg.audioFadeEnabled != null
+      ? Boolean(audioCfg.audioFadeEnabled === true || String(audioCfg.audioFadeEnabled || '').toLowerCase() === 'true' || String(audioCfg.audioFadeEnabled || '') === '1')
       : true
 
     const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
@@ -279,18 +285,19 @@ export async function startProductionRender(options: RenderOptions) {
       videoDurationSeconds,
       video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
       music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+      introSeconds: introSeconds > 0 ? introSeconds : null,
       mode: mode === 'replace' ? 'replace' : 'mix',
       videoGainDb,
       musicGainDb,
-	      duckingMode,
-	      duckingGate,
-	      duckingAmountDb,
-	      openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
-	      openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeAfterSeconds == null ? null : openerCutFadeAfterSeconds) : null,
-	      audioDurationSeconds,
-	      audioFadeEnabled,
-	      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
-	      normalizeTargetLkfs: -16,
+      duckingMode,
+      duckingGate,
+      duckingAmountDb,
+      openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
+      openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeAfterSeconds == null ? null : openerCutFadeAfterSeconds) : null,
+      audioDurationSeconds,
+      audioFadeEnabled,
+      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
+      normalizeTargetLkfs: -16,
       outputBucket: UPLOAD_BUCKET,
     }
   }
@@ -303,8 +310,48 @@ export async function startProductionRender(options: RenderOptions) {
   const productionId = Number((preIns as any).insertId)
 
   if (needsMediaJob) {
-    const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
-    return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+    if (hasMusic) {
+      const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
+      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+    }
+    if (introSeconds > 0) {
+      const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+      const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
+      const videoDurationSeconds =
+        upload?.duration_seconds != null && Number.isFinite(Number(upload.duration_seconds)) && Number(upload.duration_seconds) > 0
+          ? Number(upload.duration_seconds)
+          : null
+      const job = await enqueueJob('video_master_v1', {
+        productionId,
+        productionUlid: prodUlid,
+        userId: Number(userId),
+        uploadId: Number(upload.id),
+        dateYmd: createdDate,
+        originalLeaf,
+        videoDurationSeconds,
+        video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+        introSeconds,
+        outputBucket: UPLOAD_BUCKET,
+      })
+      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+    }
+  }
+
+  // Inline fallback: if intro is selected but media jobs are disabled, pre-master the video synchronously.
+  // This keeps feature parity in dev; production should prefer MEDIA_JOBS_ENABLED=1.
+  let inputOverride: string | null = null
+  if (!MEDIA_JOBS_ENABLED && introSeconds > 0) {
+    const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
+    const out = await createMp4WithFrozenFirstFrame({
+      uploadBucket: UPLOAD_BUCKET,
+      dateYmd: createdDate,
+      productionUlid: prodUlid,
+      originalLeaf,
+      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+      freezeSeconds: introSeconds,
+    })
+    inputOverride = out.s3Url
   }
 
   const started = await startMediaConvertForExistingProduction({
@@ -315,7 +362,7 @@ export async function startProductionRender(options: RenderOptions) {
     quality: quality ?? null,
     sound: sound ?? null,
     configPayload,
-    inputUrlOverride: null,
+    inputUrlOverride: inputOverride,
     skipInlineAudioMux: false,
     skipAudioNormalization: false,
   })

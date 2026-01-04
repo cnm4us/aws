@@ -1,6 +1,6 @@
 export type MediaJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead'
 
-export type MediaJobType = 'audio_master_v1'
+export type MediaJobType = 'audio_master_v1' | 'video_master_v1'
 
 export type MediaJobRow = {
   id: number
@@ -50,6 +50,7 @@ export type AudioMasterV1Input = {
   videoDurationSeconds: number | null
   video: S3Pointer
   music: S3Pointer
+  introSeconds?: number | null
   mode: 'replace' | 'mix'
   videoGainDb: number
   musicGainDb: number
@@ -65,6 +66,20 @@ export type AudioMasterV1Input = {
   outputBucket: string
 }
 
+export type VideoMasterV1Input = {
+  productionId: number
+  productionUlid: string
+  userId: number
+  uploadId: number
+  dateYmd: string
+  originalLeaf: string
+  videoDurationSeconds: number | null
+  video: S3Pointer
+  introSeconds: number
+  outputBucket: string
+}
+
 export type MediaJobInputByType = {
   audio_master_v1: AudioMasterV1Input
+  video_master_v1: VideoMasterV1Input
 }

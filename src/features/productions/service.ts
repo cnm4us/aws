@@ -229,6 +229,31 @@ export async function create(
   const mergedConfig: any = { ...baseConfig }
   if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
+
+  // Production intro (Plan 37): optional freeze-first-frame intro segment.
+  // Config shape: intro: { kind: 'freeze_first_frame', seconds: 2|3|4|5 } | null
+  {
+    const introRaw = mergedConfig.intro
+    if (introRaw == null || introRaw === false) {
+      mergedConfig.intro = null
+    } else if (typeof introRaw === 'number' || typeof introRaw === 'string') {
+      const secs = Number(introRaw)
+      if (!Number.isFinite(secs)) throw new DomainError('invalid_intro', 'invalid_intro', 400)
+      const rounded = Math.round(secs)
+      if (![2, 3, 4, 5].includes(rounded)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
+      mergedConfig.intro = { kind: 'freeze_first_frame', seconds: rounded }
+    } else if (typeof introRaw === 'object') {
+      const kind = String((introRaw as any).kind || '').trim()
+      if (kind !== 'freeze_first_frame') throw new DomainError('invalid_intro', 'invalid_intro', 400)
+      const secs = Number((introRaw as any).seconds)
+      if (!Number.isFinite(secs)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
+      const rounded = Math.round(secs)
+      if (![2, 3, 4, 5].includes(rounded)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
+      mergedConfig.intro = { kind: 'freeze_first_frame', seconds: rounded }
+    } else {
+      throw new DomainError('invalid_intro', 'invalid_intro', 400)
+    }
+  }
   if (input.audioConfigId !== undefined) {
     if (input.audioConfigId == null) {
       mergedConfig.audioConfigId = null
