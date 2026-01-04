@@ -57,6 +57,42 @@ async function probeVideoDimensions(filePath: string): Promise<{ width: number |
   })
 }
 
+async function probeVideoFps(filePath: string): Promise<number | null> {
+  return await new Promise<number | null>((resolve) => {
+    const p = spawn(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=avg_frame_rate,r_frame_rate',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        filePath,
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    let out = ''
+    p.stdout.on('data', (d) => { out += String(d) })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve(null)
+      const lines = String(out || '').trim().split('\n').map((s) => s.trim()).filter(Boolean)
+      const candidate = lines.find((l) => l.includes('/')) || lines[0]
+      const m = candidate ? candidate.match(/^(\d+)\s*\/\s*(\d+)$/) : null
+      if (!m) return resolve(null)
+      const num = Number(m[1])
+      const den = Number(m[2])
+      if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) return resolve(null)
+      const fps = num / den
+      if (!Number.isFinite(fps) || fps <= 0) return resolve(null)
+      resolve(fps)
+    })
+    p.on('error', () => resolve(null))
+  })
+}
+
 function roundEven(n: number): number {
   const r = Math.round(n)
   return r % 2 === 0 ? r : r - 1
@@ -243,6 +279,8 @@ export async function createMp4WithTitleImageIntro(opts: {
 
     const dims = await probeVideoDimensions(videoPath)
     const { outW, outH } = pickCappedVideoSize(dims)
+    const fpsRaw = await probeVideoFps(videoPath)
+    const fps = fpsRaw != null && Number.isFinite(fpsRaw) ? Math.max(10, Math.min(120, fpsRaw)) : 30
 
     const dur = await probeDurationSeconds(videoPath)
     const totalDur = dur != null ? Math.max(0.5, dur + hold) : null
@@ -250,8 +288,8 @@ export async function createMp4WithTitleImageIntro(opts: {
     const ms = Math.round(hold * 1000)
 
     // Cover + crop: scale to fill, then crop to exact output size.
-    const introV = `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},setsar=1,trim=0:${hold.toFixed(3)},setpts=PTS-STARTPTS[intro]`
-    const mainV = `[1:v]scale=${outW}:${outH},setsar=1,setpts=PTS-STARTPTS[main]`
+    const introV = `[0:v]fps=${fps.toFixed(3)},scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},setsar=1,trim=0:${hold.toFixed(3)},setpts=PTS-STARTPTS[intro]`
+    const mainV = `[1:v]fps=${fps.toFixed(3)},scale=${outW}:${outH},setsar=1,setpts=PTS-STARTPTS[main]`
     const concatV = `[intro][main]concat=n=2:v=1:a=0[v]`
 
     if (hasAudio) {
@@ -262,6 +300,8 @@ export async function createMp4WithTitleImageIntro(opts: {
         [
           '-loop',
           '1',
+          '-framerate',
+          fps.toFixed(3),
           '-i',
           imgPath,
           '-i',
@@ -280,6 +320,8 @@ export async function createMp4WithTitleImageIntro(opts: {
           '20',
           '-pix_fmt',
           'yuv420p',
+          '-r',
+          fps.toFixed(3),
           '-c:a',
           'aac',
           '-b:a',
@@ -301,6 +343,8 @@ export async function createMp4WithTitleImageIntro(opts: {
         [
           '-loop',
           '1',
+          '-framerate',
+          fps.toFixed(3),
           '-i',
           imgPath,
           '-i',
@@ -323,6 +367,8 @@ export async function createMp4WithTitleImageIntro(opts: {
           '20',
           '-pix_fmt',
           'yuv420p',
+          '-r',
+          fps.toFixed(3),
           '-c:a',
           'aac',
           '-b:a',

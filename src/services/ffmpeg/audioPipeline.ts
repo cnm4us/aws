@@ -50,8 +50,9 @@ export async function runFfmpeg(
     if (outStream) p.stdout.pipe(outStream)
     if (errStream) p.stderr.pipe(errStream)
     let stderr = ''
+    const maxStderr = 8000
     p.stderr.on('data', (d) => {
-      stderr += String(d)
+      stderr = (stderr + String(d)).slice(-maxStderr)
     })
     p.on('error', reject)
     p.on('close', (code) => {
