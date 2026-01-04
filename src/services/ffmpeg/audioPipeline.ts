@@ -7,6 +7,15 @@ import { spawn } from 'child_process'
 import { pipeline } from 'stream/promises'
 import { s3 } from '../s3'
 
+function parsePositiveIntEnv(name: string): number | null {
+  const raw = process.env[name]
+  if (raw == null || String(raw).trim() === '') return null
+  const n = Number(String(raw).trim())
+  if (!Number.isFinite(n)) return null
+  const rounded = Math.round(n)
+  return rounded > 0 ? rounded : null
+}
+
 export function ymdToFolder(ymd: string): string {
   const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (!m) return String(ymd || '')
@@ -44,7 +53,22 @@ export async function runFfmpeg(
   opts?: { stdoutPath?: string; stderrPath?: string }
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const p = spawn('ffmpeg', ['-hide_banner', '-y', ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const filterThreads = parsePositiveIntEnv('FFMPEG_FILTER_THREADS')
+    const filterComplexThreads = parsePositiveIntEnv('FFMPEG_FILTER_COMPLEX_THREADS')
+    const threads = parsePositiveIntEnv('FFMPEG_THREADS')
+    const nice = parsePositiveIntEnv('FFMPEG_NICE')
+
+    const injected: string[] = ['-hide_banner', '-y']
+    if (filterThreads) injected.push('-filter_threads', String(filterThreads))
+    if (filterComplexThreads) injected.push('-filter_complex_threads', String(filterComplexThreads))
+
+    const hasThreadsFlag = args.includes('-threads')
+    const finalArgs = threads && !hasThreadsFlag ? [...args.slice(0, -1), '-threads', String(threads), args[args.length - 1]] : args
+
+    const p = spawn('ffmpeg', [...injected, ...finalArgs], { stdio: ['ignore', 'pipe', 'pipe'] })
+    if (nice && p.pid) {
+      try { os.setPriority(p.pid, Math.min(19, Math.max(0, nice))) } catch {}
+    }
     const outStream = opts?.stdoutPath ? fs.createWriteStream(opts.stdoutPath, { flags: 'a' }) : null
     const errStream = opts?.stderrPath ? fs.createWriteStream(opts.stderrPath, { flags: 'a' }) : null
     if (outStream) p.stdout.pipe(outStream)
