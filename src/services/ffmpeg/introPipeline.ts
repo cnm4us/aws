@@ -57,6 +57,23 @@ async function probeVideoDimensions(filePath: string): Promise<{ width: number |
   })
 }
 
+function roundEven(n: number): number {
+  const r = Math.round(n)
+  return r % 2 === 0 ? r : r - 1
+}
+
+function pickCappedVideoSize(input: { width: number | null; height: number | null }): { outW: number; outH: number } {
+  const inW = input.width != null && Number.isFinite(input.width) && input.width > 0 ? input.width : 720
+  const inH = input.height != null && Number.isFinite(input.height) && input.height > 0 ? input.height : 1280
+  const portrait = inH >= inW
+  const maxW = portrait ? 1080 : 1920
+  const maxH = portrait ? 1920 : 1080
+  const scale = Math.min(1, maxW / inW, maxH / inH)
+  const outW = Math.max(2, roundEven(inW * scale))
+  const outH = Math.max(2, roundEven(inH * scale))
+  return { outW, outH }
+}
+
 async function hasAudioStream(filePath: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const p = spawn(
@@ -96,7 +113,12 @@ export async function createMp4WithFrozenFirstFrame(opts: {
     await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
 
     const ms = seconds * 1000
-    const vFilter = `[0:v]tpad=start_duration=${seconds}:start_mode=clone,setsar=1[v]`
+    const dims = await probeVideoDimensions(videoPath)
+    const { outW, outH } = pickCappedVideoSize(dims)
+    const needsScale = dims.width != null && dims.height != null && (dims.width !== outW || dims.height !== outH)
+    const vFilter = needsScale
+      ? `[0:v]tpad=start_duration=${seconds}:start_mode=clone,scale=${outW}:${outH},setsar=1[v]`
+      : `[0:v]tpad=start_duration=${seconds}:start_mode=clone,setsar=1[v]`
     const hasAudio = await hasAudioStream(videoPath)
     const dur = await probeDurationSeconds(videoPath)
     const totalDur = dur != null ? Math.max(0.5, dur + seconds) : null
@@ -220,8 +242,7 @@ export async function createMp4WithTitleImageIntro(opts: {
     await downloadS3ObjectToFile(opts.titleImage.bucket, opts.titleImage.key, imgPath)
 
     const dims = await probeVideoDimensions(videoPath)
-    const outW = dims.width != null ? dims.width : 720
-    const outH = dims.height != null ? dims.height : 1280
+    const { outW, outH } = pickCappedVideoSize(dims)
 
     const dur = await probeDurationSeconds(videoPath)
     const totalDur = dur != null ? Math.max(0.5, dur + hold) : null
@@ -230,7 +251,7 @@ export async function createMp4WithTitleImageIntro(opts: {
 
     // Cover + crop: scale to fill, then crop to exact output size.
     const introV = `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},setsar=1,trim=0:${hold.toFixed(3)},setpts=PTS-STARTPTS[intro]`
-    const mainV = `[1:v]setpts=PTS-STARTPTS[main]`
+    const mainV = `[1:v]scale=${outW}:${outH},setsar=1,setpts=PTS-STARTPTS[main]`
     const concatV = `[intro][main]concat=n=2:v=1:a=0[v]`
 
     if (hasAudio) {
