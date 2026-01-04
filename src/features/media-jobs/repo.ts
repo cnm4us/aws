@@ -1,4 +1,5 @@
 import type { Pool, PoolConnection } from 'mysql2/promise'
+import { MEDIA_JOBS_STALE_LOCK_MINUTES } from '../../config'
 import { getPool } from '../../db'
 import type { MediaJobAttemptRow, MediaJobRow, MediaJobStatus } from './types'
 
@@ -68,13 +69,14 @@ export async function claimNext(
   if (type) args.push(type)
   args.push(now, now)
 
+  const staleMinutes = Math.max(1, Math.min(60, Math.round(Number(MEDIA_JOBS_STALE_LOCK_MINUTES) || 5)))
   const [rows] = await conn.query(
     `SELECT *
        FROM media_jobs
       WHERE status = 'pending'
         ${whereType}
         AND (run_after IS NULL OR run_after <= COALESCE(?, NOW()))
-        AND (locked_at IS NULL OR locked_at < DATE_SUB(COALESCE(?, NOW()), INTERVAL 30 MINUTE))
+        AND (locked_at IS NULL OR locked_at < DATE_SUB(COALESCE(?, NOW()), INTERVAL ${staleMinutes} MINUTE))
       ORDER BY priority DESC, id ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED`,

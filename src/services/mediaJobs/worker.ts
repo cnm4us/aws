@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { MEDIA_JOBS_LOGS_BUCKET, MEDIA_JOBS_LOGS_PREFIX, MEDIA_JOBS_WORKER_ENABLED, MEDIA_JOBS_WORKER_POLL_MS, UPLOAD_BUCKET } from '../../config'
+import { MEDIA_JOBS_LOGS_BUCKET, MEDIA_JOBS_LOGS_PREFIX, MEDIA_JOBS_WORKER_ENABLED, MEDIA_JOBS_WORKER_HEARTBEAT_MS, MEDIA_JOBS_WORKER_POLL_MS, UPLOAD_BUCKET } from '../../config'
 import { writeRequestLog } from '../../utils/requestLog'
 import { getPool } from '../../db'
 import * as mediaJobs from '../../features/media-jobs/service'
@@ -50,6 +50,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
   const logPrefix = `${MEDIA_JOBS_LOGS_PREFIX}${jobId}/${attemptNo}/`
   const stdoutPath = path.join(os.tmpdir(), `media-job-${jobId}-${attemptNo}-stdout.log`)
   const stderrPath = path.join(os.tmpdir(), `media-job-${jobId}-${attemptNo}-stderr.log`)
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
   try {
     fs.writeFileSync(stdoutPath, '')
@@ -57,6 +58,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
   } catch {}
 
   try {
+    heartbeatTimer = setInterval(() => {
+      mediaJobsRepo.updateJobProcessingHeartbeat(jobId, workerId).catch(() => {})
+    }, Math.max(3000, MEDIA_JOBS_WORKER_HEARTBEAT_MS || 15000))
+
     const startedAt = new Date().toISOString()
     writeRequestLog(`media-job:${jobId}:${attemptNo}`, { jobId, attemptNo, workerId, type: job.type, input: job.input_json, startedAt })
 
@@ -157,6 +162,9 @@ async function runOne(job: any, attempt: any, workerId: string) {
     } catch {}
     await mediaJobsRepo.failJob(jobId, { status: 'failed', errorCode: 'failed', errorMessage: message })
   } finally {
+    if (heartbeatTimer) {
+      try { clearInterval(heartbeatTimer) } catch {}
+    }
     try { fs.rmSync(stdoutPath, { force: true }) } catch {}
     try { fs.rmSync(stderrPath, { force: true }) } catch {}
     try { await mediaJobsRepo.updateJobProcessingHeartbeat(jobId, workerId) } catch {}

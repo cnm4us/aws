@@ -32,6 +32,8 @@ export const MC_WATERMARK_POSTERS = envBool('MC_WATERMARK_POSTERS', false);
 export const MEDIA_JOBS_ENABLED = envBool('MEDIA_JOBS_ENABLED', false);
 export const MEDIA_JOBS_WORKER_ENABLED = envBool('MEDIA_JOBS_WORKER_ENABLED', MEDIA_JOBS_ENABLED);
 export const MEDIA_JOBS_WORKER_POLL_MS = Number(process.env.MEDIA_JOBS_WORKER_POLL_MS || 2000);
+export const MEDIA_JOBS_WORKER_HEARTBEAT_MS = Number(process.env.MEDIA_JOBS_WORKER_HEARTBEAT_MS || 15000);
+export const MEDIA_JOBS_STALE_LOCK_MINUTES = Number(process.env.MEDIA_JOBS_STALE_LOCK_MINUTES || 5);
 export const MEDIA_JOBS_LOGS_BUCKET = process.env.MEDIA_JOBS_LOGS_BUCKET || UPLOAD_BUCKET;
 export const MEDIA_JOBS_LOGS_PREFIX = (process.env.MEDIA_JOBS_LOGS_PREFIX ?? 'media-jobs/logs/').replace(/^\/+/, '').replace(/\/+/g, '/');
 
