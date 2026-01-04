@@ -15,6 +15,8 @@ export function pickExtension(contentType?: string, originalName?: string): stri
     ? '.png'
     : lowerCt.includes('jpeg') || lowerCt.includes('jpg')
     ? '.jpg'
+    : lowerCt.includes('webp')
+    ? '.webp'
     : lowerCt.includes('svg')
     ? '.svg'
     : lowerCt.includes('audio/mpeg') || lowerCt.includes('audio/mp3') || lowerCt.includes('mpeg')
@@ -46,11 +48,11 @@ export function buildUploadKey(
   dateFolder: string,
   uuid: string,
   ext: string,
-  kind: 'video' | 'logo' | 'audio' = 'video'
+  kind: 'video' | 'logo' | 'audio' | 'image' = 'video'
 ): string {
   const prefix = basePrefix ? (basePrefix.endsWith('/') ? basePrefix : basePrefix + '/') : '';
-  const root = kind === 'video' ? 'videos' : kind === 'logo' ? 'logos' : 'audio';
-  const leaf = kind === 'video' ? 'video' : kind === 'logo' ? 'logo' : 'audio';
+  const root = kind === 'video' ? 'videos' : kind === 'logo' ? 'logos' : kind === 'image' ? 'images' : 'audio';
+  const leaf = kind === 'video' ? 'video' : kind === 'logo' ? 'logo' : kind === 'image' ? 'image' : 'audio';
   return `${prefix}${root}/${dateFolder}/${uuid}/${leaf}${ext}`;
 }
 

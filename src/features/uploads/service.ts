@@ -18,7 +18,7 @@ import { clampLimit } from '../../core/pagination'
 export type ServiceContext = { userId?: number | null }
 
 export async function list(
-  params: { status?: string; kind?: 'video' | 'logo' | 'audio'; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean },
+  params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean },
   ctx: ServiceContext
 ) {
   const statusParam = params.status ? String(params.status) : undefined
@@ -35,6 +35,7 @@ export async function list(
     rows = await repo.list({
       status: statusList,
       kind: params.kind,
+      imageRole: params.imageRole,
       userId: params.userId,
       spaceId: params.spaceId,
       cursorId: params.cursorId,
@@ -379,7 +380,8 @@ export async function createSignedUpload(input: {
   durationSeconds?: number | null
   modifiedFilename?: string
   description?: string
-  kind?: 'video' | 'logo' | 'audio'
+  kind?: 'video' | 'logo' | 'audio' | 'image'
+  imageRole?: string | null
   ownerUserId?: number | null
 }, ctx: ServiceContext): Promise<{ id: number; key: string; bucket: string; post: any }> {
   const filename = String(input.filename)
@@ -398,6 +400,8 @@ export async function createSignedUpload(input: {
   const { ymd: dateYmd, folder: datePrefix } = nowDateYmd()
   const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
   const kind = input.kind || 'video'
+  const imageRoleRaw = input.imageRole != null ? String(input.imageRole).trim().toLowerCase() : ''
+  const imageRole = imageRoleRaw ? imageRoleRaw : null
   const actorId = ctx.userId != null && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
   const isSystem = kind === 'audio'
     ? (() => {
@@ -412,16 +416,30 @@ export async function createSignedUpload(input: {
     if (!ok) throw new ForbiddenError()
   }
 
+  if (kind === 'image') {
+    // First role shipped: title_page. Keep a tight allowlist for now.
+    if (imageRole && imageRole !== 'title_page') {
+      const err: any = new DomainError('invalid_image_role', 'invalid_image_role', 400)
+      err.detail = { imageRole }
+      throw err
+    }
+  }
+
   // Basic file type validation per kind (best-effort: uses content-type when present, otherwise file extension).
   const allowed =
     kind === 'video'
       ? (lowerCt ? lowerCt.startsWith('video/') : false) || ['.mp4', '.webm', '.mov'].includes(extFromName)
-      : kind === 'logo'
-        ? (lowerCt ? ['image/png', 'image/jpeg', 'image/jpg'].includes(lowerCt) : false) || ['.png', '.jpg', '.jpeg'].includes(extFromName)
+      : kind === 'logo' || kind === 'image'
+        ? (lowerCt ? ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(lowerCt) : false) || ['.png', '.jpg', '.jpeg', '.webp'].includes(extFromName)
         : (lowerCt ? lowerCt.startsWith('audio/') : false) || ['.mp3', '.wav', '.aac', '.m4a', '.mp4', '.ogg', '.opus'].includes(extFromName)
   if (!allowed) {
     const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
     err.detail = { kind, contentType: contentType || null, ext: extFromName || null }
+    throw err
+  }
+  if ((kind === 'logo' || kind === 'image') && (lowerCt.includes('svg') || extFromName === '.svg')) {
+    const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
+    err.detail = { kind, contentType: contentType || null, ext: extFromName || null, reason: 'svg_not_allowed' }
     throw err
   }
 
@@ -433,8 +451,8 @@ export async function createSignedUpload(input: {
   let result: any
   try {
     ;[result] = await db.query(
-      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, is_system)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?)`,
+      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, image_role, is_system)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?)`,
       [
         UPLOAD_BUCKET,
         key,
@@ -449,6 +467,7 @@ export async function createSignedUpload(input: {
         assetUuid,
         dateYmd,
         kind,
+        imageRole,
         isSystem,
       ]
     )
@@ -472,6 +491,27 @@ export async function createSignedUpload(input: {
           durationSeconds ?? null,
           assetUuid,
           dateYmd,
+        ]
+      )
+    } else if (msg.includes('Unknown column') && msg.includes('image_role')) {
+      ;[result] = await db.query(
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, is_system)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?)`,
+        [
+          UPLOAD_BUCKET,
+          key,
+          filename,
+          modifiedFilename,
+          description,
+          contentType ?? null,
+          sizeBytes ?? null,
+          width ?? null,
+          height ?? null,
+          durationSeconds ?? null,
+          assetUuid,
+          dateYmd,
+          kind,
+          isSystem,
         ]
       )
     } else if (msg.includes('Unknown column') && msg.includes('is_system')) {
@@ -535,7 +575,7 @@ export async function createSignedUpload(input: {
   // Add a best-effort guardrail on Content-Type category when provided.
   if (contentType) {
     if (kind === 'video' && lowerCt.startsWith('video/')) conditions.push(['starts-with', '$Content-Type', 'video/'])
-    if (kind === 'logo' && ['image/png', 'image/jpeg', 'image/jpg'].includes(lowerCt)) {
+    if ((kind === 'logo' || kind === 'image') && ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(lowerCt)) {
       conditions.push(['starts-with', '$Content-Type', 'image/'])
     }
     if (kind === 'audio' && lowerCt.startsWith('audio/')) conditions.push(['starts-with', '$Content-Type', 'audio/'])

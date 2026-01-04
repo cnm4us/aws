@@ -2,14 +2,14 @@ import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
 import { applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
-import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
+import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MC_WATERMARK_POSTERS, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
 import path from 'path'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
 import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
-import { createMp4WithFrozenFirstFrame } from './ffmpeg/introPipeline'
+import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from './ffmpeg/introPipeline'
 import { enqueueJob } from '../features/media-jobs/service'
 
 export type RenderOptions = {
@@ -20,6 +20,63 @@ export type RenderOptions = {
   quality?: string | null
   sound?: string | null
   config?: any
+}
+
+function ensurePosterOutputGroups(settings: any) {
+  try {
+    const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : []
+    const hlsDests: string[] = []
+    for (const g of groups) {
+      const t = g?.OutputGroupSettings?.Type
+      if (t === 'HLS_GROUP_SETTINGS') {
+        const d = g?.OutputGroupSettings?.HlsGroupSettings?.Destination
+        if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
+          hlsDests.push(d)
+        }
+      }
+      if (t === 'CMAF_GROUP_SETTINGS') {
+        const d = g?.OutputGroupSettings?.CmafGroupSettings?.Destination
+        if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
+          hlsDests.push(d)
+        }
+      }
+    }
+    const uniqueDests = Array.from(new Set(hlsDests))
+    for (const dest of uniqueDests) {
+      let posterWidth: number | undefined
+      let posterHeight: number | undefined
+      if (dest.includes('/portrait/')) { posterWidth = 720; posterHeight = 1280 }
+      else if (dest.includes('/landscape/')) { posterWidth = 1280; posterHeight = 720 }
+      const hasPosterForDest = groups.some((g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS' && g?.OutputGroupSettings?.FileGroupSettings?.Destination === dest)
+      if (!hasPosterForDest) {
+        const name = dest.includes('/portrait/') ? 'Posters Portrait' : dest.includes('/landscape/') ? 'Posters Landscape' : 'Posters'
+        groups.push({
+          Name: name,
+          OutputGroupSettings: { Type: 'FILE_GROUP_SETTINGS', FileGroupSettings: { Destination: dest } },
+          Outputs: [
+            {
+              NameModifier: '_poster',
+              ContainerSettings: { Container: 'RAW' },
+              Extension: 'jpg',
+              VideoDescription: {
+                ...(posterWidth && posterHeight ? { Width: posterWidth, Height: posterHeight, ScalingBehavior: 'DEFAULT' as const, Sharpness: 50 } : {}),
+                CodecSettings: {
+                  Codec: 'FRAME_CAPTURE',
+                  FrameCaptureSettings: {
+                    CaptureIntervalUnits: 'FRAMES',
+                    CaptureInterval: 1,
+                    MaxCaptures: 1,
+                    Quality: 80,
+                  },
+                },
+              },
+            },
+          ],
+        })
+      }
+    }
+    ;(settings as any).OutputGroups = groups
+  } catch {}
 }
 
 export async function startMediaConvertForExistingProduction(opts: {
@@ -89,74 +146,41 @@ export async function startMediaConvertForExistingProduction(opts: {
     skipAudioNormalization: Boolean(opts.skipAudioNormalization),
   })
 
+  ensurePosterOutputGroups(settings)
+
+  let durationSeconds: number | null =
+    opts.upload?.duration_seconds != null && Number.isFinite(Number(opts.upload.duration_seconds)) && Number(opts.upload.duration_seconds) > 0
+      ? Number(opts.upload.duration_seconds)
+      : null
+  try {
+    const intro = (opts.configPayload as any)?.intro
+    if (durationSeconds != null && intro && typeof intro === 'object') {
+      const kind = String((intro as any).kind || '').trim()
+      if (kind === 'freeze_first_frame') {
+        const secs = Number((intro as any).seconds)
+        const rounded = Number.isFinite(secs) ? Math.round(secs) : 0
+        if (rounded > 0) durationSeconds += rounded
+      } else if (kind === 'title_image') {
+        const secs = Number((intro as any).holdSeconds)
+        const rounded = Number.isFinite(secs) ? Math.round(secs) : 0
+        if (rounded > 0) durationSeconds += rounded
+      }
+    }
+  } catch {}
+
   await applyLogoWatermarkIfConfigured(settings, {
     config: opts.configPayload,
-    videoDurationSeconds: opts.upload?.duration_seconds != null ? Number(opts.upload.duration_seconds) : null,
+    videoDurationSeconds: durationSeconds,
   })
 
   if (!opts.skipInlineAudioMux) {
     await applyMusicReplacementIfConfigured(settings, {
       config: opts.configPayload,
-      videoDurationSeconds: opts.upload?.duration_seconds != null ? Number(opts.upload.duration_seconds) : null,
+      videoDurationSeconds: durationSeconds,
       dateYmd: createdDate,
       productionUlid: opts.productionUlid,
     })
   }
-
-  try {
-    const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : []
-    const hlsDests: string[] = []
-    for (const g of groups) {
-      const t = g?.OutputGroupSettings?.Type
-      if (t === 'HLS_GROUP_SETTINGS') {
-        const d = g?.OutputGroupSettings?.HlsGroupSettings?.Destination
-        if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
-          hlsDests.push(d)
-        }
-      }
-      if (t === 'CMAF_GROUP_SETTINGS') {
-        const d = g?.OutputGroupSettings?.CmafGroupSettings?.Destination
-        if (typeof d === 'string' && d.startsWith(`s3://${OUTPUT_BUCKET}/`)) {
-          hlsDests.push(d)
-        }
-      }
-    }
-    const uniqueDests = Array.from(new Set(hlsDests))
-    for (const dest of uniqueDests) {
-      let posterWidth: number | undefined
-      let posterHeight: number | undefined
-      if (dest.includes('/portrait/')) { posterWidth = 720; posterHeight = 1280 }
-      else if (dest.includes('/landscape/')) { posterWidth = 1280; posterHeight = 720 }
-      const hasPosterForDest = groups.some((g) => g?.OutputGroupSettings?.Type === 'FILE_GROUP_SETTINGS' && g?.OutputGroupSettings?.FileGroupSettings?.Destination === dest)
-      if (!hasPosterForDest) {
-        const name = dest.includes('/portrait/') ? 'Posters Portrait' : dest.includes('/landscape/') ? 'Posters Landscape' : 'Posters'
-        groups.push({
-          Name: name,
-          OutputGroupSettings: { Type: 'FILE_GROUP_SETTINGS', FileGroupSettings: { Destination: dest } },
-          Outputs: [
-            {
-              NameModifier: '_poster',
-              ContainerSettings: { Container: 'RAW' },
-              Extension: 'jpg',
-              VideoDescription: {
-                ...(posterWidth && posterHeight ? { Width: posterWidth, Height: posterHeight, ScalingBehavior: 'DEFAULT' as const, Sharpness: 50 } : {}),
-                CodecSettings: {
-                  Codec: 'FRAME_CAPTURE',
-                  FrameCaptureSettings: {
-                    CaptureIntervalUnits: 'FRAMES',
-                    CaptureInterval: 1,
-                    MaxCaptures: 1,
-                    Quality: 80,
-                  },
-                },
-              },
-            },
-          ],
-        })
-      }
-    }
-    ;(settings as any).OutputGroups = groups
-  } catch {}
 
   try {
     const groups: any[] = Array.isArray((settings as any).OutputGroups) ? (settings as any).OutputGroups : []
@@ -225,12 +249,58 @@ export async function startProductionRender(options: RenderOptions) {
   }
   const prodUlid = genUlid()
   const musicUploadId = cfgObj && cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
-  const introSecondsRaw =
-    cfgObj && cfgObj.intro && typeof cfgObj.intro === 'object' ? Number((cfgObj.intro as any).seconds)
-      : (cfgObj && cfgObj.intro != null && (typeof cfgObj.intro === 'number' || typeof cfgObj.intro === 'string') ? Number(cfgObj.intro) : 0)
-  const introSeconds = Number.isFinite(introSecondsRaw) ? Math.max(0, Math.min(30, Math.round(introSecondsRaw))) : 0
+  const introRaw = cfgObj && (cfgObj as any).intro != null ? (cfgObj as any).intro : null
+  let introSeconds = 0
+  let introForJob: any = null
+  if (introRaw != null && introRaw !== false) {
+    if (typeof introRaw === 'number' || typeof introRaw === 'string') {
+      const secs = Number(introRaw)
+      const rounded = Number.isFinite(secs) ? Math.round(secs) : 0
+      if ([2, 3, 4, 5].includes(rounded)) {
+        introSeconds = rounded
+        introForJob = { kind: 'freeze_first_frame', seconds: introSeconds }
+      }
+    } else if (typeof introRaw === 'object') {
+      const kind = String((introRaw as any).kind || '').trim()
+      if (kind === 'freeze_first_frame') {
+        const secs = Number((introRaw as any).seconds)
+        const rounded = Number.isFinite(secs) ? Math.round(secs) : 0
+        if ([2, 3, 4, 5].includes(rounded)) {
+          introSeconds = rounded
+          introForJob = { kind: 'freeze_first_frame', seconds: introSeconds }
+        }
+      } else if (kind === 'title_image') {
+        const uploadId = Number((introRaw as any).uploadId)
+        const holdRaw = (introRaw as any).holdSeconds != null ? Number((introRaw as any).holdSeconds) : 0
+        const holdSeconds = Number.isFinite(holdRaw) ? Math.round(holdRaw) : 0
+        if (Number.isFinite(uploadId) && uploadId > 0 && [0, 2, 3, 4, 5].includes(holdSeconds)) {
+          const [rows] = await db.query(
+            `SELECT id, kind, image_role, status, s3_bucket, s3_key
+               FROM uploads
+              WHERE id = ?
+              LIMIT 1`,
+            [uploadId]
+          )
+          const img = (rows as any[])[0]
+          if (!img) throw new DomainError('image_upload_not_found', 'image_upload_not_found', 404)
+          const k = String(img.kind || '').toLowerCase()
+          if (k !== 'image') throw new DomainError('invalid_image_upload_kind', 'invalid_image_upload_kind', 400)
+          const role = String(img.image_role || '').toLowerCase()
+          if (role !== 'title_page') throw new DomainError('invalid_image_role', 'invalid_image_role', 400)
+          const st = String(img.status || '').toLowerCase()
+          if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_image_upload_state', 'invalid_image_upload_state', 422)
+          introForJob = {
+            kind: 'title_image',
+            uploadId,
+            holdSeconds,
+            titleImage: { bucket: String(img.s3_bucket), key: String(img.s3_key) },
+          }
+        }
+      }
+    }
+  }
   const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
-  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introSeconds > 0))
+  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null))
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
   if (needsMediaJob && hasMusic) {
@@ -276,20 +346,21 @@ export async function startProductionRender(options: RenderOptions) {
         ? Number(upload.duration_seconds)
         : null
 
-    jobInputBase = {
-      productionUlid: prodUlid,
-      userId: Number(userId),
-      uploadId: Number(upload.id),
-      dateYmd: createdDate,
-      originalLeaf,
-      videoDurationSeconds,
-      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
-      introSeconds: introSeconds > 0 ? introSeconds : null,
-      mode: mode === 'replace' ? 'replace' : 'mix',
-      videoGainDb,
-      musicGainDb,
-      duckingMode,
+	    jobInputBase = {
+	      productionUlid: prodUlid,
+	      userId: Number(userId),
+	      uploadId: Number(upload.id),
+	      dateYmd: createdDate,
+	      originalLeaf,
+	      videoDurationSeconds,
+	      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+	      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+	      intro: introForJob,
+	      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
+	      mode: mode === 'replace' ? 'replace' : 'mix',
+	      videoGainDb,
+	      musicGainDb,
+	      duckingMode,
       duckingGate,
       duckingAmountDb,
       openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
@@ -314,7 +385,7 @@ export async function startProductionRender(options: RenderOptions) {
       const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
       return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
     }
-    if (introSeconds > 0) {
+    if (introForJob != null) {
       const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
       const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
       const videoDurationSeconds =
@@ -330,7 +401,8 @@ export async function startProductionRender(options: RenderOptions) {
         originalLeaf,
         videoDurationSeconds,
         video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-        introSeconds,
+        intro: introForJob,
+        introSeconds: introForJob.kind === 'freeze_first_frame' ? introSeconds : 0,
         outputBucket: UPLOAD_BUCKET,
       })
       return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
@@ -340,17 +412,27 @@ export async function startProductionRender(options: RenderOptions) {
   // Inline fallback: if intro is selected but media jobs are disabled, pre-master the video synchronously.
   // This keeps feature parity in dev; production should prefer MEDIA_JOBS_ENABLED=1.
   let inputOverride: string | null = null
-  if (!MEDIA_JOBS_ENABLED && introSeconds > 0) {
+  if (!MEDIA_JOBS_ENABLED && introForJob != null) {
     const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
     const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
-    const out = await createMp4WithFrozenFirstFrame({
-      uploadBucket: UPLOAD_BUCKET,
-      dateYmd: createdDate,
-      productionUlid: prodUlid,
-      originalLeaf,
-      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-      freezeSeconds: introSeconds,
-    })
+    const out = introForJob.kind === 'title_image'
+      ? await createMp4WithTitleImageIntro({
+        uploadBucket: UPLOAD_BUCKET,
+        dateYmd: createdDate,
+        productionUlid: prodUlid,
+        originalLeaf,
+        video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+        titleImage: introForJob.titleImage,
+        holdSeconds: introForJob.holdSeconds,
+      })
+      : await createMp4WithFrozenFirstFrame({
+        uploadBucket: UPLOAD_BUCKET,
+        dateYmd: createdDate,
+        productionUlid: prodUlid,
+        originalLeaf,
+        video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+        freezeSeconds: introSeconds,
+      })
     inputOverride = out.s3Url
   }
 
@@ -494,6 +576,7 @@ async function applyLogoWatermarkIfConfigured(settings: any, opts: { config: any
   const logoUploadId = cfgObj.logoUploadId != null ? Number(cfgObj.logoUploadId) : null
   const snapshot = (cfgObj.logoConfigSnapshot && typeof cfgObj.logoConfigSnapshot === 'object') ? (cfgObj.logoConfigSnapshot as LogoConfigSnapshot) : null
   if (!logoUploadId || !snapshot) return
+  const includePosters = Boolean(MC_WATERMARK_POSTERS)
 
   const db = getPool()
   const [rows] = await db.query(`SELECT id, kind, status, s3_bucket, s3_key, content_type, width, height FROM uploads WHERE id = ? LIMIT 1`, [logoUploadId])
@@ -520,13 +603,13 @@ async function applyLogoWatermarkIfConfigured(settings: any, opts: { config: any
   const groups: any[] = Array.isArray(settings?.OutputGroups) ? settings.OutputGroups : []
   for (const g of groups) {
     const t = g?.OutputGroupSettings?.Type
-    if (t !== 'HLS_GROUP_SETTINGS' && t !== 'CMAF_GROUP_SETTINGS') continue
+    if (t !== 'HLS_GROUP_SETTINGS' && t !== 'CMAF_GROUP_SETTINGS' && !(includePosters && t === 'FILE_GROUP_SETTINGS')) continue
     const outs: any[] = Array.isArray(g?.Outputs) ? g.Outputs : []
     for (const o of outs) {
       const vd = o?.VideoDescription
       const cs = vd?.CodecSettings
       if (!vd || !cs) continue
-      if (cs.Codec === 'FRAME_CAPTURE') continue
+      if (cs.Codec === 'FRAME_CAPTURE' && !includePosters) continue
       const outW = vd.Width != null ? Number(vd.Width) : null
       const outH = vd.Height != null ? Number(vd.Height) : null
       if (!outW || !outH) continue

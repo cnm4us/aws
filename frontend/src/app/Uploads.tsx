@@ -18,7 +18,8 @@ type UploadListItem = {
   width: number | null
   height: number | null
   status: string
-  kind?: 'video' | 'logo' | string
+  kind?: 'video' | 'logo' | 'image' | string
+  image_role?: string | null
   created_at: string
   uploaded_at: string | null
   source_deleted_at?: string | null
@@ -114,8 +115,17 @@ const UploadsPage: React.FC = () => {
   const kind = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('kind') || '').toLowerCase()
-    return raw === 'logo' ? 'logo' : 'video'
+    return raw === 'logo' ? 'logo' : raw === 'image' ? 'image' : 'video'
   }, [])
+
+  const imageRole = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const raw = String(params.get('image_role') || params.get('imageRole') || '').trim().toLowerCase()
+      if (raw) return raw
+    } catch {}
+    return kind === 'image' ? 'title_page' : null
+  }, [kind])
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [uploads, setUploads] = useState<UploadListItem[]>([])
@@ -125,20 +135,21 @@ const UploadsPage: React.FC = () => {
   const [deletingSource, setDeletingSource] = useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  const loadUploads = useCallback(
-    async (userId: number) => {
+	  const loadUploads = useCallback(
+	    async (userId: number) => {
       setLoading(true)
       setError(null)
-      try {
-        const params = new URLSearchParams({
-          limit: '100',
-          user_id: String(userId),
-          include_publications: '1',
-          kind,
-        })
-        const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
-        if (!res.ok) throw new Error('failed_to_fetch_uploads')
-        const data = (await res.json()) as UploadListItem[]
+	      try {
+	        const params = new URLSearchParams({
+	          limit: '100',
+	          user_id: String(userId),
+	          include_publications: kind === 'video' ? '1' : '0',
+	          kind,
+	        })
+	        if (kind === 'image' && imageRole) params.set('image_role', imageRole)
+	        const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
+	        if (!res.ok) throw new Error('failed_to_fetch_uploads')
+	        const data = (await res.json()) as UploadListItem[]
         const items = Array.isArray(data) ? data : []
         // Hide uploads whose source file was deleted (keeps DB rows + publications intact, but removes them from the "Uploads" view).
         setUploads(kind === 'video' ? items.filter((u) => !u.source_deleted_at) : items)
@@ -147,9 +158,9 @@ const UploadsPage: React.FC = () => {
       } finally {
         setLoading(false)
       }
-    },
-    [kind]
-  )
+	    },
+	    [kind, imageRole]
+	  )
 
   useEffect(() => {
     let cancelled = false
@@ -206,12 +217,12 @@ const UploadsPage: React.FC = () => {
 	const uploadCards = useMemo(() => {
 	    return uploads.map((upload) => {
 	      const poster = pickPoster(upload)
-	      const logoSrc = kind === 'logo' ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
+	      const logoSrc = (kind === 'logo' || kind === 'image') ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
 	      const image =
-	        kind === 'logo' ? (
+	        kind === 'logo' || kind === 'image' ? (
 	          <img
 	            src={logoSrc as string}
-            alt="logo"
+            alt={kind === 'image' ? 'image' : 'logo'}
             style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
           />
         ) : poster ? (
@@ -236,9 +247,9 @@ const UploadsPage: React.FC = () => {
 	      const detailHref =
 	        kind === 'video'
 	          ? productionHref
-	          : kind === 'logo'
+	          : kind === 'logo' || kind === 'image'
 	            ? logoSrc || '#'
-	              : '#'
+	            : '#'
 	      const isDeleting = !!deleting[upload.id]
 
 	      if (kind === 'video') {
@@ -413,7 +424,7 @@ const UploadsPage: React.FC = () => {
                 {metaLine}
               </div>
             )}
-            {kind === 'logo' ? (
+            {kind === 'logo' || kind === 'image' ? (
               <div style={{ marginTop: 6 }}>
                 <button
                   type="button"
@@ -478,54 +489,66 @@ const UploadsPage: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-	        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-	        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-	          {[
-	            { label: 'Videos', kind: 'video' },
-	            { label: 'Logos', kind: 'logo' },
-	          ].map((t) => {
-	            const active = kind === t.kind
-	            const href = t.kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(t.kind)}`
-	            return (
-              <a
-                key={t.kind}
-                href={href}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '8px 12px',
-                  borderRadius: 999,
-                  border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.16)',
-                  background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
-                  color: '#fff',
-                  textDecoration: 'none',
-                  fontWeight: 650,
-                }}
-              >
-                {t.label}
-              </a>
-            )
-          })}
-        </div>
+		        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
+		        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+		          {[
+		            { label: 'Videos', kind: 'video' },
+		            { label: 'Logos', kind: 'logo' },
+		            { label: 'Title Pages', kind: 'image', image_role: 'title_page' },
+		          ].map((t: any) => {
+		            const active = kind === t.kind && (t.kind !== 'image' || String(imageRole || '') === String(t.image_role || 'title_page'))
+		            const href =
+		              t.kind === 'video'
+		                ? '/uploads'
+		                : t.kind === 'image'
+		                  ? `/uploads?kind=image&image_role=${encodeURIComponent(String(t.image_role || 'title_page'))}`
+		                  : `/uploads?kind=${encodeURIComponent(String(t.kind))}`
+		            return (
+		              <a
+		                key={`${t.kind}:${t.image_role || ''}`}
+		                href={href}
+		                style={{
+		                  display: 'inline-flex',
+		                  alignItems: 'center',
+		                  justifyContent: 'center',
+		                  padding: '8px 12px',
+		                  borderRadius: 999,
+		                  border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.16)',
+		                  background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+		                  color: '#fff',
+		                  textDecoration: 'none',
+		                  fontWeight: 650,
+		                }}
+		              >
+		                {t.label}
+		              </a>
+		            )
+		          })}
+		        </div>
 
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-	            <h1 style={{ margin: 0, fontSize: 28 }}>
-	              {kind === 'video' ? 'My Videos' : 'My Logos'}
-	            </h1>
+		            <h1 style={{ margin: 0, fontSize: 28 }}>
+		              {kind === 'video' ? 'My Videos' : kind === 'logo' ? 'My Logos' : 'My Title Pages'}
+		            </h1>
 	            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
-	              {kind === 'video'
-	                ? 'Upload new videos and manage where they’re published.'
-	                : kind === 'logo'
-	                  ? 'Upload logos to use as watermarks in future productions.'
-	                  : ''}
-	            </p>
-	          </div>
-	          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <a
-              href={kind === 'video' ? '/uploads/new' : `/uploads/new?kind=${encodeURIComponent(kind)}`}
-              style={{
+		              {kind === 'video'
+		                ? 'Upload new videos and manage where they’re published.'
+		                : kind === 'logo'
+		                  ? 'Upload logos to use as watermarks in future productions.'
+		                  : 'Upload title page images to use as posters and optional intro holds.'}
+		            </p>
+		          </div>
+		          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+	            <a
+	              href={
+	                kind === 'video'
+	                  ? '/uploads/new'
+	                  : kind === 'image'
+	                    ? `/uploads/new?kind=image&imageRole=${encodeURIComponent(imageRole || 'title_page')}`
+	                    : `/uploads/new?kind=${encodeURIComponent(kind)}`
+	              }
+	              style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -575,7 +598,7 @@ const UploadsPage: React.FC = () => {
 	              ? 'No videos yet. Get started by uploading your first video.'
 	              : kind === 'logo'
 	                ? 'No logos yet. Upload a logo to use as a watermark in future productions.'
-	                : ''}
+	                : 'No title pages yet. Upload an image to use as a title page in productions.'}
 	          </div>
 	        ) : (
 	          kind === 'video' ? (

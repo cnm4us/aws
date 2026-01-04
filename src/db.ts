@@ -67,6 +67,9 @@ export async function ensureSchema(db: DB) {
   await db.query(ddl);
 
   // Add new columns if migrating from an older schema
+  // uploads.kind is required for assets (video/logo/audio/image); historical environments used a migration script.
+  // Keep this here to make fresh environments work without running separate migrations.
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS kind VARCHAR(16) NOT NULL DEFAULT 'video'`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS width INT NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS height INT NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS duration_seconds INT NULL`);
@@ -76,6 +79,8 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS orientation ENUM('portrait','landscape') NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS modified_filename VARCHAR(512) NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+  // Optional role/scoping for image assets (e.g. title_page, lower_third, overlay).
+  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS image_role VARCHAR(32) NULL`);
   // Ownership/scoping (optional; supports RBAC+ checks)
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS channel_id BIGINT UNSIGNED NULL`);
@@ -89,6 +94,7 @@ export async function ensureSchema(db: DB) {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_source_deleted_at ON uploads (source_deleted_at, id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
 
 	  await db.query(`
 	    CREATE TABLE IF NOT EXISTS logo_configurations (

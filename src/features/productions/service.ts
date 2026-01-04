@@ -100,7 +100,7 @@ function normalizeProductionOutputPrefix(prefix: string): string {
 async function loadAssetUploadOrThrow(
   uploadId: number,
   currentUserId: number,
-  opts: { expectedKind: 'logo' | 'audio'; allowAdmin: boolean; requireReadyStatus?: boolean }
+  opts: { expectedKind: 'logo' | 'audio' | 'image'; allowAdmin: boolean; requireReadyStatus?: boolean; imageRole?: string }
 ) {
   const row = await repo.loadUpload(uploadId)
   if (!row) {
@@ -111,6 +111,12 @@ async function loadAssetUploadOrThrow(
   if (kind !== opts.expectedKind) {
     const code = `invalid_${opts.expectedKind}_upload_kind`
     throw new DomainError(code, code, 400)
+  }
+  if (opts.expectedKind === 'image' && opts.imageRole) {
+    const role = String((row as any).image_role || '').toLowerCase()
+    if (role !== String(opts.imageRole).toLowerCase()) {
+      throw new DomainError('invalid_image_role', 'invalid_image_role', 400)
+    }
   }
   const ownerId = row.user_id != null ? Number(row.user_id) : null
   const isOwner = ownerId != null && ownerId === Number(currentUserId)
@@ -231,7 +237,9 @@ export async function create(
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
 
   // Production intro (Plan 37): optional freeze-first-frame intro segment.
-  // Config shape: intro: { kind: 'freeze_first_frame', seconds: 2|3|4|5 } | null
+  // Config shape:
+  // - intro: { kind: 'freeze_first_frame', seconds: 2|3|4|5 } | null
+  // - intro: { kind: 'title_image', uploadId: number, holdSeconds: 0|2|3|4|5 } | null
   {
     const introRaw = mergedConfig.intro
     if (introRaw == null || introRaw === false) {
@@ -244,12 +252,24 @@ export async function create(
       mergedConfig.intro = { kind: 'freeze_first_frame', seconds: rounded }
     } else if (typeof introRaw === 'object') {
       const kind = String((introRaw as any).kind || '').trim()
-      if (kind !== 'freeze_first_frame') throw new DomainError('invalid_intro', 'invalid_intro', 400)
-      const secs = Number((introRaw as any).seconds)
-      if (!Number.isFinite(secs)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
-      const rounded = Math.round(secs)
-      if (![2, 3, 4, 5].includes(rounded)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
-      mergedConfig.intro = { kind: 'freeze_first_frame', seconds: rounded }
+      if (kind === 'freeze_first_frame') {
+        const secs = Number((introRaw as any).seconds)
+        if (!Number.isFinite(secs)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
+        const rounded = Math.round(secs)
+        if (![2, 3, 4, 5].includes(rounded)) throw new DomainError('invalid_intro_seconds', 'invalid_intro_seconds', 400)
+        mergedConfig.intro = { kind: 'freeze_first_frame', seconds: rounded }
+      } else if (kind === 'title_image') {
+        const uploadId = Number((introRaw as any).uploadId)
+        if (!Number.isFinite(uploadId) || uploadId <= 0) throw new DomainError('invalid_intro_upload', 'invalid_intro_upload', 400)
+        const holdRaw = (introRaw as any).holdSeconds != null ? Number((introRaw as any).holdSeconds) : 0
+        if (!Number.isFinite(holdRaw)) throw new DomainError('invalid_intro_hold', 'invalid_intro_hold', 400)
+        const hold = Math.round(holdRaw)
+        if (![0, 2, 3, 4, 5].includes(hold)) throw new DomainError('invalid_intro_hold', 'invalid_intro_hold', 400)
+        await loadAssetUploadOrThrow(uploadId, currentUserId, { expectedKind: 'image', imageRole: 'title_page', allowAdmin: canProduceAny })
+        mergedConfig.intro = { kind: 'title_image', uploadId, holdSeconds: hold }
+      } else {
+        throw new DomainError('invalid_intro', 'invalid_intro', 400)
+      }
     } else {
       throw new DomainError('invalid_intro', 'invalid_intro', 400)
     }

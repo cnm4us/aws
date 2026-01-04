@@ -82,7 +82,7 @@ function parseUploadId(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null {
+function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('pick') || '').toLowerCase()
@@ -90,6 +90,7 @@ function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null {
     if (raw === 'audioconfig') return 'audioConfig'
     if (raw === 'logo') return 'logo'
     if (raw === 'logoconfig') return 'logoConfig'
+    if (raw === 'titlepage') return 'titlePage'
   } catch {}
   return null
 }
@@ -113,6 +114,33 @@ function parseLogoUploadId(): number | null {
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseTitleUploadId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('titleUploadId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseTitleHoldSeconds(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('titleHoldSeconds')
+    if (raw == null || raw === '') return null
+    const n = Number(raw)
+    const rounded = Math.round(n)
+    if (!Number.isFinite(rounded) || rounded < 0) return null
+    if (![0, 2, 3, 4, 5].includes(rounded)) return null
+    return rounded
   } catch {
     return null
   }
@@ -245,6 +273,7 @@ type AudioSortMode = 'recent' | 'alpha'
 type AudioConfigSortMode = 'recent' | 'alpha'
 type LogoConfigSortMode = 'recent' | 'alpha'
 type LogoSortMode = 'recent' | 'alpha'
+type TitlePageSortMode = 'recent' | 'alpha'
 
 export default function ProducePage() {
   const uploadId = useMemo(() => parseUploadId(), [])
@@ -257,21 +286,25 @@ export default function ProducePage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [logos, setLogos] = useState<AssetItem[]>([])
+  const [titlePages, setTitlePages] = useState<AssetItem[]>([])
   const [audios, setAudios] = useState<AssetItem[]>([])
   const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
   const [audioConfigs, setAudioConfigs] = useState<AudioConfig[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(() => parseLogoUploadId())
+  const [selectedTitleUploadId, setSelectedTitleUploadId] = useState<number | null>(() => parseTitleUploadId())
+  const [titleHoldSeconds, setTitleHoldSeconds] = useState<number>(() => parseTitleHoldSeconds() ?? 0)
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
   const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
   const [introSeconds, setIntroSeconds] = useState<number | null>(() => parseIntroSeconds())
-  const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | null>(() => parsePick())
+  const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
+  const [titlePageSort, setTitlePageSort] = useState<TitlePageSortMode>('recent')
 
   useEffect(() => {
     let cancelled = false
@@ -352,8 +385,25 @@ export default function ProducePage() {
           return
         }
       } catch {}
+      try {
+        const pendingRaw = sessionStorage.getItem('produce:pendingTitleUploadId')
+        if (pendingRaw !== null) {
+          sessionStorage.removeItem('produce:pendingTitleUploadId')
+          const pending = pendingRaw === '' ? null : Number(pendingRaw)
+          const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
+          setSelectedTitleUploadId(nextId)
+          replaceQueryParams(
+            { titleUploadId: nextId == null ? null : String(nextId), pick: null, introSeconds: null },
+            { ...(window.history.state || {}), modal: null }
+          )
+          if (nextId == null) setTitleHoldSeconds(0)
+          return
+        }
+      } catch {}
       setSelectedAudioId(parseMusicUploadId())
       setSelectedLogoId(parseLogoUploadId())
+      setSelectedTitleUploadId(parseTitleUploadId())
+      setTitleHoldSeconds(parseTitleHoldSeconds() ?? 0)
       setSelectedLogoConfigId(parseLogoConfigId())
       setSelectedAudioConfigId(parseAudioConfigId())
     }
@@ -371,22 +421,29 @@ export default function ProducePage() {
 		        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
         const logoParams = new URLSearchParams(base)
         logoParams.set('kind', 'logo')
-        const [logoRes, audioRes, cfgRes, audioCfgRes] = await Promise.all([
+        const titleParams = new URLSearchParams(base)
+        titleParams.set('kind', 'image')
+        titleParams.set('image_role', 'title_page')
+        const [logoRes, titleRes, audioRes, cfgRes, audioCfgRes] = await Promise.all([
           fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
+          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
           fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
           fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
           fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
         ])
         const logoJson = await logoRes.json().catch(() => [])
+        const titleJson = await titleRes.json().catch(() => [])
         const audioJson = await audioRes.json().catch(() => [])
         const cfgJson = await cfgRes.json().catch(() => [])
         const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
         if (!logoRes.ok) throw new Error('Failed to load logos')
+        if (!titleRes.ok) throw new Error('Failed to load title pages')
         if (!audioRes.ok) throw new Error('Failed to load system audio')
         if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
         if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
         if (cancelled) return
         setLogos(Array.isArray(logoJson) ? logoJson : [])
+        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
         setAudios(Array.isArray(audioJson) ? audioJson : [])
         const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
         setLogoConfigs(cfgs as any)
@@ -469,6 +526,26 @@ export default function ProducePage() {
     return items
   }, [logos, logoSort])
 
+  const selectedTitlePage = useMemo(() => {
+    if (selectedTitleUploadId == null) return null
+    return titlePages.find((t) => t.id === selectedTitleUploadId) || null
+  }, [titlePages, selectedTitleUploadId])
+
+  const sortedTitlePages = useMemo(() => {
+    const items = Array.isArray(titlePages) ? [...titlePages] : []
+    const nameFor = (t: AssetItem) => String((t.modified_filename || t.original_filename || '')).trim().toLowerCase()
+    if (titlePageSort === 'alpha') {
+      items.sort((a, b) => nameFor(a).localeCompare(nameFor(b)))
+      return items
+    }
+    items.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+      return tb - ta
+    })
+    return items
+  }, [titlePages, titlePageSort])
+
   const selectedLogoConfig = useMemo(() => {
     if (selectedLogoConfigId == null) return null
     return logoConfigs.find((c) => c.id === selectedLogoConfigId) || null
@@ -539,6 +616,11 @@ export default function ProducePage() {
     pushQueryParams({ pick: 'logoConfig' }, { ...(window.history.state || {}), modal: 'logoConfigPicker' })
   }
 
+  const openTitlePagePicker = () => {
+    setPick('titlePage')
+    pushQueryParams({ pick: 'titlePage' }, { ...(window.history.state || {}), modal: 'titlePagePicker' })
+  }
+
   const closePicker = () => {
     setPick(null)
     replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
@@ -557,6 +639,23 @@ export default function ProducePage() {
   const applyLogoSelection = (id: number | null) => {
     setSelectedLogoId(id)
     replaceQueryParams({ logoUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+  }
+
+  const applyTitlePageSelection = (id: number | null) => {
+    setSelectedTitleUploadId(id)
+    setIntroSeconds(null)
+    if (id == null) {
+      setTitleHoldSeconds(0)
+      replaceQueryParams(
+        { titleUploadId: null, titleHoldSeconds: null, introSeconds: null },
+        { ...(window.history.state || {}), modal: null }
+      )
+      return
+    }
+    replaceQueryParams(
+      { titleUploadId: String(id), titleHoldSeconds: String(titleHoldSeconds || 0), introSeconds: null },
+      { ...(window.history.state || {}), modal: null }
+    )
   }
 
   const applyAudioConfigSelection = (id: number | null) => {
@@ -641,6 +740,22 @@ export default function ProducePage() {
     closePicker()
   }
 
+  const chooseTitlePageFromPicker = (id: number | null) => {
+    setPick(null)
+    const modal = (window.history.state as any)?.modal
+    if (modal === 'titlePagePicker') {
+      try {
+        sessionStorage.setItem('produce:pendingTitleUploadId', id == null ? '' : String(id))
+      } catch {}
+      try {
+        window.history.back()
+        return
+      } catch {}
+    }
+    applyTitlePageSelection(id)
+    closePicker()
+  }
+
   const backHref = uploadId ? `/productions?upload=${encodeURIComponent(String(uploadId))}` : '/productions'
 
   if (loading) {
@@ -692,7 +807,9 @@ export default function ProducePage() {
 	        logoUploadId: selectedLogoId ?? null,
 	        logoConfigId: selectedLogoConfigId ?? null,
 	      }
-	      if (introSeconds != null) {
+	      if (selectedTitleUploadId != null) {
+	        body.config = { intro: { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: titleHoldSeconds || 0 } }
+	      } else if (introSeconds != null) {
 	        body.config = { intro: { kind: 'freeze_first_frame', seconds: introSeconds } }
 	      }
 	      const trimmedName = productionName.trim()
@@ -774,17 +891,126 @@ export default function ProducePage() {
                 />
 	              </label>
 
+                <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ color: '#bbb' }}>Title Page (optional)</div>
+                    <a
+                      href="/uploads?kind=image&image_role=title_page"
+                      style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}
+                    >
+                      Manage title pages
+                    </a>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ color: '#d4af37', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedTitlePage ? (selectedTitlePage.modified_filename || selectedTitlePage.original_filename || `Title ${selectedTitlePage.id}`) : 'None'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={openTitlePagePicker}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(212,175,55,0.85)',
+                          background: 'rgba(212,175,55,0.14)',
+                          color: '#d4af37',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Choose
+                      </button>
+                      {selectedTitleUploadId != null ? (
+                        <button
+                          type="button"
+                          onClick={() => applyTitlePageSelection(null)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.65)',
+                            background: 'rgba(212,175,55,0.10)',
+                            color: '#d4af37',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {selectedTitlePage ? (
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <img
+                        src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
+                        alt="title page"
+                        style={{ width: 96, height: 54, objectFit: 'cover', background: '#111', borderRadius: 10 }}
+                      />
+                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                        {formatBytes(selectedTitlePage.size_bytes)}{selectedTitlePage.created_at ? ` • ${formatDate(selectedTitlePage.created_at)}` : ''}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#777', fontSize: 13 }}>
+                      Optional image that becomes frame 0 (poster). You can hold it before the video starts.
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb' }}>Title Hold</div>
+                    <select
+                      value={String(titleHoldSeconds || 0)}
+                      disabled={selectedTitleUploadId == null}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        const next = raw ? Math.round(Number(raw)) : 0
+                        const final = [0, 2, 3, 4, 5].includes(next) ? next : 0
+                        setTitleHoldSeconds(final)
+                        pushQueryParams({ titleHoldSeconds: selectedTitleUploadId == null ? null : String(final) })
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #2a2a2a',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        opacity: selectedTitleUploadId == null ? 0.6 : 1,
+                      }}
+                    >
+                      <option value="0">None</option>
+                      <option value="2">2 seconds</option>
+                      <option value="3">3 seconds</option>
+                      <option value="4">4 seconds</option>
+                      <option value="5">5 seconds</option>
+                    </select>
+                    <div style={{ color: '#777', fontSize: 13 }}>
+                      Holds the title page before playback begins.
+                    </div>
+                  </div>
+                </div>
+
 	              <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
 	                <div style={{ color: '#bbb' }}>Freeze first frame (optional)</div>
 	                <select
 	                  value={introSeconds == null ? '' : String(introSeconds)}
+                    disabled={selectedTitleUploadId != null}
 	                  onChange={(e) => {
 	                    const raw = e.target.value
 	                    const next = raw ? Number(raw) : null
 	                    const normalized = next != null && Number.isFinite(next) ? Math.round(next) : null
 	                    const final = normalized != null && [2, 3, 4, 5].includes(normalized) ? normalized : null
 	                    setIntroSeconds(final)
-	                    pushQueryParams({ introSeconds: final == null ? null : String(final) })
+                      if (final != null) {
+                        setSelectedTitleUploadId(null)
+                        setTitleHoldSeconds(0)
+                        pushQueryParams({ introSeconds: String(final), titleUploadId: null, titleHoldSeconds: null })
+                      } else {
+	                      pushQueryParams({ introSeconds: null })
+                      }
 	                  }}
 	                  style={{
 	                    padding: '10px 12px',
@@ -793,6 +1019,7 @@ export default function ProducePage() {
 	                    background: '#0c0c0c',
 	                    color: '#fff',
 	                    outline: 'none',
+                      opacity: selectedTitleUploadId != null ? 0.6 : 1,
 	                  }}
 	                >
 	                  <option value="">None</option>
@@ -1392,6 +1619,165 @@ export default function ProducePage() {
 	                        >
 	                          {selected ? 'Selected' : 'Select'}
 	                        </button>
+	                      </div>
+	                    </div>
+	                  )
+	                })
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      ) : pick === 'titlePage' ? (
+	        <div
+	          role="dialog"
+	          aria-modal="true"
+	          style={{
+	            position: 'fixed',
+	            inset: 0,
+	            background: '#050505',
+	            color: '#fff',
+	            zIndex: 10050,
+	            overflow: 'auto',
+	          }}
+	        >
+	          <div style={{ maxWidth: 960, margin: '0 auto', padding: 'max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px))' }}>
+	            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  const modal = (window.history.state as any)?.modal
+	                  if (modal === 'titlePagePicker') {
+	                    try { window.history.back(); return } catch {}
+	                  }
+	                  closePicker()
+	                }}
+	                style={{
+	                  padding: '10px 12px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 700,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                ← Back
+	              </button>
+	              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Title Page</div>
+	              <div style={{ width: 84 }} />
+	            </div>
+
+	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+	              <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
+	              <button
+	                type="button"
+	                onClick={() => setTitlePageSort('recent')}
+	                style={{
+	                  padding: '8px 12px',
+	                  borderRadius: 999,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: titlePageSort === 'recent' ? '#0a84ff' : '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 800,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                Recent
+	              </button>
+	              <button
+	                type="button"
+	                onClick={() => setTitlePageSort('alpha')}
+	                style={{
+	                  padding: '8px 12px',
+	                  borderRadius: 999,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: titlePageSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 800,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                Alphabetical
+	              </button>
+	              <a href="/uploads?kind=image&image_role=title_page" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage title pages</a>
+	            </div>
+
+	            <div style={{ display: 'grid', gap: 10 }}>
+	              <button
+	                type="button"
+	                onClick={() => chooseTitlePageFromPicker(null)}
+	                style={{
+	                  textAlign: 'left',
+	                  padding: 12,
+	                  borderRadius: 12,
+	                  border: selectedTitleUploadId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                  background: selectedTitleUploadId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
+	                  color: '#fff',
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                None
+	              </button>
+
+	              {assetsLoading ? (
+	                <div style={{ color: '#888' }}>Loading title pages…</div>
+	              ) : assetsError ? (
+	                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+	              ) : sortedTitlePages.length === 0 ? (
+	                <div style={{ color: '#bbb' }}>
+	                  No title pages uploaded yet. <a href="/uploads/new?kind=image&imageRole=title_page" style={{ color: '#9cf' }}>Upload a title page</a>.
+	                </div>
+	              ) : (
+	                sortedTitlePages.map((t) => {
+	                  const selected = selectedTitleUploadId === t.id
+	                  const name = (t.modified_filename || t.original_filename || `Title ${t.id}`).trim()
+	                  const src = `/api/uploads/${encodeURIComponent(String(t.id))}/file`
+	                  const meta = [
+	                    t.size_bytes != null ? formatBytes(t.size_bytes) : null,
+	                    t.created_at ? formatDate(t.created_at) : null,
+	                  ].filter(Boolean).join(' • ')
+	                  return (
+	                    <div
+	                      key={t.id}
+	                      style={{
+	                        padding: '10px 12px 12px',
+	                        borderRadius: 12,
+	                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                        background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
+	                        display: 'grid',
+	                        gap: 10,
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+	                        <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+	                          {name}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => chooseTitlePageFromPicker(t.id)}
+	                          style={{
+	                            padding: '8px 12px',
+	                            borderRadius: 10,
+	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                            color: selected ? '#fff' : '#d4af37',
+	                            fontWeight: 800,
+	                            cursor: 'pointer',
+	                            flexShrink: 0,
+	                          }}
+	                        >
+	                          {selected ? 'Selected' : 'Select'}
+	                        </button>
+	                      </div>
+
+	                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+	                        <img src={src} alt="title page" style={{ width: 160, height: 90, objectFit: 'cover', background: '#111', borderRadius: 10 }} />
+	                        <div style={{ minWidth: 0 }}>
+	                          {meta ? <div style={{ color: '#888', fontSize: 13 }}>{meta}</div> : null}
+	                          <div style={{ marginTop: 6, color: '#777', fontSize: 13 }}>
+	                            Tip: choose a title page and a hold duration to create a title intro.
+	                          </div>
+	                        </div>
 	                      </div>
 	                    </div>
 	                  )

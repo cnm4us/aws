@@ -40,6 +40,10 @@ export type MediaJobAttemptRow = {
 
 export type S3Pointer = { bucket: string; key: string }
 
+export type IntroV1 =
+  | { kind: 'freeze_first_frame'; seconds: number }
+  | { kind: 'title_image'; uploadId: number; holdSeconds: number; titleImage: S3Pointer }
+
 export type AudioMasterV1Input = {
   productionId: number
   productionUlid: string
@@ -50,6 +54,8 @@ export type AudioMasterV1Input = {
   videoDurationSeconds: number | null
   video: S3Pointer
   music: S3Pointer
+  intro?: IntroV1 | null
+  // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number | null
   mode: 'replace' | 'mix'
   videoGainDb: number
@@ -75,7 +81,9 @@ export type VideoMasterV1Input = {
   originalLeaf: string
   videoDurationSeconds: number | null
   video: S3Pointer
-  introSeconds: number
+  intro?: IntroV1 | null
+  // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
+  introSeconds?: number
   outputBucket: string
 }
 

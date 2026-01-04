@@ -76,16 +76,16 @@ function extLower(name: string): string {
   return (m ? m[1] : '').toLowerCase()
 }
 
-function isAllowedFile(kind: 'video' | 'logo' | 'audio', file: File): boolean {
+function isAllowedFile(kind: 'video' | 'logo' | 'audio' | 'image', file: File): boolean {
   const ct = String(file.type || '').toLowerCase()
   const ext = extLower(file.name)
   if (kind === 'video') {
     if (ct.startsWith('video/')) return true
     return ['.mp4', '.webm', '.mov'].includes(ext)
   }
-  if (kind === 'logo') {
-    if (ct === 'image/png' || ct === 'image/jpeg' || ct === 'image/jpg') return true
-    return ['.png', '.jpg', '.jpeg'].includes(ext)
+  if (kind === 'logo' || kind === 'image') {
+    if (ct === 'image/png' || ct === 'image/jpeg' || ct === 'image/jpg' || ct === 'image/webp') return true
+    return ['.png', '.jpg', '.jpeg', '.webp'].includes(ext)
   }
   if (kind === 'audio') {
     if (ct.startsWith('audio/')) return true
@@ -94,8 +94,8 @@ function isAllowedFile(kind: 'video' | 'logo' | 'audio', file: File): boolean {
   return false
 }
 
-function acceptForKind(kind: 'video' | 'logo' | 'audio'): string {
-  if (kind === 'logo') return 'image/png,image/jpeg'
+function acceptForKind(kind: 'video' | 'logo' | 'audio' | 'image'): string {
+  if (kind === 'logo' || kind === 'image') return 'image/png,image/jpeg,image/webp'
   if (kind === 'audio') return 'audio/*'
   return 'video/*'
 }
@@ -113,7 +113,16 @@ const UploadNewPage: React.FC = () => {
   const kind = (() => {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('kind') || '').toLowerCase()
-    return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : 'video'
+    return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : raw === 'image' ? 'image' : 'video'
+  })()
+  const imageRole = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const raw = String(params.get('imageRole') || params.get('image_role') || '').trim()
+      return raw ? raw : null
+    } catch {
+      return null
+    }
   })()
 
   useEffect(() => {
@@ -123,7 +132,15 @@ const UploadNewPage: React.FC = () => {
       if (cancelled) return
       setMe(user)
       if (!user) {
-        setUploadError(kind === 'video' ? 'Please sign in to upload videos.' : kind === 'logo' ? 'Please sign in to upload logos.' : 'Please sign in to upload audio.')
+        setUploadError(
+          kind === 'video'
+            ? 'Please sign in to upload videos.'
+            : kind === 'logo'
+              ? 'Please sign in to upload logos.'
+              : kind === 'image'
+                ? 'Please sign in to upload images.'
+                : 'Please sign in to upload audio.'
+        )
       }
     })()
     return () => {
@@ -187,7 +204,7 @@ const UploadNewPage: React.FC = () => {
         const meta =
           kind === 'video'
             ? await probeVideo(file)
-            : kind === 'logo'
+            : kind === 'logo' || kind === 'image'
               ? { ...(await probeImage(file)), durationSeconds: null }
               : { width: null, height: null, durationSeconds: null }
         const body = {
@@ -197,6 +214,7 @@ const UploadNewPage: React.FC = () => {
           modifiedFilename: trimmedName,
           description: trimmedDescription || undefined,
           kind,
+          ...(kind === 'image' && imageRole ? { imageRole } : {}),
           ...meta,
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -273,13 +291,13 @@ const UploadNewPage: React.FC = () => {
         setUploading(false)
       }
     },
-    [file, me, modifiedName, description, resetForm]
+    [file, me, modifiedName, description, resetForm, kind, imageRole]
   )
 
   if (me === null) {
     return (
       <div style={{ color: '#fff', padding: 24, fontFamily: 'system-ui, sans-serif', minHeight: '100vh', background: '#050505' }}>
-        <h2>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}</h2>
+        <h2>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : kind === 'image' ? 'Upload Image' : 'Upload Audio'}</h2>
         <p>Checking your session…</p>
       </div>
     )
@@ -290,7 +308,7 @@ const UploadNewPage: React.FC = () => {
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 16px 80px' }}>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : 'Upload Audio'}</h1>
+            <h1 style={{ margin: 0, fontSize: 28 }}>{kind === 'video' ? 'Upload Video' : kind === 'logo' ? 'Upload Logo' : kind === 'image' ? 'Upload Image' : 'Upload Audio'}</h1>
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Choose a file, add a friendly title, and describe it for your team.</p>
           </div>
           <a

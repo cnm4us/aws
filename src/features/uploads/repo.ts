@@ -2,7 +2,7 @@ import { getPool } from '../../db'
 
 export type UploadRow = any
 
-export async function list(params: { status?: string | string[]; kind?: string; isSystem?: boolean | 0 | 1; userId?: number; spaceId?: number; cursorId?: number; limit: number }): Promise<UploadRow[]> {
+export async function list(params: { status?: string | string[]; kind?: string; imageRole?: string; isSystem?: boolean | 0 | 1; userId?: number; spaceId?: number; cursorId?: number; limit: number }): Promise<UploadRow[]> {
   const db = getPool()
   const where: string[] = []
   const args: any[] = []
@@ -18,6 +18,7 @@ export async function list(params: { status?: string | string[]; kind?: string; 
     }
   }
   if (params.kind) { where.push('kind = ?'); args.push(String(params.kind)) }
+  if (params.imageRole) { where.push('image_role = ?'); args.push(String(params.imageRole)) }
   if (params.isSystem != null) { where.push('is_system = ?'); args.push(params.isSystem ? 1 : 0) }
   if (params.userId != null) { where.push('user_id = ?'); args.push(Number(params.userId)) }
   if (params.spaceId != null) { where.push('space_id = ?'); args.push(Number(params.spaceId)) }

@@ -1,7 +1,7 @@
 import { UPLOAD_BUCKET } from '../../config'
 import type { AudioMasterV1Input } from '../../features/media-jobs/types'
 import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio } from '../../services/ffmpeg/audioPipeline'
-import { createMp4WithFrozenFirstFrame } from '../../services/ffmpeg/introPipeline'
+import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
 import fs from 'fs'
 
 export async function runAudioMasterV1Job(
@@ -29,23 +29,52 @@ export async function runAudioMasterV1Job(
   let videoDurationSeconds =
     input.videoDurationSeconds != null && Number.isFinite(Number(input.videoDurationSeconds)) ? Number(input.videoDurationSeconds) : null
 
-  const introSecondsRaw = input.introSeconds != null ? Number(input.introSeconds) : 0
-  const introSeconds = Number.isFinite(introSecondsRaw) ? Math.max(0, Math.min(30, Math.round(introSecondsRaw))) : 0
-  if (introSeconds > 0) {
-    const t0 = Date.now()
-    appendLog(`intro_freeze:start seconds=${introSeconds}`)
-    const frozen = await createMp4WithFrozenFirstFrame({
-      uploadBucket,
-      dateYmd,
-      productionUlid,
-      originalLeaf,
-      video: videoPtr,
-      freezeSeconds: introSeconds,
-      logPaths,
-    })
-    appendLog(`intro_freeze:done ms=${Date.now() - t0} s3Url=${frozen.s3Url}`)
-    videoPtr = { bucket: frozen.bucket, key: frozen.key }
-    if (videoDurationSeconds != null) videoDurationSeconds = videoDurationSeconds + introSeconds
+  const legacyIntroSecondsRaw = input.introSeconds != null ? Number(input.introSeconds) : 0
+  const legacyIntroSeconds = Number.isFinite(legacyIntroSecondsRaw) ? Math.max(0, Math.min(30, Math.round(legacyIntroSecondsRaw))) : 0
+  const intro = input.intro && typeof input.intro === 'object'
+    ? (input.intro as any)
+    : (legacyIntroSeconds > 0 ? { kind: 'freeze_first_frame', seconds: legacyIntroSeconds } : null)
+  if (intro && intro.kind) {
+    if (String(intro.kind) === 'title_image') {
+      const holdSecondsRaw = intro.holdSeconds != null ? Number(intro.holdSeconds) : 0
+      const holdSeconds = Number.isFinite(holdSecondsRaw) ? Math.round(holdSecondsRaw) : 0
+      const titleImage = intro.titleImage
+      if (!titleImage || !titleImage.bucket || !titleImage.key) throw new Error('missing_title_image')
+      const t0 = Date.now()
+      appendLog(`intro_title:start holdSeconds=${holdSeconds}`)
+      const mastered = await createMp4WithTitleImageIntro({
+        uploadBucket,
+        dateYmd,
+        productionUlid,
+        originalLeaf,
+        video: videoPtr,
+        titleImage,
+        holdSeconds,
+        logPaths,
+      })
+      appendLog(`intro_title:done ms=${Date.now() - t0} s3Url=${mastered.s3Url}`)
+      videoPtr = { bucket: mastered.bucket, key: mastered.key }
+      if (videoDurationSeconds != null) videoDurationSeconds = videoDurationSeconds + holdSeconds
+    } else if (String(intro.kind) === 'freeze_first_frame') {
+      const introSecondsRaw = intro.seconds != null ? Number(intro.seconds) : legacyIntroSeconds
+      const introSeconds = Number.isFinite(introSecondsRaw) ? Math.max(0, Math.min(30, Math.round(introSecondsRaw))) : 0
+      if (introSeconds > 0) {
+        const t0 = Date.now()
+        appendLog(`intro_freeze:start seconds=${introSeconds}`)
+        const frozen = await createMp4WithFrozenFirstFrame({
+          uploadBucket,
+          dateYmd,
+          productionUlid,
+          originalLeaf,
+          video: videoPtr,
+          freezeSeconds: introSeconds,
+          logPaths,
+        })
+        appendLog(`intro_freeze:done ms=${Date.now() - t0} s3Url=${frozen.s3Url}`)
+        videoPtr = { bucket: frozen.bucket, key: frozen.key }
+        if (videoDurationSeconds != null) videoDurationSeconds = videoDurationSeconds + introSeconds
+      }
+    }
   }
 
   if (mode === 'mix') {
@@ -75,7 +104,7 @@ export async function runAudioMasterV1Job(
         logPaths,
       })
       appendLog(`mix:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-      return { output: out, intro: introSeconds > 0 ? { kind: 'freeze_first_frame', seconds: introSeconds } : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
+      return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
     } catch {
       // fall back to replace
       appendLog(`mix:failed falling back to replace`)
@@ -100,5 +129,5 @@ export async function runAudioMasterV1Job(
     logPaths,
   })
   appendLog(`replace:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-  return { output: out, intro: introSeconds > 0 ? { kind: 'freeze_first_frame', seconds: introSeconds } : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
+  return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
 }
