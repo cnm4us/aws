@@ -5,6 +5,25 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3, ymdToFolder } from './audioPipeline'
 
+async function probeDurationSeconds(filePath: string): Promise<number | null> {
+  return await new Promise<number | null>((resolve) => {
+    const p = spawn(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    let out = ''
+    p.stdout.on('data', (d) => { out += String(d) })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve(null)
+      const v = Number(String(out || '').trim())
+      if (!Number.isFinite(v) || v <= 0) return resolve(null)
+      resolve(v)
+    })
+    p.on('error', () => resolve(null))
+  })
+}
+
 async function hasAudioStream(filePath: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const p = spawn(
@@ -46,9 +65,14 @@ export async function createMp4WithFrozenFirstFrame(opts: {
     const ms = seconds * 1000
     const vFilter = `[0:v]tpad=start_duration=${seconds}:start_mode=clone,setsar=1[v]`
     const hasAudio = await hasAudioStream(videoPath)
+    const dur = await probeDurationSeconds(videoPath)
+    const totalDur = dur != null ? Math.max(0.5, dur + seconds) : null
 
     if (hasAudio) {
-      const aFilter = `[0:a]adelay=${ms}|${ms},apad[a]`
+      // IMPORTANT: apad alone makes audio infinite; always trim to the expected total duration.
+      // This prevents ffmpeg from running indefinitely.
+      const durTrim = totalDur != null ? `,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB` : ''
+      const aFilter = `[0:a]adelay=${ms}|${ms},apad${durTrim}[a]`
       const filter = `${vFilter};${aFilter}`
       await runFfmpeg(
         [
@@ -79,6 +103,7 @@ export async function createMp4WithFrozenFirstFrame(opts: {
           '2',
           '-movflags',
           '+faststart',
+          ...(totalDur != null ? ['-t', totalDur.toFixed(3)] : []),
           outPath,
         ],
         opts.logPaths
@@ -118,7 +143,7 @@ export async function createMp4WithFrozenFirstFrame(opts: {
           '2',
           '-movflags',
           '+faststart',
-          '-shortest',
+          ...(totalDur != null ? ['-t', totalDur.toFixed(3)] : ['-shortest']),
           outPath,
         ],
         opts.logPaths
