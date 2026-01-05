@@ -12,6 +12,7 @@ import * as spacesSvc from '../features/spaces/service'
 import * as pubsSvc from '../features/publications/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as audioConfigsSvc from '../features/audio-configs/service'
+import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
@@ -616,6 +617,7 @@ type AdminNavKey =
   | 'cultures'
   | 'pages'
   | 'audio'
+  | 'lower_thirds'
   | 'audio_configs'
   | 'media_jobs'
   | 'settings'
@@ -631,6 +633,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
   { key: 'audio', label: 'Audio', href: '/admin/audio' },
+  { key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
   { key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
   { key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
@@ -2943,6 +2946,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
+    { title: 'Lower Thirds', href: '/admin/lower-thirds', desc: 'Manage system lower third templates (SVG + descriptor)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
     { title: 'Settings', href: '/admin/settings', desc: 'Coming soon' },
@@ -2966,6 +2970,278 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
   const doc = renderAdminPage({ title: 'Admin', bodyHtml: body })
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
+})
+
+function parseJsonOrNull(raw: any): any | null {
+  if (raw == null) return null
+  if (typeof raw === 'object') return raw
+  try { return JSON.parse(String(raw)) } catch { return null }
+}
+
+function renderLowerThirdTemplateForm(opts: {
+  csrfToken?: string | null
+  error?: string | null
+  notice?: string | null
+  values: {
+    templateKey: string
+    version: string
+    label: string
+    category: string
+    svgMarkup: string
+    descriptorJson: string
+  }
+}): string {
+  const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
+  const error = opts.error ? String(opts.error) : ''
+  const notice = opts.notice ? String(opts.notice) : ''
+  const v = opts.values
+
+  let body = `<h1>New Lower Third Template</h1>`
+  body += '<div class="toolbar"><div><a href="/admin/lower-thirds">\u2190 Back to lower thirds</a></div><div></div></div>'
+  body += '<p class="field-hint">Templates are immutable once created. To change an existing template, create a new version.</p>'
+  if (notice) body += `<div class="notice">${escapeHtml(notice)}</div>`
+  if (error) body += `<div class="error">${escapeHtml(error)}</div>`
+  body += `<form method="post" action="/admin/lower-thirds">`
+  if (csrfToken) body += `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />`
+  body += `<label>Template Key
+    <input type="text" name="template_key" value="${escapeHtml(v.templateKey)}" placeholder="lt_modern_gradient_01" />
+    <div class="field-hint">Stable identifier (letters/numbers/_/-). Each change requires a new version.</div>
+  </label>`
+  body += `<label>Version
+    <input type="number" name="version" value="${escapeHtml(v.version)}" min="1" step="1" />
+    <div class="field-hint">Recommended: use the next version for this key.</div>
+  </label>`
+  body += `<label>Label
+    <input type="text" name="label" value="${escapeHtml(v.label)}" />
+  </label>`
+  body += `<label>Category
+    <input type="text" name="category" value="${escapeHtml(v.category)}" placeholder="clean" />
+    <div class="field-hint">Optional grouping for later.</div>
+  </label>`
+  body += `<label>SVG Markup
+    <textarea name="svg_markup" style="min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">${escapeHtml(v.svgMarkup)}</textarea>
+    <div class="field-hint">Must be renderer-safe: no scripts/foreignObject/images/hrefs; editable elements must have stable IDs.</div>
+  </label>`
+  body += `<label>Descriptor JSON
+    <textarea name="descriptor_json" style="min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">${escapeHtml(v.descriptorJson)}</textarea>
+    <div class="field-hint">Defines editable fields/colors and defaults (drives UI + validation).</div>
+  </label>`
+  body += `<div class="actions">
+    <button type="submit">Create template</button>
+  </div>`
+  body += `</form>`
+  return renderAdminPage({ title: 'New Lower Third', bodyHtml: body, active: 'lower_thirds' })
+}
+
+pagesRouter.get('/admin/lower-thirds', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, template_key, version, label, category, archived_at, created_at
+         FROM lower_third_templates
+        ORDER BY template_key ASC, version DESC`
+    )
+    const items = rows as any[]
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    let body = '<h1>Lower Thirds</h1>'
+    body += '<div class="toolbar"><div><span class="pill">System Templates</span></div><div><a href="/admin/lower-thirds/new">New template</a></div></div>'
+    body += '<div class="section">'
+    body += '<div class="section-title">Templates</div>'
+    body += '<p class="field-hint">System-managed SVG templates. Versioned and immutable once created.</p>'
+    if (!items.length) {
+      body += '<p>No lower third templates yet.</p>'
+    } else {
+      body += '<table><thead><tr><th>Key</th><th>Version</th><th>Label</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead><tbody>'
+      for (const row of items) {
+        const key = String(row.template_key || '')
+        const ver = Number(row.version || 0)
+        const label = escapeHtml(String(row.label || ''))
+        const category = escapeHtml(String(row.category || ''))
+        const archived = row.archived_at != null
+        body += '<tr>'
+        body += `<td style="white-space:nowrap">${escapeHtml(key)}</td>`
+        body += `<td>${ver}</td>`
+        body += `<td>${label}</td>`
+        body += `<td>${category}</td>`
+        body += `<td>${archived ? '<span class="pill" style="background:rgba(255,180,180,0.12); border:1px solid rgba(255,180,180,0.25)">Archived</span>' : '<span class="pill">Active</span>'}</td>`
+        body += `<td style="white-space:nowrap; display:flex; gap:8px; align-items:center">`
+        body += `<a class="btn" href="/admin/lower-thirds/new?template_key=${encodeURIComponent(key)}" style="padding:6px 10px; font-size:12px">New version</a>`
+        if (archived) {
+          body += `<form method="post" action="/admin/lower-thirds/${encodeURIComponent(key)}/${ver}/unarchive" style="display:inline" onsubmit="return confirm('Unarchive ${escapeHtml(key)} v${ver}?');">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="padding:6px 10px; font-size:12px">Unarchive</button>
+          </form>`
+        } else {
+          body += `<form method="post" action="/admin/lower-thirds/${encodeURIComponent(key)}/${ver}/archive" style="display:inline" onsubmit="return confirm('Archive ${escapeHtml(key)} v${ver}?');">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn danger" style="padding:6px 10px; font-size:12px">Archive</button>
+          </form>`
+        }
+        body += `</td>`
+        body += '</tr>'
+      }
+      body += '</tbody></table>'
+    }
+    body += '</div>'
+
+    const doc = renderAdminPage({ title: 'Lower Thirds', bodyHtml: body, active: 'lower_thirds' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin lower thirds list failed', err)
+    res.status(500).send('Failed to load lower thirds')
+  }
+})
+
+pagesRouter.get('/admin/lower-thirds/new', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+    const templateKey = String(req.query?.template_key || '').trim()
+
+    let prefill = {
+      templateKey: templateKey || '',
+      version: '1',
+      label: '',
+      category: '',
+      svgMarkup: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 200">\n  <defs>\n    <linearGradient id="fadeGrad" x1="0" y1="0" x2="1" y2="0">\n      <stop id="accentColor" offset="0" stop-color="#D4AF37" stop-opacity="0.85"/>\n      <stop offset="1" stop-color="#D4AF37" stop-opacity="0"/>\n    </linearGradient>\n  </defs>\n  <rect id="baseBg" x="0" y="0" width="1920" height="200" fill=\"#111111\"/>\n  <rect id="gradientOverlay" x="0" y="0" width="1920" height="200" fill=\"url(#fadeGrad)\"/>\n  <text id="primaryText" x="90" y="110" fill=\"#ffffff\" font-family=\"system-ui, -apple-system, Segoe UI, sans-serif\" font-size=\"72\" font-weight=\"700\">Primary</text>\n  <text id="secondaryText" x="90" y="165" fill=\"#C7CBD6\" font-family=\"system-ui, -apple-system, Segoe UI, sans-serif\" font-size=\"44\" font-weight=\"500\">Secondary</text>\n</svg>\n`,
+      descriptorJson: JSON.stringify({
+        fields: [
+          { id: 'primaryText', label: 'Name', type: 'text', maxLength: 40 },
+          { id: 'secondaryText', label: 'Title', type: 'text', maxLength: 60 },
+        ],
+        colors: [
+          { id: 'baseBg', label: 'Background Color' },
+          { id: 'accentColor', label: 'Fade Color' },
+        ],
+        defaults: {
+          primaryText: 'Jane Doe',
+          secondaryText: 'Senior Correspondent',
+          baseBg: '#111111',
+          accentColor: '#D4AF37',
+        },
+      }, null, 2),
+    }
+
+    if (templateKey) {
+      const [rows] = await db.query(
+        `SELECT template_key, version, label, category, svg_markup, descriptor_json
+           FROM lower_third_templates
+          WHERE template_key = ?
+          ORDER BY version DESC
+          LIMIT 1`,
+        [templateKey]
+      )
+      const row = (rows as any[])[0]
+      if (row) {
+        const latestVersion = Number(row.version || 0)
+        const descriptor = parseJsonOrNull(row.descriptor_json) ?? {}
+        prefill = {
+          templateKey: String(row.template_key || templateKey),
+          version: String(latestVersion + 1),
+          label: String(row.label || ''),
+          category: String(row.category || ''),
+          svgMarkup: String(row.svg_markup || ''),
+          descriptorJson: JSON.stringify(descriptor, null, 2),
+        }
+      }
+    }
+
+    const doc = renderLowerThirdTemplateForm({ csrfToken, values: prefill })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin lower thirds new failed', err)
+    res.status(500).send('Failed to load form')
+  }
+})
+
+pagesRouter.post('/admin/lower-thirds', async (req: any, res: any) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const csrfToken = cookies['csrf'] || ''
+  const body = req.body || {}
+  const templateKey = String(body.template_key || '').trim()
+  const versionRaw = String(body.version || '').trim()
+  const label = String(body.label || '').trim()
+  const category = String(body.category || '').trim()
+  const svgMarkup = String(body.svg_markup || '')
+  const descriptorText = String(body.descriptor_json || '')
+  try {
+    const db = getPool()
+    const version = Number(versionRaw)
+    const descriptorJson = parseJsonOrNull(descriptorText)
+    if (!descriptorJson) throw new Error('Descriptor JSON is invalid.')
+
+    if (!/^[a-z0-9][a-z0-9_-]*$/i.test(templateKey) || templateKey.length > 80) throw new Error('Invalid template key.')
+    if (!label || label.length > 120) throw new Error('Invalid label.')
+    if (!Number.isFinite(version) || version <= 0) throw new Error('Invalid version.')
+    if (category && category.length > 64) throw new Error('Invalid category.')
+
+    const validated = lowerThirdsSvc.validateLowerThirdTemplateDraft({ svgMarkup, descriptorJson })
+
+    try {
+      await db.query(
+        `INSERT INTO lower_third_templates (template_key, version, label, category, svg_markup, descriptor_json)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [templateKey, Math.round(version), label, category || null, validated.svgMarkup, JSON.stringify(validated.descriptor)]
+      )
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      if (msg.toLowerCase().includes('duplicate')) throw new Error('That template key + version already exists.')
+      throw e
+    }
+
+    return res.redirect('/admin/lower-thirds')
+  } catch (err: any) {
+    const doc = renderLowerThirdTemplateForm({
+      csrfToken,
+      error: String(err?.message || 'Failed to create template'),
+      values: { templateKey, version: versionRaw, label, category, svgMarkup, descriptorJson: descriptorText },
+    })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    return res.status(400).send(doc)
+  }
+})
+
+pagesRouter.post('/admin/lower-thirds/:templateKey/:version/archive', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const templateKey = String(req.params.templateKey || '').trim()
+    const version = Number(req.params.version || '')
+    if (!templateKey || !Number.isFinite(version) || version <= 0) return res.redirect('/admin/lower-thirds')
+    await db.query(
+      `UPDATE lower_third_templates
+          SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+        WHERE template_key = ? AND version = ?`,
+      [templateKey, Math.round(version)]
+    )
+    res.redirect('/admin/lower-thirds')
+  } catch (err) {
+    console.error('archive lower third failed', err)
+    res.status(500).send('Failed to archive')
+  }
+})
+
+pagesRouter.post('/admin/lower-thirds/:templateKey/:version/unarchive', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const templateKey = String(req.params.templateKey || '').trim()
+    const version = Number(req.params.version || '')
+    if (!templateKey || !Number.isFinite(version) || version <= 0) return res.redirect('/admin/lower-thirds')
+    await db.query(
+      `UPDATE lower_third_templates
+          SET archived_at = NULL
+        WHERE template_key = ? AND version = ?`,
+      [templateKey, Math.round(version)]
+    )
+    res.redirect('/admin/lower-thirds')
+  } catch (err) {
+    console.error('unarchive lower third failed', err)
+    res.status(500).send('Failed to unarchive')
+  }
 })
 
 pagesRouter.get('/admin/audio', async (req: any, res: any) => {
@@ -6053,6 +6329,13 @@ pagesRouter.get('/produce', (_req, res) => {
 });
 
 pagesRouter.get('/logo-configs', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
+pagesRouter.get('/lower-thirds', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/lower-thirds/', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 

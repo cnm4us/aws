@@ -182,6 +182,164 @@ export async function ensureSchema(db: DB) {
 			  // Plan: opener cutoff fade controls for abrupt mode (stored as ms offsets around t).
 			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_before_ms SMALLINT UNSIGNED NULL`);
 			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
+
+        // --- Lower thirds (feature_10) ---
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS lower_third_templates (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            template_key VARCHAR(80) NOT NULL,
+            version INT UNSIGNED NOT NULL,
+            label VARCHAR(120) NOT NULL,
+            category VARCHAR(64) NULL,
+            svg_markup LONGTEXT NOT NULL,
+            descriptor_json JSON NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived_at TIMESTAMP NULL DEFAULT NULL,
+            UNIQUE KEY uniq_lt_tpl_key_version (template_key, version),
+            KEY idx_lt_tpl_key_archived (template_key, archived_at, version),
+            KEY idx_lt_tpl_archived (archived_at, id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+
+	        await db.query(`
+	          CREATE TABLE IF NOT EXISTS lower_third_configurations (
+	            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	            owner_user_id BIGINT UNSIGNED NOT NULL,
+	            name VARCHAR(120) NOT NULL,
+	            template_key VARCHAR(80) NOT NULL,
+	            template_version INT UNSIGNED NOT NULL,
+	            params_json JSON NOT NULL,
+	            timing_rule VARCHAR(20) NOT NULL DEFAULT 'first_only',
+	            timing_seconds INT UNSIGNED NULL,
+	            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	            archived_at TIMESTAMP NULL DEFAULT NULL,
+	            KEY idx_lt_cfg_owner_archived (owner_user_id, archived_at, id),
+	            KEY idx_lt_cfg_tpl_version_archived (template_key, template_version, archived_at, id),
+	            KEY idx_lt_cfg_archived (archived_at, id)
+	          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	        `);
+
+	        // Plan 41: timing controls for lower third presets (first N seconds vs entire).
+	        await db.query(`ALTER TABLE lower_third_configurations ADD COLUMN IF NOT EXISTS timing_rule VARCHAR(20) NOT NULL DEFAULT 'first_only'`);
+	        await db.query(`ALTER TABLE lower_third_configurations ADD COLUMN IF NOT EXISTS timing_seconds INT UNSIGNED NULL`);
+	        try {
+	          await db.query(
+	            `UPDATE lower_third_configurations
+	                SET timing_rule = 'first_only',
+	                    timing_seconds = 10
+	              WHERE (timing_rule IS NULL OR timing_rule = '' OR timing_rule = 'first_only')
+	                AND timing_seconds IS NULL`
+	          )
+	        } catch {}
+
+        // Seed initial system lower-third template (idempotent).
+        // This provides a usable template out-of-the-box; site_admin can add new versions via /admin/lower-thirds.
+        try {
+          const seedTemplateKey = 'lt_modern_gradient_01'
+          const seedVersion = 1
+          const seedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 200" width="1920" height="200">
+  <defs>
+    <linearGradient id="fadeGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop id="accentColor" offset="0" stop-color="#D4AF37" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#D4AF37" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect id="baseBg" x="0" y="0" width="1920" height="200" fill="#0D0F14"/>
+  <rect id="gradientOverlay" x="0" y="0" width="1920" height="200" fill="url(#fadeGrad)"/>
+  <text id="primaryText" x="96" y="92" fill="#FFFFFF" font-family="system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="56" font-weight="700">Episode Title</text>
+  <text id="secondaryText" x="96" y="154" fill="#C7CBD6" font-family="system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="34" font-weight="500">Creator • Date</text>
+</svg>`
+          const seedDescriptor = {
+            fields: [
+              { id: 'primaryText', label: 'Primary text', type: 'text', maxLength: 60 },
+              { id: 'secondaryText', label: 'Secondary text', type: 'text', maxLength: 90 },
+            ],
+            colors: [
+              { id: 'baseBg', label: 'Background' },
+              { id: 'accentColor', label: 'Fade Color' },
+            ],
+            defaults: {
+              primaryText: 'Episode Title',
+              secondaryText: 'Creator • Date',
+              baseBg: '#0D0F14',
+              accentColor: '#D4AF37',
+            },
+          }
+          await db.query(
+            `INSERT INTO lower_third_templates (template_key, version, label, category, svg_markup, descriptor_json)
+             SELECT ?, ?, ?, ?, ?, ?
+              WHERE NOT EXISTS (
+                SELECT 1 FROM lower_third_templates WHERE template_key = ? AND version = ?
+              )`,
+            [
+              seedTemplateKey,
+              seedVersion,
+              'Modern Gradient',
+              'clean',
+              seedSvg,
+              JSON.stringify(seedDescriptor),
+              seedTemplateKey,
+              seedVersion,
+            ]
+          )
+
+          // Keep the seeded template aligned with current authoring guidance.
+          try {
+            await db.query(
+              `UPDATE lower_third_templates
+                  SET svg_markup = ?, descriptor_json = ?
+                WHERE template_key = ? AND version = ?`,
+              [seedSvg, JSON.stringify(seedDescriptor), seedTemplateKey, seedVersion]
+            )
+          } catch {}
+
+          // Migrate any early "Lower-third-test" presets to the seeded Modern Gradient template
+          // (dev-only cleanup; no legacy/back-compat required).
+          try {
+            const [cfgRows] = await db.query(
+              `SELECT id, params_json
+                 FROM lower_third_configurations
+                WHERE template_key = 'Lower-third-test'
+                  AND template_version = 1
+                  AND archived_at IS NULL`
+            )
+            for (const row of cfgRows as any[]) {
+              const id = Number(row.id)
+              if (!Number.isFinite(id) || id <= 0) continue
+              let params: any = row.params_json
+              if (typeof params === 'string') {
+                try { params = JSON.parse(params) } catch { params = {} }
+              }
+              if (!params || typeof params !== 'object') params = {}
+              const nextParams: any = { ...params }
+              if (nextParams.gradientOverlay != null && nextParams.accentColor == null) {
+                nextParams.accentColor = nextParams.gradientOverlay
+              }
+              delete nextParams.gradientOverlay
+              await db.query(
+                `UPDATE lower_third_configurations
+                    SET template_key = ?, template_version = ?, params_json = ?
+                  WHERE id = ?`,
+                [seedTemplateKey, seedVersion, JSON.stringify(nextParams), id]
+              )
+            }
+            // Archive the old test template once no configs reference it.
+            const [leftRows] = await db.query(
+              `SELECT COUNT(*) AS c
+                 FROM lower_third_configurations
+                WHERE template_key = 'Lower-third-test' AND template_version = 1`
+            )
+            const left = Number((leftRows as any[])[0]?.c || 0)
+            if (left === 0) {
+              await db.query(
+                `UPDATE lower_third_templates
+                    SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+                  WHERE template_key = 'Lower-third-test' AND version = 1`
+              )
+            }
+          } catch {}
+        } catch {}
 			
 				  await db.query(`
 				    CREATE TABLE IF NOT EXISTS productions (

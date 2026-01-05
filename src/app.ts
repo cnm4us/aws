@@ -14,6 +14,7 @@ import adminRouter from './routes/admin';
 import spacesRouter from './routes/spaces';
 import { logoConfigsRouter } from './routes/logo-configs';
 import { audioConfigsRouter } from './routes/audio-configs';
+import { lowerThirdsRouter } from './routes/lower-thirds';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { sessionParse } from './middleware/sessionParse';
@@ -62,6 +63,7 @@ export function buildServer(): express.Application {
   app.use(publicationsRouter);
   app.use(logoConfigsRouter);
   app.use(audioConfigsRouter);
+  app.use(lowerThirdsRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 

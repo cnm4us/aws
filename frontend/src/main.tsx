@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProduce, loadLogoConfigs, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProduce, loadLogoConfigs, loadLowerThirds, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -16,6 +16,7 @@ const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
 const ProducePage = React.lazy(loadProduce)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
+const LowerThirdsPage = React.lazy(loadLowerThirds)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
@@ -186,6 +187,14 @@ if (path === '/' || path === '') {
     <Layout label="Logo Configs">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <LogoConfigsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/lower-thirds')) {
+  root.render(
+    <Layout label="Lower Thirds">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <LowerThirdsPage />
       </Suspense>
     </Layout>
   )

@@ -8,9 +8,14 @@ import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
 import path from 'path'
 import { applyConfiguredTransforms } from './mediaconvert/transforms'
-import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url } from './ffmpeg/audioPipeline'
+import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, parseS3Url, ymdToFolder } from './ffmpeg/audioPipeline'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from './ffmpeg/introPipeline'
 import { enqueueJob } from '../features/media-jobs/service'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { randomUUID } from 'crypto'
+import { s3 } from './s3'
+import * as lowerThirdsSvc from '../features/lower-thirds/service'
+import { rasterizeLowerThirdSvgToPng } from './lowerThirdPng'
 
 export type RenderOptions = {
   upload: any
@@ -167,6 +172,13 @@ export async function startMediaConvertForExistingProduction(opts: {
       }
     }
   } catch {}
+
+  await applyLowerThirdIfConfigured(settings, {
+    config: opts.configPayload,
+    videoDurationSeconds: durationSeconds,
+    dateYmd: createdDate,
+    productionUlid: opts.productionUlid,
+  })
 
   await applyLogoWatermarkIfConfigured(settings, {
     config: opts.configPayload,
@@ -465,6 +477,16 @@ type LogoConfigSnapshot = {
   insetYPreset?: 'small' | 'medium' | 'large' | null
 }
 
+type LowerThirdConfigSnapshot = {
+  id?: number
+  name?: string
+  templateKey?: string
+  templateVersion?: number
+  params?: Record<string, string>
+  timingRule?: 'first_only' | 'entire'
+  timingSeconds?: number | null
+}
+
 function clampInt(n: any, min: number, max: number): number {
   const v = Math.round(Number(n))
   if (!Number.isFinite(v)) return min
@@ -627,10 +649,101 @@ async function applyLogoWatermarkIfConfigured(settings: any, opts: { config: any
         Width: rect.width,
         Height: rect.height,
         Opacity: rect.opacity,
-        Layer: 1,
+        Layer: 2,
         StartTime: timing.startTime,
         Duration: timing.durationMs,
         ...fades,
+      })
+    }
+  }
+}
+
+function clampLowerThirdSeconds(raw: any): number {
+  const n = Math.round(Number(raw))
+  if (!Number.isFinite(n)) return 10
+  if ([5, 10, 15, 20].includes(n)) return n
+  return 10
+}
+
+function computeLowerThirdTiming(cfg: LowerThirdConfigSnapshot, videoDurationSeconds: number | null) {
+  const rule = cfg.timingRule === 'entire' ? 'entire' : 'first_only'
+  const fallbackDurationMs = 60 * 60 * 1000
+  const totalMs =
+    videoDurationSeconds != null && Number.isFinite(videoDurationSeconds) && videoDurationSeconds > 0
+      ? Math.max(1, Math.round(videoDurationSeconds * 1000))
+      : fallbackDurationMs
+  if (rule === 'entire') return { startTime: secondsToTimecode(0), durationMs: totalMs }
+  const seconds = clampLowerThirdSeconds(cfg.timingSeconds ?? 10)
+  return { startTime: secondsToTimecode(0), durationMs: Math.max(1, Math.min(totalMs, seconds * 1000)) }
+}
+
+async function uploadPngToS3(bucket: string, key: string, png: Buffer) {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: png,
+      ContentType: 'image/png',
+      CacheControl: 'no-store',
+    })
+  )
+  return { bucket, key, s3Url: `s3://${bucket}/${key}` }
+}
+
+async function applyLowerThirdIfConfigured(settings: any, opts: { config: any; videoDurationSeconds: number | null; dateYmd: string; productionUlid: string }) {
+  const cfgObj = opts.config && typeof opts.config === 'object' ? opts.config : null
+  if (!cfgObj) return
+  const snapshot = (cfgObj.lowerThirdConfigSnapshot && typeof cfgObj.lowerThirdConfigSnapshot === 'object')
+    ? (cfgObj.lowerThirdConfigSnapshot as LowerThirdConfigSnapshot)
+    : null
+  if (!snapshot) return
+
+  const templateKey = String(snapshot.templateKey || '').trim()
+  const templateVersion = snapshot.templateVersion != null ? Number(snapshot.templateVersion) : null
+  const params = snapshot.params && typeof snapshot.params === 'object' ? snapshot.params : null
+  if (!templateKey || !templateVersion || !params) return
+
+  const resolved = await lowerThirdsSvc.resolveLowerThirdSvgFromSnapshot({ templateKey, templateVersion, params })
+  const { png, viewBox } = rasterizeLowerThirdSvgToPng(resolved.svg, { targetWidthPx: 1920 })
+  const pngKey = `lower-thirds/${ymdToFolder(opts.dateYmd)}/${opts.productionUlid}/${randomUUID()}/lower_third.png`
+  const pngUrl = (await uploadPngToS3(UPLOAD_BUCKET, pngKey, png)).s3Url
+
+  const aspect = viewBox.height / viewBox.width
+  const timing = computeLowerThirdTiming(snapshot, opts.videoDurationSeconds)
+
+  const groups: any[] = Array.isArray(settings?.OutputGroups) ? settings.OutputGroups : []
+  for (const g of groups) {
+    const t = g?.OutputGroupSettings?.Type
+    if (t !== 'HLS_GROUP_SETTINGS' && t !== 'CMAF_GROUP_SETTINGS' && t !== 'FILE_GROUP_SETTINGS') continue
+    const outs: any[] = Array.isArray(g?.Outputs) ? g.Outputs : []
+    for (const o of outs) {
+      const vd = o?.VideoDescription
+      const cs = vd?.CodecSettings
+      if (!vd || !cs) continue
+      const outW = vd.Width != null ? Number(vd.Width) : null
+      const outH = vd.Height != null ? Number(vd.Height) : null
+      if (!outW || !outH) continue
+
+      const renderW = outW
+      const renderH = Math.max(1, Math.min(outH, Math.round(outW * aspect)))
+      const x = 0
+      const y = Math.max(0, outH - renderH)
+
+      if (!vd.VideoPreprocessors) vd.VideoPreprocessors = {}
+      if (!vd.VideoPreprocessors.ImageInserter) vd.VideoPreprocessors.ImageInserter = {}
+      if (!Array.isArray(vd.VideoPreprocessors.ImageInserter.InsertableImages)) {
+        vd.VideoPreprocessors.ImageInserter.InsertableImages = []
+      }
+      vd.VideoPreprocessors.ImageInserter.InsertableImages.push({
+        ImageInserterInput: pngUrl,
+        ImageX: x,
+        ImageY: y,
+        Width: renderW,
+        Height: renderH,
+        Opacity: 100,
+        Layer: 1,
+        StartTime: timing.startTime,
+        Duration: timing.durationMs,
       })
     }
   }

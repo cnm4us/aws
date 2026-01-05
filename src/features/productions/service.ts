@@ -9,6 +9,7 @@ import { type ProductionRecord } from './types'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
 import * as audioConfigsSvc from '../audio-configs/service'
+import * as lowerThirdsSvc from '../lower-thirds/service'
 import { s3 } from '../../services/s3'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
@@ -204,6 +205,7 @@ export async function create(
     logoUploadId?: number | null
     logoConfigId?: number | null
     audioConfigId?: number | null
+    lowerThirdConfigId?: number | null
   },
   currentUserId: number
 ) {
@@ -317,6 +319,26 @@ export async function create(
         fade: cfg.fade,
         insetXPreset: (cfg as any).insetXPreset ?? null,
         insetYPreset: (cfg as any).insetYPreset ?? null,
+      }
+    }
+  }
+
+  if (input.lowerThirdConfigId !== undefined) {
+    if (input.lowerThirdConfigId == null) {
+      mergedConfig.lowerThirdConfigId = null
+      mergedConfig.lowerThirdConfigSnapshot = null
+    } else {
+      const cfg = await lowerThirdsSvc.getConfigForUser(Number(input.lowerThirdConfigId), currentUserId)
+      if (cfg.archivedAt) throw new DomainError('archived', 'archived', 400)
+      mergedConfig.lowerThirdConfigId = cfg.id
+      mergedConfig.lowerThirdConfigSnapshot = {
+        id: cfg.id,
+        name: cfg.name,
+        templateKey: cfg.templateKey,
+        templateVersion: cfg.templateVersion,
+        params: cfg.params,
+        timingRule: cfg.timingRule,
+        timingSeconds: cfg.timingSeconds,
       }
     }
   }
