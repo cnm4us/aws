@@ -16,6 +16,8 @@ export async function runAudioMasterV1Job(
 
   const normalizeAudio = Boolean(input.normalizeAudio)
   const normalizeTargetLkfs = Number.isFinite(Number(input.normalizeTargetLkfs)) ? Number(input.normalizeTargetLkfs) : -16
+  const videoHighpassEnabled = Boolean((input as any).videoHighpassEnabled)
+  const videoHighpassHz = Number.isFinite(Number((input as any).videoHighpassHz)) ? Number((input as any).videoHighpassHz) : 80
 
   const appendLog = (msg: string) => {
     try {
@@ -101,6 +103,8 @@ export async function runAudioMasterV1Job(
         openerCutFadeAfterSeconds: input.openerCutFadeAfterSeconds == null ? null : Number(input.openerCutFadeAfterSeconds),
         normalizeAudio,
         normalizeTargetLkfs,
+        videoHighpassEnabled,
+        videoHighpassHz,
         logPaths,
       })
       appendLog(`mix:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
@@ -126,6 +130,8 @@ export async function runAudioMasterV1Job(
     audioFadeEnabled: input.audioFadeEnabled !== false,
     normalizeAudio,
     normalizeTargetLkfs,
+    videoHighpassEnabled,
+    videoHighpassHz,
     logPaths,
   })
   appendLog(`replace:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)

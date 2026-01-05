@@ -127,7 +127,7 @@ async function hasAudioStream(filePath: string): Promise<boolean> {
 async function detectInitialNonSilenceSeconds(
   filePath: string,
   gate: 'sensitive' | 'normal' | 'strict',
-  opts?: { maxAnalyzeSeconds?: number }
+  opts?: { maxAnalyzeSeconds?: number; highpassHz?: number | null }
 ): Promise<number | null> {
   if (!(await hasAudioStream(filePath))) return null
 
@@ -149,7 +149,7 @@ async function detectInitialNonSilenceSeconds(
       filePath,
       '-vn',
       '-af',
-      `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
+      `${opts?.highpassHz != null && Number.isFinite(Number(opts.highpassHz)) && Number(opts.highpassHz) > 0 ? `highpass=f=${Math.round(Number(opts.highpassHz))},` : ''}silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
       '-f',
       'null',
       '-',
@@ -188,6 +188,8 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   logPaths?: { stdoutPath?: string; stderrPath?: string }
   normalizeAudio?: boolean
   normalizeTargetLkfs?: number
+  videoHighpassEnabled?: boolean
+  videoHighpassHz?: number
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-replace-'))
   const videoPath = path.join(tmpDir, 'video')
@@ -312,6 +314,8 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   logPaths?: { stdoutPath?: string; stderrPath?: string }
   normalizeAudio?: boolean
   normalizeTargetLkfs?: number
+  videoHighpassEnabled?: boolean
+  videoHighpassHz?: number
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-audio-mix-'))
   const videoPath = path.join(tmpDir, 'video')
@@ -333,6 +337,11 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
 
   const vVol = `${vDb}dB`
   const mVol = `${mDb}dB`
+  const videoHighpassEnabled = Boolean(opts.videoHighpassEnabled)
+  const videoHighpassHzRaw = opts.videoHighpassHz != null ? Number(opts.videoHighpassHz) : 80
+  const videoHighpassHz =
+    Number.isFinite(videoHighpassHzRaw) ? Math.max(20, Math.min(250, Math.round(videoHighpassHzRaw))) : 80
+  const videoHighpassPrefix = videoHighpassEnabled ? `highpass=f=${videoHighpassHz},` : ''
 
   try {
     await downloadS3ObjectToFile(opts.video.bucket, opts.video.key, videoPath)
@@ -366,7 +375,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     //
     // IMPORTANT: amix defaults to normalize=1 (scales down by input count).
     // Use normalize=0 and add a limiter to avoid clipping (keeps gain presets audible/predictable).
-    let origChain = `[0:a]volume=${vVol},apad[orig]`
+    let origChain = `[0:a]${videoHighpassPrefix}volume=${vVol},apad[orig]`
     let musicChain = `[1:a]volume=${mVol}${musicTail}[music]`
     const thresholdForGate = (gate: string): number => {
       if (gate === 'sensitive') return 0.06
@@ -377,12 +386,15 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     if (duckingEnabled && duckingMode !== 'none') {
       const threshold = thresholdForGate(duckingGate)
 
-      origChain = `[0:a]volume=${vVol},apad[orig]`
+      origChain = `[0:a]${videoHighpassPrefix}volume=${vVol},apad[orig]`
       if (duckingMode === 'abrupt') {
         // Abrupt Ducking (latched): detect when the video's audio becomes non-silent, then fully cut music
         // after that point (good for opener SFX/music that should not continue under speech).
         const analyzeWindow = seconds != null ? Math.max(5, Math.min(60, seconds + 10)) : 30
-        const cutAt = await detectInitialNonSilenceSeconds(videoPath, duckingGate, { maxAnalyzeSeconds: analyzeWindow })
+        const cutAt = await detectInitialNonSilenceSeconds(videoPath, duckingGate, {
+          maxAnalyzeSeconds: analyzeWindow,
+          highpassHz: videoHighpassEnabled ? videoHighpassHz : null,
+        })
         const effectiveCutRaw = cutAt == null ? null : cutAt
         const effectiveCut =
           effectiveCutRaw == null

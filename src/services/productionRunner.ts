@@ -2,7 +2,7 @@ import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
 import { applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
-import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MC_WATERMARK_POSTERS, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
+import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MC_WATERMARK_POSTERS, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, MEDIA_VIDEO_HIGHPASS_ENABLED, MEDIA_VIDEO_HIGHPASS_HZ, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
@@ -377,13 +377,15 @@ export async function startProductionRender(options: RenderOptions) {
       duckingAmountDb,
       openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
       openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeAfterSeconds == null ? null : openerCutFadeAfterSeconds) : null,
-      audioDurationSeconds,
-      audioFadeEnabled,
-      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
-      normalizeTargetLkfs: -16,
-      outputBucket: UPLOAD_BUCKET,
-    }
-  }
+	      audioDurationSeconds,
+	      audioFadeEnabled,
+	      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
+	      normalizeTargetLkfs: -16,
+	      videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
+	      videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
+	      outputBucket: UPLOAD_BUCKET,
+	    }
+	  }
 
   const [preIns] = await db.query(
     `INSERT INTO productions (upload_id, user_id, name, status, config, ulid)
@@ -818,6 +820,8 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
           duckingMode,
           duckingGate,
           duckingAmountDb,
+          videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
+          videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
         })
         videoInput.FileInput = out.s3Url
       } catch {
@@ -832,6 +836,8 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
           musicGainDb,
           audioDurationSeconds,
           audioFadeEnabled,
+          videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
+          videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
         })
         videoInput.FileInput = out.s3Url
       }
@@ -846,6 +852,8 @@ async function applyMusicReplacementIfConfigured(settings: any, opts: { config: 
         musicGainDb,
         audioDurationSeconds,
         audioFadeEnabled,
+        videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
+        videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
       })
       videoInput.FileInput = out.s3Url
     }

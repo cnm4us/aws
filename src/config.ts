@@ -37,6 +37,17 @@ export const MEDIA_JOBS_STALE_LOCK_MINUTES = Number(process.env.MEDIA_JOBS_STALE
 export const MEDIA_JOBS_LOGS_BUCKET = process.env.MEDIA_JOBS_LOGS_BUCKET || UPLOAD_BUCKET;
 export const MEDIA_JOBS_LOGS_PREFIX = (process.env.MEDIA_JOBS_LOGS_PREFIX ?? 'media-jobs/logs/').replace(/^\/+/, '').replace(/\/+/g, '/');
 
+// Optional audio cleanup: gentle high-pass on the video's original audio only (helps wind/rumble).
+export const MEDIA_VIDEO_HIGHPASS_ENABLED = envBool('MEDIA_VIDEO_HIGHPASS_ENABLED', false);
+export const MEDIA_VIDEO_HIGHPASS_HZ = (() => {
+  const raw = process.env.MEDIA_VIDEO_HIGHPASS_HZ
+  if (raw == null || String(raw).trim() === '') return 80
+  const n = Number(String(raw).trim())
+  if (!Number.isFinite(n)) return 80
+  const rounded = Math.round(n)
+  return Math.max(20, Math.min(250, rounded))
+})();
+
 // MediaConvert job
 export const MC_ROLE_ARN = process.env.MC_ROLE_ARN || '';
 export const MC_QUEUE_ARN = process.env.MC_QUEUE_ARN || undefined;

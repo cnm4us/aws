@@ -69,6 +69,8 @@ export type AudioMasterV1Input = {
   audioFadeEnabled: boolean
   normalizeAudio: boolean
   normalizeTargetLkfs: number
+  videoHighpassEnabled?: boolean
+  videoHighpassHz?: number
   outputBucket: string
 }
 
