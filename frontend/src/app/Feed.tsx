@@ -1922,7 +1922,21 @@ export default function Feed() {
                     }}
                     className={`btn btn--overlay btn--sm`}
                   >
-                    {fsIndex === index ? 'Exit' : 'Full'}
+                    {fsIndex === index ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 9H5V5" />
+                        <path d="M15 9H19V5" />
+                        <path d="M9 15H5V19" />
+                        <path d="M15 15H19V19" />
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                        <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+                        <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               )}
