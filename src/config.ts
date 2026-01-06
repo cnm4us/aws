@@ -26,7 +26,7 @@ export const OUTPUT_PREFIX = (process.env.OUTPUT_PREFIX ?? 'hls/').replace(/^\/+
 export const MEDIA_CONVERT_NORMALIZE_AUDIO = envBool('MEDIA_CONVERT_NORMALIZE_AUDIO', true);
 
 // Apply logo watermark to MediaConvert poster frame captures (FILE_GROUP_SETTINGS _poster)
-export const MC_WATERMARK_POSTERS = envBool('MC_WATERMARK_POSTERS', false);
+export const MC_WATERMARK_POSTERS = envBool('MC_WATERMARK_POSTERS', true);
 
 // Media jobs worker (Plan 36)
 export const MEDIA_JOBS_ENABLED = envBool('MEDIA_JOBS_ENABLED', false);
