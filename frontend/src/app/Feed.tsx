@@ -1895,8 +1895,8 @@ export default function Feed() {
                   </div>
                 </div>
               )}
-              {/* Fullscreen toggle (active slide only) */}
-              {i === index && (
+              {/* Fullscreen toggle (active slide only; landscape assets only) */}
+              {i === index && isLandscapeAsset && (
                 <div className={styles.fullToggle}>
                   <button
                     aria-label={fsIndex === index ? 'Exit full screen' : 'Full screen'}
