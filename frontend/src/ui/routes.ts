@@ -6,6 +6,7 @@ export const loadUploads = () => import('../app/Uploads')
 export const loadUploadNew = () => import('../app/UploadNew')
 export const loadProductions = () => import('../app/Productions')
 export const loadPublish = () => import('../app/Publish')
+export const loadPublishStory = () => import('../app/PublishStory')
 export const loadProduce = () => import('../app/Produce')
 export const loadLogoConfigs = () => import('../app/LogoConfigs')
 export const loadLowerThirds = () => import('../app/LowerThirds')
@@ -22,6 +23,7 @@ export function prefetchForHref(href: string) {
     if (href.startsWith('/uploads/new')) { void loadUploadNew() }
     else if (href.startsWith('/uploads')) { void loadUploads() }
     else if (href.startsWith('/productions')) { void loadProductions() }
+    else if (href.startsWith('/publish/story')) { void loadPublishStory() }
     else if (href.startsWith('/publish')) { void loadPublish() }
     else if (href.startsWith('/produce')) { void loadProduce() }
     else if (href.startsWith('/logo-configs')) { void loadLogoConfigs() }

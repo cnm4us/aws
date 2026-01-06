@@ -1,6 +1,7 @@
 import { ForbiddenError, InvalidStateError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as spacesRepo from '../spaces/repo'
+import * as spacesSvc from '../spaces/service'
 import { resolveChecker, can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { type CreateFromProductionInput, type CreateFromUploadInput, type Publication, type PublicationEvent, type ServiceContext } from './types'
@@ -260,6 +261,8 @@ export async function listByProductionDto(productionId: number, ctx: ServiceCont
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  hasStory: boolean
+  storyPreview: string | null
 }>> {
   const p = await repo.loadProduction(productionId)
   if (!p) throw new NotFoundError('production_not_found')
@@ -277,6 +280,8 @@ export async function listByProductionDto(productionId: number, ctx: ServiceCont
     status: r.status,
     publishedAt: r.published_at,
     unpublishedAt: r.unpublished_at,
+    hasStory: Boolean(r.has_story),
+    storyPreview: r.story_preview,
   }))
 }
 
@@ -320,6 +325,8 @@ export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Pr
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  hasStory: boolean
+  storyPreview: string | null
 }>> {
   const up = await repo.loadUpload(uploadId)
   if (!up) throw new NotFoundError('upload_not_found')
@@ -337,6 +344,8 @@ export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Pr
     status: r.status,
     publishedAt: r.published_at,
     unpublishedAt: r.unpublished_at,
+    hasStory: Boolean(r.has_story),
+    storyPreview: r.story_preview,
   }))
 }
 
@@ -456,4 +465,37 @@ export async function unpublishUploadFromSpaces(uploadId: number, spaces: number
     await unpublish(row.id, ctx)
   }
   return { ok: true, uploadId, spaces }
+}
+
+function normalizeStoryInput(input: unknown): string | null {
+  const s = typeof input === 'string' ? input : String(input ?? '')
+  const normalized = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const trimmed = normalized.trim()
+  if (!trimmed) return null
+  if (normalized.length > 2000) throw new DomainError('story_too_long', 'story_too_long', 400)
+  return normalized
+}
+
+export async function getStory(publicationId: number, ctx: ServiceContext): Promise<{ storyText: string | null }> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, ctx.userId)
+  const txt = pub.story_text == null ? null : String(pub.story_text)
+  const trimmed = txt != null ? txt.trim() : ''
+  return { storyText: trimmed ? txt : null }
+}
+
+export async function setStory(publicationId: number, storyText: unknown, ctx: ServiceContext): Promise<{ ok: true; publicationId: number }> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
+  const upload = await repo.loadUpload(pub.upload_id)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const isOwner = upload.user_id != null && Number(upload.user_id) === Number(ctx.userId)
+  if (!isAdmin && !isOwner) throw new ForbiddenError()
+
+  const txt = normalizeStoryInput(storyText)
+  await repo.updateStory(publicationId, txt)
+  return { ok: true, publicationId }
 }

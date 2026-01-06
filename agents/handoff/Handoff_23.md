@@ -72,7 +72,15 @@ Commits (since `b68aeaa`)
 - `ff8b80e` System audio: admin-managed library + user picker
 - `e8aef7d` Logo configs: 3x3 position + safe inset presets
 - (many intermediate commits: uploads kinds, produce flow, watermark/music support, UI cleanups; see `git log b68aeaa..HEAD`)
+- Feed: publication stories (per-space), feed preview + expand, publish-side editor, `/api/publications/:id/story`
 
 Open Questions / Deferred
 - Consider removing legacy `mixins/audio/normalize-lufs-16` references from `jobs/profiles/*.json` to eliminate “two sources of truth” (code policy is now authoritative).
 - Future: cube LUT support and animated lower thirds via the transforms seam.
+
+Changes Since Last (since `74e1c20`)
+- Stories (plain text, per space publication)
+  - DB: `space_publications.story_text`, `space_publications.story_updated_at`
+  - API: `GET /api/publications/:id/story`, `PATCH /api/publications/:id/story` (owner/site_admin; CSRF required for PATCH)
+  - Feed: 1–2 line preview under creator name; chevron expands to scrollable story; transparent background; lazy-load full text on expand
+  - Publish: per-space “Story” section on `/publish?production=:id` + editor route `/publish/story?publication=:id&from=...`

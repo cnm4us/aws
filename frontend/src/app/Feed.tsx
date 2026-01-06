@@ -32,6 +32,8 @@ type UploadItem = {
    likedByMe?: boolean | null
    commentedByMe?: boolean | null
    reportedByMe?: boolean | null
+  hasStory?: boolean | null
+  storyPreview?: string | null
 }
 
 type MeResponse = {
@@ -128,6 +130,8 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const likedByMe = typeof (publication as any)?.liked_by_me === 'boolean' ? Boolean((publication as any).liked_by_me) : null
   const commentedByMe = typeof (publication as any)?.commented_by_me === 'boolean' ? Boolean((publication as any).commented_by_me) : null
   const reportedByMe = typeof (publication as any)?.reported_by_me === 'boolean' ? Boolean((publication as any).reported_by_me) : null
+  const hasStory = typeof (publication as any)?.has_story === 'boolean' ? Boolean((publication as any).has_story) : null
+  const storyPreview = typeof (publication as any)?.story_preview === 'string' ? String((publication as any).story_preview) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -153,6 +157,8 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     likedByMe,
     commentedByMe,
     reportedByMe,
+    hasStory,
+    storyPreview,
   }
 }
 
@@ -293,6 +299,10 @@ export default function Feed() {
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpForPub, setJumpForPub] = useState<number | null>(null)
   const [jumpPinUlid, setJumpPinUlid] = useState<string | null>(null)
+  // Story overlay state keyed by publicationId
+  const [storyOpenForPub, setStoryOpenForPub] = useState<number | null>(null)
+  const [storyTextMap, setStoryTextMap] = useState<Record<number, string | null>>({})
+  const [storyBusyMap, setStoryBusyMap] = useState<Record<number, boolean>>({})
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -407,6 +417,29 @@ export default function Feed() {
       setLikedMap((m) => ({ ...m, [publicationId]: Boolean(data?.liked) }))
       try { debug.log('feed', 'like summary fetched', { publicationId, count: Number(data?.count ?? 0), liked: Boolean(data?.liked) }) } catch {}
     } catch {}
+  }
+
+  useEffect(() => {
+    // Close story overlay when the user changes slides.
+    setStoryOpenForPub(null)
+  }, [index])
+
+  async function ensureStory(publicationId: number | null | undefined) {
+    if (!publicationId || !isAuthed) return
+    if (Object.prototype.hasOwnProperty.call(storyTextMap, publicationId)) return
+    if (storyBusyMap[publicationId]) return
+    setStoryBusyMap((m) => ({ ...m, [publicationId]: true }))
+    try {
+      const res = await fetch(`/api/publications/${publicationId}/story`, { credentials: 'same-origin' })
+      if (!res.ok) return
+      const data = await res.json().catch(() => ({}))
+      const storyText = typeof data?.storyText === 'string' ? String(data.storyText) : null
+      setStoryTextMap((m) => ({ ...m, [publicationId]: storyText }))
+    } catch {
+      // ignore
+    } finally {
+      setStoryBusyMap((m) => ({ ...m, [publicationId]: false }))
+    }
   }
 
   const openProfilePeek = useCallback(
@@ -1940,6 +1973,72 @@ export default function Feed() {
                   </button>
                 </div>
               )}
+              {/* Creator name + optional story (transparent overlay) */}
+              <div
+                className={clsx(
+                  styles.storyPanel,
+                  it.publicationId != null && storyOpenForPub === it.publicationId ? styles.storyPanelExpanded : null
+                )}
+                onClick={(e) => {
+                  // Prevent slide tap-to-play from triggering when interacting with the story UI.
+                  e.stopPropagation()
+                }}
+              >
+                <div className={styles.storyHeaderRow}>
+                  <div className={styles.storyHeaderLeft}>
+                    <div className={styles.storyAuthor}>
+                      {(it.ownerName || it.ownerEmail || 'Unknown').trim()}
+                    </div>
+                    {it.hasStory === true && it.publicationId != null ? (
+                      <button
+                        type="button"
+                        className={styles.storyChevron}
+                        aria-label={storyOpenForPub === it.publicationId ? 'Collapse story' : 'Expand story'}
+                        aria-expanded={storyOpenForPub === it.publicationId}
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          const pubId = it.publicationId
+                          if (!pubId) return
+                          if (storyOpenForPub === pubId) {
+                            setStoryOpenForPub(null)
+                            return
+                          }
+                          await ensureStory(pubId)
+                          setStoryOpenForPub(pubId)
+                        }}
+                      >
+                        {storyOpenForPub === it.publicationId ? (
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        ) : (
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M6 15l6-6 6 6" />
+                          </svg>
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {it.hasStory === true ? (
+                  storyOpenForPub === it.publicationId ? (
+                    <div className={styles.storyBody}>
+                      {(() => {
+                        const pubId = it.publicationId!
+                        if (storyBusyMap[pubId]) return 'Loading…'
+                        if (Object.prototype.hasOwnProperty.call(storyTextMap, pubId)) {
+                          const txt = storyTextMap[pubId]
+                          return txt && txt.trim().length ? txt : 'No story.'
+                        }
+                        // Fallback (should be rare): show preview until fetch completes.
+                        return (it.storyPreview || '').trim() || 'Loading…'
+                      })()}
+                    </div>
+                  ) : (
+                    <div className={styles.storyPreview}>{((it.storyPreview || '').trim() || '…')}</div>
+                  )
+                ) : null}
+              </div>
               {playingIndex !== i && (
                 <div aria-hidden className={styles.playHint}>
                   <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
@@ -1951,7 +2050,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId]
+    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap]
   )
 
   // Debug: log index changes explicitly (outside slides memo)

@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadProduce, loadLogoConfigs, loadLowerThirds, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadLogoConfigs, loadLowerThirds, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -14,6 +14,7 @@ const Feed = React.lazy(loadFeed)
 const UploadsPage = React.lazy(loadUploads)
 const UploadNewPage = React.lazy(loadUploadNew)
 const PublishPage = React.lazy(loadPublish)
+const PublishStoryPage = React.lazy(loadPublishStory)
 const ProducePage = React.lazy(loadProduce)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const LowerThirdsPage = React.lazy(loadLowerThirds)
@@ -163,6 +164,14 @@ if (path === '/' || path === '') {
     <Layout label="Productions">
       <Suspense fallback={<ProductionsSkeleton />}> 
         <ProductionsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/publish/story')) {
+  root.render(
+    <Layout label="Story">
+      <Suspense fallback={<PublishSkeleton />}>
+        <PublishStoryPage />
       </Suspense>
     </Layout>
   )

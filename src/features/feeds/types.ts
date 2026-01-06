@@ -8,6 +8,8 @@ export type FeedPublication = {
   liked_by_me: boolean
   commented_by_me: boolean
   reported_by_me?: boolean
+  has_story?: boolean
+  story_preview?: string | null
   production_id?: number | null
   production_ulid?: string | null
   space_id: number

@@ -116,6 +116,39 @@ publicationsRouter.get('/api/publications/:id/jump-spaces', requireAuth, async (
   } catch (err: any) { next(err) }
 })
 
+const storySchema = z.object({
+  storyText: z.string().max(2000).nullable().optional(),
+})
+
+publicationsRouter.get('/api/publications/:id/story', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' })
+    }
+    const userId = Number(req.user!.id)
+    const data = await pubsSvc.getStory(publicationId, { userId })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+publicationsRouter.patch('/api/publications/:id/story', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' })
+    }
+    const parsed = storySchema.safeParse(req.body || {})
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    }
+    const userId = Number(req.user!.id)
+    const storyText = parsed.data.storyText ?? null
+    const data = await pubsSvc.setStory(publicationId, storyText, { userId })
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
 // Reporting options for end users (derived from the publication's space cultures)
 publicationsRouter.get('/api/publications/:id/reporting/options', requireAuth, async (req, res, next) => {
   try {

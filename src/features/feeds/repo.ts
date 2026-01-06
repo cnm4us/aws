@@ -30,6 +30,11 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
         SELECT 1 FROM space_publication_reports spr
         WHERE spr.space_publication_id = sp.id AND spr.reporter_user_id = ?
       ) AS reported_by_me,
+      CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+      CASE
+        WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+        ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
+      END AS story_preview,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -118,6 +123,11 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
         SELECT 1 FROM space_publication_reports spr
         WHERE spr.space_publication_id = sp.id AND spr.reporter_user_id = ?
       ) AS reported_by_me,
+      CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+      CASE
+        WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+        ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
+      END AS story_preview,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -208,6 +218,11 @@ export async function listSpaceFeedRows(
         SELECT 1 FROM space_publication_reports spr
         WHERE spr.space_publication_id = sp.id AND spr.reporter_user_id = ?
       ) AS reported_by_me,
+      CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+      CASE
+        WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+        ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
+      END AS story_preview,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,

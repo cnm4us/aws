@@ -2,12 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import HLSVideo from '../components/HLSVideo'
 
 type PublicationSummary = {
+  id: number
   spaceId: number
   spaceName: string
   spaceType: string
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  hasStory?: boolean
+  storyPreview?: string | null
 }
 
 type UploadDetail = {
@@ -122,6 +125,7 @@ const PublishPage: React.FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [storySavingMap, setStorySavingMap] = useState<Record<number, boolean>>({})
   const [previewOpen, setPreviewOpen] = useState(false)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
 
@@ -210,6 +214,8 @@ const PublishPage: React.FC = () => {
           const pubsJson = await pubsRes.json().catch(() => ({}))
           if (!pubsRes.ok) throw new Error(pubsJson?.error || 'Failed to load publications')
           pubs = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
+          // Ensure the publish page has the per-space publication list (for Stories, etc)
+          uploadJson.publications = pubs
         } else {
           const uploadRes = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
           if (!uploadRes.ok) throw new Error('Failed to load upload')
@@ -455,6 +461,7 @@ const PublishPage: React.FC = () => {
   const title = productionId ? (productionName || displayName) : displayName
 
   const backHref = fromHref || (productionId ? `/productions?upload=${encodeURIComponent(String(upload.id))}` : '/uploads')
+  const currentHref = `${window.location.pathname}${window.location.search}`
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -687,6 +694,92 @@ const PublishPage: React.FC = () => {
                 </button>
               </div>
             </section>
+
+            {productionId ? (
+              <section style={{ marginTop: 28 }}>
+                <h2 style={{ fontSize: 18, marginBottom: 10 }}>Story</h2>
+                <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>Stories are per space.</div>
+                {Array.isArray(upload.publications) && upload.publications.length ? (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {upload.publications.map((p) => {
+                      const preview = typeof p.storyPreview === 'string' ? p.storyPreview.trim() : ''
+                      const hasStory = Boolean(p.hasStory)
+                      const canEdit = !!p.id
+                      return (
+                        <div
+                          key={p.id || `${p.spaceId}-${p.status}`}
+                          style={{
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            borderRadius: 12,
+                            padding: 12,
+                            background: 'rgba(255,255,255,0.03)',
+                            display: 'grid',
+                            gap: 6,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+                            <div style={{ fontWeight: 700 }}>{p.spaceName}</div>
+                            <div style={{ fontSize: 12, color: '#888' }}>{p.status}</div>
+                          </div>
+                          <div style={{ color: hasStory ? '#ddd' : '#888', whiteSpace: 'pre-wrap' }}>
+                            {hasStory ? (preview || '…') : 'None'}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                            {canEdit ? (
+                              <a
+                                href={`/publish/story?publication=${encodeURIComponent(String(p.id))}&from=${encodeURIComponent(currentHref)}`}
+                                style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Edit
+                              </a>
+                            ) : null}
+                            <button
+                              disabled={!canEdit || storySavingMap[p.id]}
+                              onClick={async () => {
+                                if (!canEdit) return
+                                const pubId = Number(p.id)
+                                setStorySavingMap((m) => ({ ...m, [pubId]: true }))
+                                try {
+                                  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                                  const csrf = getCsrfToken()
+                                  if (csrf) headers['x-csrf-token'] = csrf
+                                  const res = await fetch(`/api/publications/${pubId}/story`, {
+                                    method: 'PATCH',
+                                    credentials: 'same-origin',
+                                    headers,
+                                    body: JSON.stringify({ storyText: null }),
+                                  })
+                                  if (!res.ok) throw new Error('Failed to clear story')
+                                  await refreshUpload()
+                                } catch (err) {
+                                  console.error('clear story failed', err)
+                                } finally {
+                                  setStorySavingMap((m) => ({ ...m, [pubId]: false }))
+                                }
+                              }}
+                              style={{
+                                background: 'transparent',
+                                color: '#fff',
+                                border: '1px solid rgba(255,255,255,0.25)',
+                                borderRadius: 10,
+                                padding: '6px 10px',
+                                fontWeight: 600,
+                                cursor: storySavingMap[p.id] ? 'default' : 'pointer',
+                                opacity: storySavingMap[p.id] ? 0.6 : 1,
+                              }}
+                            >
+                              {storySavingMap[p.id] ? 'Clearing…' : 'Clear'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ color: '#888' }}>Publish to a space to add a story.</div>
+                )}
+              </section>
+            ) : null}
           </div>
         </div>
       </div>

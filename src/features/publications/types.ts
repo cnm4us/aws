@@ -18,6 +18,8 @@ export type Publication = {
   owner_user_id: number | null
   visible_in_space: boolean
   visible_in_global: boolean
+  story_text: string | null
+  story_updated_at: string | null
   published_at: string | null
   unpublished_at: string | null
   created_at: string

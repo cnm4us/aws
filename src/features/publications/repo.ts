@@ -23,11 +23,26 @@ export async function getById(id: number, conn?: any): Promise<Publication | nul
     owner_user_id: r.owner_user_id == null ? null : Number(r.owner_user_id),
     visible_in_space: Boolean(Number(r.visible_in_space)),
     visible_in_global: Boolean(Number(r.visible_in_global)),
+    story_text: r.story_text == null ? null : String(r.story_text),
+    story_updated_at: r.story_updated_at == null ? null : String(r.story_updated_at),
     published_at: r.published_at ? String(r.published_at) : null,
     unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
     created_at: String(r.created_at),
     updated_at: r.updated_at ? String(r.updated_at) : String(r.created_at),
   }
+}
+
+export async function updateStory(publicationId: number, storyText: string | null, conn?: any): Promise<void> {
+  const db = conn || getPool()
+  const txt = storyText == null ? null : String(storyText)
+  await db.query(
+    `UPDATE space_publications
+        SET story_text = ?,
+            story_updated_at = NOW(),
+            updated_at = NOW()
+      WHERE id = ?`,
+    [txt, publicationId]
+  )
 }
 
 export async function getByProductionSpace(productionId: number, spaceId: number, _conn?: any): Promise<Publication | null> {
@@ -197,10 +212,24 @@ export async function listPublicationsForProduction(productionId: number, conn?:
   status: string
   published_at: string | null
   unpublished_at: string | null
+  has_story: boolean
+  story_preview: string | null
 }>> {
   const db = conn || getPool()
   const [rows] = await db.query(
-    `SELECT sp.id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at, s.name AS space_name, s.type AS space_type
+    `SELECT
+        sp.id,
+        sp.space_id,
+        sp.status,
+        sp.published_at,
+        sp.unpublished_at,
+        s.name AS space_name,
+        s.type AS space_type,
+        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+        CASE
+          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+          ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
+        END AS story_preview
        FROM space_publications sp
        JOIN spaces s ON s.id = sp.space_id
       WHERE sp.production_id = ?
@@ -215,6 +244,8 @@ export async function listPublicationsForProduction(productionId: number, conn?:
     status: String(r.status || ''),
     published_at: r.published_at ? String(r.published_at) : null,
     unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+    has_story: Boolean(Number(r.has_story)),
+    story_preview: r.story_preview == null ? null : String(r.story_preview),
   }))
 }
 
@@ -226,10 +257,24 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
   status: string
   published_at: string | null
   unpublished_at: string | null
+  has_story: boolean
+  story_preview: string | null
 }>> {
   const db = conn || getPool()
   const [rows] = await db.query(
-    `SELECT sp.id, sp.space_id, sp.status, sp.published_at, sp.unpublished_at, s.name AS space_name, s.type AS space_type
+    `SELECT
+        sp.id,
+        sp.space_id,
+        sp.status,
+        sp.published_at,
+        sp.unpublished_at,
+        s.name AS space_name,
+        s.type AS space_type,
+        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+        CASE
+          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+          ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
+        END AS story_preview
        FROM space_publications sp
        JOIN spaces s ON s.id = sp.space_id
       WHERE sp.upload_id = ?
@@ -244,6 +289,8 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
     status: String(r.status || ''),
     published_at: r.published_at ? String(r.published_at) : null,
     unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+    has_story: Boolean(Number(r.has_story)),
+    story_preview: r.story_preview == null ? null : String(r.story_preview),
   }))
 }
 

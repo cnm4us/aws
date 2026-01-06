@@ -1017,6 +1017,9 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS likes_count INT UNSIGNED NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_count INT UNSIGNED NOT NULL DEFAULT 0`);
+  // Optional per-space/per-publication plain-text story (shown on the feed)
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_text TEXT NULL`);
+  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_updated_at DATETIME NULL`);
   // Retroactive cleanup: clear legacy Personal ⇒ Global coupling
   try {
     await db.query(`
