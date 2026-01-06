@@ -73,6 +73,7 @@ Commits (since `b68aeaa`)
 - `e8aef7d` Logo configs: 3x3 position + safe inset presets
 - (many intermediate commits: uploads kinds, produce flow, watermark/music support, UI cleanups; see `git log b68aeaa..HEAD`)
 - Feed: publication stories (per-space), feed preview + expand, publish-side editor, `/api/publications/:id/story`
+- `b78e19a` Publish: always show story list (and add `agents/implementation/plan_44.md`)
 
 Open Questions / Deferred
 - Consider removing legacy `mixins/audio/normalize-lufs-16` references from `jobs/profiles/*.json` to eliminate “two sources of truth” (code policy is now authoritative).

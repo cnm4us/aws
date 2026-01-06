@@ -117,6 +117,7 @@ const PublishPage: React.FC = () => {
   const productionId = useMemo(() => parseProductionId(), [])
   const fromHref = useMemo(() => parseFromHref(), [])
   const [upload, setUpload] = useState<UploadDetail | null>(null)
+  const [publicationRows, setPublicationRows] = useState<PublicationSummary[]>([])
   const [productionName, setProductionName] = useState<string | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
   const [selectedSpaces, setSelectedSpaces] = useState<Record<number, boolean>>({})
@@ -176,6 +177,7 @@ const PublishPage: React.FC = () => {
       setLoading(true)
       setError(null)
       setProductionName(null)
+      setPublicationRows([])
       try {
         let uploadJson: UploadDetail | null = null
         let pubs: PublicationSummary[] = []
@@ -214,14 +216,15 @@ const PublishPage: React.FC = () => {
           const pubsJson = await pubsRes.json().catch(() => ({}))
           if (!pubsRes.ok) throw new Error(pubsJson?.error || 'Failed to load publications')
           pubs = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
-          // Ensure the publish page has the per-space publication list (for Stories, etc)
-          uploadJson.publications = pubs
+          // Keep a dedicated publications list so it’s always visible/editable without re-publishing.
+          if (!cancelled) setPublicationRows(pubs)
         } else {
           const uploadRes = await fetch(`/api/uploads/${uploadId}?include_publications=1`, { credentials: 'same-origin' })
           if (!uploadRes.ok) throw new Error('Failed to load upload')
           uploadJson = (await uploadRes.json()) as UploadDetail
           pubs = Array.isArray(uploadJson?.publications) ? uploadJson.publications : []
           if (!cancelled) setProductionName(null)
+          if (!cancelled) setPublicationRows(pubs)
         }
         const optionsRes = await fetch(`/api/uploads/${uploadJson!.id}/publish-options`, { credentials: 'same-origin' })
         if (!optionsRes.ok) throw new Error('Failed to load publish options')
@@ -262,6 +265,7 @@ const PublishPage: React.FC = () => {
         const pubsJson = await pubsRes.json()
         const pubList: PublicationSummary[] = Array.isArray(pubsJson?.publications) ? pubsJson.publications : []
         setUpload((prev) => (prev ? { ...prev, publications: pubList } : prev))
+        setPublicationRows(pubList)
         const published = pubList
           .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
           .reduce<Record<number, boolean>>((acc, p) => {
@@ -275,6 +279,7 @@ const PublishPage: React.FC = () => {
         const json = await res.json()
         setUpload(json)
         const pubs: PublicationSummary[] = Array.isArray(json?.publications) ? json.publications : []
+        setPublicationRows(pubs)
         const published = pubs
           .filter((p) => p.status !== 'unpublished' && p.status !== 'rejected')
           .reduce<Record<number, boolean>>((acc, p) => {
@@ -699,9 +704,9 @@ const PublishPage: React.FC = () => {
               <section style={{ marginTop: 28 }}>
                 <h2 style={{ fontSize: 18, marginBottom: 10 }}>Story</h2>
                 <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>Stories are per space.</div>
-                {Array.isArray(upload.publications) && upload.publications.length ? (
+                {Array.isArray(publicationRows) && publicationRows.length ? (
                   <div style={{ display: 'grid', gap: 10 }}>
-                    {upload.publications.map((p) => {
+                    {publicationRows.map((p) => {
                       const preview = typeof p.storyPreview === 'string' ? p.storyPreview.trim() : ''
                       const hasStory = Boolean(p.hasStory)
                       const canEdit = !!p.id
