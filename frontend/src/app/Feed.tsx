@@ -525,6 +525,11 @@ export default function Feed() {
     const normalized = Array.isArray(cues) ? cues.slice().sort((a, b) => a.startMs - b.startMs) : []
     if (normalized.length === 0) return []
     const out: Array<{ startMs: number; endMs: number; text: string }> = []
+    const countWords = (s: string) => {
+      const txt = String(s || '').trim()
+      if (!txt) return 0
+      return txt.split(/\s+/).filter(Boolean).length
+    }
     for (let i = 0; i < normalized.length; i += 1) {
       const raw = normalized[i]
       const startMs = Math.max(0, Math.round(Number(raw.startMs) || 0))
@@ -538,6 +543,22 @@ export default function Feed() {
       const isLast = i === normalized.length - 1
       const minMs = isLast ? opts.minLastCueMs : opts.minCueMs
       const dur = Math.max(0, endMs - startMs)
+
+      // Merge "hanger" micro-cues into the prior cue when they are very small and close in time.
+      // This avoids single-word flashes like a trailing "profile" at the very end.
+      const wordCount = countWords(text)
+      const isMicro = wordCount > 0 && (wordCount <= 2 || text.length <= 8)
+      if (isMicro && out.length) {
+        const prev = out[out.length - 1]
+        const gapMs = Math.max(0, startMs - prev.endMs)
+        if (gapMs <= 800 || isLast) {
+          prev.text = `${prev.text} ${text}`.trim()
+          prev.endMs = Math.max(prev.endMs, endMs)
+          if (nextStartMs != null && prev.endMs >= nextStartMs) prev.endMs = Math.max(prev.startMs + 1, nextStartMs - 1)
+          continue
+        }
+      }
+
       if (dur < minMs) {
         let extendedEnd = startMs + minMs
         if (nextStartMs != null) extendedEnd = Math.min(extendedEnd, Math.max(startMs + 1, nextStartMs - 1))
