@@ -45,6 +45,8 @@ type AssetItem = {
   modified_filename: string | null
   content_type?: string | null
   size_bytes?: number | null
+  width?: number | null
+  height?: number | null
   created_at?: string | null
 }
 
@@ -78,6 +80,8 @@ type LowerThirdConfig = {
   id: number
   name: string
   position: 'bottom_center'
+  sizeMode?: 'pct' | 'match_image'
+  baselineWidth?: 1080 | 1920
   sizePctWidth: number
   opacityPct: number
   timingRule: 'first_only' | 'entire'
@@ -687,6 +691,8 @@ export default function ProducePage() {
 
   const formatLowerThirdConfigSummary = (c: LowerThirdConfig | null): string => {
     if (!c) return ''
+    const sizeMode = String(c.sizeMode || 'pct').toLowerCase()
+    const base = c.baselineWidth === 1920 ? 1920 : 1080
     const timing =
       c.timingRule === 'entire'
         ? 'Till end'
@@ -695,8 +701,22 @@ export default function ProducePage() {
           : 'First 10s'
     const fadeLabel = c.fade && c.fade !== 'none' ? `Fade ${String(c.fade).split('_').join(' ')}` : null
     const insetY = c.insetYPreset ? `Inset ${String(c.insetYPreset)}` : null
+    const sizeLabel =
+      sizeMode === 'match_image'
+        ? (() => {
+            const w = selectedLowerThirdImage?.width != null ? Number(selectedLowerThirdImage.width) : null
+            if (w != null && Number.isFinite(w) && w > 0) {
+              const pct = (w / base) * 100
+              const pctLabel = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)
+              return `Match image @ ${base} (~${pctLabel}%)`
+            }
+            return `Match image @ ${base}`
+          })()
+        : c.sizePctWidth != null
+          ? `${c.sizePctWidth}%`
+          : null
     return [
-      c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
+      sizeLabel,
       c.opacityPct != null ? `${c.opacityPct}%` : null,
       timing,
       fadeLabel,
@@ -1538,9 +1558,29 @@ export default function ProducePage() {
                       </div>
                     </div>
                     {selectedLowerThirdConfig ? (
-                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                        {formatLowerThirdConfigSummary(selectedLowerThirdConfig)}
-                      </div>
+                      <>
+                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                          {formatLowerThirdConfigSummary(selectedLowerThirdConfig)}
+                        </div>
+                        {(() => {
+                          const cfg = selectedLowerThirdConfig
+                          const sizeMode = String(cfg.sizeMode || 'pct').toLowerCase()
+                          if (sizeMode !== 'pct') return null
+                          const imgW = selectedLowerThirdImage?.width != null ? Number(selectedLowerThirdImage.width) : null
+                          if (imgW == null || !Number.isFinite(imgW) || imgW <= 0) return null
+                          const pct = cfg.sizePctWidth != null ? Number(cfg.sizePctWidth) : null
+                          if (pct == null || !Number.isFinite(pct) || pct <= 0) return null
+                          const baseline = upload.width != null && upload.height != null && Number(upload.width) > Number(upload.height) ? 1920 : 1080
+                          const required = (pct / 100) * baseline
+                          if (!Number.isFinite(required) || required <= 0) return null
+                          if (required <= imgW + 1) return null
+                          return (
+                            <div style={{ color: '#ffcf8a', fontSize: 13, lineHeight: 1.35 }}>
+                              Warning: this may upscale your PNG (needs ~{Math.round(required)}px at {baseline}-wide; image is {Math.round(imgW)}px).
+                            </div>
+                          )
+                        })()}
+                      </>
                     ) : (
                       <div style={{ color: '#777', fontSize: 13 }}>
                         Select a config preset for sizing/timing (optional).

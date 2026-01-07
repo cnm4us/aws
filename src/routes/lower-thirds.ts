@@ -31,7 +31,7 @@ lowerThirdsRouter.post('/api/lower-third-configs', requireAuth, async (req, res,
   try {
     const body = req.body || {}
     const config = await lowerThirdConfigsSvc.createForUser(
-      { name: body.name, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
+      { name: body.name, sizeMode: body.sizeMode, baselineWidth: body.baselineWidth, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
       Number(req.user!.id),
     )
     res.status(201).json({ config })
@@ -58,7 +58,7 @@ async function handleUpdate(req: any, res: any, next: any) {
     const body = req.body || {}
     const config = await lowerThirdConfigsSvc.updateForUser(
       id,
-      { name: body.name, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
+      { name: body.name, sizeMode: body.sizeMode, baselineWidth: body.baselineWidth, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
       Number(req.user!.id)
     )
     res.json({ config })

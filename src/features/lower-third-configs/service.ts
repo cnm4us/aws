@@ -1,6 +1,6 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
-import type { InsetPreset, LowerThirdConfigurationDto, LowerThirdConfigurationRow, LowerThirdFade, LowerThirdPosition, LowerThirdTimingRule } from './types'
+import type { InsetPreset, LowerThirdBaselineWidth, LowerThirdConfigurationDto, LowerThirdConfigurationRow, LowerThirdFade, LowerThirdPosition, LowerThirdSizeMode, LowerThirdTimingRule } from './types'
 
 function normalizeName(raw: any): string {
   const name = String(raw ?? '').trim()
@@ -12,6 +12,21 @@ function normalizeName(raw: any): string {
 function normalizePosition(_raw: any): LowerThirdPosition {
   // MVP restriction: bottom_center only.
   return 'bottom_center'
+}
+
+function normalizeSizeMode(raw: any): LowerThirdSizeMode {
+  const s = String(raw ?? '').trim().toLowerCase()
+  if (!s) return 'pct'
+  if (s === 'pct' || s === 'percent') return 'pct'
+  if (s === 'match_image' || s === 'match' || s === 'image') return 'match_image'
+  throw new DomainError('invalid_size_mode', 'invalid_size_mode', 400)
+}
+
+function normalizeBaselineWidth(raw: any): LowerThirdBaselineWidth {
+  const n = Math.round(Number(raw))
+  if (!Number.isFinite(n)) return 1080
+  if (n === 1080 || n === 1920) return n as LowerThirdBaselineWidth
+  throw new DomainError('invalid_baseline_width', 'invalid_baseline_width', 400)
 }
 
 function normalizeInsetPreset(raw: any): InsetPreset | null {
@@ -54,9 +69,15 @@ function clampInt(raw: any, min: number, max: number): number {
 }
 
 function mapRow(row: LowerThirdConfigurationRow): LowerThirdConfigurationDto {
+  const sizeModeRaw = String((row as any).size_mode || '').toLowerCase()
+  const sizeMode: LowerThirdSizeMode = sizeModeRaw === 'match_image' ? 'match_image' : 'pct'
+  const baselineRaw = row.baseline_width != null ? Number(row.baseline_width) : 1080
+  const baselineWidth: LowerThirdBaselineWidth = baselineRaw === 1920 ? 1920 : 1080
   return {
     id: Number(row.id),
     name: String(row.name || ''),
+    sizeMode,
+    baselineWidth,
     position: 'bottom_center',
     sizePctWidth: clampInt(row.size_pct_width, 1, 100),
     opacityPct: clampInt(row.opacity_pct, 0, 100),
@@ -92,6 +113,8 @@ export async function getActiveForUser(id: number, userId: number): Promise<Lowe
 export async function createForUser(
   input: {
     name: any
+    sizeMode?: any
+    baselineWidth?: any
     sizePctWidth: any
     opacityPct: any
     timingRule: any
@@ -102,6 +125,8 @@ export async function createForUser(
   userId: number
 ) {
   const name = normalizeName(input.name)
+  const sizeMode = normalizeSizeMode(input.sizeMode)
+  const baselineWidth = normalizeBaselineWidth(input.baselineWidth)
   const position = normalizePosition(null)
   const sizePctWidth = clampInt(input.sizePctWidth ?? 82, 1, 100)
   const opacityPct = clampInt(input.opacityPct ?? 100, 0, 100)
@@ -113,6 +138,8 @@ export async function createForUser(
   const id = await repo.insert({
     ownerUserId: userId,
     name,
+    sizeMode,
+    baselineWidth,
     position,
     sizePctWidth,
     opacityPct,
@@ -129,6 +156,8 @@ export async function updateForUser(
   id: number,
   input: {
     name: any
+    sizeMode?: any
+    baselineWidth?: any
     sizePctWidth: any
     opacityPct: any
     timingRule: any
@@ -143,6 +172,8 @@ export async function updateForUser(
   if (Number(existing.owner_user_id) !== Number(userId)) throw new ForbiddenError()
 
   const name = normalizeName(input.name)
+  const sizeMode = normalizeSizeMode(input.sizeMode ?? (existing as any).size_mode)
+  const baselineWidth = normalizeBaselineWidth(input.baselineWidth ?? (existing as any).baseline_width)
   const position = normalizePosition(null)
   const sizePctWidth = clampInt(input.sizePctWidth ?? existing.size_pct_width, 1, 100)
   const opacityPct = clampInt(input.opacityPct ?? existing.opacity_pct, 0, 100)
@@ -153,6 +184,8 @@ export async function updateForUser(
 
   await repo.update(id, {
     name,
+    sizeMode,
+    baselineWidth,
     position,
     sizePctWidth,
     opacityPct,
@@ -172,4 +205,3 @@ export async function archiveForUser(id: number, userId: number) {
   await repo.archive(id)
   return { ok: true }
 }
-

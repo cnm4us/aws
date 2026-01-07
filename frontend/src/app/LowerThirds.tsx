@@ -9,10 +9,14 @@ type MeResponse = {
 type InsetPreset = 'small' | 'medium' | 'large'
 type TimingRule = 'first_only' | 'entire'
 type Fade = 'none' | 'in' | 'out' | 'in_out'
+type SizeMode = 'pct' | 'match_image'
+type BaselineWidth = 1080 | 1920
 
 type LowerThirdConfig = {
   id: number
   name: string
+  sizeMode: SizeMode
+  baselineWidth: BaselineWidth
   position: 'bottom_center'
   sizePctWidth: number
   opacityPct: number
@@ -27,6 +31,8 @@ type LowerThirdConfig = {
 
 type Draft = {
   name: string
+  sizeMode: SizeMode
+  baselineWidth: BaselineWidth
   sizePctWidth: number
   opacityPct: number
   timingRule: TimingRule
@@ -77,6 +83,8 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
 function defaultDraft(): Draft {
   return {
     name: 'Lower Third',
+    sizeMode: 'pct',
+    baselineWidth: 1080,
     sizePctWidth: 82,
     opacityPct: 100,
     timingRule: 'first_only',
@@ -164,6 +172,8 @@ export default function LowerThirdsPage() {
     if (!selectedConfig) return
     setDraft({
       name: selectedConfig.name,
+      sizeMode: selectedConfig.sizeMode || 'pct',
+      baselineWidth: selectedConfig.baselineWidth || 1080,
       sizePctWidth: selectedConfig.sizePctWidth,
       opacityPct: selectedConfig.opacityPct,
       timingRule: selectedConfig.timingRule,
@@ -194,6 +204,8 @@ export default function LowerThirdsPage() {
     try {
       const payload: any = {
         name: draft.name,
+        sizeMode: draft.sizeMode,
+        baselineWidth: draft.baselineWidth,
         sizePctWidth: draft.sizePctWidth,
         opacityPct: draft.opacityPct,
         timingRule: draft.timingRule,
@@ -300,7 +312,7 @@ export default function LowerThirdsPage() {
                 >
                   <div style={{ fontWeight: 800 }}>{c.name}</div>
                   <div style={{ fontSize: 12, color: '#bbb' }}>
-                    {c.sizePctWidth}% · {c.opacityPct}% · {c.timingRule === 'entire' ? 'Entire' : `First ${c.timingSeconds ?? 10}s`}
+                    {c.sizeMode === 'match_image' ? `Match image @ ${c.baselineWidth}` : `${c.sizePctWidth}%`} · {c.opacityPct}% · {c.timingRule === 'entire' ? 'Entire' : `First ${c.timingSeconds ?? 10}s`}
                   </div>
                 </button>
               ))}
@@ -351,15 +363,18 @@ export default function LowerThirdsPage() {
 
             <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
 
-            <div style={{ color: '#bbb', fontWeight: 750 }}>Size</div>
+            <div style={{ color: '#bbb', fontWeight: 750 }}>Size Mode</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {SIZE_PRESETS.map((s) => {
-                const active = draft.sizePctWidth === s.pct
+              {([
+                { label: 'Scale by %', value: 'pct' as const },
+                { label: 'Match image @ baseline', value: 'match_image' as const },
+              ] as const).map((opt) => {
+                const active = draft.sizeMode === opt.value
                 return (
                   <button
-                    key={s.label}
+                    key={opt.value}
                     type="button"
-                    onClick={() => setDraft((prev) => ({ ...prev, sizePctWidth: s.pct }))}
+                    onClick={() => setDraft((prev) => ({ ...prev, sizeMode: opt.value }))}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 999,
@@ -370,11 +385,73 @@ export default function LowerThirdsPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    {s.label}
+                    {opt.label}
                   </button>
                 )
               })}
             </div>
+
+            {draft.sizeMode === 'match_image' ? (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ color: '#bbb', fontWeight: 750 }}>Baseline Width</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {([
+                    { label: '1080 (portrait)', value: 1080 as const },
+                    { label: '1920 (landscape)', value: 1920 as const },
+                  ] as const).map((opt) => {
+                    const active = draft.baselineWidth === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setDraft((prev) => ({ ...prev, baselineWidth: opt.value }))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 999,
+                          border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+                          background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+                          color: '#fff',
+                          fontWeight: 850,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ color: '#aaa', fontSize: 13, lineHeight: 1.35 }}>
+                  Uses the uploaded PNG’s pixel width to compute a % at the chosen baseline, then applies that % to all outputs. Avoids upscaling when outputs are ≤ baseline.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ color: '#bbb', fontWeight: 750 }}>Size</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {SIZE_PRESETS.map((s) => {
+                    const active = draft.sizePctWidth === s.pct
+                    return (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => setDraft((prev) => ({ ...prev, sizePctWidth: s.pct }))}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 999,
+                          border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+                          background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+                          color: '#fff',
+                          fontWeight: 850,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
 
@@ -500,4 +577,3 @@ export default function LowerThirdsPage() {
     </div>
   )
 }
-

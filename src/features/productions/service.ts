@@ -338,6 +338,8 @@ export async function create(
       mergedConfig.lowerThirdConfigSnapshot = {
         id: cfg.id,
         name: cfg.name,
+        sizeMode: (cfg as any).sizeMode ?? 'pct',
+        baselineWidth: (cfg as any).baselineWidth ?? 1080,
         position: cfg.position,
         sizePctWidth: cfg.sizePctWidth,
         opacityPct: cfg.opacityPct,

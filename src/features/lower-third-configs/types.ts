@@ -3,11 +3,15 @@ export type LowerThirdPosition = 'bottom_center'
 export type LowerThirdTimingRule = 'entire' | 'first_only'
 export type LowerThirdFade = 'none' | 'in' | 'out' | 'in_out'
 export type InsetPreset = 'small' | 'medium' | 'large'
+export type LowerThirdSizeMode = 'pct' | 'match_image'
+export type LowerThirdBaselineWidth = 1080 | 1920
 
 export type LowerThirdConfigurationRow = {
   id: number
   owner_user_id: number
   name: string
+  size_mode: string
+  baseline_width: number
   position: string
   size_pct_width: number
   opacity_pct: number
@@ -24,6 +28,8 @@ export type LowerThirdConfigurationRow = {
 export type LowerThirdConfigurationDto = {
   id: number
   name: string
+  sizeMode: LowerThirdSizeMode
+  baselineWidth: LowerThirdBaselineWidth
   position: LowerThirdPosition
   sizePctWidth: number
   opacityPct: number
@@ -36,4 +42,3 @@ export type LowerThirdConfigurationDto = {
   updatedAt: string
   archivedAt: string | null
 }
-

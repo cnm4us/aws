@@ -498,6 +498,8 @@ type LowerThirdConfigSnapshot = {
 type LowerThirdImageConfigSnapshot = {
   id?: number
   name?: string
+  sizeMode?: 'pct' | 'match_image'
+  baselineWidth?: 1080 | 1920
   position?: LogoConfigSnapshot['position']
   sizePctWidth?: number
   opacityPct?: number
@@ -731,6 +733,8 @@ async function applyLowerThirdImageIfConfigured(
       : null
   const snapshot: LowerThirdImageConfigSnapshot = {
     position: 'bottom_center',
+    sizeMode: String(snapRaw?.sizeMode || snapRaw?.size_mode || 'pct').toLowerCase() === 'match_image' ? 'match_image' : 'pct',
+    baselineWidth: Number(snapRaw?.baselineWidth || snapRaw?.baseline_width || 1080) === 1920 ? 1920 : 1080,
     sizePctWidth: snapRaw?.sizePctWidth != null ? Number(snapRaw.sizePctWidth) : 82,
     opacityPct: snapRaw?.opacityPct != null ? Number(snapRaw.opacityPct) : 100,
     timingRule: (String(snapRaw?.timingRule || '').toLowerCase() === 'entire' ? 'entire' : 'first_only') as any,
@@ -759,14 +763,19 @@ async function applyLowerThirdImageIfConfigured(
   const isPng = ct === 'image/png' || key.toLowerCase().endsWith('.png')
   if (!isPng) throw new DomainError('lower_third_requires_png', 'lower_third_requires_png', 400)
 
-  const imgUrl = `s3://${String(img.s3_bucket)}/${key}`
-  const imgW = img.width != null ? Number(img.width) : 0
-  const imgH = img.height != null ? Number(img.height) : 0
+	  const imgUrl = `s3://${String(img.s3_bucket)}/${key}`
+	  const imgW = img.width != null ? Number(img.width) : 0
+	  const imgH = img.height != null ? Number(img.height) : 0
 
-  const rectCfg: LogoConfigSnapshot = {
-    position: 'bottom_center',
-    sizePctWidth: clampInt(snapshot.sizePctWidth ?? 82, 1, 100),
-    opacityPct: clampInt(snapshot.opacityPct ?? 100, 0, 100),
+	  const pctFromBaseline =
+	    snapshot.sizeMode === 'match_image' && imgW > 0
+	      ? (imgW / (snapshot.baselineWidth === 1920 ? 1920 : 1080)) * 100
+	      : null
+
+	  const rectCfg: LogoConfigSnapshot = {
+	    position: 'bottom_center',
+	    sizePctWidth: clampInt(snapshot.sizePctWidth ?? 82, 1, 100),
+	    opacityPct: clampInt(snapshot.opacityPct ?? 100, 0, 100),
     timingRule: (snapshot.timingRule === 'entire' ? 'entire' : 'first_only') as any,
     timingSeconds: snapshot.timingSeconds ?? 10,
     fade: (snapshot.fade as any) ?? 'none',
@@ -788,11 +797,18 @@ async function applyLowerThirdImageIfConfigured(
       const cs = vd?.CodecSettings
       if (!vd || !cs) continue
       if (t === 'FILE_GROUP_SETTINGS' && cs.Codec !== 'FRAME_CAPTURE') continue
-      const outW = vd.Width != null ? Number(vd.Width) : null
-      const outH = vd.Height != null ? Number(vd.Height) : null
-      if (!outW || !outH) continue
+	    const outW = vd.Width != null ? Number(vd.Width) : null
+	    const outH = vd.Height != null ? Number(vd.Height) : null
+	    if (!outW || !outH) continue
 
-      const rect = computeOverlayRect(outW, outH, imgW, imgH, rectCfg)
+      const cfgForOut: LogoConfigSnapshot = { ...rectCfg }
+      if (snapshot.sizeMode === 'match_image' && pctFromBaseline != null && Number.isFinite(pctFromBaseline) && pctFromBaseline > 0 && imgW > 0) {
+        const pctNoUpscale = (imgW / outW) * 100
+        const pctUsed = Math.min(pctFromBaseline, pctNoUpscale, 100)
+        // Use floor so we don't accidentally round up and upscale by a few pixels.
+        cfgForOut.sizePctWidth = clampInt(Math.floor(pctUsed), 1, 100)
+      }
+      const rect = computeOverlayRect(outW, outH, imgW, imgH, cfgForOut)
       if (!vd.VideoPreprocessors) vd.VideoPreprocessors = {}
       if (!vd.VideoPreprocessors.ImageInserter) vd.VideoPreprocessors.ImageInserter = {}
       if (!Array.isArray(vd.VideoPreprocessors.ImageInserter.InsertableImages)) {
