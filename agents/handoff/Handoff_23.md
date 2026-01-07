@@ -90,3 +90,8 @@ Changes Since Last (since `74e1c20`)
   - Uploads: `/uploads?kind=logo` supports Edit modal for name/description
   - Produce: Logo “About” modal (selected + picker) shows description (or “No description.”)
   - Commit: `846a705`
+- Logo config descriptions
+  - DB/API/UI: add `logo_configurations.description` (max 2000 chars) and edit via `/logo-configs`
+  - Produce: Logo Config “About” modal shows the selected config’s description (or “No description.”)
+  - UI: removed the experimental Logo Config size preset “Lower third”
+  - Commit: `ef07d30`
