@@ -85,3 +85,8 @@ Changes Since Last (since `74e1c20`)
   - API: `GET /api/publications/:id/story`, `PATCH /api/publications/:id/story` (owner/site_admin; CSRF required for PATCH)
   - Feed: 1–2 line preview under creator name; chevron expands to scrollable story; transparent background; lazy-load full text on expand
   - Publish: per-space “Story” section on `/publish?production=:id` + editor route `/publish/story?publication=:id&from=...`
+- Logo metadata edit + About modals
+  - API: `PATCH /api/uploads/:id` updates `modified_filename` and `description` (owner/site_admin; CSRF required)
+  - Uploads: `/uploads?kind=logo` supports Edit modal for name/description
+  - Produce: Logo “About” modal (selected + picker) shows description (or “No description.”)
+  - Commit: `846a705`

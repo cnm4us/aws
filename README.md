@@ -55,6 +55,7 @@ API testing (authenticated)
 - Useful endpoint: `GET /api/publications/:id/jump-spaces` (lists Group/Channel spaces where the same `production_id` is published; used by the Global Feed “Jump” modal).
 - Publication Story (plain text, per space publication): `GET /api/publications/:id/story` and `PATCH /api/publications/:id/story` (owner/site_admin; CSRF required for PATCH).
 - Upload thumbnail endpoint: `GET /api/uploads/:id/thumb` (first-frame thumbnail from the source upload; auth required).
+- Upload metadata endpoint: `PATCH /api/uploads/:id` (updates `modified_filename` and `description`; owner/site_admin; CSRF required).
 - Logo configs API: `GET /api/logo-configs`, `POST /api/logo-configs`, `PATCH /api/logo-configs/:id`, `POST /api/logo-configs/:id/duplicate`, `DELETE /api/logo-configs/:id` (archive).
 - Space feed supports optional `?pin=<production_ulid>` on `/groups/:slug` and `/channels/:slug` to show that production first (pins only on initial load).
 
