@@ -2264,40 +2264,38 @@ export default function Feed() {
                 }}
               >
                 <div className={styles.storyHeaderRow}>
-                  <div className={styles.storyHeaderLeft}>
-                    <div className={styles.storyAuthor}>
-                      {(it.ownerName || it.ownerEmail || 'Unknown').trim()}
-                    </div>
-                    {it.hasStory === true && it.publicationId != null ? (
-                      <button
-                        type="button"
-                        className={styles.storyChevron}
-                        aria-label={storyOpenForPub === it.publicationId ? 'Collapse story' : 'Expand story'}
-                        aria-expanded={storyOpenForPub === it.publicationId}
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          const pubId = it.publicationId
-                          if (!pubId) return
-                          if (storyOpenForPub === pubId) {
-                            setStoryOpenForPub(null)
-                            return
-                          }
-                          await ensureStory(pubId)
-                          setStoryOpenForPub(pubId)
-                        }}
-                      >
-                        {storyOpenForPub === it.publicationId ? (
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M6 9l6 6 6-6" />
-                          </svg>
-                        ) : (
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M6 15l6-6 6 6" />
-                          </svg>
-                        )}
-                      </button>
-                    ) : null}
+                  <div className={styles.storyAuthor}>
+                    {(it.ownerName || it.ownerEmail || 'Unknown').trim()}
                   </div>
+                  {it.hasStory === true && it.publicationId != null ? (
+                    <button
+                      type="button"
+                      className={styles.storyChevron}
+                      aria-label={storyOpenForPub === it.publicationId ? 'Collapse story' : 'Expand story'}
+                      aria-expanded={storyOpenForPub === it.publicationId}
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        const pubId = it.publicationId
+                        if (!pubId) return
+                        if (storyOpenForPub === pubId) {
+                          setStoryOpenForPub(null)
+                          return
+                        }
+                        await ensureStory(pubId)
+                        setStoryOpenForPub(pubId)
+                      }}
+                    >
+                      {storyOpenForPub === it.publicationId ? (
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                      ) : (
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M6 15l6-6 6 6" />
+                        </svg>
+                      )}
+                    </button>
+                  ) : null}
                 </div>
                 {it.hasStory === true ? (
                   storyOpenForPub === it.publicationId ? (

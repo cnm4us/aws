@@ -140,12 +140,13 @@
 .storyPanel {
   position: absolute;
   left: 12px;
-  right: 12px;
+  right: auto;
   bottom: max(12px, env(safe-area-inset-bottom, 0px));
   z-index: 6;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: min(80vw, 640px);
   max-height: 92px;
   overflow: hidden;
   transition: max-height 180ms ease;
@@ -160,7 +161,7 @@
 .storyHeaderRow {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 8px;
 }
 
