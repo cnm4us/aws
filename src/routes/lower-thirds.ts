@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
+import * as lowerThirdConfigsSvc from '../features/lower-third-configs/service'
 
 export const lowerThirdsRouter = Router()
 
@@ -19,7 +20,7 @@ lowerThirdsRouter.get('/api/lower-third-configs', requireAuth, async (req, res, 
     const includeArchived = req.query?.include_archived === '1' || req.query?.include_archived === 'true'
     const limitRaw = req.query?.limit ? Number(req.query.limit) : undefined
     const limit = limitRaw != null && Number.isFinite(limitRaw) ? limitRaw : undefined
-    const items = await lowerThirdsSvc.listConfigsForUser(Number(req.user!.id), { includeArchived, limit })
+    const items = await lowerThirdConfigsSvc.listForUser(Number(req.user!.id), { includeArchived, limit })
     res.json({ items })
   } catch (err: any) {
     next(err)
@@ -29,16 +30,9 @@ lowerThirdsRouter.get('/api/lower-third-configs', requireAuth, async (req, res, 
 lowerThirdsRouter.post('/api/lower-third-configs', requireAuth, async (req, res, next) => {
   try {
     const body = req.body || {}
-    const config = await lowerThirdsSvc.createConfigForUser(
-      {
-        name: body.name,
-        templateKey: body.templateKey,
-        templateVersion: body.templateVersion,
-        params: body.params,
-        timingRule: body.timingRule,
-        timingSeconds: body.timingSeconds,
-      },
-      Number(req.user!.id)
+    const config = await lowerThirdConfigsSvc.createForUser(
+      { name: body.name, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
+      Number(req.user!.id),
     )
     res.status(201).json({ config })
   } catch (err: any) {
@@ -50,7 +44,7 @@ lowerThirdsRouter.get('/api/lower-third-configs/:id', requireAuth, async (req, r
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const config = await lowerThirdsSvc.getConfigForUser(id, Number(req.user!.id))
+    const config = await lowerThirdConfigsSvc.getForUser(id, Number(req.user!.id))
     res.json({ config })
   } catch (err: any) {
     next(err)
@@ -62,9 +56,9 @@ async function handleUpdate(req: any, res: any, next: any) {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
     const body = req.body || {}
-    const config = await lowerThirdsSvc.updateConfigForUser(
+    const config = await lowerThirdConfigsSvc.updateForUser(
       id,
-      { name: body.name, params: body.params, timingRule: body.timingRule, timingSeconds: body.timingSeconds },
+      { name: body.name, sizePctWidth: body.sizePctWidth, opacityPct: body.opacityPct, timingRule: body.timingRule, timingSeconds: body.timingSeconds, fade: body.fade, insetYPreset: body.insetYPreset },
       Number(req.user!.id)
     )
     res.json({ config })
@@ -80,7 +74,7 @@ lowerThirdsRouter.delete('/api/lower-third-configs/:id', requireAuth, async (req
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const result = await lowerThirdsSvc.archiveConfigForUser(id, Number(req.user!.id))
+    const result = await lowerThirdConfigsSvc.archiveForUser(id, Number(req.user!.id))
     res.json(result)
   } catch (err: any) {
     next(err)

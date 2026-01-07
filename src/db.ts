@@ -96,8 +96,8 @@ export async function ensureSchema(db: DB) {
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
 
-	  await db.query(`
-	    CREATE TABLE IF NOT EXISTS logo_configurations (
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS logo_configurations (
 	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	      owner_user_id BIGINT UNSIGNED NOT NULL,
 	      name VARCHAR(120) NOT NULL,
@@ -119,7 +119,34 @@ export async function ensureSchema(db: DB) {
 	      archived_at TIMESTAMP NULL DEFAULT NULL,
 	      KEY idx_logo_cfg_owner_archived (owner_user_id, archived_at, id)
 	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-	  `);
+		  `);
+
+      // Lower-third image configs (Plan 46): image-based overlays configured like logos.
+      // NOTE: This is intentionally separate from the legacy SVG-template lower thirds tables below.
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS lower_third_image_configurations (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          owner_user_id BIGINT UNSIGNED NOT NULL,
+          name VARCHAR(120) NOT NULL,
+          position ENUM(
+            'top_left','top_center','top_right',
+            'middle_left','middle_center','middle_right',
+            'bottom_left','bottom_center','bottom_right',
+            'center'
+          ) NOT NULL DEFAULT 'bottom_center',
+          size_pct_width TINYINT UNSIGNED NOT NULL DEFAULT 82,
+          opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 100,
+          timing_rule ENUM('entire','start_after','first_only','last_only') NOT NULL DEFAULT 'first_only',
+          timing_seconds INT UNSIGNED NULL,
+          fade ENUM('none','in','out','in_out') NOT NULL DEFAULT 'none',
+          inset_x_preset VARCHAR(16) NULL,
+          inset_y_preset VARCHAR(16) NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          archived_at TIMESTAMP NULL DEFAULT NULL,
+          KEY idx_lt_img_cfg_owner_archived (owner_user_id, archived_at, id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
 	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_x_preset VARCHAR(16) NULL`);
 	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_y_preset VARCHAR(16) NULL`);
 	  try {

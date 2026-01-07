@@ -173,12 +173,18 @@ export async function startMediaConvertForExistingProduction(opts: {
     }
   } catch {}
 
-  await applyLowerThirdIfConfigured(settings, {
+  const lowerThirdApplied = await applyLowerThirdImageIfConfigured(settings, {
     config: opts.configPayload,
     videoDurationSeconds: durationSeconds,
-    dateYmd: createdDate,
-    productionUlid: opts.productionUlid,
   })
+  if (!lowerThirdApplied) {
+    await applyLowerThirdIfConfigured(settings, {
+      config: opts.configPayload,
+      videoDurationSeconds: durationSeconds,
+      dateYmd: createdDate,
+      productionUlid: opts.productionUlid,
+    })
+  }
 
   await applyLogoWatermarkIfConfigured(settings, {
     config: opts.configPayload,
@@ -489,6 +495,19 @@ type LowerThirdConfigSnapshot = {
   timingSeconds?: number | null
 }
 
+type LowerThirdImageConfigSnapshot = {
+  id?: number
+  name?: string
+  position?: LogoConfigSnapshot['position']
+  sizePctWidth?: number
+  opacityPct?: number
+  timingRule?: 'first_only' | 'entire'
+  timingSeconds?: number | null
+  fade?: LogoConfigSnapshot['fade']
+  insetXPreset?: LogoConfigSnapshot['insetXPreset']
+  insetYPreset?: LogoConfigSnapshot['insetYPreset']
+}
+
 function clampInt(n: any, min: number, max: number): number {
   const v = Math.round(Number(n))
   if (!Number.isFinite(v)) return min
@@ -524,9 +543,13 @@ function insetPctForPreset(preset: any): number {
 function computeOverlayRect(outputW: number, outputH: number, logoW: number, logoH: number, cfg: LogoConfigSnapshot) {
   const pct = clampInt(cfg.sizePctWidth ?? 15, 1, 100)
   const opacity = clampInt(cfg.opacityPct ?? 35, 0, 100)
-  const renderW = Math.max(1, Math.round(outputW * (pct / 100)))
   const aspect = logoW > 0 && logoH > 0 ? (logoH / logoW) : 1
-  const renderH = Math.max(1, Math.round(renderW * aspect))
+  let renderW = Math.max(1, Math.round(outputW * (pct / 100)))
+  let renderH = Math.max(1, Math.round(renderW * aspect))
+  if (renderH > outputH) {
+    renderH = outputH
+    renderW = Math.max(1, Math.min(outputW, Math.round(renderH / aspect)))
+  }
 
   const posRaw = cfg.position || 'bottom_right'
   const pos = normalizeLegacyPosition(posRaw)
@@ -667,8 +690,8 @@ function clampLowerThirdSeconds(raw: any): number {
   return 10
 }
 
-function computeLowerThirdTiming(cfg: LowerThirdConfigSnapshot, videoDurationSeconds: number | null) {
-  const rule = cfg.timingRule === 'entire' ? 'entire' : 'first_only'
+function computeLowerThirdTiming(cfg: { timingRule?: any; timingSeconds?: any }, videoDurationSeconds: number | null) {
+  const rule = String(cfg.timingRule || '').toLowerCase() === 'entire' ? 'entire' : 'first_only'
   const fallbackDurationMs = 60 * 60 * 1000
   const totalMs =
     videoDurationSeconds != null && Number.isFinite(videoDurationSeconds) && videoDurationSeconds > 0
@@ -690,6 +713,108 @@ async function uploadPngToS3(bucket: string, key: string, png: Buffer) {
     })
   )
   return { bucket, key, s3Url: `s3://${bucket}/${key}` }
+}
+
+async function applyLowerThirdImageIfConfigured(
+  settings: any,
+  opts: { config: any; videoDurationSeconds: number | null }
+): Promise<boolean> {
+  const cfgObj = opts.config && typeof opts.config === 'object' ? opts.config : null
+  if (!cfgObj) return false
+
+  const lowerThirdUploadId = cfgObj.lowerThirdUploadId != null ? Number(cfgObj.lowerThirdUploadId) : null
+  if (!lowerThirdUploadId || !Number.isFinite(lowerThirdUploadId) || lowerThirdUploadId <= 0) return false
+
+  const snapRaw =
+    cfgObj.lowerThirdConfigSnapshot && typeof cfgObj.lowerThirdConfigSnapshot === 'object'
+      ? (cfgObj.lowerThirdConfigSnapshot as any)
+      : null
+  const snapshot: LowerThirdImageConfigSnapshot = {
+    position: 'bottom_center',
+    sizePctWidth: snapRaw?.sizePctWidth != null ? Number(snapRaw.sizePctWidth) : 82,
+    opacityPct: snapRaw?.opacityPct != null ? Number(snapRaw.opacityPct) : 100,
+    timingRule: (String(snapRaw?.timingRule || '').toLowerCase() === 'entire' ? 'entire' : 'first_only') as any,
+    timingSeconds: snapRaw?.timingSeconds != null ? Number(snapRaw.timingSeconds) : 10,
+    fade: (snapRaw?.fade != null ? String(snapRaw.fade) : 'none') as any,
+    insetXPreset: snapRaw?.insetXPreset != null ? (String(snapRaw.insetXPreset).toLowerCase() as any) : null,
+    insetYPreset: snapRaw?.insetYPreset != null ? (String(snapRaw.insetYPreset).toLowerCase() as any) : 'medium',
+  }
+
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, kind, status, s3_bucket, s3_key, content_type, width, height, image_role FROM uploads WHERE id = ? LIMIT 1`,
+    [lowerThirdUploadId]
+  )
+  const img = (rows as any[])[0]
+  if (!img) throw new DomainError('lower_third_upload_not_found', 'lower_third_upload_not_found', 404)
+  const kind = String(img.kind || '').toLowerCase()
+  if (kind !== 'image') throw new DomainError('invalid_lower_third_upload_kind', 'invalid_lower_third_upload_kind', 400)
+  const role = String(img.image_role || '').toLowerCase()
+  if (role !== 'lower_third') throw new DomainError('invalid_image_role', 'invalid_image_role', 400)
+  const st = String(img.status || '').toLowerCase()
+  if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_lower_third_upload_state', 'invalid_lower_third_upload_state', 422)
+
+  const ct = String(img.content_type || '').toLowerCase()
+  const key = String(img.s3_key || '')
+  const isPng = ct === 'image/png' || key.toLowerCase().endsWith('.png')
+  if (!isPng) throw new DomainError('lower_third_requires_png', 'lower_third_requires_png', 400)
+
+  const imgUrl = `s3://${String(img.s3_bucket)}/${key}`
+  const imgW = img.width != null ? Number(img.width) : 0
+  const imgH = img.height != null ? Number(img.height) : 0
+
+  const rectCfg: LogoConfigSnapshot = {
+    position: 'bottom_center',
+    sizePctWidth: clampInt(snapshot.sizePctWidth ?? 82, 1, 100),
+    opacityPct: clampInt(snapshot.opacityPct ?? 100, 0, 100),
+    timingRule: (snapshot.timingRule === 'entire' ? 'entire' : 'first_only') as any,
+    timingSeconds: snapshot.timingSeconds ?? 10,
+    fade: (snapshot.fade as any) ?? 'none',
+    insetXPreset: snapshot.insetXPreset ?? null,
+    insetYPreset: snapshot.insetYPreset ?? 'medium',
+  }
+
+  const timing = computeLowerThirdTiming(snapshot, opts.videoDurationSeconds)
+  const fades = computeFade(rectCfg)
+
+  let applied = false
+  const groups: any[] = Array.isArray(settings?.OutputGroups) ? settings.OutputGroups : []
+  for (const g of groups) {
+    const t = g?.OutputGroupSettings?.Type
+    if (t !== 'HLS_GROUP_SETTINGS' && t !== 'CMAF_GROUP_SETTINGS' && t !== 'FILE_GROUP_SETTINGS') continue
+    const outs: any[] = Array.isArray(g?.Outputs) ? g.Outputs : []
+    for (const o of outs) {
+      const vd = o?.VideoDescription
+      const cs = vd?.CodecSettings
+      if (!vd || !cs) continue
+      if (t === 'FILE_GROUP_SETTINGS' && cs.Codec !== 'FRAME_CAPTURE') continue
+      const outW = vd.Width != null ? Number(vd.Width) : null
+      const outH = vd.Height != null ? Number(vd.Height) : null
+      if (!outW || !outH) continue
+
+      const rect = computeOverlayRect(outW, outH, imgW, imgH, rectCfg)
+      if (!vd.VideoPreprocessors) vd.VideoPreprocessors = {}
+      if (!vd.VideoPreprocessors.ImageInserter) vd.VideoPreprocessors.ImageInserter = {}
+      if (!Array.isArray(vd.VideoPreprocessors.ImageInserter.InsertableImages)) {
+        vd.VideoPreprocessors.ImageInserter.InsertableImages = []
+      }
+      vd.VideoPreprocessors.ImageInserter.InsertableImages.push({
+        ImageInserterInput: imgUrl,
+        ImageX: rect.x,
+        ImageY: rect.y,
+        Width: rect.width,
+        Height: rect.height,
+        Opacity: rect.opacity,
+        Layer: 1,
+        StartTime: timing.startTime,
+        Duration: timing.durationMs,
+        ...fades,
+      })
+      applied = true
+    }
+  }
+
+  return applied
 }
 
 async function applyLowerThirdIfConfigured(settings: any, opts: { config: any; videoDurationSeconds: number | null; dateYmd: string; productionUlid: string }) {

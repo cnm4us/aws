@@ -9,7 +9,7 @@ import { type ProductionRecord } from './types'
 import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
 import * as audioConfigsSvc from '../audio-configs/service'
-import * as lowerThirdsSvc from '../lower-thirds/service'
+import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
 import { s3 } from '../../services/s3'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
@@ -205,6 +205,7 @@ export async function create(
     logoUploadId?: number | null
     logoConfigId?: number | null
     audioConfigId?: number | null
+    lowerThirdUploadId?: number | null
     lowerThirdConfigId?: number | null
   },
   currentUserId: number
@@ -232,11 +233,15 @@ export async function create(
   if (input.musicUploadId != null) {
     await loadAssetUploadOrThrow(Number(input.musicUploadId), currentUserId, { expectedKind: 'audio', allowAdmin: canProduceAny })
   }
+  if (input.lowerThirdUploadId != null) {
+    await loadAssetUploadOrThrow(Number(input.lowerThirdUploadId), currentUserId, { expectedKind: 'image', imageRole: 'lower_third', allowAdmin: canProduceAny })
+  }
 
   const baseConfig = input.config && typeof input.config === 'object' ? input.config : {}
   const mergedConfig: any = { ...baseConfig }
   if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
+  if (input.lowerThirdUploadId !== undefined) mergedConfig.lowerThirdUploadId = input.lowerThirdUploadId
 
   // Production intro (Plan 37): optional freeze-first-frame intro segment.
   // Config shape:
@@ -328,17 +333,19 @@ export async function create(
       mergedConfig.lowerThirdConfigId = null
       mergedConfig.lowerThirdConfigSnapshot = null
     } else {
-      const cfg = await lowerThirdsSvc.getConfigForUser(Number(input.lowerThirdConfigId), currentUserId)
-      if (cfg.archivedAt) throw new DomainError('archived', 'archived', 400)
+      const cfg = await lowerThirdConfigsSvc.getActiveForUser(Number(input.lowerThirdConfigId), currentUserId)
       mergedConfig.lowerThirdConfigId = cfg.id
       mergedConfig.lowerThirdConfigSnapshot = {
         id: cfg.id,
         name: cfg.name,
-        templateKey: cfg.templateKey,
-        templateVersion: cfg.templateVersion,
-        params: cfg.params,
+        position: cfg.position,
+        sizePctWidth: cfg.sizePctWidth,
+        opacityPct: cfg.opacityPct,
         timingRule: cfg.timingRule,
         timingSeconds: cfg.timingSeconds,
+        fade: cfg.fade,
+        insetXPreset: (cfg as any).insetXPreset ?? null,
+        insetYPreset: (cfg as any).insetYPreset ?? null,
       }
     }
   }

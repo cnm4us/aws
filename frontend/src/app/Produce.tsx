@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type MeResponse = {
@@ -77,11 +77,13 @@ type AudioConfig = {
 type LowerThirdConfig = {
   id: number
   name: string
-  templateKey: string
-  templateVersion: number
-  params: Record<string, string>
+  position: 'bottom_center'
+  sizePctWidth: number
+  opacityPct: number
   timingRule: 'first_only' | 'entire'
   timingSeconds: number | null
+  fade: string
+  insetYPreset?: 'small' | 'medium' | 'large' | null
   createdAt?: string
   updatedAt?: string
   archivedAt?: string | null
@@ -95,7 +97,7 @@ function parseUploadId(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThird' | null {
+function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThirdImage' | 'lowerThirdConfig' | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('pick') || '').toLowerCase()
@@ -104,7 +106,8 @@ function parsePick(): 'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePa
     if (raw === 'logo') return 'logo'
     if (raw === 'logoconfig') return 'logoConfig'
     if (raw === 'titlepage') return 'titlePage'
-    if (raw === 'lowerthird') return 'lowerThird'
+    if (raw === 'lowerthirdimage' || raw === 'lowerthird') return 'lowerThirdImage'
+    if (raw === 'lowerthirdconfig') return 'lowerThirdConfig'
   } catch {}
   return null
 }
@@ -188,6 +191,18 @@ function parseLowerThirdConfigId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = params.get('lowerThirdConfigId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseLowerThirdUploadId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('lowerThirdUploadId')
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -313,6 +328,7 @@ export default function ProducePage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [logos, setLogos] = useState<AssetItem[]>([])
   const [titlePages, setTitlePages] = useState<AssetItem[]>([])
+  const [lowerThirdImages, setLowerThirdImages] = useState<AssetItem[]>([])
   const [audios, setAudios] = useState<AssetItem[]>([])
   const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
   const [audioConfigs, setAudioConfigs] = useState<AudioConfig[]>([])
@@ -325,9 +341,10 @@ export default function ProducePage() {
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
   const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
+  const [selectedLowerThirdUploadId, setSelectedLowerThirdUploadId] = useState<number | null>(() => parseLowerThirdUploadId())
   const [selectedLowerThirdConfigId, setSelectedLowerThirdConfigId] = useState<number | null>(() => parseLowerThirdConfigId())
   const [introSeconds, setIntroSeconds] = useState<number | null>(() => parseIntroSeconds())
-  const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThird' | null>(() => parsePick())
+  const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThirdImage' | 'lowerThirdConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
@@ -403,6 +420,20 @@ export default function ProducePage() {
         }
       } catch {}
       try {
+        const pendingRaw = sessionStorage.getItem('produce:pendingLowerThirdUploadId')
+        if (pendingRaw !== null) {
+          sessionStorage.removeItem('produce:pendingLowerThirdUploadId')
+          const pending = pendingRaw === '' ? null : Number(pendingRaw)
+          const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
+          setSelectedLowerThirdUploadId(nextId)
+          replaceQueryParams(
+            { lowerThirdUploadId: nextId == null ? null : String(nextId), pick: null },
+            { ...(window.history.state || {}), modal: null }
+          )
+          return
+        }
+      } catch {}
+      try {
         const pendingRaw = sessionStorage.getItem('produce:pendingLowerThirdConfigId')
         if (pendingRaw !== null) {
           sessionStorage.removeItem('produce:pendingLowerThirdConfigId')
@@ -448,6 +479,7 @@ export default function ProducePage() {
       setTitleHoldSeconds(parseTitleHoldSeconds() ?? 0)
       setSelectedLogoConfigId(parseLogoConfigId())
       setSelectedAudioConfigId(parseAudioConfigId())
+      setSelectedLowerThirdUploadId(parseLowerThirdUploadId())
       setSelectedLowerThirdConfigId(parseLowerThirdConfigId())
     }
     window.addEventListener('popstate', applyFromLocation)
@@ -461,36 +493,43 @@ export default function ProducePage() {
       setAssetsLoading(true)
       setAssetsError(null)
       try {
-		        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
-        const logoParams = new URLSearchParams(base)
-        logoParams.set('kind', 'logo')
-        const titleParams = new URLSearchParams(base)
-        titleParams.set('kind', 'image')
-        titleParams.set('image_role', 'title_page')
-        const [logoRes, titleRes, audioRes, cfgRes, audioCfgRes, ltCfgRes] = await Promise.all([
-          fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
-          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
-          fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
-          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
-          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
-          fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' }),
-        ])
-        const logoJson = await logoRes.json().catch(() => [])
-        const titleJson = await titleRes.json().catch(() => [])
-        const audioJson = await audioRes.json().catch(() => [])
-        const cfgJson = await cfgRes.json().catch(() => [])
-        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
-        const ltCfgJson = await ltCfgRes.json().catch(() => ({}))
-        if (!logoRes.ok) throw new Error('Failed to load logos')
-        if (!titleRes.ok) throw new Error('Failed to load title pages')
-        if (!audioRes.ok) throw new Error('Failed to load system audio')
-        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
-        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
-        if (!ltCfgRes.ok) throw new Error('Failed to load lower third presets')
-        if (cancelled) return
-        setLogos(Array.isArray(logoJson) ? logoJson : [])
-        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
-        setAudios(Array.isArray(audioJson) ? audioJson : [])
+			        const base = new URLSearchParams({ user_id: String(me.userId), limit: '200', status: 'uploaded,completed' })
+	        const logoParams = new URLSearchParams(base)
+	        logoParams.set('kind', 'logo')
+	        const titleParams = new URLSearchParams(base)
+	        titleParams.set('kind', 'image')
+	        titleParams.set('image_role', 'title_page')
+	        const lowerThirdImageParams = new URLSearchParams(base)
+	        lowerThirdImageParams.set('kind', 'image')
+	        lowerThirdImageParams.set('image_role', 'lower_third')
+	        const [logoRes, titleRes, lowerThirdImageRes, audioRes, cfgRes, audioCfgRes, ltCfgRes] = await Promise.all([
+	          fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
+	          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
+	          fetch(`/api/uploads?${lowerThirdImageParams.toString()}`, { credentials: 'same-origin' }),
+	          fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
+	          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
+	          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
+	          fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' }),
+	        ])
+	        const logoJson = await logoRes.json().catch(() => [])
+	        const titleJson = await titleRes.json().catch(() => [])
+	        const lowerThirdImageJson = await lowerThirdImageRes.json().catch(() => [])
+	        const audioJson = await audioRes.json().catch(() => [])
+	        const cfgJson = await cfgRes.json().catch(() => [])
+	        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
+	        const ltCfgJson = await ltCfgRes.json().catch(() => ({}))
+	        if (!logoRes.ok) throw new Error('Failed to load logos')
+	        if (!titleRes.ok) throw new Error('Failed to load title pages')
+	        if (!lowerThirdImageRes.ok) throw new Error('Failed to load lower third images')
+	        if (!audioRes.ok) throw new Error('Failed to load system audio')
+	        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
+	        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
+	        if (!ltCfgRes.ok) throw new Error('Failed to load lower third configs')
+	        if (cancelled) return
+	        setLogos(Array.isArray(logoJson) ? logoJson : [])
+	        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
+	        setLowerThirdImages(Array.isArray(lowerThirdImageJson) ? lowerThirdImageJson : [])
+	        setAudios(Array.isArray(audioJson) ? audioJson : [])
         const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
         setLogoConfigs(cfgs as any)
         const audioCfgItems = Array.isArray(audioCfgJson)
@@ -499,12 +538,12 @@ export default function ProducePage() {
             ? ((audioCfgJson as any).items as any[])
             : []
         setAudioConfigs(audioCfgItems as any)
-        const ltCfgItems = Array.isArray((ltCfgJson as any)?.items)
-          ? ((ltCfgJson as any).items as any[])
-          : Array.isArray(ltCfgJson)
-            ? (ltCfgJson as any[])
-            : []
-        setLowerThirdConfigs(ltCfgItems as any)
+	        const ltCfgItems = Array.isArray((ltCfgJson as any)?.items)
+	          ? ((ltCfgJson as any).items as any[])
+	          : Array.isArray(ltCfgJson)
+	            ? (ltCfgJson as any[])
+	            : []
+	        setLowerThirdConfigs(ltCfgItems as any)
       } catch (e: any) {
         if (!cancelled) setAssetsError(e?.message || 'Failed to load assets')
       } finally {
@@ -598,6 +637,21 @@ export default function ProducePage() {
     return items
   }, [titlePages, titlePageSort])
 
+  const selectedLowerThirdImage = useMemo(() => {
+    if (selectedLowerThirdUploadId == null) return null
+    return lowerThirdImages.find((t) => t.id === selectedLowerThirdUploadId) || null
+  }, [lowerThirdImages, selectedLowerThirdUploadId])
+
+  const sortedLowerThirdImages = useMemo(() => {
+    const items = Array.isArray(lowerThirdImages) ? [...lowerThirdImages] : []
+    items.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+      return tb - ta
+    })
+    return items
+  }, [lowerThirdImages])
+
   const selectedLogoConfig = useMemo(() => {
     if (selectedLogoConfigId == null) return null
     return logoConfigs.find((c) => c.id === selectedLogoConfigId) || null
@@ -612,58 +666,6 @@ export default function ProducePage() {
     if (selectedLogoId == null) return null
     return logos.find((l) => l.id === selectedLogoId) || null
   }, [logos, selectedLogoId])
-
-  const [lowerThirdPreviewSvg, setLowerThirdPreviewSvg] = useState<string | null>(null)
-  const [lowerThirdPreviewError, setLowerThirdPreviewError] = useState<string | null>(null)
-  const lowerThirdPreviewRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    const id = selectedLowerThirdConfigId
-    if (id == null) {
-      setLowerThirdPreviewSvg(null)
-      setLowerThirdPreviewError(null)
-      return
-    }
-    ;(async () => {
-      setLowerThirdPreviewError(null)
-      try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        const csrf = getCsrfToken()
-        if (csrf) headers['x-csrf-token'] = csrf
-        const res = await fetch('/api/lower-third-templates/resolve', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers,
-          body: JSON.stringify({ presetId: id }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to resolve lower third preview')
-        if (!cancelled) setLowerThirdPreviewSvg(String(data?.svg || ''))
-      } catch (e: any) {
-        if (!cancelled) {
-          setLowerThirdPreviewSvg(null)
-          setLowerThirdPreviewError(e?.message || 'Failed to resolve lower third preview')
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [selectedLowerThirdConfigId])
-
-  useEffect(() => {
-    const root = lowerThirdPreviewRef.current
-    if (!root) return
-    const svg = root.querySelector('svg') as SVGElement | null
-    if (!svg) return
-    try {
-      svg.setAttribute('width', '100%')
-      svg.removeAttribute('height')
-      ;(svg as any).style.width = '100%'
-      ;(svg as any).style.height = 'auto'
-      ;(svg as any).style.display = 'block'
-    } catch {}
-  }, [lowerThirdPreviewSvg])
 
   const formatLogoConfigSummary = (c: LogoConfig | null): string => {
     if (!c) return ''
@@ -680,6 +682,25 @@ export default function ProducePage() {
       c.opacityPct != null ? `${c.opacityPct}%` : null,
       timing || null,
       c.fade ? String(c.fade).split('_').join(' ') : null,
+    ].filter(Boolean).join(' • ')
+  }
+
+  const formatLowerThirdConfigSummary = (c: LowerThirdConfig | null): string => {
+    if (!c) return ''
+    const timing =
+      c.timingRule === 'entire'
+        ? 'Till end'
+        : c.timingSeconds != null
+          ? `First ${c.timingSeconds}s`
+          : 'First 10s'
+    const fadeLabel = c.fade && c.fade !== 'none' ? `Fade ${String(c.fade).split('_').join(' ')}` : null
+    const insetY = c.insetYPreset ? `Inset ${String(c.insetYPreset)}` : null
+    return [
+      c.sizePctWidth != null ? `${c.sizePctWidth}%` : null,
+      c.opacityPct != null ? `${c.opacityPct}%` : null,
+      timing,
+      fadeLabel,
+      insetY,
     ].filter(Boolean).join(' • ')
   }
 
@@ -730,19 +751,15 @@ export default function ProducePage() {
     pushQueryParams({ pick: 'titlePage' }, { ...(window.history.state || {}), modal: 'titlePagePicker' })
   }
 
-  const openLowerThirdPicker = () => {
-    setPick('lowerThird')
-    pushQueryParams({ pick: 'lowerThird' }, { ...(window.history.state || {}), modal: 'lowerThirdPicker' })
+  const openLowerThirdImagePicker = () => {
+    setPick('lowerThirdImage')
+    pushQueryParams({ pick: 'lowerThirdImage' }, { ...(window.history.state || {}), modal: 'lowerThirdImagePicker' })
   }
 
-  const lowerThirdManageHref = useMemo(() => {
-    try {
-      const from = encodeURIComponent(`${window.location.pathname}${window.location.search}`)
-      return `/lower-thirds?from=${from}`
-    } catch {
-      return '/lower-thirds'
-    }
-  }, [])
+  const openLowerThirdConfigPicker = () => {
+    setPick('lowerThirdConfig')
+    pushQueryParams({ pick: 'lowerThirdConfig' }, { ...(window.history.state || {}), modal: 'lowerThirdConfigPicker' })
+  }
 
   const closePicker = () => {
     setPick(null)
@@ -762,6 +779,11 @@ export default function ProducePage() {
   const applyLogoSelection = (id: number | null) => {
     setSelectedLogoId(id)
     replaceQueryParams({ logoUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
+  }
+
+  const applyLowerThirdImageSelection = (id: number | null) => {
+    setSelectedLowerThirdUploadId(id)
+    replaceQueryParams({ lowerThirdUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyTitlePageSelection = (id: number | null) => {
@@ -868,10 +890,26 @@ export default function ProducePage() {
     closePicker()
   }
 
-  const chooseLowerThirdFromPicker = (id: number | null) => {
+  const chooseLowerThirdImageFromPicker = (id: number | null) => {
     setPick(null)
     const modal = (window.history.state as any)?.modal
-    if (modal === 'lowerThirdPicker') {
+    if (modal === 'lowerThirdImagePicker') {
+      try {
+        sessionStorage.setItem('produce:pendingLowerThirdUploadId', id == null ? '' : String(id))
+      } catch {}
+      try {
+        window.history.back()
+        return
+      } catch {}
+    }
+    applyLowerThirdImageSelection(id)
+    closePicker()
+  }
+
+  const chooseLowerThirdConfigFromPicker = (id: number | null) => {
+    setPick(null)
+    const modal = (window.history.state as any)?.modal
+    if (modal === 'lowerThirdConfigPicker') {
       try {
         sessionStorage.setItem('produce:pendingLowerThirdConfigId', id == null ? '' : String(id))
       } catch {}
@@ -950,6 +988,7 @@ export default function ProducePage() {
 	        audioConfigId: selectedAudioConfigId ?? null,
 	        logoUploadId: selectedLogoId ?? null,
 	        logoConfigId: selectedLogoConfigId ?? null,
+	        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
 	        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
 	      }
 	      if (selectedTitleUploadId != null) {
@@ -1372,27 +1411,101 @@ export default function ProducePage() {
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
 
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 650 }}>Lower Third</div>
-                  <a href={lowerThirdManageHref} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>Lower Third Image</div>
+                  <a href="/uploads?kind=image&image_role=lower_third" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage images</a>
                 </div>
                 {assetsLoading ? (
-                  <div style={{ color: '#777' }}>Loading lower third presets…</div>
+                  <div style={{ color: '#777' }}>Loading lower third images…</div>
                 ) : assetsError ? (
                   <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
-                ) : lowerThirdConfigs.length === 0 ? (
+                ) : lowerThirdImages.length === 0 ? (
                   <div style={{ color: '#777' }}>
-                    No lower third presets yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
+                    No lower third images uploaded yet. <a href="/uploads/new?kind=image&image_role=lower_third" style={{ color: '#9cf' }}>Upload a PNG</a>.
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
                       <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                        {selectedLowerThirdConfig ? (selectedLowerThirdConfig.name || `Preset ${selectedLowerThirdConfig.id}`) : 'None'}
+                        {selectedLowerThirdImage ? (selectedLowerThirdImage.modified_filename || selectedLowerThirdImage.original_filename || `Image ${selectedLowerThirdImage.id}`) : 'None'}
                       </div>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                         <button
                           type="button"
-                          onClick={openLowerThirdPicker}
+                          onClick={openLowerThirdImagePicker}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.85)',
+                            background: 'rgba(212,175,55,0.14)',
+                            color: '#d4af37',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Choose
+                        </button>
+                        {selectedLowerThirdUploadId != null ? (
+                          <button
+                            type="button"
+                            onClick={() => applyLowerThirdImageSelection(null)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(212,175,55,0.65)',
+                              background: 'rgba(212,175,55,0.10)',
+                              color: '#d4af37',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {selectedLowerThirdImage ? (
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <img
+                          src={`/api/uploads/${encodeURIComponent(String(selectedLowerThirdImage.id))}/file`}
+                          alt="lower third"
+                          style={{ width: 160, height: 44, objectFit: 'cover', background: '#111', borderRadius: 10 }}
+                        />
+                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                          {formatBytes(selectedLowerThirdImage.size_bytes)}{selectedLowerThirdImage.created_at ? ` • ${formatDate(selectedLowerThirdImage.created_at)}` : ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#777', fontSize: 13 }}>
+                        Upload a PNG lower third graphic (recommended with transparent background).
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>Lower Third Config</div>
+                  <a href="/lower-thirds" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
+                </div>
+                {assetsLoading ? (
+                  <div style={{ color: '#777' }}>Loading lower third configs…</div>
+                ) : assetsError ? (
+                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+                ) : lowerThirdConfigs.length === 0 ? (
+                  <div style={{ color: '#777' }}>
+                    No lower third configs yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        {selectedLowerThirdConfig ? (selectedLowerThirdConfig.name || `Config ${selectedLowerThirdConfig.id}`) : 'None'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={openLowerThirdConfigPicker}
                           style={{
                             padding: '10px 12px',
                             borderRadius: 10,
@@ -1424,33 +1537,13 @@ export default function ProducePage() {
                         ) : null}
                       </div>
                     </div>
-	                    {selectedLowerThirdConfig ? (
-	                      <>
-	                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-	                          {selectedLowerThirdConfig.templateKey} v{selectedLowerThirdConfig.templateVersion} •{' '}
-	                          {selectedLowerThirdConfig.timingRule === 'entire'
-	                            ? 'Till end'
-	                            : `First ${selectedLowerThirdConfig.timingSeconds ?? 10}s`}
-	                        </div>
-                        {lowerThirdPreviewError ? (
-                          <div style={{ color: '#ff9b9b', fontSize: 13 }}>{lowerThirdPreviewError}</div>
-                        ) : null}
-                        {lowerThirdPreviewSvg ? (
-                          <div
-                            style={{
-                              borderRadius: 10,
-                              border: '1px solid rgba(255,255,255,0.10)',
-                              background: '#0a0a0a',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div ref={lowerThirdPreviewRef} style={{ width: '100%' }} dangerouslySetInnerHTML={{ __html: lowerThirdPreviewSvg }} />
-                          </div>
-                        ) : null}
-                      </>
+                    {selectedLowerThirdConfig ? (
+                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                        {formatLowerThirdConfigSummary(selectedLowerThirdConfig)}
+                      </div>
                     ) : (
                       <div style={{ color: '#777', fontSize: 13 }}>
-                        Select a lower third preset (optional).
+                        Select a config preset for sizing/timing (optional).
                       </div>
                     )}
                   </div>
@@ -2018,7 +2111,7 @@ export default function ProducePage() {
 	            </div>
 	          </div>
 	        </div>
-	      ) : pick === 'lowerThird' ? (
+	      ) : pick === 'lowerThirdImage' ? (
 	        <div
 	          role="dialog"
 	          aria-modal="true"
@@ -2037,7 +2130,7 @@ export default function ProducePage() {
 	                type="button"
 	                onClick={() => {
 	                  const modal = (window.history.state as any)?.modal
-	                  if (modal === 'lowerThirdPicker') {
+	                  if (modal === 'lowerThirdImagePicker') {
 	                    try { window.history.back(); return } catch {}
 	                  }
 	                  closePicker()
@@ -2054,18 +2147,139 @@ export default function ProducePage() {
 	              >
 	                ← Back
 	              </button>
-	              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Lower Third</div>
+	              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Lower Third Image</div>
 	              <div style={{ width: 84 }} />
 	            </div>
 
 	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-	              <a href="/lower-thirds" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage presets</a>
+	              <a href="/uploads?kind=image&image_role=lower_third" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage images</a>
 	            </div>
 
 	            <div style={{ display: 'grid', gap: 10 }}>
 	              <button
 	                type="button"
-	                onClick={() => chooseLowerThirdFromPicker(null)}
+	                onClick={() => chooseLowerThirdImageFromPicker(null)}
+	                style={{
+	                  textAlign: 'left',
+	                  padding: 12,
+	                  borderRadius: 12,
+	                  border: selectedLowerThirdUploadId == null ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                  background: selectedLowerThirdUploadId == null ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.03)',
+	                  color: '#fff',
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                None
+	              </button>
+
+	              {assetsLoading ? (
+	                <div style={{ color: '#888' }}>Loading lower third images…</div>
+	              ) : assetsError ? (
+	                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+	              ) : sortedLowerThirdImages.length === 0 ? (
+	                <div style={{ color: '#bbb' }}>
+	                  No lower third images yet. <a href="/uploads/new?kind=image&image_role=lower_third" style={{ color: '#9cf' }}>Upload a PNG</a>.
+	                </div>
+	              ) : (
+	                sortedLowerThirdImages.map((img) => {
+	                  const selected = selectedLowerThirdUploadId === img.id
+	                  const name = (img.modified_filename || img.original_filename || `Image ${img.id}`).trim()
+	                  const src = `/api/uploads/${encodeURIComponent(String(img.id))}/file`
+	                  const meta = [img.size_bytes != null ? formatBytes(img.size_bytes) : null, img.created_at ? formatDate(img.created_at) : null]
+	                    .filter(Boolean)
+	                    .join(' • ')
+	                  return (
+	                    <div
+	                      key={img.id}
+	                      style={{
+	                        padding: '10px 12px 12px',
+	                        borderRadius: 12,
+	                        border: selected ? '1px solid rgba(255,255,255,0.9)' : '1px solid rgba(212,175,55,0.65)',
+	                        background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
+	                        display: 'grid',
+	                        gap: 10,
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+	                        <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+	                          {name}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => chooseLowerThirdImageFromPicker(img.id)}
+	                          style={{
+	                            padding: '8px 12px',
+	                            borderRadius: 10,
+	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                            color: selected ? '#fff' : '#d4af37',
+	                            fontWeight: 800,
+	                            cursor: 'pointer',
+	                            flexShrink: 0,
+	                          }}
+	                        >
+	                          {selected ? 'Selected' : 'Select'}
+	                        </button>
+	                      </div>
+	                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+	                        <img src={src} alt="lower third" style={{ width: 220, height: 60, objectFit: 'cover', background: '#111', borderRadius: 10 }} />
+	                        <div style={{ color: '#888', fontSize: 13 }}>{meta}</div>
+	                      </div>
+	                    </div>
+	                  )
+	                })
+	              )}
+	            </div>
+	          </div>
+	        </div>
+	      ) : pick === 'lowerThirdConfig' ? (
+	        <div
+	          role="dialog"
+	          aria-modal="true"
+	          style={{
+	            position: 'fixed',
+	            inset: 0,
+	            background: '#050505',
+	            color: '#fff',
+	            zIndex: 10050,
+	            overflow: 'auto',
+	          }}
+	        >
+	          <div style={{ maxWidth: 960, margin: '0 auto', padding: 'max(16px, env(safe-area-inset-top, 0px)) 16px max(24px, env(safe-area-inset-bottom, 0px))' }}>
+	            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  const modal = (window.history.state as any)?.modal
+	                  if (modal === 'lowerThirdConfigPicker') {
+	                    try { window.history.back(); return } catch {}
+	                  }
+	                  closePicker()
+	                }}
+	                style={{
+	                  padding: '10px 12px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 700,
+	                  cursor: 'pointer',
+	                }}
+	              >
+	                ← Back
+	              </button>
+	              <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Lower Third Config</div>
+	              <div style={{ width: 84 }} />
+	            </div>
+
+	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+	              <a href="/lower-thirds" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
+	            </div>
+
+	            <div style={{ display: 'grid', gap: 10 }}>
+	              <button
+	                type="button"
+	                onClick={() => chooseLowerThirdConfigFromPicker(null)}
 	                style={{
 	                  textAlign: 'left',
 	                  padding: 12,
@@ -2080,20 +2294,18 @@ export default function ProducePage() {
 	              </button>
 
 	              {assetsLoading ? (
-	                <div style={{ color: '#888' }}>Loading lower thirds…</div>
+	                <div style={{ color: '#888' }}>Loading lower third configs…</div>
 	              ) : assetsError ? (
 	                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
 	              ) : lowerThirdConfigs.length === 0 ? (
 	                <div style={{ color: '#bbb' }}>
-	                  No lower third presets yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
+	                  No lower third configs yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
 	                </div>
 	              ) : (
 	                lowerThirdConfigs.map((c) => {
 	                  const selected = selectedLowerThirdConfigId === c.id
-	                  const name = (c.name || `Preset ${c.id}`).trim()
-	                  const primary = c.params && typeof c.params === 'object' ? String((c.params as any).primaryText || '').trim() : ''
-	                  const secondary = c.params && typeof c.params === 'object' ? String((c.params as any).secondaryText || '').trim() : ''
-	                  const meta = [primary || null, secondary || null].filter(Boolean).join(' • ')
+	                  const name = (c.name || `Config ${c.id}`).trim()
+	                  const meta = formatLowerThirdConfigSummary(c)
 	                  return (
 	                    <div
 	                      key={c.id}
@@ -2111,14 +2323,15 @@ export default function ProducePage() {
 	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
 	                            {name}
 	                          </div>
-	                          <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>
-	                            {c.templateKey} v{c.templateVersion}
-	                            {meta ? ` • ${meta}` : ''}
-	                          </div>
+	                          {meta ? (
+	                            <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>
+	                              {meta}
+	                            </div>
+	                          ) : null}
 	                        </div>
 	                        <button
 	                          type="button"
-	                          onClick={() => chooseLowerThirdFromPicker(c.id)}
+	                          onClick={() => chooseLowerThirdConfigFromPicker(c.id)}
 	                          style={{
 	                            padding: '8px 12px',
 	                            borderRadius: 10,

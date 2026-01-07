@@ -461,7 +461,7 @@ export async function createSignedUpload(input: {
 
   if (kind === 'image') {
     // First role shipped: title_page. Keep a tight allowlist for now.
-    if (imageRole && imageRole !== 'title_page') {
+    if (imageRole && imageRole !== 'title_page' && imageRole !== 'lower_third') {
       const err: any = new DomainError('invalid_image_role', 'invalid_image_role', 400)
       err.detail = { imageRole }
       throw err
@@ -469,11 +469,16 @@ export async function createSignedUpload(input: {
   }
 
   // Basic file type validation per kind (best-effort: uses content-type when present, otherwise file extension).
+  const isLowerThirdImage = kind === 'image' && imageRole === 'lower_third'
   const allowed =
     kind === 'video'
       ? (lowerCt ? lowerCt.startsWith('video/') : false) || ['.mp4', '.webm', '.mov'].includes(extFromName)
-      : kind === 'logo' || kind === 'image'
+      : kind === 'logo'
         ? (lowerCt ? ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(lowerCt) : false) || ['.png', '.jpg', '.jpeg', '.webp'].includes(extFromName)
+        : kind === 'image'
+          ? isLowerThirdImage
+            ? (lowerCt ? lowerCt === 'image/png' : false) || extFromName === '.png'
+            : (lowerCt ? ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(lowerCt) : false) || ['.png', '.jpg', '.jpeg', '.webp'].includes(extFromName)
         : (lowerCt ? lowerCt.startsWith('audio/') : false) || ['.mp3', '.wav', '.aac', '.m4a', '.mp4', '.ogg', '.opus'].includes(extFromName)
   if (!allowed) {
     const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
