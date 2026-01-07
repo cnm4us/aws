@@ -36,6 +36,8 @@ const SIZE_PRESETS: Array<{ label: string; pct: number }> = [
   { label: 'Small', pct: 15 },
   { label: 'Medium', pct: 22 },
   { label: 'Large', pct: 30 },
+  // Rectangular “lower third” graphic target: ~880px on 1080-wide output (~81.5%).
+  { label: 'Lower third', pct: 82 },
 ]
 
 const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
