@@ -96,17 +96,18 @@ export async function ensureSchema(db: DB) {
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
 
-		  await db.query(`
-		    CREATE TABLE IF NOT EXISTS logo_configurations (
-	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-	      owner_user_id BIGINT UNSIGNED NOT NULL,
-	      name VARCHAR(120) NOT NULL,
-	      position ENUM(
-	        'top_left','top_center','top_right',
-	        'middle_left','middle_center','middle_right',
-	        'bottom_left','bottom_center','bottom_right',
-	        'center'
-	      ) NOT NULL,
+			  await db.query(`
+			    CREATE TABLE IF NOT EXISTS logo_configurations (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		      owner_user_id BIGINT UNSIGNED NOT NULL,
+		      name VARCHAR(120) NOT NULL,
+          description TEXT NULL,
+		      position ENUM(
+		        'top_left','top_center','top_right',
+		        'middle_left','middle_center','middle_right',
+		        'bottom_left','bottom_center','bottom_right',
+		        'center'
+		      ) NOT NULL,
 	      size_pct_width TINYINT UNSIGNED NOT NULL,
 	      opacity_pct TINYINT UNSIGNED NOT NULL,
 	      timing_rule ENUM('entire','start_after','first_only','last_only') NOT NULL,
@@ -152,19 +153,20 @@ export async function ensureSchema(db: DB) {
       // Plan: allow switching between % scaling and "match image width @ baseline".
       await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS size_mode ENUM('pct','match_image') NOT NULL DEFAULT 'pct'`);
       await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS baseline_width SMALLINT UNSIGNED NOT NULL DEFAULT 1080`);
-	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_x_preset VARCHAR(16) NULL`);
-	  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_y_preset VARCHAR(16) NULL`);
-	  try {
-	    await db.query(
-	      `ALTER TABLE logo_configurations
-	          MODIFY COLUMN position ENUM(
-	            'top_left','top_center','top_right',
-	            'middle_left','middle_center','middle_right',
-	            'bottom_left','bottom_center','bottom_right',
-	            'center'
-	          ) NOT NULL`
-	    )
-	  } catch {}
+		  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_x_preset VARCHAR(16) NULL`);
+		  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_y_preset VARCHAR(16) NULL`);
+      await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+		  try {
+		    await db.query(
+		      `ALTER TABLE logo_configurations
+		          MODIFY COLUMN position ENUM(
+		            'top_left','top_center','top_right',
+		            'middle_left','middle_center','middle_right',
+		            'bottom_left','bottom_center','bottom_right',
+		            'center'
+		          ) NOT NULL`
+		    )
+		  } catch {}
 
 			  await db.query(`
 			    CREATE TABLE IF NOT EXISTS audio_configurations (

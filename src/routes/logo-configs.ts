@@ -21,6 +21,7 @@ logoConfigsRouter.post('/api/logo-configs', requireAuth, async (req, res, next) 
     const body = req.body || {}
     const config = await logoConfigsSvc.createForUser({
       name: body.name,
+      description: body.description,
       position: body.position,
       sizePctWidth: body.sizePctWidth,
       opacityPct: body.opacityPct,
@@ -54,6 +55,7 @@ async function handleUpdate(req: any, res: any, next: any) {
     const body = req.body || {}
     const config = await logoConfigsSvc.updateForUser(id, {
       name: body.name,
+      description: body.description,
       position: body.position,
       sizePctWidth: body.sizePctWidth,
       opacityPct: body.opacityPct,

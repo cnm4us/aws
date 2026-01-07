@@ -16,6 +16,7 @@ function mapRow(row: LogoConfigRow): LogoConfigDto {
   return {
     id: Number(row.id),
     name: String(row.name || ''),
+    description: (row as any).description == null ? null : String((row as any).description),
     position: row.position,
     sizePctWidth: Number(row.size_pct_width),
     opacityPct: Number(row.opacity_pct),
@@ -49,6 +50,13 @@ function normalizeName(raw: any): string {
   if (!name) throw new DomainError('invalid_name', 'invalid_name', 400)
   if (name.length > 120) throw new DomainError('invalid_name', 'invalid_name', 400)
   return name
+}
+
+function normalizeDescription(raw: any): string | null {
+  const description = String(raw ?? '').trim()
+  if (!description) return null
+  if (description.length > 2000) throw new DomainError('invalid_description', 'invalid_description', 400)
+  return description
 }
 
 function normalizePct(raw: any, code: string, min: number, max: number): number {
@@ -110,6 +118,7 @@ export async function getForUser(id: number, userId: number): Promise<LogoConfig
 
 export async function createForUser(input: {
   name: any
+  description?: any
   position: any
   sizePctWidth: any
   opacityPct: any
@@ -121,6 +130,7 @@ export async function createForUser(input: {
 }, userId: number): Promise<LogoConfigDto> {
   if (!userId) throw new ForbiddenError()
   const name = normalizeName(input.name)
+  const description = normalizeDescription(input.description)
   if (!isEnumValue(input.position, POSITIONS)) throw new DomainError('invalid_position', 'invalid_position', 400)
   const position = input.position
   const sizePctWidth = normalizePct(input.sizePctWidth, 'invalid_size', 1, 100)
@@ -137,6 +147,7 @@ export async function createForUser(input: {
   const row = await repo.create({
     ownerUserId: Number(userId),
     name,
+    description,
     position: normalizeLegacyPosition(position),
     sizePctWidth,
     opacityPct,
@@ -153,6 +164,7 @@ export async function updateForUser(
   id: number,
   patch: {
     name?: any
+    description?: any
     position?: any
     sizePctWidth?: any
     opacityPct?: any
@@ -171,6 +183,7 @@ export async function updateForUser(
 
   const next: any = {
     name: patch.name !== undefined ? normalizeName(patch.name) : String(existing.name || ''),
+    description: patch.description !== undefined ? normalizeDescription(patch.description) : ((existing as any).description == null ? null : String((existing as any).description)),
     position: patch.position !== undefined ? patch.position : existing.position,
     sizePctWidth: patch.sizePctWidth !== undefined ? patch.sizePctWidth : existing.size_pct_width,
     opacityPct: patch.opacityPct !== undefined ? patch.opacityPct : existing.opacity_pct,
@@ -194,6 +207,7 @@ export async function updateForUser(
 
   const row = await repo.update(id, {
     name: next.name,
+    description: next.description,
     position: normalizedPosition,
     sizePctWidth,
     opacityPct,
@@ -216,9 +230,11 @@ export async function duplicateForUser(id: number, userId: number): Promise<Logo
   const baseName = String(row.name || '').trim() || 'Logo config'
   const pref = `Copy of ${baseName}`
   const name = pref.length > 120 ? pref.slice(0, 120).trim() : pref
+  const description = (row as any).description == null ? null : String((row as any).description)
   const created = await repo.create({
     ownerUserId: Number(userId),
     name,
+    description,
     position: normalizeLegacyPosition(row.position),
     sizePctWidth: Number(row.size_pct_width),
     opacityPct: Number(row.opacity_pct),

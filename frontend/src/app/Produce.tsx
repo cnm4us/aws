@@ -54,6 +54,7 @@ type AssetItem = {
 type LogoConfig = {
   id: number
   name: string
+  description?: string | null
   position: string
   sizePctWidth: number
   opacityPct: number
@@ -358,6 +359,7 @@ export default function ProducePage() {
   const [titlePageSort, setTitlePageSort] = useState<TitlePageSortMode>('recent')
   const [audioConfigAbout, setAudioConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [logoAbout, setLogoAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [logoConfigAbout, setLogoConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -775,6 +777,12 @@ export default function ProducePage() {
     const title = logo ? ((logo.modified_filename || logo.original_filename || `Logo ${logo.id}`).trim()) : 'Logo'
     const description = logo?.description != null ? String(logo.description) : null
     setLogoAbout({ title, description })
+  }
+
+  const openLogoConfigAbout = (cfg: LogoConfig | null) => {
+    const title = (cfg?.name || '').trim() || 'Logo Config'
+    const description = cfg?.description != null ? String(cfg.description) : null
+    setLogoConfigAbout({ title, description })
   }
 
   const openLogoPicker = () => {
@@ -1507,6 +1515,21 @@ export default function ProducePage() {
 		                        {selectedLogoConfig ? (selectedLogoConfig.name || `Config ${selectedLogoConfig.id}`) : 'None'}
 		                      </div>
 		                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => openLogoConfigAbout(selectedLogoConfig)}
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: '#0c0c0c',
+                                color: '#fff',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              About
+                            </button>
 		                        <button
 		                          type="button"
 		                          onClick={openLogoConfigPicker}
@@ -2840,6 +2863,59 @@ export default function ProducePage() {
             </div>
             <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               {audioConfigAbout.description && audioConfigAbout.description.trim().length ? audioConfigAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {logoConfigAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10062,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {logoConfigAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLogoConfigAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {logoConfigAbout.description && logoConfigAbout.description.trim().length ? logoConfigAbout.description : 'No description.'}
             </div>
           </div>
         </div>

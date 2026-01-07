@@ -18,6 +18,7 @@ type InsetPreset = 'small' | 'medium' | 'large'
 type LogoConfig = {
   id: number
   name: string
+  description?: string | null
   position: LogoPosition
   sizePctWidth: number
   opacityPct: number
@@ -36,8 +37,6 @@ const SIZE_PRESETS: Array<{ label: string; pct: number }> = [
   { label: 'Small', pct: 15 },
   { label: 'Medium', pct: 22 },
   { label: 'Large', pct: 30 },
-  // Rectangular “lower third” graphic target: ~880px on 1080-wide output (~81.5%).
-  { label: 'Lower third', pct: 82 },
 ]
 
 const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
@@ -111,6 +110,7 @@ function positionLabel(p: LogoPosition): string {
 function defaultDraft(): Omit<LogoConfig, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> {
   return {
     name: 'Standard watermark',
+    description: null,
     position: 'bottom_right',
     sizePctWidth: 15,
     opacityPct: 35,
@@ -192,6 +192,7 @@ export default function LogoConfigsPage() {
     if (!selected) return
     setDraft({
       name: selected.name,
+      description: selected.description ?? null,
       position: selected.position,
       sizePctWidth: selected.sizePctWidth,
       opacityPct: selected.opacityPct,
@@ -219,6 +220,7 @@ export default function LogoConfigsPage() {
 
       const body = JSON.stringify({
         name: draft.name,
+        description: draft.description,
         position: draft.position,
         sizePctWidth: draft.sizePctWidth,
         opacityPct: draft.opacityPct,
@@ -584,6 +586,18 @@ export default function LogoConfigsPage() {
                     onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
                     placeholder="e.g. Standard watermark"
                     style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.16)', background: '#0c0c0c', color: '#fff', outline: 'none' }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Description</div>
+                  <textarea
+                    value={draft.description ?? ''}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+                    placeholder="Notes for yourself (shown via About in Produce)."
+                    rows={5}
+                    maxLength={2000}
+                    style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.16)', background: '#0c0c0c', color: '#fff', outline: 'none', resize: 'vertical', lineHeight: 1.4 }}
                   />
                 </label>
 

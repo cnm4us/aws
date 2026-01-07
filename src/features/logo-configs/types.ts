@@ -12,6 +12,7 @@ export type LogoConfigRow = {
   id: number
   owner_user_id: number
   name: string
+  description?: string | null
   position: LogoPosition
   size_pct_width: number
   opacity_pct: number
@@ -28,6 +29,7 @@ export type LogoConfigRow = {
 export type LogoConfigDto = {
   id: number
   name: string
+  description?: string | null
   position: LogoPosition
   sizePctWidth: number
   opacityPct: number

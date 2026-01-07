@@ -28,6 +28,7 @@ export async function getById(id: number): Promise<LogoConfigRow | null> {
 export async function create(input: {
   ownerUserId: number
   name: string
+  description?: string | null
   position: string
   sizePctWidth: number
   opacityPct: number
@@ -40,11 +41,12 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO logo_configurations
-      (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
+      input.description ?? null,
       input.position,
       input.sizePctWidth,
       input.opacityPct,
@@ -63,6 +65,7 @@ export async function create(input: {
 
 export async function update(id: number, patch: {
   name?: string
+  description?: string | null
   position?: string
   sizePctWidth?: number
   opacityPct?: number
@@ -76,6 +79,7 @@ export async function update(id: number, patch: {
   const sets: string[] = []
   const args: any[] = []
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
+  if (patch.description !== undefined) { sets.push('description = ?'); args.push(patch.description) }
   if (patch.position !== undefined) { sets.push('position = ?'); args.push(patch.position) }
   if (patch.sizePctWidth !== undefined) { sets.push('size_pct_width = ?'); args.push(patch.sizePctWidth) }
   if (patch.opacityPct !== undefined) { sets.push('opacity_pct = ?'); args.push(patch.opacityPct) }
@@ -103,8 +107,8 @@ export async function archive(id: number): Promise<void> {
 export async function ensureDefaultForOwner(ownerUserId: number): Promise<{ created: boolean }> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT INTO logo_configurations (owner_user_id, name, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
-     SELECT ?, 'Standard watermark', 'bottom_right', 15, 35, 'entire', NULL, 'none', 'medium', 'medium'
+    `INSERT INTO logo_configurations (owner_user_id, name, description, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
+     SELECT ?, 'Standard watermark', NULL, 'bottom_right', 15, 35, 'entire', NULL, 'none', 'medium', 'medium'
       WHERE NOT EXISTS (
         SELECT 1 FROM logo_configurations WHERE owner_user_id = ? AND archived_at IS NULL LIMIT 1
       )`,
