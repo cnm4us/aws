@@ -564,71 +564,83 @@ export default function Feed() {
         setCaptionText(null)
       }
 
-      const tick = () => {
-        if (cancelled) return
-        const v: any = getVideoEl(captionsSlideIndex)
-        // (Re)bind video event handlers in case the element gets replaced (HLS reattach, loop behavior, etc).
-        if (v && v instanceof HTMLVideoElement && v !== boundVideo) {
-          try { unbind?.() } catch {}
-          boundVideo = v
-          const onEnded = () => { resetLoopState() }
-          const onSeeked = () => {
-            // Seeking can happen on loop and on user interactions; reset index and let tick re-sync.
-            captionsCueIndexRef.current[pubId] = 0
-            captionsLastTimeMsRef.current[pubId] = Math.max(0, Math.round(Number((v as any).currentTime || 0) * 1000))
-            lastCaptionTextRef.current = null
-            setCaptionText(null)
-          }
-          try {
-            v.addEventListener('ended', onEnded)
-            v.addEventListener('seeked', onSeeked)
-            v.addEventListener('seeking', onSeeked)
-          } catch {}
-          unbind = () => {
-            try {
-              v.removeEventListener('ended', onEnded)
-              v.removeEventListener('seeked', onSeeked)
-              v.removeEventListener('seeking', onSeeked)
-            } catch {}
-          }
-        }
-        const cues = captionsCuesRef.current[pubId] || []
-        if (!v || !cues.length || typeof v.currentTime !== 'number') {
-          if (lastCaptionTextRef.current !== null) {
-            lastCaptionTextRef.current = null
-            setCaptionText(null)
-          }
-          requestAnimationFrame(tick)
-          return
-        }
-        const tMs = Math.max(0, Math.round(Number(v.currentTime) * 1000))
-        const prevMs = captionsLastTimeMsRef.current[pubId]
-        // If the video loops (time jumps backwards), reset cue tracking so captions restart cleanly.
-        if (typeof prevMs === 'number' && Number.isFinite(prevMs) && tMs + 500 < prevMs) {
-          resetLoopState()
-        }
-        captionsLastTimeMsRef.current[pubId] = tMs
-        let idx = captionsCueIndexRef.current[pubId] ?? 0
-        if (idx >= cues.length) idx = cues.length - 1
-        if (idx < 0) idx = 0
+	      const tick = () => {
+	        if (cancelled) return
+	        try {
+	          const v: any = getVideoEl(captionsSlideIndex)
+	          // (Re)bind video event handlers in case the element gets replaced (HLS reattach, loop behavior, etc).
+	          if (v && v instanceof HTMLVideoElement && v !== boundVideo) {
+	            try { unbind?.() } catch {}
+	            boundVideo = v
+	            const onEnded = () => { resetLoopState() }
+	            const onSeeked = () => {
+	              // Seeking can happen on loop and on user interactions; reset index and let tick re-sync.
+	              captionsCueIndexRef.current[pubId] = 0
+	              captionsLastTimeMsRef.current[pubId] = Math.max(0, Math.round(Number((v as any).currentTime || 0) * 1000))
+	              lastCaptionTextRef.current = null
+	              setCaptionText(null)
+	            }
+	            try {
+	              v.addEventListener('ended', onEnded)
+	              v.addEventListener('seeked', onSeeked)
+	              v.addEventListener('seeking', onSeeked)
+	            } catch {}
+	            unbind = () => {
+	              try {
+	                v.removeEventListener('ended', onEnded)
+	                v.removeEventListener('seeked', onSeeked)
+	                v.removeEventListener('seeking', onSeeked)
+	              } catch {}
+	            }
+	          }
 
-        // Advance/rewind index to follow time (handles seeking).
-        while (idx < cues.length && tMs > cues[idx].endMs) idx += 1
-        while (idx > 0 && tMs < cues[idx].startMs) idx -= 1
+	          const cues = captionsCuesRef.current[pubId] || []
+	          if (!v || !cues.length || typeof v.currentTime !== 'number') {
+	            if (lastCaptionTextRef.current !== null) {
+	              lastCaptionTextRef.current = null
+	              setCaptionText(null)
+	            }
+	            return
+	          }
 
-        let nextText: string | null = null
-        const cue = cues[idx]
-        if (cue && tMs >= cue.startMs && tMs <= cue.endMs) nextText = cue.text
-        captionsCueIndexRef.current[pubId] = idx
+	          const tMs = Math.max(0, Math.round(Number(v.currentTime) * 1000))
+	          const prevMs = captionsLastTimeMsRef.current[pubId]
+	          // If the video loops (time jumps backwards), reset cue tracking so captions restart cleanly.
+	          if (typeof prevMs === 'number' && Number.isFinite(prevMs) && tMs + 500 < prevMs) {
+	            resetLoopState()
+	          }
+	          captionsLastTimeMsRef.current[pubId] = tMs
+	          let idx = captionsCueIndexRef.current[pubId] ?? 0
+	          if (idx >= cues.length) idx = cues.length - 1
+	          if (idx < 0) idx = 0
 
-        if (lastCaptionTextRef.current !== nextText) {
-          lastCaptionTextRef.current = nextText
-          setCaptionText(nextText)
-        }
-        requestAnimationFrame(tick)
-      }
-      requestAnimationFrame(tick)
-    })()
+	          // Advance/rewind index to follow time (handles seeking).
+	          while (idx < cues.length && tMs > cues[idx].endMs) idx += 1
+	          while (idx > 0 && tMs < cues[idx].startMs) idx -= 1
+
+	          let nextText: string | null = null
+	          const cue = cues[idx]
+	          if (cue && tMs >= cue.startMs && tMs <= cue.endMs) nextText = cue.text
+	          captionsCueIndexRef.current[pubId] = idx
+
+	          if (lastCaptionTextRef.current !== nextText) {
+	            lastCaptionTextRef.current = nextText
+	            setCaptionText(nextText)
+	          }
+	        } catch {
+	          // Never let captions break the feed loop.
+	          captionsCueIndexRef.current[pubId] = 0
+	          captionsLastTimeMsRef.current[pubId] = 0
+	          if (lastCaptionTextRef.current !== null) {
+	            lastCaptionTextRef.current = null
+	            setCaptionText(null)
+	          }
+	        } finally {
+	          requestAnimationFrame(tick)
+	        }
+	      }
+	      requestAnimationFrame(tick)
+	    })()
     return () => {
       cancelled = true
       try { unbind?.() } catch {}
