@@ -35,6 +35,7 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
         WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
         ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
       END AS story_preview,
+      CASE WHEN pcaps.id IS NULL THEN 0 ELSE 1 END AS has_captions,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -84,6 +85,7 @@ export async function listGlobalFeedRows(opts: { cursorPublishedAt?: string | nu
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
+    LEFT JOIN production_captions pcaps ON pcaps.production_id = sp.production_id AND pcaps.status = 'ready'
     LEFT JOIN users owner ON owner.id = u.user_id
     LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
@@ -128,6 +130,7 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
         WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
         ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
       END AS story_preview,
+      CASE WHEN pcaps.id IS NULL THEN 0 ELSE 1 END AS has_captions,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -177,6 +180,7 @@ export async function getSpaceFeedPinnedRowByProductionUlid(
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
+    LEFT JOIN production_captions pcaps ON pcaps.production_id = sp.production_id AND pcaps.status = 'ready'
     LEFT JOIN users owner ON owner.id = u.user_id
     LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}
@@ -223,6 +227,7 @@ export async function listSpaceFeedRows(
         WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
         ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
       END AS story_preview,
+      CASE WHEN pcaps.id IS NULL THEN 0 ELSE 1 END AS has_captions,
       sp.id AS publication_id,
       sp.upload_id,
       sp.production_id,
@@ -272,6 +277,7 @@ export async function listSpaceFeedRows(
     FROM space_publications sp
     JOIN uploads u ON u.id = sp.upload_id
     LEFT JOIN productions p ON p.id = sp.production_id
+    LEFT JOIN production_captions pcaps ON pcaps.production_id = sp.production_id AND pcaps.status = 'ready'
     LEFT JOIN users owner ON owner.id = u.user_id
     LEFT JOIN profiles prof ON prof.user_id = owner.id
     WHERE ${where.join(' AND ')}

@@ -4,8 +4,9 @@ import { GetJobCommand } from '@aws-sdk/client-mediaconvert';
 import { buildServer } from './app';
 import { ensureSchema, getPool, seedRbac } from './db';
 import { getMediaConvertClient } from './aws/mediaconvert';
-import { PORT, STATUS_POLL_MS } from './config';
+import { ASSEMBLYAI_AUTOTRANSCRIBE, ASSEMBLYAI_ENABLED, MEDIA_JOBS_ENABLED, PORT, STATUS_POLL_MS } from './config';
 import { startMediaJobsWorker } from './services/mediaJobs/worker';
+import * as mediaJobs from './features/media-jobs/service'
 
 const db = getPool();
 
@@ -187,6 +188,27 @@ async function pollStatuses() {
                 WHERE id = ?`,
               [effectiveStart, effectiveFinish, productionId]
             );
+
+            // Optional: enqueue AssemblyAI transcript job (Plan 44).
+            // Guarded behind env flags because it incurs third-party API costs.
+            try {
+              const hasKey = String(process.env.ASSEMBLYAI_API_KEY || '').trim().length > 0
+              if (hasKey && MEDIA_JOBS_ENABLED && ASSEMBLYAI_ENABLED && ASSEMBLYAI_AUTOTRANSCRIBE) {
+                const [existing] = await db.query(
+                  `SELECT id
+                     FROM media_jobs
+                    WHERE type = 'assemblyai_transcript_v1'
+                      AND status IN ('pending','processing','completed')
+                      AND CAST(JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.productionId')) AS UNSIGNED) = ?
+                    ORDER BY id DESC
+                    LIMIT 1`,
+                  [productionId]
+                )
+                if (!Array.isArray(existing) || (existing as any[]).length === 0) {
+                  await mediaJobs.enqueueJob('assemblyai_transcript_v1', { productionId })
+                }
+              }
+            } catch {}
           }
         } else if (status === 'CANCELED' || status === 'ERROR') {
           if (row.status !== 'failed') {

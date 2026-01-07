@@ -5,6 +5,8 @@ import * as spacesSvc from '../spaces/service'
 import { resolveChecker, can } from '../../security/permissions'
 import { PERM } from '../../security/perm'
 import { type CreateFromProductionInput, type CreateFromUploadInput, type Publication, type PublicationEvent, type ServiceContext } from './types'
+import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { s3 } from '../../services/s3'
 
 // NOTE: Service methods coordinate permissions, transactions, and events.
 // Keep response objects domain-oriented; routes will map to API DTO shapes.
@@ -498,4 +500,21 @@ export async function setStory(publicationId: number, storyText: unknown, ctx: S
   const txt = normalizeStoryInput(storyText)
   await repo.updateStory(publicationId, txt)
   return { ok: true, publicationId }
+}
+
+export async function getCaptionsVtt(publicationId: number, ctx: ServiceContext): Promise<{ contentType: string; body: any }> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  if (pub.production_id == null) throw new NotFoundError('captions_not_found')
+
+  await spacesSvc.assertCanViewSpaceFeed(pub.space_id, ctx.userId)
+
+  const ptr = await repo.getCaptionsPointerByProductionId(Number(pub.production_id))
+  if (!ptr) throw new NotFoundError('captions_not_found')
+
+  const resp = await s3.send(new GetObjectCommand({ Bucket: ptr.bucket, Key: ptr.key }))
+  return {
+    contentType: resp.ContentType ? String(resp.ContentType) : 'text/vtt; charset=utf-8',
+    body: resp.Body,
+  }
 }

@@ -217,3 +217,50 @@
   padding-right: 2px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.85);
 }
+
+.captionsOverlay {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 108px);
+  z-index: 7;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.captionsPill {
+  max-width: min(640px, 84vw);
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.75);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+}
+
+.ccBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.5);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  background: rgba(0,0,0,0.25);
+}
+
+.ccBadgeOn {
+  border-color: rgba(255,255,255,0.95);
+  background: rgba(255,255,255,0.2);
+}

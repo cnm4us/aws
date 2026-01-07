@@ -1,6 +1,6 @@
 export type MediaJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead'
 
-export type MediaJobType = 'audio_master_v1' | 'video_master_v1' | 'upload_thumb_v1'
+export type MediaJobType = 'audio_master_v1' | 'video_master_v1' | 'upload_thumb_v1' | 'assemblyai_transcript_v1'
 
 export type MediaJobRow = {
   id: number
@@ -98,8 +98,13 @@ export type UploadThumbV1Input = {
   longEdgePx: number
 }
 
+export type AssemblyAiTranscriptV1Input = {
+  productionId: number
+}
+
 export type MediaJobInputByType = {
   audio_master_v1: AudioMasterV1Input
   video_master_v1: VideoMasterV1Input
   upload_thumb_v1: UploadThumbV1Input
+  assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
 }

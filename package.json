@@ -32,6 +32,7 @@
     "@aws-sdk/client-s3": "^3.645.0",
     "@aws-sdk/credential-providers": "^3.645.0",
     "@aws-sdk/s3-presigned-post": "^3.645.0",
+    "@aws-sdk/s3-request-presigner": "^3.964.0",
     "@resvg/resvg-js": "^2.6.2",
     "@xmldom/xmldom": "^0.8.11",
     "bowser": "^2.12.1",

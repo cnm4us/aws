@@ -45,6 +45,24 @@ export async function updateStory(publicationId: number, storyText: string | nul
   )
 }
 
+export async function getCaptionsPointerByProductionId(productionId: number, conn?: any): Promise<{ bucket: string; key: string } | null> {
+  const db = conn || getPool()
+  const [rows] = await db.query(
+    `SELECT s3_bucket, s3_key
+       FROM production_captions
+      WHERE production_id = ?
+        AND status = 'ready'
+      LIMIT 1`,
+    [productionId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  const bucket = String(row.s3_bucket || '').trim()
+  const key = String(row.s3_key || '').trim()
+  if (!bucket || !key) return null
+  return { bucket, key }
+}
+
 export async function getByProductionSpace(productionId: number, spaceId: number, _conn?: any): Promise<Publication | null> {
   const db = _conn || getPool()
   const [rows] = await db.query(`SELECT * FROM space_publications WHERE production_id = ? AND space_id = ? LIMIT 1`, [productionId, spaceId])

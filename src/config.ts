@@ -48,6 +48,25 @@ export const MEDIA_VIDEO_HIGHPASS_HZ = (() => {
   return Math.max(20, Math.min(250, rounded))
 })();
 
+// AssemblyAI (captions/transcripts)
+export const ASSEMBLYAI_ENABLED = envBool('ASSEMBLYAI_ENABLED', false);
+export const ASSEMBLYAI_AUTOTRANSCRIBE = envBool('ASSEMBLYAI_AUTOTRANSCRIBE', false);
+export const ASSEMBLYAI_PRESIGN_TTL_SECONDS = (() => {
+  const n = Number(process.env.ASSEMBLYAI_PRESIGN_TTL_SECONDS || 21600)
+  if (!Number.isFinite(n)) return 21600
+  return Math.max(300, Math.min(86400, Math.round(n)))
+})()
+export const ASSEMBLYAI_POLL_INTERVAL_MS = (() => {
+  const n = Number(process.env.ASSEMBLYAI_POLL_INTERVAL_MS || 3000)
+  if (!Number.isFinite(n)) return 3000
+  return Math.max(500, Math.min(30000, Math.round(n)))
+})()
+export const ASSEMBLYAI_POLL_TIMEOUT_SECONDS = (() => {
+  const n = Number(process.env.ASSEMBLYAI_POLL_TIMEOUT_SECONDS || 1800)
+  if (!Number.isFinite(n)) return 1800
+  return Math.max(30, Math.min(7200, Math.round(n)))
+})()
+
 // MediaConvert job
 export const MC_ROLE_ARN = process.env.MC_ROLE_ARN || '';
 export const MC_QUEUE_ARN = process.env.MC_QUEUE_ARN || undefined;

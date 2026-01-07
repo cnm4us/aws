@@ -132,6 +132,26 @@ publicationsRouter.get('/api/publications/:id/story', requireAuth, async (req, r
   } catch (err: any) { next(err) }
 })
 
+publicationsRouter.get('/api/publications/:id/captions.vtt', requireAuth, async (req, res, next) => {
+  try {
+    const publicationId = Number(req.params.id)
+    if (!Number.isFinite(publicationId) || publicationId <= 0) {
+      return res.status(400).json({ error: 'bad_publication_id' })
+    }
+    const userId = Number(req.user!.id)
+    const data = await pubsSvc.getCaptionsVtt(publicationId, { userId })
+    res.setHeader('Content-Type', data.contentType || 'text/vtt; charset=utf-8')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    const body: any = (data as any).body
+    if (body && typeof body.pipe === 'function') {
+      body.pipe(res)
+      return
+    }
+    const buf = body ? Buffer.from(body) : Buffer.from('', 'utf8')
+    res.send(buf)
+  } catch (err: any) { next(err) }
+})
+
 publicationsRouter.patch('/api/publications/:id/story', requireAuth, async (req, res, next) => {
   try {
     const publicationId = Number(req.params.id)

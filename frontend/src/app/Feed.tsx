@@ -34,6 +34,7 @@ type UploadItem = {
    reportedByMe?: boolean | null
   hasStory?: boolean | null
   storyPreview?: string | null
+  hasCaptions?: boolean | null
 }
 
 type MeResponse = {
@@ -132,6 +133,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
   const reportedByMe = typeof (publication as any)?.reported_by_me === 'boolean' ? Boolean((publication as any).reported_by_me) : null
   const hasStory = typeof (publication as any)?.has_story === 'boolean' ? Boolean((publication as any).has_story) : null
   const storyPreview = typeof (publication as any)?.story_preview === 'string' ? String((publication as any).story_preview) : null
+  const hasCaptions = typeof (publication as any)?.has_captions === 'boolean' ? Boolean((publication as any).has_captions) : null
   // Prefer production ULID; fallback to upload asset UUID; ensure string or null
   const productionUlid: string | null = publication?.production_ulid ? String(publication.production_ulid) : null
   const assetUuid: string | null = raw.asset_uuid ? String(raw.asset_uuid) : null
@@ -159,6 +161,7 @@ function buildUploadItem(raw: any, owner?: { id: number | null; displayName?: st
     reportedByMe,
     hasStory,
     storyPreview,
+    hasCaptions,
   }
 }
 
@@ -303,6 +306,15 @@ export default function Feed() {
   const [storyOpenForPub, setStoryOpenForPub] = useState<number | null>(null)
   const [storyTextMap, setStoryTextMap] = useState<Record<number, string | null>>({})
   const [storyBusyMap, setStoryBusyMap] = useState<Record<number, boolean>>({})
+  // Captions (custom overlay) state
+  const [captionsEnabled, setCaptionsEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem('captions:enabled') === '1' } catch { return false }
+  })
+  const [captionText, setCaptionText] = useState<string | null>(null)
+  const captionsCuesRef = useRef<Record<number, Array<{ startMs: number; endMs: number; text: string }>>>({})
+  const captionsLoadingRef = useRef<Record<number, boolean>>({})
+  const captionsCueIndexRef = useRef<Record<number, number>>({})
+  const lastCaptionTextRef = useRef<string | null>(null)
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
   const [likersForPub, setLikersForPub] = useState<number | null>(null)
@@ -422,6 +434,8 @@ export default function Feed() {
   useEffect(() => {
     // Close story overlay when the user changes slides.
     setStoryOpenForPub(null)
+    setCaptionText(null)
+    lastCaptionTextRef.current = null
   }, [index])
 
   async function ensureStory(publicationId: number | null | undefined) {
@@ -441,6 +455,135 @@ export default function Feed() {
       setStoryBusyMap((m) => ({ ...m, [publicationId]: false }))
     }
   }
+
+  function persistCaptionsEnabled(next: boolean) {
+    setCaptionsEnabled(next)
+    try { localStorage.setItem('captions:enabled', next ? '1' : '0') } catch {}
+    if (!next) {
+      lastCaptionTextRef.current = null
+      setCaptionText(null)
+    }
+  }
+
+  function parseVttTimestampMs(raw: string): number | null {
+    const s = String(raw || '').trim()
+    const m = s.match(/^(\d{1,2}:)?(\d{2}):(\d{2})\.(\d{3})$/)
+    if (!m) return null
+    const hasHours = !!m[1]
+    const hours = hasHours ? Number(String(m[1]).replace(':', '')) : 0
+    const minutes = Number(m[2])
+    const seconds = Number(m[3])
+    const ms = Number(m[4])
+    if (![hours, minutes, seconds, ms].every((n) => Number.isFinite(n))) return null
+    return (((hours * 60 + minutes) * 60 + seconds) * 1000 + ms)
+  }
+
+  function parseVttCues(vtt: string): Array<{ startMs: number; endMs: number; text: string }> {
+    const src = String(vtt || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const blocks = src.split(/\n\n+/).map((b) => b.trim()).filter(Boolean)
+    const cues: Array<{ startMs: number; endMs: number; text: string }> = []
+    for (const block of blocks) {
+      if (block.toUpperCase().startsWith('WEBVTT')) continue
+      const lines = block.split('\n').map((l) => l.trimEnd())
+      if (!lines.length) continue
+      const timeLineIndex = lines.findIndex((l) => l.includes('-->'))
+      if (timeLineIndex < 0) continue
+      const timeLine = lines[timeLineIndex]
+      const parts = timeLine.split('-->').map((p) => p.trim())
+      if (parts.length < 2) continue
+      const startRaw = parts[0]
+      const endRaw = parts[1].split(/\s+/)[0]
+      const startMs = parseVttTimestampMs(startRaw)
+      const endMs = parseVttTimestampMs(endRaw)
+      if (startMs == null || endMs == null) continue
+      const textLines = lines.slice(timeLineIndex + 1).filter((l) => l.trim().length)
+      if (!textLines.length) continue
+      const text = textLines
+        .join('\n')
+        .replace(/<[^>]+>/g, '')
+        .trim()
+      if (!text) continue
+      cues.push({ startMs, endMs, text })
+    }
+    cues.sort((a, b) => a.startMs - b.startMs)
+    return cues
+  }
+
+  async function ensureCaptionsCues(publicationId: number) {
+    if (captionsCuesRef.current[publicationId]) return
+    if (captionsLoadingRef.current[publicationId]) return
+    captionsLoadingRef.current[publicationId] = true
+    try {
+      const res = await fetch(`/api/publications/${publicationId}/captions.vtt`, { credentials: 'same-origin' })
+      if (!res.ok) {
+        captionsCuesRef.current[publicationId] = []
+        return
+      }
+      const vtt = await res.text()
+      captionsCuesRef.current[publicationId] = parseVttCues(vtt)
+    } catch {
+      captionsCuesRef.current[publicationId] = []
+    } finally {
+      captionsLoadingRef.current[publicationId] = false
+    }
+  }
+
+  useEffect(() => {
+    if (!captionsEnabled) return
+    const active = items[index]
+    const pubId = active?.publicationId != null ? Number(active.publicationId) : null
+    const hasCaps = active?.hasCaptions === true
+    if (!pubId || !hasCaps) {
+      setCaptionText(null)
+      return
+    }
+    // Avoid overlap: hide captions when story is expanded for this publication.
+    if (storyOpenForPub === pubId) {
+      setCaptionText(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      await ensureCaptionsCues(pubId)
+      if (cancelled) return
+      const tick = () => {
+        if (cancelled) return
+        const v: any = getVideoEl(index)
+        const cues = captionsCuesRef.current[pubId] || []
+        if (!v || !cues.length || typeof v.currentTime !== 'number') {
+          if (lastCaptionTextRef.current !== null) {
+            lastCaptionTextRef.current = null
+            setCaptionText(null)
+          }
+          requestAnimationFrame(tick)
+          return
+        }
+        const tMs = Math.max(0, Math.round(Number(v.currentTime) * 1000))
+        let idx = captionsCueIndexRef.current[pubId] ?? 0
+        if (idx >= cues.length) idx = cues.length - 1
+        if (idx < 0) idx = 0
+
+        // Advance/rewind index to follow time (handles seeking).
+        while (idx < cues.length && tMs > cues[idx].endMs) idx += 1
+        while (idx > 0 && tMs < cues[idx].startMs) idx -= 1
+
+        let nextText: string | null = null
+        const cue = cues[idx]
+        if (cue && tMs >= cue.startMs && tMs <= cue.endMs) nextText = cue.text
+        captionsCueIndexRef.current[pubId] = idx
+
+        if (lastCaptionTextRef.current !== nextText) {
+          lastCaptionTextRef.current = nextText
+          setCaptionText(nextText)
+        }
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [captionsEnabled, index, items, storyOpenForPub])
 
   const openProfilePeek = useCallback(
     async (
@@ -1890,13 +2033,35 @@ export default function Feed() {
                         >
                           {commentsCountMap[it.publicationId] != null ? commentsCountMap[it.publicationId] : (typeof it.commentsCount === 'number' ? it.commentsCount : 0)}
                         </button>
-                      </div>
-                    </>
-                  )}
-                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
-                    <button
-                      aria-label={alreadyReported ? 'Reported' : 'Report'}
-                      aria-pressed={alreadyReported ? true : false}
+	                      </div>
+	                    </>
+	                  )}
+	                  {it.hasCaptions === true && it.publicationId != null ? (
+	                    <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+	                      <button
+	                        aria-label={captionsEnabled ? 'Hide captions' : 'Show captions'}
+	                        aria-pressed={captionsEnabled ? true : false}
+	                        onClick={(e) => { e.stopPropagation(); persistCaptionsEnabled(!captionsEnabled) }}
+	                        style={{
+	                          background: 'transparent',
+	                          border: 'none',
+	                          padding: 0,
+	                          margin: 0,
+	                          display: 'grid',
+	                          placeItems: 'center',
+	                          color: '#fff',
+	                          cursor: 'pointer',
+	                        }}
+	                      >
+	                        <span className={clsx(styles.ccBadge, captionsEnabled ? styles.ccBadgeOn : null)}>CC</span>
+	                      </button>
+	                      <div style={{ fontSize: 12, opacity: 0.85 }}>CC</div>
+	                    </div>
+	                  ) : null}
+	                  <div style={{ display: 'grid', justifyItems: 'center', gap: 2 }}>
+	                    <button
+	                      aria-label={alreadyReported ? 'Reported' : 'Report'}
+	                      aria-pressed={alreadyReported ? true : false}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (it.publicationId == null) return
@@ -2050,7 +2215,7 @@ export default function Feed() {
           </div>
         )
       }),
-    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap]
+    [items, index, isPortrait, posterAvail, playingIndex, startedMap, likesCountMap, likedMap, likeBusy, commentsCountMap, commentedByMeMap, reportedMap, isAuthed, feedMode, followMap, spaceList, myUserId, storyOpenForPub, storyTextMap, storyBusyMap, captionsEnabled]
   )
 
   // Debug: log index changes explicitly (outside slides memo)
@@ -2452,13 +2617,29 @@ export default function Feed() {
               {initialLoading ? 'Loading…' : 'No videos yet.'}
             </div>
           )}
-        </div>
-      </div>
-      {modalOpen && (
-        <div
-          onClick={closeModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.96)', zIndex: 50, display: 'grid', placeItems: 'center' }}
-        >
+	        </div>
+	      </div>
+	      {(() => {
+	        const active = items[index]
+	        const pubId = active?.publicationId != null ? Number(active.publicationId) : null
+	        const show =
+	          captionsEnabled &&
+	          !!captionText &&
+	          pubId != null &&
+	          active?.hasCaptions === true &&
+	          storyOpenForPub !== pubId
+	        if (!show) return null
+	        return (
+	          <div className={styles.captionsOverlay} aria-hidden>
+	            <div className={styles.captionsPill}>{captionText}</div>
+	          </div>
+	        )
+	      })()}
+	      {modalOpen && (
+	        <div
+	          onClick={closeModal}
+	          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.96)', zIndex: 50, display: 'grid', placeItems: 'center' }}
+	        >
           {modalSrc && (
             <FeedVideo
               src={modalSrc}

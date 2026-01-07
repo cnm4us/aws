@@ -1020,6 +1020,25 @@ export async function ensureSchema(db: DB) {
   // Optional per-space/per-publication plain-text story (shown on the feed)
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_text TEXT NULL`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_updated_at DATETIME NULL`);
+
+  // Production captions (VTT) persisted per production (Plan 45)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS production_captions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      production_id BIGINT UNSIGNED NOT NULL,
+      provider VARCHAR(32) NOT NULL DEFAULT 'assemblyai',
+      transcript_id VARCHAR(128) NULL,
+      format VARCHAR(16) NOT NULL DEFAULT 'vtt',
+      language VARCHAR(16) NOT NULL DEFAULT 'en',
+      s3_bucket VARCHAR(255) NOT NULL,
+      s3_key VARCHAR(1024) NOT NULL,
+      status ENUM('ready','failed') NOT NULL DEFAULT 'ready',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_production_captions_production (production_id),
+      KEY idx_production_captions_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
   // Retroactive cleanup: clear legacy Personal ⇒ Global coupling
   try {
     await db.query(`
