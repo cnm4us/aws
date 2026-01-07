@@ -1362,7 +1362,81 @@ export default function ProducePage() {
 	                )}
 
 	                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
-	
+
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo</div>
+                  <a href="/uploads?kind=logo" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage logos</a>
+                </div>
+                {assetsLoading ? (
+                  <div style={{ color: '#777' }}>Loading logos…</div>
+                ) : assetsError ? (
+                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
+                ) : logos.length === 0 ? (
+                  <div style={{ color: '#777' }}>
+                    No logo uploaded yet. <a href="/uploads/new?kind=logo" style={{ color: '#9cf' }}>Upload a logo</a>.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
+                        {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={openLogoPicker}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.85)',
+                            background: 'rgba(212,175,55,0.14)',
+                            color: '#d4af37',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Choose
+                        </button>
+                        {selectedLogoId != null ? (
+                          <button
+                            type="button"
+                            onClick={() => applyLogoSelection(null)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(212,175,55,0.65)',
+                              background: 'rgba(212,175,55,0.10)',
+                              color: '#d4af37',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    {selectedLogo ? (
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <img
+                          src={`/api/uploads/${encodeURIComponent(String(selectedLogo.id))}/file`}
+                          alt="logo"
+                          style={{ width: 72, height: 72, objectFit: 'contain', background: '#111', borderRadius: 10 }}
+                        />
+                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                          {formatBytes(selectedLogo.size_bytes)}{selectedLogo.created_at ? ` • ${formatDate(selectedLogo.created_at)}` : ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#777', fontSize: 13 }}>
+                        Select a logo to watermark the video (optional).
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+
 		                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
 		                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo Config</div>
 		                  <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
@@ -1589,79 +1663,6 @@ export default function ProducePage() {
                   </div>
                 )}
 
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
-
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo</div>
-                  <a href="/uploads?kind=logo" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage logos</a>
-                </div>
-                {assetsLoading ? (
-                  <div style={{ color: '#777' }}>Loading logos…</div>
-                ) : assetsError ? (
-                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
-                ) : logos.length === 0 ? (
-                  <div style={{ color: '#777' }}>
-                    No logo uploaded yet. <a href="/uploads/new?kind=logo" style={{ color: '#9cf' }}>Upload a logo</a>.
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
-                        {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={openLogoPicker}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(212,175,55,0.85)',
-                            background: 'rgba(212,175,55,0.14)',
-                            color: '#d4af37',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Choose
-                        </button>
-                        {selectedLogoId != null ? (
-                          <button
-                            type="button"
-                            onClick={() => applyLogoSelection(null)}
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(212,175,55,0.65)',
-                              background: 'rgba(212,175,55,0.10)',
-                              color: '#d4af37',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Clear
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                    {selectedLogo ? (
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <img
-                          src={`/api/uploads/${encodeURIComponent(String(selectedLogo.id))}/file`}
-                          alt="logo"
-                          style={{ width: 72, height: 72, objectFit: 'contain', background: '#111', borderRadius: 10 }}
-                        />
-                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                          {formatBytes(selectedLogo.size_bytes)}{selectedLogo.created_at ? ` • ${formatDate(selectedLogo.created_at)}` : ''}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ color: '#777', fontSize: 13 }}>
-                        Select a logo to watermark the video (optional).
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </section>
 
