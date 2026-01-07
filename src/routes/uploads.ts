@@ -141,6 +141,29 @@ uploadsRouter.delete('/api/uploads/:id', requireAuth, async (req, res) => {
   }
 });
 
+uploadsRouter.patch('/api/uploads/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const currentUserId = Number(req.user!.id)
+    const body = (req.body || {}) as any
+    const result = await uploadsSvc.updateMetadata(
+      id,
+      {
+        modifiedFilename: body.modified_filename ?? body.modifiedFilename ?? undefined,
+        description: body.description ?? undefined,
+      },
+      { userId: currentUserId }
+    )
+    return res.json(result)
+  } catch (err: any) {
+    console.error('update upload error', err)
+    const status = err?.status || 500
+    const code = err?.code || 'failed_to_update'
+    res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
+  }
+})
+
 uploadsRouter.post('/api/uploads/:id/delete-source', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)

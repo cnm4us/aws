@@ -166,6 +166,11 @@ const UploadsPage: React.FC = () => {
   const [deleting, setDeleting] = useState<Record<number, boolean>>({})
   const [deletingSource, setDeletingSource] = useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [editUpload, setEditUpload] = useState<UploadListItem | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
 	  const loadUploads = useCallback(
 	    async (userId: number) => {
@@ -456,47 +461,71 @@ const UploadsPage: React.FC = () => {
             )}
             {kind === 'logo' || kind === 'image' ? (
               <div style={{ marginTop: 6 }}>
-                <button
-                  type="button"
-                  onClick={async (e) => {
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setEditError(null)
+                      setEditUpload(upload)
+                      setEditName((upload.modified_filename || upload.original_filename || '').trim())
+                      setEditDescription((upload.description || '').trim())
+                    }}
+                    style={{
+                      background: 'transparent',
+                      color: '#0a84ff',
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      borderRadius: 10,
+                      padding: '6px 10px',
+                      fontWeight: 650,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async (e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     if (isDeleting) return
-                    const ok = window.confirm('Delete this logo? This cannot be undone.')
+                    const ok = window.confirm(kind === 'logo' ? 'Delete this logo? This cannot be undone.' : 'Delete this image? This cannot be undone.')
                     if (!ok) return
                     setDeleteError(null)
                     setDeleting((prev) => ({ ...prev, [upload.id]: true }))
                     try {
-                      const headers: Record<string, string> = {}
-                      const csrf = getCsrfToken()
-                      if (csrf) headers['x-csrf-token'] = csrf
-                      const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
-                      const data = await res.json().catch(() => ({}))
-                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
-                      setUploads((prev) => prev.filter((u) => u.id !== upload.id))
-                    } catch (err: any) {
-                      setDeleteError(err?.message || 'Failed to delete')
-                    } finally {
-                      setDeleting((prev) => {
-                        const next = { ...prev }
-                        delete next[upload.id]
-                        return next
-                      })
-                    }
-                  }}
-                  style={{
-                    background: 'transparent',
-                    color: '#ff9b9b',
-                    border: '1px solid rgba(255,155,155,0.35)',
-                    borderRadius: 10,
-                    padding: '6px 10px',
-                    fontWeight: 650,
-                    cursor: isDeleting ? 'default' : 'pointer',
-                    opacity: isDeleting ? 0.6 : 1,
-                  }}
-                >
-                  {isDeleting ? 'Deleting…' : 'Delete'}
-                </button>
+                        const headers: Record<string, string> = {}
+                        const csrf = getCsrfToken()
+                        if (csrf) headers['x-csrf-token'] = csrf
+                        const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
+                        const data = await res.json().catch(() => ({}))
+                        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                        setUploads((prev) => prev.filter((u) => u.id !== upload.id))
+                      } catch (err: any) {
+                        setDeleteError(err?.message || 'Failed to delete')
+                      } finally {
+                        setDeleting((prev) => {
+                          const next = { ...prev }
+                          delete next[upload.id]
+                          return next
+                        })
+                      }
+                    }}
+                    style={{
+                      background: 'transparent',
+                      color: '#ff9b9b',
+                      border: '1px solid rgba(255,155,155,0.35)',
+                      borderRadius: 10,
+                      padding: '6px 10px',
+                      fontWeight: 650,
+                      cursor: isDeleting ? 'default' : 'pointer',
+                      opacity: isDeleting ? 0.6 : 1,
+                    }}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
               </div>
             ) : null}
             {kind === 'video' && publicationLines.length > 0 && publicationLines}
@@ -648,6 +677,164 @@ const UploadsPage: React.FC = () => {
             </div>
           )
         )}
+
+        {editUpload ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.65)',
+              zIndex: 10050,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+            }}
+            onClick={() => {
+              if (editSaving) return
+              setEditUpload(null)
+            }}
+          >
+            <div
+              style={{
+                width: 'min(720px, 100%)',
+                borderRadius: 16,
+                background: '#0b0b0b',
+                border: '1px solid rgba(255,255,255,0.14)',
+                padding: 16,
+                color: '#fff',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>Edit</div>
+                <button
+                  type="button"
+                  onClick={() => setEditUpload(null)}
+                  disabled={editSaving}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0c0c0c',
+                    color: '#fff',
+                    fontWeight: 700,
+                    cursor: editSaving ? 'default' : 'pointer',
+                    opacity: editSaving ? 0.6 : 1,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 700 }}>Name</div>
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                    }}
+                    maxLength={512}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 700 }}>Description</div>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={6}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      resize: 'vertical',
+                      lineHeight: 1.4,
+                    }}
+                    maxLength={2000}
+                  />
+                </label>
+
+                {editError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{editError}</div> : null}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditUpload(null)}
+                    disabled={editSaving}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      fontWeight: 700,
+                      cursor: editSaving ? 'default' : 'pointer',
+                      opacity: editSaving ? 0.6 : 1,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!editUpload || editSaving) return
+                      setEditSaving(true)
+                      setEditError(null)
+                      try {
+                        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                        const csrf = getCsrfToken()
+                        if (csrf) headers['x-csrf-token'] = csrf
+                        const payload = {
+                          modified_filename: editName.trim().length ? editName.trim() : null,
+                          description: editDescription.trim().length ? editDescription.trim() : null,
+                        }
+                        const res = await fetch(`/api/uploads/${editUpload.id}`, {
+                          method: 'PATCH',
+                          credentials: 'same-origin',
+                          headers,
+                          body: JSON.stringify(payload),
+                        })
+                        const data = await res.json().catch(() => ({}))
+                        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to save')
+                        setUploads((prev) => prev.map((u) => (u.id === editUpload.id ? (data as UploadListItem) : u)))
+                        setEditUpload(null)
+                      } catch (err: any) {
+                        setEditError(err?.message || 'Failed to save')
+                      } finally {
+                        setEditSaving(false)
+                      }
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(10,132,255,0.85)',
+                      background: 'rgba(10,132,255,0.30)',
+                      color: '#fff',
+                      fontWeight: 800,
+                      cursor: editSaving ? 'default' : 'pointer',
+                      opacity: editSaving ? 0.6 : 1,
+                    }}
+                  >
+                    {editSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

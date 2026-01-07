@@ -43,6 +43,7 @@ type AssetItem = {
   id: number
   original_filename: string
   modified_filename: string | null
+  description?: string | null
   content_type?: string | null
   size_bytes?: number | null
   width?: number | null
@@ -356,6 +357,7 @@ export default function ProducePage() {
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
   const [titlePageSort, setTitlePageSort] = useState<TitlePageSortMode>('recent')
   const [audioConfigAbout, setAudioConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [logoAbout, setLogoAbout] = useState<{ title: string; description: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -767,6 +769,12 @@ export default function ProducePage() {
     const title = (cfg?.name || '').trim() || 'Audio Preset'
     const description = cfg?.description != null ? String(cfg.description) : null
     setAudioConfigAbout({ title, description })
+  }
+
+  const openLogoAbout = (logo: AssetItem | null) => {
+    const title = logo ? ((logo.modified_filename || logo.original_filename || `Logo ${logo.id}`).trim()) : 'Logo'
+    const description = logo?.description != null ? String(logo.description) : null
+    setLogoAbout({ title, description })
   }
 
   const openLogoPicker = () => {
@@ -1410,6 +1418,21 @@ export default function ProducePage() {
                         {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
                       </div>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => openLogoAbout(selectedLogo)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          About
+                        </button>
                         <button
                           type="button"
                           onClick={openLogoPicker}
@@ -2563,22 +2586,39 @@ export default function ProducePage() {
                         <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                           {name}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => chooseLogoFromPicker(l.id)}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: 10,
-                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
-                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
-                            color: selected ? '#fff' : '#d4af37',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {selected ? 'Selected' : 'Select'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => openLogoAbout(l)}
+                            style={{
+                              padding: '8px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            About
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => chooseLogoFromPicker(l.id)}
+                            style={{
+                              padding: '8px 12px',
+                              borderRadius: 10,
+                              border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+                              background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+                              color: selected ? '#fff' : '#d4af37',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {selected ? 'Selected' : 'Select'}
+                          </button>
+                        </div>
                       </div>
 
                       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2800,6 +2840,59 @@ export default function ProducePage() {
             </div>
             <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               {audioConfigAbout.description && audioConfigAbout.description.trim().length ? audioConfigAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {logoAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10061,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {logoAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLogoAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {logoAbout.description && logoAbout.description.trim().length ? logoAbout.description : 'No description.'}
             </div>
           </div>
         </div>

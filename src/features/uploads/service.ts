@@ -361,6 +361,61 @@ export async function remove(id: number, currentUserId: number): Promise<{ ok: t
   return { ok: true }
 }
 
+export async function updateMetadata(
+  id: number,
+  input: { modifiedFilename?: string | null; description?: string | null },
+  ctx: ServiceContext
+) {
+  if (!ctx.userId) throw new ForbiddenError()
+  const currentUserId = Number(ctx.userId)
+
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [id])
+  const u = (rows as any[])[0]
+  if (!u) throw new NotFoundError('not_found')
+
+  const checker = await resolveChecker(currentUserId)
+  const ownerId = u.user_id ? Number(u.user_id) : null
+  const allowed =
+    (ownerId && (await can(currentUserId, PERM.VIDEO_EDIT_OWN, { ownerId, checker }))) ||
+    (await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker }))
+  if (!allowed) throw new ForbiddenError()
+
+  const rawName = input.modifiedFilename != null ? String(input.modifiedFilename) : ''
+  const modifiedFilename = rawName.trim().length ? rawName.trim() : null
+  const rawDescription = input.description != null ? String(input.description) : ''
+  const description = rawDescription.trim().length ? rawDescription.trim() : null
+
+  if (modifiedFilename && modifiedFilename.length > 512) {
+    const err: any = new DomainError('invalid_name', 'invalid_name', 400)
+    err.detail = { max: 512 }
+    throw err
+  }
+  if (description && description.length > 2000) {
+    const err: any = new DomainError('invalid_description', 'invalid_description', 400)
+    err.detail = { max: 2000 }
+    throw err
+  }
+
+  await db.query(`UPDATE uploads SET modified_filename = ?, description = ? WHERE id = ?`, [
+    modifiedFilename,
+    description,
+    id,
+  ])
+
+  try {
+    await db.query(
+      `INSERT INTO action_log (user_id, action, resource_type, resource_id, detail)
+       VALUES (?, 'update_metadata', 'upload', ?, ?)`,
+      [currentUserId, id, JSON.stringify({ modified_filename: modifiedFilename, description })]
+    )
+  } catch {}
+
+  const updated = await repo.getById(id)
+  if (!updated) throw new NotFoundError('not_found')
+  return enhanceUploadRow(updated)
+}
+
 export async function deleteSourceVideo(id: number, currentUserId: number): Promise<{ ok: true; alreadyDeleted?: true }> {
   const db = getPool()
   const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [id])
