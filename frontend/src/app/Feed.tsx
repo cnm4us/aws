@@ -566,7 +566,9 @@ export default function Feed() {
         // If the video loops (time jumps backwards), reset cue tracking so captions restart cleanly.
         if (typeof prevMs === 'number' && Number.isFinite(prevMs) && tMs + 500 < prevMs) {
           captionsCueIndexRef.current[pubId] = 0
+          // Keep the rendered overlay in sync with our refs.
           lastCaptionTextRef.current = null
+          setCaptionText(null)
         }
         captionsLastTimeMsRef.current[pubId] = tMs
         let idx = captionsCueIndexRef.current[pubId] ?? 0
