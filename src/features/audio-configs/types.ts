@@ -6,6 +6,7 @@ export type AudioConfigRow = {
   id: number
   owner_user_id: number
   name: string
+  description?: string | null
   mode: AudioMode
   video_gain_db: number
   music_gain_db: number
@@ -29,6 +30,7 @@ export type AudioConfigRow = {
 export type AudioConfigDto = {
   id: number
   name: string
+  description: string | null
   mode: AudioMode
   videoGainDb: number
   musicGainDb: number

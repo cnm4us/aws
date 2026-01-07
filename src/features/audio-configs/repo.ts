@@ -42,6 +42,7 @@ export async function getById(id: number): Promise<AudioConfigRow | null> {
 export async function create(input: {
   ownerUserId: number
   name: string
+  description: string | null
   mode: string
   videoGainDb: number
   musicGainDb: number
@@ -57,13 +58,14 @@ export async function create(input: {
   const duckEnabled = String(input.duckingMode || '').toLowerCase() !== 'none'
   const [result] = await db.query(
     `INSERT INTO audio_configurations
-      (owner_user_id, name, mode, video_gain_db, music_gain_db, ducking_enabled, ducking_amount_db, ducking_mode, ducking_gate,
+      (owner_user_id, name, description, mode, video_gain_db, music_gain_db, ducking_enabled, ducking_amount_db, ducking_mode, ducking_gate,
        opener_cut_fade_before_ms, opener_cut_fade_after_ms,
        intro_sfx_upload_id, intro_sfx_seconds, intro_sfx_gain_db, intro_sfx_fade_enabled, intro_sfx_ducking_enabled, intro_sfx_ducking_amount_db)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
+      input.description,
       input.mode,
       input.videoGainDb,
       input.musicGainDb,
@@ -89,6 +91,7 @@ export async function create(input: {
 
 export async function update(id: number, patch: {
   name?: string
+  description?: string | null
   mode?: string
   videoGainDb?: number
   musicGainDb?: number
@@ -104,6 +107,7 @@ export async function update(id: number, patch: {
   const sets: string[] = []
   const args: any[] = []
   if (patch.name !== undefined) { sets.push('name = ?'); args.push(patch.name) }
+  if (patch.description !== undefined) { sets.push('description = ?'); args.push(patch.description) }
   if (patch.mode !== undefined) { sets.push('mode = ?'); args.push(patch.mode) }
   if (patch.videoGainDb !== undefined) { sets.push('video_gain_db = ?'); args.push(patch.videoGainDb) }
   if (patch.musicGainDb !== undefined) { sets.push('music_gain_db = ?'); args.push(patch.musicGainDb) }

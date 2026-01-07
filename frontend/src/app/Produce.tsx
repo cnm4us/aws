@@ -64,6 +64,7 @@ type LogoConfig = {
 type AudioConfig = {
   id: number
   name: string
+  description?: string | null
   mode: 'replace' | 'mix'
   videoGainDb: number
   musicGainDb: number
@@ -354,6 +355,7 @@ export default function ProducePage() {
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
   const [titlePageSort, setTitlePageSort] = useState<TitlePageSortMode>('recent')
+  const [audioConfigAbout, setAudioConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -584,6 +586,11 @@ export default function ProducePage() {
     return audioConfigs.find((c) => c.id === selectedAudioConfigId) || null
   }, [audioConfigs, selectedAudioConfigId])
 
+  const defaultAudioConfig = useMemo(() => {
+    const preferred = audioConfigs.find((c) => String(c.name || '').trim().toLowerCase() === 'mix (medium)')
+    return preferred || audioConfigs[0] || null
+  }, [audioConfigs])
+
   const sortedAudioConfigs = useMemo(() => {
     const items = Array.isArray(audioConfigs) ? [...audioConfigs] : []
     const nameFor = (c: AudioConfig) => String(c.name || '').trim().toLowerCase()
@@ -754,6 +761,12 @@ export default function ProducePage() {
   const openAudioConfigPicker = () => {
     setPick('audioConfig')
     pushQueryParams({ pick: 'audioConfig' }, { ...(window.history.state || {}), modal: 'audioConfigPicker' })
+  }
+
+  const openAudioConfigAbout = (cfg: AudioConfig | null) => {
+    const title = (cfg?.name || '').trim() || 'Audio Preset'
+    const description = cfg?.description != null ? String(cfg.description) : null
+    setAudioConfigAbout({ title, description })
   }
 
   const openLogoPicker = () => {
@@ -1317,14 +1330,29 @@ export default function ProducePage() {
 	                ) : (
 	                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
 	                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-	                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-	                        {selectedAudioConfig ? (selectedAudioConfig.name || `Preset ${selectedAudioConfig.id}`) : 'Default (Mix Medium)'}
-	                      </div>
-	                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-	                        <button
-	                          type="button"
-	                          onClick={openAudioConfigPicker}
-	                          style={{
+		                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+		                        {selectedAudioConfig ? (selectedAudioConfig.name || `Preset ${selectedAudioConfig.id}`) : 'Default (Mix Medium)'}
+		                      </div>
+		                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+		                        <button
+		                          type="button"
+		                          onClick={() => openAudioConfigAbout(selectedAudioConfig || defaultAudioConfig)}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            background: '#0c0c0c',
+		                            color: '#fff',
+		                            fontWeight: 700,
+		                            cursor: 'pointer',
+		                          }}
+		                        >
+		                          About
+		                        </button>
+		                        <button
+		                          type="button"
+		                          onClick={openAudioConfigPicker}
+		                          style={{
 	                            padding: '10px 12px',
 	                            borderRadius: 10,
 	                            border: '1px solid rgba(212,175,55,0.85)',
@@ -1969,22 +1997,38 @@ export default function ProducePage() {
 	                          </div>
 	                          {summary ? <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>{summary}</div> : null}
 	                        </div>
-	                        <button
-	                          type="button"
-	                          onClick={() => chooseAudioConfigFromPicker(c.id)}
-	                          style={{
-	                            padding: '8px 12px',
-	                            borderRadius: 10,
-	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
-	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
-	                            color: selected ? '#fff' : '#d4af37',
-	                            fontWeight: 800,
-	                            cursor: 'pointer',
-	                            flexShrink: 0,
-	                          }}
-	                        >
-	                          {selected ? 'Selected' : 'Select'}
-	                        </button>
+	                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+	                          <button
+	                            type="button"
+	                            onClick={() => openAudioConfigAbout(c)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: '#0c0c0c',
+	                              color: '#fff',
+	                              fontWeight: 800,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            About
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => chooseAudioConfigFromPicker(c.id)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                              background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                              color: selected ? '#fff' : '#d4af37',
+	                              fontWeight: 800,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            {selected ? 'Selected' : 'Select'}
+	                          </button>
+	                        </div>
 	                      </div>
 	                    </div>
 	                  )
@@ -2703,6 +2747,59 @@ export default function ProducePage() {
                   )
                 })
               )}
+            </div>
+          </div>
+        </div>
+	      ) : null}
+
+      {audioConfigAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {audioConfigAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAudioConfigAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {audioConfigAbout.description && audioConfigAbout.description.trim().length ? audioConfigAbout.description : 'No description.'}
             </div>
           </div>
         </div>

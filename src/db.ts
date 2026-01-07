@@ -186,14 +186,15 @@ export async function ensureSchema(db: DB) {
 			    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 			  `);
 
-			  // Plan 35: ducking modes + sensitivity (idempotent best-effort).
-			  // Use NULL default first so we can backfill safely, then enforce NOT NULL defaults.
-			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_mode ENUM('none','rolling','abrupt') NULL DEFAULT NULL`);
-			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_gate ENUM('sensitive','normal','strict') NULL DEFAULT NULL`);
-			  try {
-			    await db.query(
-			      `UPDATE audio_configurations
-			          SET ducking_mode = CASE WHEN ducking_enabled = 1 THEN 'rolling' ELSE 'none' END
+				  // Plan 35: ducking modes + sensitivity (idempotent best-effort).
+				  // Use NULL default first so we can backfill safely, then enforce NOT NULL defaults.
+				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_mode ENUM('none','rolling','abrupt') NULL DEFAULT NULL`);
+				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS ducking_gate ENUM('sensitive','normal','strict') NULL DEFAULT NULL`);
+				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+				  try {
+				    await db.query(
+				      `UPDATE audio_configurations
+				          SET ducking_mode = CASE WHEN ducking_enabled = 1 THEN 'rolling' ELSE 'none' END
 			        WHERE ducking_mode IS NULL`
 			    )
 			  } catch {}

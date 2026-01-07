@@ -29,6 +29,7 @@ function mapRow(row: AudioConfigRow): AudioConfigDto {
   return {
     id: Number(row.id),
     name: String(row.name || ''),
+    description: row.description != null ? String(row.description) : null,
     mode,
     videoGainDb: Number(row.video_gain_db ?? 0),
     musicGainDb: Number(row.music_gain_db ?? -18),
@@ -69,6 +70,13 @@ function normalizeName(raw: any): string {
   if (!name) throw new DomainError('invalid_name', 'invalid_name', 400)
   if (name.length > 120) throw new DomainError('invalid_name', 'invalid_name', 400)
   return name
+}
+
+function normalizeDescription(raw: any): string | null {
+  const desc = String(raw ?? '').trim()
+  if (!desc) return null
+  if (desc.length > 2000) throw new DomainError('invalid_description', 'invalid_description', 400)
+  return desc
 }
 
 function normalizeDb(raw: any, fallback: number): number {
@@ -148,6 +156,7 @@ export async function getActiveForUser(id: number, userId: number): Promise<Audi
 
 export async function createForOwner(input: {
   name: any
+  description?: any
   mode: any
   videoGainDb?: any
   musicGainDb?: any
@@ -161,6 +170,7 @@ export async function createForOwner(input: {
 }, userId: number): Promise<AudioConfigDto> {
   if (!userId) throw new ForbiddenError()
   const name = normalizeName(input.name)
+  const description = normalizeDescription(input.description)
   if (!isEnumValue(input.mode, MODES)) throw new DomainError('invalid_mode', 'invalid_mode', 400)
   const mode = input.mode
   const videoGainDb = normalizeDb(input.videoGainDb, 0)
@@ -193,6 +203,7 @@ export async function createForOwner(input: {
   const row = await repo.create({
     ownerUserId: Number(userId),
     name,
+    description,
     mode,
     videoGainDb,
     musicGainDb,
@@ -211,6 +222,7 @@ export async function updateForOwner(
   id: number,
   patch: {
     name?: any
+    description?: any
     mode?: any
     videoGainDb?: any
     musicGainDb?: any
@@ -231,6 +243,7 @@ export async function updateForOwner(
 
   const next: any = {
     name: patch.name !== undefined ? patch.name : existing.name,
+    description: patch.description !== undefined ? patch.description : (existing as any).description,
     mode: patch.mode !== undefined ? patch.mode : existing.mode,
     videoGainDb: patch.videoGainDb !== undefined ? patch.videoGainDb : existing.video_gain_db,
     musicGainDb: patch.musicGainDb !== undefined ? patch.musicGainDb : existing.music_gain_db,
@@ -250,6 +263,7 @@ export async function updateForOwner(
   }
 
   const name = normalizeName(next.name)
+  const description = normalizeDescription(next.description)
   if (!isEnumValue(next.mode, MODES)) throw new DomainError('invalid_mode', 'invalid_mode', 400)
   const mode = next.mode
   const videoGainDb = normalizeDb(next.videoGainDb, 0)
@@ -281,6 +295,7 @@ export async function updateForOwner(
 
   const row = await repo.update(id, {
     name,
+    description,
     mode,
     videoGainDb,
     musicGainDb,

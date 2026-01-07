@@ -3544,6 +3544,7 @@ function renderAdminAudioConfigForm(opts: {
   const notice = opts.notice ? String(opts.notice) : ''
   const cfg = opts.config || {}
   const nameValue = String(cfg.name || '').trim()
+  const descValue = String(cfg.description || '').trim()
   const modeValue = String(cfg.mode || 'mix')
   const musicGainDb = cfg.musicGainDb != null ? Number(cfg.musicGainDb) : (cfg.music_gain_db != null ? Number(cfg.music_gain_db) : -18)
   const duckingModeValue = String(cfg.duckingMode ?? cfg.ducking_mode ?? (Number(cfg.ducking_enabled || 0) ? 'rolling' : 'none'))
@@ -3570,6 +3571,10 @@ function renderAdminAudioConfigForm(opts: {
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
     <div class="field-hint">Creators pick this preset when producing.</div>
+  </label>`
+  body += `<label style="margin-top:10px">Description
+    <textarea name="description" rows="4" maxlength="2000" placeholder="Describe this preset for creators...">${escapeHtml(descValue)}</textarea>
+    <div class="field-hint">Shown to creators via the About button.</div>
   </label>`
   body += `<label>Mode
     <select name="mode">
@@ -3768,12 +3773,13 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
 
-	    const body = req.body || {}
-		    const input = {
-		      name: body.name,
-		      mode: body.mode,
-		      videoGainDb: body.videoGainDb,
-		      musicGainDb: body.musicGainDb,
+		    const body = req.body || {}
+			    const input = {
+			      name: body.name,
+			      description: body.description,
+			      mode: body.mode,
+			      videoGainDb: body.videoGainDb,
+			      musicGainDb: body.musicGainDb,
 		      duckingMode: body.duckingMode,
 		      duckingGate: body.duckingGate,
 		      audioDurationSeconds: body.audioDurationSeconds,
@@ -3793,11 +3799,12 @@ pagesRouter.post('/admin/audio-configs', async (req: any, res: any) => {
       backHref: '/admin/audio-configs',
       csrfToken,
       error: msg,
-			      config: {
-			        name: req.body?.name,
-			        mode: req.body?.mode,
-			        musicGainDb: req.body?.musicGainDb,
-			        duckingMode: req.body?.duckingMode,
+				      config: {
+				        name: req.body?.name,
+				        description: req.body?.description,
+				        mode: req.body?.mode,
+				        musicGainDb: req.body?.musicGainDb,
+				        duckingMode: req.body?.duckingMode,
 			        duckingGate: req.body?.duckingGate,
 			        audioDurationSeconds: req.body?.audioDurationSeconds,
 			        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
@@ -3842,12 +3849,13 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
     const currentUserId = req.user?.id ? Number(req.user.id) : null
     if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-configs')}`)
 
-		    const body = req.body || {}
-				    const config = await audioConfigsSvc.updateForOwner(id, {
-				      name: body.name,
-				      mode: body.mode,
-				      videoGainDb: body.videoGainDb,
-				      musicGainDb: body.musicGainDb,
+			    const body = req.body || {}
+					    const config = await audioConfigsSvc.updateForOwner(id, {
+					      name: body.name,
+					      description: body.description,
+					      mode: body.mode,
+					      videoGainDb: body.videoGainDb,
+					      musicGainDb: body.musicGainDb,
 				      duckingMode: body.duckingMode,
 				      duckingGate: body.duckingGate,
 				      audioDurationSeconds: body.audioDurationSeconds,
@@ -3879,12 +3887,13 @@ pagesRouter.post('/admin/audio-configs/:id', async (req: any, res: any) => {
 	      backHref: '/admin/audio-configs',
 	      csrfToken,
 	      error: msg,
-				      config: {
-				        id,
-				        name: req.body?.name,
-				        mode: req.body?.mode,
-				        musicGainDb: req.body?.musicGainDb,
-				        duckingMode: req.body?.duckingMode,
+					      config: {
+					        id,
+					        name: req.body?.name,
+					        description: req.body?.description,
+					        mode: req.body?.mode,
+					        musicGainDb: req.body?.musicGainDb,
+					        duckingMode: req.body?.duckingMode,
 				        duckingGate: req.body?.duckingGate,
 				        audioDurationSeconds: req.body?.audioDurationSeconds,
 				        audioFadeEnabled: Boolean(req.body?.audioFadeEnabled),
