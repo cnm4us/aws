@@ -435,9 +435,15 @@ export default function Feed() {
   useEffect(() => {
     // Close story overlay when the user changes slides.
     setStoryOpenForPub(null)
+  }, [index])
+
+  const captionsSlideIndex = playingIndex != null ? playingIndex : index
+
+  useEffect(() => {
+    // Keep captions in sync with whichever video is actually playing/active.
     setCaptionText(null)
     lastCaptionTextRef.current = null
-  }, [index])
+  }, [captionsSlideIndex])
 
   async function ensureStory(publicationId: number | null | undefined) {
     if (!publicationId || !isAuthed) return
@@ -533,7 +539,7 @@ export default function Feed() {
 
   useEffect(() => {
     if (!captionsEnabled) return
-    const active = items[index]
+    const active = items[captionsSlideIndex]
     const pubId = active?.publicationId != null ? Number(active.publicationId) : null
     const hasCaps = active?.hasCaptions === true
     if (!pubId || !hasCaps) {
@@ -546,12 +552,46 @@ export default function Feed() {
       return
     }
     let cancelled = false
+    let boundVideo: HTMLVideoElement | null = null
+    let unbind: (() => void) | null = null
     ;(async () => {
       await ensureCaptionsCues(pubId)
       if (cancelled) return
+      const resetLoopState = () => {
+        captionsCueIndexRef.current[pubId] = 0
+        captionsLastTimeMsRef.current[pubId] = 0
+        lastCaptionTextRef.current = null
+        setCaptionText(null)
+      }
+
       const tick = () => {
         if (cancelled) return
-        const v: any = getVideoEl(index)
+        const v: any = getVideoEl(captionsSlideIndex)
+        // (Re)bind video event handlers in case the element gets replaced (HLS reattach, loop behavior, etc).
+        if (v && v instanceof HTMLVideoElement && v !== boundVideo) {
+          try { unbind?.() } catch {}
+          boundVideo = v
+          const onEnded = () => { resetLoopState() }
+          const onSeeked = () => {
+            // Seeking can happen on loop and on user interactions; reset index and let tick re-sync.
+            captionsCueIndexRef.current[pubId] = 0
+            captionsLastTimeMsRef.current[pubId] = Math.max(0, Math.round(Number((v as any).currentTime || 0) * 1000))
+            lastCaptionTextRef.current = null
+            setCaptionText(null)
+          }
+          try {
+            v.addEventListener('ended', onEnded)
+            v.addEventListener('seeked', onSeeked)
+            v.addEventListener('seeking', onSeeked)
+          } catch {}
+          unbind = () => {
+            try {
+              v.removeEventListener('ended', onEnded)
+              v.removeEventListener('seeked', onSeeked)
+              v.removeEventListener('seeking', onSeeked)
+            } catch {}
+          }
+        }
         const cues = captionsCuesRef.current[pubId] || []
         if (!v || !cues.length || typeof v.currentTime !== 'number') {
           if (lastCaptionTextRef.current !== null) {
@@ -565,10 +605,7 @@ export default function Feed() {
         const prevMs = captionsLastTimeMsRef.current[pubId]
         // If the video loops (time jumps backwards), reset cue tracking so captions restart cleanly.
         if (typeof prevMs === 'number' && Number.isFinite(prevMs) && tMs + 500 < prevMs) {
-          captionsCueIndexRef.current[pubId] = 0
-          // Keep the rendered overlay in sync with our refs.
-          lastCaptionTextRef.current = null
-          setCaptionText(null)
+          resetLoopState()
         }
         captionsLastTimeMsRef.current[pubId] = tMs
         let idx = captionsCueIndexRef.current[pubId] ?? 0
@@ -594,8 +631,9 @@ export default function Feed() {
     })()
     return () => {
       cancelled = true
+      try { unbind?.() } catch {}
     }
-  }, [captionsEnabled, index, items, storyOpenForPub])
+  }, [captionsEnabled, captionsSlideIndex, items, storyOpenForPub])
 
   const openProfilePeek = useCallback(
     async (
@@ -2632,7 +2670,7 @@ export default function Feed() {
 	        </div>
 	      </div>
 	      {(() => {
-	        const active = items[index]
+	        const active = items[captionsSlideIndex]
 	        const pubId = active?.publicationId != null ? Number(active.publicationId) : null
 	        const show =
 	          captionsEnabled &&
