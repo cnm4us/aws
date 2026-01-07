@@ -518,6 +518,37 @@ export default function Feed() {
     return cues
   }
 
+  function postProcessCaptionsCues(
+    cues: Array<{ startMs: number; endMs: number; text: string }>,
+    opts: { minCueMs: number; minLastCueMs: number } = { minCueMs: 900, minLastCueMs: 1600 },
+  ): Array<{ startMs: number; endMs: number; text: string }> {
+    const normalized = Array.isArray(cues) ? cues.slice().sort((a, b) => a.startMs - b.startMs) : []
+    if (normalized.length === 0) return []
+    const out: Array<{ startMs: number; endMs: number; text: string }> = []
+    for (let i = 0; i < normalized.length; i += 1) {
+      const raw = normalized[i]
+      const startMs = Math.max(0, Math.round(Number(raw.startMs) || 0))
+      let endMs = Math.max(startMs + 1, Math.round(Number(raw.endMs) || 0))
+      const text = String(raw.text || '').trim()
+      if (!text) continue
+
+      const nextStartMs = i + 1 < normalized.length ? Math.max(0, Math.round(Number(normalized[i + 1].startMs) || 0)) : null
+      if (nextStartMs != null && endMs >= nextStartMs) endMs = Math.max(startMs + 1, nextStartMs - 1)
+
+      const isLast = i === normalized.length - 1
+      const minMs = isLast ? opts.minLastCueMs : opts.minCueMs
+      const dur = Math.max(0, endMs - startMs)
+      if (dur < minMs) {
+        let extendedEnd = startMs + minMs
+        if (nextStartMs != null) extendedEnd = Math.min(extendedEnd, Math.max(startMs + 1, nextStartMs - 1))
+        endMs = Math.max(endMs, extendedEnd)
+      }
+
+      out.push({ startMs, endMs, text })
+    }
+    return out
+  }
+
   async function ensureCaptionsCues(publicationId: number) {
     if (captionsCuesRef.current[publicationId]) return
     if (captionsLoadingRef.current[publicationId]) return
@@ -529,7 +560,7 @@ export default function Feed() {
         return
       }
       const vtt = await res.text()
-      captionsCuesRef.current[publicationId] = parseVttCues(vtt)
+      captionsCuesRef.current[publicationId] = postProcessCaptionsCues(parseVttCues(vtt))
     } catch {
       captionsCuesRef.current[publicationId] = []
     } finally {
