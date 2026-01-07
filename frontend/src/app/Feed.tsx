@@ -314,6 +314,7 @@ export default function Feed() {
   const captionsCuesRef = useRef<Record<number, Array<{ startMs: number; endMs: number; text: string }>>>({})
   const captionsLoadingRef = useRef<Record<number, boolean>>({})
   const captionsCueIndexRef = useRef<Record<number, number>>({})
+  const captionsLastTimeMsRef = useRef<Record<number, number>>({})
   const lastCaptionTextRef = useRef<string | null>(null)
   // Who liked modal state
   const [likersOpen, setLikersOpen] = useState(false)
@@ -460,6 +461,8 @@ export default function Feed() {
     setCaptionsEnabled(next)
     try { localStorage.setItem('captions:enabled', next ? '1' : '0') } catch {}
     if (!next) {
+      captionsCueIndexRef.current = {}
+      captionsLastTimeMsRef.current = {}
       lastCaptionTextRef.current = null
       setCaptionText(null)
     }
@@ -559,6 +562,13 @@ export default function Feed() {
           return
         }
         const tMs = Math.max(0, Math.round(Number(v.currentTime) * 1000))
+        const prevMs = captionsLastTimeMsRef.current[pubId]
+        // If the video loops (time jumps backwards), reset cue tracking so captions restart cleanly.
+        if (typeof prevMs === 'number' && Number.isFinite(prevMs) && tMs + 500 < prevMs) {
+          captionsCueIndexRef.current[pubId] = 0
+          lastCaptionTextRef.current = null
+        }
+        captionsLastTimeMsRef.current[pubId] = tMs
         let idx = captionsCueIndexRef.current[pubId] ?? 0
         if (idx >= cues.length) idx = cues.length - 1
         if (idx < 0) idx = 0
