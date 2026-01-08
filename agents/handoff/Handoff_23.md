@@ -95,3 +95,8 @@ Changes Since Last (since `74e1c20`)
   - Produce: Logo Config “About” modal shows the selected config’s description (or “No description.”)
   - UI: removed the experimental Logo Config size preset “Lower third”
   - Commit: `ef07d30`
+- Lower third config descriptions + responsive Produce headers
+  - DB/API/UI: add `lower_third_image_configurations.description` (max 2000 chars) and edit via `/lower-thirds`
+  - Produce: About modals for audio, lower third image, and lower third config (selected + pickers)
+  - Produce: selected asset headers no longer force horizontal scrolling on narrow/mobile screens
+  - Commit: `764791b`

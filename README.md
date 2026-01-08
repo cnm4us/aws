@@ -57,6 +57,7 @@ API testing (authenticated)
 - Upload thumbnail endpoint: `GET /api/uploads/:id/thumb` (first-frame thumbnail from the source upload; auth required).
 - Upload metadata endpoint: `PATCH /api/uploads/:id` (updates `modified_filename` and `description`; owner/site_admin; CSRF required).
 - Logo configs API: `GET /api/logo-configs`, `POST /api/logo-configs`, `PATCH /api/logo-configs/:id`, `POST /api/logo-configs/:id/duplicate`, `DELETE /api/logo-configs/:id` (archive; includes `description`).
+- Lower third configs API: `GET /api/lower-third-configs`, `POST /api/lower-third-configs`, `PATCH|PUT /api/lower-third-configs/:id`, `DELETE /api/lower-third-configs/:id` (archive; includes `description`).
 - Space feed supports optional `?pin=<production_ulid>` on `/groups/:slug` and `/channels/:slug` to show that production first (pins only on initial load).
 
 One-off admin scripts
