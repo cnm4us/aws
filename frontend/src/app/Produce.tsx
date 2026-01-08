@@ -1291,23 +1291,21 @@ export default function ProducePage() {
 	                {selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
 	                  <div
 	                    style={{
-	                      ...computeOverlayCss({
-	                        position: selectedScreenTitlePreset.position,
-	                        sizePctWidth: selectedScreenTitlePreset.maxWidthPct,
-	                        opacityPct: 100,
-	                        insetXPreset: selectedScreenTitlePreset.insetXPreset ?? null,
-	                        insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
-	                      }),
-	                      width: 'auto',
-	                      maxWidth: `${(() => {
+	                      ...computeOverlayCss(() => {
 	                        const pos = String(selectedScreenTitlePreset.position || 'top_left')
+	                        const rawMax = clampNumber(selectedScreenTitlePreset.maxWidthPct ?? 90, 10, 100)
 	                        const xInsetPct = pos.endsWith('_center')
 	                          ? 0
 	                          : insetPctForPreset((selectedScreenTitlePreset.insetXPreset ?? null) as any) * 100
-	                        const rawMax = clampNumber(selectedScreenTitlePreset.maxWidthPct ?? 90, 10, 100)
-	                        const capped = Math.min(rawMax, 100 - 2 * xInsetPct)
-	                        return clampNumber(capped, 10, 100).toFixed(2)
-	                      })()}%`,
+	                        const effectiveWidthPct = clampNumber(Math.min(rawMax, 100 - 2 * xInsetPct), 10, 100)
+	                        return {
+	                          position: selectedScreenTitlePreset.position,
+	                          sizePctWidth: effectiveWidthPct,
+	                          opacityPct: 100,
+	                          insetXPreset: selectedScreenTitlePreset.insetXPreset ?? null,
+	                          insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
+	                        }
+	                      })(),
 	                      zIndex: 2,
 	                      boxSizing: 'border-box',
 	                      padding:
