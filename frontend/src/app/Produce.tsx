@@ -1294,6 +1294,16 @@ export default function ProducePage() {
 	                        insetXPreset: selectedScreenTitlePreset.insetXPreset ?? null,
 	                        insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
 	                      }),
+	                      width: 'auto',
+	                      maxWidth: `${(() => {
+	                        const pos = String(selectedScreenTitlePreset.position || 'top_left')
+	                        const xInsetPct = pos.endsWith('_center')
+	                          ? 0
+	                          : insetPctForPreset((selectedScreenTitlePreset.insetXPreset ?? null) as any) * 100
+	                        const rawMax = clampNumber(selectedScreenTitlePreset.maxWidthPct ?? 90, 10, 100)
+	                        const capped = Math.min(rawMax, 100 - 2 * xInsetPct)
+	                        return clampNumber(capped, 10, 100).toFixed(2)
+	                      })()}%`,
 	                      zIndex: 2,
 	                      boxSizing: 'border-box',
 	                      padding:
