@@ -124,7 +124,9 @@ function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right
 
 function coerceInsetsForPosition(pos: ScreenTitlePosition, insetXPreset: InsetPreset | null, insetYPreset: InsetPreset | null) {
   const { x } = positionAxes(pos)
-  const xPreset = x === 'center' ? null : (insetXPreset ?? 'medium')
+  // For center positions, keep inset X as-is so it persists if the user later switches to left/right.
+  // Rendering ignores inset X when centered.
+  const xPreset = x === 'center' ? insetXPreset : (insetXPreset ?? 'medium')
   const yPreset = insetYPreset ?? 'medium'
   return { insetXPreset: xPreset, insetYPreset: yPreset }
 }
