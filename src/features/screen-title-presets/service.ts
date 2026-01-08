@@ -24,12 +24,17 @@ function toInsetPresetOrNull(raw: any): InsetPreset | null {
 function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const rawFont = String((row as any).font_key || 'dejavu_sans_bold').trim() as any
   const fontKey: ScreenTitleFontKey = isEnumValue(rawFont, FONT_KEYS) ? rawFont : 'dejavu_sans_bold'
+  const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
+  const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
+  const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   return {
     id: Number(row.id),
     name: String(row.name || ''),
     description: row.description == null ? null : String(row.description),
     style: row.style,
     fontKey,
+    fontSizePct,
+    fontColor,
     position: row.position,
     maxWidthPct: Number((row as any).max_width_pct),
     insetXPreset: toInsetPresetOrNull((row as any).inset_x_preset),
@@ -76,6 +81,21 @@ function normalizeInsetPreset(raw: any): InsetPreset | null {
   return raw
 }
 
+function normalizeFontSizePct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 4.5
+  const clamped = Math.min(Math.max(n, 2), 8)
+  return Math.round(clamped * 10) / 10
+}
+
+function normalizeFontColor(raw: any): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return '#ffffff'
+  const m = s.match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) throw new DomainError('invalid_font_color', 'invalid_font_color', 400)
+  return `#${m[1].toLowerCase()}`
+}
+
 function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right'; y: 'top' } {
   const [row, col] = String(pos).split('_') as [string, string]
   const x = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
@@ -114,6 +134,8 @@ export async function createForUser(input: {
   description?: any
   style?: any
   fontKey?: any
+  fontSizePct?: any
+  fontColor?: any
   position?: any
   maxWidthPct?: any
   insetXPreset?: any
@@ -127,6 +149,8 @@ export async function createForUser(input: {
   const description = normalizeDescription(input.description)
   const style: ScreenTitleStyle = isEnumValue(input.style, STYLES) ? input.style : 'pill'
   const fontKey: ScreenTitleFontKey = isEnumValue(input.fontKey, FONT_KEYS) ? input.fontKey : 'dejavu_sans_bold'
+  const fontSizePct = normalizeFontSizePct(input.fontSizePct)
+  const fontColor = normalizeFontColor(input.fontColor)
   const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top_left'
   const maxWidthPct = normalizePct(input.maxWidthPct ?? 90, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(input.insetXPreset)
@@ -142,6 +166,8 @@ export async function createForUser(input: {
     description,
     style,
     fontKey,
+    fontSizePct,
+    fontColor,
     position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,
@@ -160,6 +186,8 @@ export async function updateForUser(
     description?: any
     style?: any
     fontKey?: any
+    fontSizePct?: any
+    fontColor?: any
     position?: any
     maxWidthPct?: any
     insetXPreset?: any
@@ -180,6 +208,8 @@ export async function updateForUser(
     description: patch.description !== undefined ? normalizeDescription(patch.description) : (existing.description == null ? null : String(existing.description)),
     style: patch.style !== undefined ? patch.style : existing.style,
     fontKey: patch.fontKey !== undefined ? patch.fontKey : (existing as any).font_key,
+    fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
+    fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
     position: patch.position !== undefined ? patch.position : existing.position,
     maxWidthPct: patch.maxWidthPct !== undefined ? patch.maxWidthPct : (existing as any).max_width_pct,
     insetXPreset: patch.insetXPreset !== undefined ? patch.insetXPreset : (existing as any).inset_x_preset,
@@ -191,6 +221,8 @@ export async function updateForUser(
 
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   if (!isEnumValue(next.fontKey, FONT_KEYS)) throw new DomainError('invalid_font', 'invalid_font', 400)
+  const fontSizePct = normalizeFontSizePct(next.fontSizePct)
+  const fontColor = normalizeFontColor(next.fontColor)
   if (!isEnumValue(next.position, POSITIONS)) throw new DomainError('invalid_position', 'invalid_position', 400)
   const maxWidthPct = normalizePct(next.maxWidthPct, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(next.insetXPreset)
@@ -205,6 +237,8 @@ export async function updateForUser(
     description: next.description,
     style: next.style,
     fontKey: next.fontKey,
+    fontSizePct,
+    fontColor,
     position: next.position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,

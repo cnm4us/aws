@@ -12,6 +12,8 @@ type ScreenTitleV1 = {
   preset: {
     style?: 'pill' | 'outline' | 'strip'
     fontKey?: string
+    fontSizePct?: number
+    fontColor?: string
     position?: 'top_left' | 'top_center' | 'top_right'
     maxWidthPct?: number
     insetXPreset?: 'small' | 'medium' | 'large' | null
@@ -196,6 +198,19 @@ function insetPctForPreset(preset: any): number {
   return 0.10
 }
 
+function normalizeHexColor(raw: any): string | null {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const m = s.match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) return null
+  return `#${m[1].toLowerCase()}`
+}
+
+function ffmpegColorForHex(hex: string): string {
+  // drawtext expects "0xRRGGBB" or named colors; we store "#rrggbb".
+  return `0x${String(hex).replace('#', '')}`
+}
+
 function fontFileForKey(key: any): string {
   const k = String(key || '').trim().toLowerCase()
   if (k === 'dejavu_sans_bold') return '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
@@ -258,6 +273,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     const preset = opts.screenTitle.preset || {}
     const pos = String(preset.position || 'top_left').toLowerCase()
     const style = String(preset.style || 'pill').toLowerCase()
+    const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
+    const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
     const xInset = pos.includes('_center') ? 0 : insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
 
@@ -273,8 +290,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     const textFileEsc = escapeFilterValue(textFile)
     const { enableExpr, alphaExpr } = buildScreenTitleAlphaExpr(preset, opts.videoDurationSeconds)
 
-    const fontSizeExpr = 'h*0.045'
-    const lineSpacing = 'h*0.008'
+    const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
+    const lineSpacing = `h*${((fontSizePct / 100) * 0.177).toFixed(5)}`
 
     const baseText = [
       `drawtext=fontfile=${fontFile}`,
@@ -282,7 +299,7 @@ export async function burnScreenTitleIntoMp4(opts: {
       `x=${xExpr}`,
       `y=${yExpr}`,
       `fontsize=${fontSizeExpr}`,
-      `fontcolor=white`,
+      `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
       `alpha=${alphaExpr}`,
       `line_spacing=${lineSpacing}`,
       `enable='${enableExpr}'`,

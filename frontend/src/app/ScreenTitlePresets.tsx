@@ -19,6 +19,8 @@ type ScreenTitlePreset = {
   description?: string | null
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
+  fontSizePct: number
+  fontColor: string
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
@@ -64,6 +66,8 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     description: null,
     style: 'pill',
     fontKey: 'dejavu_sans_bold',
+    fontSizePct: 4.5,
+    fontColor: '#ffffff',
     position: 'top_left',
     maxWidthPct: 90,
     insetXPreset: 'medium',
@@ -170,6 +174,8 @@ export default function ScreenTitlePresetsPage() {
       description: selected.description ?? null,
       style: selected.style,
       fontKey: selected.fontKey,
+      fontSizePct: selected.fontSizePct ?? 4.5,
+      fontColor: selected.fontColor || '#ffffff',
       position: selected.position,
       maxWidthPct: selected.maxWidthPct,
       insetXPreset: selected.insetXPreset ?? null,
@@ -389,6 +395,51 @@ export default function ScreenTitlePresetsPage() {
                   }}
                 />
               </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font size (% of frame height)</div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={2}
+                    max={8}
+                    value={Number.isFinite(Number(draft.fontSizePct)) ? String(draft.fontSizePct) : '4.5'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, fontSizePct: Number.isFinite(n) ? n : 4.5 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font color</div>
+                  <input
+                    type="color"
+                    value={draft.fontColor || '#ffffff'}
+                    onChange={(e) => setDraft((d) => ({ ...d, fontColor: e.target.value || '#ffffff' }))}
+                    style={{
+                      width: '100%',
+                      height: 44,
+                      padding: '6px 8px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>

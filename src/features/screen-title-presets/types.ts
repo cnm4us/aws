@@ -13,6 +13,8 @@ export type ScreenTitlePresetRow = {
   description: string | null
   style: ScreenTitleStyle
   font_key: string
+  font_size_pct: number
+  font_color: string
   position: ScreenTitlePosition
   max_width_pct: number
   inset_x_preset: string | null
@@ -31,6 +33,8 @@ export type ScreenTitlePresetDto = {
   description: string | null
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
+  fontSizePct: number
+  fontColor: string
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset: InsetPreset | null
@@ -42,4 +46,3 @@ export type ScreenTitlePresetDto = {
   updatedAt: string
   archivedAt: string | null
 }
-

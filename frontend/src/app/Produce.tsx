@@ -107,6 +107,8 @@ type ScreenTitlePreset = {
   description?: string | null
   style: 'pill' | 'outline' | 'strip'
   fontKey: string
+  fontSizePct?: number
+  fontColor?: string
   position: 'top_left' | 'top_center' | 'top_right'
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
@@ -1319,9 +1321,11 @@ export default function ProducePage() {
 	                          : selectedScreenTitlePreset.style === 'pill'
 	                            ? 'rgba(0,0,0,0.55)'
 	                            : 'transparent',
-	                      color: '#fff',
+	                      color: selectedScreenTitlePreset.fontColor || '#ffffff',
 	                      fontWeight: 850,
-	                      fontSize: 14,
+	                      fontSize: Math.round(
+	                        14 * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 4.5, 0.6, 1.8)
+	                      ),
 	                      lineHeight: 1.2,
 	                      whiteSpace: 'pre-wrap',
 	                      overflowWrap: 'anywhere',

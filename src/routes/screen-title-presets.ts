@@ -22,6 +22,8 @@ screenTitlePresetsRouter.post('/api/screen-title-presets', requireAuth, async (r
       description: body.description,
       style: body.style,
       fontKey: body.fontKey,
+      fontSizePct: body.fontSizePct,
+      fontColor: body.fontColor,
       position: body.position,
       maxWidthPct: body.maxWidthPct,
       insetXPreset: body.insetXPreset,
@@ -53,6 +55,8 @@ async function handleUpdate(req: any, res: any, next: any) {
       description: body.description,
       style: body.style,
       fontKey: body.fontKey,
+      fontSizePct: body.fontSizePct,
+      fontColor: body.fontColor,
       position: body.position,
       maxWidthPct: body.maxWidthPct,
       insetXPreset: body.insetXPreset,
@@ -76,4 +80,3 @@ screenTitlePresetsRouter.delete('/api/screen-title-presets/:id', requireAuth, as
     res.json(result)
   } catch (err: any) { next(err) }
 })
-

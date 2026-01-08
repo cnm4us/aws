@@ -229,6 +229,8 @@ export async function ensureSchema(db: DB) {
               description TEXT NULL,
               style ENUM('pill','outline','strip') NOT NULL DEFAULT 'pill',
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
+              font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
+              font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               position ENUM('top_left','top_center','top_right') NOT NULL DEFAULT 'top_left',
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
@@ -243,6 +245,8 @@ export async function ensureSchema(db: DB) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_screen_title_archived ON screen_title_presets (archived_at, id)`); } catch {}
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
 
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`
