@@ -246,6 +246,13 @@ function escapeFfmpegExprCommas(expr: string): string {
   return String(expr).replace(/,/g, '\\,')
 }
 
+function lineSpacingPxForFrame(frameH: number, fontSizePct: number): number {
+  const h = Number.isFinite(frameH) && frameH > 0 ? frameH : 1080
+  const pct = clampNum(fontSizePct, 2, 8)
+  const px = Math.round(h * (pct / 100) * 0.18)
+  return Math.max(0, Math.min(200, px))
+}
+
 function buildScreenTitleAlphaExpr(preset: any, videoDurationSeconds: number | null): { enableExpr: string; alphaExpr: string } {
   const fade = String(preset?.fade || 'out').toLowerCase()
   const timingRule = String(preset?.timingRule || 'first_only').toLowerCase()
@@ -313,7 +320,6 @@ export async function burnScreenTitleIntoMp4(opts: {
     const { enableExpr, alphaExpr } = buildScreenTitleAlphaExpr(preset, opts.videoDurationSeconds)
 
     const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
-    const lineSpacing = `h*${((fontSizePct / 100) * 0.177).toFixed(5)}`
 
     const baseText = [
       `drawtext=fontfile=${fontFile}`,
@@ -323,7 +329,6 @@ export async function burnScreenTitleIntoMp4(opts: {
       `fontsize=${fontSizeExpr}`,
       `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
       `alpha=${alphaExpr}`,
-      `line_spacing=${lineSpacing}`,
       `enable='${enableExpr}'`,
     ]
 
@@ -406,7 +411,6 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
   const textFileEsc = escapeFilterValue(textFile)
 
   const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
-  const lineSpacing = `h*${((fontSizePct / 100) * 0.177).toFixed(5)}`
 
   const renderOne = async (frame: { w: number; h: number }, outPngPath: string) => {
     const xExpr = escapeFfmpegExprCommas(`min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`)
@@ -416,6 +420,7 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
         : pos === 'middle'
           ? `(h-text_h)/2`
           : `h*${yInset.toFixed(4)}`
+    const lineSpacingPx = lineSpacingPxForFrame(frame.h, fontSizePct)
 
     const baseText = [
       `drawtext=fontfile=${fontFile}`,
@@ -425,7 +430,7 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
       `fontsize=${fontSizeExpr}`,
       `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
       'alpha=1',
-      `line_spacing=${lineSpacing}`,
+      `line_spacing=${lineSpacingPx}`,
       "enable='1'",
     ]
 
