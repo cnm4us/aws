@@ -1295,6 +1295,7 @@ export default function ProducePage() {
 	                        insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
 	                      }),
 	                      zIndex: 2,
+	                      boxSizing: 'border-box',
 	                      padding:
 	                        selectedScreenTitlePreset.style === 'strip'
 	                          ? '10px 12px'
@@ -1313,6 +1314,8 @@ export default function ProducePage() {
 	                      fontSize: 14,
 	                      lineHeight: 1.2,
 	                      whiteSpace: 'pre-wrap',
+	                      overflowWrap: 'anywhere',
+	                      wordBreak: 'break-word',
 	                      textShadow:
 	                        selectedScreenTitlePreset.style === 'outline'
 	                          ? '0 1px 2px rgba(0,0,0,0.95), 0 0 1px rgba(0,0,0,0.95)'
