@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type MeResponse = {
@@ -514,7 +514,28 @@ export default function ProducePage() {
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
   const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const previewBoxRef = useRef<HTMLDivElement | null>(null)
+  const [previewBoxHeightPx, setPreviewBoxHeightPx] = useState<number | null>(null)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
+
+  useEffect(() => {
+    const el = previewBoxRef.current
+    if (!el) return
+    const update = () => {
+      try {
+        const h = el.getBoundingClientRect().height
+        if (Number.isFinite(h) && h > 0) setPreviewBoxHeightPx(Math.round(h))
+      } catch {}
+    }
+    update()
+    const RO = (window as any).ResizeObserver as (typeof ResizeObserver | undefined)
+    if (!RO) return
+    const ro = new RO(() => update())
+    ro.observe(el)
+    return () => {
+      try { ro.disconnect() } catch {}
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -1289,7 +1310,10 @@ export default function ProducePage() {
 	        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 	          <div>
 	            {uploadPreviewSrc ? (
-	              <div style={{ width: 280, borderRadius: 12, background: '#111', overflow: 'hidden', position: 'relative' }}>
+	              <div
+	                ref={previewBoxRef}
+	                style={{ width: 280, borderRadius: 12, background: '#111', overflow: 'hidden', position: 'relative' }}
+	              >
 	                <img
 	                  src={uploadPreviewSrc}
 	                  alt="poster"
@@ -1340,13 +1364,21 @@ export default function ProducePage() {
 	                            : 'transparent',
 	                      color: selectedScreenTitlePreset.fontColor || '#ffffff',
 	                      fontWeight: 850,
-	                      fontSize: Math.round(
-	                        14 * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 4.5, 0.6, 1.8)
-	                      ),
+	                      fontSize:
+	                        previewBoxHeightPx != null
+	                          ? Math.round(
+	                              clampNumber(previewBoxHeightPx, 180, 2000) *
+	                                clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 100, 0.01, 0.2)
+	                            )
+	                          : Math.round(14 * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 4.5, 0.6, 1.8)),
 	                      lineHeight: 1.2,
 	                      whiteSpace: 'pre-wrap',
 	                      overflowWrap: 'anywhere',
 	                      wordBreak: 'break-word',
+	                      display: '-webkit-box',
+	                      WebkitLineClamp: 2,
+	                      WebkitBoxOrient: 'vertical' as any,
+	                      overflow: 'hidden',
 	                      textShadow:
 	                        selectedScreenTitlePreset.style === 'outline'
 	                          ? '0 1px 2px rgba(0,0,0,0.95), 0 0 1px rgba(0,0,0,0.95)'

@@ -431,9 +431,16 @@ export async function burnScreenTitleIntoMp4(opts: {
     const maxWidthPct = clampNum(preset.maxWidthPct ?? 90, 20, 100) / 100
 
     const dims = await probeVideoDisplayDimensions(opts.inPath)
-    const maxLinePx = Math.min(dims.width * maxWidthPct, dims.width - (2 * dims.width * xInset))
+    const boxPadPx = style === 'pill' ? 10 : 0
+    const borderPadPx = style === 'outline' ? 3 : 0
+    const extraPadPx = Math.max(boxPadPx, borderPadPx)
+    const maxLinePx = Math.max(
+      10,
+      Math.min(dims.width * maxWidthPct, dims.width - (2 * dims.width * xInset)) - (2 * extraPadPx)
+    )
     const fontPx = dims.height * (fontSizePct / 100)
-    const avgCharPx = Math.max(6, fontPx * 0.56)
+    // Conservative estimate to avoid overflow: bold fonts + box padding can push width beyond naive averages.
+    const avgCharPx = Math.max(7, fontPx * 0.74)
     const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
     const wrappedText = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 2 })
     if (!wrappedText) return
@@ -443,14 +450,18 @@ export async function burnScreenTitleIntoMp4(opts: {
     fs.writeFileSync(textFile, wrappedText, 'utf8')
 
     // If text_w exceeds w, avoid negative x (which would show only the *tail* of the line).
-    // Instead, left-align to the inset.
-    const xExpr = escapeFfmpegExprCommas(`max(w*${xInset.toFixed(4)},min((w-text_w)/2,w-text_w-w*${xInset.toFixed(4)}))`)
+    // Instead, left-align to the inset. Also account for pill padding so the box doesn't clip.
     const yExpr =
       pos === 'bottom'
         ? `h-text_h-h*${yInset.toFixed(4)}`
         : pos === 'middle'
           ? `(h-text_h)/2`
           : `h*${yInset.toFixed(4)}`
+
+    const padPx = style === 'pill' ? 10 : 0
+    const xExpr = escapeFfmpegExprCommas(
+      `max(w*${xInset.toFixed(4)}+${padPx},min((w-text_w)/2,w-text_w-w*${xInset.toFixed(4)}-${padPx}))`
+    )
 
     const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
     const textFileEsc = escapeFilterValue(textFile)
@@ -469,6 +480,7 @@ export async function burnScreenTitleIntoMp4(opts: {
       `alpha=${alphaExpr}`,
       `line_spacing=${lineSpacingPx}`,
       `enable='${enableExpr}'`,
+      'fix_bounds=1',
     ]
 
     const extras: string[] = []
