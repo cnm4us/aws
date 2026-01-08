@@ -453,15 +453,15 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
     const drawText = [...baseText, ...extras].join(':')
     const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
     const vf = style === 'strip'
-      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText},format=rgba`
-      : `${drawText},format=rgba`
+      ? `format=rgba,colorchannelmixer=aa=0,drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
+      : `format=rgba,colorchannelmixer=aa=0,${drawText}`
 
     await runFfmpeg(
       [
         '-f',
         'lavfi',
         '-i',
-        `color=c=black@0.0:s=${frame.w}x${frame.h}:d=1`,
+        `color=c=black:s=${frame.w}x${frame.h}:d=1`,
         '-frames:v',
         '1',
         '-vf',
