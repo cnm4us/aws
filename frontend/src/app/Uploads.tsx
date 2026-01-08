@@ -171,6 +171,8 @@ const UploadsPage: React.FC = () => {
   const [editDescription, setEditDescription] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [openUploadId, setOpenUploadId] = useState<number | null>(null)
+  const [isNarrowScreen, setIsNarrowScreen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 640 : false))
 
 	  const loadUploads = useCallback(
 	    async (userId: number) => {
@@ -251,6 +253,20 @@ const UploadsPage: React.FC = () => {
     return nodes
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenUploadId(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setIsNarrowScreen(window.innerWidth < 640)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
 	const uploadCards = useMemo(() => {
 	    return uploads.map((upload) => {
 	      const poster = pickPoster(upload)
@@ -293,7 +309,11 @@ const UploadsPage: React.FC = () => {
 	        const href = productionHref
 	        const sourceDeleted = !!upload.source_deleted_at
         const isDeletingSource = !!deletingSource[upload.id]
-        const thumbHeightPx = 160
+        const baseAspectRatio = upload.width && upload.height ? `${upload.width} / ${upload.height}` : '9 / 16'
+        const isLandscape = !!(upload.width && upload.height && upload.width > upload.height)
+        const isOpen = openUploadId === upload.id
+        const expandedForOverlay = isOpen && isNarrowScreen && isLandscape
+        const frameAspectRatio = expandedForOverlay ? '9 / 16' : baseAspectRatio
         return (
           <div
             key={upload.id}
@@ -304,117 +324,195 @@ const UploadsPage: React.FC = () => {
               overflow: 'hidden',
             }}
           >
-            <a href={href} style={{ display: 'block', textDecoration: 'none' }}>
-              <VideoThumb
-                uploadId={upload.id}
-                fallbackSrc={poster}
-                alt="poster"
-                style={{ width: '100%', height: thumbHeightPx, objectFit: 'cover', display: 'block', background: '#111' }}
-              />
-            </a>
-            <div style={{ padding: '12px 12px 14px' }}>
-              <a
-                href={href}
+            <div style={{ width: '100%', position: 'relative', aspectRatio: frameAspectRatio, background: '#111' }}>
+              {expandedForOverlay ? (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ width: '100%', position: 'relative', aspectRatio: baseAspectRatio, background: '#111', flex: '0 0 auto' }}>
+                    <a href={href} style={{ position: 'absolute', inset: 0, display: 'block', textDecoration: 'none', zIndex: 1 }}>
+                      <VideoThumb
+                        uploadId={upload.id}
+                        fallbackSrc={poster}
+                        alt="poster"
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#111' }}
+                      />
+                    </a>
+                  </div>
+                  <div style={{ flex: '1 1 auto', background: '#0e0e0e' }} />
+                </div>
+              ) : (
+                <a href={href} style={{ position: 'absolute', inset: 0, display: 'block', textDecoration: 'none', zIndex: 1 }}>
+                  <VideoThumb
+                    uploadId={upload.id}
+                    fallbackSrc={poster}
+                    alt="poster"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#111' }}
+                  />
+                </a>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setOpenUploadId((prev) => (prev === upload.id ? null : upload.id))
+                }}
+                aria-label={isOpen ? 'Close details' : 'Open details'}
+                aria-expanded={isOpen}
                 style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  zIndex: 5,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.20)',
+                  background: 'rgba(0,0,0,0.40)',
                   color: '#fff',
-                  fontWeight: 750,
-                  textDecoration: 'none',
-                  lineHeight: 1.25,
-                  display: 'block',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  backdropFilter: 'blur(6px)',
                 }}
               >
-                {displayName}
-              </a>
-              {description && (
-                <div style={{ marginTop: 6, color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
-                  {description}
-                </div>
-              )}
-              {metaLine && (
-                <div style={{ marginTop: 6, color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                  {metaLine}
-                </div>
-              )}
-              {sourceDeleted ? (
-                <div style={{ marginTop: 8, color: '#ff9b9b', fontSize: 13, lineHeight: 1.35 }}>
-                  Source deleted (existing productions/publications still work).
+                {isOpen ? (
+                  <span style={{ fontSize: 18, fontWeight: 900, lineHeight: 1 }}>✕</span>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M19.4 15a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2-1.5-2-3.5-2.4.8a7.7 7.7 0 0 0-1.7-1L15 4h-6l-.3 2.8a7.7 7.7 0 0 0-1.7 1L4.6 7l-2 3.5 2 1.5a7.8 7.8 0 0 0-.1 1c0 .3 0 .7.1 1l-2 1.5 2 3.5 2.4-.8c.5.4 1.1.7 1.7 1L9 20h6l.3-2.8c.6-.3 1.2-.6 1.7-1l2.4.8 2-3.5-2-1.5Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.85"
+                    />
+                  </svg>
+                )}
+              </button>
+
+              {isOpen ? (
+                <div
+                  role="dialog"
+                  aria-modal="false"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 4,
+                    background: 'linear-gradient(180deg, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.78) 100%)',
+                    padding: 14,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'flex-end',
+                  }}
+                  onClick={() => setOpenUploadId(null)}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ display: 'grid', gap: 8, marginTop: 'auto', maxHeight: '100%', overflowY: 'auto' }}
+                  >
+                    <div style={{ fontSize: 16, fontWeight: 850, lineHeight: 1.2 }}>{displayName}</div>
+                    {description ? (
+                      <div style={{ color: '#ddd', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>{description}</div>
+                    ) : null}
+                    {metaLine ? (
+                      <div style={{ color: '#bcbcbc', fontSize: 13, lineHeight: 1.35 }}>{metaLine}</div>
+                    ) : null}
+                    {sourceDeleted ? (
+                      <div style={{ color: '#ffb3b3', fontSize: 13, lineHeight: 1.35 }}>
+                        Source deleted (existing productions/publications still work).
+                      </div>
+                    ) : null}
+                    {publicationLines.length ? (
+                      <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+                        {publicationLines}
+                      </div>
+                    ) : null}
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+                      <a
+                        href={href}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(10,132,255,0.55)',
+                          background: 'rgba(10,132,255,0.12)',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          fontWeight: 750,
+                        }}
+                      >
+                        View Productions
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (sourceDeleted || isDeletingSource) return
+                          const ok = window.confirm(
+                            'Delete source video file?\n\nExisting productions and published videos will keep working, but you will NOT be able to create new productions from this upload.'
+                          )
+                          if (!ok) return
+                          setDeleteError(null)
+                          setDeletingSource((prev) => ({ ...prev, [upload.id]: true }))
+                          try {
+                            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                            const csrf = getCsrfToken()
+                            if (csrf) headers['x-csrf-token'] = csrf
+                            const res = await fetch(`/api/uploads/${upload.id}/delete-source`, {
+                              method: 'POST',
+                              credentials: 'same-origin',
+                              headers,
+                              body: '{}',
+                            })
+                            const data = await res.json().catch(() => ({}))
+                            if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete source')
+                            window.location.href = productionHref
+                          } catch (err: any) {
+                            setDeleteError(err?.message || 'Failed to delete source')
+                          } finally {
+                            setDeletingSource((prev) => {
+                              const next = { ...prev }
+                              delete next[upload.id]
+                              return next
+                            })
+                          }
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          border: sourceDeleted ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,155,155,0.35)',
+                          background: sourceDeleted ? 'rgba(255,255,255,0.04)' : 'rgba(255,155,155,0.08)',
+                          color: '#fff',
+                          fontWeight: 750,
+                          cursor: sourceDeleted || isDeletingSource ? 'default' : 'pointer',
+                          opacity: sourceDeleted || isDeletingSource ? 0.6 : 1,
+                        }}
+                        disabled={sourceDeleted || isDeletingSource}
+                      >
+                        {sourceDeleted ? 'Source Deleted' : isDeletingSource ? 'Deleting…' : 'Delete Source'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
-              {publicationLines.length ? (
-                <div style={{ marginTop: 8, display: 'grid', gap: 4, fontSize: 13 }}>
-                  {publicationLines}
-                </div>
-              ) : null}
-              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                <a
-                  href={href}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: 'rgba(10,132,255,0.12)',
-                    color: '#fff',
-                    textDecoration: 'none',
-                    fontWeight: 700,
-                  }}
-                >
-                  View Productions
-                </a>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (sourceDeleted || isDeletingSource) return
-                    const ok = window.confirm(
-                      'Delete source video file?\n\nExisting productions and published videos will keep working, but you will NOT be able to create new productions from this upload.'
-                    )
-                    if (!ok) return
-                    setDeleteError(null)
-                    setDeletingSource((prev) => ({ ...prev, [upload.id]: true }))
-                    try {
-                      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                      const csrf = getCsrfToken()
-                      if (csrf) headers['x-csrf-token'] = csrf
-                      const res = await fetch(`/api/uploads/${upload.id}/delete-source`, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers,
-                        body: '{}',
-                      })
-                      const data = await res.json().catch(() => ({}))
-                      if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete source')
-                      // Redirect to productions for this upload (so the user can still manage productions after the source is gone).
-                      window.location.href = productionHref
-                    } catch (err: any) {
-                      setDeleteError(err?.message || 'Failed to delete source')
-                    } finally {
-                      setDeletingSource((prev) => {
-                        const next = { ...prev }
-                        delete next[upload.id]
-                        return next
-                      })
-                    }
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: sourceDeleted ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,155,155,0.35)',
-                    background: sourceDeleted ? 'rgba(255,255,255,0.04)' : 'rgba(255,155,155,0.08)',
-                    color: '#fff',
-                    fontWeight: 700,
-                    cursor: sourceDeleted || isDeletingSource ? 'default' : 'pointer',
-                    opacity: sourceDeleted || isDeletingSource ? 0.6 : 1,
-                  }}
-                  disabled={sourceDeleted || isDeletingSource}
-                >
-                  {sourceDeleted ? 'Source Deleted' : isDeletingSource ? 'Deleting…' : 'Delete Source'}
-                </button>
-              </div>
             </div>
           </div>
         )
@@ -533,7 +631,7 @@ const UploadsPage: React.FC = () => {
         </div>
       )
     })
-  }, [uploads, renderPublicationLines, kind, deleting, deletingSource])
+	}, [uploads, renderPublicationLines, kind, deleting, deletingSource, openUploadId, isNarrowScreen])
 
   if (me === null) {
     return (
