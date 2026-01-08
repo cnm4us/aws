@@ -478,8 +478,10 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
     await renderOne({ w: 1080, h: 1920 }, portraitPath)
     await renderOne({ w: 1920, h: 1080 }, landscapePath)
 
+    // MediaConvert's job role permissions are often prefix-scoped. We already use `lower-thirds/*`
+    // for other dynamic overlays, so keep screen-title overlays under that prefix as well.
     const folder = ymdToFolder(opts.dateYmd)
-    const baseKey = `screen-titles/${folder}/${opts.productionUlid}/${randomUUID()}`
+    const baseKey = `lower-thirds/screen-titles/${folder}/${opts.productionUlid}/${randomUUID()}`
     const portraitKey = `${baseKey}/portrait.png`
     const landscapeKey = `${baseKey}/landscape.png`
     await uploadFileToS3(opts.uploadBucket, portraitKey, portraitPath, 'image/png')
