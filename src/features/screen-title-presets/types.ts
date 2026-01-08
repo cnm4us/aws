@@ -15,6 +15,8 @@ export type ScreenTitlePresetRow = {
   font_key: string
   font_size_pct: number
   font_color: string
+  pill_bg_color: string
+  pill_bg_opacity_pct: number
   position: ScreenTitlePosition
   max_width_pct: number
   inset_x_preset: string | null
@@ -35,6 +37,8 @@ export type ScreenTitlePresetDto = {
   fontKey: ScreenTitleFontKey
   fontSizePct: number
   fontColor: string
+  pillBgColor: string
+  pillBgOpacityPct: number
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset: InsetPreset | null

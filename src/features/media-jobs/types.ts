@@ -47,6 +47,8 @@ export type ScreenTitlePresetSnapshotV1 = {
   fontKey?: string
   fontSizePct?: number
   fontColor?: string
+  pillBgColor?: string
+  pillBgOpacityPct?: number
   position?: 'top_left' | 'top_center' | 'top_right'
   maxWidthPct?: number
   insetXPreset?: 'small' | 'medium' | 'large' | null

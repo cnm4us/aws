@@ -109,6 +109,8 @@ type ScreenTitlePreset = {
   fontKey: string
   fontSizePct?: number
   fontColor?: string
+  pillBgColor?: string
+  pillBgOpacityPct?: number
   position: 'top_left' | 'top_center' | 'top_right'
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
@@ -1319,7 +1321,15 @@ export default function ProducePage() {
 	                        selectedScreenTitlePreset.style === 'strip'
 	                          ? 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 100%)'
 	                          : selectedScreenTitlePreset.style === 'pill'
-	                            ? 'rgba(0,0,0,0.55)'
+	                            ? (() => {
+	                                const hex = String(selectedScreenTitlePreset.pillBgColor || '#000000').trim() || '#000000'
+	                                const m = hex.match(/^#([0-9a-fA-F]{6})$/)
+	                                const rr = m ? parseInt(m[1].slice(0, 2), 16) : 0
+	                                const gg = m ? parseInt(m[1].slice(2, 4), 16) : 0
+	                                const bb = m ? parseInt(m[1].slice(4, 6), 16) : 0
+	                                const a = clampNumber((selectedScreenTitlePreset.pillBgOpacityPct ?? 55) / 100, 0, 1)
+	                                return `rgba(${rr},${gg},${bb},${a})`
+	                              })()
 	                            : 'transparent',
 	                      color: selectedScreenTitlePreset.fontColor || '#ffffff',
 	                      fontWeight: 850,

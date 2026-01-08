@@ -14,6 +14,8 @@ type ScreenTitleV1 = {
     fontKey?: string
     fontSizePct?: number
     fontColor?: string
+    pillBgColor?: string
+    pillBgOpacityPct?: number
     position?: 'top_left' | 'top_center' | 'top_right'
     maxWidthPct?: number
     insetXPreset?: 'small' | 'medium' | 'large' | null
@@ -275,6 +277,9 @@ export async function burnScreenTitleIntoMp4(opts: {
     const style = String(preset.style || 'pill').toLowerCase()
     const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
     const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
+    const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
+    const pillBgOpacityPct = clampNum(preset.pillBgOpacityPct ?? 55, 0, 100)
+    const pillBgAlpha = clampNum(pillBgOpacityPct / 100, 0, 1)
     const xInset = pos.includes('_center') ? 0 : insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
 
@@ -307,7 +312,14 @@ export async function burnScreenTitleIntoMp4(opts: {
 
     const extras: string[] = []
     if (style === 'pill') {
-      extras.push('box=1', 'boxcolor=black@0.55', 'boxborderw=10', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+      extras.push(
+        'box=1',
+        `boxcolor=${escapeFilterValue(`${ffmpegColorForHex(pillBgColorHex)}@${pillBgAlpha.toFixed(3)}`)}`,
+        'boxborderw=10',
+        'shadowcolor=black@0.55',
+        'shadowx=0',
+        'shadowy=2'
+      )
     } else if (style === 'outline') {
       extras.push('borderw=3', 'bordercolor=black@0.90', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
     } else {

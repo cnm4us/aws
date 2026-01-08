@@ -231,6 +231,8 @@ export async function ensureSchema(db: DB) {
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
+              pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
+              pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
               position ENUM('top_left','top_center','top_right') NOT NULL DEFAULT 'top_left',
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
@@ -247,6 +249,8 @@ export async function ensureSchema(db: DB) {
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_screen_title_archived ON screen_title_presets (archived_at, id)`); } catch {}
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
 
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`

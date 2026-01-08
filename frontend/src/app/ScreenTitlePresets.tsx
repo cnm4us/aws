@@ -21,6 +21,8 @@ type ScreenTitlePreset = {
   fontKey: ScreenTitleFontKey
   fontSizePct: number
   fontColor: string
+  pillBgColor: string
+  pillBgOpacityPct: number
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
@@ -68,6 +70,8 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontKey: 'dejavu_sans_bold',
     fontSizePct: 4.5,
     fontColor: '#ffffff',
+    pillBgColor: '#000000',
+    pillBgOpacityPct: 55,
     position: 'top_left',
     maxWidthPct: 90,
     insetXPreset: 'medium',
@@ -176,6 +180,8 @@ export default function ScreenTitlePresetsPage() {
       fontKey: selected.fontKey,
       fontSizePct: selected.fontSizePct ?? 4.5,
       fontColor: selected.fontColor || '#ffffff',
+      pillBgColor: selected.pillBgColor || '#000000',
+      pillBgOpacityPct: selected.pillBgOpacityPct ?? 55,
       position: selected.position,
       maxWidthPct: selected.maxWidthPct,
       insetXPreset: selected.insetXPreset ?? null,
@@ -440,6 +446,52 @@ export default function ScreenTitlePresetsPage() {
                   />
                 </label>
               </div>
+
+              {draft.style === 'pill' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Pill background color</div>
+                    <input
+                      type="color"
+                      value={draft.pillBgColor || '#000000'}
+                      onChange={(e) => setDraft((d) => ({ ...d, pillBgColor: e.target.value || '#000000' }))}
+                      style={{
+                        width: '100%',
+                        height: 44,
+                        padding: '6px 8px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Pill background opacity (%)</div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={Number.isFinite(Number(draft.pillBgOpacityPct)) ? String(draft.pillBgOpacityPct) : '55'}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        setDraft((d) => ({ ...d, pillBgOpacityPct: Number.isFinite(n) ? n : 55 }))
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>

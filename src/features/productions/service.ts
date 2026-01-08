@@ -273,6 +273,8 @@ export async function create(
         fontKey: (preset as any).fontKey,
         fontSizePct: (preset as any).fontSizePct,
         fontColor: (preset as any).fontColor,
+        pillBgColor: (preset as any).pillBgColor,
+        pillBgOpacityPct: (preset as any).pillBgOpacityPct,
         position: (preset as any).position,
         maxWidthPct: (preset as any).maxWidthPct,
         insetXPreset: (preset as any).insetXPreset ?? null,

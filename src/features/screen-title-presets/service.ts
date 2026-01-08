@@ -27,6 +27,9 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
+  const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
+  const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
+  const pillBgOpacityPct = Number.isFinite(pillBgOpacityPctRaw) ? pillBgOpacityPctRaw : 55
   return {
     id: Number(row.id),
     name: String(row.name || ''),
@@ -35,6 +38,8 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontKey,
     fontSizePct,
     fontColor,
+    pillBgColor,
+    pillBgOpacityPct,
     position: row.position,
     maxWidthPct: Number((row as any).max_width_pct),
     insetXPreset: toInsetPresetOrNull((row as any).inset_x_preset),
@@ -96,6 +101,20 @@ function normalizeFontColor(raw: any): string {
   return `#${m[1].toLowerCase()}`
 }
 
+function normalizePillBgColor(raw: any): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return '#000000'
+  const m = s.match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) throw new DomainError('invalid_pill_bg_color', 'invalid_pill_bg_color', 400)
+  return `#${m[1].toLowerCase()}`
+}
+
+function normalizeOpacityPct(raw: any, fallback: number): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  return Math.round(Math.min(Math.max(n, 0), 100))
+}
+
 function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right'; y: 'top' } {
   const [row, col] = String(pos).split('_') as [string, string]
   const x = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
@@ -136,6 +155,8 @@ export async function createForUser(input: {
   fontKey?: any
   fontSizePct?: any
   fontColor?: any
+  pillBgColor?: any
+  pillBgOpacityPct?: any
   position?: any
   maxWidthPct?: any
   insetXPreset?: any
@@ -151,6 +172,8 @@ export async function createForUser(input: {
   const fontKey: ScreenTitleFontKey = isEnumValue(input.fontKey, FONT_KEYS) ? input.fontKey : 'dejavu_sans_bold'
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const fontColor = normalizeFontColor(input.fontColor)
+  const pillBgColor = normalizePillBgColor(input.pillBgColor)
+  const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
   const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top_left'
   const maxWidthPct = normalizePct(input.maxWidthPct ?? 90, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(input.insetXPreset)
@@ -168,6 +191,8 @@ export async function createForUser(input: {
     fontKey,
     fontSizePct,
     fontColor,
+    pillBgColor: style === 'pill' ? pillBgColor : '#000000',
+    pillBgOpacityPct: style === 'pill' ? pillBgOpacityPct : 55,
     position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,
@@ -188,6 +213,8 @@ export async function updateForUser(
     fontKey?: any
     fontSizePct?: any
     fontColor?: any
+    pillBgColor?: any
+    pillBgOpacityPct?: any
     position?: any
     maxWidthPct?: any
     insetXPreset?: any
@@ -210,6 +237,8 @@ export async function updateForUser(
     fontKey: patch.fontKey !== undefined ? patch.fontKey : (existing as any).font_key,
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
+    pillBgColor: patch.pillBgColor !== undefined ? patch.pillBgColor : (existing as any).pill_bg_color,
+    pillBgOpacityPct: patch.pillBgOpacityPct !== undefined ? patch.pillBgOpacityPct : (existing as any).pill_bg_opacity_pct,
     position: patch.position !== undefined ? patch.position : existing.position,
     maxWidthPct: patch.maxWidthPct !== undefined ? patch.maxWidthPct : (existing as any).max_width_pct,
     insetXPreset: patch.insetXPreset !== undefined ? patch.insetXPreset : (existing as any).inset_x_preset,
@@ -223,6 +252,8 @@ export async function updateForUser(
   if (!isEnumValue(next.fontKey, FONT_KEYS)) throw new DomainError('invalid_font', 'invalid_font', 400)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const fontColor = normalizeFontColor(next.fontColor)
+  const pillBgColor = normalizePillBgColor(next.pillBgColor)
+  const pillBgOpacityPct = normalizeOpacityPct(next.pillBgOpacityPct, 55)
   if (!isEnumValue(next.position, POSITIONS)) throw new DomainError('invalid_position', 'invalid_position', 400)
   const maxWidthPct = normalizePct(next.maxWidthPct, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(next.insetXPreset)
@@ -239,6 +270,8 @@ export async function updateForUser(
     fontKey: next.fontKey,
     fontSizePct,
     fontColor,
+    pillBgColor: next.style === 'pill' ? pillBgColor : '#000000',
+    pillBgOpacityPct: next.style === 'pill' ? pillBgOpacityPct : 55,
     position: next.position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,
