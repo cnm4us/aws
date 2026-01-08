@@ -7,8 +7,9 @@ export const uploadsRouter = Router();
 
 uploadsRouter.get('/api/uploads', async (req, res) => {
   try {
-    const { status, kind, image_role, limit, cursor, user_id, space_id, include_publications } = req.query as any
+    const { status, kind, image_role, limit, cursor, user_id, space_id, include_publications, include_productions } = req.query as any
     const includePubs = include_publications === '1' || include_publications === 'true'
+    const includeProds = include_productions === '1' || include_productions === 'true'
     const lim = clampLimit(limit, 50, 1, 500)
     const curId = parseNumberCursor(cursor) ?? undefined
     const result = await uploadsSvc.list({
@@ -20,6 +21,7 @@ uploadsRouter.get('/api/uploads', async (req, res) => {
       cursorId: curId,
       limit: lim,
       includePublications: includePubs,
+      includeProductions: includeProds,
     }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
     return res.json(result)
   } catch (err: any) {
@@ -34,7 +36,8 @@ uploadsRouter.get('/api/uploads/:id', async (req, res) => {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
     const includePublications = req.query?.include_publications === '1' || req.query?.include_publications === 'true'
-    const data = await uploadsSvc.get(id, { includePublications }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
+    const includeProductions = req.query?.include_productions === '1' || req.query?.include_productions === 'true'
+    const data = await uploadsSvc.get(id, { includePublications, includeProductions }, { userId: (req as any).user?.id ? Number((req as any).user.id) : undefined })
     return res.json(data)
   } catch (err: any) {
     console.error('get upload error', err)

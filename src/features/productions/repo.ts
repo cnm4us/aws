@@ -73,3 +73,19 @@ export async function countSpacePublicationsForProduction(productionId: number):
   )
   return Number((rows as any[])[0]?.c || 0)
 }
+
+export async function listSummariesForUploadIds(userId: number, uploadIds: number[]) {
+  const ids = Array.isArray(uploadIds) ? uploadIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) : []
+  if (!ids.length) return []
+  const db = getPool()
+  const placeholders = ids.map(() => '?').join(', ')
+  const [rows] = await db.query(
+    `SELECT id, upload_id, name, status, created_at, started_at, completed_at
+       FROM productions
+      WHERE user_id = ?
+        AND upload_id IN (${placeholders})
+      ORDER BY created_at DESC`,
+    [Number(userId), ...ids]
+  )
+  return rows as any[]
+}

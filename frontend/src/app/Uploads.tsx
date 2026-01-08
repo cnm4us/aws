@@ -9,6 +9,15 @@ type PublicationSummary = {
   unpublishedAt: string | null
 }
 
+type ProductionSummary = {
+  id: number
+  name: string | null
+  status: string | null
+  created_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+}
+
 type UploadListItem = {
   id: number
   original_filename: string
@@ -30,6 +39,7 @@ type UploadListItem = {
   poster_landscape_s3?: string
   poster_s3?: string
   publications?: PublicationSummary[]
+  productions?: ProductionSummary[]
 }
 
 type MeResponse = {
@@ -182,7 +192,7 @@ const UploadsPage: React.FC = () => {
 	        const params = new URLSearchParams({
 	          limit: '100',
 	          user_id: String(userId),
-	          include_publications: kind === 'video' ? '1' : '0',
+	          include_productions: kind === 'video' ? '1' : '0',
 	          kind,
 	        })
 	        if (kind === 'image' && imageRole) params.set('image_role', imageRole)
@@ -268,6 +278,7 @@ const UploadsPage: React.FC = () => {
   }, [])
 
 	const uploadCards = useMemo(() => {
+      const fromHref = `${window.location.pathname}${window.location.search}`
 	    return uploads.map((upload) => {
 	      const poster = pickPoster(upload)
 	      const logoSrc = (kind === 'logo' || kind === 'image') ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
@@ -314,6 +325,7 @@ const UploadsPage: React.FC = () => {
         const isOpen = openUploadId === upload.id
         const expandedForOverlay = isOpen && isNarrowScreen && isLandscape
         const frameAspectRatio = expandedForOverlay ? '9 / 16' : baseAspectRatio
+        const productions = Array.isArray(upload.productions) ? upload.productions : []
         return (
           <div
             key={upload.id}
@@ -433,11 +445,43 @@ const UploadsPage: React.FC = () => {
                         Source deleted (existing productions/publications still work).
                       </div>
                     ) : null}
-                    {publicationLines.length ? (
-                      <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
-                        {publicationLines}
+                    <div style={{ display: 'grid', gap: 6, marginTop: 4 }}>
+                      <div style={{ fontSize: 12, fontWeight: 750, letterSpacing: 0.6, textTransform: 'uppercase', opacity: 0.78 }}>
+                        Productions
                       </div>
-                    ) : null}
+                      {productions.length ? (
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          {productions.map((p) => {
+                            const name = (p.name || '').trim() || `Production #${p.id}`
+                            const status = (p.status || '').trim()
+                            const completed = p.completed_at ? formatDate(p.completed_at) : ''
+                            const subtitle = [status ? `Status: ${status}` : null, completed ? `Completed: ${completed}` : null].filter(Boolean).join(' • ')
+                            const publishHref = `/publish?production=${encodeURIComponent(String(p.id))}&from=${encodeURIComponent(fromHref)}`
+                            return (
+                              <a
+                                key={p.id}
+                                href={publishHref}
+                                style={{
+                                  textDecoration: 'none',
+                                  color: '#fff',
+                                  border: '1px solid rgba(255,255,255,0.14)',
+                                  background: 'rgba(255,255,255,0.04)',
+                                  borderRadius: 12,
+                                  padding: '10px 10px',
+                                  display: 'grid',
+                                  gap: 4,
+                                }}
+                              >
+                                <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{name}</div>
+                                {subtitle ? <div style={{ color: '#cfcfcf', fontSize: 12, lineHeight: 1.25 }}>{subtitle}</div> : null}
+                              </a>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#cfcfcf', fontSize: 13 }}>No productions yet.</div>
+                      )}
+                    </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
                       <a

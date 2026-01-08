@@ -16,11 +16,12 @@ import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
+import * as prodRepo from '../productions/repo'
 
 export type ServiceContext = { userId?: number | null }
 
 export async function list(
-  params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean },
+  params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean; includeProductions?: boolean },
   ctx: ServiceContext
 ) {
   const statusParam = params.status ? String(params.status) : undefined
@@ -60,7 +61,36 @@ export async function list(
     }
   }
   const includePubs = Boolean(params.includePublications)
+  const includeProds = Boolean(params.includeProductions)
   const userId = ctx.userId && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
+  const requestedUserId = params.userId != null && Number.isFinite(params.userId) ? Number(params.userId) : null
+
+  // Only include production details when the caller is authenticated and requesting their own uploads list.
+  const canIncludeProductions = includeProds && userId != null && requestedUserId != null && userId === requestedUserId
+
+  let productionsByUploadId = new Map<number, any[]>()
+  if (canIncludeProductions && rows.length) {
+    try {
+      const uploadIds = rows.map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)
+      const prodRows = await prodRepo.listSummariesForUploadIds(userId, uploadIds)
+      for (const p of prodRows) {
+        const uploadId = Number((p as any).upload_id)
+        if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+        const list = productionsByUploadId.get(uploadId) || []
+        list.push({
+          id: Number((p as any).id),
+          name: (p as any).name != null ? String((p as any).name) : null,
+          status: (p as any).status != null ? String((p as any).status) : null,
+          created_at: (p as any).created_at ?? null,
+          started_at: (p as any).started_at ?? null,
+          completed_at: (p as any).completed_at ?? null,
+        })
+        productionsByUploadId.set(uploadId, list)
+      }
+    } catch (e) {
+      // swallow; list still works without productions
+    }
+  }
   const result = await Promise.all(rows.map(async (row) => {
     const enhanced = enhanceUploadRow(row)
     if (includePubs && userId) {
@@ -71,16 +101,20 @@ export async function list(
         // Intentionally swallow permission errors to preserve list behavior
       }
     }
+    if (canIncludeProductions) {
+      ;(enhanced as any).productions = productionsByUploadId.get(Number(row.id)) || []
+    }
     return enhanced
   }))
   return result
 }
 
-export async function get(id: number, params: { includePublications?: boolean }, ctx: ServiceContext) {
+export async function get(id: number, params: { includePublications?: boolean; includeProductions?: boolean }, ctx: ServiceContext) {
   const row = await repo.getById(id)
   if (!row) throw new NotFoundError('not_found')
   const enhanced = enhanceUploadRow(row)
   const includePubs = Boolean(params.includePublications)
+  const includeProds = Boolean(params.includeProductions)
   const userId = ctx.userId && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
   if (includePubs && userId) {
     try {
@@ -88,6 +122,26 @@ export async function get(id: number, params: { includePublications?: boolean },
       ;(enhanced as any).publications = pubs
     } catch (e) {
       // swallow permission errors; keep base upload data
+    }
+  }
+  if (includeProds && userId != null) {
+    try {
+      const ownerId = row.user_id != null ? Number(row.user_id) : null
+      if (ownerId != null && ownerId === userId) {
+        const prodRows = await prodRepo.listSummariesForUploadIds(userId, [Number(row.id)])
+        ;(enhanced as any).productions = prodRows
+          .filter((p) => Number((p as any).upload_id) === Number(row.id))
+          .map((p) => ({
+            id: Number((p as any).id),
+            name: (p as any).name != null ? String((p as any).name) : null,
+            status: (p as any).status != null ? String((p as any).status) : null,
+            created_at: (p as any).created_at ?? null,
+            started_at: (p as any).started_at ?? null,
+            completed_at: (p as any).completed_at ?? null,
+          }))
+      }
+    } catch (e) {
+      // swallow; keep base upload data
     }
   }
   return enhanced
