@@ -242,6 +242,10 @@ function clampNum(n: any, min: number, max: number): number {
   return Math.min(Math.max(v, min), max)
 }
 
+function escapeFfmpegExprCommas(expr: string): string {
+  return String(expr).replace(/,/g, '\\,')
+}
+
 function buildScreenTitleAlphaExpr(preset: any, videoDurationSeconds: number | null): { enableExpr: string; alphaExpr: string } {
   const fade = String(preset?.fade || 'out').toLowerCase()
   const timingRule = String(preset?.timingRule || 'first_only').toLowerCase()
@@ -296,7 +300,7 @@ export async function burnScreenTitleIntoMp4(opts: {
     const xInset = insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
 
-    const xExpr = `min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`
+    const xExpr = escapeFfmpegExprCommas(`min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`)
     const yExpr =
       pos === 'bottom'
         ? `h-text_h-h*${yInset.toFixed(4)}`
@@ -405,7 +409,7 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
   const lineSpacing = `h*${((fontSizePct / 100) * 0.177).toFixed(5)}`
 
   const renderOne = async (frame: { w: number; h: number }, outPngPath: string) => {
-    const xExpr = `min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`
+    const xExpr = escapeFfmpegExprCommas(`min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`)
     const yExpr =
       pos === 'bottom'
         ? `h-text_h-h*${yInset.toFixed(4)}`
