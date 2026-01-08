@@ -10,6 +10,7 @@ type InsetPreset = 'small' | 'medium' | 'large'
 type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
 type ScreenTitleFontKey = 'dejavu_sans_bold'
 type ScreenTitlePosition = 'top_left' | 'top_center' | 'top_right'
+  | 'bottom_left' | 'bottom_center' | 'bottom_right'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
 type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
 
@@ -85,7 +86,10 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 function positionLabel(p: ScreenTitlePosition): string {
   if (p === 'top_left') return 'Top-left'
   if (p === 'top_center') return 'Top-center'
-  return 'Top-right'
+  if (p === 'top_right') return 'Top-right'
+  if (p === 'bottom_left') return 'Bottom-left'
+  if (p === 'bottom_center') return 'Bottom-center'
+  return 'Bottom-right'
 }
 
 function styleLabel(s: ScreenTitleStyle): string {
@@ -533,6 +537,9 @@ export default function ScreenTitlePresetsPage() {
                     <option value="top_left">Top-left</option>
                     <option value="top_center">Top-center</option>
                     <option value="top_right">Top-right</option>
+                    <option value="bottom_left">Bottom-left</option>
+                    <option value="bottom_center">Bottom-center</option>
+                    <option value="bottom_right">Bottom-right</option>
                   </select>
                 </label>
               </div>

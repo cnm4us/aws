@@ -16,7 +16,7 @@ type ScreenTitleV1 = {
     fontColor?: string
     pillBgColor?: string
     pillBgOpacityPct?: number
-    position?: 'top_left' | 'top_center' | 'top_right'
+    position?: 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
     maxWidthPct?: number
     insetXPreset?: 'small' | 'medium' | 'large' | null
     insetYPreset?: 'small' | 'medium' | 'large' | null
@@ -289,7 +289,7 @@ export async function burnScreenTitleIntoMp4(opts: {
         : pos.endsWith('_center')
           ? `(w-text_w)/2`
           : `w*${xInset.toFixed(4)}`
-    const yExpr = `h*${yInset.toFixed(4)}`
+    const yExpr = pos.startsWith('bottom_') ? `h-text_h-h*${yInset.toFixed(4)}` : `h*${yInset.toFixed(4)}`
 
     const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
     const textFileEsc = escapeFilterValue(textFile)
@@ -327,8 +327,9 @@ export async function burnScreenTitleIntoMp4(opts: {
     }
 
     const drawText = [...baseText, ...extras].join(':')
+    const stripY = pos.startsWith('bottom_') ? 'h-h*0.12' : '0'
     const vf = style === 'strip'
-      ? `drawbox=x=0:y=0:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
+      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
       : drawText
 
     await runFfmpeg([

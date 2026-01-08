@@ -5,7 +5,7 @@ import type { InsetPreset, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosit
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
 const FONT_KEYS: readonly ScreenTitleFontKey[] = ['dejavu_sans_bold']
-const POSITIONS: readonly ScreenTitlePosition[] = ['top_left', 'top_center', 'top_right']
+const POSITIONS: readonly ScreenTitlePosition[] = ['top_left', 'top_center', 'top_right', 'bottom_left', 'bottom_center', 'bottom_right']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
 
@@ -115,11 +115,11 @@ function normalizeOpacityPct(raw: any, fallback: number): number {
   return Math.round(Math.min(Math.max(n, 0), 100))
 }
 
-function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right'; y: 'top' } {
+function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right'; y: 'top' | 'bottom' } {
   const [row, col] = String(pos).split('_') as [string, string]
   const x = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
-  // Only top_* in MVP
-  return { x, y: row === 'top' ? 'top' : 'top' }
+  const y = row === 'bottom' ? 'bottom' : 'top'
+  return { x, y }
 }
 
 function coerceInsetsForPosition(pos: ScreenTitlePosition, insetXPreset: InsetPreset | null, insetYPreset: InsetPreset | null) {

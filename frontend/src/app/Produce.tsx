@@ -111,7 +111,7 @@ type ScreenTitlePreset = {
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number
-  position: 'top_left' | 'top_center' | 'top_right'
+  position: 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
   insetYPreset?: InsetPreset | null

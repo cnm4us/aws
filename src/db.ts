@@ -233,7 +233,7 @@ export async function ensureSchema(db: DB) {
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
-              position ENUM('top_left','top_center','top_right') NOT NULL DEFAULT 'top_left',
+              position ENUM('top_left','top_center','top_right','bottom_left','bottom_center','bottom_right') NOT NULL DEFAULT 'top_left',
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
               inset_y_preset VARCHAR(16) NULL,
@@ -251,6 +251,13 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
+          try {
+            await db.query(
+              `ALTER TABLE screen_title_presets
+                 MODIFY COLUMN position ENUM('top_left','top_center','top_right','bottom_left','bottom_center','bottom_right')
+                 NOT NULL DEFAULT 'top_left'`
+            )
+          } catch {}
 
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`
