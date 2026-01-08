@@ -251,24 +251,38 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
+          // Plan: simplify screen title positions to top/middle/bottom.
+          // Existing tables created with older enums won't accept these values, so we:
+          // 1) temporarily widen to VARCHAR
+          // 2) backfill
+          // 3) tighten to ENUM('top','middle','bottom')
           try {
-            // Migrate older position values to the new 3-position model.
-            await db.query(
-              `UPDATE screen_title_presets
-                  SET position = CASE
-                    WHEN position IN ('top_left','top_center','top_right','top') THEN 'top'
-                    WHEN position IN ('bottom_left','bottom_center','bottom_right','bottom') THEN 'bottom'
-                    WHEN position IN ('middle_center','center','middle') THEN 'middle'
-                    ELSE 'top'
-                  END`
+            const [posRows] = await db.query(
+              `SELECT COLUMN_TYPE
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'screen_title_presets'
+                  AND COLUMN_NAME = 'position'
+                LIMIT 1`
             )
-          } catch {}
-          try {
-            await db.query(
-              `ALTER TABLE screen_title_presets
-                 MODIFY COLUMN position ENUM('top','middle','bottom')
-                 NOT NULL DEFAULT 'top'`
-            )
+            const colType = (posRows as any[])[0]?.COLUMN_TYPE
+            if (typeof colType === 'string' && colType.includes('top_left') && !colType.includes("'middle'")) {
+              await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN position VARCHAR(16) NOT NULL DEFAULT 'top'`)
+              await db.query(
+                `UPDATE screen_title_presets
+                    SET position = CASE
+                      WHEN position IN ('top_left','top_center','top_right','top') THEN 'top'
+                      WHEN position IN ('bottom_left','bottom_center','bottom_right','bottom') THEN 'bottom'
+                      WHEN position IN ('middle_center','center','middle') THEN 'middle'
+                      ELSE 'top'
+                    END`
+              )
+              await db.query(
+                `ALTER TABLE screen_title_presets
+                   MODIFY COLUMN position ENUM('top','middle','bottom')
+                   NOT NULL DEFAULT 'top'`
+              )
+            }
           } catch {}
 
 	        // --- Lower thirds (feature_10) ---
