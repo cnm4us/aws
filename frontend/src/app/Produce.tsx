@@ -82,6 +82,7 @@ type AudioConfig = {
 type LowerThirdConfig = {
   id: number
   name: string
+  description?: string | null
   position: 'bottom_center'
   sizeMode?: 'pct' | 'match_image'
   baselineWidth?: 1080 | 1920
@@ -360,6 +361,9 @@ export default function ProducePage() {
   const [audioConfigAbout, setAudioConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [logoAbout, setLogoAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [logoConfigAbout, setLogoConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [audioAbout, setAudioAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [lowerThirdAbout, setLowerThirdAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -783,6 +787,24 @@ export default function ProducePage() {
     const title = (cfg?.name || '').trim() || 'Logo Config'
     const description = cfg?.description != null ? String(cfg.description) : null
     setLogoConfigAbout({ title, description })
+  }
+
+  const openAudioAbout = (audio: AssetItem | null) => {
+    const title = audio ? ((audio.modified_filename || audio.original_filename || `Audio ${audio.id}`).trim()) : 'Audio'
+    const description = audio?.description != null ? String(audio.description) : null
+    setAudioAbout({ title, description })
+  }
+
+  const openLowerThirdAbout = (image: AssetItem | null) => {
+    const title = image ? ((image.modified_filename || image.original_filename || `Image ${image.id}`).trim()) : 'Lower Third Image'
+    const description = image?.description != null ? String(image.description) : null
+    setLowerThirdAbout({ title, description })
+  }
+
+  const openLowerThirdConfigAbout = (cfg: LowerThirdConfig | null) => {
+    const title = (cfg?.name || '').trim() || 'Lower Third Config'
+    const description = cfg?.description != null ? String(cfg.description) : null
+    setLowerThirdConfigAbout({ title, description })
   }
 
   const openLogoPicker = () => {
@@ -1280,18 +1302,28 @@ export default function ProducePage() {
 	                  </div>
 	                ) : (
 	                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-	                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-	                      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
-	                        <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-	                          {selectedAudio ? (selectedAudio.modified_filename || selectedAudio.original_filename || `Audio ${selectedAudio.id}`) : 'None'}
-	                        </div>
-	                      </div>
-	                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-	                      <button
+	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+	                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={() => openAudioAbout(selectedAudio)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            About
+                          </button>
+	                        <button
 	                          type="button"
 	                          onClick={openAudioPicker}
-                          style={{
-                            padding: '10px 12px',
+	                          style={{
+	                            padding: '10px 12px',
                             borderRadius: 10,
                             border: '1px solid rgba(212,175,55,0.85)',
                             background: 'rgba(212,175,55,0.14)',
@@ -1320,6 +1352,9 @@ export default function ProducePage() {
                           </button>
                         ) : null}
                       </div>
+                        <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+                          {selectedAudio ? (selectedAudio.modified_filename || selectedAudio.original_filename || `Audio ${selectedAudio.id}`) : 'None'}
+                        </div>
                     </div>
 	                    {selectedAudioId != null ? (
 	                      <CompactAudioPlayer src={`/api/uploads/${encodeURIComponent(String(selectedAudioId))}/file`} />
@@ -1345,11 +1380,8 @@ export default function ProducePage() {
 	                  <div style={{ color: '#777' }}>No audio presets available yet.</div>
 	                ) : (
 	                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-	                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-		                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-		                        {selectedAudioConfig ? (selectedAudioConfig.name || `Preset ${selectedAudioConfig.id}`) : 'Default (Mix Medium)'}
-		                      </div>
-		                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+		                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
 		                        <button
 		                          type="button"
 		                          onClick={() => openAudioConfigAbout(selectedAudioConfig || defaultAudioConfig)}
@@ -1398,6 +1430,9 @@ export default function ProducePage() {
 	                          </button>
 	                        ) : null}
 	                      </div>
+	                      <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+	                        {selectedAudioConfig ? (selectedAudioConfig.name || `Preset ${selectedAudioConfig.id}`) : 'Default (Mix Medium)'}
+	                      </div>
 	                    </div>
 	                    <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
 	                      {selectedAudioConfig ? formatAudioConfigSummary(selectedAudioConfig) : 'Default: Mix • Video 0 dB • Music -18 dB'}
@@ -1421,11 +1456,8 @@ export default function ProducePage() {
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
-                        {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button
                           type="button"
                           onClick={() => openLogoAbout(selectedLogo)}
@@ -1474,6 +1506,9 @@ export default function ProducePage() {
                           </button>
                         ) : null}
                       </div>
+                      <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+                        {selectedLogo ? (selectedLogo.modified_filename || selectedLogo.original_filename || `Logo ${selectedLogo.id}`) : 'None'}
+                      </div>
                     </div>
                     {selectedLogo ? (
                       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1510,11 +1545,8 @@ export default function ProducePage() {
 		                  </div>
 		                ) : (
 		                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-		                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-		                      <div style={{ color: '#d4af37', fontWeight: 800 }}>
-		                        {selectedLogoConfig ? (selectedLogoConfig.name || `Config ${selectedLogoConfig.id}`) : 'None'}
-		                      </div>
-		                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+		                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+		                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                             <button
                               type="button"
                               onClick={() => openLogoConfigAbout(selectedLogoConfig)}
@@ -1563,6 +1595,9 @@ export default function ProducePage() {
 		                          </button>
 		                        ) : null}
 		                      </div>
+		                      <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+		                        {selectedLogoConfig ? (selectedLogoConfig.name || `Config ${selectedLogoConfig.id}`) : 'None'}
+		                      </div>
 		                    </div>
 		                    {selectedLogoConfig ? (
 		                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
@@ -1592,11 +1627,23 @@ export default function ProducePage() {
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                        {selectedLowerThirdImage ? (selectedLowerThirdImage.modified_filename || selectedLowerThirdImage.original_filename || `Image ${selectedLowerThirdImage.id}`) : 'None'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => openLowerThirdAbout(selectedLowerThirdImage)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          About
+                        </button>
                         <button
                           type="button"
                           onClick={openLowerThirdImagePicker}
@@ -1629,6 +1676,9 @@ export default function ProducePage() {
                             Clear
                           </button>
                         ) : null}
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+                        {selectedLowerThirdImage ? (selectedLowerThirdImage.modified_filename || selectedLowerThirdImage.original_filename || `Image ${selectedLowerThirdImage.id}`) : 'None'}
                       </div>
                     </div>
                     {selectedLowerThirdImage ? (
@@ -1666,11 +1716,23 @@ export default function ProducePage() {
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ color: '#d4af37', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                        {selectedLowerThirdConfig ? (selectedLowerThirdConfig.name || `Config ${selectedLowerThirdConfig.id}`) : 'None'}
-                      </div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+                      <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => openLowerThirdConfigAbout(selectedLowerThirdConfig)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          About
+                        </button>
                         <button
                           type="button"
                           onClick={openLowerThirdConfigPicker}
@@ -1703,6 +1765,9 @@ export default function ProducePage() {
                             Clear
                           </button>
                         ) : null}
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+                        {selectedLowerThirdConfig ? (selectedLowerThirdConfig.name || `Config ${selectedLowerThirdConfig.id}`) : 'None'}
                       </div>
                     </div>
                     {selectedLowerThirdConfig ? (
@@ -2335,22 +2400,39 @@ export default function ProducePage() {
 	                        <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
 	                          {name}
 	                        </div>
-	                        <button
-	                          type="button"
-	                          onClick={() => chooseLowerThirdImageFromPicker(img.id)}
-	                          style={{
-	                            padding: '8px 12px',
-	                            borderRadius: 10,
-	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
-	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
-	                            color: selected ? '#fff' : '#d4af37',
-	                            fontWeight: 800,
-	                            cursor: 'pointer',
-	                            flexShrink: 0,
-	                          }}
-	                        >
-	                          {selected ? 'Selected' : 'Select'}
-	                        </button>
+	                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+	                          <button
+	                            type="button"
+	                            onClick={() => openLowerThirdAbout(img)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: '#0c0c0c',
+	                              color: '#fff',
+	                              fontWeight: 700,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            About
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => chooseLowerThirdImageFromPicker(img.id)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                              background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                              color: selected ? '#fff' : '#d4af37',
+	                              fontWeight: 800,
+	                              cursor: 'pointer',
+	                              flexShrink: 0,
+	                            }}
+	                          >
+	                            {selected ? 'Selected' : 'Select'}
+	                          </button>
+	                        </div>
 	                      </div>
 	                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
 	                        <img src={src} alt="lower third" style={{ width: 220, height: 60, objectFit: 'cover', background: '#111', borderRadius: 10 }} />
@@ -2454,28 +2536,45 @@ export default function ProducePage() {
 	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
 	                            {name}
 	                          </div>
-	                          {meta ? (
-	                            <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>
-	                              {meta}
-	                            </div>
-	                          ) : null}
+	                        {meta ? (
+	                          <div style={{ marginTop: 2, color: '#888', fontSize: 13, lineHeight: 1.25 }}>
+	                            {meta}
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+	                          <button
+	                            type="button"
+	                            onClick={() => openLowerThirdConfigAbout(c)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: '#0c0c0c',
+	                              color: '#fff',
+	                              fontWeight: 700,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            About
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => chooseLowerThirdConfigFromPicker(c.id)}
+	                            style={{
+	                              padding: '8px 12px',
+	                              borderRadius: 10,
+	                              border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
+	                              background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
+	                              color: selected ? '#fff' : '#d4af37',
+	                              fontWeight: 800,
+	                              cursor: 'pointer',
+	                              flexShrink: 0,
+	                            }}
+	                          >
+	                            {selected ? 'Selected' : 'Select'}
+	                          </button>
 	                        </div>
-	                        <button
-	                          type="button"
-	                          onClick={() => chooseLowerThirdConfigFromPicker(c.id)}
-	                          style={{
-	                            padding: '8px 12px',
-	                            borderRadius: 10,
-	                            border: selected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(212,175,55,0.55)',
-	                            background: selected ? 'transparent' : 'rgba(212,175,55,0.10)',
-	                            color: selected ? '#fff' : '#d4af37',
-	                            fontWeight: 800,
-	                            cursor: 'pointer',
-	                            flexShrink: 0,
-	                          }}
-	                        >
-	                          {selected ? 'Selected' : 'Select'}
-	                        </button>
 	                      </div>
 	                    </div>
 	                  )
@@ -2863,6 +2962,165 @@ export default function ProducePage() {
             </div>
             <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               {audioConfigAbout.description && audioConfigAbout.description.trim().length ? audioConfigAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {audioAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10063,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {audioAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAudioAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {audioAbout.description && audioAbout.description.trim().length ? audioAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {lowerThirdAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10064,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {lowerThirdAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLowerThirdAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {lowerThirdAbout.description && lowerThirdAbout.description.trim().length ? lowerThirdAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {lowerThirdConfigAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10065,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {lowerThirdConfigAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setLowerThirdConfigAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {lowerThirdConfigAbout.description && lowerThirdConfigAbout.description.trim().length ? lowerThirdConfigAbout.description : 'No description.'}
             </div>
           </div>
         </div>

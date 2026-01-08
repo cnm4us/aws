@@ -15,6 +15,7 @@ type BaselineWidth = 1080 | 1920
 type LowerThirdConfig = {
   id: number
   name: string
+  description?: string | null
   sizeMode: SizeMode
   baselineWidth: BaselineWidth
   position: 'bottom_center'
@@ -31,6 +32,7 @@ type LowerThirdConfig = {
 
 type Draft = {
   name: string
+  description?: string | null
   sizeMode: SizeMode
   baselineWidth: BaselineWidth
   sizePctWidth: number
@@ -83,6 +85,7 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
 function defaultDraft(): Draft {
   return {
     name: 'Lower Third',
+    description: null,
     sizeMode: 'pct',
     baselineWidth: 1080,
     sizePctWidth: 82,
@@ -172,6 +175,7 @@ export default function LowerThirdsPage() {
     if (!selectedConfig) return
     setDraft({
       name: selectedConfig.name,
+      description: selectedConfig.description ?? null,
       sizeMode: selectedConfig.sizeMode || 'pct',
       baselineWidth: selectedConfig.baselineWidth || 1080,
       sizePctWidth: selectedConfig.sizePctWidth,
@@ -204,6 +208,7 @@ export default function LowerThirdsPage() {
     try {
       const payload: any = {
         name: draft.name,
+        description: draft.description,
         sizeMode: draft.sizeMode,
         baselineWidth: draft.baselineWidth,
         sizePctWidth: draft.sizePctWidth,
@@ -358,12 +363,24 @@ export default function LowerThirdsPage() {
               />
             </div>
 
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ color: '#bbb', fontWeight: 750 }}>Description</div>
+              <textarea
+                value={draft.description ?? ''}
+                onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
+                placeholder="Notes (shown via About in Produce)."
+                rows={5}
+                maxLength={2000}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.04)', color: '#fff', resize: 'vertical', lineHeight: 1.4 }}
+              />
+            </div>
+
             <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
             <div style={{ color: '#fff', opacity: 0.92 }}>Bottom-center (fixed for now)</div>
 
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
+	            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
 
-            <div style={{ color: '#bbb', fontWeight: 750 }}>Size Mode</div>
+	            <div style={{ color: '#bbb', fontWeight: 750 }}>Size Mode</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {([
                 { label: 'Scale by %', value: 'pct' as const },

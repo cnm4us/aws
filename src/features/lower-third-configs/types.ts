@@ -10,6 +10,7 @@ export type LowerThirdConfigurationRow = {
   id: number
   owner_user_id: number
   name: string
+  description?: string | null
   size_mode: string
   baseline_width: number
   position: string
@@ -28,6 +29,7 @@ export type LowerThirdConfigurationRow = {
 export type LowerThirdConfigurationDto = {
   id: number
   name: string
+  description?: string | null
   sizeMode: LowerThirdSizeMode
   baselineWidth: LowerThirdBaselineWidth
   position: LowerThirdPosition

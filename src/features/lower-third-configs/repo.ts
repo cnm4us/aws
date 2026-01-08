@@ -29,6 +29,7 @@ export async function getById(id: number): Promise<LowerThirdConfigurationRow | 
 export async function insert(row: {
   ownerUserId: number
   name: string
+  description?: string | null
   sizeMode: string
   baselineWidth: number
   position: string
@@ -44,13 +45,14 @@ export async function insert(row: {
   const [res] = await db.query(
     `
       INSERT INTO lower_third_image_configurations
-        (owner_user_id, name, size_mode, baseline_width, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
+        (owner_user_id, name, description, size_mode, baseline_width, position, size_pct_width, opacity_pct, timing_rule, timing_seconds, fade, inset_x_preset, inset_y_preset)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       row.ownerUserId,
       row.name,
+      row.description ?? null,
       row.sizeMode,
       row.baselineWidth,
       row.position,
@@ -70,6 +72,7 @@ export async function update(
   id: number,
   row: {
     name: string
+    description?: string | null
     sizeMode: string
     baselineWidth: number
     position: string
@@ -87,6 +90,7 @@ export async function update(
     `
       UPDATE lower_third_image_configurations
          SET name = ?,
+             description = ?,
              size_mode = ?,
              baseline_width = ?,
              position = ?,
@@ -102,6 +106,7 @@ export async function update(
     `,
     [
       row.name,
+      row.description ?? null,
       row.sizeMode,
       row.baselineWidth,
       row.position,

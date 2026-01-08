@@ -9,6 +9,13 @@ function normalizeName(raw: any): string {
   return name
 }
 
+function normalizeDescription(raw: any): string | null {
+  const description = String(raw ?? '').trim()
+  if (!description) return null
+  if (description.length > 2000) throw new DomainError('invalid_description', 'invalid_description', 400)
+  return description
+}
+
 function normalizePosition(_raw: any): LowerThirdPosition {
   // MVP restriction: bottom_center only.
   return 'bottom_center'
@@ -76,6 +83,7 @@ function mapRow(row: LowerThirdConfigurationRow): LowerThirdConfigurationDto {
   return {
     id: Number(row.id),
     name: String(row.name || ''),
+    description: (row as any).description == null ? null : String((row as any).description),
     sizeMode,
     baselineWidth,
     position: 'bottom_center',
@@ -113,6 +121,7 @@ export async function getActiveForUser(id: number, userId: number): Promise<Lowe
 export async function createForUser(
   input: {
     name: any
+    description?: any
     sizeMode?: any
     baselineWidth?: any
     sizePctWidth: any
@@ -125,6 +134,7 @@ export async function createForUser(
   userId: number
 ) {
   const name = normalizeName(input.name)
+  const description = normalizeDescription(input.description)
   const sizeMode = normalizeSizeMode(input.sizeMode)
   const baselineWidth = normalizeBaselineWidth(input.baselineWidth)
   const position = normalizePosition(null)
@@ -138,6 +148,7 @@ export async function createForUser(
   const id = await repo.insert({
     ownerUserId: userId,
     name,
+    description,
     sizeMode,
     baselineWidth,
     position,
@@ -156,6 +167,7 @@ export async function updateForUser(
   id: number,
   input: {
     name: any
+    description?: any
     sizeMode?: any
     baselineWidth?: any
     sizePctWidth: any
@@ -172,6 +184,7 @@ export async function updateForUser(
   if (Number(existing.owner_user_id) !== Number(userId)) throw new ForbiddenError()
 
   const name = normalizeName(input.name)
+  const description = normalizeDescription(input.description ?? (existing as any).description)
   const sizeMode = normalizeSizeMode(input.sizeMode ?? (existing as any).size_mode)
   const baselineWidth = normalizeBaselineWidth(input.baselineWidth ?? (existing as any).baseline_width)
   const position = normalizePosition(null)
@@ -184,6 +197,7 @@ export async function updateForUser(
 
   await repo.update(id, {
     name,
+    description,
     sizeMode,
     baselineWidth,
     position,

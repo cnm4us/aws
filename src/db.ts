@@ -125,14 +125,15 @@ export async function ensureSchema(db: DB) {
       // Lower-third image configs (Plan 46): image-based overlays configured like logos.
       // NOTE: This is intentionally separate from the legacy SVG-template lower thirds tables below.
       await db.query(`
-        CREATE TABLE IF NOT EXISTS lower_third_image_configurations (
-          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-          owner_user_id BIGINT UNSIGNED NOT NULL,
-          name VARCHAR(120) NOT NULL,
-          size_mode ENUM('pct','match_image') NOT NULL DEFAULT 'pct',
-          baseline_width SMALLINT UNSIGNED NOT NULL DEFAULT 1080,
-          position ENUM(
-            'top_left','top_center','top_right',
+	        CREATE TABLE IF NOT EXISTS lower_third_image_configurations (
+	          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	          owner_user_id BIGINT UNSIGNED NOT NULL,
+	          name VARCHAR(120) NOT NULL,
+            description TEXT NULL,
+	          size_mode ENUM('pct','match_image') NOT NULL DEFAULT 'pct',
+	          baseline_width SMALLINT UNSIGNED NOT NULL DEFAULT 1080,
+	          position ENUM(
+	            'top_left','top_center','top_right',
             'middle_left','middle_center','middle_right',
             'bottom_left','bottom_center','bottom_right',
             'center'
@@ -147,12 +148,13 @@ export async function ensureSchema(db: DB) {
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           archived_at TIMESTAMP NULL DEFAULT NULL,
-          KEY idx_lt_img_cfg_owner_archived (owner_user_id, archived_at, id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-      // Plan: allow switching between % scaling and "match image width @ baseline".
-      await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS size_mode ENUM('pct','match_image') NOT NULL DEFAULT 'pct'`);
-      await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS baseline_width SMALLINT UNSIGNED NOT NULL DEFAULT 1080`);
+	          KEY idx_lt_img_cfg_owner_archived (owner_user_id, archived_at, id)
+	        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	      `);
+	      // Plan: allow switching between % scaling and "match image width @ baseline".
+	      await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS size_mode ENUM('pct','match_image') NOT NULL DEFAULT 'pct'`);
+	      await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS baseline_width SMALLINT UNSIGNED NOT NULL DEFAULT 1080`);
+        await db.query(`ALTER TABLE lower_third_image_configurations ADD COLUMN IF NOT EXISTS description TEXT NULL`);
 		  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_x_preset VARCHAR(16) NULL`);
 		  await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS inset_y_preset VARCHAR(16) NULL`);
       await db.query(`ALTER TABLE logo_configurations ADD COLUMN IF NOT EXISTS description TEXT NULL`);
