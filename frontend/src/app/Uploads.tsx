@@ -408,17 +408,17 @@ const UploadsPage: React.FC = () => {
                     position: 'absolute',
                     inset: 0,
                     zIndex: 4,
-                    background: 'linear-gradient(180deg, rgba(0,0,0,0.50) 0%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.78) 100%)',
+                    background: 'linear-gradient(180deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.70) 60%, rgba(0,0,0,0.58) 100%)',
                     padding: 14,
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'flex-end',
+                    justifyContent: 'flex-start',
                   }}
                   onClick={() => setOpenUploadId(null)}
                 >
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    style={{ display: 'grid', gap: 8, marginTop: 'auto', maxHeight: '100%', overflowY: 'auto' }}
+                    style={{ display: 'grid', gap: 8, paddingTop: 52, paddingRight: 52, maxHeight: '100%', overflowY: 'auto' }}
                   >
                     <div style={{ fontSize: 16, fontWeight: 850, lineHeight: 1.2 }}>{displayName}</div>
                     {description ? (
