@@ -1,11 +1,7 @@
 import { UPLOAD_BUCKET } from '../../config'
 import type { VideoMasterV1Input } from '../../features/media-jobs/types'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
-import { burnScreenTitleIntoMp4, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
-import { randomUUID } from 'crypto'
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
+import { renderScreenTitleOverlayPngsToS3 } from '../../services/ffmpeg/audioPipeline'
 
 export async function runVideoMasterV1Job(
   input: VideoMasterV1Input,
@@ -68,28 +64,16 @@ export async function runVideoMasterV1Job(
     out = { bucket: masteredVideoPtr.bucket, key: masteredVideoPtr.key, s3Url: `s3://${masteredVideoPtr.bucket}/${masteredVideoPtr.key}` }
   }
 
-  if (input.screenTitle && input.screenTitle.text && input.screenTitle.preset) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-video-master-title-'))
-    const inPath = path.join(tmpDir, 'in.mp4')
-    const titledPath = path.join(tmpDir, 'titled.mp4')
-    try {
-      await downloadS3ObjectToFile(masteredVideoPtr.bucket, masteredVideoPtr.key, inPath)
-      await burnScreenTitleIntoMp4({
-        inPath,
-        outPath: titledPath,
-        screenTitle: input.screenTitle as any,
-        videoDurationSeconds: durationSeconds,
-        logPaths,
-      })
-      const folder = ymdToFolder(dateYmd)
-      const key = `video-master/${folder}/${productionUlid}/${randomUUID()}/${originalLeaf}`
-      await uploadFileToS3(uploadBucket, key, titledPath, 'video/mp4')
-      out = { bucket: uploadBucket, key, s3Url: `s3://${uploadBucket}/${key}` }
-      masteredVideoPtr = { bucket: out.bucket, key: out.key }
-    } finally {
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
-    }
-  }
+  const screenTitleOverlays =
+    input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
+      ? await renderScreenTitleOverlayPngsToS3({
+          uploadBucket,
+          dateYmd,
+          productionUlid,
+          screenTitle: input.screenTitle as any,
+          logPaths,
+        })
+      : null
 
   const introMeta = intro && intro.kind
     ? (String(intro.kind) === 'title_image'
@@ -97,5 +81,5 @@ export async function runVideoMasterV1Job(
         : { kind: 'freeze_first_frame', seconds: Math.round(Number((intro as any).seconds || legacyIntroSeconds || 0)) })
     : null
 
-  return { output: out, intro: introMeta }
+  return { output: out, intro: introMeta, screenTitleOverlays }
 }

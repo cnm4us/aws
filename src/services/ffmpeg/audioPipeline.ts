@@ -26,6 +26,11 @@ type ScreenTitleV1 = {
   }
 }
 
+export type ScreenTitleOverlayPngsV1 = {
+  portrait: { bucket: string; key: string; s3Url: string }
+  landscape: { bucket: string; key: string; s3Url: string }
+}
+
 function normalizeScreenTitlePosition(pos: any): 'top' | 'middle' | 'bottom' {
   const raw = String(pos || 'top').trim().toLowerCase()
   if (raw === 'middle' || raw === 'center' || raw === 'middle_center') return 'middle'
@@ -368,6 +373,118 @@ export async function burnScreenTitleIntoMp4(opts: {
   }
 }
 
+export async function renderScreenTitleOverlayPngsToS3(opts: {
+  uploadBucket: string
+  dateYmd: string
+  productionUlid: string
+  screenTitle: ScreenTitleV1
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<ScreenTitleOverlayPngsV1> {
+  const text = String(opts.screenTitle?.text || '').replace(/\r\n/g, '\n').trim()
+  if (!text) throw new Error('missing_screen_title_text')
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-screen-title-png-'))
+  const textFile = path.join(tmpDir, `screen-title-${randomUUID()}.txt`)
+  fs.writeFileSync(textFile, text, 'utf8')
+
+  const preset = opts.screenTitle.preset || {}
+  const pos = normalizeScreenTitlePosition(preset.position)
+  const style = String(preset.style || 'pill').toLowerCase()
+  const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
+  const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
+  const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
+  const pillBgOpacityPct = clampNum(preset.pillBgOpacityPct ?? 55, 0, 100)
+  const pillBgAlpha = clampNum(pillBgOpacityPct / 100, 0, 1)
+  const xInset = insetPctForPreset(preset.insetXPreset)
+  const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
+
+  const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
+  const textFileEsc = escapeFilterValue(textFile)
+
+  const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
+  const lineSpacing = `h*${((fontSizePct / 100) * 0.177).toFixed(5)}`
+
+  const renderOne = async (frame: { w: number; h: number }, outPngPath: string) => {
+    const xExpr = `min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`
+    const yExpr =
+      pos === 'bottom'
+        ? `h-text_h-h*${yInset.toFixed(4)}`
+        : pos === 'middle'
+          ? `(h-text_h)/2`
+          : `h*${yInset.toFixed(4)}`
+
+    const baseText = [
+      `drawtext=fontfile=${fontFile}`,
+      `textfile=${textFileEsc}`,
+      `x=${xExpr}`,
+      `y=${yExpr}`,
+      `fontsize=${fontSizeExpr}`,
+      `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
+      'alpha=1',
+      `line_spacing=${lineSpacing}`,
+      "enable='1'",
+    ]
+
+    const extras: string[] = []
+    if (style === 'pill') {
+      extras.push(
+        'box=1',
+        `boxcolor=${escapeFilterValue(`${ffmpegColorForHex(pillBgColorHex)}@${pillBgAlpha.toFixed(3)}`)}`,
+        'boxborderw=10',
+        'shadowcolor=black@0.55',
+        'shadowx=0',
+        'shadowy=2'
+      )
+    } else if (style === 'outline') {
+      extras.push('borderw=3', 'bordercolor=black@0.90', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+    } else {
+      extras.push('shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+    }
+
+    const drawText = [...baseText, ...extras].join(':')
+    const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
+    const vf = style === 'strip'
+      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText},format=rgba`
+      : `${drawText},format=rgba`
+
+    await runFfmpeg(
+      [
+        '-f',
+        'lavfi',
+        '-i',
+        `color=c=black@0.0:s=${frame.w}x${frame.h}:d=1`,
+        '-frames:v',
+        '1',
+        '-vf',
+        vf,
+        outPngPath,
+      ],
+      opts.logPaths
+    )
+  }
+
+  try {
+    const portraitPath = path.join(tmpDir, 'portrait.png')
+    const landscapePath = path.join(tmpDir, 'landscape.png')
+    await renderOne({ w: 1080, h: 1920 }, portraitPath)
+    await renderOne({ w: 1920, h: 1080 }, landscapePath)
+
+    const folder = ymdToFolder(opts.dateYmd)
+    const baseKey = `screen-titles/${folder}/${opts.productionUlid}/${randomUUID()}`
+    const portraitKey = `${baseKey}/portrait.png`
+    const landscapeKey = `${baseKey}/landscape.png`
+    await uploadFileToS3(opts.uploadBucket, portraitKey, portraitPath, 'image/png')
+    await uploadFileToS3(opts.uploadBucket, landscapeKey, landscapePath, 'image/png')
+
+    return {
+      portrait: { bucket: opts.uploadBucket, key: portraitKey, s3Url: `s3://${opts.uploadBucket}/${portraitKey}` },
+      landscape: { bucket: opts.uploadBucket, key: landscapeKey, s3Url: `s3://${opts.uploadBucket}/${landscapeKey}` },
+    }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+}
+
 export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   uploadBucket: string
   dateYmd: string
@@ -376,7 +493,6 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
-  screenTitle?: ScreenTitleV1 | null
   musicGainDb: number
   audioDurationSeconds?: number | null
   audioFadeEnabled?: boolean
@@ -474,24 +590,7 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
       ], opts.logPaths)
     }
 
-    let uploadPath = outPath
-    if (opts.screenTitle) {
-      const titledPath = path.join(tmpDir, 'titled.mp4')
-      const titleDur =
-        videoDur != null && Number.isFinite(videoDur) && videoDur > 0
-          ? videoDur
-          : (opts.videoDurationSeconds != null && Number.isFinite(Number(opts.videoDurationSeconds)) && Number(opts.videoDurationSeconds) > 0
-              ? Number(opts.videoDurationSeconds)
-              : null)
-      await burnScreenTitleIntoMp4({
-        inPath: outPath,
-        outPath: titledPath,
-        screenTitle: opts.screenTitle,
-        videoDurationSeconds: titleDur,
-        logPaths: opts.logPaths,
-      })
-      uploadPath = titledPath
-    }
+    const uploadPath = outPath
 
     // Preserve the original input basename so MediaConvert output names stay stable (e.g. "video.m3u8"),
     // since the app derives master/poster URLs from the upload's original key leaf.
@@ -515,7 +614,6 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
-  screenTitle?: ScreenTitleV1 | null
   videoGainDb: number
   musicGainDb: number
   audioDurationSeconds?: number | null
@@ -693,24 +791,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     if (!useDurTrim) args.splice(args.length - 1, 0, '-shortest')
     await runFfmpeg(args, opts.logPaths)
 
-    let uploadPath = outPath
-    if (opts.screenTitle) {
-      const titledPath = path.join(tmpDir, 'titled.mp4')
-      const titleDur =
-        videoDur != null && Number.isFinite(videoDur) && videoDur > 0
-          ? videoDur
-          : (opts.videoDurationSeconds != null && Number.isFinite(Number(opts.videoDurationSeconds)) && Number(opts.videoDurationSeconds) > 0
-              ? Number(opts.videoDurationSeconds)
-              : null)
-      await burnScreenTitleIntoMp4({
-        inPath: outPath,
-        outPath: titledPath,
-        screenTitle: opts.screenTitle,
-        videoDurationSeconds: titleDur,
-        logPaths: opts.logPaths,
-      })
-      uploadPath = titledPath
-    }
+    const uploadPath = outPath
 
     const folder = ymdToFolder(opts.dateYmd)
     const prefix = duckingEnabled ? (duckingMode === 'abrupt' ? 'music-mix-gate' : 'music-mix-duck') : 'music-mix'

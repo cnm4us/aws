@@ -191,6 +191,11 @@ export async function startMediaConvertForExistingProduction(opts: {
     videoDurationSeconds: durationSeconds,
   })
 
+  await applyScreenTitleOverlayIfConfigured(settings, {
+    config: opts.configPayload,
+    videoDurationSeconds: durationSeconds,
+  })
+
   if (!opts.skipInlineAudioMux) {
     await applyMusicReplacementIfConfigured(settings, {
       config: opts.configPayload,
@@ -507,6 +512,11 @@ type LowerThirdConfigSnapshot = {
   timingSeconds?: number | null
 }
 
+type ScreenTitleOverlaysSnapshot = {
+  portrait?: { bucket?: string; key?: string }
+  landscape?: { bucket?: string; key?: string }
+}
+
 type LowerThirdImageConfigSnapshot = {
   id?: number
   name?: string
@@ -629,6 +639,90 @@ function computeFade(cfg: LogoConfigSnapshot) {
   if (fade === 'out') return { FadeIn: 0, FadeOut: fadeMs }
   if (fade === 'in_out') return { FadeIn: fadeMs, FadeOut: fadeMs }
   return { FadeIn: 0, FadeOut: 0 }
+}
+
+function computeScreenTitleTiming(preset: any, videoDurationSeconds: number | null) {
+  const timingRule = String(preset?.timingRule || 'first_only').toLowerCase() === 'entire' ? 'entire' : 'first_only'
+  const fallbackDurationMs = 60 * 60 * 1000
+  const totalMs =
+    videoDurationSeconds != null && Number.isFinite(Number(videoDurationSeconds)) && Number(videoDurationSeconds) > 0
+      ? Math.max(1, Math.round(Number(videoDurationSeconds) * 1000))
+      : fallbackDurationMs
+  if (timingRule === 'entire') return { startTime: secondsToTimecode(0), durationMs: totalMs }
+  const secsRaw = preset?.timingSeconds != null ? Number(preset.timingSeconds) : 10
+  const secs = Number.isFinite(secsRaw) ? Math.max(0, Math.min(3600, secsRaw)) : 10
+  return { startTime: secondsToTimecode(0), durationMs: Math.max(1, Math.min(totalMs, Math.round(secs * 1000))) }
+}
+
+function computeFadeFromPreset(preset: any) {
+  const fadeMs = 500
+  const fade = String(preset?.fade || 'none').toLowerCase()
+  if (fade === 'in') return { FadeIn: fadeMs, FadeOut: 0 }
+  if (fade === 'out') return { FadeIn: 0, FadeOut: fadeMs }
+  if (fade === 'in_out') return { FadeIn: fadeMs, FadeOut: fadeMs }
+  return { FadeIn: 0, FadeOut: 0 }
+}
+
+async function applyScreenTitleOverlayIfConfigured(settings: any, opts: { config: any; videoDurationSeconds: number | null }) {
+  const cfgObj = opts.config && typeof opts.config === 'object' ? opts.config : null
+  if (!cfgObj) return
+
+  const text = String((cfgObj as any).screenTitleText || '').replace(/\r\n/g, '\n').trim()
+  const preset =
+    (cfgObj as any).screenTitlePresetSnapshot && typeof (cfgObj as any).screenTitlePresetSnapshot === 'object'
+      ? (cfgObj as any).screenTitlePresetSnapshot
+      : null
+  const overlays: ScreenTitleOverlaysSnapshot | null =
+    (cfgObj as any).screenTitleOverlays && typeof (cfgObj as any).screenTitleOverlays === 'object'
+      ? ((cfgObj as any).screenTitleOverlays as any)
+      : null
+  if (!text || !preset || !overlays) return
+
+  const portraitBucket = overlays.portrait?.bucket ? String(overlays.portrait.bucket) : ''
+  const portraitKey = overlays.portrait?.key ? String(overlays.portrait.key) : ''
+  const landscapeBucket = overlays.landscape?.bucket ? String(overlays.landscape.bucket) : ''
+  const landscapeKey = overlays.landscape?.key ? String(overlays.landscape.key) : ''
+  if (!portraitBucket || !portraitKey || !landscapeBucket || !landscapeKey) return
+
+  const portraitUrl = `s3://${portraitBucket}/${portraitKey}`
+  const landscapeUrl = `s3://${landscapeBucket}/${landscapeKey}`
+  const timing = computeScreenTitleTiming(preset, opts.videoDurationSeconds)
+  const fades = computeFadeFromPreset(preset)
+
+  const groups: any[] = Array.isArray(settings?.OutputGroups) ? settings.OutputGroups : []
+  for (const g of groups) {
+    const t = g?.OutputGroupSettings?.Type
+    if (t !== 'HLS_GROUP_SETTINGS' && t !== 'CMAF_GROUP_SETTINGS' && t !== 'FILE_GROUP_SETTINGS') continue
+    const outs: any[] = Array.isArray(g?.Outputs) ? g.Outputs : []
+    for (const o of outs) {
+      const vd = o?.VideoDescription
+      const cs = vd?.CodecSettings
+      if (!vd || !cs) continue
+      if (t === 'FILE_GROUP_SETTINGS' && cs.Codec !== 'FRAME_CAPTURE') continue
+      const outW = vd.Width != null ? Number(vd.Width) : null
+      const outH = vd.Height != null ? Number(vd.Height) : null
+      if (!outW || !outH) continue
+
+      const url = outH > outW ? portraitUrl : landscapeUrl
+      if (!vd.VideoPreprocessors) vd.VideoPreprocessors = {}
+      if (!vd.VideoPreprocessors.ImageInserter) vd.VideoPreprocessors.ImageInserter = {}
+      if (!Array.isArray(vd.VideoPreprocessors.ImageInserter.InsertableImages)) {
+        vd.VideoPreprocessors.ImageInserter.InsertableImages = []
+      }
+      vd.VideoPreprocessors.ImageInserter.InsertableImages.push({
+        ImageInserterInput: url,
+        ImageX: 0,
+        ImageY: 0,
+        Width: outW,
+        Height: outH,
+        Opacity: 100,
+        Layer: 3,
+        StartTime: timing.startTime,
+        Duration: timing.durationMs,
+        ...fades,
+      })
+    }
+  }
 }
 
 async function applyLogoWatermarkIfConfigured(settings: any, opts: { config: any; videoDurationSeconds: number | null }) {

@@ -1315,7 +1315,7 @@ export default function ProducePage() {
 	                  <div
 	                    style={{
 	                      ...computeScreenTitleOverlayCss(selectedScreenTitlePreset),
-	                      zIndex: 2,
+	                      zIndex: 3,
 	                      boxSizing: 'border-box',
 	                      padding:
 	                        selectedScreenTitlePreset.style === 'strip'
@@ -1390,7 +1390,7 @@ export default function ProducePage() {
 	                        insetXPreset: selectedLogoConfig.insetXPreset ?? null,
 	                        insetYPreset: selectedLogoConfig.insetYPreset ?? null,
 	                      }),
-	                      zIndex: 3,
+	                      zIndex: 2,
 	                      objectFit: 'contain',
 	                      maxWidth: '100%',
 	                      maxHeight: '100%',

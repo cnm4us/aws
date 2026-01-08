@@ -1,6 +1,6 @@
 import { UPLOAD_BUCKET } from '../../config'
 import type { AudioMasterV1Input } from '../../features/media-jobs/types'
-import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio } from '../../services/ffmpeg/audioPipeline'
+import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, renderScreenTitleOverlayPngsToS3 } from '../../services/ffmpeg/audioPipeline'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
 import fs from 'fs'
 
@@ -91,7 +91,6 @@ export async function runAudioMasterV1Job(
         videoDurationSeconds,
         video: videoPtr,
         audio: input.music,
-        screenTitle: input.screenTitle ?? null,
         videoGainDb: Number(input.videoGainDb || 0),
         musicGainDb: Number(input.musicGainDb || -18),
         audioDurationSeconds: input.audioDurationSeconds == null ? null : Number(input.audioDurationSeconds),
@@ -109,7 +108,17 @@ export async function runAudioMasterV1Job(
         logPaths,
       })
       appendLog(`mix:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-      return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
+      const screenTitleOverlays =
+        input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
+          ? await renderScreenTitleOverlayPngsToS3({
+              uploadBucket,
+              dateYmd,
+              productionUlid,
+              screenTitle: input.screenTitle as any,
+              logPaths,
+            })
+          : null
+      return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs }, screenTitleOverlays }
     } catch {
       // fall back to replace
       appendLog(`mix:failed falling back to replace`)
@@ -126,7 +135,6 @@ export async function runAudioMasterV1Job(
     videoDurationSeconds,
     video: videoPtr,
     audio: input.music,
-    screenTitle: input.screenTitle ?? null,
     musicGainDb: Number(input.musicGainDb || -18),
     audioDurationSeconds: input.audioDurationSeconds == null ? null : Number(input.audioDurationSeconds),
     audioFadeEnabled: input.audioFadeEnabled !== false,
@@ -137,5 +145,15 @@ export async function runAudioMasterV1Job(
     logPaths,
   })
   appendLog(`replace:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-  return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
+  const screenTitleOverlays =
+    input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
+      ? await renderScreenTitleOverlayPngsToS3({
+          uploadBucket,
+          dateYmd,
+          productionUlid,
+          screenTitle: input.screenTitle as any,
+          logPaths,
+        })
+      : null
+  return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs }, screenTitleOverlays }
 }

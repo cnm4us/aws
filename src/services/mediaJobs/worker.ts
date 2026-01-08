@@ -77,6 +77,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
       const prod = (prodRows as any[])[0]
       if (!prod) throw new Error('production_not_found')
       const cfg = typeof prod.config === 'string' ? JSON.parse(prod.config) : (prod.config || {})
+      const cfgForMc = { ...cfg }
+      if (result && (result as any).screenTitleOverlays) {
+        ;(cfgForMc as any).screenTitleOverlays = (result as any).screenTitleOverlays
+      }
       const [upRows] = await pool.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [Number(input.uploadId)])
       const upload = (upRows as any[])[0]
       if (!upload) throw new Error('upload_not_found')
@@ -88,10 +92,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
         upload,
         productionId: Number(input.productionId),
         productionUlid: String(prod.ulid || input.productionUlid || ''),
-        profile: cfg.profile ?? null,
-        quality: cfg.quality ?? null,
-        sound: cfg.sound ?? null,
-        configPayload: cfg,
+        profile: cfgForMc.profile ?? null,
+        quality: cfgForMc.quality ?? null,
+        sound: cfgForMc.sound ?? null,
+        configPayload: cfgForMc,
         inputUrlOverride: String(masteredUrl),
         skipInlineAudioMux: true,
         skipAudioNormalization: true,
@@ -119,6 +123,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
       const prod = (prodRows as any[])[0]
       if (!prod) throw new Error('production_not_found')
       const cfg = typeof prod.config === 'string' ? JSON.parse(prod.config) : (prod.config || {})
+      const cfgForMc = { ...cfg }
+      if (result && (result as any).screenTitleOverlays) {
+        ;(cfgForMc as any).screenTitleOverlays = (result as any).screenTitleOverlays
+      }
       const [upRows] = await pool.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [Number(input.uploadId)])
       const upload = (upRows as any[])[0]
       if (!upload) throw new Error('upload_not_found')
@@ -130,10 +138,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
         upload,
         productionId: Number(input.productionId),
         productionUlid: String(prod.ulid || input.productionUlid || ''),
-        profile: cfg.profile ?? null,
-        quality: cfg.quality ?? null,
-        sound: cfg.sound ?? null,
-        configPayload: cfg,
+        profile: cfgForMc.profile ?? null,
+        quality: cfgForMc.quality ?? null,
+        sound: cfgForMc.sound ?? null,
+        configPayload: cfgForMc,
         inputUrlOverride: String(masteredUrl),
         skipInlineAudioMux: false,
         skipAudioNormalization: false,
