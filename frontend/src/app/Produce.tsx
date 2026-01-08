@@ -487,6 +487,7 @@ export default function ProducePage() {
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
   const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
 
   useEffect(() => {
     let cancelled = false
@@ -1408,7 +1409,7 @@ export default function ProducePage() {
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
                     <div style={{ color: '#bbb' }}>Screen Title (per production)</div>
                     <a
-                      href="/screen-title-presets"
+                      href={`/screen-title-presets?from=${fromHere}`}
                       style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}
                     >
                       Manage presets
@@ -1890,7 +1891,7 @@ export default function ProducePage() {
 
 		                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
 		                  <div style={{ color: '#bbb', fontWeight: 650 }}>Logo Config</div>
-		                  <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
+		                  <a href={`/logo-configs?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
 		                </div>
 		                {assetsLoading ? (
 		                  <div style={{ color: '#777' }}>Loading logo configurations…</div>
@@ -1898,7 +1899,7 @@ export default function ProducePage() {
 		                  <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
 		                ) : logoConfigs.length === 0 ? (
 		                  <div style={{ color: '#777' }}>
-		                    No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create a preset</a>.
+		                    No logo configurations yet. <a href={`/logo-configs?from=${fromHere}`} style={{ color: '#9cf' }}>Create a preset</a>.
 		                  </div>
 		                ) : (
 		                  <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
@@ -2061,7 +2062,7 @@ export default function ProducePage() {
 
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ color: '#bbb', fontWeight: 650 }}>Lower Third Config</div>
-                  <a href="/lower-thirds" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
+                  <a href={`/lower-thirds?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage configs</a>
                 </div>
                 {assetsLoading ? (
                   <div style={{ color: '#777' }}>Loading lower third configs…</div>
@@ -2069,7 +2070,7 @@ export default function ProducePage() {
                   <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
                 ) : lowerThirdConfigs.length === 0 ? (
                   <div style={{ color: '#777' }}>
-                    No lower third configs yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
+                    No lower third configs yet. <a href={`/lower-thirds?from=${fromHere}`} style={{ color: '#9cf' }}>Create a preset</a>.
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)' }}>
@@ -2843,7 +2844,7 @@ export default function ProducePage() {
 	            </div>
 
 	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-	              <a href="/lower-thirds" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
+	              <a href={`/lower-thirds?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
 	            </div>
 
 	            <div style={{ display: 'grid', gap: 10 }}>
@@ -2869,7 +2870,7 @@ export default function ProducePage() {
 	                <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
 	              ) : lowerThirdConfigs.length === 0 ? (
 	                <div style={{ color: '#bbb' }}>
-	                  No lower third configs yet. <a href="/lower-thirds" style={{ color: '#9cf' }}>Create a preset</a>.
+	                  No lower third configs yet. <a href={`/lower-thirds?from=${fromHere}`} style={{ color: '#9cf' }}>Create a preset</a>.
 	                </div>
 	              ) : (
 	                lowerThirdConfigs.map((c) => {
@@ -3193,7 +3194,7 @@ export default function ProducePage() {
               >
                 Alphabetical
               </button>
-              <a href="/logo-configs" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
+              <a href={`/logo-configs?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}>Manage configs</a>
             </div>
 
             <div style={{ display: 'grid', gap: 10 }}>
@@ -3219,7 +3220,7 @@ export default function ProducePage() {
                 <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
               ) : sortedLogoConfigs.length === 0 ? (
                 <div style={{ color: '#bbb' }}>
-                  No logo configurations yet. <a href="/logo-configs" style={{ color: '#9cf' }}>Create one</a>.
+                  No logo configurations yet. <a href={`/logo-configs?from=${fromHere}`} style={{ color: '#9cf' }}>Create one</a>.
                 </div>
               ) : (
                 sortedLogoConfigs.map((c) => {

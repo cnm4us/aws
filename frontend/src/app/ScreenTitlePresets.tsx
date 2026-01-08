@@ -99,7 +99,23 @@ function timingLabel(rule: ScreenTitleTimingRule, seconds: number | null): strin
   return `First ${s}`
 }
 
+function parseFromHref(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('from') || '').trim()
+    if (!raw) return null
+    if (!raw.startsWith('/')) return null
+    return raw
+  } catch {
+    return null
+  }
+}
+
 export default function ScreenTitlePresetsPage() {
+  const fromHref = useMemo(() => parseFromHref(), [])
+  const backHref = fromHref || '/uploads'
+  const backLabel = fromHref?.startsWith('/produce') ? '← Back to Produce' : '← Back'
+
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
   const [loading, setLoading] = useState(false)
@@ -227,7 +243,7 @@ export default function ScreenTitlePresetsPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <a href="/produce" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to Produce</a>
+        <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Presets</h1>
@@ -570,4 +586,3 @@ export default function ScreenTitlePresetsPage() {
     </div>
   )
 }
-
