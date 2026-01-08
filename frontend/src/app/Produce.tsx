@@ -51,6 +51,8 @@ type AssetItem = {
   created_at?: string | null
 }
 
+type InsetPreset = 'small' | 'medium' | 'large'
+
 type LogoConfig = {
   id: number
   name: string
@@ -61,6 +63,8 @@ type LogoConfig = {
   timingRule: string
   timingSeconds: number | null
   fade: string
+  insetXPreset?: InsetPreset | null
+  insetYPreset?: InsetPreset | null
 }
 
 type AudioConfig = {
@@ -309,6 +313,83 @@ function formatLogoPosition(pos: string | null | undefined): string {
   return titled.join(' ')
 }
 
+function normalizeLegacyPosition(pos: string): string {
+  return pos === 'center' ? 'middle_center' : pos
+}
+
+function insetPctForPreset(preset: InsetPreset | string | null | undefined): number {
+  const p = String(preset || '').toLowerCase()
+  if (p === 'small') return 0.06
+  if (p === 'large') return 0.14
+  return 0.10
+}
+
+function clampNumber(n: any, min: number, max: number): number {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return min
+  return Math.min(Math.max(v, min), max)
+}
+
+function computeOverlayCss(cfg: {
+  position?: string | null
+  sizePctWidth?: number | null
+  opacityPct?: number | null
+  insetXPreset?: InsetPreset | string | null
+  insetYPreset?: InsetPreset | string | null
+}): React.CSSProperties {
+  const sizePctWidth = clampNumber(cfg.sizePctWidth ?? 15, 1, 100)
+  const opacityPct = clampNumber(cfg.opacityPct ?? 100, 0, 100)
+
+  const posRaw = String(cfg.position || 'bottom_right')
+  const pos = normalizeLegacyPosition(posRaw)
+  const [rowRaw, colRaw] = String(pos).split('_') as [string, string]
+  const row = rowRaw || 'bottom'
+  const col = colRaw || 'right'
+  const yMode = row === 'top' ? 'top' : row === 'bottom' ? 'bottom' : 'middle'
+  const xMode = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
+
+  const insetXPct = insetPctForPreset(cfg.insetXPreset) * 100
+  const insetYPct = insetPctForPreset(cfg.insetYPreset) * 100
+  const marginXPct = xMode === 'center' ? 0 : insetXPct
+  const marginYPct = yMode === 'middle' ? 0 : insetYPct
+
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    width: `${sizePctWidth}%`,
+    height: 'auto',
+    opacity: opacityPct / 100,
+    pointerEvents: 'none',
+  }
+
+  let transform = ''
+  if (xMode === 'left') style.left = `${marginXPct}%`
+  else if (xMode === 'right') style.right = `${marginXPct}%`
+  else {
+    style.left = '50%'
+    transform += ' translateX(-50%)'
+  }
+
+  if (yMode === 'top') style.top = `${marginYPct}%`
+  else if (yMode === 'bottom') style.bottom = `${marginYPct}%`
+  else {
+    style.top = '50%'
+    transform += ' translateY(-50%)'
+  }
+
+  if (transform.trim()) style.transform = transform.trim()
+  return style
+}
+
+function computeLowerThirdPreviewSizePct(cfg: LowerThirdConfig | null, image: AssetItem | null): number {
+  const sizeMode = String(cfg?.sizeMode || 'pct').toLowerCase()
+  if (sizeMode === 'match_image') {
+    const base = cfg?.baselineWidth === 1920 ? 1920 : 1080
+    const w = image?.width != null ? Number(image.width) : null
+    if (w != null && Number.isFinite(w) && w > 0) return clampNumber((w / base) * 100, 1, 100)
+  }
+  return clampNumber(cfg?.sizePctWidth ?? 82, 1, 100)
+}
+
 function getCsrfToken(): string | null {
   try {
     const m = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
@@ -364,6 +445,8 @@ export default function ProducePage() {
   const [audioAbout, setAudioAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdAbout, setLowerThirdAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
+  const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -394,6 +477,11 @@ export default function ProducePage() {
     return () => {
       cancelled = true
     }
+  }, [uploadId])
+
+  useEffect(() => {
+    setUploadPreviewMode('thumb')
+    setUploadThumbRetryNonce(0)
   }, [uploadId])
 
   useEffect(() => {
@@ -1037,6 +1125,8 @@ export default function ProducePage() {
 
   const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
   const poster = pickPoster(upload)
+  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
+  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
   const sourceDeleted = !!upload.source_deleted_at
 
 	  const onProduce = async () => {
@@ -1103,17 +1193,80 @@ export default function ProducePage() {
           <div style={{ color: '#bbb' }}>{displayName}</div>
         </header>
 
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div>
-            {poster ? (
-              <img src={poster} alt="poster" style={{ width: 280, borderRadius: 12, background: '#111', objectFit: 'cover' }} />
-            ) : (
-              <div style={{ width: 280, height: 158, borderRadius: 12, background: '#222' }} />
-            )}
-            <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
-              {upload.status}
-              {upload.size_bytes != null ? ` • ${formatBytes(upload.size_bytes)}` : ''}
-              {upload.width && upload.height ? ` • ${upload.width}×${upload.height}` : ''}
+	        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+	          <div>
+	            {uploadPreviewSrc ? (
+	              <div style={{ width: 280, borderRadius: 12, background: '#111', overflow: 'hidden', position: 'relative' }}>
+	                <img
+	                  src={uploadPreviewSrc}
+	                  alt="poster"
+	                  style={{ width: '100%', display: 'block', objectFit: 'cover' }}
+	                  onError={() => {
+	                    if (uploadPreviewMode === 'thumb') {
+	                      if (poster) {
+	                        setUploadPreviewMode('poster')
+	                        return
+	                      }
+	                      if (uploadThumbRetryNonce < 8) {
+	                        window.setTimeout(() => setUploadThumbRetryNonce((n) => n + 1), 1500)
+	                        return
+	                      }
+	                      setUploadPreviewMode('none')
+	                      return
+	                    }
+	                    setUploadPreviewMode('none')
+	                  }}
+	                />
+
+	                {selectedLowerThirdImage ? (
+	                  <img
+	                    src={`/api/uploads/${encodeURIComponent(String(selectedLowerThirdImage.id))}/file`}
+	                    alt=""
+	                    style={{
+	                      ...computeOverlayCss({
+	                        position: 'bottom_center',
+	                        sizePctWidth: computeLowerThirdPreviewSizePct(selectedLowerThirdConfig, selectedLowerThirdImage),
+	                        opacityPct: selectedLowerThirdConfig?.opacityPct ?? 100,
+	                        insetXPreset: null,
+	                        insetYPreset: selectedLowerThirdConfig?.insetYPreset ?? 'medium',
+	                      }),
+	                      zIndex: 2,
+	                      objectFit: 'contain',
+	                      maxWidth: '100%',
+	                      maxHeight: '100%',
+	                    }}
+	                  />
+	                ) : null}
+
+	                {selectedLogo && selectedLogoConfig ? (
+	                  <img
+	                    src={`/api/uploads/${encodeURIComponent(String(selectedLogo.id))}/file`}
+	                    alt=""
+	                    style={{
+	                      ...computeOverlayCss({
+	                        position: selectedLogoConfig.position,
+	                        sizePctWidth: selectedLogoConfig.sizePctWidth,
+	                        opacityPct: selectedLogoConfig.opacityPct,
+	                        insetXPreset: selectedLogoConfig.insetXPreset ?? null,
+	                        insetYPreset: selectedLogoConfig.insetYPreset ?? null,
+	                      }),
+	                      zIndex: 3,
+	                      objectFit: 'contain',
+	                      maxWidth: '100%',
+	                      maxHeight: '100%',
+	                    }}
+	                  />
+	                ) : null}
+	              </div>
+	            ) : (
+	              <div style={{ width: 280, height: 158, borderRadius: 12, background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, color: '#888', fontSize: 13, textAlign: 'center', lineHeight: 1.3 }}>
+	                Preview generating…
+	              </div>
+	            )}
+	            <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
+	              {upload.status}
+	              {upload.size_bytes != null ? ` • ${formatBytes(upload.size_bytes)}` : ''}
+	              {upload.width && upload.height ? ` • ${upload.width}×${upload.height}` : ''}
             </div>
           </div>
 
