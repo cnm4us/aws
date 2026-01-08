@@ -307,7 +307,9 @@ export async function burnScreenTitleIntoMp4(opts: {
     const xInset = insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
 
-    const xExpr = escapeFfmpegExprCommas(`min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`)
+    // If text_w exceeds w, avoid negative x (which would show only the *tail* of the line).
+    // Instead, left-align to the inset.
+    const xExpr = escapeFfmpegExprCommas(`max(w*${xInset.toFixed(4)},min((w-text_w)/2,w-text_w-w*${xInset.toFixed(4)}))`)
     const yExpr =
       pos === 'bottom'
         ? `h-text_h-h*${yInset.toFixed(4)}`
@@ -413,7 +415,7 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
   const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
 
   const renderOne = async (frame: { w: number; h: number }, outPngPath: string) => {
-    const xExpr = escapeFfmpegExprCommas(`min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`)
+    const xExpr = escapeFfmpegExprCommas(`max(w*${xInset.toFixed(4)},min((w-text_w)/2,w-text_w-w*${xInset.toFixed(4)}))`)
     const yExpr =
       pos === 'bottom'
         ? `h-text_h-h*${yInset.toFixed(4)}`
