@@ -2,7 +2,7 @@ import { CreateJobCommand } from '@aws-sdk/client-mediaconvert'
 import { getMediaConvertClient } from '../aws/mediaconvert'
 import { getPool } from '../db'
 import { applyHqTuning, enforceQvbr, getFirstHlsDestinationPrefix, getFirstCmafDestinationPrefix, loadProfileJson, transformSettings } from '../jobs'
-import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MC_WATERMARK_POSTERS, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_JOBS_ENABLED, MEDIA_VIDEO_HIGHPASS_ENABLED, MEDIA_VIDEO_HIGHPASS_HZ, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
+import { ACCELERATION_MODE, AWS_REGION, MC_PRIORITY, MC_QUEUE_ARN, MC_ROLE_ARN, MC_WATERMARK_POSTERS, MEDIA_CONVERT_NORMALIZE_AUDIO, MEDIA_FFMPEG_COMPOSITE_ENABLED, MEDIA_JOBS_ENABLED, MEDIA_VIDEO_HIGHPASS_ENABLED, MEDIA_VIDEO_HIGHPASS_HZ, OUTPUT_BUCKET, OUTPUT_PREFIX, UPLOAD_BUCKET } from '../config'
 import { writeRequestLog } from '../utils/requestLog'
 import { ulid as genUlid } from '../utils/ulid'
 import { DomainError } from '../core/errors'
@@ -173,28 +173,30 @@ export async function startMediaConvertForExistingProduction(opts: {
     }
   } catch {}
 
-  const lowerThirdApplied = await applyLowerThirdImageIfConfigured(settings, {
-    config: opts.configPayload,
-    videoDurationSeconds: durationSeconds,
-  })
-  if (!lowerThirdApplied) {
-    await applyLowerThirdIfConfigured(settings, {
+  if (!MEDIA_FFMPEG_COMPOSITE_ENABLED) {
+    const lowerThirdApplied = await applyLowerThirdImageIfConfigured(settings, {
       config: opts.configPayload,
       videoDurationSeconds: durationSeconds,
-      dateYmd: createdDate,
-      productionUlid: opts.productionUlid,
+    })
+    if (!lowerThirdApplied) {
+      await applyLowerThirdIfConfigured(settings, {
+        config: opts.configPayload,
+        videoDurationSeconds: durationSeconds,
+        dateYmd: createdDate,
+        productionUlid: opts.productionUlid,
+      })
+    }
+
+    await applyLogoWatermarkIfConfigured(settings, {
+      config: opts.configPayload,
+      videoDurationSeconds: durationSeconds,
+    })
+
+    await applyScreenTitleOverlayIfConfigured(settings, {
+      config: opts.configPayload,
+      videoDurationSeconds: durationSeconds,
     })
   }
-
-  await applyLogoWatermarkIfConfigured(settings, {
-    config: opts.configPayload,
-    videoDurationSeconds: durationSeconds,
-  })
-
-  await applyScreenTitleOverlayIfConfigured(settings, {
-    config: opts.configPayload,
-    videoDurationSeconds: durationSeconds,
-  })
 
   if (!opts.skipInlineAudioMux) {
     await applyMusicReplacementIfConfigured(settings, {
@@ -272,6 +274,8 @@ export async function startProductionRender(options: RenderOptions) {
   }
   const prodUlid = genUlid()
   const musicUploadId = cfgObj && cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
+  const logoUploadId = cfgObj && cfgObj.logoUploadId != null ? Number(cfgObj.logoUploadId) : null
+  const lowerThirdUploadId = cfgObj && cfgObj.lowerThirdUploadId != null ? Number(cfgObj.lowerThirdUploadId) : null
   const screenTitleTextRaw = cfgObj && (cfgObj as any).screenTitleText != null ? String((cfgObj as any).screenTitleText) : ''
   const screenTitleText = String(screenTitleTextRaw || '').replace(/\r\n/g, '\n').trim()
   const screenTitlePresetSnapshot =
@@ -281,6 +285,14 @@ export async function startProductionRender(options: RenderOptions) {
   const screenTitleForJob =
     screenTitleText && screenTitlePresetSnapshot
       ? { text: screenTitleText, preset: screenTitlePresetSnapshot }
+      : null
+  const logoConfigSnapshot =
+    cfgObj && (cfgObj as any).logoConfigSnapshot && typeof (cfgObj as any).logoConfigSnapshot === 'object'
+      ? (cfgObj as any).logoConfigSnapshot
+      : null
+  const lowerThirdImageConfigSnapshot =
+    cfgObj && (cfgObj as any).lowerThirdConfigSnapshot && typeof (cfgObj as any).lowerThirdConfigSnapshot === 'object'
+      ? (cfgObj as any).lowerThirdConfigSnapshot
       : null
   const introRaw = cfgObj && (cfgObj as any).intro != null ? (cfgObj as any).intro : null
   let introSeconds = 0
@@ -333,9 +345,74 @@ export async function startProductionRender(options: RenderOptions) {
     }
   }
   const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
-  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null || screenTitleForJob != null))
+  const wantsLogo = Boolean(
+    MEDIA_FFMPEG_COMPOSITE_ENABLED &&
+      logoUploadId &&
+      Number.isFinite(logoUploadId) &&
+      logoUploadId > 0 &&
+      logoConfigSnapshot
+  )
+  const wantsLowerThirdImage = Boolean(
+    MEDIA_FFMPEG_COMPOSITE_ENABLED &&
+      lowerThirdUploadId &&
+      Number.isFinite(lowerThirdUploadId) &&
+      lowerThirdUploadId > 0 &&
+      lowerThirdImageConfigSnapshot
+  )
+  const needsMediaJob = Boolean(
+    MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage)
+  )
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
+
+  let logoForJob: any = null
+  let lowerThirdImageForJob: any = null
+  if (needsMediaJob && (wantsLogo || wantsLowerThirdImage)) {
+    if (wantsLogo) {
+      const [rows] = await db.query(
+        `SELECT id, kind, status, s3_bucket, s3_key, width, height
+           FROM uploads
+          WHERE id = ?
+          LIMIT 1`,
+        [logoUploadId]
+      )
+      const r = (rows as any[])[0]
+      if (!r) throw new DomainError('logo_upload_not_found', 'logo_upload_not_found', 404)
+      const kind = String(r.kind || '').toLowerCase()
+      if (kind !== 'logo') throw new DomainError('invalid_logo_upload_kind', 'invalid_logo_upload_kind', 400)
+      const st = String(r.status || '').toLowerCase()
+      if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_logo_upload_state', 'invalid_logo_upload_state', 422)
+      logoForJob = {
+        image: { bucket: String(r.s3_bucket), key: String(r.s3_key) },
+        width: Number(r.width || 0),
+        height: Number(r.height || 0),
+        config: logoConfigSnapshot,
+      }
+    }
+    if (wantsLowerThirdImage) {
+      const [rows] = await db.query(
+        `SELECT id, kind, image_role, status, s3_bucket, s3_key, width, height
+           FROM uploads
+          WHERE id = ?
+          LIMIT 1`,
+        [lowerThirdUploadId]
+      )
+      const r = (rows as any[])[0]
+      if (!r) throw new DomainError('lower_third_upload_not_found', 'lower_third_upload_not_found', 404)
+      const kind = String(r.kind || '').toLowerCase()
+      if (kind !== 'image') throw new DomainError('invalid_lower_third_upload_kind', 'invalid_lower_third_upload_kind', 400)
+      const role = String(r.image_role || '').toLowerCase()
+      if (role !== 'lower_third') throw new DomainError('invalid_lower_third_image_role', 'invalid_lower_third_image_role', 400)
+      const st = String(r.status || '').toLowerCase()
+      if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_lower_third_upload_state', 'invalid_lower_third_upload_state', 422)
+      lowerThirdImageForJob = {
+        image: { bucket: String(r.s3_bucket), key: String(r.s3_key) },
+        width: Number(r.width || 0),
+        height: Number(r.height || 0),
+        config: lowerThirdImageConfigSnapshot,
+      }
+    }
+  }
   if (needsMediaJob && hasMusic) {
     const [rows] = await db.query(
       `SELECT id, kind, status, s3_bucket, s3_key, content_type
@@ -389,6 +466,8 @@ export async function startProductionRender(options: RenderOptions) {
       video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
       music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
       screenTitle: screenTitleForJob,
+      logo: logoForJob,
+      lowerThirdImage: lowerThirdImageForJob,
       intro: introForJob,
       introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
       mode: mode === 'replace' ? 'replace' : 'mix',
@@ -421,7 +500,7 @@ export async function startProductionRender(options: RenderOptions) {
       const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
       return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
     }
-    if (introForJob != null || screenTitleForJob != null) {
+    if (introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage) {
       const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
       const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
       const videoDurationSeconds =
@@ -438,6 +517,8 @@ export async function startProductionRender(options: RenderOptions) {
         videoDurationSeconds,
         video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
         screenTitle: screenTitleForJob,
+        logo: logoForJob,
+        lowerThirdImage: lowerThirdImageForJob,
         intro: introForJob,
         introSeconds: introForJob?.kind === 'freeze_first_frame' ? introSeconds : 0,
         outputBucket: UPLOAD_BUCKET,

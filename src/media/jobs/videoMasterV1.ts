@@ -1,7 +1,11 @@
 import { UPLOAD_BUCKET } from '../../config'
 import type { VideoMasterV1Input } from '../../features/media-jobs/types'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
-import { renderScreenTitleOverlayPngsToS3 } from '../../services/ffmpeg/audioPipeline'
+import { burnScreenTitleIntoMp4, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
+import { burnPngOverlaysIntoMp4, downloadOverlayPngToFile, probeVideoDisplayDimensions, withTempDir } from '../../services/ffmpeg/visualPipeline'
+import { randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
 
 export async function runVideoMasterV1Job(
   input: VideoMasterV1Input,
@@ -64,16 +68,108 @@ export async function runVideoMasterV1Job(
     out = { bucket: masteredVideoPtr.bucket, key: masteredVideoPtr.key, s3Url: `s3://${masteredVideoPtr.bucket}/${masteredVideoPtr.key}` }
   }
 
-  const screenTitleOverlays =
-    input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
-      ? await renderScreenTitleOverlayPngsToS3({
-          uploadBucket,
-          dateYmd,
-          productionUlid,
-          screenTitle: input.screenTitle as any,
+  const hasLowerThird = Boolean(input.lowerThirdImage && input.lowerThirdImage.image && input.lowerThirdImage.image.bucket && input.lowerThirdImage.image.key)
+  const hasLogo = Boolean(input.logo && input.logo.image && input.logo.image.bucket && input.logo.image.key)
+  const hasScreenTitle = Boolean(input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset)
+
+  if (hasLowerThird || hasLogo || hasScreenTitle) {
+    const folder = ymdToFolder(dateYmd)
+    const key = `video-master/${folder}/${productionUlid}/${randomUUID()}/${originalLeaf}`
+
+    out = await withTempDir('bacs-video-master-visual-', async (tmpDir) => {
+      const inPath = path.join(tmpDir, 'in.mp4')
+      const afterOverlays = path.join(tmpDir, 'overlays.mp4')
+      const afterTitle = path.join(tmpDir, 'title.mp4')
+      const lowerPath = path.join(tmpDir, 'lower.png')
+      const logoPath = path.join(tmpDir, 'logo.png')
+
+      await downloadS3ObjectToFile(masteredVideoPtr.bucket, masteredVideoPtr.key, inPath)
+      const dims = await probeVideoDisplayDimensions(inPath)
+
+      const overlays: any[] = []
+      if (hasLowerThird) {
+        await downloadOverlayPngToFile((input.lowerThirdImage as any).image, lowerPath)
+        const imgW = Number((input.lowerThirdImage as any).width || 0)
+        const imgH = Number((input.lowerThirdImage as any).height || 0)
+        const snap = (input.lowerThirdImage as any).config || {}
+        const sizeMode = String(snap.sizeMode || 'pct').toLowerCase() === 'match_image' ? 'match_image' : 'pct'
+        const baselineWidth = Number(snap.baselineWidth) === 1920 ? 1920 : 1080
+        const pctFromBaseline = imgW > 0 ? (imgW / baselineWidth) * 100 : null
+        const pctNoUpscale = imgW > 0 ? (imgW / dims.width) * 100 : null
+        const pctUsed =
+          sizeMode === 'match_image' && pctFromBaseline != null && pctNoUpscale != null
+            ? Math.min(pctFromBaseline, pctNoUpscale, 100)
+            : Number(snap.sizePctWidth || 82)
+        overlays.push({
+          pngPath: lowerPath,
+          imgW,
+          imgH,
+          cfg: {
+            position: 'bottom_center',
+            sizePctWidth: clampFloorPct(pctUsed),
+            opacityPct: snap.opacityPct != null ? Number(snap.opacityPct) : 100,
+            timingRule: String(snap.timingRule || 'first_only').toLowerCase() === 'entire' ? 'entire' : 'first_only',
+            timingSeconds: snap.timingSeconds != null ? Number(snap.timingSeconds) : 10,
+            fade: snap.fade != null ? String(snap.fade) : 'none',
+            insetXPreset: snap.insetXPreset ?? null,
+            insetYPreset: snap.insetYPreset ?? 'medium',
+          },
+        })
+      }
+
+      if (hasLogo) {
+        await downloadOverlayPngToFile((input.logo as any).image, logoPath)
+        const imgW = Number((input.logo as any).width || 0)
+        const imgH = Number((input.logo as any).height || 0)
+        const snap = (input.logo as any).config || {}
+        overlays.push({
+          pngPath: logoPath,
+          imgW,
+          imgH,
+          cfg: {
+            position: snap.position != null ? String(snap.position) : 'bottom_right',
+            sizePctWidth: snap.sizePctWidth != null ? Number(snap.sizePctWidth) : 15,
+            opacityPct: snap.opacityPct != null ? Number(snap.opacityPct) : 35,
+            timingRule: snap.timingRule != null ? String(snap.timingRule) : 'entire',
+            timingSeconds: snap.timingSeconds != null ? Number(snap.timingSeconds) : null,
+            fade: snap.fade != null ? String(snap.fade) : 'none',
+            insetXPreset: snap.insetXPreset ?? null,
+            insetYPreset: snap.insetYPreset ?? null,
+          },
+        })
+      }
+
+      if (overlays.length) {
+        await burnPngOverlaysIntoMp4({
+          inPath,
+          outPath: afterOverlays,
+          videoDurationSeconds: durationSeconds,
+          overlays,
           logPaths,
         })
-      : null
+      } else {
+        fs.copyFileSync(inPath, afterOverlays)
+      }
+
+      const finalPath = hasScreenTitle
+        ? (await (async () => {
+            await burnScreenTitleIntoMp4({
+              inPath: afterOverlays,
+              outPath: afterTitle,
+              screenTitle: input.screenTitle as any,
+              videoDurationSeconds: durationSeconds,
+              logPaths,
+            })
+            return afterTitle
+          })())
+        : afterOverlays
+
+      await uploadFileToS3(uploadBucket, key, finalPath, 'video/mp4')
+      return { bucket: uploadBucket, key, s3Url: `s3://${uploadBucket}/${key}` }
+    })
+
+    masteredVideoPtr = { bucket: out.bucket, key: out.key }
+  }
 
   const introMeta = intro && intro.kind
     ? (String(intro.kind) === 'title_image'
@@ -81,5 +177,11 @@ export async function runVideoMasterV1Job(
         : { kind: 'freeze_first_frame', seconds: Math.round(Number((intro as any).seconds || legacyIntroSeconds || 0)) })
     : null
 
-  return { output: out, intro: introMeta, screenTitleOverlays }
+  return { output: out, intro: introMeta }
+}
+
+function clampFloorPct(n: any): number {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return 1
+  return Math.max(1, Math.min(100, Math.floor(v)))
 }

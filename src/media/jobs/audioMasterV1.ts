@@ -1,8 +1,11 @@
 import { UPLOAD_BUCKET } from '../../config'
 import type { AudioMasterV1Input } from '../../features/media-jobs/types'
-import { createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, renderScreenTitleOverlayPngsToS3 } from '../../services/ffmpeg/audioPipeline'
+import { burnScreenTitleIntoMp4, createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
+import { burnPngOverlaysIntoMp4, downloadOverlayPngToFile, probeVideoDisplayDimensions, withTempDir } from '../../services/ffmpeg/visualPipeline'
+import { randomUUID } from 'crypto'
 import fs from 'fs'
+import path from 'path'
 
 export async function runAudioMasterV1Job(
   input: AudioMasterV1Input,
@@ -108,17 +111,19 @@ export async function runAudioMasterV1Job(
         logPaths,
       })
       appendLog(`mix:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-      const screenTitleOverlays =
-        input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
-          ? await renderScreenTitleOverlayPngsToS3({
-              uploadBucket,
-              dateYmd,
-              productionUlid,
-              screenTitle: input.screenTitle as any,
-              logPaths,
-            })
-          : null
-      return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs }, screenTitleOverlays }
+      const final = await maybeApplyVisualOverlays({
+        uploadBucket,
+        dateYmd,
+        productionUlid,
+        originalLeaf,
+        masteredS3Url: out.s3Url,
+        videoDurationSeconds,
+        logo: (input as any).logo,
+        lowerThirdImage: (input as any).lowerThirdImage,
+        screenTitle: input.screenTitle ?? null,
+        logPaths,
+      })
+      return { output: final || out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
     } catch {
       // fall back to replace
       appendLog(`mix:failed falling back to replace`)
@@ -145,15 +150,150 @@ export async function runAudioMasterV1Job(
     logPaths,
   })
   appendLog(`replace:done ms=${Date.now() - t0} s3Url=${out.s3Url}`)
-  const screenTitleOverlays =
-    input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset
-      ? await renderScreenTitleOverlayPngsToS3({
-          uploadBucket,
-          dateYmd,
-          productionUlid,
-          screenTitle: input.screenTitle as any,
-          logPaths,
-        })
-      : null
-  return { output: out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs }, screenTitleOverlays }
+  const final = await maybeApplyVisualOverlays({
+    uploadBucket,
+    dateYmd,
+    productionUlid,
+    originalLeaf,
+    masteredS3Url: out.s3Url,
+    videoDurationSeconds,
+    logo: (input as any).logo,
+    lowerThirdImage: (input as any).lowerThirdImage,
+    screenTitle: input.screenTitle ?? null,
+    logPaths,
+  })
+  return { output: final || out, intro: intro && intro.kind ? intro : null, normalize: { enabled: normalizeAudio, targetLkfs: normalizeTargetLkfs } }
+}
+
+async function maybeApplyVisualOverlays(opts: {
+  uploadBucket: string
+  dateYmd: string
+  productionUlid: string
+  originalLeaf: string
+  masteredS3Url: string
+  videoDurationSeconds: number | null
+  logo: any
+  lowerThirdImage: any
+  screenTitle: any
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<{ bucket: string; key: string; s3Url: string } | null> {
+  const hasLowerThird = Boolean(opts.lowerThirdImage && opts.lowerThirdImage.image && opts.lowerThirdImage.image.bucket && opts.lowerThirdImage.image.key)
+  const hasLogo = Boolean(opts.logo && opts.logo.image && opts.logo.image.bucket && opts.logo.image.key)
+  const hasScreenTitle = Boolean(opts.screenTitle && opts.screenTitle.text && opts.screenTitle.preset)
+  if (!hasLowerThird && !hasLogo && !hasScreenTitle) return null
+
+  const s3 = masteredS3UrlToPtr(opts.masteredS3Url)
+  if (!s3) return null
+
+  return await withTempDir('bacs-audio-master-visual-', async (tmpDir) => {
+    const inPath = path.join(tmpDir, 'in.mp4')
+    const afterOverlays = path.join(tmpDir, 'overlays.mp4')
+    const afterTitle = path.join(tmpDir, 'title.mp4')
+    const lowerPath = path.join(tmpDir, 'lower.png')
+    const logoPath = path.join(tmpDir, 'logo.png')
+
+    await downloadS3ObjectToFile(s3.bucket, s3.key, inPath)
+    const dims = await probeVideoDisplayDimensions(inPath)
+
+    const overlays: any[] = []
+    if (hasLowerThird) {
+      await downloadOverlayPngToFile(opts.lowerThirdImage.image, lowerPath)
+      const imgW = Number(opts.lowerThirdImage.width || 0)
+      const imgH = Number(opts.lowerThirdImage.height || 0)
+      const snap = opts.lowerThirdImage.config || {}
+      const sizeMode = String(snap.sizeMode || 'pct').toLowerCase() === 'match_image' ? 'match_image' : 'pct'
+      const baselineWidth = Number(snap.baselineWidth) === 1920 ? 1920 : 1080
+      const pctFromBaseline = imgW > 0 ? (imgW / baselineWidth) * 100 : null
+      const pctNoUpscale = imgW > 0 ? (imgW / dims.width) * 100 : null
+      const pctUsed =
+        sizeMode === 'match_image' && pctFromBaseline != null && pctNoUpscale != null
+          ? Math.min(pctFromBaseline, pctNoUpscale, 100)
+          : Number(snap.sizePctWidth || 82)
+      overlays.push({
+        pngPath: lowerPath,
+        imgW,
+        imgH,
+        cfg: {
+          position: 'bottom_center',
+          sizePctWidth: clampFloorPct(pctUsed),
+          opacityPct: snap.opacityPct != null ? Number(snap.opacityPct) : 100,
+          timingRule: String(snap.timingRule || 'first_only').toLowerCase() === 'entire' ? 'entire' : 'first_only',
+          timingSeconds: snap.timingSeconds != null ? Number(snap.timingSeconds) : 10,
+          fade: snap.fade != null ? String(snap.fade) : 'none',
+          insetXPreset: snap.insetXPreset ?? null,
+          insetYPreset: snap.insetYPreset ?? 'medium',
+        },
+      })
+    }
+
+    if (hasLogo) {
+      await downloadOverlayPngToFile(opts.logo.image, logoPath)
+      const imgW = Number(opts.logo.width || 0)
+      const imgH = Number(opts.logo.height || 0)
+      const snap = opts.logo.config || {}
+      overlays.push({
+        pngPath: logoPath,
+        imgW,
+        imgH,
+        cfg: {
+          position: snap.position != null ? String(snap.position) : 'bottom_right',
+          sizePctWidth: snap.sizePctWidth != null ? Number(snap.sizePctWidth) : 15,
+          opacityPct: snap.opacityPct != null ? Number(snap.opacityPct) : 35,
+          timingRule: snap.timingRule != null ? String(snap.timingRule) : 'entire',
+          timingSeconds: snap.timingSeconds != null ? Number(snap.timingSeconds) : null,
+          fade: snap.fade != null ? String(snap.fade) : 'none',
+          insetXPreset: snap.insetXPreset ?? null,
+          insetYPreset: snap.insetYPreset ?? null,
+        },
+      })
+    }
+
+    if (overlays.length) {
+      await burnPngOverlaysIntoMp4({
+        inPath,
+        outPath: afterOverlays,
+        videoDurationSeconds: opts.videoDurationSeconds,
+        overlays,
+        logPaths: opts.logPaths,
+      })
+    } else {
+      fs.copyFileSync(inPath, afterOverlays)
+    }
+
+    const finalPath = hasScreenTitle
+      ? (await (async () => {
+          await burnScreenTitleIntoMp4({
+            inPath: afterOverlays,
+            outPath: afterTitle,
+            screenTitle: opts.screenTitle,
+            videoDurationSeconds: opts.videoDurationSeconds,
+            logPaths: opts.logPaths,
+          })
+          return afterTitle
+        })())
+      : afterOverlays
+
+    const folder = ymdToFolder(opts.dateYmd)
+    const key = `mastered/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
+    await uploadFileToS3(opts.uploadBucket, key, finalPath, 'video/mp4')
+    return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
+  })
+}
+
+function masteredS3UrlToPtr(url: string): { bucket: string; key: string } | null {
+  const u = String(url || '')
+  if (!u.startsWith('s3://')) return null
+  const rest = u.slice('s3://'.length)
+  const idx = rest.indexOf('/')
+  if (idx <= 0) return null
+  const bucket = rest.slice(0, idx)
+  const key = rest.slice(idx + 1)
+  if (!bucket || !key) return null
+  return { bucket, key }
+}
+
+function clampFloorPct(n: any): number {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return 1
+  return Math.max(1, Math.min(100, Math.floor(v)))
 }

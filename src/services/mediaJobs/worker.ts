@@ -78,9 +78,6 @@ async function runOne(job: any, attempt: any, workerId: string) {
       if (!prod) throw new Error('production_not_found')
       const cfg = typeof prod.config === 'string' ? JSON.parse(prod.config) : (prod.config || {})
       const cfgForMc = { ...cfg }
-      if (result && (result as any).screenTitleOverlays) {
-        ;(cfgForMc as any).screenTitleOverlays = (result as any).screenTitleOverlays
-      }
       const [upRows] = await pool.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [Number(input.uploadId)])
       const upload = (upRows as any[])[0]
       if (!upload) throw new Error('upload_not_found')
@@ -124,9 +121,6 @@ async function runOne(job: any, attempt: any, workerId: string) {
       if (!prod) throw new Error('production_not_found')
       const cfg = typeof prod.config === 'string' ? JSON.parse(prod.config) : (prod.config || {})
       const cfgForMc = { ...cfg }
-      if (result && (result as any).screenTitleOverlays) {
-        ;(cfgForMc as any).screenTitleOverlays = (result as any).screenTitleOverlays
-      }
       const [upRows] = await pool.query(`SELECT * FROM uploads WHERE id = ? LIMIT 1`, [Number(input.uploadId)])
       const upload = (upRows as any[])[0]
       if (!upload) throw new Error('upload_not_found')

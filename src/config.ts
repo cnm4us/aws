@@ -37,6 +37,10 @@ export const MEDIA_JOBS_STALE_LOCK_MINUTES = Number(process.env.MEDIA_JOBS_STALE
 export const MEDIA_JOBS_LOGS_BUCKET = process.env.MEDIA_JOBS_LOGS_BUCKET || UPLOAD_BUCKET;
 export const MEDIA_JOBS_LOGS_PREFIX = (process.env.MEDIA_JOBS_LOGS_PREFIX ?? 'media-jobs/logs/').replace(/^\/+/, '').replace(/\/+/g, '/');
 
+// When enabled (default: on when media-jobs are enabled), ffmpeg is the single source of truth for
+// all rendering/compositing (audio + overlays), and MediaConvert is used only for packaging.
+export const MEDIA_FFMPEG_COMPOSITE_ENABLED = envBool('MEDIA_FFMPEG_COMPOSITE_ENABLED', MEDIA_JOBS_ENABLED);
+
 // Optional audio cleanup: gentle high-pass on the video's original audio only (helps wind/rumble).
 export const MEDIA_VIDEO_HIGHPASS_ENABLED = envBool('MEDIA_VIDEO_HIGHPASS_ENABLED', false);
 export const MEDIA_VIDEO_HIGHPASS_HZ = (() => {

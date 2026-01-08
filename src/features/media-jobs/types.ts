@@ -40,6 +40,40 @@ export type MediaJobAttemptRow = {
 
 export type S3Pointer = { bucket: string; key: string }
 
+export type LogoOverlayV1 = {
+  image: S3Pointer
+  width: number
+  height: number
+  config: {
+    position?: any
+    sizePctWidth?: any
+    opacityPct?: any
+    timingRule?: any
+    timingSeconds?: any
+    fade?: any
+    insetXPreset?: any
+    insetYPreset?: any
+  }
+}
+
+export type LowerThirdImageOverlayV1 = {
+  image: S3Pointer
+  width: number
+  height: number
+  config: {
+    sizeMode?: any
+    baselineWidth?: any
+    position?: any
+    sizePctWidth?: any
+    opacityPct?: any
+    timingRule?: any
+    timingSeconds?: any
+    fade?: any
+    insetXPreset?: any
+    insetYPreset?: any
+  }
+}
+
 export type ScreenTitlePresetSnapshotV1 = {
   id?: number
   name?: string
@@ -79,6 +113,8 @@ export type AudioMasterV1Input = {
   video: S3Pointer
   music: S3Pointer
   screenTitle?: ScreenTitleV1 | null
+  logo?: LogoOverlayV1 | null
+  lowerThirdImage?: LowerThirdImageOverlayV1 | null
   intro?: IntroV1 | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number | null
@@ -109,6 +145,8 @@ export type VideoMasterV1Input = {
   videoDurationSeconds: number | null
   video: S3Pointer
   screenTitle?: ScreenTitleV1 | null
+  logo?: LogoOverlayV1 | null
+  lowerThirdImage?: LowerThirdImageOverlayV1 | null
   intro?: IntroV1 | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number
