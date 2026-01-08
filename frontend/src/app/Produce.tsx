@@ -101,6 +101,24 @@ type LowerThirdConfig = {
   archivedAt?: string | null
 }
 
+type ScreenTitlePreset = {
+  id: number
+  name: string
+  description?: string | null
+  style: 'pill' | 'outline' | 'strip'
+  fontKey: string
+  position: 'top_left' | 'top_center' | 'top_right'
+  maxWidthPct: number
+  insetXPreset?: InsetPreset | null
+  insetYPreset?: InsetPreset | null
+  timingRule: 'entire' | 'first_only'
+  timingSeconds: number | null
+  fade: 'none' | 'in' | 'out' | 'in_out'
+  createdAt?: string
+  updatedAt?: string
+  archivedAt?: string | null
+}
+
 function parseUploadId(): number | null {
   const params = new URLSearchParams(window.location.search)
   const raw = params.get('upload')
@@ -215,6 +233,18 @@ function parseLowerThirdUploadId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
     const raw = params.get('lowerThirdUploadId')
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+function parseScreenTitlePresetId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('screenTitlePresetId')
     if (!raw) return null
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : null
@@ -422,6 +452,7 @@ export default function ProducePage() {
   const [logoConfigs, setLogoConfigs] = useState<LogoConfig[]>([])
   const [audioConfigs, setAudioConfigs] = useState<AudioConfig[]>([])
   const [lowerThirdConfigs, setLowerThirdConfigs] = useState<LowerThirdConfig[]>([])
+  const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePreset[]>([])
   const [assetsLoading, setAssetsLoading] = useState(false)
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(() => parseLogoUploadId())
@@ -432,6 +463,15 @@ export default function ProducePage() {
   const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
   const [selectedLowerThirdUploadId, setSelectedLowerThirdUploadId] = useState<number | null>(() => parseLowerThirdUploadId())
   const [selectedLowerThirdConfigId, setSelectedLowerThirdConfigId] = useState<number | null>(() => parseLowerThirdConfigId())
+  const [selectedScreenTitlePresetId, setSelectedScreenTitlePresetId] = useState<number | null>(() => parseScreenTitlePresetId())
+  const [screenTitleText, setScreenTitleText] = useState<string>(() => {
+    if (!uploadId) return ''
+    try {
+      return sessionStorage.getItem(`produce:screenTitleText:${uploadId}`) || ''
+    } catch {
+      return ''
+    }
+  })
   const [introSeconds, setIntroSeconds] = useState<number | null>(() => parseIntroSeconds())
   const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThirdImage' | 'lowerThirdConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
@@ -482,7 +522,20 @@ export default function ProducePage() {
   useEffect(() => {
     setUploadPreviewMode('thumb')
     setUploadThumbRetryNonce(0)
+    try {
+      const stored = uploadId ? sessionStorage.getItem(`produce:screenTitleText:${uploadId}`) : null
+      setScreenTitleText(stored || '')
+    } catch {
+      setScreenTitleText('')
+    }
   }, [uploadId])
+
+  useEffect(() => {
+    if (!uploadId) return
+    try {
+      sessionStorage.setItem(`produce:screenTitleText:${uploadId}`, screenTitleText || '')
+    } catch {}
+  }, [uploadId, screenTitleText])
 
   useEffect(() => {
     const applyFromLocation = () => {
@@ -583,6 +636,7 @@ export default function ProducePage() {
       setSelectedAudioConfigId(parseAudioConfigId())
       setSelectedLowerThirdUploadId(parseLowerThirdUploadId())
       setSelectedLowerThirdConfigId(parseLowerThirdConfigId())
+      setSelectedScreenTitlePresetId(parseScreenTitlePresetId())
     }
     window.addEventListener('popstate', applyFromLocation)
     return () => window.removeEventListener('popstate', applyFromLocation)
@@ -604,7 +658,7 @@ export default function ProducePage() {
 	        const lowerThirdImageParams = new URLSearchParams(base)
 	        lowerThirdImageParams.set('kind', 'image')
 	        lowerThirdImageParams.set('image_role', 'lower_third')
-	        const [logoRes, titleRes, lowerThirdImageRes, audioRes, cfgRes, audioCfgRes, ltCfgRes] = await Promise.all([
+	        const [logoRes, titleRes, lowerThirdImageRes, audioRes, cfgRes, audioCfgRes, ltCfgRes, stRes] = await Promise.all([
 	          fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
 	          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
 	          fetch(`/api/uploads?${lowerThirdImageParams.toString()}`, { credentials: 'same-origin' }),
@@ -612,6 +666,7 @@ export default function ProducePage() {
 	          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
 	          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
 	          fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' }),
+	          fetch(`/api/screen-title-presets`, { credentials: 'same-origin' }),
 	        ])
 	        const logoJson = await logoRes.json().catch(() => [])
 	        const titleJson = await titleRes.json().catch(() => [])
@@ -620,6 +675,7 @@ export default function ProducePage() {
 	        const cfgJson = await cfgRes.json().catch(() => [])
 	        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
 	        const ltCfgJson = await ltCfgRes.json().catch(() => ({}))
+	        const stJson = await stRes.json().catch(() => [])
 	        if (!logoRes.ok) throw new Error('Failed to load logos')
 	        if (!titleRes.ok) throw new Error('Failed to load title pages')
 	        if (!lowerThirdImageRes.ok) throw new Error('Failed to load lower third images')
@@ -627,6 +683,7 @@ export default function ProducePage() {
 	        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
 	        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
 	        if (!ltCfgRes.ok) throw new Error('Failed to load lower third configs')
+	        if (!stRes.ok) throw new Error('Failed to load screen title presets')
 	        if (cancelled) return
 	        setLogos(Array.isArray(logoJson) ? logoJson : [])
 	        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
@@ -646,6 +703,7 @@ export default function ProducePage() {
 	            ? (ltCfgJson as any[])
 	            : []
 	        setLowerThirdConfigs(ltCfgItems as any)
+	        setScreenTitlePresets(Array.isArray(stJson) ? (stJson as any) : [])
       } catch (e: any) {
         if (!cancelled) setAssetsError(e?.message || 'Failed to load assets')
       } finally {
@@ -748,6 +806,11 @@ export default function ProducePage() {
     if (selectedLowerThirdUploadId == null) return null
     return lowerThirdImages.find((t) => t.id === selectedLowerThirdUploadId) || null
   }, [lowerThirdImages, selectedLowerThirdUploadId])
+
+  const selectedScreenTitlePreset = useMemo(() => {
+    if (selectedScreenTitlePresetId == null) return null
+    return screenTitlePresets.find((p) => p.id === selectedScreenTitlePresetId) || null
+  }, [screenTitlePresets, selectedScreenTitlePresetId])
 
   const sortedLowerThirdImages = useMemo(() => {
     const items = Array.isArray(lowerThirdImages) ? [...lowerThirdImages] : []
@@ -1151,6 +1214,8 @@ export default function ProducePage() {
 	        logoConfigId: selectedLogoConfigId ?? null,
 	        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
 	        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
+	        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
+	        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
 	      }
 	      if (selectedTitleUploadId != null) {
 	        body.config = { intro: { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: titleHoldSeconds || 0 } }
@@ -1218,6 +1283,46 @@ export default function ProducePage() {
 	                  }}
 	                />
 
+	                {selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
+	                  <div
+	                    style={{
+	                      ...computeOverlayCss({
+	                        position: selectedScreenTitlePreset.position,
+	                        sizePctWidth: selectedScreenTitlePreset.maxWidthPct,
+	                        opacityPct: 100,
+	                        insetXPreset: selectedScreenTitlePreset.insetXPreset ?? null,
+	                        insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
+	                      }),
+	                      zIndex: 2,
+	                      padding:
+	                        selectedScreenTitlePreset.style === 'strip'
+	                          ? '10px 12px'
+	                          : selectedScreenTitlePreset.style === 'pill'
+	                            ? '8px 10px'
+	                            : '0px',
+	                      borderRadius: selectedScreenTitlePreset.style === 'pill' ? 12 : 0,
+	                      background:
+	                        selectedScreenTitlePreset.style === 'strip'
+	                          ? 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 100%)'
+	                          : selectedScreenTitlePreset.style === 'pill'
+	                            ? 'rgba(0,0,0,0.55)'
+	                            : 'transparent',
+	                      color: '#fff',
+	                      fontWeight: 850,
+	                      fontSize: 14,
+	                      lineHeight: 1.2,
+	                      whiteSpace: 'pre-wrap',
+	                      textShadow:
+	                        selectedScreenTitlePreset.style === 'outline'
+	                          ? '0 1px 2px rgba(0,0,0,0.95), 0 0 1px rgba(0,0,0,0.95)'
+	                          : '0 1px 2px rgba(0,0,0,0.75)',
+	                      pointerEvents: 'none',
+	                    }}
+	                  >
+	                    {screenTitleText}
+	                  </div>
+	                ) : null}
+
 	                {selectedLowerThirdImage ? (
 	                  <img
 	                    src={`/api/uploads/${encodeURIComponent(String(selectedLowerThirdImage.id))}/file`}
@@ -1230,7 +1335,7 @@ export default function ProducePage() {
 	                        insetXPreset: null,
 	                        insetYPreset: selectedLowerThirdConfig?.insetYPreset ?? 'medium',
 	                      }),
-	                      zIndex: 2,
+	                      zIndex: 1,
 	                      objectFit: 'contain',
 	                      maxWidth: '100%',
 	                      maxHeight: '100%',
@@ -1298,6 +1403,105 @@ export default function ProducePage() {
                   }}
                 />
 	              </label>
+
+                <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ color: '#bbb' }}>Screen Title (per production)</div>
+                    <a
+                      href="/screen-title-presets"
+                      style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}
+                    >
+                      Manage presets
+                    </a>
+                  </div>
+
+                  <select
+                    value={selectedScreenTitlePresetId == null ? '' : String(selectedScreenTitlePresetId)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const next = raw ? Number(raw) : null
+                      const id = next != null && Number.isFinite(next) && next > 0 ? next : null
+                      setSelectedScreenTitlePresetId(id)
+                      pushQueryParams({ screenTitlePresetId: id == null ? null : String(id) })
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid #2a2a2a',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">None</option>
+                    {screenTitlePresets.map((p) => (
+                      <option key={p.id} value={String(p.id)}>{p.name}</option>
+                    ))}
+                  </select>
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ color: '#777', fontSize: 13 }}>
+                      Max 140 chars • max 2 lines
+                    </div>
+                    <div style={{ color: '#777', fontSize: 13 }}>
+                      {(screenTitleText || '').length}/140
+                    </div>
+                  </div>
+
+                  <textarea
+                    value={screenTitleText}
+                    onChange={(e) => {
+                      let v = String(e.target.value || '')
+                      v = v.replace(/\r\n/g, '\n')
+                      const lines = v.split('\n')
+                      if (lines.length > 2) v = `${lines[0]}\n${lines[1]}`
+                      if (v.length > 140) v = v.slice(0, 140)
+                      setScreenTitleText(v)
+                    }}
+                    rows={2}
+                    placeholder={selectedScreenTitlePresetId ? 'Enter a short title (optional)' : 'Select a preset to enable a screen title'}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid #2a2a2a',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      resize: 'vertical',
+                      opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
+                    }}
+                  />
+
+                  {(selectedScreenTitlePresetId != null || screenTitleText.trim()) ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedScreenTitlePresetId(null)
+                          setScreenTitleText('')
+                          pushQueryParams({ screenTitlePresetId: null })
+                        }}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(212,175,55,0.65)',
+                          background: 'rgba(212,175,55,0.10)',
+                          color: '#d4af37',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {selectedScreenTitlePreset ? (
+                    <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                      Preset: <span style={{ color: '#d4af37', fontWeight: 800 }}>{selectedScreenTitlePreset.name}</span>
+                    </div>
+                  ) : null}
+                </div>
 
                 <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>

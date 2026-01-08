@@ -40,6 +40,25 @@ export type MediaJobAttemptRow = {
 
 export type S3Pointer = { bucket: string; key: string }
 
+export type ScreenTitlePresetSnapshotV1 = {
+  id?: number
+  name?: string
+  style?: 'pill' | 'outline' | 'strip'
+  fontKey?: string
+  position?: 'top_left' | 'top_center' | 'top_right'
+  maxWidthPct?: number
+  insetXPreset?: 'small' | 'medium' | 'large' | null
+  insetYPreset?: 'small' | 'medium' | 'large' | null
+  timingRule?: 'entire' | 'first_only'
+  timingSeconds?: number | null
+  fade?: 'none' | 'in' | 'out' | 'in_out'
+}
+
+export type ScreenTitleV1 = {
+  text: string
+  preset: ScreenTitlePresetSnapshotV1
+}
+
 export type IntroV1 =
   | { kind: 'freeze_first_frame'; seconds: number }
   | { kind: 'title_image'; uploadId: number; holdSeconds: number; titleImage: S3Pointer }
@@ -54,6 +73,7 @@ export type AudioMasterV1Input = {
   videoDurationSeconds: number | null
   video: S3Pointer
   music: S3Pointer
+  screenTitle?: ScreenTitleV1 | null
   intro?: IntroV1 | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number | null
@@ -83,6 +103,7 @@ export type VideoMasterV1Input = {
   originalLeaf: string
   videoDurationSeconds: number | null
   video: S3Pointer
+  screenTitle?: ScreenTitleV1 | null
   intro?: IntroV1 | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number

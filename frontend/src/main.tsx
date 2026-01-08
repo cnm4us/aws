@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadLogoConfigs, loadLowerThirds, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadLogoConfigs, loadLowerThirds, loadScreenTitlePresets, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -18,6 +18,7 @@ const PublishStoryPage = React.lazy(loadPublishStory)
 const ProducePage = React.lazy(loadProduce)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const LowerThirdsPage = React.lazy(loadLowerThirds)
+const ScreenTitlePresetsPage = React.lazy(loadScreenTitlePresets)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
@@ -204,6 +205,14 @@ if (path === '/' || path === '') {
     <Layout label="Lower Thirds">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <LowerThirdsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/screen-title-presets')) {
+  root.render(
+    <Layout label="Screen Titles">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <ScreenTitlePresetsPage />
       </Suspense>
     </Layout>
   )

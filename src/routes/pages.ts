@@ -6341,6 +6341,13 @@ pagesRouter.get('/logo-configs', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/screen-title-presets', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/screen-title-presets/', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/lower-thirds', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

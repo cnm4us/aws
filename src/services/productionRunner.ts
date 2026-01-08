@@ -267,6 +267,16 @@ export async function startProductionRender(options: RenderOptions) {
   }
   const prodUlid = genUlid()
   const musicUploadId = cfgObj && cfgObj.musicUploadId != null ? Number(cfgObj.musicUploadId) : null
+  const screenTitleTextRaw = cfgObj && (cfgObj as any).screenTitleText != null ? String((cfgObj as any).screenTitleText) : ''
+  const screenTitleText = String(screenTitleTextRaw || '').replace(/\r\n/g, '\n').trim()
+  const screenTitlePresetSnapshot =
+    cfgObj && (cfgObj as any).screenTitlePresetSnapshot && typeof (cfgObj as any).screenTitlePresetSnapshot === 'object'
+      ? (cfgObj as any).screenTitlePresetSnapshot
+      : null
+  const screenTitleForJob =
+    screenTitleText && screenTitlePresetSnapshot
+      ? { text: screenTitleText, preset: screenTitlePresetSnapshot }
+      : null
   const introRaw = cfgObj && (cfgObj as any).intro != null ? (cfgObj as any).intro : null
   let introSeconds = 0
   let introForJob: any = null
@@ -318,7 +328,7 @@ export async function startProductionRender(options: RenderOptions) {
     }
   }
   const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
-  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null))
+  const needsMediaJob = Boolean(MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null || screenTitleForJob != null))
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
   if (needsMediaJob && hasMusic) {
@@ -364,34 +374,35 @@ export async function startProductionRender(options: RenderOptions) {
         ? Number(upload.duration_seconds)
         : null
 
-	    jobInputBase = {
-	      productionUlid: prodUlid,
-	      userId: Number(userId),
-	      uploadId: Number(upload.id),
-	      dateYmd: createdDate,
-	      originalLeaf,
-	      videoDurationSeconds,
-	      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-	      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
-	      intro: introForJob,
-	      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
-	      mode: mode === 'replace' ? 'replace' : 'mix',
-	      videoGainDb,
-	      musicGainDb,
-	      duckingMode,
+    jobInputBase = {
+      productionUlid: prodUlid,
+      userId: Number(userId),
+      uploadId: Number(upload.id),
+      dateYmd: createdDate,
+      originalLeaf,
+      videoDurationSeconds,
+      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+      screenTitle: screenTitleForJob,
+      intro: introForJob,
+      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
+      mode: mode === 'replace' ? 'replace' : 'mix',
+      videoGainDb,
+      musicGainDb,
+      duckingMode,
       duckingGate,
       duckingAmountDb,
       openerCutFadeBeforeSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeBeforeSeconds == null ? null : openerCutFadeBeforeSeconds) : null,
       openerCutFadeAfterSeconds: mode === 'mix' && duckingMode === 'abrupt' ? (openerCutFadeAfterSeconds == null ? null : openerCutFadeAfterSeconds) : null,
-	      audioDurationSeconds,
-	      audioFadeEnabled,
-	      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
-	      normalizeTargetLkfs: -16,
-	      videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
-	      videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
-	      outputBucket: UPLOAD_BUCKET,
-	    }
-	  }
+      audioDurationSeconds,
+      audioFadeEnabled,
+      normalizeAudio: Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO),
+      normalizeTargetLkfs: -16,
+      videoHighpassEnabled: Boolean(MEDIA_VIDEO_HIGHPASS_ENABLED),
+      videoHighpassHz: Number(MEDIA_VIDEO_HIGHPASS_HZ),
+      outputBucket: UPLOAD_BUCKET,
+    }
+  }
 
   const [preIns] = await db.query(
     `INSERT INTO productions (upload_id, user_id, name, status, config, ulid)
@@ -405,7 +416,7 @@ export async function startProductionRender(options: RenderOptions) {
       const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
       return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
     }
-    if (introForJob != null) {
+    if (introForJob != null || screenTitleForJob != null) {
       const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
       const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
       const videoDurationSeconds =
@@ -421,8 +432,9 @@ export async function startProductionRender(options: RenderOptions) {
         originalLeaf,
         videoDurationSeconds,
         video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+        screenTitle: screenTitleForJob,
         intro: introForJob,
-        introSeconds: introForJob.kind === 'freeze_first_frame' ? introSeconds : 0,
+        introSeconds: introForJob?.kind === 'freeze_first_frame' ? introSeconds : 0,
         outputBucket: UPLOAD_BUCKET,
       })
       return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }

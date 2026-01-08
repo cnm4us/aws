@@ -216,14 +216,38 @@ export async function ensureSchema(db: DB) {
 			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS intro_sfx_ducking_amount_db SMALLINT NOT NULL DEFAULT 12`);
 			  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_audio_cfg_intro_sfx ON audio_configurations (intro_sfx_upload_id, archived_at, id)`); } catch {}
 
-			  // Plan: opener cutoff fade controls for abrupt mode (stored as ms offsets around t).
-			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_before_ms SMALLINT UNSIGNED NULL`);
-			  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
+				  // Plan: opener cutoff fade controls for abrupt mode (stored as ms offsets around t).
+				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_before_ms SMALLINT UNSIGNED NULL`);
+				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
 
-        // --- Lower thirds (feature_10) ---
-        await db.query(`
-          CREATE TABLE IF NOT EXISTS lower_third_templates (
-            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          // --- Screen titles (plan_47) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS screen_title_presets (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              owner_user_id BIGINT UNSIGNED NOT NULL,
+              name VARCHAR(120) NOT NULL,
+              description TEXT NULL,
+              style ENUM('pill','outline','strip') NOT NULL DEFAULT 'pill',
+              font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
+              position ENUM('top_left','top_center','top_right') NOT NULL DEFAULT 'top_left',
+              max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
+              inset_x_preset VARCHAR(16) NULL,
+              inset_y_preset VARCHAR(16) NULL,
+              timing_rule ENUM('entire','first_only') NOT NULL DEFAULT 'first_only',
+              timing_seconds INT UNSIGNED NULL,
+              fade ENUM('none','in','out','in_out') NOT NULL DEFAULT 'out',
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              archived_at TIMESTAMP NULL DEFAULT NULL,
+              KEY idx_screen_title_owner_archived (owner_user_id, archived_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `);
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_screen_title_archived ON screen_title_presets (archived_at, id)`); } catch {}
+
+	        // --- Lower thirds (feature_10) ---
+	        await db.query(`
+	          CREATE TABLE IF NOT EXISTS lower_third_templates (
+	            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             template_key VARCHAR(80) NOT NULL,
             version INT UNSIGNED NOT NULL,
             label VARCHAR(120) NOT NULL,

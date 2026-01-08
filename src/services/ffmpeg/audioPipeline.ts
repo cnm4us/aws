@@ -7,6 +7,21 @@ import { spawn } from 'child_process'
 import { pipeline } from 'stream/promises'
 import { s3 } from '../s3'
 
+type ScreenTitleV1 = {
+  text: string
+  preset: {
+    style?: 'pill' | 'outline' | 'strip'
+    fontKey?: string
+    position?: 'top_left' | 'top_center' | 'top_right'
+    maxWidthPct?: number
+    insetXPreset?: 'small' | 'medium' | 'large' | null
+    insetYPreset?: 'small' | 'medium' | 'large' | null
+    timingRule?: 'entire' | 'first_only'
+    timingSeconds?: number | null
+    fade?: 'none' | 'in' | 'out' | 'in_out'
+  }
+}
+
 function parsePositiveIntEnv(name: string): number | null {
   const raw = process.env[name]
   if (raw == null || String(raw).trim() === '') return null
@@ -174,6 +189,147 @@ async function detectInitialNonSilenceSeconds(
   })
 }
 
+function insetPctForPreset(preset: any): number {
+  const p = String(preset || '').toLowerCase()
+  if (p === 'small') return 0.06
+  if (p === 'large') return 0.14
+  return 0.10
+}
+
+function fontFileForKey(key: any): string {
+  const k = String(key || '').trim().toLowerCase()
+  if (k === 'dejavu_sans_bold') return '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+  return '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+}
+
+function escapeFilterValue(raw: string): string {
+  return String(raw).replace(/\\/g, '\\\\').replace(/:/g, '\\:')
+}
+
+function clampNum(n: any, min: number, max: number): number {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return min
+  return Math.min(Math.max(v, min), max)
+}
+
+function buildScreenTitleAlphaExpr(preset: any, videoDurationSeconds: number | null): { enableExpr: string; alphaExpr: string } {
+  const fade = String(preset?.fade || 'out').toLowerCase()
+  const timingRule = String(preset?.timingRule || 'first_only').toLowerCase()
+  const timingSecondsRaw = preset?.timingSeconds != null ? Number(preset.timingSeconds) : 10
+  const end =
+    timingRule === 'first_only'
+      ? clampNum(timingSecondsRaw, 0, 3600)
+      : (videoDurationSeconds != null && Number.isFinite(videoDurationSeconds) && videoDurationSeconds > 0 ? videoDurationSeconds : null)
+
+  const enableExpr = end != null ? `between(t\\,0\\,${end.toFixed(3)})` : '1'
+
+  const f = 0.5
+  const inExpr = `if(lt(t\\,${f.toFixed(3)})\\,t/${f.toFixed(3)}\\,1)`
+  const outExpr =
+    end != null
+      ? `if(lt(t\\,${(end - f).toFixed(3)})\\,1\\,if(lt(t\\,${end.toFixed(3)})\\,(${end.toFixed(3)}-t)/${f.toFixed(3)}\\,0))`
+      : '1'
+
+  const wantIn = fade === 'in' || fade === 'in_out'
+  const wantOut = fade === 'out' || fade === 'in_out'
+  const aIn = wantIn ? inExpr : '1'
+  const aOut = wantOut ? outExpr : '1'
+  const alphaExpr = fade === 'in_out'
+    ? `if(lt(${aIn}\\,${aOut})\\,${aIn}\\,${aOut})`
+    : (fade === 'in' ? aIn : fade === 'out' ? aOut : '1')
+  return { enableExpr, alphaExpr }
+}
+
+export async function burnScreenTitleIntoMp4(opts: {
+  inPath: string
+  outPath: string
+  screenTitle: ScreenTitleV1
+  videoDurationSeconds: number | null
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<void> {
+  const text = String(opts.screenTitle?.text || '').replace(/\r\n/g, '\n').trim()
+  if (!text) return
+
+  const tmpDir = path.dirname(opts.outPath)
+  const textFile = path.join(tmpDir, `screen-title-${randomUUID()}.txt`)
+  fs.writeFileSync(textFile, text, 'utf8')
+
+  try {
+    const preset = opts.screenTitle.preset || {}
+    const pos = String(preset.position || 'top_left').toLowerCase()
+    const style = String(preset.style || 'pill').toLowerCase()
+    const xInset = pos.includes('_center') ? 0 : insetPctForPreset(preset.insetXPreset)
+    const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
+
+    const xExpr =
+      pos.endsWith('_right')
+        ? `w-text_w-w*${xInset.toFixed(4)}`
+        : pos.endsWith('_center')
+          ? `(w-text_w)/2`
+          : `w*${xInset.toFixed(4)}`
+    const yExpr = `h*${yInset.toFixed(4)}`
+
+    const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
+    const textFileEsc = escapeFilterValue(textFile)
+    const { enableExpr, alphaExpr } = buildScreenTitleAlphaExpr(preset, opts.videoDurationSeconds)
+
+    const fontSizeExpr = 'h*0.045'
+    const lineSpacing = 'h*0.008'
+
+    const baseText = [
+      `drawtext=fontfile=${fontFile}`,
+      `textfile=${textFileEsc}`,
+      `x=${xExpr}`,
+      `y=${yExpr}`,
+      `fontsize=${fontSizeExpr}`,
+      `fontcolor=white`,
+      `alpha=${alphaExpr}`,
+      `line_spacing=${lineSpacing}`,
+      `enable='${enableExpr}'`,
+    ]
+
+    const extras: string[] = []
+    if (style === 'pill') {
+      extras.push('box=1', 'boxcolor=black@0.55', 'boxborderw=10', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+    } else if (style === 'outline') {
+      extras.push('borderw=3', 'bordercolor=black@0.90', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+    } else {
+      extras.push('shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+    }
+
+    const drawText = [...baseText, ...extras].join(':')
+    const vf = style === 'strip'
+      ? `drawbox=x=0:y=0:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
+      : drawText
+
+    await runFfmpeg([
+      '-i',
+      opts.inPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a?',
+      '-vf',
+      vf,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'copy',
+      '-movflags',
+      '+faststart',
+      opts.outPath,
+    ], opts.logPaths)
+  } finally {
+    try { fs.rmSync(textFile, { force: true }) } catch {}
+  }
+}
+
 export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   uploadBucket: string
   dateYmd: string
@@ -182,6 +338,7 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
   videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
+  screenTitle?: ScreenTitleV1 | null
   musicGainDb: number
   audioDurationSeconds?: number | null
   audioFadeEnabled?: boolean
@@ -279,12 +436,31 @@ export async function createMuxedMp4WithLoopedReplacementAudio(opts: {
       ], opts.logPaths)
     }
 
+    let uploadPath = outPath
+    if (opts.screenTitle) {
+      const titledPath = path.join(tmpDir, 'titled.mp4')
+      const titleDur =
+        videoDur != null && Number.isFinite(videoDur) && videoDur > 0
+          ? videoDur
+          : (opts.videoDurationSeconds != null && Number.isFinite(Number(opts.videoDurationSeconds)) && Number(opts.videoDurationSeconds) > 0
+              ? Number(opts.videoDurationSeconds)
+              : null)
+      await burnScreenTitleIntoMp4({
+        inPath: outPath,
+        outPath: titledPath,
+        screenTitle: opts.screenTitle,
+        videoDurationSeconds: titleDur,
+        logPaths: opts.logPaths,
+      })
+      uploadPath = titledPath
+    }
+
     // Preserve the original input basename so MediaConvert output names stay stable (e.g. "video.m3u8"),
     // since the app derives master/poster URLs from the upload's original key leaf.
     const folder = ymdToFolder(opts.dateYmd)
     const keyPrefix = seconds != null ? 'music-replace-clip' : 'music-replace'
     const key = `${keyPrefix}/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
-    await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')
+    await uploadFileToS3(opts.uploadBucket, key, uploadPath, 'video/mp4')
     return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
   } finally {
     try {
@@ -301,6 +477,7 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
   videoDurationSeconds?: number | null
   video: { bucket: string; key: string }
   audio: { bucket: string; key: string }
+  screenTitle?: ScreenTitleV1 | null
   videoGainDb: number
   musicGainDb: number
   audioDurationSeconds?: number | null
@@ -478,11 +655,30 @@ export async function createMuxedMp4WithLoopedMixedAudio(opts: {
     if (!useDurTrim) args.splice(args.length - 1, 0, '-shortest')
     await runFfmpeg(args, opts.logPaths)
 
+    let uploadPath = outPath
+    if (opts.screenTitle) {
+      const titledPath = path.join(tmpDir, 'titled.mp4')
+      const titleDur =
+        videoDur != null && Number.isFinite(videoDur) && videoDur > 0
+          ? videoDur
+          : (opts.videoDurationSeconds != null && Number.isFinite(Number(opts.videoDurationSeconds)) && Number(opts.videoDurationSeconds) > 0
+              ? Number(opts.videoDurationSeconds)
+              : null)
+      await burnScreenTitleIntoMp4({
+        inPath: outPath,
+        outPath: titledPath,
+        screenTitle: opts.screenTitle,
+        videoDurationSeconds: titleDur,
+        logPaths: opts.logPaths,
+      })
+      uploadPath = titledPath
+    }
+
     const folder = ymdToFolder(opts.dateYmd)
     const prefix = duckingEnabled ? (duckingMode === 'abrupt' ? 'music-mix-gate' : 'music-mix-duck') : 'music-mix'
     const keyPrefix = seconds != null ? `${prefix}-clip` : prefix
     const key = `${keyPrefix}/${folder}/${opts.productionUlid}/${randomUUID()}/${opts.originalLeaf}`
-    await uploadFileToS3(opts.uploadBucket, key, outPath, 'video/mp4')
+    await uploadFileToS3(opts.uploadBucket, key, uploadPath, 'video/mp4')
     return { bucket: opts.uploadBucket, key, s3Url: `s3://${opts.uploadBucket}/${key}` }
   } finally {
     try {

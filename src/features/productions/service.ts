@@ -10,6 +10,7 @@ import { NotFoundError, ForbiddenError, DomainError } from '../../core/errors'
 import * as logoConfigsSvc from '../logo-configs/service'
 import * as audioConfigsSvc from '../audio-configs/service'
 import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
+import * as screenTitlePresetsSvc from '../screen-title-presets/service'
 import { s3 } from '../../services/s3'
 import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
@@ -207,6 +208,8 @@ export async function create(
     audioConfigId?: number | null
     lowerThirdUploadId?: number | null
     lowerThirdConfigId?: number | null
+    screenTitlePresetId?: number | null
+    screenTitleText?: string | null
   },
   currentUserId: number
 ) {
@@ -242,6 +245,43 @@ export async function create(
   if (input.musicUploadId !== undefined) mergedConfig.musicUploadId = input.musicUploadId
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
   if (input.lowerThirdUploadId !== undefined) mergedConfig.lowerThirdUploadId = input.lowerThirdUploadId
+
+  // Screen title (Plan 47): per-production text + preset snapshot.
+  {
+    const presetIdRaw = input.screenTitlePresetId
+    const presetId = presetIdRaw != null ? Number(presetIdRaw) : null
+    const rawText = input.screenTitleText
+    let text = String(rawText ?? '').replace(/\r\n/g, '\n')
+    const lines = text.split('\n')
+    if (lines.length > 2) text = `${lines[0]}\n${lines[1]}`
+    text = text.trim()
+    if (!text) {
+      mergedConfig.screenTitlePresetId = null
+      mergedConfig.screenTitlePresetSnapshot = null
+      mergedConfig.screenTitleText = null
+    } else {
+      if (text.length > 140) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+      if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+        throw new DomainError('missing_screen_title_preset', 'missing_screen_title_preset', 400)
+      }
+      const preset = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
+      mergedConfig.screenTitlePresetId = preset.id
+      mergedConfig.screenTitlePresetSnapshot = {
+        id: preset.id,
+        name: preset.name,
+        style: (preset as any).style,
+        fontKey: (preset as any).fontKey,
+        position: (preset as any).position,
+        maxWidthPct: (preset as any).maxWidthPct,
+        insetXPreset: (preset as any).insetXPreset ?? null,
+        insetYPreset: (preset as any).insetYPreset ?? null,
+        timingRule: (preset as any).timingRule,
+        timingSeconds: (preset as any).timingSeconds ?? null,
+        fade: (preset as any).fade,
+      }
+      mergedConfig.screenTitleText = text
+    }
+  }
 
   // Production intro (Plan 37): optional freeze-first-frame intro segment.
   // Config shape:

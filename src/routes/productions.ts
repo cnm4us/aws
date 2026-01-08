@@ -16,6 +16,8 @@ const createProductionSchema = z.object({
   audioConfigId: z.union([z.number().int().positive(), z.null()]).optional(),
   lowerThirdUploadId: z.union([z.number().int().positive(), z.null()]).optional(),
   lowerThirdConfigId: z.union([z.number().int().positive(), z.null()]).optional(),
+  screenTitlePresetId: z.union([z.number().int().positive(), z.null()]).optional(),
+  screenTitleText: z.union([z.string().max(140), z.null()]).optional(),
   profile: z.string().optional(),
   quality: z.string().optional(),
   sound: z.string().optional(),
@@ -46,10 +48,10 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res, next) =
   try {
     const parsed = createProductionSchema.safeParse(req.body || {})
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
-    const { uploadId, name, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, profile, quality, sound } = parsed.data
+    const { uploadId, name, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, screenTitlePresetId, screenTitleText, profile, quality, sound } = parsed.data
     const currentUserId = req.user!.id
     const result = await prodSvc.create(
-      { uploadId, name, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, profile, quality, sound },
+      { uploadId, name, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, screenTitlePresetId, screenTitleText, profile, quality, sound },
       currentUserId
     )
     res.status(201).json(result)
