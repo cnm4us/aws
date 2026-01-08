@@ -16,7 +16,7 @@ type ScreenTitleV1 = {
     fontColor?: string
     pillBgColor?: string
     pillBgOpacityPct?: number
-    position?: 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
+    position?: 'top' | 'middle' | 'bottom' | 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
     maxWidthPct?: number
     insetXPreset?: 'small' | 'medium' | 'large' | null
     insetYPreset?: 'small' | 'medium' | 'large' | null
@@ -24,6 +24,14 @@ type ScreenTitleV1 = {
     timingSeconds?: number | null
     fade?: 'none' | 'in' | 'out' | 'in_out'
   }
+}
+
+function normalizeScreenTitlePosition(pos: any): 'top' | 'middle' | 'bottom' {
+  const raw = String(pos || 'top').trim().toLowerCase()
+  if (raw === 'middle' || raw === 'center' || raw === 'middle_center') return 'middle'
+  if (raw === 'bottom' || raw.startsWith('bottom_')) return 'bottom'
+  if (raw.startsWith('top_')) return 'top'
+  return raw === 'top' ? 'top' : 'top'
 }
 
 function parsePositiveIntEnv(name: string): number | null {
@@ -273,23 +281,23 @@ export async function burnScreenTitleIntoMp4(opts: {
 
   try {
     const preset = opts.screenTitle.preset || {}
-    const pos = String(preset.position || 'top_left').toLowerCase()
+    const pos = normalizeScreenTitlePosition(preset.position)
     const style = String(preset.style || 'pill').toLowerCase()
     const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
     const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
     const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
     const pillBgOpacityPct = clampNum(preset.pillBgOpacityPct ?? 55, 0, 100)
     const pillBgAlpha = clampNum(pillBgOpacityPct / 100, 0, 1)
-    const xInset = pos.includes('_center') ? 0 : insetPctForPreset(preset.insetXPreset)
+    const xInset = insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
 
-    const xExpr =
-      pos.endsWith('_right')
-        ? `w-text_w-w*${xInset.toFixed(4)}`
-        : pos.endsWith('_center')
-          ? `(w-text_w)/2`
-          : `w*${xInset.toFixed(4)}`
-    const yExpr = pos.startsWith('bottom_') ? `h-text_h-h*${yInset.toFixed(4)}` : `h*${yInset.toFixed(4)}`
+    const xExpr = `min(max(w*${xInset.toFixed(4)},(w-text_w)/2),w-text_w-w*${xInset.toFixed(4)})`
+    const yExpr =
+      pos === 'bottom'
+        ? `h-text_h-h*${yInset.toFixed(4)}`
+        : pos === 'middle'
+          ? `(h-text_h)/2`
+          : `h*${yInset.toFixed(4)}`
 
     const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
     const textFileEsc = escapeFilterValue(textFile)
@@ -327,7 +335,7 @@ export async function burnScreenTitleIntoMp4(opts: {
     }
 
     const drawText = [...baseText, ...extras].join(':')
-    const stripY = pos.startsWith('bottom_') ? 'h-h*0.12' : '0'
+    const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
     const vf = style === 'strip'
       ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
       : drawText

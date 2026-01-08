@@ -5,7 +5,7 @@ import type { InsetPreset, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosit
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
 const FONT_KEYS: readonly ScreenTitleFontKey[] = ['dejavu_sans_bold']
-const POSITIONS: readonly ScreenTitlePosition[] = ['top_left', 'top_center', 'top_right', 'bottom_left', 'bottom_center', 'bottom_right']
+const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
 
@@ -30,6 +30,13 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
   const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
   const pillBgOpacityPct = Number.isFinite(pillBgOpacityPctRaw) ? pillBgOpacityPctRaw : 55
+  const posRaw = String((row as any).position || 'top').trim().toLowerCase()
+  const position: ScreenTitlePosition =
+    posRaw === 'middle' || posRaw === 'center' || posRaw === 'middle_center'
+      ? 'middle'
+      : posRaw === 'bottom' || posRaw.startsWith('bottom_')
+        ? 'bottom'
+        : 'top'
   return {
     id: Number(row.id),
     name: String(row.name || ''),
@@ -40,7 +47,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontColor,
     pillBgColor,
     pillBgOpacityPct,
-    position: row.position,
+    position,
     maxWidthPct: Number((row as any).max_width_pct),
     insetXPreset: toInsetPresetOrNull((row as any).inset_x_preset),
     insetYPreset: toInsetPresetOrNull((row as any).inset_y_preset),
@@ -115,20 +122,15 @@ function normalizeOpacityPct(raw: any, fallback: number): number {
   return Math.round(Math.min(Math.max(n, 0), 100))
 }
 
-function positionAxes(pos: ScreenTitlePosition): { x: 'left' | 'center' | 'right'; y: 'top' | 'bottom' } {
-  const [row, col] = String(pos).split('_') as [string, string]
-  const x = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
-  const y = row === 'bottom' ? 'bottom' : 'top'
-  return { x, y }
+function positionAxes(pos: ScreenTitlePosition): { x: 'center'; y: 'top' | 'middle' | 'bottom' } {
+  const y: 'top' | 'middle' | 'bottom' = pos === 'bottom' ? 'bottom' : pos === 'middle' ? 'middle' : 'top'
+  return { x: 'center', y }
 }
 
 function coerceInsetsForPosition(pos: ScreenTitlePosition, insetXPreset: InsetPreset | null, insetYPreset: InsetPreset | null) {
-  const { x } = positionAxes(pos)
-  // For center positions, keep inset X as-is so it persists if the user later switches to left/right.
-  // Rendering ignores inset X when centered.
-  const xPreset = x === 'center' ? insetXPreset : (insetXPreset ?? 'medium')
-  const yPreset = insetYPreset ?? 'medium'
-  return { insetXPreset: xPreset, insetYPreset: yPreset }
+  // Keep values as-is; UI controls visibility by position (top/bottom vs middle),
+  // and rendering treats inset X as symmetric safe area.
+  return { insetXPreset, insetYPreset }
 }
 
 function ensureOwned(row: ScreenTitlePresetRow, userId: number) {
@@ -176,7 +178,7 @@ export async function createForUser(input: {
   const fontColor = normalizeFontColor(input.fontColor)
   const pillBgColor = normalizePillBgColor(input.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
-  const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top_left'
+  const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top'
   const maxWidthPct = normalizePct(input.maxWidthPct ?? 90, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(input.insetXPreset)
   const rawInsetY = normalizeInsetPreset(input.insetYPreset)

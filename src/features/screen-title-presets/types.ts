@@ -2,7 +2,7 @@ export type InsetPreset = 'small' | 'medium' | 'large'
 
 export type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
 export type ScreenTitleFontKey = 'dejavu_sans_bold'
-export type ScreenTitlePosition = 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
+export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 export type ScreenTitleTimingRule = 'entire' | 'first_only'
 export type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
 

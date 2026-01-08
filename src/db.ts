@@ -233,7 +233,7 @@ export async function ensureSchema(db: DB) {
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
-              position ENUM('top_left','top_center','top_right','bottom_left','bottom_center','bottom_right') NOT NULL DEFAULT 'top_left',
+              position ENUM('top','middle','bottom') NOT NULL DEFAULT 'top',
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
               inset_y_preset VARCHAR(16) NULL,
@@ -252,10 +252,22 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
           try {
+            // Migrate older position values to the new 3-position model.
+            await db.query(
+              `UPDATE screen_title_presets
+                  SET position = CASE
+                    WHEN position IN ('top_left','top_center','top_right','top') THEN 'top'
+                    WHEN position IN ('bottom_left','bottom_center','bottom_right','bottom') THEN 'bottom'
+                    WHEN position IN ('middle_center','center','middle') THEN 'middle'
+                    ELSE 'top'
+                  END`
+            )
+          } catch {}
+          try {
             await db.query(
               `ALTER TABLE screen_title_presets
-                 MODIFY COLUMN position ENUM('top_left','top_center','top_right','bottom_left','bottom_center','bottom_right')
-                 NOT NULL DEFAULT 'top_left'`
+                 MODIFY COLUMN position ENUM('top','middle','bottom')
+                 NOT NULL DEFAULT 'top'`
             )
           } catch {}
 

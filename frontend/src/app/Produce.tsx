@@ -111,7 +111,7 @@ type ScreenTitlePreset = {
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number
-  position: 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
+  position: 'top' | 'middle' | 'bottom' | 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
   insetYPreset?: InsetPreset | null
@@ -412,6 +412,29 @@ function computeOverlayCss(cfg: {
 
   if (transform.trim()) style.transform = transform.trim()
   return style
+}
+
+function normalizeScreenTitlePosition(pos: string | null | undefined): 'top' | 'middle' | 'bottom' {
+  const raw = String(pos || 'top').trim().toLowerCase()
+  if (raw === 'middle' || raw === 'center' || raw === 'middle_center') return 'middle'
+  if (raw === 'bottom' || raw.startsWith('bottom_')) return 'bottom'
+  return 'top'
+}
+
+function computeScreenTitleOverlayCss(preset: ScreenTitlePreset): React.CSSProperties {
+  const position = normalizeScreenTitlePosition(preset.position)
+  const insetXPct = insetPctForPreset((preset.insetXPreset ?? null) as any) * 100
+  const insetYPct = insetPctForPreset((preset.insetYPreset ?? null) as any) * 100
+  const rawMax = clampNumber(preset.maxWidthPct ?? 90, 10, 100)
+  const effectiveWidthPct = clampNumber(Math.min(rawMax, 100 - 2 * insetXPct), 10, 100)
+  const posForOverlay = position === 'top' ? 'top_center' : position === 'bottom' ? 'bottom_center' : 'middle_center'
+  return computeOverlayCss({
+    position: posForOverlay,
+    sizePctWidth: effectiveWidthPct,
+    opacityPct: 100,
+    insetXPreset: null,
+    insetYPreset: position === 'middle' ? null : (preset.insetYPreset ?? null),
+  })
 }
 
 function computeLowerThirdPreviewSizePct(cfg: LowerThirdConfig | null, image: AssetItem | null): number {
@@ -1291,21 +1314,7 @@ export default function ProducePage() {
 	                {selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
 	                  <div
 	                    style={{
-	                      ...computeOverlayCss(() => {
-	                        const pos = String(selectedScreenTitlePreset.position || 'top_left')
-	                        const rawMax = clampNumber(selectedScreenTitlePreset.maxWidthPct ?? 90, 10, 100)
-	                        const xInsetPct = pos.endsWith('_center')
-	                          ? 0
-	                          : insetPctForPreset((selectedScreenTitlePreset.insetXPreset ?? null) as any) * 100
-	                        const effectiveWidthPct = clampNumber(Math.min(rawMax, 100 - 2 * xInsetPct), 10, 100)
-	                        return {
-	                          position: selectedScreenTitlePreset.position,
-	                          sizePctWidth: effectiveWidthPct,
-	                          opacityPct: 100,
-	                          insetXPreset: selectedScreenTitlePreset.insetXPreset ?? null,
-	                          insetYPreset: selectedScreenTitlePreset.insetYPreset ?? null,
-	                        }
-	                      })(),
+	                      ...computeScreenTitleOverlayCss(selectedScreenTitlePreset),
 	                      zIndex: 2,
 	                      boxSizing: 'border-box',
 	                      padding:

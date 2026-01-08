@@ -9,8 +9,7 @@ type MeResponse = {
 type InsetPreset = 'small' | 'medium' | 'large'
 type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
 type ScreenTitleFontKey = 'dejavu_sans_bold'
-type ScreenTitlePosition = 'top_left' | 'top_center' | 'top_right'
-  | 'bottom_left' | 'bottom_center' | 'bottom_right'
+type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
 type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
 
@@ -73,7 +72,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontColor: '#ffffff',
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
-    position: 'top_left',
+    position: 'top',
     maxWidthPct: 90,
     insetXPreset: 'medium',
     insetYPreset: 'medium',
@@ -84,12 +83,9 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 }
 
 function positionLabel(p: ScreenTitlePosition): string {
-  if (p === 'top_left') return 'Top-left'
-  if (p === 'top_center') return 'Top-center'
-  if (p === 'top_right') return 'Top-right'
-  if (p === 'bottom_left') return 'Bottom-left'
-  if (p === 'bottom_center') return 'Bottom-center'
-  return 'Bottom-right'
+  if (p === 'top') return 'Top'
+  if (p === 'middle') return 'Middle'
+  return 'Bottom'
 }
 
 function styleLabel(s: ScreenTitleStyle): string {
@@ -534,12 +530,9 @@ export default function ScreenTitlePresetsPage() {
                       outline: 'none',
                     }}
                   >
-                    <option value="top_left">Top-left</option>
-                    <option value="top_center">Top-center</option>
-                    <option value="top_right">Top-right</option>
-                    <option value="bottom_left">Bottom-left</option>
-                    <option value="bottom_center">Bottom-center</option>
-                    <option value="bottom_right">Bottom-right</option>
+                    <option value="top">Top</option>
+                    <option value="middle">Middle</option>
+                    <option value="bottom">Bottom</option>
                   </select>
                 </label>
               </div>
@@ -611,27 +604,29 @@ export default function ScreenTitlePresetsPage() {
                   </select>
                 </label>
 
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Inset Y</div>
-                  <select
-                    value={draft.insetYPreset || ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="">Auto</option>
-                    {INSET_PRESETS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
-                </label>
+                {draft.position !== 'middle' ? (
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Inset Y</div>
+                    <select
+                      value={draft.insetYPreset || ''}
+                      onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">Auto</option>
+                      {INSET_PRESETS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
