@@ -281,6 +281,131 @@ function buildScreenTitleAlphaExpr(preset: any, videoDurationSeconds: number | n
   return { enableExpr, alphaExpr }
 }
 
+async function probeVideoDisplayDimensions(filePath: string): Promise<{ width: number; height: number }> {
+  return await new Promise((resolve, reject) => {
+    const p = spawn(
+      'ffprobe',
+      [
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height:stream_tags=rotate:side_data_list',
+        '-of', 'json',
+        filePath,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    )
+    let out = ''
+    let err = ''
+    p.stdout.on('data', (d) => { out += String(d) })
+    p.stderr.on('data', (d) => { err += String(d) })
+    p.on('error', reject)
+    p.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`ffprobe_failed:${code}:${err.slice(0, 400)}`))
+      try {
+        const j = JSON.parse(out || '{}')
+        const s = Array.isArray(j.streams) ? j.streams[0] : null
+        const w = s && s.width != null ? Number(s.width) : NaN
+        const h = s && s.height != null ? Number(s.height) : NaN
+        let rotate = 0
+        if (s && s.tags && s.tags.rotate != null) rotate = Number(s.tags.rotate)
+        if (!Number.isFinite(rotate) && Array.isArray(s?.side_data_list)) {
+          for (const sd of s.side_data_list) {
+            if (sd && sd.rotation != null) rotate = Number(sd.rotation)
+          }
+        }
+        const rot = Number.isFinite(rotate) ? Math.abs(Math.round(rotate)) % 360 : 0
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return reject(new Error('ffprobe_missing_dims'))
+        if (rot === 90 || rot === 270) return resolve({ width: h, height: w })
+        resolve({ width: w, height: h })
+      } catch (e) {
+        reject(e)
+      }
+    })
+  })
+}
+
+function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLines: number }): string {
+  const maxChars = Math.max(8, Math.floor(opts.maxCharsPerLine))
+  const maxLines = Math.max(1, Math.floor(opts.maxLines))
+  const raw = String(opts.text || '').replace(/\r\n/g, '\n').trim()
+  if (!raw) return ''
+
+  const segments = raw.split('\n').map((s) => s.trim()).filter(Boolean)
+  const wordsBySegment = segments.length ? segments.map((s) => s.split(/\s+/).filter(Boolean)) : [raw.split(/\s+/).filter(Boolean)]
+
+  const lines: string[] = []
+  let current = ''
+
+  const flushLine = () => {
+    const trimmed = current.trim()
+    if (trimmed) lines.push(trimmed)
+    current = ''
+  }
+
+  const pushWord = (word: string) => {
+    const w = String(word || '')
+    if (!w) return
+    if (!current) {
+      current = w
+      return
+    }
+    if ((current.length + 1 + w.length) <= maxChars) {
+      current = `${current} ${w}`
+      return
+    }
+    flushLine()
+    current = w
+  }
+
+  const truncateLine = (s: string) => {
+    const str = String(s || '').trim()
+    if (str.length <= maxChars) return str
+    if (maxChars <= 3) return str.slice(0, maxChars)
+    return `${str.slice(0, maxChars - 3).trimEnd()}...`
+  }
+
+  const forceStop = () => {
+    if (!lines.length) return ''
+    lines[lines.length - 1] = truncateLine(lines[lines.length - 1])
+    return lines.slice(0, maxLines).join('\n')
+  }
+
+  for (let si = 0; si < wordsBySegment.length; si++) {
+    if (lines.length >= maxLines) return forceStop()
+    if (si > 0) {
+      flushLine()
+      if (lines.length >= maxLines) return forceStop()
+    }
+
+    const words = wordsBySegment[si] || []
+    for (const word of words) {
+      if (lines.length >= maxLines) return forceStop()
+      if (String(word).length > maxChars) {
+        // Break long tokens so we never produce a single ultra-long unwrappable line.
+        const token = String(word)
+        let i = 0
+        while (i < token.length) {
+          const chunk = token.slice(i, i + maxChars)
+          i += maxChars
+          pushWord(chunk)
+          if (current.length >= maxChars) flushLine()
+          if (lines.length >= maxLines) return forceStop()
+        }
+        continue
+      }
+      pushWord(word)
+      if (current.length >= maxChars) flushLine()
+      if (lines.length >= maxLines) return forceStop()
+    }
+  }
+
+  flushLine()
+  if (lines.length > maxLines) {
+    return lines.slice(0, maxLines).join('\n')
+  }
+  return lines.join('\n')
+}
+
 export async function burnScreenTitleIntoMp4(opts: {
   inPath: string
   outPath: string
@@ -288,13 +413,10 @@ export async function burnScreenTitleIntoMp4(opts: {
   videoDurationSeconds: number | null
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }): Promise<void> {
-  const text = String(opts.screenTitle?.text || '').replace(/\r\n/g, '\n').trim()
-  if (!text) return
+  const rawText = String(opts.screenTitle?.text || '').replace(/\r\n/g, '\n').trim()
+  if (!rawText) return
 
-  const tmpDir = path.dirname(opts.outPath)
-  const textFile = path.join(tmpDir, `screen-title-${randomUUID()}.txt`)
-  fs.writeFileSync(textFile, text, 'utf8')
-
+  let textFile: string | null = null
   try {
     const preset = opts.screenTitle.preset || {}
     const pos = normalizeScreenTitlePosition(preset.position)
@@ -306,6 +428,19 @@ export async function burnScreenTitleIntoMp4(opts: {
     const pillBgAlpha = clampNum(pillBgOpacityPct / 100, 0, 1)
     const xInset = insetPctForPreset(preset.insetXPreset)
     const yInset = insetPctForPreset(preset.insetYPreset ?? 'medium')
+    const maxWidthPct = clampNum(preset.maxWidthPct ?? 90, 20, 100) / 100
+
+    const dims = await probeVideoDisplayDimensions(opts.inPath)
+    const maxLinePx = Math.min(dims.width * maxWidthPct, dims.width - (2 * dims.width * xInset))
+    const fontPx = dims.height * (fontSizePct / 100)
+    const avgCharPx = Math.max(6, fontPx * 0.56)
+    const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
+    const wrappedText = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 2 })
+    if (!wrappedText) return
+
+    const tmpDir = path.dirname(opts.outPath)
+    textFile = path.join(tmpDir, `screen-title-${randomUUID()}.txt`)
+    fs.writeFileSync(textFile, wrappedText, 'utf8')
 
     // If text_w exceeds w, avoid negative x (which would show only the *tail* of the line).
     // Instead, left-align to the inset.
@@ -322,6 +457,7 @@ export async function burnScreenTitleIntoMp4(opts: {
     const { enableExpr, alphaExpr } = buildScreenTitleAlphaExpr(preset, opts.videoDurationSeconds)
 
     const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
+    const lineSpacingPx = lineSpacingPxForFrame(dims.height, fontSizePct)
 
     const baseText = [
       `drawtext=fontfile=${fontFile}`,
@@ -331,6 +467,7 @@ export async function burnScreenTitleIntoMp4(opts: {
       `fontsize=${fontSizeExpr}`,
       `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
       `alpha=${alphaExpr}`,
+      `line_spacing=${lineSpacingPx}`,
       `enable='${enableExpr}'`,
     ]
 
@@ -380,7 +517,9 @@ export async function burnScreenTitleIntoMp4(opts: {
       opts.outPath,
     ], opts.logPaths)
   } finally {
-    try { fs.rmSync(textFile, { force: true }) } catch {}
+    if (textFile) {
+      try { fs.rmSync(textFile, { force: true }) } catch {}
+    }
   }
 }
 
