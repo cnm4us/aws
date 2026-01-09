@@ -1732,7 +1732,6 @@ export default function ProducePage() {
                 </div>
                 <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)', marginBottom: 14 }}>
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>First Screen</div>
                     <select
                       value={firstScreenMode}
                       onChange={(e) => {
