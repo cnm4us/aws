@@ -206,6 +206,24 @@ function parseTitleHoldSeconds(): number | null {
   }
 }
 
+type FirstScreenMode = 'custom_image' | 'first_frame'
+
+function parseFirstScreenMode(): FirstScreenMode {
+  const titleUploadId = parseTitleUploadId()
+  if (titleUploadId != null) return 'custom_image'
+  const introSeconds = parseIntroSeconds()
+  if (introSeconds != null) return 'first_frame'
+  return 'first_frame'
+}
+
+function parseFirstScreenHoldSeconds(): number {
+  const titleHold = parseTitleHoldSeconds()
+  if (titleHold != null) return titleHold
+  const intro = parseIntroSeconds()
+  if (intro != null) return intro
+  return 0
+}
+
 function parseLogoConfigId(): number | null {
   try {
     const params = new URLSearchParams(window.location.search)
@@ -493,7 +511,8 @@ export default function ProducePage() {
   const [assetsError, setAssetsError] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<number | null>(() => parseLogoUploadId())
   const [selectedTitleUploadId, setSelectedTitleUploadId] = useState<number | null>(() => parseTitleUploadId())
-  const [titleHoldSeconds, setTitleHoldSeconds] = useState<number>(() => parseTitleHoldSeconds() ?? 0)
+  const [firstScreenMode, setFirstScreenMode] = useState<FirstScreenMode>(() => parseFirstScreenMode())
+  const [firstScreenHoldSeconds, setFirstScreenHoldSeconds] = useState<number>(() => parseFirstScreenHoldSeconds())
   const [selectedAudioId, setSelectedAudioId] = useState<number | null>(() => parseMusicUploadId())
   const [selectedLogoConfigId, setSelectedLogoConfigId] = useState<number | null>(() => parseLogoConfigId())
   const [selectedAudioConfigId, setSelectedAudioConfigId] = useState<number | null>(() => parseAudioConfigId())
@@ -508,7 +527,6 @@ export default function ProducePage() {
       return ''
     }
   })
-  const [introSeconds, setIntroSeconds] = useState<number | null>(() => parseIntroSeconds())
   const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThirdImage' | 'lowerThirdConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
@@ -724,18 +742,19 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedTitleUploadId(nextId)
+          if (nextId != null) setFirstScreenMode('custom_image')
           replaceQueryParams(
             { titleUploadId: nextId == null ? null : String(nextId), pick: null, introSeconds: null },
             { ...(window.history.state || {}), modal: null }
           )
-          if (nextId == null) setTitleHoldSeconds(0)
           return
         }
       } catch {}
       setSelectedAudioId(parseMusicUploadId())
       setSelectedLogoId(parseLogoUploadId())
       setSelectedTitleUploadId(parseTitleUploadId())
-      setTitleHoldSeconds(parseTitleHoldSeconds() ?? 0)
+      setFirstScreenMode(parseFirstScreenMode())
+      setFirstScreenHoldSeconds(parseFirstScreenHoldSeconds())
       setSelectedLogoConfigId(parseLogoConfigId())
       setSelectedAudioConfigId(parseAudioConfigId())
       setSelectedLowerThirdUploadId(parseLowerThirdUploadId())
@@ -1084,6 +1103,7 @@ export default function ProducePage() {
   }
 
   const openTitlePagePicker = () => {
+    if (firstScreenMode !== 'custom_image') return
     setPick('titlePage')
     pushQueryParams({ pick: 'titlePage' }, { ...(window.history.state || {}), modal: 'titlePagePicker' })
   }
@@ -1125,17 +1145,16 @@ export default function ProducePage() {
 
   const applyTitlePageSelection = (id: number | null) => {
     setSelectedTitleUploadId(id)
-    setIntroSeconds(null)
     if (id == null) {
-      setTitleHoldSeconds(0)
       replaceQueryParams(
         { titleUploadId: null, titleHoldSeconds: null, introSeconds: null },
         { ...(window.history.state || {}), modal: null }
       )
       return
     }
+    setFirstScreenMode('custom_image')
     replaceQueryParams(
-      { titleUploadId: String(id), titleHoldSeconds: String(titleHoldSeconds || 0), introSeconds: null },
+      { titleUploadId: String(id), titleHoldSeconds: String(firstScreenHoldSeconds || 0), introSeconds: null },
       { ...(window.history.state || {}), modal: null }
     )
   }
@@ -1332,10 +1351,13 @@ export default function ProducePage() {
 	        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
 	        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
 	      }
-	      if (selectedTitleUploadId != null) {
-	        body.config = { intro: { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: titleHoldSeconds || 0 } }
-	      } else if (introSeconds != null) {
-	        body.config = { intro: { kind: 'freeze_first_frame', seconds: introSeconds } }
+	      if (firstScreenMode === 'custom_image') {
+	        if (selectedTitleUploadId == null) {
+	          throw new Error('Choose a title page image, or switch First Screen to First Frame of Video.')
+	        }
+	        body.config = { intro: { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: firstScreenHoldSeconds || 0 } }
+	      } else if (firstScreenHoldSeconds) {
+	        body.config = { intro: { kind: 'freeze_first_frame', seconds: firstScreenHoldSeconds } }
 	      }
 	      const trimmedName = productionName.trim()
 	      if (trimmedName) body.name = trimmedName
@@ -1704,85 +1726,39 @@ export default function ProducePage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                    <div style={{ color: '#bbb' }}>Title Page (optional)</div>
-                    <a
-                      href="/uploads?kind=image&image_role=title_page"
-                      style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}
-                    >
-                      Manage title pages
-                    </a>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ color: '#d4af37', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedTitlePage ? (selectedTitlePage.modified_filename || selectedTitlePage.original_filename || `Title ${selectedTitlePage.id}`) : 'None'}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={openTitlePagePicker}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(212,175,55,0.85)',
-                          background: 'rgba(212,175,55,0.14)',
-                          color: '#d4af37',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Choose
-                      </button>
-                      {selectedTitleUploadId != null ? (
-                        <button
-                          type="button"
-                          onClick={() => applyTitlePageSelection(null)}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(212,175,55,0.65)',
-                            background: 'rgba(212,175,55,0.10)',
-                            color: '#d4af37',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {selectedTitlePage ? (
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <img
-                        src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
-                        alt="title page"
-                        style={{ width: 96, height: 54, objectFit: 'cover', background: '#111', borderRadius: 10 }}
-                      />
-                      <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                        {formatBytes(selectedTitlePage.size_bytes)}{selectedTitlePage.created_at ? ` • ${formatDate(selectedTitlePage.created_at)}` : ''}
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ color: '#777', fontSize: 13 }}>
-                      Optional image that becomes frame 0 (poster). You can hold it before the video starts.
-                    </div>
-                  )}
-
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb' }}>Title Hold</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>First Screen</div>
+                  <a href="/uploads?kind=image&image_role=title_page" style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage Title Page</a>
+                </div>
+                <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)', marginBottom: 14 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>First Screen</div>
                     <select
-                      value={String(titleHoldSeconds || 0)}
-                      disabled={selectedTitleUploadId == null}
+                      value={firstScreenMode}
                       onChange={(e) => {
-                        const raw = e.target.value
-                        const next = raw ? Math.round(Number(raw)) : 0
-                        const final = [0, 2, 3, 4, 5].includes(next) ? next : 0
-                        setTitleHoldSeconds(final)
-                        pushQueryParams({ titleHoldSeconds: selectedTitleUploadId == null ? null : String(final) })
+                        const v = String(e.target.value || 'first_frame')
+                        const next: FirstScreenMode = v === 'custom_image' ? 'custom_image' : 'first_frame'
+                        setFirstScreenMode(next)
+                        if (next === 'first_frame') {
+                          setSelectedTitleUploadId(null)
+                          replaceQueryParams(
+                            {
+                              titleUploadId: null,
+                              titleHoldSeconds: null,
+                              introSeconds: firstScreenHoldSeconds ? String(firstScreenHoldSeconds) : null,
+                            },
+                            { ...(window.history.state || {}), modal: null }
+                          )
+                        } else {
+                          replaceQueryParams(
+                            {
+                              introSeconds: null,
+                              titleUploadId: selectedTitleUploadId == null ? null : String(selectedTitleUploadId),
+                              titleHoldSeconds: String(firstScreenHoldSeconds || 0),
+                            },
+                            { ...(window.history.state || {}), modal: null }
+                          )
+                        }
                       }}
                       style={{
                         padding: '10px 12px',
@@ -1791,7 +1767,98 @@ export default function ProducePage() {
                         background: '#0c0c0c',
                         color: '#fff',
                         outline: 'none',
-                        opacity: selectedTitleUploadId == null ? 0.6 : 1,
+                      }}
+                    >
+                      <option value="custom_image">Custom Image</option>
+                      <option value="first_frame">First Frame of Video</option>
+                    </select>
+                  </label>
+
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                      <div style={{ color: '#bbb', fontWeight: 750 }}>Custom Image</div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          disabled={firstScreenMode !== 'custom_image'}
+                          onClick={openTitlePagePicker}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.85)',
+                            background: 'rgba(212,175,55,0.14)',
+                            color: '#d4af37',
+                            fontWeight: 700,
+                            cursor: firstScreenMode !== 'custom_image' ? 'default' : 'pointer',
+                            opacity: firstScreenMode !== 'custom_image' ? 0.6 : 1,
+                          }}
+                        >
+                          Choose
+                        </button>
+                        {selectedTitleUploadId != null ? (
+                          <button
+                            type="button"
+                            disabled={firstScreenMode !== 'custom_image'}
+                            onClick={() => applyTitlePageSelection(null)}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(212,175,55,0.65)',
+                              background: 'rgba(212,175,55,0.10)',
+                              color: '#d4af37',
+                              fontWeight: 800,
+                              cursor: firstScreenMode !== 'custom_image' ? 'default' : 'pointer',
+                              opacity: firstScreenMode !== 'custom_image' ? 0.6 : 1,
+                            }}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div style={{ color: '#d4af37', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedTitlePage ? (selectedTitlePage.modified_filename || selectedTitlePage.original_filename || `Title ${selectedTitlePage.id}`) : 'None'}
+                    </div>
+                    {selectedTitlePage ? (
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <img
+                          src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
+                          alt="title page"
+                          style={{ width: 96, height: 54, objectFit: 'cover', background: '#111', borderRadius: 10 }}
+                        />
+                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                          {formatBytes(selectedTitlePage.size_bytes)}{selectedTitlePage.created_at ? ` • ${formatDate(selectedTitlePage.created_at)}` : ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#777', fontSize: 13 }}>
+                        Choose an image to use as the first screen.
+                      </div>
+                    )}
+                  </div>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>First Screen Hold</div>
+                    <select
+                      value={String(firstScreenHoldSeconds || 0)}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        const next = raw ? Math.round(Number(raw)) : 0
+                        const final = [0, 2, 3, 4, 5].includes(next) ? next : 0
+                        setFirstScreenHoldSeconds(final)
+                        if (firstScreenMode === 'custom_image') {
+                          pushQueryParams({ titleHoldSeconds: String(final), introSeconds: null })
+                        } else {
+                          pushQueryParams({ introSeconds: final ? String(final) : null, titleHoldSeconds: null, titleUploadId: null })
+                        }
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #2a2a2a',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
                       }}
                     >
                       <option value="0">None</option>
@@ -1801,50 +1868,10 @@ export default function ProducePage() {
                       <option value="5">5 seconds</option>
                     </select>
                     <div style={{ color: '#777', fontSize: 13 }}>
-                      Holds the title page before playback begins.
+                      Holds the first screen before playback begins.
                     </div>
-                  </div>
+                  </label>
                 </div>
-
-	              <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
-	                <div style={{ color: '#bbb' }}>Freeze first frame (optional)</div>
-	                <select
-	                  value={introSeconds == null ? '' : String(introSeconds)}
-                    disabled={selectedTitleUploadId != null}
-	                  onChange={(e) => {
-	                    const raw = e.target.value
-	                    const next = raw ? Number(raw) : null
-	                    const normalized = next != null && Number.isFinite(next) ? Math.round(next) : null
-	                    const final = normalized != null && [2, 3, 4, 5].includes(normalized) ? normalized : null
-	                    setIntroSeconds(final)
-                      if (final != null) {
-                        setSelectedTitleUploadId(null)
-                        setTitleHoldSeconds(0)
-                        pushQueryParams({ introSeconds: String(final), titleUploadId: null, titleHoldSeconds: null })
-                      } else {
-	                      pushQueryParams({ introSeconds: null })
-                      }
-	                  }}
-	                  style={{
-	                    padding: '10px 12px',
-	                    borderRadius: 10,
-	                    border: '1px solid #2a2a2a',
-	                    background: '#0c0c0c',
-	                    color: '#fff',
-	                    outline: 'none',
-                      opacity: selectedTitleUploadId != null ? 0.6 : 1,
-	                  }}
-	                >
-	                  <option value="">None</option>
-	                  <option value="2">2 seconds</option>
-	                  <option value="3">3 seconds</option>
-	                  <option value="4">4 seconds</option>
-	                  <option value="5">5 seconds</option>
-	                </select>
-	                <div style={{ color: '#777', fontSize: 13 }}>
-	                  Extends the production with a frozen first frame. Audio/video start after this intro.
-	                </div>
-	              </label>
 
 		              <div style={{ display: 'grid', gap: 10 }}>
 		                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
