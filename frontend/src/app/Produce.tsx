@@ -1376,7 +1376,7 @@ export default function ProducePage() {
 	                      overflowWrap: 'anywhere',
 	                      wordBreak: 'break-word',
 	                      display: '-webkit-box',
-	                      WebkitLineClamp: 2,
+	                      WebkitLineClamp: 3,
 	                      WebkitBoxOrient: 'vertical' as any,
 	                      overflow: 'hidden',
 	                      textShadow:

@@ -442,7 +442,7 @@ export async function burnScreenTitleIntoMp4(opts: {
     // Conservative estimate to avoid overflow: bold fonts + box padding can push width beyond naive averages.
     const avgCharPx = Math.max(7, fontPx * 0.74)
     const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
-    const wrappedText = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 2 })
+    const wrappedText = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3 })
     if (!wrappedText) return
 
     const tmpDir = path.dirname(opts.outPath)
