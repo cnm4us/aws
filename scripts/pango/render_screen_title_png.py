@@ -163,40 +163,55 @@ def main():
       pass
 
   ink, logical = layout.get_pixel_extents()
-  text_w = float(logical.width)
-  text_h = float(logical.height)
+  # Prefer ink extents for sizing backgrounds (pill) so we don't clip glyphs.
+  # logical extents can undercount depending on font metrics / stroke / layout alignment.
+  content_x = float(ink.x)
+  content_y = float(ink.y)
+  content_w = float(ink.width) if ink.width > 0 else float(logical.width)
+  content_h = float(ink.height) if ink.height > 0 else float(logical.height)
 
   # Padding around text for pill background.
   pad_x = 0.0
   pad_y = 0.0
   if style == "pill":
-    pad_x = clamp(font_px * 0.40, 6.0, 18.0)
-    pad_y = clamp(font_px * 0.25, 4.0, 14.0)
+    pad_x = clamp(font_px * 0.45, 8.0, 40.0)
+    pad_y = clamp(font_px * 0.30, 6.0, 28.0)
 
-  # Positioning: center horizontally within frame, constrained by insets.
+  # Extra padding for stroke + shadow so text never touches/overflows the pill.
+  # (We draw shadow with a small positive y offset, and we may stroke glyph paths.)
+  stroke_pad = 1.5
+  shadow_dx = 0.0
+  shadow_dy = 2.0
+
   inset_x_px = width * x_inset
   inset_y_px = height * y_inset
 
-  x = (width - text_w) / 2.0
-  x = clamp(x, inset_x_px, width - text_w - inset_x_px)
+  # Compute a bounding box in layout coordinates that should fit on-screen.
+  box_x0 = content_x - pad_x - stroke_pad
+  box_y0 = content_y - pad_y - stroke_pad
+  box_w = content_w + 2.0 * (pad_x + stroke_pad) + abs(shadow_dx)
+  box_h = content_h + 2.0 * (pad_y + stroke_pad) + abs(shadow_dy)
+
+  # Position the bounding box, then derive the layout draw origin.
+  box_x = (width - box_w) / 2.0
+  box_x = clamp(box_x, inset_x_px, width - box_w - inset_x_px)
 
   if pos == "bottom":
-    y = height - text_h - inset_y_px
+    box_y = height - box_h - inset_y_px
   elif pos == "middle":
-    y = (height - text_h) / 2.0
+    box_y = (height - box_h) / 2.0
   else:
-    y = inset_y_px
+    box_y = inset_y_px
 
-  # If we have a pill, move the layout origin to account for padding (background drawn behind).
-  # The layout is still measured without padding.
-  x_draw = x
-  y_draw = y
+  x_draw = box_x - box_x0
+  y_draw = box_y - box_y0
 
   if style == "pill":
-    pill_x = x_draw - pad_x
-    pill_y = y_draw - pad_y
-    pill_w = text_w + (2.0 * pad_x)
-    pill_h = text_h + (2.0 * pad_y)
+    # Draw the pill at the computed bounding box position.
+    pill_x = box_x
+    pill_y = box_y
+    pill_w = box_w
+    pill_h = box_h
     radius = clamp(font_px * 0.45, 6.0, 22.0)
     rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
     ctx.set_source_rgba(rr, gg, bb, aa)
@@ -205,8 +220,6 @@ def main():
 
   # Simple shadow (offset only, no blur).
   shadow_a = 0.65
-  shadow_dx = 0.0
-  shadow_dy = 2.0
   if style in ("pill", "outline", "strip"):
     ctx.save()
     ctx.translate(x_draw + shadow_dx, y_draw + shadow_dy)
