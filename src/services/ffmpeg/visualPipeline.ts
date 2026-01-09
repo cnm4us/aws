@@ -155,7 +155,22 @@ export async function probeVideoDisplayDimensions(filePath: string): Promise<{ w
     p.on('close', (code) => {
       if (code !== 0) return reject(new Error(`ffprobe_failed:${code}:${err.slice(0, 400)}`))
       try {
-        const j = JSON.parse(out || '{}')
+        const parseProbeJson = (raw: string) => {
+          const trimmed = String(raw || '').trim()
+          if (!trimmed) return {}
+          try {
+            return JSON.parse(trimmed)
+          } catch {
+            const first = trimmed.indexOf('{')
+            const last = trimmed.lastIndexOf('}')
+            if (first >= 0 && last > first) return JSON.parse(trimmed.slice(first, last + 1))
+            throw new Error(
+              `ffprobe_json_parse_failed:${trimmed.slice(0, 220).replace(/\s+/g, ' ')}`
+            )
+          }
+        }
+
+        const j = parseProbeJson(out)
         const s = Array.isArray(j.streams) ? j.streams[0] : null
         const w = s && s.width != null ? Number(s.width) : NaN
         const h = s && s.height != null ? Number(s.height) : NaN
