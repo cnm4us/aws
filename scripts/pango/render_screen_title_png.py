@@ -134,7 +134,18 @@ def main():
   fd.set_absolute_size(int(font_px * Pango.SCALE))
   layout.set_font_description(fd)
 
-  max_w = min(width * max_width_pct, width - (2.0 * width * x_inset))
+  # Constrain layout width so that the final pill (text + padding + stroke/shadow)
+  # fits within the X inset on both sides; otherwise we end up clamping the pill
+  # against one edge, producing visibly asymmetric margins.
+  pad_x0 = 0.0
+  stroke_pad0 = 1.5
+  shadow_dx0 = 0.0
+  if style == "pill":
+    pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
+  inset_x_px0 = width * x_inset
+  max_box_w_allowed0 = max(10.0, width - (2.0 * inset_x_px0))
+  max_layout_w_allowed0 = max(10.0, max_box_w_allowed0 - (2.0 * (pad_x0 + stroke_pad0)) - abs(shadow_dx0))
+  max_w = min(width * max_width_pct, max_layout_w_allowed0)
   max_w = max(10.0, max_w)
   layout.set_width(int(max_w * Pango.SCALE))
   layout.set_wrap(Pango.WrapMode.WORD_CHAR)
