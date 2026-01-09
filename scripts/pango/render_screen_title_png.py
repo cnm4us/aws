@@ -141,14 +141,17 @@ def main():
 
   if tracking_pct != 0.0:
     # Pango letter spacing is in Pango units (Pango.SCALE == 1024 units per device unit).
+    # GI bindings expose this as attr_letter_spacing_new().
     letter_px = font_px * (tracking_pct / 100.0)
     try:
-      attrs = Pango.AttrList()
-      a = Pango.attr_letter_spacing(int(letter_px * Pango.SCALE))
-      a.start_index = 0
-      a.end_index = len(text.encode("utf-8"))
-      attrs.insert(a)
-      layout.set_attributes(attrs)
+      new_fn = getattr(Pango, "attr_letter_spacing_new", None)
+      if callable(new_fn):
+        attrs = Pango.AttrList()
+        a = new_fn(int(letter_px * Pango.SCALE))
+        a.start_index = 0
+        a.end_index = len(text.encode("utf-8"))
+        attrs.insert(a)
+        layout.set_attributes(attrs)
     except Exception:
       pass
 
