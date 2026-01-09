@@ -1646,37 +1646,35 @@ export default function ProducePage() {
                   </label>
 
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ position: 'relative' }}>
-                      <textarea
-                        value={screenTitleText}
-                        onChange={(e) => {
-                          let v = String(e.target.value || '')
-                          v = v.replace(/\r\n/g, '\n')
-                          const lines = v.split('\n')
-                          if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
-                          if (v.length > 140) v = v.slice(0, 140)
-                          setScreenTitleText(v)
-                        }}
-                        rows={3}
-                        placeholder="type your screen title here"
-                        style={{
-                          padding: '10px 12px 30px',
-                          borderRadius: 10,
-                          border: '1px solid #2a2a2a',
-                          background: '#0c0c0c',
-                          color: '#fff',
-                          outline: 'none',
-                          resize: 'vertical',
-                          opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
-                          width: '100%',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                      <div style={{ position: 'absolute', right: 10, bottom: 8, color: '#777', fontSize: 12, pointerEvents: 'none' }}>
-                        {(screenTitleText || '').length}/140
-                      </div>
+                    <textarea
+                      value={screenTitleText}
+                      onChange={(e) => {
+                        let v = String(e.target.value || '')
+                        v = v.replace(/\r\n/g, '\n')
+                        const lines = v.split('\n')
+                        if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
+                        if (v.length > 140) v = v.slice(0, 140)
+                        setScreenTitleText(v)
+                      }}
+                      rows={3}
+                      placeholder="type your screen title here"
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #2a2a2a',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        resize: 'vertical',
+                        opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
+                        width: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: '#777', fontSize: 13 }}>
+                      <div>Max 140 chars • max 3 lines</div>
+                      <div>{(screenTitleText || '').length}/140</div>
                     </div>
-                    <div style={{ color: '#777', fontSize: 13 }}>Max 140 chars • max 3 lines</div>
                   </label>
 
                   {screenTitlePreviewError ? (
