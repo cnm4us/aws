@@ -41,6 +41,14 @@ export const MEDIA_JOBS_LOGS_PREFIX = (process.env.MEDIA_JOBS_LOGS_PREFIX ?? 'me
 // all rendering/compositing (audio + overlays), and MediaConvert is used only for packaging.
 export const MEDIA_FFMPEG_COMPOSITE_ENABLED = envBool('MEDIA_FFMPEG_COMPOSITE_ENABLED', MEDIA_JOBS_ENABLED);
 
+// Screen title renderer:
+// - drawtext (default): ffmpeg drawtext directly on video frames
+// - pango: render a PNG overlay with Pango+Cairo, then ffmpeg overlays it (more typographic control)
+export const SCREEN_TITLE_RENDERER: 'drawtext' | 'pango' = (() => {
+  const raw = String(process.env.SCREEN_TITLE_RENDERER || 'drawtext').trim().toLowerCase()
+  return raw === 'pango' ? 'pango' : 'drawtext'
+})()
+
 // Optional audio cleanup: gentle high-pass on the video's original audio only (helps wind/rumble).
 export const MEDIA_VIDEO_HIGHPASS_ENABLED = envBool('MEDIA_VIDEO_HIGHPASS_ENABLED', false);
 export const MEDIA_VIDEO_HIGHPASS_HZ = (() => {

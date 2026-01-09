@@ -16,6 +16,7 @@ import { logoConfigsRouter } from './routes/logo-configs';
 import { audioConfigsRouter } from './routes/audio-configs';
 import { lowerThirdsRouter } from './routes/lower-thirds';
 import { screenTitlePresetsRouter } from './routes/screen-title-presets';
+import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { sessionParse } from './middleware/sessionParse';
@@ -66,6 +67,7 @@ export function buildServer(): express.Application {
   app.use(audioConfigsRouter);
   app.use(lowerThirdsRouter);
   app.use(screenTitlePresetsRouter);
+  app.use(screenTitlePreviewRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 

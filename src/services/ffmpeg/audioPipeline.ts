@@ -6,6 +6,8 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { pipeline } from 'stream/promises'
 import { s3 } from '../s3'
+import { SCREEN_TITLE_RENDERER } from '../../config'
+import { renderScreenTitlePngWithPango } from '../pango/screenTitlePng'
 
 type ScreenTitleV1 = {
   text: string
@@ -281,6 +283,15 @@ function buildScreenTitleAlphaExpr(preset: any, videoDurationSeconds: number | n
   return { enableExpr, alphaExpr }
 }
 
+async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  try {
+    return await fn(dir)
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
+  }
+}
+
 async function probeVideoDisplayDimensions(filePath: string): Promise<{ width: number; height: number }> {
   return await new Promise((resolve, reject) => {
     const p = spawn(
@@ -413,6 +424,108 @@ function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLi
 }
 
 export async function burnScreenTitleIntoMp4(opts: {
+  inPath: string
+  outPath: string
+  screenTitle: ScreenTitleV1
+  videoDurationSeconds: number | null
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<void> {
+  if (SCREEN_TITLE_RENDERER === 'pango') {
+    try {
+      await burnScreenTitleWithPango(opts)
+      return
+    } catch (err) {
+      // Fall back to drawtext if the Pango+Cairo renderer isn't available or fails for a specific input.
+      // Keep a breadcrumb in logs to aid debugging.
+      try {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (opts.logPaths?.stderrPath) fs.appendFileSync(opts.logPaths.stderrPath, `[screen_title:pango_fallback] ${msg}\n`)
+      } catch {}
+    }
+  }
+  return await burnScreenTitleWithDrawtext(opts)
+}
+
+async function burnScreenTitleWithPango(opts: {
+  inPath: string
+  outPath: string
+  screenTitle: ScreenTitleV1
+  videoDurationSeconds: number | null
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<void> {
+  const rawText = String(opts.screenTitle?.text || '').replace(/\r\n/g, '\n').trim()
+  if (!rawText) return
+
+  const dims = await probeVideoDisplayDimensions(opts.inPath)
+  const portrait = dims.height >= dims.width
+  const frame = portrait ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 }
+
+  const preset = opts.screenTitle.preset || {}
+  const timingRule = String(preset?.timingRule || 'first_only').toLowerCase()
+  const timingSecondsRaw = preset?.timingSeconds != null ? Number(preset.timingSeconds) : 10
+  const endS =
+    timingRule === 'first_only'
+      ? clampNum(timingSecondsRaw, 0, 3600)
+      : (opts.videoDurationSeconds != null && Number.isFinite(opts.videoDurationSeconds) && opts.videoDurationSeconds > 0 ? opts.videoDurationSeconds : null)
+  const totalS = endS != null ? endS : 60 * 60
+
+  const fade = String(preset?.fade || 'out').toLowerCase()
+  const wantIn = fade === 'in' || fade === 'in_out'
+  const wantOut = fade === 'out' || fade === 'in_out'
+  const f = 0.5
+  const fadeInS = wantIn ? f : 0
+  const fadeOutS = wantOut ? f : 0
+
+  return await withTempDir('bacs-pango-title-', async (tmpDir) => {
+    const pngPath = path.join(tmpDir, 'screen-title.png')
+    await renderScreenTitlePngWithPango({
+      input: { text: rawText, preset, frame },
+      outPath: pngPath,
+    })
+
+    const filterParts: string[] = []
+    filterParts.push(`[0:v]setpts=PTS-STARTPTS[basein]`)
+    filterParts.push(`[1:v]format=rgba[ovraw]`)
+    filterParts.push(`[ovraw][basein]scale2ref=w=main_w:h=main_h[ov][base]`)
+    filterParts.push(`[base]setpts=PTS-STARTPTS[base0]`)
+
+    const ovChain: string[] = []
+    ovChain.push(`[ov]setpts=PTS-STARTPTS`)
+    if (fadeInS > 0) ovChain.push(`fade=t=in:st=0:d=${fadeInS.toFixed(3)}:alpha=1`)
+    if (fadeOutS > 0 && endS != null && endS > 0) {
+      const st = Math.max(0, endS - fadeOutS)
+      ovChain.push(`fade=t=out:st=${st.toFixed(3)}:d=${fadeOutS.toFixed(3)}:alpha=1`)
+    }
+    const trimDur = Math.max(0.1, totalS + fadeOutS)
+    ovChain.push(`trim=duration=${trimDur.toFixed(3)}`)
+    ovChain.push(`setpts=PTS+0/TB`)
+    filterParts.push(ovChain.join(',') + `[ovt]`)
+
+    const enableExpr = endS != null ? `between(t\\,0\\,${endS.toFixed(3)})` : '1'
+    filterParts.push(`[base0][ovt]overlay=0:0:eof_action=pass:enable='${enableExpr}'[vout]`)
+
+    const filter = filterParts.join(';')
+    await runFfmpeg(
+      [
+        '-i', opts.inPath,
+        '-loop', '1', '-i', pngPath,
+        '-filter_complex', filter,
+        '-map', '[vout]',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '20',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'copy',
+        '-movflags', '+faststart',
+        opts.outPath,
+      ],
+      opts.logPaths
+    )
+  })
+}
+
+async function burnScreenTitleWithDrawtext(opts: {
   inPath: string
   outPath: string
   screenTitle: ScreenTitleV1

@@ -521,7 +521,20 @@ export default function ProducePage() {
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
   const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
+  const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
+  const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
+
+  useEffect(() => {
+    // If the inputs change, invalidate the cached preview PNG.
+    if (screenTitlePreviewPngUrl) {
+      try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
+    }
+    setScreenTitlePreviewPngUrl(null)
+    setScreenTitlePreviewError(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScreenTitlePresetId, screenTitleText])
 
   useEffect(() => {
     let cancelled = false
@@ -1327,7 +1340,21 @@ export default function ProducePage() {
 	                  }}
 	                />
 
-	                {selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
+	                {screenTitlePreviewPngUrl ? (
+	                  <img
+	                    src={screenTitlePreviewPngUrl}
+	                    alt=""
+	                    style={{
+	                      position: 'absolute',
+	                      inset: 0,
+	                      width: '100%',
+	                      height: '100%',
+	                      objectFit: 'cover',
+	                      zIndex: 3,
+	                      pointerEvents: 'none',
+	                    }}
+	                  />
+	                ) : selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
 	                  <div
 	                    style={{
 	                      ...computeScreenTitleOverlayCss(selectedScreenTitlePreset),
@@ -1502,7 +1529,7 @@ export default function ProducePage() {
 
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div style={{ color: '#777', fontSize: 13 }}>
-                      Max 140 chars • max 2 lines
+                      Max 140 chars • max 3 lines
                     </div>
                     <div style={{ color: '#777', fontSize: 13 }}>
                       {(screenTitleText || '').length}/140
@@ -1515,11 +1542,11 @@ export default function ProducePage() {
                       let v = String(e.target.value || '')
                       v = v.replace(/\r\n/g, '\n')
                       const lines = v.split('\n')
-                      if (lines.length > 2) v = `${lines[0]}\n${lines[1]}`
+                      if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
                       if (v.length > 140) v = v.slice(0, 140)
                       setScreenTitleText(v)
                     }}
-                    rows={2}
+                    rows={3}
                     placeholder={selectedScreenTitlePresetId ? 'Enter a short title (optional)' : 'Select a preset to enable a screen title'}
                     style={{
                       padding: '10px 12px',
@@ -1534,7 +1561,87 @@ export default function ProducePage() {
                   />
 
                   {(selectedScreenTitlePresetId != null || screenTitleText.trim()) ? (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                      {selectedScreenTitlePresetId != null && screenTitleText.trim() ? (
+                        <button
+                          type="button"
+                          disabled={!uploadId || screenTitlePreviewLoading}
+                          onClick={async () => {
+                            if (!uploadId || !selectedScreenTitlePresetId) return
+                            const csrf = getCsrfToken()
+                            if (!csrf) {
+                              setScreenTitlePreviewError('Missing CSRF token; refresh and try again.')
+                              return
+                            }
+                            setScreenTitlePreviewLoading(true)
+                            setScreenTitlePreviewError(null)
+                            try {
+                              const res = await fetch('/api/screen-titles/preview', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'x-csrf-token': csrf,
+                                },
+                                credentials: 'same-origin',
+                                body: JSON.stringify({
+                                  uploadId,
+                                  presetId: selectedScreenTitlePresetId,
+                                  text: screenTitleText,
+                                }),
+                              })
+                              if (!res.ok) {
+                                const j = await res.json().catch(() => null)
+                                const err = j?.error ? String(j.error) : `preview_failed_${res.status}`
+                                throw new Error(err)
+                              }
+                              const blob = await res.blob()
+                              const url = URL.createObjectURL(blob)
+                              if (screenTitlePreviewPngUrl) {
+                                try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
+                              }
+                              setScreenTitlePreviewPngUrl(url)
+                            } catch (e: any) {
+                              setScreenTitlePreviewError(String(e?.message || e || 'preview_failed'))
+                            } finally {
+                              setScreenTitlePreviewLoading(false)
+                            }
+                          }}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(10,132,255,0.75)',
+                            background: 'rgba(10,132,255,0.16)',
+                            color: '#cfe6ff',
+                            fontWeight: 800,
+                            cursor: screenTitlePreviewLoading ? 'default' : 'pointer',
+                            opacity: screenTitlePreviewLoading ? 0.7 : 1,
+                          }}
+                        >
+                          {screenTitlePreviewLoading ? 'Generating…' : 'Generate preview'}
+                        </button>
+                      ) : null}
+                      {screenTitlePreviewPngUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (screenTitlePreviewPngUrl) {
+                              try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
+                            }
+                            setScreenTitlePreviewPngUrl(null)
+                          }}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.35)',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: '#fff',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Clear preview
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -1554,6 +1661,12 @@ export default function ProducePage() {
                       >
                         Clear
                       </button>
+                    </div>
+                  ) : null}
+
+                  {screenTitlePreviewError ? (
+                    <div style={{ color: '#ff9b9b', fontSize: 13 }}>
+                      Preview error: {screenTitlePreviewError}
                     </div>
                   ) : null}
 
