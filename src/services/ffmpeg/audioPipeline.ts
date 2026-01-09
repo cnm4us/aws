@@ -324,17 +324,19 @@ async function probeVideoDisplayDimensions(filePath: string): Promise<{ width: n
   })
 }
 
-function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLines: number }): string {
+function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLines: number; ellipsis?: boolean }): { text: string; truncated: boolean } {
   const maxChars = Math.max(8, Math.floor(opts.maxCharsPerLine))
   const maxLines = Math.max(1, Math.floor(opts.maxLines))
+  const wantEllipsis = Boolean(opts.ellipsis)
   const raw = String(opts.text || '').replace(/\r\n/g, '\n').trim()
-  if (!raw) return ''
+  if (!raw) return { text: '', truncated: false }
 
   const segments = raw.split('\n').map((s) => s.trim()).filter(Boolean)
   const wordsBySegment = segments.length ? segments.map((s) => s.split(/\s+/).filter(Boolean)) : [raw.split(/\s+/).filter(Boolean)]
 
   const lines: string[] = []
   let current = ''
+  let truncated = false
 
   const flushLine = () => {
     const trimmed = current.trim()
@@ -365,21 +367,22 @@ function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLi
   }
 
   const forceStop = () => {
+    truncated = true
     if (!lines.length) return ''
-    lines[lines.length - 1] = truncateLine(lines[lines.length - 1])
+    if (wantEllipsis) lines[lines.length - 1] = truncateLine(lines[lines.length - 1])
     return lines.slice(0, maxLines).join('\n')
   }
 
   for (let si = 0; si < wordsBySegment.length; si++) {
-    if (lines.length >= maxLines) return forceStop()
+    if (lines.length >= maxLines) return { text: forceStop(), truncated }
     if (si > 0) {
       flushLine()
-      if (lines.length >= maxLines) return forceStop()
+      if (lines.length >= maxLines) return { text: forceStop(), truncated }
     }
 
     const words = wordsBySegment[si] || []
     for (const word of words) {
-      if (lines.length >= maxLines) return forceStop()
+      if (lines.length >= maxLines) return { text: forceStop(), truncated }
       if (String(word).length > maxChars) {
         // Break long tokens so we never produce a single ultra-long unwrappable line.
         const token = String(word)
@@ -389,21 +392,24 @@ function wrapTextToMaxLines(opts: { text: string; maxCharsPerLine: number; maxLi
           i += maxChars
           pushWord(chunk)
           if (current.length >= maxChars) flushLine()
-          if (lines.length >= maxLines) return forceStop()
+          if (lines.length >= maxLines) return { text: forceStop(), truncated }
         }
         continue
       }
       pushWord(word)
       if (current.length >= maxChars) flushLine()
-      if (lines.length >= maxLines) return forceStop()
+      if (lines.length >= maxLines) return { text: forceStop(), truncated }
     }
   }
 
   flushLine()
   if (lines.length > maxLines) {
-    return lines.slice(0, maxLines).join('\n')
+    truncated = true
+    const sliced = lines.slice(0, maxLines)
+    if (wantEllipsis) sliced[sliced.length - 1] = truncateLine(sliced[sliced.length - 1])
+    return { text: sliced.join('\n'), truncated }
   }
-  return lines.join('\n')
+  return { text: lines.join('\n'), truncated }
 }
 
 export async function burnScreenTitleIntoMp4(opts: {
@@ -421,7 +427,7 @@ export async function burnScreenTitleIntoMp4(opts: {
     const preset = opts.screenTitle.preset || {}
     const pos = normalizeScreenTitlePosition(preset.position)
     const style = String(preset.style || 'pill').toLowerCase()
-    const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
+    const initialFontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
     const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
     const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
     const pillBgOpacityPct = clampNum(preset.pillBgOpacityPct ?? 55, 0, 100)
@@ -434,16 +440,38 @@ export async function burnScreenTitleIntoMp4(opts: {
     const boxPadPx = style === 'pill' ? 10 : 0
     const borderPadPx = style === 'outline' ? 3 : 0
     const extraPadPx = Math.max(boxPadPx, borderPadPx)
-    const maxLinePx = Math.max(
-      10,
-      Math.min(dims.width * maxWidthPct, dims.width - (2 * dims.width * xInset)) - (2 * extraPadPx)
-    )
-    const fontPx = dims.height * (fontSizePct / 100)
-    // Conservative estimate to avoid overflow: bold fonts + box padding can push width beyond naive averages.
-    const avgCharPx = Math.max(7, fontPx * 0.74)
-    const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
-    const wrappedText = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3 })
-    if (!wrappedText) return
+
+    const computeMaxLinePx = () =>
+      Math.max(
+        10,
+        Math.min(dims.width * maxWidthPct, dims.width - (2 * dims.width * xInset)) - (2 * extraPadPx)
+      )
+
+    let fontSizePct = initialFontSizePct
+    let wrappedText = ''
+    let wrappedTruncated = false
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const maxLinePx = computeMaxLinePx()
+      const fontPx = dims.height * (fontSizePct / 100)
+      const avgCharPx = Math.max(6, fontPx * 0.60)
+      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.95) / avgCharPx))
+      const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: false })
+      wrappedText = res.text
+      wrappedTruncated = res.truncated
+      if (!wrappedText) return
+      if (!wrappedTruncated) break
+      fontSizePct = Math.max(2, fontSizePct - 0.5)
+      if (fontSizePct <= 2) break
+    }
+
+    if (wrappedTruncated) {
+      const maxLinePx = computeMaxLinePx()
+      const fontPx = dims.height * (fontSizePct / 100)
+      const avgCharPx = Math.max(6, fontPx * 0.60)
+      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.95) / avgCharPx))
+      const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: true })
+      wrappedText = res.text
+    }
 
     const tmpDir = path.dirname(opts.outPath)
     textFile = path.join(tmpDir, `screen-title-${randomUUID()}.txt`)

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type MeResponse = {
@@ -37,6 +37,13 @@ type UploadDetail = {
   poster_portrait_s3?: string | null
   poster_landscape_s3?: string | null
   poster_s3?: string | null
+}
+
+function computePreviewAspectRatio(upload: UploadDetail | null): number {
+  const w = upload?.width != null ? Number(upload.width) : null
+  const h = upload?.height != null ? Number(upload.height) : null
+  if (w != null && h != null && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return w / h
+  return 9 / 16
 }
 
 type AssetItem = {
@@ -514,28 +521,7 @@ export default function ProducePage() {
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
   const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
-  const previewBoxRef = useRef<HTMLDivElement | null>(null)
-  const [previewBoxHeightPx, setPreviewBoxHeightPx] = useState<number | null>(null)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
-
-  useEffect(() => {
-    const el = previewBoxRef.current
-    if (!el) return
-    const update = () => {
-      try {
-        const h = el.getBoundingClientRect().height
-        if (Number.isFinite(h) && h > 0) setPreviewBoxHeightPx(Math.round(h))
-      } catch {}
-    }
-    update()
-    const RO = (window as any).ResizeObserver as (typeof ResizeObserver | undefined)
-    if (!RO) return
-    const ro = new RO(() => update())
-    ro.observe(el)
-    return () => {
-      try { ro.disconnect() } catch {}
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -1307,17 +1293,23 @@ export default function ProducePage() {
           <div style={{ color: '#bbb' }}>{displayName}</div>
         </header>
 
-	        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 	          <div>
 	            {uploadPreviewSrc ? (
 	              <div
-	                ref={previewBoxRef}
-	                style={{ width: 280, borderRadius: 12, background: '#111', overflow: 'hidden', position: 'relative' }}
+	                style={{
+	                  width: 280,
+	                  aspectRatio: `${computePreviewAspectRatio(upload)}`,
+	                  borderRadius: 12,
+	                  background: '#111',
+	                  overflow: 'hidden',
+	                  position: 'relative',
+	                }}
 	              >
 	                <img
 	                  src={uploadPreviewSrc}
 	                  alt="poster"
-	                  style={{ width: '100%', display: 'block', objectFit: 'cover' }}
+	                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
 	                  onError={() => {
 	                    if (uploadPreviewMode === 'thumb') {
 	                      if (poster) {
@@ -1364,13 +1356,15 @@ export default function ProducePage() {
 	                            : 'transparent',
 	                      color: selectedScreenTitlePreset.fontColor || '#ffffff',
 	                      fontWeight: 850,
-	                      fontSize:
-	                        previewBoxHeightPx != null
-	                          ? Math.round(
-	                              clampNumber(previewBoxHeightPx, 180, 2000) *
-	                                clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 100, 0.01, 0.2)
-	                            )
-	                          : Math.round(14 * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 4.5, 0.6, 1.8)),
+	                      fontSize: (() => {
+	                        const w = 280
+	                        const ar = computePreviewAspectRatio(upload)
+	                        const h = ar > 0 ? (w / ar) : 498
+	                        const px = Math.round(
+	                          clampNumber(h, 180, 2000) * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 100, 0.01, 0.2)
+	                        )
+	                        return px
+	                      })(),
 	                      lineHeight: 1.2,
 	                      whiteSpace: 'pre-wrap',
 	                      overflowWrap: 'anywhere',
