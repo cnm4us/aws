@@ -44,13 +44,16 @@ screenTitlePreviewRouter.post('/api/screen-titles/preview', requireAuth, async (
       outPath,
     })
 
+    // Avoid res.sendFile() here because it streams asynchronously; we'd delete tmpDir in finally
+    // before the file is fully read. Read into memory and send as a single response.
+    const png = fs.readFileSync(outPath)
     res.setHeader('Content-Type', 'image/png')
     res.setHeader('Cache-Control', 'no-store')
-    res.sendFile(outPath)
+    res.setHeader('Content-Length', String(png.length))
+    res.status(200).end(png)
   } catch (err) {
     next(err)
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }
 })
-
