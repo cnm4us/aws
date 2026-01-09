@@ -1773,68 +1773,66 @@ export default function ProducePage() {
                     </select>
                   </label>
 
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ color: '#bbb', fontWeight: 750 }}>Custom Image</div>
-                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          disabled={firstScreenMode !== 'custom_image'}
-                          onClick={openTitlePagePicker}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(212,175,55,0.85)',
-                            background: 'rgba(212,175,55,0.14)',
-                            color: '#d4af37',
-                            fontWeight: 700,
-                            cursor: firstScreenMode !== 'custom_image' ? 'default' : 'pointer',
-                            opacity: firstScreenMode !== 'custom_image' ? 0.6 : 1,
-                          }}
-                        >
-                          Choose
-                        </button>
-                        {selectedTitleUploadId != null ? (
+                  {firstScreenMode === 'custom_image' ? (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Custom Image</div>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <button
                             type="button"
-                            disabled={firstScreenMode !== 'custom_image'}
-                            onClick={() => applyTitlePageSelection(null)}
+                            onClick={openTitlePagePicker}
                             style={{
                               padding: '10px 12px',
                               borderRadius: 10,
-                              border: '1px solid rgba(212,175,55,0.65)',
-                              background: 'rgba(212,175,55,0.10)',
+                              border: '1px solid rgba(212,175,55,0.85)',
+                              background: 'rgba(212,175,55,0.14)',
                               color: '#d4af37',
-                              fontWeight: 800,
-                              cursor: firstScreenMode !== 'custom_image' ? 'default' : 'pointer',
-                              opacity: firstScreenMode !== 'custom_image' ? 0.6 : 1,
+                              fontWeight: 700,
+                              cursor: 'pointer',
                             }}
                           >
-                            Clear
+                            Choose
                           </button>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div style={{ color: '#d4af37', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedTitlePage ? (selectedTitlePage.modified_filename || selectedTitlePage.original_filename || `Title ${selectedTitlePage.id}`) : 'None'}
-                    </div>
-                    {selectedTitlePage ? (
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <img
-                          src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
-                          alt="title page"
-                          style={{ width: 96, height: 54, objectFit: 'cover', background: '#111', borderRadius: 10 }}
-                        />
-                        <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                          {formatBytes(selectedTitlePage.size_bytes)}{selectedTitlePage.created_at ? ` • ${formatDate(selectedTitlePage.created_at)}` : ''}
+                          {selectedTitleUploadId != null ? (
+                            <button
+                              type="button"
+                              onClick={() => applyTitlePageSelection(null)}
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(212,175,55,0.65)',
+                                background: 'rgba(212,175,55,0.10)',
+                                color: '#d4af37',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Clear
+                            </button>
+                          ) : null}
                         </div>
                       </div>
-                    ) : (
-                      <div style={{ color: '#777', fontSize: 13 }}>
-                        Choose an image to use as the first screen.
+                      <div style={{ color: '#d4af37', fontWeight: 800, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {selectedTitlePage ? (selectedTitlePage.modified_filename || selectedTitlePage.original_filename || `Title ${selectedTitlePage.id}`) : 'None'}
                       </div>
-                    )}
-                  </div>
+                      {selectedTitlePage ? (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <img
+                            src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
+                            alt="title page"
+                            style={{ width: 96, height: 54, objectFit: 'cover', background: '#111', borderRadius: 10 }}
+                          />
+                          <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
+                            {formatBytes(selectedTitlePage.size_bytes)}{selectedTitlePage.created_at ? ` • ${formatDate(selectedTitlePage.created_at)}` : ''}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: '#777', fontSize: 13 }}>
+                          Choose an image to use as the first screen.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
 
                   <label style={{ display: 'grid', gap: 6 }}>
                     <div style={{ color: '#bbb', fontWeight: 750 }}>First Screen Hold</div>
