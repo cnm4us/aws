@@ -19,6 +19,7 @@ import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
+import { SCREEN_TITLE_RENDERER } from './config'
 import { sessionParse } from './middleware/sessionParse';
 import { csrfProtect } from './middleware/csrf';
 import { requireAuth } from './middleware/auth';
@@ -87,6 +88,7 @@ export function buildServer(): express.Application {
           userId: null,
           email: null,
           displayName: null,
+          screenTitleRenderer: SCREEN_TITLE_RENDERER,
           roles: [],
           isSiteAdmin: false,
           hasAnySpaceAdmin: false,
@@ -158,6 +160,7 @@ export function buildServer(): express.Application {
         userId: user.id,
         email: user.email,
         displayName: user.display_name,
+        screenTitleRenderer: SCREEN_TITLE_RENDERER,
         roles: roles.filter((r: string) => /^site_/.test(String(r))),
         isSiteAdmin,
         hasAnySpaceAdmin,

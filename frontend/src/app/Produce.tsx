@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CompactAudioPlayer from '../components/CompactAudioPlayer'
 
 type MeResponse = {
@@ -6,6 +6,7 @@ type MeResponse = {
   email: string | null
   displayName: string | null
   isSiteAdmin?: boolean
+  screenTitleRenderer?: 'drawtext' | 'pango'
 }
 
 async function ensureLoggedIn(): Promise<MeResponse | null> {
@@ -525,6 +526,7 @@ export default function ProducePage() {
   const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
   const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
   const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
+  const screenTitlePreviewAutoDoneRef = useRef(false)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
 
   useEffect(() => {
@@ -536,6 +538,58 @@ export default function ProducePage() {
     setScreenTitlePreviewError(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedScreenTitlePresetId, screenTitleText])
+
+  const generateScreenTitlePreview = useCallback(async () => {
+    if (!uploadId || !selectedScreenTitlePresetId) return
+    const text = String(screenTitleText || '').replace(/\r\n/g, '\n').trim()
+    if (!text) return
+    const csrf = getCsrfToken()
+    if (!csrf) {
+      setScreenTitlePreviewError('Missing CSRF token; refresh and try again.')
+      return
+    }
+    setScreenTitlePreviewLoading(true)
+    setScreenTitlePreviewError(null)
+    try {
+      const res = await fetch('/api/screen-titles/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrf,
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          uploadId,
+          presetId: selectedScreenTitlePresetId,
+          text,
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => null)
+        const err = j?.error ? String(j.error) : `preview_failed_${res.status}`
+        throw new Error(err)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (screenTitlePreviewPngUrl) {
+        try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
+      }
+      setScreenTitlePreviewPngUrl(url)
+    } catch (e: any) {
+      setScreenTitlePreviewError(String(e?.message || e || 'preview_failed'))
+    } finally {
+      setScreenTitlePreviewLoading(false)
+    }
+  }, [uploadId, selectedScreenTitlePresetId, screenTitleText, screenTitlePreviewPngUrl])
+
+  useEffect(() => {
+    if (screenTitlePreviewAutoDoneRef.current) return
+    if (me?.screenTitleRenderer !== 'pango') return
+    if (!selectedScreenTitlePresetId) return
+    if (!String(screenTitleText || '').trim()) return
+    screenTitlePreviewAutoDoneRef.current = true
+    void generateScreenTitlePreview()
+  }, [me?.screenTitleRenderer, selectedScreenTitlePresetId, screenTitleText, generateScreenTitlePreview])
 
   useEffect(() => {
     let cancelled = false
@@ -1355,7 +1409,7 @@ export default function ProducePage() {
 	                      pointerEvents: 'none',
 	                    }}
 	                  />
-	                ) : selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
+	                ) : (me?.screenTitleRenderer !== 'pango') && selectedScreenTitlePreset && (screenTitleText || '').trim() ? (
 	                  <div
 	                    style={{
 	                      ...computeScreenTitleOverlayCss(selectedScreenTitlePreset),
@@ -1578,46 +1632,7 @@ export default function ProducePage() {
                         <button
                           type="button"
                           disabled={!uploadId || screenTitlePreviewLoading}
-                          onClick={async () => {
-                            if (!uploadId || !selectedScreenTitlePresetId) return
-                            const csrf = getCsrfToken()
-                            if (!csrf) {
-                              setScreenTitlePreviewError('Missing CSRF token; refresh and try again.')
-                              return
-                            }
-                            setScreenTitlePreviewLoading(true)
-                            setScreenTitlePreviewError(null)
-                            try {
-                              const res = await fetch('/api/screen-titles/preview', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'x-csrf-token': csrf,
-                                },
-                                credentials: 'same-origin',
-                                body: JSON.stringify({
-                                  uploadId,
-                                  presetId: selectedScreenTitlePresetId,
-                                  text: screenTitleText,
-                                }),
-                              })
-                              if (!res.ok) {
-                                const j = await res.json().catch(() => null)
-                                const err = j?.error ? String(j.error) : `preview_failed_${res.status}`
-                                throw new Error(err)
-                              }
-                              const blob = await res.blob()
-                              const url = URL.createObjectURL(blob)
-                              if (screenTitlePreviewPngUrl) {
-                                try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
-                              }
-                              setScreenTitlePreviewPngUrl(url)
-                            } catch (e: any) {
-                              setScreenTitlePreviewError(String(e?.message || e || 'preview_failed'))
-                            } finally {
-                              setScreenTitlePreviewLoading(false)
-                            }
-                          }}
+                          onClick={generateScreenTitlePreview}
                           style={{
                             padding: '10px 12px',
                             borderRadius: 10,
