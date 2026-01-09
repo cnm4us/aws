@@ -460,7 +460,9 @@ export async function burnScreenTitleIntoMp4(opts: {
 
     const padPx = style === 'pill' ? 10 : 0
     const xExpr = escapeFfmpegExprCommas(
-      `max(w*${xInset.toFixed(4)}+${padPx},min((w-text_w)/2,w-text_w-w*${xInset.toFixed(4)}-${padPx}))`
+      // Center *including* pill padding. drawtext's `text_w` excludes the box padding, so we subtract `padPx`
+      // from the centered position to keep the whole pill inside the frame.
+      `max(w*${xInset.toFixed(4)}+${padPx},min((w-text_w)/2-${padPx},w-text_w-w*${xInset.toFixed(4)}-${padPx}))`
     )
 
     const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
