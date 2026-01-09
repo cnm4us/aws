@@ -431,17 +431,8 @@ export async function burnScreenTitleIntoMp4(opts: {
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }): Promise<void> {
   if (SCREEN_TITLE_RENDERER === 'pango') {
-    try {
-      await burnScreenTitleWithPango(opts)
-      return
-    } catch (err) {
-      // Fall back to drawtext if the Pango+Cairo renderer isn't available or fails for a specific input.
-      // Keep a breadcrumb in logs to aid debugging.
-      try {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (opts.logPaths?.stderrPath) fs.appendFileSync(opts.logPaths.stderrPath, `[screen_title:pango_fallback] ${msg}\n`)
-      } catch {}
-    }
+    await burnScreenTitleWithPango(opts)
+    return
   }
   return await burnScreenTitleWithDrawtext(opts)
 }
@@ -457,8 +448,7 @@ async function burnScreenTitleWithPango(opts: {
   if (!rawText) return
 
   const dims = await probeVideoDisplayDimensions(opts.inPath)
-  const portrait = dims.height >= dims.width
-  const frame = portrait ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 }
+  const frame = { width: dims.width, height: dims.height }
 
   const preset = opts.screenTitle.preset || {}
   const timingRule = String(preset?.timingRule || 'first_only').toLowerCase()
@@ -484,10 +474,8 @@ async function burnScreenTitleWithPango(opts: {
     })
 
     const filterParts: string[] = []
-    filterParts.push(`[0:v]setpts=PTS-STARTPTS[basein]`)
-    filterParts.push(`[1:v]format=rgba[ovraw]`)
-    filterParts.push(`[ovraw][basein]scale2ref=w=main_w:h=main_h[ov][base]`)
-    filterParts.push(`[base]setpts=PTS-STARTPTS[base0]`)
+    filterParts.push(`[0:v]setpts=PTS-STARTPTS[base0]`)
+    filterParts.push(`[1:v]format=rgba[ov]`)
 
     const ovChain: string[] = []
     ovChain.push(`[ov]setpts=PTS-STARTPTS`)

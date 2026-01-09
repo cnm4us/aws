@@ -36,7 +36,7 @@ screenTitlePreviewRouter.post('/api/screen-titles/preview', requireAuth, async (
     const w = upload.width != null ? Number(upload.width) : 0
     const h = upload.height != null ? Number(upload.height) : 0
     const portrait = Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? (h >= w) : true
-    const frame = portrait ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 }
+    const frame = w > 0 && h > 0 ? { width: w, height: h } : (portrait ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 })
 
     const outPath = path.join(tmpDir, 'preview.png')
     await renderScreenTitlePngWithPango({
