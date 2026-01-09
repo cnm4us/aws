@@ -25,6 +25,7 @@ export async function getById(id: number, conn?: any): Promise<Publication | nul
     visible_in_global: Boolean(Number(r.visible_in_global)),
     story_text: r.story_text == null ? null : String(r.story_text),
     story_updated_at: r.story_updated_at == null ? null : String(r.story_updated_at),
+    story_source: r.story_source == null ? 'custom' : String(r.story_source),
     published_at: r.published_at ? String(r.published_at) : null,
     unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
     created_at: String(r.created_at),
@@ -39,9 +40,24 @@ export async function updateStory(publicationId: number, storyText: string | nul
     `UPDATE space_publications
         SET story_text = ?,
             story_updated_at = NOW(),
+            story_source = 'custom',
             updated_at = NOW()
       WHERE id = ?`,
     [txt, publicationId]
+  )
+}
+
+export async function updateStoryFromProductionDefault(publicationId: number, storyText: string | null, conn?: any): Promise<void> {
+  const db = conn || getPool()
+  const txt = storyText == null ? null : String(storyText)
+  await db.query(
+    `UPDATE space_publications
+        SET story_text = ?,
+            story_updated_at = CASE WHEN ? IS NULL THEN NULL ELSE NOW() END,
+            story_source = 'production',
+            updated_at = NOW()
+      WHERE id = ?`,
+    [txt, txt, publicationId]
   )
 }
 
@@ -94,15 +110,20 @@ export async function insert(data: {
   visibleInGlobal: boolean
   publishedAt?: Date | string | null
   unpublishedAt?: Date | string | null
+  storyText?: string | null
+  storySource?: 'production' | 'custom'
 }, conn?: any): Promise<Publication> {
   const db = conn || getPool()
   const publishedAt = data.publishedAt ? new Date(data.publishedAt).toISOString().slice(0,19).replace('T',' ') : null
   const unpublishedAt = data.unpublishedAt ? new Date(data.unpublishedAt).toISOString().slice(0,19).replace('T',' ') : null
   const distribution = data.distributionFlags == null ? null : JSON.stringify(data.distributionFlags)
+  const storyText = data.storyText == null ? null : String(data.storyText)
+  const storyUpdatedAt = storyText ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null
+  const storySource = data.storySource ? String(data.storySource) : 'custom'
   const [result] = await db.query(
     `INSERT INTO space_publications
-       (upload_id, production_id, space_id, status, requested_by, approved_by, is_primary, visibility, distribution_flags, owner_user_id, visible_in_space, visible_in_global, published_at, unpublished_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (upload_id, production_id, space_id, status, requested_by, approved_by, is_primary, visibility, distribution_flags, owner_user_id, visible_in_space, visible_in_global, published_at, unpublished_at, story_text, story_updated_at, story_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.uploadId,
       data.productionId,
@@ -118,6 +139,9 @@ export async function insert(data: {
       data.visibleInGlobal ? 1 : 0,
       publishedAt,
       unpublishedAt,
+      storyText,
+      storyUpdatedAt,
+      storySource,
     ]
   )
   const id = Number((result as any).insertId)
@@ -184,12 +208,21 @@ export async function loadUpload(uploadId: number, conn?: any): Promise<{ id: nu
   return { id: Number(row.id), user_id: row.user_id == null ? null : Number(row.user_id), origin_space_id: row.origin_space_id == null ? null : Number(row.origin_space_id) }
 }
 
-export async function loadProduction(productionId: number, conn?: any): Promise<{ id: number; upload_id: number; user_id: number } | null> {
+export async function loadProduction(
+  productionId: number,
+  conn?: any
+): Promise<{ id: number; upload_id: number; user_id: number; default_story_text: string | null; default_story_updated_at: string | null } | null> {
   const db = conn || getPool()
-  const [rows] = await db.query(`SELECT id, upload_id, user_id FROM productions WHERE id = ? LIMIT 1`, [productionId])
+  const [rows] = await db.query(`SELECT id, upload_id, user_id, default_story_text, default_story_updated_at FROM productions WHERE id = ? LIMIT 1`, [productionId])
   const row = (rows as any[])[0]
   if (!row) return null
-  return { id: Number(row.id), upload_id: Number(row.upload_id), user_id: Number(row.user_id) }
+  return {
+    id: Number(row.id),
+    upload_id: Number(row.upload_id),
+    user_id: Number(row.user_id),
+    default_story_text: row.default_story_text == null ? null : String(row.default_story_text),
+    default_story_updated_at: row.default_story_updated_at == null ? null : String(row.default_story_updated_at),
+  }
 }
 
 export async function loadSpace(spaceId: number, conn?: any): Promise<{ id: number; type: string; owner_user_id: number | null; settings: any; slug?: string } | null> {
@@ -230,22 +263,24 @@ export async function listPublicationsForProduction(productionId: number, conn?:
   status: string
   published_at: string | null
   unpublished_at: string | null
+  story_source: string | null
   has_story: boolean
   story_preview: string | null
 }>> {
   const db = conn || getPool()
   const [rows] = await db.query(
-    `SELECT
-        sp.id,
-        sp.space_id,
-        sp.status,
-        sp.published_at,
-        sp.unpublished_at,
-        s.name AS space_name,
-        s.type AS space_type,
-        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
-        CASE
-          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+	    `SELECT
+	        sp.id,
+	        sp.space_id,
+	        sp.status,
+	        sp.published_at,
+	        sp.unpublished_at,
+          sp.story_source,
+	        s.name AS space_name,
+	        s.type AS space_type,
+	        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+	        CASE
+	          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
           ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
         END AS story_preview
        FROM space_publications sp
@@ -254,17 +289,18 @@ export async function listPublicationsForProduction(productionId: number, conn?:
       ORDER BY sp.published_at DESC, sp.id DESC`,
     [productionId]
   )
-  return (rows as any[]).map((r) => ({
-    id: Number(r.id),
-    space_id: Number(r.space_id),
-    space_name: String(r.space_name || ''),
-    space_type: String(r.space_type || ''),
-    status: String(r.status || ''),
-    published_at: r.published_at ? String(r.published_at) : null,
-    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
-    has_story: Boolean(Number(r.has_story)),
-    story_preview: r.story_preview == null ? null : String(r.story_preview),
-  }))
+	  return (rows as any[]).map((r) => ({
+	    id: Number(r.id),
+	    space_id: Number(r.space_id),
+	    space_name: String(r.space_name || ''),
+	    space_type: String(r.space_type || ''),
+	    status: String(r.status || ''),
+	    published_at: r.published_at ? String(r.published_at) : null,
+	    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+      story_source: r.story_source == null ? null : String(r.story_source),
+	    has_story: Boolean(Number(r.has_story)),
+	    story_preview: r.story_preview == null ? null : String(r.story_preview),
+	  }))
 }
 
 export async function listPublicationsForUpload(uploadId: number, conn?: any): Promise<Array<{
@@ -275,22 +311,24 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
   status: string
   published_at: string | null
   unpublished_at: string | null
+  story_source: string | null
   has_story: boolean
   story_preview: string | null
 }>> {
   const db = conn || getPool()
   const [rows] = await db.query(
-    `SELECT
-        sp.id,
-        sp.space_id,
-        sp.status,
-        sp.published_at,
-        sp.unpublished_at,
-        s.name AS space_name,
-        s.type AS space_type,
-        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
-        CASE
-          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
+	    `SELECT
+	        sp.id,
+	        sp.space_id,
+	        sp.status,
+	        sp.published_at,
+	        sp.unpublished_at,
+          sp.story_source,
+	        s.name AS space_name,
+	        s.type AS space_type,
+	        CASE WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN 0 ELSE 1 END AS has_story,
+	        CASE
+	          WHEN sp.story_text IS NULL OR TRIM(sp.story_text) = '' THEN NULL
           ELSE LEFT(REPLACE(REPLACE(TRIM(sp.story_text), CHAR(13), ''), CHAR(10), ' '), 200)
         END AS story_preview
        FROM space_publications sp
@@ -299,17 +337,18 @@ export async function listPublicationsForUpload(uploadId: number, conn?: any): P
       ORDER BY sp.published_at DESC, sp.id DESC`,
     [uploadId]
   )
-  return (rows as any[]).map((r) => ({
-    id: Number(r.id),
-    space_id: Number(r.space_id),
-    space_name: String(r.space_name || ''),
-    space_type: String(r.space_type || ''),
-    status: String(r.status || ''),
-    published_at: r.published_at ? String(r.published_at) : null,
-    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
-    has_story: Boolean(Number(r.has_story)),
-    story_preview: r.story_preview == null ? null : String(r.story_preview),
-  }))
+	  return (rows as any[]).map((r) => ({
+	    id: Number(r.id),
+	    space_id: Number(r.space_id),
+	    space_name: String(r.space_name || ''),
+	    space_type: String(r.space_type || ''),
+	    status: String(r.status || ''),
+	    published_at: r.published_at ? String(r.published_at) : null,
+	    unpublished_at: r.unpublished_at ? String(r.unpublished_at) : null,
+      story_source: r.story_source == null ? null : String(r.story_source),
+	    has_story: Boolean(Number(r.has_story)),
+	    story_preview: r.story_preview == null ? null : String(r.story_preview),
+	  }))
 }
 
 export async function listJumpSpacesForProduction(productionId: number, opts: { excludeSpaceIds?: number[] } = {}, conn?: any): Promise<Array<{

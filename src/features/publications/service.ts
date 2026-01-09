@@ -50,6 +50,9 @@ export async function createFromUpload(input: CreateFromUploadInput, ctx: Servic
 
   const isPrimary = upload.origin_space_id != null && Number(upload.origin_space_id) === Number(spaceId)
 
+  const boundProd = boundProductionId != null ? await repo.loadProduction(boundProductionId) : null
+  const defaultStoryText = boundProd ? boundProd.default_story_text : null
+
   const publication = await repo.insert({
     uploadId: uploadId,
     productionId: boundProductionId ?? null,
@@ -64,6 +67,8 @@ export async function createFromUpload(input: CreateFromUploadInput, ctx: Servic
     visibleInSpace,
     visibleInGlobal,
     publishedAt,
+    storyText: defaultStoryText,
+    storySource: boundProductionId != null ? 'production' : 'custom',
   })
   await repo.insertEvent(publication.id, ctx.userId, requireApproval ? 'create_pending' : 'auto_published', {
     visibility: publication.visibility,
@@ -122,6 +127,8 @@ export async function createFromProduction(input: CreateFromProductionInput, ctx
     visibleInSpace,
     visibleInGlobal,
     publishedAt,
+    storyText: prod.default_story_text,
+    storySource: 'production',
   })
   await repo.insertEvent(publication.id, ctx.userId, requireApproval ? 'create_pending' : 'auto_published', {
     visibility: publication.visibility,
@@ -263,6 +270,7 @@ export async function listByProductionDto(productionId: number, ctx: ServiceCont
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  storySource: string | null
   hasStory: boolean
   storyPreview: string | null
 }>> {
@@ -282,6 +290,7 @@ export async function listByProductionDto(productionId: number, ctx: ServiceCont
     status: r.status,
     publishedAt: r.published_at,
     unpublishedAt: r.unpublished_at,
+    storySource: r.story_source == null ? null : String(r.story_source),
     hasStory: Boolean(r.has_story),
     storyPreview: r.story_preview,
   }))
@@ -327,6 +336,7 @@ export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Pr
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  storySource: string | null
   hasStory: boolean
   storyPreview: string | null
 }>> {
@@ -346,6 +356,7 @@ export async function listByUploadDto(uploadId: number, ctx: ServiceContext): Pr
     status: r.status,
     publishedAt: r.published_at,
     unpublishedAt: r.unpublished_at,
+    storySource: r.story_source == null ? null : String(r.story_source),
     hasStory: Boolean(r.has_story),
     storyPreview: r.story_preview,
   }))
@@ -499,6 +510,24 @@ export async function setStory(publicationId: number, storyText: unknown, ctx: S
 
   const txt = normalizeStoryInput(storyText)
   await repo.updateStory(publicationId, txt)
+  return { ok: true, publicationId }
+}
+
+export async function resetStoryToProductionDefault(publicationId: number, ctx: ServiceContext): Promise<{ ok: true; publicationId: number }> {
+  const pub = await repo.getById(publicationId)
+  if (!pub) throw new NotFoundError('publication_not_found')
+  const checker = await resolveChecker(ctx.userId)
+  const isAdmin = await can(ctx.userId, PERM.VIDEO_DELETE_ANY, { checker })
+  const upload = await repo.loadUpload(pub.upload_id)
+  if (!upload) throw new NotFoundError('upload_not_found')
+  const isOwner = upload.user_id != null && Number(upload.user_id) === Number(ctx.userId)
+  if (!isAdmin && !isOwner) throw new ForbiddenError()
+  if (pub.production_id == null) throw new DomainError('production_not_found', 'production_not_found', 404)
+
+  const prod = await repo.loadProduction(Number(pub.production_id))
+  if (!prod) throw new NotFoundError('production_not_found')
+
+  await repo.updateStoryFromProductionDefault(publicationId, prod.default_story_text)
   return { ok: true, publicationId }
 }
 

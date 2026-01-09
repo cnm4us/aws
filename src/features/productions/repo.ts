@@ -89,3 +89,47 @@ export async function listSummariesForUploadIds(userId: number, uploadIds: numbe
   )
   return rows as any[]
 }
+
+export async function getDefaultStory(productionId: number): Promise<{ text: string | null; updatedAt: string | null } | null> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT default_story_text, default_story_updated_at
+       FROM productions
+      WHERE id = ?
+      LIMIT 1`,
+    [productionId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return {
+    text: row.default_story_text == null ? null : String(row.default_story_text),
+    updatedAt: row.default_story_updated_at == null ? null : String(row.default_story_updated_at),
+  }
+}
+
+export async function setDefaultStory(productionId: number, storyText: string | null): Promise<void> {
+  const db = getPool()
+  const txt = storyText == null ? null : String(storyText)
+  await db.query(
+    `UPDATE productions
+        SET default_story_text = ?,
+            default_story_updated_at = CASE WHEN ? IS NULL THEN NULL ELSE NOW() END,
+            updated_at = NOW()
+      WHERE id = ?`,
+    [txt, txt, productionId]
+  )
+}
+
+export async function propagateDefaultStoryToPublications(productionId: number, storyText: string | null): Promise<void> {
+  const db = getPool()
+  const txt = storyText == null ? null : String(storyText)
+  await db.query(
+    `UPDATE space_publications
+        SET story_text = ?,
+            story_updated_at = CASE WHEN ? IS NULL THEN NULL ELSE NOW() END,
+            updated_at = NOW()
+      WHERE production_id = ?
+        AND story_source = 'production'`,
+    [txt, txt, productionId]
+  )
+}

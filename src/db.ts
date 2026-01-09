@@ -468,10 +468,13 @@ export async function ensureSchema(db: DB) {
       KEY idx_productions_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 	  `);
-  // Add new columns/indexes for productions table if upgrading
-  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
-  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
-	  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
+	  // Add new columns/indexes for productions table if upgrading
+	  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS ulid CHAR(26) NULL`);
+	  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
+	  // Plan 50: production default story (applied to new publications; can be overridden per space)
+	  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS default_story_text TEXT NULL`);
+	  await db.query(`ALTER TABLE productions ADD COLUMN IF NOT EXISTS default_story_updated_at DATETIME NULL`);
+		  try { await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_productions_ulid ON productions (ulid)`); } catch {}
   // Plan 36: allow 'pending_media' status for async ffmpeg mastering jobs.
   try {
     await db.query(
@@ -1122,9 +1125,11 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS visible_in_global TINYINT(1) NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS likes_count INT UNSIGNED NOT NULL DEFAULT 0`);
   await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS comments_count INT UNSIGNED NOT NULL DEFAULT 0`);
-  // Optional per-space/per-publication plain-text story (shown on the feed)
-  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_text TEXT NULL`);
-  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_updated_at DATETIME NULL`);
+	  // Optional per-space/per-publication plain-text story (shown on the feed)
+	  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_text TEXT NULL`);
+	  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_updated_at DATETIME NULL`);
+	  // Plan 50: track whether a story is inherited from production default or custom per space
+	  await db.query(`ALTER TABLE space_publications ADD COLUMN IF NOT EXISTS story_source VARCHAR(32) NOT NULL DEFAULT 'custom'`);
 
   // Production captions (VTT) persisted per production (Plan 45)
   await db.query(`
@@ -1538,6 +1543,8 @@ export type ProductionRow = {
   upload_id: number;
   user_id: number;
   name?: string | null;
+  default_story_text?: string | null;
+  default_story_updated_at?: string | null;
   status: ProductionStatus;
   config: any;
   output_prefix: string | null;

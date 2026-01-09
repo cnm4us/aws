@@ -20,6 +20,8 @@ function mapProduction(row: any): ProductionRecord {
     upload_id: Number(row.upload_id),
     user_id: Number(row.user_id),
     name: row.name ? String(row.name) : null,
+    default_story_text: row.default_story_text == null ? null : String(row.default_story_text),
+    default_story_updated_at: row.default_story_updated_at == null ? null : String(row.default_story_updated_at),
     status: String(row.status) as any,
     config: row.config ? safeJson(row.config) : null,
     output_prefix: row.output_prefix ? String(row.output_prefix) : null,
@@ -53,6 +55,26 @@ function safeJson(input: any) {
 
 function normalizeUploadStatus(status: any): string {
   return String(status || '').toLowerCase()
+}
+
+function normalizeStoryInput(input: unknown): string | null {
+  const s = typeof input === 'string' ? input : String(input ?? '')
+  const normalized = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const trimmed = normalized.trim()
+  if (!trimmed) return null
+  if (normalized.length > 2000) throw new DomainError('story_too_long', 'story_too_long', 400)
+  return normalized
+}
+
+async function assertCanManageProduction(productionId: number, currentUserId: number) {
+  const row = await repo.getWithUpload(productionId)
+  if (!row) throw new NotFoundError('not_found')
+  const ownerId = Number(row.user_id)
+  const isOwner = ownerId === currentUserId
+  const checker = await resolveChecker(currentUserId)
+  const isAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+  return row
 }
 
 type DeleteSummary = { bucket: string; prefix: string; deleted: number; batches: number; samples: string[]; errors: string[] }
@@ -192,6 +214,28 @@ export async function get(id: number, currentUserId: number) {
     }
   } catch {}
   return rec
+}
+
+export async function getDefaultStory(productionId: number, currentUserId: number): Promise<{ storyText: string | null; updatedAt: string | null }> {
+  const row = await assertCanManageProduction(productionId, currentUserId)
+  const txt = row.default_story_text == null ? null : String(row.default_story_text)
+  const trimmed = txt != null ? txt.trim() : ''
+  return {
+    storyText: trimmed ? txt : null,
+    updatedAt: row.default_story_updated_at == null ? null : String(row.default_story_updated_at),
+  }
+}
+
+export async function setDefaultStory(
+  productionId: number,
+  storyText: unknown,
+  currentUserId: number
+): Promise<{ ok: true; productionId: number }> {
+  await assertCanManageProduction(productionId, currentUserId)
+  const txt = normalizeStoryInput(storyText)
+  await repo.setDefaultStory(productionId, txt)
+  await repo.propagateDefaultStoryToPublications(productionId, txt)
+  return { ok: true, productionId }
 }
 
 export async function create(

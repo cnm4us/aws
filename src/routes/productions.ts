@@ -23,6 +23,10 @@ const createProductionSchema = z.object({
   sound: z.string().optional(),
 })
 
+const storySchema = z.object({
+  storyText: z.string().max(2000).nullable().optional(),
+})
+
 // legacy mapping helpers removed; routes delegate to productions service
 
 productionsRouter.get('/api/productions', requireAuth, async (req, res, next) => {
@@ -41,6 +45,29 @@ productionsRouter.get('/api/productions/:id', requireAuth, async (req, res, next
     const currentUserId = req.user!.id
     const production = await prodSvc.get(id, currentUserId)
     res.json({ production })
+  } catch (err: any) { next(err) }
+})
+
+productionsRouter.get('/api/productions/:id/story', requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const currentUserId = req.user!.id
+    const data = await prodSvc.getDefaultStory(id, currentUserId)
+    res.json(data)
+  } catch (err: any) { next(err) }
+})
+
+productionsRouter.patch('/api/productions/:id/story', requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const parsed = storySchema.safeParse(req.body || {})
+    if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
+    const currentUserId = req.user!.id
+    await prodSvc.setDefaultStory(id, parsed.data.storyText ?? null, currentUserId)
+    const data = await prodSvc.getDefaultStory(id, currentUserId)
+    res.json(data)
   } catch (err: any) { next(err) }
 })
 

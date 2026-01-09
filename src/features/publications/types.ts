@@ -20,6 +20,7 @@ export type Publication = {
   visible_in_global: boolean
   story_text: string | null
   story_updated_at: string | null
+  story_source?: 'production' | 'custom' | string
   published_at: string | null
   unpublished_at: string | null
   created_at: string

@@ -9,6 +9,7 @@ type PublicationSummary = {
   status: string
   publishedAt: string | null
   unpublishedAt: string | null
+  storySource?: string | null
   hasStory?: boolean
   storyPreview?: string | null
 }
@@ -119,6 +120,10 @@ const PublishPage: React.FC = () => {
   const [upload, setUpload] = useState<UploadDetail | null>(null)
   const [publicationRows, setPublicationRows] = useState<PublicationSummary[]>([])
   const [productionName, setProductionName] = useState<string | null>(null)
+  const [defaultStoryText, setDefaultStoryText] = useState<string>('')
+  const [defaultStoryUpdatedAt, setDefaultStoryUpdatedAt] = useState<string | null>(null)
+  const [defaultStorySaving, setDefaultStorySaving] = useState(false)
+  const [defaultStoryError, setDefaultStoryError] = useState<string | null>(null)
   const [options, setOptions] = useState<PublishSpace[]>([])
   const [selectedSpaces, setSelectedSpaces] = useState<Record<number, boolean>>({})
   const [loading, setLoading] = useState(true)
@@ -178,6 +183,9 @@ const PublishPage: React.FC = () => {
       setError(null)
       setProductionName(null)
       setPublicationRows([])
+      setDefaultStoryText('')
+      setDefaultStoryUpdatedAt(null)
+      setDefaultStoryError(null)
       try {
         let uploadJson: UploadDetail | null = null
         let pubs: PublicationSummary[] = []
@@ -188,6 +196,11 @@ const PublishPage: React.FC = () => {
           if (!prodRes.ok) throw new Error(prodJson?.error || 'Failed to load production')
           const prodName = String(prodJson?.production?.name || '').trim()
           if (!cancelled) setProductionName(prodName.length ? prodName : null)
+          const storyRaw = prodJson?.production?.default_story_text
+          const storyTxt = typeof storyRaw === 'string' ? String(storyRaw) : ''
+          if (!cancelled) setDefaultStoryText(storyTxt)
+          const storyUpdatedAt = prodJson?.production?.default_story_updated_at
+          if (!cancelled) setDefaultStoryUpdatedAt(storyUpdatedAt == null ? null : String(storyUpdatedAt))
           const up = (prodJson?.production?.upload || null) as any
           if (!up) throw new Error('Production missing upload context')
           uploadJson = {
@@ -294,6 +307,35 @@ const PublishPage: React.FC = () => {
       setSaving(false)
     }
   }, [uploadId, productionId])
+
+  const saveDefaultStory = useCallback(async () => {
+    if (!productionId) return
+    setDefaultStorySaving(true)
+    setDefaultStoryError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const trimmed = defaultStoryText.trim()
+      const body = { storyText: trimmed ? defaultStoryText : null }
+      const res = await fetch(`/api/productions/${productionId}/story`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to save default story')
+      const next = typeof data?.storyText === 'string' ? String(data.storyText) : ''
+      setDefaultStoryText(next)
+      setDefaultStoryUpdatedAt(data?.updatedAt == null ? null : String(data.updatedAt))
+      await refreshUpload()
+    } catch (err: any) {
+      setDefaultStoryError(err?.message || 'Failed to save default story')
+    } finally {
+      setDefaultStorySaving(false)
+    }
+  }, [defaultStoryText, productionId, refreshUpload])
 
   const selectedSpaceIds = useMemo(
     () =>
@@ -700,19 +742,82 @@ const PublishPage: React.FC = () => {
               </div>
             </section>
 
-            {productionId ? (
-              <section style={{ marginTop: 28 }}>
-                <h2 style={{ fontSize: 18, marginBottom: 10 }}>Story</h2>
-                <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>Stories are per space.</div>
-                {Array.isArray(publicationRows) && publicationRows.length ? (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {publicationRows.map((p) => {
-                      const preview = typeof p.storyPreview === 'string' ? p.storyPreview.trim() : ''
-                      const hasStory = Boolean(p.hasStory)
-                      const canEdit = !!p.id
-                      return (
-                        <div
-                          key={p.id || `${p.spaceId}-${p.status}`}
+	            {productionId ? (
+	              <section style={{ marginTop: 28 }}>
+	                <h2 style={{ fontSize: 18, marginBottom: 10 }}>Story</h2>
+	                <div style={{ color: '#888', fontSize: 13, marginBottom: 10 }}>
+	                  Set a default story for all spaces, then customize per space when needed.
+	                </div>
+
+	                <div
+	                  style={{
+	                    border: '1px solid rgba(255,255,255,0.12)',
+	                    borderRadius: 12,
+	                    padding: 12,
+	                    background: 'rgba(255,255,255,0.03)',
+	                    display: 'grid',
+	                    gap: 8,
+	                    marginBottom: 12,
+	                  }}
+	                >
+	                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+	                    <div style={{ fontWeight: 700 }}>Default Story (for all spaces)</div>
+	                    {defaultStoryUpdatedAt ? <div style={{ fontSize: 12, color: '#888' }}>{defaultStoryUpdatedAt}</div> : null}
+	                  </div>
+	                  <textarea
+	                    value={defaultStoryText}
+	                    onChange={(e) => setDefaultStoryText(e.target.value)}
+	                    placeholder="Write a default story to apply to spaces that haven’t been customized…"
+	                    style={{
+	                      width: '100%',
+	                      minHeight: 120,
+	                      resize: 'vertical',
+	                      borderRadius: 12,
+	                      border: '1px solid rgba(255,255,255,0.18)',
+	                      background: 'rgba(0,0,0,0.35)',
+	                      color: '#fff',
+	                      padding: 10,
+	                      outline: 'none',
+	                      fontFamily: 'system-ui, sans-serif',
+	                      fontSize: 14,
+	                      lineHeight: 1.35,
+	                      whiteSpace: 'pre-wrap',
+	                    }}
+	                  />
+	                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+	                    <div style={{ fontSize: 12, color: defaultStoryError ? '#ff6b6b' : '#888' }}>
+	                      {defaultStoryError ? defaultStoryError : 'Updates spaces still using the default.'}
+	                    </div>
+	                    <button
+	                      type="button"
+	                      onClick={() => void saveDefaultStory()}
+	                      disabled={defaultStorySaving}
+	                      style={{
+	                        background: 'transparent',
+	                        color: '#fff',
+	                        border: '1px solid rgba(255,255,255,0.25)',
+	                        borderRadius: 10,
+	                        padding: '6px 10px',
+	                        fontWeight: 600,
+	                        cursor: defaultStorySaving ? 'default' : 'pointer',
+	                        opacity: defaultStorySaving ? 0.6 : 1,
+	                      }}
+	                    >
+	                      {defaultStorySaving ? 'Saving…' : 'Save default'}
+	                    </button>
+	                  </div>
+	                </div>
+	                {Array.isArray(publicationRows) && publicationRows.length ? (
+	                  <div style={{ display: 'grid', gap: 10 }}>
+	                    {publicationRows.map((p) => {
+	                      const preview = typeof p.storyPreview === 'string' ? p.storyPreview.trim() : ''
+	                      const hasStory = Boolean(p.hasStory)
+	                      const canEdit = !!p.id
+	                      const storySource = p.storySource == null ? 'custom' : String(p.storySource)
+	                      const usesDefault = storySource === 'production'
+	                      return (
+	                        <div
+	                          key={p.id || `${p.spaceId}-${p.status}`}
                           style={{
                             border: '1px solid rgba(255,255,255,0.12)',
                             borderRadius: 12,
@@ -721,27 +826,69 @@ const PublishPage: React.FC = () => {
                             display: 'grid',
                             gap: 6,
                           }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
-                            <div style={{ fontWeight: 700 }}>{p.spaceName}</div>
-                            <div style={{ fontSize: 12, color: '#888' }}>{p.status}</div>
-                          </div>
-                          <div style={{ color: hasStory ? '#ddd' : '#888', whiteSpace: 'pre-wrap' }}>
-                            {hasStory ? (preview || '…') : 'None'}
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-                            {canEdit ? (
+	                        >
+	                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+	                            <div style={{ fontWeight: 700 }}>{p.spaceName}</div>
+	                            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+	                              <div style={{ fontSize: 12, color: '#888' }}>{p.status}</div>
+	                              <div style={{ fontSize: 12, color: usesDefault ? '#9cf' : '#bbb' }}>
+	                                {usesDefault ? 'Using default' : 'Customized'}
+	                              </div>
+	                            </div>
+	                          </div>
+	                          <div style={{ color: hasStory ? '#ddd' : '#888', whiteSpace: 'pre-wrap' }}>
+	                            {hasStory ? (preview || '…') : 'None'}
+	                          </div>
+	                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                            {canEdit ? (
                               <a
                                 href={`/publish/story?publication=${encodeURIComponent(String(p.id))}&from=${encodeURIComponent(currentHref)}`}
                                 style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 600 }}
                               >
                                 Edit
                               </a>
-                            ) : null}
-                            <button
-                              disabled={!canEdit || storySavingMap[p.id]}
-                              onClick={async () => {
-                                if (!canEdit) return
+	                            ) : null}
+	                            <button
+	                              disabled={!canEdit || usesDefault || storySavingMap[p.id]}
+	                              onClick={async () => {
+	                                if (!canEdit) return
+	                                if (usesDefault) return
+	                                const pubId = Number(p.id)
+	                                setStorySavingMap((m) => ({ ...m, [pubId]: true }))
+	                                try {
+	                                  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+	                                  const csrf = getCsrfToken()
+	                                  if (csrf) headers['x-csrf-token'] = csrf
+	                                  const res = await fetch(`/api/publications/${pubId}/story/reset`, {
+	                                    method: 'POST',
+	                                    credentials: 'same-origin',
+	                                    headers,
+	                                  })
+	                                  if (!res.ok) throw new Error('Failed to reset story')
+	                                  await refreshUpload()
+	                                } catch (err) {
+	                                  console.error('reset story failed', err)
+	                                } finally {
+	                                  setStorySavingMap((m) => ({ ...m, [pubId]: false }))
+	                                }
+	                              }}
+	                              style={{
+	                                background: 'transparent',
+	                                color: '#fff',
+	                                border: '1px solid rgba(255,255,255,0.25)',
+	                                borderRadius: 10,
+	                                padding: '6px 10px',
+	                                fontWeight: 600,
+	                                cursor: (!canEdit || usesDefault || storySavingMap[p.id]) ? 'default' : 'pointer',
+	                                opacity: (!canEdit || usesDefault || storySavingMap[p.id]) ? 0.6 : 1,
+	                              }}
+	                            >
+	                              Reset
+	                            </button>
+	                            <button
+	                              disabled={!canEdit || storySavingMap[p.id]}
+	                              onClick={async () => {
+	                                if (!canEdit) return
                                 const pubId = Number(p.id)
                                 setStorySavingMap((m) => ({ ...m, [pubId]: true }))
                                 try {
@@ -762,29 +909,29 @@ const PublishPage: React.FC = () => {
                                   setStorySavingMap((m) => ({ ...m, [pubId]: false }))
                                 }
                               }}
-                              style={{
-                                background: 'transparent',
-                                color: '#fff',
-                                border: '1px solid rgba(255,255,255,0.25)',
-                                borderRadius: 10,
-                                padding: '6px 10px',
-                                fontWeight: 600,
-                                cursor: storySavingMap[p.id] ? 'default' : 'pointer',
-                                opacity: storySavingMap[p.id] ? 0.6 : 1,
-                              }}
-                            >
-                              {storySavingMap[p.id] ? 'Clearing…' : 'Clear'}
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ color: '#888' }}>Publish to a space to add a story.</div>
-                )}
-              </section>
-            ) : null}
+	                              style={{
+	                                background: 'transparent',
+	                                color: '#fff',
+	                                border: '1px solid rgba(255,255,255,0.25)',
+	                                borderRadius: 10,
+	                                padding: '6px 10px',
+	                                fontWeight: 600,
+	                                cursor: storySavingMap[p.id] ? 'default' : 'pointer',
+	                                opacity: storySavingMap[p.id] ? 0.6 : 1,
+	                              }}
+	                            >
+	                              {storySavingMap[p.id] ? 'Clearing…' : 'Clear'}
+	                            </button>
+	                          </div>
+	                        </div>
+	                      )
+	                    })}
+	                  </div>
+	                ) : (
+	                  <div style={{ color: '#888' }}>Publish to a space to add a story.</div>
+	                )}
+	              </section>
+	            ) : null}
           </div>
         </div>
       </div>
