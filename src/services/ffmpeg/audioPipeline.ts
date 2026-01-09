@@ -455,8 +455,8 @@ export async function burnScreenTitleIntoMp4(opts: {
       const fontPx = dims.height * (fontSizePct / 100)
       // Heuristic: approximate average glyph width in a bold sans font.
       // Keep this slightly optimistic so we don't wrap too early; x/y clamping + fix_bounds protects against overflow.
-      const avgCharPx = Math.max(6, fontPx * 0.56)
-      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.98) / avgCharPx))
+      const avgCharPx = Math.max(6, fontPx * 0.42)
+      const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
       const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: false })
       wrappedText = res.text
       wrappedTruncated = res.truncated
@@ -469,8 +469,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     if (wrappedTruncated) {
       const maxLinePx = computeMaxLinePx()
       const fontPx = dims.height * (fontSizePct / 100)
-      const avgCharPx = Math.max(6, fontPx * 0.56)
-      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.98) / avgCharPx))
+      const avgCharPx = Math.max(6, fontPx * 0.42)
+      const maxCharsPerLine = Math.max(10, Math.floor(maxLinePx / avgCharPx))
       const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: true })
       wrappedText = res.text
     }
@@ -490,11 +490,13 @@ export async function burnScreenTitleIntoMp4(opts: {
           ? `(h-text_h)/2`
           : `h*${yInset.toFixed(4)}+${yPadPx}`
 
-    const xExpr = escapeFfmpegExprCommas(
+    const xBaseExpr =
       // Center *including* pill padding. drawtext's `text_w` excludes the box padding, so we subtract `padPx`
       // from the centered position to keep the whole pill inside the frame.
       `max(w*${xInset.toFixed(4)}+${padPx},min((w-text_w)/2-${padPx},w-text_w-w*${xInset.toFixed(4)}-${padPx}))`
-    )
+    const xExpr = escapeFfmpegExprCommas(xBaseExpr)
+    // Slight second pass to "fatten" glyphs (closer to the browser preview weight).
+    const xExprBold = escapeFfmpegExprCommas(`${xBaseExpr}+0.60`)
 
     const fontFile = escapeFilterValue(fontFileForKey(preset.fontKey))
     const textFileEsc = escapeFilterValue(textFile)
@@ -503,10 +505,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     const fontSizeExpr = `h*${(fontSizePct / 100).toFixed(5)}`
     const lineSpacingPx = lineSpacingPxForFrame(dims.height, fontSizePct)
 
-    const baseText = [
-      `drawtext=fontfile=${fontFile}`,
+    const commonText = [
       `textfile=${textFileEsc}`,
-      `x=${xExpr}`,
       `y=${yExpr}`,
       `fontsize=${fontSizeExpr}`,
       `fontcolor=${escapeFilterValue(ffmpegColorForHex(fontColorHex))}`,
@@ -516,9 +516,9 @@ export async function burnScreenTitleIntoMp4(opts: {
       'fix_bounds=1',
     ]
 
-    const extras: string[] = []
+    const extrasPrimary: string[] = []
     if (style === 'pill') {
-      extras.push(
+      extrasPrimary.push(
         'box=1',
         `boxcolor=${escapeFilterValue(`${ffmpegColorForHex(pillBgColorHex)}@${pillBgAlpha.toFixed(3)}`)}`,
         `boxborderw=${padPx}`,
@@ -527,7 +527,7 @@ export async function burnScreenTitleIntoMp4(opts: {
         'shadowy=2'
       )
     } else if (style === 'outline') {
-      extras.push(
+      extrasPrimary.push(
         `borderw=${padPx}`,
         'bordercolor=black@0.45',
         'shadowcolor=black@0.65',
@@ -535,14 +535,15 @@ export async function burnScreenTitleIntoMp4(opts: {
         'shadowy=2'
       )
     } else {
-      extras.push('shadowcolor=black@0.65', 'shadowx=0', 'shadowy=2')
+      extrasPrimary.push('shadowcolor=black@0.65', 'shadowx=0', 'shadowy=2')
     }
 
-    const drawText = [...baseText, ...extras].join(':')
+    const drawTextPrimary = [`drawtext=fontfile=${fontFile}`, ...commonText, `x=${xExpr}`, ...extrasPrimary].join(':')
+    const drawTextBoldPass = [`drawtext=fontfile=${fontFile}`, ...commonText, `x=${xExprBold}`].join(':')
     const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
     const vf = style === 'strip'
-      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
-      : drawText
+      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawTextPrimary},${drawTextBoldPass}`
+      : `${drawTextPrimary},${drawTextBoldPass}`
 
     await runFfmpeg([
       '-i',
