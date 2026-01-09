@@ -521,6 +521,7 @@ export default function ProducePage() {
   const [audioAbout, setAudioAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdAbout, setLowerThirdAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [screenTitlePresetAbout, setScreenTitlePresetAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
   const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
   const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
@@ -914,6 +915,17 @@ export default function ProducePage() {
     if (selectedScreenTitlePresetId == null) return null
     return screenTitlePresets.find((p) => p.id === selectedScreenTitlePresetId) || null
   }, [screenTitlePresets, selectedScreenTitlePresetId])
+
+  const openScreenTitlePresetAbout = useCallback((preset: ScreenTitlePreset | null) => {
+    if (!preset) {
+      setScreenTitlePresetAbout({ title: 'Screen Title Style', description: null })
+      return
+    }
+    setScreenTitlePresetAbout({
+      title: preset.name || 'Screen Title Style',
+      description: preset.description ?? null,
+    })
+  }, [])
 
   const sortedLowerThirdImages = useMemo(() => {
     const items = Array.isArray(lowerThirdImages) ? [...lowerThirdImages] : []
@@ -1558,120 +1570,35 @@ export default function ProducePage() {
                 />
 	              </label>
 
-                <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                    <div style={{ color: '#bbb' }}>Screen Title (per production)</div>
-                    <a
-                      href={`/screen-title-presets?from=${fromHere}`}
-                      style={{ color: '#9cf', textDecoration: 'none', fontSize: 13, marginLeft: 'auto' }}
-                    >
-                      Manage presets
-                    </a>
-                  </div>
-
-                  <select
-                    value={selectedScreenTitlePresetId == null ? '' : String(selectedScreenTitlePresetId)}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      const next = raw ? Number(raw) : null
-                      const id = next != null && Number.isFinite(next) && next > 0 ? next : null
-                      setSelectedScreenTitlePresetId(id)
-                      pushQueryParams({ screenTitlePresetId: id == null ? null : String(id) })
-                    }}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid #2a2a2a',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="">None</option>
-                    {screenTitlePresets.map((p) => (
-                      <option key={p.id} value={String(p.id)}>{p.name}</option>
-                    ))}
-                  </select>
-
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ color: '#777', fontSize: 13 }}>
-                      Max 140 chars • max 3 lines
-                    </div>
-                    <div style={{ color: '#777', fontSize: 13 }}>
-                      {(screenTitleText || '').length}/140
-                    </div>
-                  </div>
-
-                  <textarea
-                    value={screenTitleText}
-                    onChange={(e) => {
-                      let v = String(e.target.value || '')
-                      v = v.replace(/\r\n/g, '\n')
-                      const lines = v.split('\n')
-                      if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
-                      if (v.length > 140) v = v.slice(0, 140)
-                      setScreenTitleText(v)
-                    }}
-                    rows={3}
-                    placeholder={selectedScreenTitlePresetId ? 'Enter a short title (optional)' : 'Select a preset to enable a screen title'}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid #2a2a2a',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      resize: 'vertical',
-                      opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
-                    }}
-                  />
-
-                  {(selectedScreenTitlePresetId != null || screenTitleText.trim()) ? (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-                      {selectedScreenTitlePresetId != null && screenTitleText.trim() ? (
-                        <button
-                          type="button"
-                          disabled={!uploadId || screenTitlePreviewLoading}
-                          onClick={generateScreenTitlePreview}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(10,132,255,0.75)',
-                            background: 'rgba(10,132,255,0.16)',
-                            color: '#cfe6ff',
-                            fontWeight: 800,
-                            cursor: screenTitlePreviewLoading ? 'default' : 'pointer',
-                            opacity: screenTitlePreviewLoading ? 0.7 : 1,
-                          }}
-                        >
-                          {screenTitlePreviewLoading ? 'Generating…' : 'Generate preview'}
-                        </button>
-                      ) : null}
-                      {screenTitlePreviewPngUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (screenTitlePreviewPngUrl) {
-                              try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
-                            }
-                            setScreenTitlePreviewPngUrl(null)
-                          }}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(255,255,255,0.35)',
-                            background: 'rgba(255,255,255,0.08)',
-                            color: '#fff',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Clear preview
-                        </button>
-                      ) : null}
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                  <div style={{ color: '#bbb', fontWeight: 650 }}>Screen Title</div>
+                  <a href={`/screen-title-presets?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
+                </div>
+                <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)', marginBottom: 14 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
+                    <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => openScreenTitlePresetAbout(selectedScreenTitlePreset)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: '#0c0c0c',
+                          color: '#fff',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        About
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
+                          if (screenTitlePreviewPngUrl) {
+                            try { URL.revokeObjectURL(screenTitlePreviewPngUrl) } catch {}
+                          }
+                          setScreenTitlePreviewPngUrl(null)
                           setSelectedScreenTitlePresetId(null)
                           setScreenTitleText('')
                           pushQueryParams({ screenTitlePresetId: null })
@@ -1689,7 +1616,72 @@ export default function ProducePage() {
                         Clear
                       </button>
                     </div>
-                  ) : null}
+                    <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
+                      {selectedScreenTitlePreset ? selectedScreenTitlePreset.name : 'None'}
+                    </div>
+                  </div>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Style</div>
+                    <select
+                      value={selectedScreenTitlePresetId == null ? '' : String(selectedScreenTitlePresetId)}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        const next = raw ? Number(raw) : null
+                        const id = next != null && Number.isFinite(next) && next > 0 ? next : null
+                        setSelectedScreenTitlePresetId(id)
+                        pushQueryParams({ screenTitlePresetId: id == null ? null : String(id) })
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #2a2a2a',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">None</option>
+                      {screenTitlePresets.map((p) => (
+                        <option key={p.id} value={String(p.id)}>{p.name}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ color: '#bbb', fontWeight: 750 }}>Text</div>
+                      <div style={{ color: '#777', fontSize: 13 }}>
+                        {(screenTitleText || '').length}/140
+                      </div>
+                    </div>
+                    <textarea
+                      value={screenTitleText}
+                      onChange={(e) => {
+                        let v = String(e.target.value || '')
+                        v = v.replace(/\r\n/g, '\n')
+                        const lines = v.split('\n')
+                        if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
+                        if (v.length > 140) v = v.slice(0, 140)
+                        setScreenTitleText(v)
+                      }}
+                      rows={3}
+                      placeholder={selectedScreenTitlePresetId ? 'Enter a short title (optional)' : 'Select a preset to enable a screen title'}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #2a2a2a',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        resize: 'vertical',
+                        opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
+                      }}
+                    />
+                    <div style={{ color: '#777', fontSize: 13 }}>
+                      Max 140 chars • max 3 lines
+                    </div>
+                  </label>
 
                   {screenTitlePreviewError ? (
                     <div style={{ color: '#ff9b9b', fontSize: 13 }}>
@@ -1697,11 +1689,25 @@ export default function ProducePage() {
                     </div>
                   ) : null}
 
-                  {selectedScreenTitlePreset ? (
-                    <div style={{ color: '#888', fontSize: 13, lineHeight: 1.35 }}>
-                      Preset: <span style={{ color: '#d4af37', fontWeight: 800 }}>{selectedScreenTitlePreset.name}</span>
-                    </div>
-                  ) : null}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      disabled={!uploadId || screenTitlePreviewLoading || selectedScreenTitlePresetId == null || !screenTitleText.trim()}
+                      onClick={generateScreenTitlePreview}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(10,132,255,0.75)',
+                        background: 'rgba(10,132,255,0.16)',
+                        color: '#cfe6ff',
+                        fontWeight: 800,
+                        cursor: screenTitlePreviewLoading ? 'default' : 'pointer',
+                        opacity: screenTitlePreviewLoading ? 0.7 : 1,
+                      }}
+                    >
+                      {screenTitlePreviewLoading ? 'Generating…' : 'Generate preview'}
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
@@ -3573,6 +3579,59 @@ export default function ProducePage() {
             </div>
             <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
               {audioAbout.description && audioAbout.description.trim().length ? audioAbout.description : 'No description.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {screenTitlePresetAbout ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.0)',
+            zIndex: 10064,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(720px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.65)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.10)' }}>
+              <div style={{ fontWeight: 900, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {screenTitlePresetAbout.title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setScreenTitlePresetAbout(null)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ padding: 14, color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+              {screenTitlePresetAbout.description && screenTitlePresetAbout.description.trim().length ? screenTitlePresetAbout.description : 'No description.'}
             </div>
           </div>
         </div>
