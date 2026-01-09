@@ -97,7 +97,9 @@ def main():
 
   # Font: start with curated DejaVu Sans Bold. (Future: map fontKey to Pango family/weight.)
   font_family = "DejaVu Sans"
-  font_weight = "Bold"
+  # Use a slightly heavier weight than Bold so the PNG preview matches the on-page CSS
+  # (which uses very heavy weights like 800–900 on system fonts).
+  font_weight = "UltraBold"
   font_px = height * (font_size_pct / 100.0)
   font_px = clamp(font_px, 8.0, 220.0)
 
@@ -123,7 +125,12 @@ def main():
   layout = PangoCairo.create_layout(ctx)
   fd = Pango.FontDescription()
   fd.set_family(font_family)
-  fd.set_weight(Pango.Weight.BOLD if font_weight.lower() == "bold" else Pango.Weight.NORMAL)
+  if font_weight.lower() == "ultrabold":
+    fd.set_weight(Pango.Weight.ULTRABOLD)
+  elif font_weight.lower() == "heavy":
+    fd.set_weight(Pango.Weight.HEAVY)
+  else:
+    fd.set_weight(Pango.Weight.BOLD if font_weight.lower() == "bold" else Pango.Weight.NORMAL)
   fd.set_absolute_size(int(font_px * Pango.SCALE))
   layout.set_font_description(fd)
 
@@ -225,9 +232,16 @@ def main():
     rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
     ctx.save()
     ctx.translate(x_draw, y_draw)
-    ctx.set_source_rgba(rr, gg, bb, aa)
     PangoCairo.update_layout(ctx, layout)
-    PangoCairo.show_layout(ctx, layout)
+    PangoCairo.layout_path(ctx, layout)
+    # Add a very subtle outline for pill/strip to better match browser-rendered
+    # system fonts (which often look heavier than DejaVu Sans Bold).
+    if style in ("pill", "strip"):
+      ctx.set_source_rgba(0.0, 0.0, 0.0, 0.25)
+      ctx.set_line_width(0.9)
+      ctx.stroke_preserve()
+    ctx.set_source_rgba(rr, gg, bb, aa)
+    ctx.fill()
     ctx.restore()
 
   try:
