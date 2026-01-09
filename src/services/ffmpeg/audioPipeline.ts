@@ -437,8 +437,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     const maxWidthPct = clampNum(preset.maxWidthPct ?? 90, 20, 100) / 100
 
     const dims = await probeVideoDisplayDimensions(opts.inPath)
-    const boxPadPx = style === 'pill' ? 10 : 0
-    const borderPadPx = style === 'outline' ? 3 : 0
+    const boxPadPx = style === 'pill' ? 8 : 0
+    const borderPadPx = style === 'outline' ? 1 : 0
     const extraPadPx = Math.max(boxPadPx, borderPadPx)
 
     const computeMaxLinePx = () =>
@@ -453,8 +453,10 @@ export async function burnScreenTitleIntoMp4(opts: {
     for (let attempt = 0; attempt < 12; attempt++) {
       const maxLinePx = computeMaxLinePx()
       const fontPx = dims.height * (fontSizePct / 100)
-      const avgCharPx = Math.max(6, fontPx * 0.60)
-      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.95) / avgCharPx))
+      // Heuristic: approximate average glyph width in a bold sans font.
+      // Keep this slightly optimistic so we don't wrap too early; x/y clamping + fix_bounds protects against overflow.
+      const avgCharPx = Math.max(6, fontPx * 0.56)
+      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.98) / avgCharPx))
       const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: false })
       wrappedText = res.text
       wrappedTruncated = res.truncated
@@ -467,8 +469,8 @@ export async function burnScreenTitleIntoMp4(opts: {
     if (wrappedTruncated) {
       const maxLinePx = computeMaxLinePx()
       const fontPx = dims.height * (fontSizePct / 100)
-      const avgCharPx = Math.max(6, fontPx * 0.60)
-      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.95) / avgCharPx))
+      const avgCharPx = Math.max(6, fontPx * 0.56)
+      const maxCharsPerLine = Math.max(10, Math.floor((maxLinePx * 0.98) / avgCharPx))
       const res = wrapTextToMaxLines({ text: rawText, maxCharsPerLine, maxLines: 3, ellipsis: true })
       wrappedText = res.text
     }
@@ -479,14 +481,15 @@ export async function burnScreenTitleIntoMp4(opts: {
 
     // If text_w exceeds w, avoid negative x (which would show only the *tail* of the line).
     // Instead, left-align to the inset. Also account for pill padding so the box doesn't clip.
+    const padPx = style === 'pill' ? 8 : (style === 'outline' ? 1 : 0)
+    const yPadPx = padPx
     const yExpr =
       pos === 'bottom'
-        ? `h-text_h-h*${yInset.toFixed(4)}`
+        ? `h-text_h-h*${yInset.toFixed(4)}-${yPadPx}`
         : pos === 'middle'
           ? `(h-text_h)/2`
-          : `h*${yInset.toFixed(4)}`
+          : `h*${yInset.toFixed(4)}+${yPadPx}`
 
-    const padPx = style === 'pill' ? 10 : 0
     const xExpr = escapeFfmpegExprCommas(
       // Center *including* pill padding. drawtext's `text_w` excludes the box padding, so we subtract `padPx`
       // from the centered position to keep the whole pill inside the frame.
@@ -518,15 +521,21 @@ export async function burnScreenTitleIntoMp4(opts: {
       extras.push(
         'box=1',
         `boxcolor=${escapeFilterValue(`${ffmpegColorForHex(pillBgColorHex)}@${pillBgAlpha.toFixed(3)}`)}`,
-        'boxborderw=10',
-        'shadowcolor=black@0.55',
+        `boxborderw=${padPx}`,
+        'shadowcolor=black@0.65',
         'shadowx=0',
         'shadowy=2'
       )
     } else if (style === 'outline') {
-      extras.push('borderw=3', 'bordercolor=black@0.90', 'shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+      extras.push(
+        `borderw=${padPx}`,
+        'bordercolor=black@0.45',
+        'shadowcolor=black@0.65',
+        'shadowx=0',
+        'shadowy=2'
+      )
     } else {
-      extras.push('shadowcolor=black@0.55', 'shadowx=0', 'shadowy=2')
+      extras.push('shadowcolor=black@0.65', 'shadowx=0', 'shadowy=2')
     }
 
     const drawText = [...baseText, ...extras].join(':')
