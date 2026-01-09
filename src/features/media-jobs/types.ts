@@ -80,6 +80,7 @@ export type ScreenTitlePresetSnapshotV1 = {
   style?: 'pill' | 'outline' | 'strip'
   fontKey?: string
   fontSizePct?: number
+  trackingPct?: number
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number

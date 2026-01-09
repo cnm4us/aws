@@ -26,6 +26,8 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontKey: ScreenTitleFontKey = isEnumValue(rawFont, FONT_KEYS) ? rawFont : 'dejavu_sans_bold'
   const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
+  const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
+  const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, 0), 50)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
   const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
@@ -44,6 +46,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     style: row.style,
     fontKey,
     fontSizePct,
+    trackingPct,
     fontColor,
     pillBgColor,
     pillBgOpacityPct,
@@ -98,6 +101,13 @@ function normalizeFontSizePct(raw: any): number {
   if (!Number.isFinite(n)) return 4.5
   const clamped = Math.min(Math.max(n, 2), 8)
   return Math.round(clamped * 10) / 10
+}
+
+function normalizeTrackingPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  const clamped = Math.min(Math.max(n, 0), 50)
+  return Math.round(clamped)
 }
 
 function normalizeFontColor(raw: any): string {
@@ -158,6 +168,7 @@ export async function createForUser(input: {
   style?: any
   fontKey?: any
   fontSizePct?: any
+  trackingPct?: any
   fontColor?: any
   pillBgColor?: any
   pillBgOpacityPct?: any
@@ -175,6 +186,7 @@ export async function createForUser(input: {
   const style: ScreenTitleStyle = isEnumValue(input.style, STYLES) ? input.style : 'pill'
   const fontKey: ScreenTitleFontKey = isEnumValue(input.fontKey, FONT_KEYS) ? input.fontKey : 'dejavu_sans_bold'
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
+  const trackingPct = normalizeTrackingPct(input.trackingPct)
   const fontColor = normalizeFontColor(input.fontColor)
   const pillBgColor = normalizePillBgColor(input.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
@@ -194,6 +206,7 @@ export async function createForUser(input: {
     style,
     fontKey,
     fontSizePct,
+    trackingPct,
     fontColor,
     pillBgColor: style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: style === 'pill' ? pillBgOpacityPct : 55,
@@ -216,6 +229,7 @@ export async function updateForUser(
     style?: any
     fontKey?: any
     fontSizePct?: any
+    trackingPct?: any
     fontColor?: any
     pillBgColor?: any
     pillBgOpacityPct?: any
@@ -240,6 +254,7 @@ export async function updateForUser(
     style: patch.style !== undefined ? patch.style : existing.style,
     fontKey: patch.fontKey !== undefined ? patch.fontKey : (existing as any).font_key,
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
+    trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
     pillBgColor: patch.pillBgColor !== undefined ? patch.pillBgColor : (existing as any).pill_bg_color,
     pillBgOpacityPct: patch.pillBgOpacityPct !== undefined ? patch.pillBgOpacityPct : (existing as any).pill_bg_opacity_pct,
@@ -255,6 +270,7 @@ export async function updateForUser(
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   if (!isEnumValue(next.fontKey, FONT_KEYS)) throw new DomainError('invalid_font', 'invalid_font', 400)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
+  const trackingPct = normalizeTrackingPct(next.trackingPct)
   const fontColor = normalizeFontColor(next.fontColor)
   const pillBgColor = normalizePillBgColor(next.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(next.pillBgOpacityPct, 55)
@@ -273,6 +289,7 @@ export async function updateForUser(
     style: next.style,
     fontKey: next.fontKey,
     fontSizePct,
+    trackingPct,
     fontColor,
     pillBgColor: next.style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: next.style === 'pill' ? pillBgOpacityPct : 55,

@@ -84,6 +84,9 @@ def main():
   max_width_pct = float(preset.get("maxWidthPct") or 90.0)
   max_width_pct = clamp(max_width_pct, 20.0, 100.0) / 100.0
 
+  tracking_pct = float(preset.get("trackingPct") or 0.0)
+  tracking_pct = clamp(tracking_pct, 0.0, 50.0)
+
   x_inset = inset_pct_for_preset(preset.get("insetXPreset"))
   y_inset = inset_pct_for_preset(preset.get("insetYPreset") or "medium")
 
@@ -135,6 +138,19 @@ def main():
 
   # Text shaping on by default; allow \n.
   layout.set_text(text, -1)
+
+  if tracking_pct > 0.0:
+    # Pango letter spacing is in Pango units (Pango.SCALE == 1024 units per device unit).
+    letter_px = font_px * (tracking_pct / 100.0)
+    try:
+      attrs = Pango.AttrList()
+      a = Pango.attr_letter_spacing(int(letter_px * Pango.SCALE))
+      a.start_index = 0
+      a.end_index = len(text.encode("utf-8"))
+      attrs.insert(a)
+      layout.set_attributes(attrs)
+    except Exception:
+      pass
 
   ink, logical = layout.get_pixel_extents()
   text_w = float(logical.width)

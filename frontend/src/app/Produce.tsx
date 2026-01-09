@@ -115,6 +115,7 @@ type ScreenTitlePreset = {
   style: 'pill' | 'outline' | 'strip'
   fontKey: string
   fontSizePct?: number
+  trackingPct?: number
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number
@@ -1391,6 +1392,17 @@ export default function ProducePage() {
 	                          clampNumber(h, 180, 2000) * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 100, 0.01, 0.2)
 	                        )
 	                        return px
+	                      })(),
+	                      letterSpacing: (() => {
+	                        const tracking = clampNumber(selectedScreenTitlePreset.trackingPct ?? 0, 0, 50)
+	                        if (!tracking) return undefined
+	                        const w = 280
+	                        const ar = computePreviewAspectRatio(upload)
+	                        const h = ar > 0 ? (w / ar) : 498
+	                        const fontPx =
+	                          clampNumber(h, 180, 2000) * clampNumber((selectedScreenTitlePreset.fontSizePct ?? 4.5) / 100, 0.01, 0.2)
+	                        const letterPx = fontPx * (tracking / 100)
+	                        return `${Math.round(letterPx * 100) / 100}px`
 	                      })(),
 	                      lineHeight: 1.2,
 	                      whiteSpace: 'pre-wrap',

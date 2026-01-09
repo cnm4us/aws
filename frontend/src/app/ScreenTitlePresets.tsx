@@ -20,6 +20,7 @@ type ScreenTitlePreset = {
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
   fontSizePct: number
+  trackingPct?: number
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
@@ -69,6 +70,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     style: 'pill',
     fontKey: 'dejavu_sans_bold',
     fontSizePct: 4.5,
+    trackingPct: 0,
     fontColor: '#ffffff',
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
@@ -179,6 +181,7 @@ export default function ScreenTitlePresetsPage() {
       style: selected.style,
       fontKey: selected.fontKey,
       fontSizePct: selected.fontSizePct ?? 4.5,
+      trackingPct: selected.trackingPct ?? 0,
       fontColor: selected.fontColor || '#ffffff',
       pillBgColor: selected.pillBgColor || '#000000',
       pillBgOpacityPct: selected.pillBgOpacityPct ?? 55,
@@ -414,6 +417,30 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => {
                       const n = Number(e.target.value)
                       setDraft((d) => ({ ...d, fontSizePct: Number.isFinite(n) ? n : 4.5 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Character spacing (%)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={0}
+                    max={50}
+                    value={Number.isFinite(Number(draft.trackingPct)) ? String(draft.trackingPct) : '0'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, trackingPct: Number.isFinite(n) ? n : 0 }))
                     }}
                     style={{
                       width: '100%',

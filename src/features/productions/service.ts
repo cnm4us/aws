@@ -253,7 +253,7 @@ export async function create(
     const rawText = input.screenTitleText
     let text = String(rawText ?? '').replace(/\r\n/g, '\n')
     const lines = text.split('\n')
-    if (lines.length > 2) text = `${lines[0]}\n${lines[1]}`
+    if (lines.length > 3) text = `${lines[0]}\n${lines[1]}\n${lines[2]}`
     text = text.trim()
     if (!text) {
       mergedConfig.screenTitlePresetId = null
@@ -272,6 +272,7 @@ export async function create(
         style: (preset as any).style,
         fontKey: (preset as any).fontKey,
         fontSizePct: (preset as any).fontSizePct,
+        trackingPct: (preset as any).trackingPct,
         fontColor: (preset as any).fontColor,
         pillBgColor: (preset as any).pillBgColor,
         pillBgOpacityPct: (preset as any).pillBgOpacityPct,

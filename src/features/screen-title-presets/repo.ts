@@ -32,6 +32,7 @@ export async function create(input: {
   style: string
   fontKey: string
   fontSizePct: number
+  trackingPct: number
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
@@ -46,8 +47,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO screen_title_presets
-      (owner_user_id, name, description, style, font_key, font_size_pct, font_color, pill_bg_color, pill_bg_opacity_pct, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, pill_bg_color, pill_bg_opacity_pct, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -55,6 +56,7 @@ export async function create(input: {
       input.style,
       input.fontKey,
       input.fontSizePct,
+      input.trackingPct,
       input.fontColor,
       input.pillBgColor,
       input.pillBgOpacityPct,
@@ -79,6 +81,7 @@ export async function update(id: number, patch: {
   style?: string
   fontKey?: string
   fontSizePct?: number
+  trackingPct?: number
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number
@@ -98,6 +101,7 @@ export async function update(id: number, patch: {
   if (patch.style !== undefined) { sets.push('style = ?'); args.push(patch.style) }
   if (patch.fontKey !== undefined) { sets.push('font_key = ?'); args.push(patch.fontKey) }
   if (patch.fontSizePct !== undefined) { sets.push('font_size_pct = ?'); args.push(patch.fontSizePct) }
+  if (patch.trackingPct !== undefined) { sets.push('tracking_pct = ?'); args.push(patch.trackingPct) }
   if (patch.fontColor !== undefined) { sets.push('font_color = ?'); args.push(patch.fontColor) }
   if (patch.pillBgColor !== undefined) { sets.push('pill_bg_color = ?'); args.push(patch.pillBgColor) }
   if (patch.pillBgOpacityPct !== undefined) { sets.push('pill_bg_opacity_pct = ?'); args.push(patch.pillBgOpacityPct) }

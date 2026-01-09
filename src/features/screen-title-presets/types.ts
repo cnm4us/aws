@@ -14,6 +14,7 @@ export type ScreenTitlePresetRow = {
   style: ScreenTitleStyle
   font_key: string
   font_size_pct: number
+  tracking_pct: number
   font_color: string
   pill_bg_color: string
   pill_bg_opacity_pct: number
@@ -36,6 +37,7 @@ export type ScreenTitlePresetDto = {
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
   fontSizePct: number
+  trackingPct: number
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number

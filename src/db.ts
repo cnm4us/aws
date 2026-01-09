@@ -230,6 +230,7 @@ export async function ensureSchema(db: DB) {
               style ENUM('pill','outline','strip') NOT NULL DEFAULT 'pill',
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
+              tracking_pct TINYINT UNSIGNED NOT NULL DEFAULT 0,
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
@@ -248,6 +249,7 @@ export async function ensureSchema(db: DB) {
           `);
           try { await db.query(`CREATE INDEX IF NOT EXISTS idx_screen_title_archived ON screen_title_presets (archived_at, id)`); } catch {}
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS tracking_pct TINYINT UNSIGNED NOT NULL DEFAULT 0`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
