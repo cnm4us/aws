@@ -1616,13 +1616,10 @@ export default function ProducePage() {
                         Clear
                       </button>
                     </div>
-                    <div style={{ gridColumn: '1 / -1', gridRow: 2, color: '#d4af37', fontWeight: 800, wordBreak: 'break-word', lineHeight: 1.2 }}>
-                      {selectedScreenTitlePreset ? selectedScreenTitlePreset.name : 'None'}
-                    </div>
                   </div>
 
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Style</div>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Select Style</div>
                     <select
                       value={selectedScreenTitlePresetId == null ? '' : String(selectedScreenTitlePresetId)}
                       onChange={(e) => {
@@ -1649,38 +1646,37 @@ export default function ProducePage() {
                   </label>
 
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ color: '#bbb', fontWeight: 750 }}>Text</div>
-                      <div style={{ color: '#777', fontSize: 13 }}>
+                    <div style={{ position: 'relative' }}>
+                      <textarea
+                        value={screenTitleText}
+                        onChange={(e) => {
+                          let v = String(e.target.value || '')
+                          v = v.replace(/\r\n/g, '\n')
+                          const lines = v.split('\n')
+                          if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
+                          if (v.length > 140) v = v.slice(0, 140)
+                          setScreenTitleText(v)
+                        }}
+                        rows={3}
+                        placeholder="type your screen title here"
+                        style={{
+                          padding: '10px 12px 30px',
+                          borderRadius: 10,
+                          border: '1px solid #2a2a2a',
+                          background: '#0c0c0c',
+                          color: '#fff',
+                          outline: 'none',
+                          resize: 'vertical',
+                          opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      <div style={{ position: 'absolute', right: 10, bottom: 8, color: '#777', fontSize: 12, pointerEvents: 'none' }}>
                         {(screenTitleText || '').length}/140
                       </div>
                     </div>
-                    <textarea
-                      value={screenTitleText}
-                      onChange={(e) => {
-                        let v = String(e.target.value || '')
-                        v = v.replace(/\r\n/g, '\n')
-                        const lines = v.split('\n')
-                        if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
-                        if (v.length > 140) v = v.slice(0, 140)
-                        setScreenTitleText(v)
-                      }}
-                      rows={3}
-                      placeholder={selectedScreenTitlePresetId ? 'Enter a short title (optional)' : 'Select a preset to enable a screen title'}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid #2a2a2a',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                        resize: 'vertical',
-                        opacity: selectedScreenTitlePresetId == null ? 0.75 : 1,
-                      }}
-                    />
-                    <div style={{ color: '#777', fontSize: 13 }}>
-                      Max 140 chars • max 3 lines
-                    </div>
+                    <div style={{ color: '#777', fontSize: 13 }}>Max 140 chars • max 3 lines</div>
                   </label>
 
                   {screenTitlePreviewError ? (
