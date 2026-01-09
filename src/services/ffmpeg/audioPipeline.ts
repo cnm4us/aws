@@ -313,23 +313,91 @@ async function probeVideoDisplayDimensions(filePath: string): Promise<{ width: n
     p.on('close', (code) => {
       if (code !== 0) return reject(new Error(`ffprobe_failed:${code}:${err.slice(0, 400)}`))
       try {
-        const j = JSON.parse(out || '{}')
-        const s = Array.isArray(j.streams) ? j.streams[0] : null
-        const w = s && s.width != null ? Number(s.width) : NaN
-        const h = s && s.height != null ? Number(s.height) : NaN
-        let rotate = 0
-        if (s && s.tags && s.tags.rotate != null) rotate = Number(s.tags.rotate)
-        if (!Number.isFinite(rotate) && Array.isArray(s?.side_data_list)) {
-          for (const sd of s.side_data_list) {
-            if (sd && sd.rotation != null) rotate = Number(sd.rotation)
+        const parseProbeDims = (stdout: string): { width: number; height: number; rotate: number } => {
+          const trimmed = String(stdout || '').trim()
+          if (!trimmed) throw new Error('ffprobe_json_empty')
+
+          const extractFirstJsonObject = (s: string) => {
+            const start = s.indexOf('{')
+            if (start < 0) return null
+            let depth = 0
+            let inString = false
+            let escape = false
+            for (let i = start; i < s.length; i++) {
+              const ch = s[i]
+              if (inString) {
+                if (escape) {
+                  escape = false
+                } else if (ch === '\\') {
+                  escape = true
+                } else if (ch === '"') {
+                  inString = false
+                }
+                continue
+              }
+              if (ch === '"') {
+                inString = true
+              } else if (ch === '{') {
+                depth++
+              } else if (ch === '}') {
+                depth--
+                if (depth === 0) return s.slice(start, i + 1)
+              }
+            }
+            return null
+          }
+
+          const parseFromJson = (rawJson: string) => {
+            const j = JSON.parse(rawJson)
+            const s = Array.isArray(j.streams) ? j.streams[0] : null
+            const width = s && s.width != null ? Number(s.width) : NaN
+            const height = s && s.height != null ? Number(s.height) : NaN
+            let rotate = 0
+            if (s && s.tags && s.tags.rotate != null) rotate = Number(s.tags.rotate)
+            if (!Number.isFinite(rotate) && Array.isArray(s?.side_data_list)) {
+              for (const sd of s.side_data_list) {
+                if (sd && sd.rotation != null) rotate = Number(sd.rotation)
+              }
+            }
+            return { width, height, rotate: Number.isFinite(rotate) ? rotate : 0 }
+          }
+
+          try {
+            return parseFromJson(trimmed)
+          } catch {
+            const extracted = extractFirstJsonObject(trimmed)
+            if (extracted) {
+              try {
+                return parseFromJson(extracted)
+              } catch {
+                // fall through
+              }
+            }
+
+            const width = Number((trimmed.match(/"width"\s*:\s*(\d+)/) || [])[1])
+            const height = Number((trimmed.match(/"height"\s*:\s*(\d+)/) || [])[1])
+            const rotateTag = (trimmed.match(/"rotate"\s*:\s*"?(?<rot>-?\d+(?:\.\d+)?)"?/) as any)?.groups?.rot
+            const rotationSideData = (trimmed.match(/"rotation"\s*:\s*(?<rot>-?\d+(?:\.\d+)?)/) as any)?.groups?.rot
+            const rotate = Number(rotateTag ?? rotationSideData ?? 0)
+
+            if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+              return { width, height, rotate: Number.isFinite(rotate) ? rotate : 0 }
+            }
+
+            throw new Error(`ffprobe_json_parse_failed:${trimmed.slice(0, 220).replace(/\s+/g, ' ')}`)
           }
         }
-        const rot = Number.isFinite(rotate) ? Math.abs(Math.round(rotate)) % 360 : 0
+
+        const dims = parseProbeDims(out)
+        const w = dims.width
+        const h = dims.height
+        const rot = Number.isFinite(dims.rotate) ? Math.abs(Math.round(dims.rotate)) % 360 : 0
         if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return reject(new Error('ffprobe_missing_dims'))
         if (rot === 90 || rot === 270) return resolve({ width: h, height: w })
         resolve({ width: w, height: h })
       } catch (e) {
-        reject(e)
+        const msg = e instanceof Error ? e.message : String(e)
+        reject(new Error(`${msg} (ffprobe stdout: ${String(out).slice(0, 260).replace(/\s+/g, ' ')})`))
       }
     })
   })
