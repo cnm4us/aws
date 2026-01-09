@@ -1408,11 +1408,11 @@ export default function ProducePage() {
 	                  position: 'relative',
 	                }}
 	              >
-	                <img
-	                  src={uploadPreviewSrc}
-	                  alt="poster"
-	                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-	                  onError={() => {
+		                <img
+		                  src={uploadPreviewSrc}
+		                  alt="poster"
+		                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+		                  onError={() => {
 	                    if (uploadPreviewMode === 'thumb') {
 	                      if (poster) {
 	                        setUploadPreviewMode('poster')
@@ -1426,13 +1426,29 @@ export default function ProducePage() {
 	                      return
 	                    }
 	                    setUploadPreviewMode('none')
-	                  }}
-	                />
+		                  }}
+		                />
 
-	                {screenTitlePreviewPngUrl ? (
-	                  <img
-	                    src={screenTitlePreviewPngUrl}
-	                    alt=""
+		                {firstScreenMode === 'custom_image' && selectedTitlePage ? (
+		                  <img
+		                    src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
+		                    alt=""
+		                    style={{
+		                      position: 'absolute',
+		                      inset: 0,
+		                      width: '100%',
+		                      height: '100%',
+		                      objectFit: 'cover',
+		                      zIndex: 0,
+		                      pointerEvents: 'none',
+		                    }}
+		                  />
+		                ) : null}
+
+		                {screenTitlePreviewPngUrl ? (
+		                  <img
+		                    src={screenTitlePreviewPngUrl}
+		                    alt=""
 	                    style={{
 	                      position: 'absolute',
 	                      inset: 0,
