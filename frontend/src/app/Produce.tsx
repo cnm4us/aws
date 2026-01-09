@@ -1394,7 +1394,7 @@ export default function ProducePage() {
 	                        return px
 	                      })(),
 	                      letterSpacing: (() => {
-	                        const tracking = clampNumber(selectedScreenTitlePreset.trackingPct ?? 0, 0, 50)
+	                        const tracking = clampNumber(selectedScreenTitlePreset.trackingPct ?? 0, -20, 50)
 	                        if (!tracking) return undefined
 	                        const w = 280
 	                        const ar = computePreviewAspectRatio(upload)

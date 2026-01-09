@@ -27,7 +27,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
   const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
-  const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, 0), 50)) : 0
+  const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
   const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
@@ -106,7 +106,7 @@ function normalizeFontSizePct(raw: any): number {
 function normalizeTrackingPct(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 0
-  const clamped = Math.min(Math.max(n, 0), 50)
+  const clamped = Math.min(Math.max(n, -20), 50)
   return Math.round(clamped)
 }
 

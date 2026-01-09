@@ -435,7 +435,7 @@ export default function ScreenTitlePresetsPage() {
                   <input
                     type="number"
                     step="1"
-                    min={0}
+                    min={-20}
                     max={50}
                     value={Number.isFinite(Number(draft.trackingPct)) ? String(draft.trackingPct) : '0'}
                     onChange={(e) => {

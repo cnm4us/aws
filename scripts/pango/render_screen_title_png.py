@@ -85,7 +85,7 @@ def main():
   max_width_pct = clamp(max_width_pct, 20.0, 100.0) / 100.0
 
   tracking_pct = float(preset.get("trackingPct") or 0.0)
-  tracking_pct = clamp(tracking_pct, 0.0, 50.0)
+  tracking_pct = clamp(tracking_pct, -20.0, 50.0)
 
   x_inset = inset_pct_for_preset(preset.get("insetXPreset"))
   y_inset = inset_pct_for_preset(preset.get("insetYPreset") or "medium")
@@ -139,7 +139,7 @@ def main():
   # Text shaping on by default; allow \n.
   layout.set_text(text, -1)
 
-  if tracking_pct > 0.0:
+  if tracking_pct != 0.0:
     # Pango letter spacing is in Pango units (Pango.SCALE == 1024 units per device unit).
     letter_px = font_px * (tracking_pct / 100.0)
     try:
