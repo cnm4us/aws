@@ -3690,40 +3690,37 @@ pagesRouter.get('/admin/audio-tags', async (req: any, res: any) => {
     body += `<div class="section"><div class="section-title">List</div>`
     if (!items.length) {
       body += `<p>No tags yet.</p>`
-    } else {
-      body += `<div style="display:grid; gap:10px">`
-      for (const t of items as any[]) {
-        const id = Number((t as any).id)
-        const name = String((t as any).name || '')
-        const slug = String((t as any).slug || '')
-        const archivedAt = (t as any).archived_at
-        body += `<div style="border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; background: rgba(255,255,255,0.03); display:grid; gap:8px">`
-        body += `<div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline">
-          <div style="font-weight:800">${escapeHtml(name)}</div>
-          <div style="font-size:12px; color:#888">${archivedAt ? 'Archived' : escapeHtml(slug)}</div>
-        </div>`
-        body += `<form method="post" action="/admin/audio-tags/${id}">
-          ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
-          <label>Rename
-            <input type="text" name="name" value="${escapeHtml(name)}" />
-          </label>
-          <div class="actions"><button type="submit">Save</button></div>
-        </form>`
-        if (archivedAt) {
-          body += `<form method="post" action="/admin/audio-tags/${id}/unarchive" onsubmit="return confirm('Unarchive this tag?')">
-            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
-            <button type="submit" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Unarchive</button>
-          </form>`
-        } else {
-          body += `<form method="post" action="/admin/audio-tags/${id}/archive" onsubmit="return confirm('Archive this tag? It will stop appearing in pickers.')">
-            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
-            <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Archive</button>
-          </form>`
-        }
-        body += `</div>`
-      }
-      body += `</div>`
-    }
+	    } else {
+	      body += `<div style="display:grid; gap:10px">`
+	      for (const t of items as any[]) {
+	        const id = Number((t as any).id)
+	        const name = String((t as any).name || '')
+	        const slug = String((t as any).slug || '')
+	        const archivedAt = (t as any).archived_at
+	        body += `<div style="border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; background: rgba(255,255,255,0.03); display:grid; gap:8px">`
+	        body += `<form id="audio-tag-rename-${id}" method="post" action="/admin/audio-tags/${id}" style="margin:0; display:flex; gap:10px; align-items:baseline">
+	          ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+	          <input type="text" name="name" value="${escapeHtml(name)}" style="flex:1; min-width: 240px" />
+	          <div style="font-size:12px; color:#888; white-space:nowrap">${archivedAt ? 'Archived' : escapeHtml(slug)}</div>
+	        </form>`
+	        body += `<div style="display:flex; justify-content:flex-end; gap:10px; align-items:center; flex-wrap:wrap">
+	          <button type="submit" form="audio-tag-rename-${id}" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Save</button>`
+	        if (archivedAt) {
+	          body += `<form method="post" action="/admin/audio-tags/${id}/unarchive" onsubmit="return confirm('Unarchive this tag?')" style="margin:0">
+	            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+	            <button type="submit" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Unarchive</button>
+	          </form>`
+	        } else {
+	          body += `<form method="post" action="/admin/audio-tags/${id}/archive" onsubmit="return confirm('Archive this tag? It will stop appearing in pickers.')" style="margin:0">
+	            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+	            <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Archive</button>
+	          </form>`
+	        }
+	        body += `</div>`
+	        body += `</div>`
+	      }
+	      body += `</div>`
+	    }
     body += `</div>`
 
     const doc = renderAdminPage({ title: 'Audio Tags', bodyHtml: body, active: 'audio_tags' })
