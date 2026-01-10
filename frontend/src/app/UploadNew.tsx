@@ -414,11 +414,11 @@ const UploadNewPage: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="modifiedFilename" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                Display Name
-              </label>
-              <input
+	            <div>
+	              <label htmlFor="modifiedFilename" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+	                Display Name
+	              </label>
+	              <input
                 id="modifiedFilename"
                 type="text"
                 value={modifiedName}
@@ -433,15 +433,40 @@ const UploadNewPage: React.FC = () => {
                   color: '#fff',
                   fontSize: 16,
                 }}
-                disabled={uploading}
-              />
-            </div>
+	                disabled={uploading}
+	              />
+	            </div>
 
-            <div>
-              <label htmlFor="description" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                Description
-              </label>
-              <textarea
+	            {kind === 'audio' && me?.isSiteAdmin ? (
+	              <div>
+	                <label htmlFor="artist" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+	                  Artist
+	                </label>
+	                <input
+	                  id="artist"
+	                  type="text"
+	                  value={artist}
+	                  onChange={(event) => setArtist(event.target.value)}
+	                  placeholder="Enter the artist name (optional)"
+	                  style={{
+	                    width: '100%',
+	                    padding: '12px',
+	                    borderRadius: 10,
+	                    border: '1px solid #1f1f1f',
+	                    background: '#050505',
+	                    color: '#fff',
+	                    fontSize: 16,
+	                  }}
+	                  disabled={uploading}
+	                />
+	              </div>
+	            ) : null}
+
+	            <div>
+	              <label htmlFor="description" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+	                Description
+	              </label>
+	              <textarea
                 id="description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
@@ -458,39 +483,16 @@ const UploadNewPage: React.FC = () => {
                   resize: 'vertical',
                   minHeight: 120,
                 }}
-                disabled={uploading}
-              />
-            </div>
+	                disabled={uploading}
+	              />
+	            </div>
 
-            {kind === 'audio' && me?.isSiteAdmin ? (
-              <>
-                <div>
-                  <label htmlFor="artist" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                    Artist
-                  </label>
-                  <input
-                    id="artist"
-                    type="text"
-                    value={artist}
-                    onChange={(event) => setArtist(event.target.value)}
-                    placeholder="Enter the artist name (optional)"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      borderRadius: 10,
-                      border: '1px solid #1f1f1f',
-                      background: '#050505',
-                      color: '#fff',
-                      fontSize: 16,
-                    }}
-                    disabled={uploading}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-                    <div style={{ fontWeight: 700 }}>Genres</div>
-                    <button
+	            {kind === 'audio' && me?.isSiteAdmin ? (
+	              <>
+	                <div style={{ display: 'grid', gap: 12 }}>
+	                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                    <div style={{ fontWeight: 700 }}>Genres</div>
+	                    <button
                       type="button"
                       onClick={() => setSelectedGenreIds([])}
                       style={{
