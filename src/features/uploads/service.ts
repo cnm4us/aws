@@ -542,6 +542,9 @@ export async function createSignedUpload(input: {
   durationSeconds?: number | null
   modifiedFilename?: string
   description?: string
+  artist?: string
+  genreTagIds?: number[]
+  moodTagIds?: number[]
   kind?: 'video' | 'logo' | 'audio' | 'image'
   imageRole?: string | null
   ownerUserId?: number | null
@@ -556,6 +559,8 @@ export async function createSignedUpload(input: {
   const modifiedFilename = providedModified.length ? providedModified : filename
   const rawDescription = (input.description || '').trim()
   const description = rawDescription.length ? rawDescription : null
+  const rawArtist = (input.artist || '').trim()
+  const artist = rawArtist.length ? rawArtist.slice(0, 255) : null
   const safe = sanitizeFilename(filename)
   const lowerCt = String(contentType || '').toLowerCase()
   const extFromName = ((safe || '').match(/\.[^.]+$/) || [''])[0].toLowerCase()
@@ -706,6 +711,49 @@ export async function createSignedUpload(input: {
     }
   }
   const id = Number((result as any).insertId)
+
+  if (kind === 'audio' && artist) {
+    try {
+      await db.query(`UPDATE uploads SET artist = ? WHERE id = ?`, [artist, id])
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      // Backward compatibility when `uploads.artist` isn't deployed yet.
+      if (!(msg.includes('Unknown column') && msg.includes('artist'))) throw e
+    }
+  }
+
+  if (kind === 'audio') {
+    const genreIds = Array.isArray(input.genreTagIds) ? input.genreTagIds : []
+    const moodIds = Array.isArray(input.moodTagIds) ? input.moodTagIds : []
+    const requested = Array.from(
+      new Set(
+        [...genreIds, ...moodIds]
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n > 0)
+      )
+    )
+    if (requested.length) {
+      try {
+        const [rows] = await db.query(`SELECT id FROM audio_tags WHERE archived_at IS NULL AND id IN (?)`, [requested])
+        const okIds = new Set((rows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0))
+        const invalid = requested.filter((n) => !okIds.has(n))
+        if (invalid.length) {
+          const err: any = new DomainError('invalid_audio_tags', 'invalid_audio_tags', 400)
+          err.detail = { invalidTagIds: invalid }
+          throw err
+        }
+        await audioTagsRepo.replaceUploadTags(id, requested)
+      } catch (e: any) {
+        const msg = String(e?.message || '')
+        // Backward compatibility when tag tables aren't deployed yet.
+        if ((msg.includes('Table') && msg.includes('audio_tags')) || (msg.includes('Table') && msg.includes('upload_audio_tags'))) {
+          // ignore
+        } else {
+          throw e
+        }
+      }
+    }
+  }
 
   // Determine owner: prefer session user; otherwise explicit ownerUserId (admin token flow)
   const ownerId = ctx.userId ?? (input.ownerUserId ?? null)

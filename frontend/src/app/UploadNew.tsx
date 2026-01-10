@@ -4,6 +4,7 @@ type MeResponse = {
   userId: number | null
   email: string | null
   displayName: string | null
+  isSiteAdmin?: boolean
 }
 
 async function ensureLoggedIn(): Promise<MeResponse | null> {
@@ -105,6 +106,10 @@ const UploadNewPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null)
   const [modifiedName, setModifiedName] = useState('')
   const [description, setDescription] = useState('')
+  const [artist, setArtist] = useState('')
+  const [audioTags, setAudioTags] = useState<{ genres: Array<{ id: number; name: string }>; moods: Array<{ id: number; name: string }> }>({ genres: [], moods: [] })
+  const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([])
+  const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
@@ -141,6 +146,26 @@ const UploadNewPage: React.FC = () => {
                 ? 'Please sign in to upload images.'
                 : 'Please sign in to upload audio.'
         )
+        return
+      }
+      if (kind === 'audio' && !user?.isSiteAdmin) {
+        setUploadError('Only site_admin can upload system audio.')
+        return
+      }
+      if (kind === 'audio') {
+        try {
+          const res = await fetch('/api/audio-tags', { credentials: 'same-origin' })
+          const json = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(json?.error || 'failed_to_load_tags')
+          if (!cancelled) {
+            setAudioTags({
+              genres: Array.isArray(json?.genres) ? json.genres : [],
+              moods: Array.isArray(json?.moods) ? json.moods : [],
+            })
+          }
+        } catch {
+          // Best-effort; tags are optional at upload time.
+        }
       }
     })()
     return () => {
@@ -195,6 +220,7 @@ const UploadNewPage: React.FC = () => {
 
       const trimmedName = modifiedName.trim() || file.name
       const trimmedDescription = description.trim()
+      const trimmedArtist = artist.trim()
       setUploading(true)
       setUploadError(null)
       setUploadMessage(null)
@@ -213,6 +239,13 @@ const UploadNewPage: React.FC = () => {
           sizeBytes: file.size,
           modifiedFilename: trimmedName,
           description: trimmedDescription || undefined,
+          ...(kind === 'audio' && me?.isSiteAdmin
+            ? {
+                artist: trimmedArtist || undefined,
+                genreTagIds: selectedGenreIds,
+                moodTagIds: selectedMoodIds,
+              }
+            : {}),
           kind,
           ...(kind === 'image' && imageRole ? { imageRole } : {}),
           ...meta,
@@ -283,6 +316,9 @@ const UploadNewPage: React.FC = () => {
         setUploadProgress(100)
         setModifiedName('')
         setDescription('')
+        setArtist('')
+        setSelectedGenreIds([])
+        setSelectedMoodIds([])
         resetForm()
       } catch (err: any) {
         console.error('upload failed', err)
@@ -291,7 +327,7 @@ const UploadNewPage: React.FC = () => {
         setUploading(false)
       }
     },
-    [file, me, modifiedName, description, resetForm, kind, imageRole]
+    [file, me, modifiedName, description, artist, selectedGenreIds, selectedMoodIds, resetForm, kind, imageRole]
   )
 
   if (me === null) {
@@ -312,7 +348,7 @@ const UploadNewPage: React.FC = () => {
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Choose a file, add a friendly title, and describe it for your team.</p>
           </div>
           <a
-            href={kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(kind)}`}
+            href={kind === 'audio' && me?.isSiteAdmin ? '/admin/audio' : kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(kind)}`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -343,7 +379,7 @@ const UploadNewPage: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
               <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                {kind === 'video' ? 'Select Video File' : kind === 'logo' ? 'Select Logo File' : 'Select Audio File'}
+                {kind === 'video' ? 'Select Video File' : kind === 'logo' ? 'Select Logo File' : kind === 'image' ? 'Select Image File' : 'Select Audio File'}
               </label>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <button
@@ -425,6 +461,137 @@ const UploadNewPage: React.FC = () => {
                 disabled={uploading}
               />
             </div>
+
+            {kind === 'audio' && me?.isSiteAdmin ? (
+              <>
+                <div>
+                  <label htmlFor="artist" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+                    Artist
+                  </label>
+                  <input
+                    id="artist"
+                    type="text"
+                    value={artist}
+                    onChange={(event) => setArtist(event.target.value)}
+                    placeholder="Enter the artist name (optional)"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: 10,
+                      border: '1px solid #1f1f1f',
+                      background: '#050505',
+                      color: '#fff',
+                      fontSize: 16,
+                    }}
+                    disabled={uploading}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 700 }}>Genres</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGenreIds([])}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                      disabled={uploading}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {audioTags.genres.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {audioTags.genres.map((t) => {
+                        const selected = selectedGenreIds.includes(t.id)
+                        return (
+                          <button
+                            key={`g-${t.id}`}
+                            type="button"
+                            onClick={() =>
+                              setSelectedGenreIds((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+                            }
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: selected ? '#0a84ff' : '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                            disabled={uploading}
+                          >
+                            {t.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#a0a0a0' }}>No genre tags yet. Create them in Admin → Audio Tags.</div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 700 }}>Moods</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMoodIds([])}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                      disabled={uploading}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {audioTags.moods.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+	                      {audioTags.moods.map((t) => {
+	                        const selected = selectedMoodIds.includes(t.id)
+	                        return (
+	                          <button
+	                            key={`m-${t.id}`}
+                            type="button"
+                            onClick={() =>
+                              setSelectedMoodIds((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+                            }
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: selected ? '#0a84ff' : '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+	                            disabled={uploading}
+	                          >
+	                            {t.name}
+	                          </button>
+	                        )
+	                      })}
+	                    </div>
+	                  ) : (
+                    <div style={{ color: '#a0a0a0' }}>No mood tags yet. Create them in Admin → Audio Tags.</div>
+                  )}
+                </div>
+              </>
+            ) : null}
 
             <div>
               <button

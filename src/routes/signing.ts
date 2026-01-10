@@ -18,6 +18,9 @@ const signSchema = z.object({
   userId: z.number().int().positive().optional(),
   modifiedFilename: z.string().max(512).optional(),
   description: z.string().max(4000).optional(),
+  artist: z.string().max(255).optional(),
+  genreTagIds: z.array(z.number().int().positive()).max(200).optional(),
+  moodTagIds: z.array(z.number().int().positive()).max(200).optional(),
 });
 
 signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res) => {
@@ -35,6 +38,9 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
       imageRole: parsed.imageRole ?? null,
       modifiedFilename: parsed.modifiedFilename,
       description: parsed.description,
+      artist: parsed.artist,
+      genreTagIds: parsed.genreTagIds,
+      moodTagIds: parsed.moodTagIds,
       ownerUserId: parsed.userId ?? null,
     }, { userId: actorId })
     res.json(result)
