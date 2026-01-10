@@ -497,6 +497,14 @@ export default function ProducePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [productionName, setProductionName] = useState('')
+  const [defaultStoryText, setDefaultStoryText] = useState<string>(() => {
+    if (!uploadId) return ''
+    try {
+      return sessionStorage.getItem(`produce:defaultStoryText:${uploadId}`) || ''
+    } catch {
+      return ''
+    }
+  })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [logos, setLogos] = useState<AssetItem[]>([])
@@ -650,6 +658,12 @@ export default function ProducePage() {
     } catch {
       setScreenTitleText('')
     }
+    try {
+      const stored = uploadId ? sessionStorage.getItem(`produce:defaultStoryText:${uploadId}`) : null
+      setDefaultStoryText(stored || '')
+    } catch {
+      setDefaultStoryText('')
+    }
   }, [uploadId])
 
   useEffect(() => {
@@ -658,6 +672,13 @@ export default function ProducePage() {
       sessionStorage.setItem(`produce:screenTitleText:${uploadId}`, screenTitleText || '')
     } catch {}
   }, [uploadId, screenTitleText])
+
+  useEffect(() => {
+    if (!uploadId) return
+    try {
+      sessionStorage.setItem(`produce:defaultStoryText:${uploadId}`, defaultStoryText || '')
+    } catch {}
+  }, [uploadId, defaultStoryText])
 
   useEffect(() => {
     const applyFromLocation = () => {
@@ -1326,7 +1347,7 @@ export default function ProducePage() {
   const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
   const sourceDeleted = !!upload.source_deleted_at
 
-	  const onProduce = async () => {
+		  const onProduce = async () => {
     if (!uploadId) return
     if (creating) return
     if (sourceDeleted) {
@@ -1340,17 +1361,18 @@ export default function ProducePage() {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
 
-	      const body: any = {
-	        uploadId,
-	        musicUploadId: selectedAudioId ?? null,
-	        audioConfigId: selectedAudioConfigId ?? null,
-	        logoUploadId: selectedLogoId ?? null,
-	        logoConfigId: selectedLogoConfigId ?? null,
-	        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
-	        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
-	        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
-	        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
-	      }
+		      const body: any = {
+		        uploadId,
+		        musicUploadId: selectedAudioId ?? null,
+		        audioConfigId: selectedAudioConfigId ?? null,
+		        logoUploadId: selectedLogoId ?? null,
+		        logoConfigId: selectedLogoConfigId ?? null,
+		        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
+		        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
+		        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
+		        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
+		        defaultStoryText: (defaultStoryText || '').trim() ? defaultStoryText : null,
+		      }
 	      if (firstScreenMode === 'custom_image') {
 	        if (selectedTitleUploadId == null) {
 	          throw new Error('Choose a title page image, or switch First Screen to First Frame of Video.')
@@ -1579,11 +1601,11 @@ export default function ProducePage() {
             </div>
           </div>
 
-	          <div style={{ flex: 1, minWidth: 260 }}>
-	            <section style={{ padding: 14, borderRadius: 12, background: '#0e0e0e', border: '1px solid #1f1f1f' }}>
-	              <div style={{ fontSize: 13, fontWeight: 650, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8, marginBottom: 10 }}>
-	                Optional Enhancements
-	              </div>
+		          <div style={{ flex: 1, minWidth: 260 }}>
+		            <section style={{ padding: 14, borderRadius: 12, background: '#0e0e0e', border: '1px solid #1f1f1f' }}>
+		              <div style={{ fontSize: 13, fontWeight: 650, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8, marginBottom: 10 }}>
+		                Optional Enhancements
+		              </div>
 
               {authChecked && !me?.userId ? (
                 <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', marginBottom: 12 }}>
@@ -1591,12 +1613,12 @@ export default function ProducePage() {
                 </div>
               ) : null}
 
-	              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-	                <div style={{ color: '#bbb' }}>Production Name (optional)</div>
-                <input
-                  value={productionName}
-                  onChange={(e) => setProductionName(e.target.value)}
-                  placeholder="Name this production"
+		              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+		                <div style={{ color: '#bbb' }}>Production Name (optional)</div>
+	                <input
+	                  value={productionName}
+	                  onChange={(e) => setProductionName(e.target.value)}
+	                  placeholder="Name this production"
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
@@ -1605,13 +1627,41 @@ export default function ProducePage() {
                     color: '#fff',
                     outline: 'none',
                   }}
-                />
-	              </label>
+	                />
+		              </label>
 
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-                  <div style={{ color: '#bbb', fontWeight: 650 }}>Screen Title</div>
-                  <a href={`/screen-title-presets?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
-                </div>
+		              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+		                <div style={{ color: '#bbb' }}>Default Story (optional)</div>
+		                <textarea
+		                  value={defaultStoryText}
+		                  onChange={(e) => setDefaultStoryText(e.target.value)}
+		                  placeholder="Used as the story for spaces by default (you can customize per space on Publish)."
+		                  style={{
+		                    width: '100%',
+		                    minHeight: 120,
+		                    resize: 'vertical',
+		                    padding: '10px 12px',
+		                    borderRadius: 10,
+		                    border: '1px solid #2a2a2a',
+		                    background: '#0c0c0c',
+		                    color: '#fff',
+		                    outline: 'none',
+		                    fontFamily: 'system-ui, sans-serif',
+		                    fontSize: 14,
+		                    lineHeight: 1.35,
+		                    whiteSpace: 'pre-wrap',
+		                  }}
+		                />
+		                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: '#888' }}>
+		                  <div>Max 2000 chars</div>
+		                  <div>{(defaultStoryText || '').length}/2000</div>
+		                </div>
+		              </label>
+
+	                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+	                  <div style={{ color: '#bbb', fontWeight: 650 }}>Screen Title</div>
+	                  <a href={`/screen-title-presets?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
+	                </div>
                 <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)', marginBottom: 14 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>
                     <div style={{ gridColumn: '2', gridRow: 1, justifySelf: 'end', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>

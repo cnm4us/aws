@@ -242,6 +242,7 @@ export async function create(
   input: {
     uploadId: number
     name?: string | null
+    defaultStoryText?: string | null
     profile?: string | null
     quality?: string | null
     sound?: string | null
@@ -499,6 +500,10 @@ export async function create(
     sound: input.sound ?? null,
     config: mergedConfig,
   })
+  if (input.defaultStoryText !== undefined) {
+    const txt = normalizeStoryInput(input.defaultStoryText)
+    try { await repo.setDefaultStory(productionId, txt) } catch {}
+  }
   if (input.name) {
     try { await repo.updateProductionNameIfEmpty(productionId, input.name) } catch {}
   }
