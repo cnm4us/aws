@@ -484,58 +484,31 @@ const UploadNewPage: React.FC = () => {
 	              />
 	            </div>
 
-	            {kind === 'audio' && me?.isSiteAdmin ? (
-	              <div>
-	                <label htmlFor="artist" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-	                  Artist
-	                </label>
-	                <input
-	                  id="artist"
-	                  type="text"
-	                  value={artist}
-	                  onChange={(event) => setArtist(event.target.value)}
-	                  placeholder="Enter the artist name (optional)"
-	                  style={{
-	                    width: '100%',
-	                    padding: '12px',
-	                    borderRadius: 10,
-	                    border: '1px solid #1f1f1f',
-	                    background: '#050505',
-	                    color: '#fff',
-	                    fontSize: 16,
-	                  }}
-	                  disabled={uploading}
-	                />
-	              </div>
-	            ) : null}
-
-	            <div>
-	              <label htmlFor="description" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-	                Description
-	              </label>
-	              <textarea
-                id="description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Share context about the video…"
-                rows={5}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: 10,
-                  border: '1px solid #1f1f1f',
-                  background: '#050505',
-                  color: '#fff',
-                  fontSize: 16,
-                  resize: 'vertical',
-                  minHeight: 120,
-                }}
-	                disabled={uploading}
-	              />
-	            </div>
-
 		            {kind === 'audio' && me?.isSiteAdmin ? (
 		              <>
+		                <div>
+		                  <label htmlFor="artist" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+		                    Artist
+		                  </label>
+		                  <input
+		                    id="artist"
+		                    type="text"
+		                    value={artist}
+		                    onChange={(event) => setArtist(event.target.value)}
+		                    placeholder="Enter the artist name (optional)"
+		                    style={{
+		                      width: '100%',
+		                      padding: '12px',
+		                      borderRadius: 10,
+		                      border: '1px solid #1f1f1f',
+		                      background: '#050505',
+		                      color: '#fff',
+		                      fontSize: 16,
+		                    }}
+		                    disabled={uploading}
+		                  />
+		                </div>
+
 		                <div style={{ display: 'grid', gap: 10 }}>
 		                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
 		                    <div style={{ fontWeight: 700 }}>License Source</div>
@@ -575,11 +548,40 @@ const UploadNewPage: React.FC = () => {
 		                  )}
 		                  <div style={{ color: '#a0a0a0', fontSize: 13 }}>Required for system audio uploads.</div>
 		                </div>
+		              </>
+		            ) : null}
 
-		                <div style={{ display: 'grid', gap: 12 }}>
-		                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-		                    <div style={{ fontWeight: 700 }}>Genres</div>
-		                    <button
+	            <div>
+	              <label htmlFor="description" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+	                Description
+	              </label>
+	              <textarea
+                id="description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Share context about the video…"
+                rows={5}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: 10,
+                  border: '1px solid #1f1f1f',
+                  background: '#050505',
+                  color: '#fff',
+                  fontSize: 16,
+                  resize: 'vertical',
+                  minHeight: 120,
+                }}
+	                disabled={uploading}
+	              />
+	            </div>
+
+			            {kind === 'audio' && me?.isSiteAdmin ? (
+			              <>
+			                <div style={{ display: 'grid', gap: 12 }}>
+			                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+			                    <div style={{ fontWeight: 700 }}>Genres</div>
+			                    <button
                       type="button"
                       onClick={() => setSelectedGenreIds([])}
                       style={{
