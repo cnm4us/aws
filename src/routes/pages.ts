@@ -12,6 +12,8 @@ import * as spacesSvc from '../features/spaces/service'
 import * as pubsSvc from '../features/publications/service'
 import * as uploadsSvc from '../features/uploads/service'
 import * as audioConfigsSvc from '../features/audio-configs/service'
+import * as audioTagsSvc from '../features/audio-tags/service'
+import * as audioTagsRepo from '../features/audio-tags/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
@@ -617,6 +619,7 @@ type AdminNavKey =
   | 'cultures'
   | 'pages'
   | 'audio'
+  | 'audio_tags'
   | 'lower_thirds'
   | 'audio_configs'
   | 'media_jobs'
@@ -633,6 +636,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
   { key: 'audio', label: 'Audio', href: '/admin/audio' },
+  { key: 'audio_tags', label: 'Audio Tags', href: '/admin/audio-tags' },
   { key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
   { key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
   { key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
@@ -3248,7 +3252,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   try {
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description, size_bytes
+      `SELECT id, original_filename, modified_filename, description, artist, size_bytes
          FROM uploads
         WHERE kind = 'audio' AND is_system = 1
         ORDER BY id DESC
@@ -3370,8 +3374,10 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
         const id = Number(row.id)
         const name = escapeHtml(String(row.modified_filename || row.original_filename || `Audio ${id}`))
         const size = formatMb(row.size_bytes)
+        const artist = row.artist != null ? String(row.artist).trim() : ''
         body += '<div class="adm-audio-card">'
         body += `<div class="adm-audio-title">${name}</div>`
+        if (artist) body += `<div class="adm-audio-size">${escapeHtml(artist)}</div>`
         if (size) body += `<div class="adm-audio-size">${escapeHtml(size)}</div>`
         body += `<div class="adm-audio-player" data-src="/api/uploads/${id}/file">
           <button type="button" class="adm-audio-btn" aria-label="Play">▶</button>
@@ -3404,7 +3410,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   }
 })
 
-	function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null }): string {
+		function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null; genres?: any[]; moods?: any[]; selectedTagIds?: number[] }): string {
   const audio = opts.audio || {}
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const error = opts.error ? String(opts.error) : ''
@@ -3412,6 +3418,10 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   const id = Number(audio.id)
   const nameValue = String(audio.modified_filename || audio.original_filename || '').trim()
   const descValue = audio.description != null ? String(audio.description) : ''
+  const artistValue = audio.artist != null ? String(audio.artist) : ''
+  const selected = new Set((opts.selectedTagIds || []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))
+  const genres = Array.isArray(opts.genres) ? opts.genres : []
+  const moods = Array.isArray(opts.moods) ? opts.moods : []
 
   let body = `<h1>Edit Audio</h1>`
   body += '<div class="toolbar"><div><a href="/admin/audio">\u2190 Back to audio</a></div><div></div></div>'
@@ -3423,30 +3433,59 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
     <div class="field-hint">Displayed to users when choosing audio for productions.</div>
   </label>`
+  body += `<label>Artist
+    <input type="text" name="artist" value="${escapeHtml(artistValue)}" />
+    <div class="field-hint">Optional. Used for filtering in the audio picker.</div>
+  </label>`
   body += `<label>Description
     <textarea name="description" style="min-height: 120px">${escapeHtml(descValue)}</textarea>
     <div class="field-hint">Optional.</div>
   </label>`
+
+  const renderTagCheckboxes = (items: any[], fieldName: string) => {
+    if (!items.length) return '<div class="field-hint">No tags yet. Create some in <a href="/admin/audio-tags">Audio Tags</a>.</div>'
+    let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 6px;">'
+    for (const t of items) {
+      const tid = Number(t.id)
+      const checked = selected.has(tid)
+      html += `<label style="display:flex; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:8px 10px; background: rgba(0,0,0,0.25);">
+        <input type="checkbox" name="${escapeHtml(fieldName)}" value="${escapeHtml(String(tid))}" ${checked ? 'checked' : ''} />
+        <span>${escapeHtml(String(t.name || ''))}</span>
+      </label>`
+    }
+    html += '</div>'
+    return html
+  }
+
+  body += `<div class="section">
+    <div class="section-title">Genres</div>
+    ${renderTagCheckboxes(genres, 'genreTagIds')}
+  </div>`
+  body += `<div class="section">
+    <div class="section-title">Moods</div>
+    ${renderTagCheckboxes(moods, 'moodTagIds')}
+  </div>`
+
   body += `<div class="actions">
     <button type="submit">Save</button>
   </div>`
   body += `</form>`
 
-	  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
-	}
+		  return renderAdminPage({ title: 'Edit Audio', bodyHtml: body, active: 'audio' })
+		}
 
 		// IMPORTANT: define /admin/audio/new before /admin/audio/:id so "new" doesn't match the :id param route.
 		pagesRouter.get('/admin/audio/new', (_req: any, res: any) => {
 		  res.redirect('/uploads/new?kind=audio')
 		})
 
-	pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
-	  try {
-	    const id = Number(req.params.id)
-	    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description
+      `SELECT id, original_filename, modified_filename, description, artist
          FROM uploads
         WHERE id = ? AND kind = 'audio' AND is_system = 1
         LIMIT 1`,
@@ -3454,9 +3493,14 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
     )
     const audio = (rows as any[])[0]
     if (!audio) return res.status(404).send('Not found')
+    const [genres, moods, selectedTagIds] = await Promise.all([
+      audioTagsRepo.listTags('genre', { includeArchived: false }),
+      audioTagsRepo.listTags('mood', { includeArchived: false }),
+      audioTagsRepo.listTagIdsForUpload(id),
+    ])
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
-    const doc = renderAdminAudioEditPage({ audio, csrfToken })
+    const doc = renderAdminAudioEditPage({ audio, csrfToken, genres, moods, selectedTagIds })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
@@ -3472,11 +3516,13 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
 
     const rawName = String(req.body?.name || '').trim()
     const rawDesc = String(req.body?.description || '')
+    const rawArtist = String(req.body?.artist || '')
     const desc = rawDesc.trim().length ? rawDesc.trim() : null
+    const artist = rawArtist.trim().length ? rawArtist.trim() : null
 
     const db = getPool()
     const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description
+      `SELECT id, original_filename, modified_filename, description, artist
          FROM uploads
         WHERE id = ? AND kind = 'audio' AND is_system = 1
         LIMIT 1`,
@@ -3487,14 +3533,20 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
 
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
+    const [genres, moods] = await Promise.all([
+      audioTagsRepo.listTags('genre', { includeArchived: false }),
+      audioTagsRepo.listTags('mood', { includeArchived: false }),
+    ])
 
     if (!rawName) {
-      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc }, csrfToken, error: 'Name is required.' })
+      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
+      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, genres, moods, selectedTagIds, error: 'Name is required.' })
       res.set('Content-Type', 'text/html; charset=utf-8')
       return res.status(400).send(doc)
     }
     if (rawName.length > 512) {
-      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc }, csrfToken, error: 'Name is too long (max 512 characters).' })
+      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
+      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, genres, moods, selectedTagIds, error: 'Name is too long (max 512 characters).' })
       res.set('Content-Type', 'text/html; charset=utf-8')
       return res.status(400).send(doc)
     }
@@ -3502,19 +3554,171 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
     await db.query(
       `UPDATE uploads
           SET modified_filename = ?,
-              description = ?
+              description = ?,
+              artist = ?
         WHERE id = ? AND kind = 'audio' AND is_system = 1`,
-      [rawName, desc, id]
+      [rawName, desc, artist, id]
     )
 
-    const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: desc }, csrfToken, notice: 'Saved.' })
+    const parseIdList = (v: any): number[] => {
+      if (v == null) return []
+      const arr = Array.isArray(v) ? v : [v]
+      return arr.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0)
+    }
+    const tagIds = [...parseIdList(req.body?.genreTagIds), ...parseIdList(req.body?.moodTagIds)]
+    await audioTagsRepo.replaceUploadTags(id, tagIds)
+    const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
+
+    const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: desc, artist }, csrfToken, genres, moods, selectedTagIds, notice: 'Saved.' })
     res.set('Content-Type', 'text/html; charset=utf-8')
     res.send(doc)
   } catch (err) {
     console.error('admin audio update failed', err)
-	    res.status(500).send('Failed to save audio')
-	  }
-	})
+		    res.status(500).send('Failed to save audio')
+		  }
+		})
+
+// --- Admin audio tags (Plan 51) ---
+pagesRouter.get('/admin/audio-tags', async (req: any, res: any) => {
+  try {
+    const kind = String(req.query?.kind || 'genre').toLowerCase() === 'mood' ? 'mood' : 'genre'
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-tags')}`)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const items = await audioTagsSvc.listAdminTags(kind, { includeArchived }, { userId: currentUserId } as any)
+
+    let body = `<h1>Audio Tags</h1>`
+    body += `<div class="toolbar"><div><span class="pill">${escapeHtml(kind === 'mood' ? 'Moods' : 'Genres')}</span></div><div></div></div>`
+    body += `<div class="section"><div class="section-title">Kinds</div>
+      <div class="toolbar" style="margin:0">
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <a href="/admin/audio-tags?kind=genre" class="btn" style="background:${kind === 'genre' ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.18)">Genres</a>
+          <a href="/admin/audio-tags?kind=mood" class="btn" style="background:${kind === 'mood' ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.06)'}; border:1px solid rgba(255,255,255,0.18)">Moods</a>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <a href="/admin/audio-tags?kind=${escapeHtml(kind)}&include_archived=${includeArchived ? '0' : '1'}" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">${includeArchived ? 'Hide archived' : 'Show archived'}</a>
+        </div>
+      </div>
+    </div>`
+
+    body += `<div class="section"><div class="section-title">Create</div>
+      <form method="post" action="/admin/audio-tags">
+        ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+        <input type="hidden" name="kind" value="${escapeHtml(kind)}" />
+        <label>Name
+          <input type="text" name="name" value="" placeholder="${kind === 'mood' ? 'e.g. Uplifting' : 'e.g. Ambient'}" />
+        </label>
+        <div class="actions"><button type="submit">Create</button></div>
+      </form>
+    </div>`
+
+    body += `<div class="section"><div class="section-title">List</div>`
+    if (!items.length) {
+      body += `<p>No tags yet.</p>`
+    } else {
+      body += `<div style="display:grid; gap:10px">`
+      for (const t of items as any[]) {
+        const id = Number((t as any).id)
+        const name = String((t as any).name || '')
+        const slug = String((t as any).slug || '')
+        const archivedAt = (t as any).archived_at
+        body += `<div style="border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; background: rgba(255,255,255,0.03); display:grid; gap:8px">`
+        body += `<div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline">
+          <div style="font-weight:800">${escapeHtml(name)}</div>
+          <div style="font-size:12px; color:#888">${archivedAt ? 'Archived' : escapeHtml(slug)}</div>
+        </div>`
+        body += `<form method="post" action="/admin/audio-tags/${id}">
+          ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+          <label>Rename
+            <input type="text" name="name" value="${escapeHtml(name)}" />
+          </label>
+          <div class="actions"><button type="submit">Save</button></div>
+        </form>`
+        if (archivedAt) {
+          body += `<form method="post" action="/admin/audio-tags/${id}/unarchive" onsubmit="return confirm('Unarchive this tag?')">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Unarchive</button>
+          </form>`
+        } else {
+          body += `<form method="post" action="/admin/audio-tags/${id}/archive" onsubmit="return confirm('Archive this tag? It will stop appearing in pickers.')">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Archive</button>
+          </form>`
+        }
+        body += `</div>`
+      }
+      body += `</div>`
+    }
+    body += `</div>`
+
+    const doc = renderAdminPage({ title: 'Audio Tags', bodyHtml: body, active: 'audio_tags' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin audio-tags page failed', err)
+    res.status(500).send('Failed to load audio tags')
+  }
+})
+
+pagesRouter.post('/admin/audio-tags', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-tags')}`)
+    const kind = String(req.body?.kind || 'genre').toLowerCase() === 'mood' ? 'mood' : 'genre'
+    const name = String(req.body?.name || '')
+    await audioTagsSvc.createAdminTag({ kind, name }, { userId: currentUserId } as any)
+    res.redirect(`/admin/audio-tags?kind=${encodeURIComponent(kind)}`)
+  } catch (err) {
+    console.error('admin audio-tags create failed', err)
+    res.status(500).send('Failed to create tag')
+  }
+})
+
+pagesRouter.post('/admin/audio-tags/:id', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-tags')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const name = req.body?.name
+    await audioTagsSvc.renameAdminTag(id, name, { userId: currentUserId } as any)
+    res.redirect('/admin/audio-tags')
+  } catch (err) {
+    console.error('admin audio-tags rename failed', err)
+    res.status(500).send('Failed to rename tag')
+  }
+})
+
+pagesRouter.post('/admin/audio-tags/:id/archive', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-tags')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    await audioTagsSvc.archiveAdminTag(id, true, { userId: currentUserId } as any)
+    res.redirect('/admin/audio-tags')
+  } catch (err) {
+    console.error('admin audio-tags archive failed', err)
+    res.status(500).send('Failed to archive tag')
+  }
+})
+
+pagesRouter.post('/admin/audio-tags/:id/unarchive', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/audio-tags')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    await audioTagsSvc.archiveAdminTag(id, false, { userId: currentUserId } as any)
+    res.redirect('/admin/audio-tags')
+  } catch (err) {
+    console.error('admin audio-tags unarchive failed', err)
+    res.status(500).send('Failed to unarchive tag')
+  }
+})
 
 	pagesRouter.post('/admin/audio/:id/delete', async (req: any, res: any) => {
 	  try {

@@ -17,6 +17,7 @@ import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type List
 import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
+import * as audioTagsRepo from '../audio-tags/repo'
 
 export type ServiceContext = { userId?: number | null }
 
@@ -232,21 +233,30 @@ export async function listSystemAudio(
   const lim = clampLimit(params?.limit, 50, 1, 200)
   const cursorId = params?.cursorId && Number.isFinite(params.cursorId) ? Number(params.cursorId) : undefined
 
-  try {
-    const rows = await repo.list({
-      status: ['uploaded', 'completed'],
-      kind: 'audio',
-      isSystem: true,
-      cursorId,
-      limit: lim,
-    })
-    return rows.map((row) => enhanceUploadRow(row))
-  } catch (e: any) {
-    const msg = String(e?.message || '')
-    // Backward compatibility when `uploads.is_system` is not deployed yet.
-    if (msg.includes('Unknown column') && msg.includes('is_system')) return []
-    throw e
-  }
+	  try {
+	    const rows = await repo.list({
+	      status: ['uploaded', 'completed'],
+	      kind: 'audio',
+	      isSystem: true,
+	      cursorId,
+	      limit: lim,
+	    })
+      const uploadIds = rows.map((r) => Number((r as any).id)).filter((n) => Number.isFinite(n) && n > 0)
+      const tagMap = await audioTagsRepo.listTagAssignmentsForUploadIds(uploadIds)
+      return rows.map((row) => {
+        const enhanced: any = enhanceUploadRow(row)
+        const id = Number((row as any).id)
+        const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [] }
+        enhanced.genreTagIds = tags.genreTagIds
+        enhanced.moodTagIds = tags.moodTagIds
+        return enhanced
+      })
+	  } catch (e: any) {
+	    const msg = String(e?.message || '')
+	    // Backward compatibility when `uploads.is_system` is not deployed yet.
+	    if (msg.includes('Unknown column') && msg.includes('is_system')) return []
+	    throw e
+	  }
 }
 
 export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {

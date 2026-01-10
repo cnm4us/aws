@@ -52,12 +52,17 @@ type AssetItem = {
   original_filename: string
   modified_filename: string | null
   description?: string | null
+  artist?: string | null
+  genreTagIds?: number[]
+  moodTagIds?: number[]
   content_type?: string | null
   size_bytes?: number | null
   width?: number | null
   height?: number | null
   created_at?: string | null
 }
+
+type AudioTagSummary = { id: number; name: string; slug: string }
 
 type InsetPreset = 'small' | 'medium' | 'large'
 
@@ -537,6 +542,10 @@ export default function ProducePage() {
   })
   const [pick, setPick] = useState<'audio' | 'audioConfig' | 'logo' | 'logoConfig' | 'titlePage' | 'lowerThirdImage' | 'lowerThirdConfig' | null>(() => parsePick())
   const [audioSort, setAudioSort] = useState<AudioSortMode>('recent')
+  const [audioSearch, setAudioSearch] = useState('')
+  const [audioGenreFilters, setAudioGenreFilters] = useState<number[]>([])
+  const [audioMoodFilters, setAudioMoodFilters] = useState<number[]>([])
+  const [audioTags, setAudioTags] = useState<{ genres: AudioTagSummary[]; moods: AudioTagSummary[] }>({ genres: [], moods: [] })
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
@@ -802,40 +811,47 @@ export default function ProducePage() {
 	        const lowerThirdImageParams = new URLSearchParams(base)
 	        lowerThirdImageParams.set('kind', 'image')
 	        lowerThirdImageParams.set('image_role', 'lower_third')
-	        const [logoRes, titleRes, lowerThirdImageRes, audioRes, cfgRes, audioCfgRes, ltCfgRes, stRes] = await Promise.all([
-	          fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
-	          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
-	          fetch(`/api/uploads?${lowerThirdImageParams.toString()}`, { credentials: 'same-origin' }),
-	          fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
-	          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
-	          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
-	          fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' }),
-	          fetch(`/api/screen-title-presets`, { credentials: 'same-origin' }),
-	        ])
+		        const [logoRes, titleRes, lowerThirdImageRes, audioRes, tagsRes, cfgRes, audioCfgRes, ltCfgRes, stRes] = await Promise.all([
+		          fetch(`/api/uploads?${logoParams.toString()}`, { credentials: 'same-origin' }),
+		          fetch(`/api/uploads?${titleParams.toString()}`, { credentials: 'same-origin' }),
+		          fetch(`/api/uploads?${lowerThirdImageParams.toString()}`, { credentials: 'same-origin' }),
+		          fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' }),
+		          fetch(`/api/audio-tags`, { credentials: 'same-origin' }),
+		          fetch(`/api/logo-configs`, { credentials: 'same-origin' }),
+		          fetch(`/api/audio-configs?limit=200`, { credentials: 'same-origin' }),
+		          fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' }),
+		          fetch(`/api/screen-title-presets`, { credentials: 'same-origin' }),
+		        ])
 	        const logoJson = await logoRes.json().catch(() => [])
 	        const titleJson = await titleRes.json().catch(() => [])
-	        const lowerThirdImageJson = await lowerThirdImageRes.json().catch(() => [])
-	        const audioJson = await audioRes.json().catch(() => [])
-	        const cfgJson = await cfgRes.json().catch(() => [])
-	        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
-	        const ltCfgJson = await ltCfgRes.json().catch(() => ({}))
-	        const stJson = await stRes.json().catch(() => [])
+		        const lowerThirdImageJson = await lowerThirdImageRes.json().catch(() => [])
+		        const audioJson = await audioRes.json().catch(() => [])
+		        const tagsJson = await tagsRes.json().catch(() => ({}))
+		        const cfgJson = await cfgRes.json().catch(() => [])
+		        const audioCfgJson = await audioCfgRes.json().catch(() => ({}))
+		        const ltCfgJson = await ltCfgRes.json().catch(() => ({}))
+		        const stJson = await stRes.json().catch(() => [])
 	        if (!logoRes.ok) throw new Error('Failed to load logos')
 	        if (!titleRes.ok) throw new Error('Failed to load title pages')
-	        if (!lowerThirdImageRes.ok) throw new Error('Failed to load lower third images')
-	        if (!audioRes.ok) throw new Error('Failed to load system audio')
-	        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
-	        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
-	        if (!ltCfgRes.ok) throw new Error('Failed to load lower third configs')
-	        if (!stRes.ok) throw new Error('Failed to load screen title presets')
-	        if (cancelled) return
+		        if (!lowerThirdImageRes.ok) throw new Error('Failed to load lower third images')
+		        if (!audioRes.ok) throw new Error('Failed to load system audio')
+		        if (!tagsRes.ok) throw new Error('Failed to load audio tags')
+		        if (!cfgRes.ok) throw new Error('Failed to load logo configurations')
+		        if (!audioCfgRes.ok) throw new Error('Failed to load audio configurations')
+		        if (!ltCfgRes.ok) throw new Error('Failed to load lower third configs')
+		        if (!stRes.ok) throw new Error('Failed to load screen title presets')
+		        if (cancelled) return
 	        setLogos(Array.isArray(logoJson) ? logoJson : [])
-	        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
-	        setLowerThirdImages(Array.isArray(lowerThirdImageJson) ? lowerThirdImageJson : [])
-	        setAudios(Array.isArray(audioJson) ? audioJson : [])
-        const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
-        setLogoConfigs(cfgs as any)
-        const audioCfgItems = Array.isArray(audioCfgJson)
+		        setTitlePages(Array.isArray(titleJson) ? titleJson : [])
+		        setLowerThirdImages(Array.isArray(lowerThirdImageJson) ? lowerThirdImageJson : [])
+		        setAudios(Array.isArray(audioJson) ? audioJson : [])
+		        setAudioTags({
+		          genres: Array.isArray((tagsJson as any)?.genres) ? ((tagsJson as any).genres as AudioTagSummary[]) : [],
+		          moods: Array.isArray((tagsJson as any)?.moods) ? ((tagsJson as any).moods as AudioTagSummary[]) : [],
+		        })
+	        const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
+	        setLogoConfigs(cfgs as any)
+	        const audioCfgItems = Array.isArray(audioCfgJson)
           ? (audioCfgJson as any[])
           : Array.isArray((audioCfgJson as any)?.items)
             ? ((audioCfgJson as any).items as any[])
@@ -878,6 +894,28 @@ export default function ProducePage() {
     })
     return items
   }, [audios, audioSort])
+
+  const filteredAudios = useMemo(() => {
+    const q = audioSearch.trim().toLowerCase()
+    const genreSet = new Set(audioGenreFilters.filter((n) => Number.isFinite(n) && n > 0))
+    const moodSet = new Set(audioMoodFilters.filter((n) => Number.isFinite(n) && n > 0))
+    return sortedAudios.filter((a) => {
+      if (q) {
+        const name = String((a.modified_filename || a.original_filename || '')).trim().toLowerCase()
+        const artist = String(a.artist || '').trim().toLowerCase()
+        if (!name.includes(q) && !artist.includes(q)) return false
+      }
+      if (genreSet.size) {
+        const ids = Array.isArray(a.genreTagIds) ? a.genreTagIds : []
+        if (!ids.some((id) => genreSet.has(Number(id)))) return false
+      }
+      if (moodSet.size) {
+        const ids = Array.isArray(a.moodTagIds) ? a.moodTagIds : []
+        if (!ids.some((id) => moodSet.has(Number(id)))) return false
+      }
+      return true
+    })
+  }, [sortedAudios, audioSearch, audioGenreFilters, audioMoodFilters])
 
   const selectedAudioConfig = useMemo(() => {
     if (selectedAudioConfigId == null) return null
@@ -2522,40 +2560,137 @@ export default function ProducePage() {
               </button>
               <div style={{ fontSize: 18, fontWeight: 800 }}>Choose Audio</div>
               <div style={{ width: 84 }} />
-            </div>
+	            </div>
 
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
-              <button
-                type="button"
-                onClick={() => setAudioSort('recent')}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 999,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: audioSort === 'recent' ? '#0a84ff' : '#0c0c0c',
-                  color: '#fff',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                Recent
-              </button>
-	              <button
-	                type="button"
-	                onClick={() => setAudioSort('alpha')}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 999,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: audioSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
-                  color: '#fff',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-	              >
-	                Alphabetical
-	              </button>
+	            <div style={{ display: 'grid', gap: 12, marginBottom: 14 }}>
+	              <input
+	                value={audioSearch}
+	                onChange={(e) => setAudioSearch(e.target.value)}
+	                placeholder="Search name or artist…"
+	                style={{
+	                  width: '100%',
+	                  padding: '10px 12px',
+	                  borderRadius: 12,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                  color: '#fff',
+	                  outline: 'none',
+	                }}
+	              />
+
+	              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+	                <div style={{ color: '#bbb', fontWeight: 700 }}>Sort</div>
+	                <button
+	                  type="button"
+	                  onClick={() => setAudioSort('recent')}
+	                  style={{
+	                    padding: '8px 12px',
+	                    borderRadius: 999,
+	                    border: '1px solid rgba(255,255,255,0.18)',
+	                    background: audioSort === 'recent' ? '#0a84ff' : '#0c0c0c',
+	                    color: '#fff',
+	                    fontWeight: 800,
+	                    cursor: 'pointer',
+	                  }}
+	                >
+	                  Recent
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => setAudioSort('alpha')}
+	                  style={{
+	                    padding: '8px 12px',
+	                    borderRadius: 999,
+	                    border: '1px solid rgba(255,255,255,0.18)',
+	                    background: audioSort === 'alpha' ? '#0a84ff' : '#0c0c0c',
+	                    color: '#fff',
+	                    fontWeight: 800,
+	                    cursor: 'pointer',
+	                  }}
+	                >
+	                  Alphabetical
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => {
+	                    setAudioSearch('')
+	                    setAudioGenreFilters([])
+	                    setAudioMoodFilters([])
+	                  }}
+	                  style={{
+	                    padding: '8px 12px',
+	                    borderRadius: 999,
+	                    border: '1px solid rgba(255,255,255,0.18)',
+	                    background: '#0c0c0c',
+	                    color: '#fff',
+	                    fontWeight: 800,
+	                    cursor: 'pointer',
+	                  }}
+	                >
+	                  Clear Filters
+	                </button>
+	                <div style={{ color: '#888', fontSize: 13 }}>
+	                  {filteredAudios.length} / {sortedAudios.length}
+	                </div>
+	              </div>
+
+	              {audioTags.genres.length ? (
+	                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+	                  <div style={{ color: '#bbb', fontWeight: 700, marginRight: 4 }}>Genre</div>
+	                  {audioTags.genres.map((t) => {
+	                    const selected = audioGenreFilters.includes(t.id)
+	                    return (
+	                      <button
+	                        key={`g-${t.id}`}
+	                        type="button"
+	                        onClick={() =>
+	                          setAudioGenreFilters((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+	                        }
+	                        style={{
+	                          padding: '7px 10px',
+	                          borderRadius: 999,
+	                          border: '1px solid rgba(255,255,255,0.18)',
+	                          background: selected ? '#0a84ff' : '#0c0c0c',
+	                          color: '#fff',
+	                          fontWeight: 800,
+	                          cursor: 'pointer',
+	                        }}
+	                      >
+	                        {t.name}
+	                      </button>
+	                    )
+	                  })}
+	                </div>
+	              ) : null}
+
+	              {audioTags.moods.length ? (
+	                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+	                  <div style={{ color: '#bbb', fontWeight: 700, marginRight: 4 }}>Mood</div>
+	                  {audioTags.moods.map((t) => {
+	                    const selected = audioMoodFilters.includes(t.id)
+	                    return (
+	                      <button
+	                        key={`m-${t.id}`}
+	                        type="button"
+	                        onClick={() =>
+	                          setAudioMoodFilters((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+	                        }
+	                        style={{
+	                          padding: '7px 10px',
+	                          borderRadius: 999,
+	                          border: '1px solid rgba(255,255,255,0.18)',
+	                          background: selected ? '#0a84ff' : '#0c0c0c',
+	                          color: '#fff',
+	                          fontWeight: 800,
+	                          cursor: 'pointer',
+	                        }}
+	                      >
+	                        {t.name}
+	                      </button>
+	                    )
+	                  })}
+	                </div>
+	              ) : null}
 	            </div>
 
             <div style={{ display: 'grid', gap: 10 }}>
@@ -2579,17 +2714,17 @@ export default function ProducePage() {
                 <div style={{ color: '#888' }}>Loading audio…</div>
               ) : assetsError ? (
                 <div style={{ color: '#ff9b9b' }}>{assetsError}</div>
-              ) : sortedAudios.length === 0 ? (
-                <div style={{ color: '#bbb' }}>
-                  No system audio available yet.
-                </div>
-              ) : (
-		                sortedAudios.map((a) => {
-	                  const name = (a.modified_filename || a.original_filename || `Audio ${a.id}`).trim()
-	                  const src = `/api/uploads/${encodeURIComponent(String(a.id))}/file`
-	                  const selected = selectedAudioId === a.id
-	                  return (
-                    <div
+	              ) : filteredAudios.length === 0 ? (
+	                <div style={{ color: '#bbb' }}>
+	                  No matching audio.
+	                </div>
+	              ) : (
+			                filteredAudios.map((a) => {
+		                  const name = (a.modified_filename || a.original_filename || `Audio ${a.id}`).trim()
+		                  const src = `/api/uploads/${encodeURIComponent(String(a.id))}/file`
+		                  const selected = selectedAudioId === a.id
+		                  return (
+	                    <div
                       key={a.id}
                       style={{
                         padding: '8px 12px 12px',
@@ -2598,11 +2733,11 @@ export default function ProducePage() {
                         background: selected ? 'rgba(10,132,255,0.30)' : 'rgba(255,255,255,0.03)',
 	                      }}
 	                    >
-	                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-	                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
-	                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-	                        </div>
-	                        <button
+		                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
+		                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
+		                          <div style={{ fontWeight: 800, color: '#d4af37', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+		                        </div>
+		                        <button
 	                          type="button"
 	                          onClick={() => chooseAudioFromPicker(a.id)}
 	                          style={{
@@ -2617,13 +2752,18 @@ export default function ProducePage() {
                           }}
                         >
                           {selected ? 'Selected' : 'Select'}
-                        </button>
-                      </div>
-                      <div style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>
-                        {formatBytes(a.size_bytes)}{a.created_at ? ` • ${String(a.created_at).slice(0, 10)}` : ''}
-                      </div>
-                      <CompactAudioPlayer src={src} />
-                    </div>
+		                        </button>
+		                      </div>
+		                      {a.artist ? (
+		                        <div style={{ color: '#bbb', fontSize: 13, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+		                          {String(a.artist)}
+		                        </div>
+		                      ) : null}
+		                      <div style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>
+		                        {formatBytes(a.size_bytes)}{a.created_at ? ` • ${String(a.created_at).slice(0, 10)}` : ''}
+		                      </div>
+		                      <CompactAudioPlayer src={src} />
+	                    </div>
                   )
                 })
               )}

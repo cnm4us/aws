@@ -85,16 +85,46 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS channel_id BIGINT UNSIGNED NULL`);
   await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS space_id BIGINT UNSIGNED NULL`);
-  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS origin_space_id BIGINT UNSIGNED NULL`);
-  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS source_deleted_at DATETIME NULL`);
-  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS is_system TINYINT(1) NOT NULL DEFAULT 0`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads (user_id)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_channel_id ON uploads (channel_id)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_space_id ON uploads (space_id)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
-  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_source_deleted_at ON uploads (source_deleted_at, id)`); } catch {}
-  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
-  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS origin_space_id BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS source_deleted_at DATETIME NULL`);
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS is_system TINYINT(1) NOT NULL DEFAULT 0`);
+	  // Plan 51: richer system audio metadata (selectable by creators)
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS artist VARCHAR(255) NULL`);
+	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads (user_id)`);
+	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_channel_id ON uploads (channel_id)`);
+	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_space_id ON uploads (space_id)`);
+	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
+	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_source_deleted_at ON uploads (source_deleted_at, id)`); } catch {}
+	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
+	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
+	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
+
+	  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS audio_tags (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      kind ENUM('genre','mood') NOT NULL,
+	      name VARCHAR(120) NOT NULL,
+	      slug VARCHAR(140) NOT NULL,
+	      sort_order INT NOT NULL DEFAULT 0,
+	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	      archived_at TIMESTAMP NULL DEFAULT NULL,
+	      UNIQUE KEY uniq_audio_tags_kind_slug (kind, slug),
+	      KEY idx_audio_tags_kind_archived (kind, archived_at, sort_order, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `)
+
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS upload_audio_tags (
+	      upload_id BIGINT UNSIGNED NOT NULL,
+	      tag_id BIGINT UNSIGNED NOT NULL,
+	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	      UNIQUE KEY uniq_upload_audio_tags_pair (upload_id, tag_id),
+	      KEY idx_upload_audio_tags_upload (upload_id, tag_id),
+	      KEY idx_upload_audio_tags_tag (tag_id, upload_id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `)
 
 			  await db.query(`
 			    CREATE TABLE IF NOT EXISTS logo_configurations (

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import * as uploadsSvc from '../features/uploads/service'
 import { clampLimit, parseNumberCursor } from '../core/pagination'
+import * as audioTagsSvc from '../features/audio-tags/service'
 
 export const uploadsRouter = Router();
 
@@ -60,6 +61,18 @@ uploadsRouter.get('/api/system-audio', requireAuth, async (req, res) => {
     console.error('list system audio error', err)
     const status = err?.status || 500
     res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
+  }
+})
+
+uploadsRouter.get('/api/audio-tags', requireAuth, async (req, res) => {
+  try {
+    const userId = Number(req.user!.id)
+    const data = await audioTagsSvc.listActiveTagsDto({ userId })
+    return res.json(data)
+  } catch (err: any) {
+    console.error('list audio tags error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
 })
 
