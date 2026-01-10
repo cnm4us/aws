@@ -5,7 +5,7 @@ import { buildServer } from './app';
 import { ensureSchema, getPool, seedRbac } from './db';
 import { getMediaConvertClient } from './aws/mediaconvert';
 import { ASSEMBLYAI_AUTOTRANSCRIBE, ASSEMBLYAI_ENABLED, MEDIA_JOBS_ENABLED, PORT, STATUS_POLL_MS } from './config';
-import { startMediaJobsWorker } from './services/mediaJobs/worker';
+import { startMediaJobsWorker, stopMediaJobsWorker } from './services/mediaJobs/worker';
 import * as mediaJobs from './features/media-jobs/service'
 
 const db = getPool();
@@ -239,6 +239,8 @@ async function gracefulStop(signal: NodeJS.Signals) {
     clearInterval(pollTimer);
     pollTimer = undefined;
   }
+
+  try { stopMediaJobsWorker(); } catch {}
 
   const waitForPolling = (async () => {
     const deadline = Date.now() + 5000;

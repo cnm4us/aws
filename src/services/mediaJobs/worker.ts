@@ -15,6 +15,7 @@ import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
 
 let workerTimer: ReturnType<typeof setInterval> | undefined
 let tickRunning = false
+let stopping = false
 
 function getWorkerId() {
   const raw = process.env.MEDIA_JOBS_WORKER_ID
@@ -25,9 +26,11 @@ function getWorkerId() {
 export function startMediaJobsWorker() {
   if (!MEDIA_JOBS_WORKER_ENABLED) return
   if (workerTimer) return
+  stopping = false
   const workerId = getWorkerId()
 
   const tick = async () => {
+    if (stopping) return
     if (tickRunning) return
     tickRunning = true
     try {
@@ -35,6 +38,12 @@ export function startMediaJobsWorker() {
       if (!claimed) return
       await runOne(claimed.job, claimed.attempt, workerId)
     } catch (err) {
+      const msg = String((err as any)?.message || err || '')
+      // If the DB pool is closed during shutdown/restart, stop the worker to avoid log spam.
+      if (msg.includes('Pool is closed')) {
+        stopMediaJobsWorker()
+        return
+      }
       console.error('media_jobs_worker_tick_failed', err)
     } finally {
       tickRunning = false
@@ -44,6 +53,14 @@ export function startMediaJobsWorker() {
   tick().catch(() => {})
   workerTimer = setInterval(() => tick().catch(() => {}), MEDIA_JOBS_WORKER_POLL_MS)
   console.log(`Media jobs worker started (${workerId}) poll=${MEDIA_JOBS_WORKER_POLL_MS}ms`)
+}
+
+export function stopMediaJobsWorker() {
+  stopping = true
+  if (workerTimer) {
+    try { clearInterval(workerTimer) } catch {}
+    workerTimer = undefined
+  }
 }
 
 async function runOne(job: any, attempt: any, workerId: string) {
