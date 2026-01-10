@@ -18,8 +18,9 @@ import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
+import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 
-export type ServiceContext = { userId?: number | null }
+export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
 export async function list(
   params: { status?: string; kind?: 'video' | 'logo' | 'audio' | 'image'; imageRole?: string; userId?: number; spaceId?: number; cursorId?: number; limit?: number; includePublications?: boolean; includeProductions?: boolean },
@@ -549,6 +550,8 @@ export async function createSignedUpload(input: {
   moodTagIds?: number[]
   themeTagIds?: number[]
   instrumentTagIds?: number[]
+  licenseSourceId?: number | null
+  termsAccepted?: boolean
   kind?: 'video' | 'logo' | 'audio' | 'image'
   imageRole?: string | null
   ownerUserId?: number | null
@@ -574,12 +577,47 @@ export async function createSignedUpload(input: {
   const imageRoleRaw = input.imageRole != null ? String(input.imageRole).trim().toLowerCase() : ''
   const imageRole = imageRoleRaw ? imageRoleRaw : null
   const actorId = ctx.userId != null && Number.isFinite(ctx.userId) ? Number(ctx.userId) : null
+  const db = getPool()
   const isSystem = kind === 'audio'
     ? (() => {
         if (!actorId) throw new ForbiddenError()
         return 1
       })()
     : 0
+
+  if (actorId) {
+    try {
+      const [rows] = await db.query(
+        `SELECT id
+           FROM user_terms_acceptances
+          WHERE user_id = ?
+            AND terms_key = ?
+            AND terms_version = ?
+          LIMIT 1`,
+        [actorId, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION]
+      )
+      const accepted = (rows as any[]).length > 0
+      if (!accepted) {
+        const ok = Boolean(input.termsAccepted)
+        if (!ok) throw new DomainError('terms_required', 'terms_required', 400)
+        const ip = ctx.ip != null ? String(ctx.ip).slice(0, 64) : null
+        const ua = ctx.userAgent != null ? String(ctx.userAgent).slice(0, 512) : null
+        await db.query(
+          `INSERT IGNORE INTO user_terms_acceptances (user_id, terms_key, terms_version, accepted_ip, user_agent)
+           VALUES (?, ?, ?, ?, ?)`,
+          [actorId, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION, ip, ua]
+        )
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      // Backward compatibility when the acceptances table isn't deployed yet.
+      if (msg.includes('Table') && msg.includes('user_terms_acceptances')) {
+        // ignore
+      } else {
+        throw e
+      }
+    }
+  }
 
   if (kind === 'audio') {
     // System audio is curated by site_admin only (copyright risk).
@@ -623,7 +661,6 @@ export async function createSignedUpload(input: {
   const assetUuid = randomUUID()
   const key = buildUploadKey(basePrefix, datePrefix, assetUuid, ext, kind)
 
-  const db = getPool()
   let result: any
   try {
     ;[result] = await db.query(
@@ -757,6 +794,32 @@ export async function createSignedUpload(input: {
         } else {
           throw e
         }
+      }
+    }
+  }
+
+  if (kind === 'audio') {
+    const licenseSourceId = input.licenseSourceId != null ? Number(input.licenseSourceId) : null
+    if (!licenseSourceId || !Number.isFinite(licenseSourceId) || licenseSourceId <= 0) {
+      const err: any = new DomainError('license_source_required', 'license_source_required', 400)
+      throw err
+    }
+    try {
+      const [rows] = await db.query(`SELECT id FROM license_sources WHERE id = ? AND kind = 'audio' AND archived_at IS NULL LIMIT 1`, [licenseSourceId])
+      if (!(rows as any[]).length) {
+        const err: any = new DomainError('invalid_license_source', 'invalid_license_source', 400)
+        err.detail = { licenseSourceId }
+        throw err
+      }
+      await db.query(`UPDATE uploads SET license_source_id = ? WHERE id = ?`, [licenseSourceId, id])
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      if (msg.includes('Unknown column') && msg.includes('license_source_id')) {
+        // ignore
+      } else if (msg.includes('Table') && msg.includes('license_sources')) {
+        // ignore
+      } else {
+        throw e
       }
     }
   }

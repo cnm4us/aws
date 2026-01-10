@@ -5,6 +5,7 @@ import { clampLimit } from '../core/pagination'
 import { requireAuth, requireSiteAdmin } from '../middleware/auth';
 import crypto from 'crypto';
 import * as adminSvc from '../features/admin/service'
+import * as licenseSourcesSvc from '../features/license-sources/service'
 import { slugify, defaultSettings } from '../features/spaces/util'
 import {
   assignDefaultAdminRoles,
@@ -109,6 +110,20 @@ adminRouter.get('/cultures', async (_req, res) => {
   } catch (err: any) {
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_list_cultures', detail: String(err?.message || err) })
+  }
+})
+
+// ---------- License sources (Plan 52) ----------
+adminRouter.get('/license-sources', async (req, res) => {
+  try {
+    const kind = String(req.query?.kind || 'audio').toLowerCase()
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const userId = Number((req as any).user?.id)
+    const items = await licenseSourcesSvc.listAdminSources(kind, { includeArchived }, { userId })
+    return res.json(items)
+  } catch (err: any) {
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
   }
 })
 

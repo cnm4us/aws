@@ -19,7 +19,7 @@ import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
-import { SCREEN_TITLE_RENDERER } from './config'
+import { SCREEN_TITLE_RENDERER, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from './config'
 import { sessionParse } from './middleware/sessionParse';
 import { csrfProtect } from './middleware/csrf';
 import { requireAuth } from './middleware/auth';
@@ -150,6 +150,23 @@ export function buildServer(): express.Application {
         isSiteAdmin = await can(user.id, PERM.VIDEO_DELETE_ANY)
       } catch {}
 
+      // One-time upload terms acceptance (Plan 52)
+      let hasAcceptedUploadTerms = false
+      try {
+        const [rows] = await db.query(
+          `SELECT id
+             FROM user_terms_acceptances
+            WHERE user_id = ?
+              AND terms_key = ?
+              AND terms_version = ?
+            LIMIT 1`,
+          [user.id, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION]
+        )
+        hasAcceptedUploadTerms = (rows as any[]).length > 0
+      } catch {
+        // swallow when table isn't deployed yet
+      }
+
       const hasAnySpaceAdmin =
         isSiteAdmin || Object.values(spaceRoles).some((roles) => Array.isArray(roles) && roles.includes('space_admin'))
       const hasAnySpaceModerator =
@@ -163,6 +180,8 @@ export function buildServer(): express.Application {
         screenTitleRenderer: SCREEN_TITLE_RENDERER,
         roles: roles.filter((r: string) => /^site_/.test(String(r))),
         isSiteAdmin,
+        hasAcceptedUploadTerms,
+        uploadTermsVersion: TERMS_UPLOAD_VERSION,
         hasAnySpaceAdmin,
         hasAnySpaceModerator,
         spaceRoles,

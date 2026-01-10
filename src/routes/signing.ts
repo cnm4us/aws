@@ -23,6 +23,8 @@ const signSchema = z.object({
   moodTagIds: z.array(z.number().int().positive()).max(200).optional(),
   themeTagIds: z.array(z.number().int().positive()).max(200).optional(),
   instrumentTagIds: z.array(z.number().int().positive()).max(200).optional(),
+  licenseSourceId: z.number().int().positive().optional().nullable(),
+  termsAccepted: z.boolean().optional(),
 });
 
 signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res) => {
@@ -45,8 +47,10 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
       moodTagIds: parsed.moodTagIds,
       themeTagIds: parsed.themeTagIds,
       instrumentTagIds: parsed.instrumentTagIds,
+      licenseSourceId: parsed.licenseSourceId ?? null,
+      termsAccepted: parsed.termsAccepted,
       ownerUserId: parsed.userId ?? null,
-    }, { userId: actorId })
+    }, { userId: actorId, ip: (req as any).ip ? String((req as any).ip) : null, userAgent: req.headers['user-agent'] ? String(req.headers['user-agent']) : null })
     res.json(result)
   } catch (err: any) {
     console.error('sign-upload error', err);

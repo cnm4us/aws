@@ -5,6 +5,8 @@ type MeResponse = {
   email: string | null
   displayName: string | null
   isSiteAdmin?: boolean
+  hasAcceptedUploadTerms?: boolean
+  uploadTermsVersion?: string
 }
 
 async function ensureLoggedIn(): Promise<MeResponse | null> {
@@ -113,10 +115,13 @@ const UploadNewPage: React.FC = () => {
     themes: Array<{ id: number; name: string }>
     instruments: Array<{ id: number; name: string }>
   }>({ genres: [], moods: [], themes: [], instruments: [] })
+  const [licenseSources, setLicenseSources] = useState<Array<{ id: number; name: string; archived_at?: string | null }>>([])
+  const [selectedLicenseSourceId, setSelectedLicenseSourceId] = useState<number | null>(null)
   const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([])
   const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>([])
   const [selectedThemeIds, setSelectedThemeIds] = useState<number[]>([])
   const [selectedInstrumentIds, setSelectedInstrumentIds] = useState<number[]>([])
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
@@ -175,6 +180,21 @@ const UploadNewPage: React.FC = () => {
         } catch {
           // Best-effort; tags are optional at upload time.
         }
+        try {
+          const res = await fetch('/api/admin/license-sources?kind=audio', { credentials: 'same-origin' })
+          const json = await res.json().catch(() => [])
+          if (!res.ok) throw new Error('failed_to_load_license_sources')
+          const items = Array.isArray(json) ? json : []
+          if (!cancelled) {
+            setLicenseSources(items as any)
+            if (selectedLicenseSourceId == null) {
+              const active = items.filter((x: any) => !(x as any).archived_at)
+              if (active.length === 1) setSelectedLicenseSourceId(Number(active[0].id))
+            }
+          }
+        } catch {
+          // Best-effort; required will be enforced on submit for system audio.
+        }
       }
     })()
     return () => {
@@ -226,6 +246,16 @@ const UploadNewPage: React.FC = () => {
         setUploadError(kind === 'video' ? 'Please sign in to upload videos.' : kind === 'logo' ? 'Please sign in to upload logos.' : 'Please sign in to upload audio.')
         return
       }
+      if (!me?.hasAcceptedUploadTerms && !termsAccepted) {
+        setUploadError('Please agree to the upload terms before continuing.')
+        return
+      }
+      if (kind === 'audio' && me?.isSiteAdmin) {
+        if (selectedLicenseSourceId == null) {
+          setUploadError('License Source is required for system audio.')
+          return
+        }
+      }
 
       const trimmedName = modifiedName.trim() || file.name
       const trimmedDescription = description.trim()
@@ -248,6 +278,7 @@ const UploadNewPage: React.FC = () => {
           sizeBytes: file.size,
           modifiedFilename: trimmedName,
           description: trimmedDescription || undefined,
+          ...(termsAccepted ? { termsAccepted: true } : {}),
           ...(kind === 'audio' && me?.isSiteAdmin
             ? {
                 artist: trimmedArtist || undefined,
@@ -255,6 +286,7 @@ const UploadNewPage: React.FC = () => {
                 moodTagIds: selectedMoodIds,
                 themeTagIds: selectedThemeIds,
                 instrumentTagIds: selectedInstrumentIds,
+                licenseSourceId: selectedLicenseSourceId ?? undefined,
               }
             : {}),
           kind,
@@ -328,10 +360,12 @@ const UploadNewPage: React.FC = () => {
         setModifiedName('')
         setDescription('')
         setArtist('')
+        setSelectedLicenseSourceId(null)
         setSelectedGenreIds([])
         setSelectedMoodIds([])
         setSelectedThemeIds([])
         setSelectedInstrumentIds([])
+        setTermsAccepted(false)
         resetForm()
       } catch (err: any) {
         console.error('upload failed', err)
@@ -340,7 +374,7 @@ const UploadNewPage: React.FC = () => {
         setUploading(false)
       }
     },
-    [file, me, modifiedName, description, artist, selectedGenreIds, selectedMoodIds, selectedThemeIds, selectedInstrumentIds, resetForm, kind, imageRole]
+    [file, me, modifiedName, description, artist, selectedLicenseSourceId, selectedGenreIds, selectedMoodIds, selectedThemeIds, selectedInstrumentIds, termsAccepted, resetForm, kind, imageRole]
   )
 
   if (me === null) {
@@ -500,12 +534,52 @@ const UploadNewPage: React.FC = () => {
 	              />
 	            </div>
 
-	            {kind === 'audio' && me?.isSiteAdmin ? (
-	              <>
-	                <div style={{ display: 'grid', gap: 12 }}>
-	                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-	                    <div style={{ fontWeight: 700 }}>Genres</div>
-	                    <button
+		            {kind === 'audio' && me?.isSiteAdmin ? (
+		              <>
+		                <div style={{ display: 'grid', gap: 10 }}>
+		                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+		                    <div style={{ fontWeight: 700 }}>License Source</div>
+		                    <a href="/admin/license-sources" style={{ color: '#9fc7ff', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>
+		                      Manage
+		                    </a>
+		                  </div>
+		                  {licenseSources.filter((s) => !s.archived_at).length ? (
+		                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+		                      {licenseSources
+		                        .filter((s) => !s.archived_at)
+		                        .map((s) => {
+		                          const selected = selectedLicenseSourceId === Number(s.id)
+		                          return (
+		                            <button
+		                              key={`ls-${s.id}`}
+		                              type="button"
+		                              onClick={() => setSelectedLicenseSourceId(Number(s.id))}
+		                              style={{
+		                                padding: '7px 10px',
+		                                borderRadius: 999,
+		                                border: '1px solid rgba(255,255,255,0.18)',
+		                                background: selected ? '#0a84ff' : '#0c0c0c',
+		                                color: '#fff',
+		                                fontWeight: 800,
+		                                cursor: 'pointer',
+		                              }}
+		                              disabled={uploading}
+		                            >
+		                              {s.name}
+		                            </button>
+		                          )
+		                        })}
+		                    </div>
+		                  ) : (
+		                    <div style={{ color: '#a0a0a0' }}>No license sources yet. Create one in Admin → License Sources.</div>
+		                  )}
+		                  <div style={{ color: '#a0a0a0', fontSize: 13 }}>Required for system audio uploads.</div>
+		                </div>
+
+		                <div style={{ display: 'grid', gap: 12 }}>
+		                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+		                    <div style={{ fontWeight: 700 }}>Genres</div>
+		                    <button
                       type="button"
                       onClick={() => setSelectedGenreIds([])}
                       style={{
@@ -709,12 +783,42 @@ const UploadNewPage: React.FC = () => {
                     <div style={{ color: '#a0a0a0' }}>No instrument tags yet. Create them in Admin → Audio Tags.</div>
                   )}
                 </div>
-              </>
-            ) : null}
+		              </>
+		            ) : null}
 
-            <div>
-              <button
-                type="submit"
+	            {!me?.hasAcceptedUploadTerms ? (
+	              <div
+	                style={{
+	                  display: 'grid',
+	                  gap: 10,
+	                  padding: 12,
+	                  borderRadius: 12,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                }}
+	              >
+	                <div style={{ fontWeight: 800 }}>Upload Terms</div>
+	                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+	                  <input
+	                    type="checkbox"
+	                    checked={termsAccepted}
+	                    onChange={(e) => setTermsAccepted(e.target.checked)}
+	                    disabled={uploading}
+	                    style={{ marginTop: 3 }}
+	                  />
+	                  <span style={{ color: '#ddd' }}>
+	                    I agree to the upload terms (version {me?.uploadTermsVersion || 'current'}).{' '}
+	                    <a href="/terms/upload" target="_blank" rel="noreferrer" style={{ color: '#9fc7ff' }}>
+	                      Read terms
+	                    </a>
+	                  </span>
+	                </label>
+	              </div>
+	            ) : null}
+
+	            <div>
+	              <button
+	                type="submit"
                 style={{
                   background: '#0a84ff',
                   color: '#fff',
@@ -726,11 +830,16 @@ const UploadNewPage: React.FC = () => {
                   opacity: uploading ? 0.7 : 1,
                   boxShadow: '0 10px 28px rgba(10,132,255,0.35)',
                 }}
-                disabled={uploading || !file}
-              >
-                {uploading ? 'Uploading…' : kind === 'video' ? 'Upload New Video' : kind === 'logo' ? 'Upload New Logo' : 'Upload New Audio'}
-              </button>
-            </div>
+	                disabled={
+	                  uploading ||
+	                  !file ||
+	                  (!me?.hasAcceptedUploadTerms && !termsAccepted) ||
+	                  (kind === 'audio' && me?.isSiteAdmin && selectedLicenseSourceId == null)
+	                }
+	              >
+	                {uploading ? 'Uploading…' : kind === 'video' ? 'Upload New Video' : kind === 'logo' ? 'Upload New Logo' : 'Upload New Audio'}
+	              </button>
+	            </div>
           </div>
         </form>
 

@@ -14,10 +14,13 @@ import * as uploadsSvc from '../features/uploads/service'
 import * as audioConfigsSvc from '../features/audio-configs/service'
 import * as audioTagsSvc from '../features/audio-tags/service'
 import * as audioTagsRepo from '../features/audio-tags/repo'
+import * as licenseSourcesSvc from '../features/license-sources/service'
+import * as licenseSourcesRepo from '../features/license-sources/repo'
 import * as lowerThirdsSvc from '../features/lower-thirds/service'
 import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
+import { TERMS_UPLOAD_VERSION } from '../config'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -36,6 +39,17 @@ function serveSpaceSpa(res: any) {
 }
 
 export const pagesRouter = Router();
+
+// Public terms page (Plan 52): simple placeholder content for now.
+pagesRouter.get('/terms/upload', (_req: any, res: any) => {
+  const body = `<main>
+    <h1>Upload Terms</h1>
+    <p><strong>Version:</strong> ${escapeHtml(TERMS_UPLOAD_VERSION)}</p>
+    <p>TBD</p>
+  </main>`
+  res.set('Content-Type', 'text/html; charset=utf-8')
+  res.send(renderPageDocument('Upload Terms', body))
+})
 
 function escapeHtml(text: string): string {
   return String(text)
@@ -618,13 +632,14 @@ type AdminNavKey =
   | 'categories'
   | 'cultures'
   | 'pages'
-  | 'audio'
-  | 'audio_tags'
-  | 'lower_thirds'
-  | 'audio_configs'
-  | 'media_jobs'
-  | 'settings'
-  | 'dev';
+	| 'audio'
+	| 'audio_tags'
+	| 'license_sources'
+	| 'lower_thirds'
+	| 'audio_configs'
+	| 'media_jobs'
+	| 'settings'
+	| 'dev';
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> = [
   { key: 'review', label: 'Review', href: '/admin/review' },
@@ -635,11 +650,12 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'categories', label: 'Categories', href: '/admin/categories' },
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
-  { key: 'audio', label: 'Audio', href: '/admin/audio' },
-  { key: 'audio_tags', label: 'Audio Tags', href: '/admin/audio-tags' },
-  { key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
-  { key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
-  { key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
+	{ key: 'audio', label: 'Audio', href: '/admin/audio' },
+	{ key: 'audio_tags', label: 'Audio Tags', href: '/admin/audio-tags' },
+	{ key: 'license_sources', label: 'License Sources', href: '/admin/license-sources' },
+	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
+	{ key: 'audio_configs', label: 'Audio Configs', href: '/admin/audio-configs' },
+	{ key: 'media_jobs', label: 'Media Jobs', href: '/admin/media-jobs' },
   { key: 'settings', label: 'Settings', href: '/admin/settings' },
   { key: 'dev', label: 'Dev', href: '/admin/dev' },
 ];
@@ -3410,7 +3426,7 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   }
 })
 
-			function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null; genres?: any[]; moods?: any[]; themes?: any[]; instruments?: any[]; selectedTagIds?: number[] }): string {
+			function renderAdminAudioEditPage(opts: { audio: any; csrfToken?: string; error?: string | null; notice?: string | null; sources?: any[]; genres?: any[]; moods?: any[]; themes?: any[]; instruments?: any[]; selectedTagIds?: number[] }): string {
   const audio = opts.audio || {}
   const csrfToken = opts.csrfToken ? String(opts.csrfToken) : ''
   const error = opts.error ? String(opts.error) : ''
@@ -3419,7 +3435,9 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   const nameValue = String(audio.modified_filename || audio.original_filename || '').trim()
   const descValue = audio.description != null ? String(audio.description) : ''
   const artistValue = audio.artist != null ? String(audio.artist) : ''
+  const licenseSourceId = audio.license_source_id != null ? Number(audio.license_source_id) : null
   const selected = new Set((opts.selectedTagIds || []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))
+  const sources = Array.isArray(opts.sources) ? opts.sources : []
   const genres = Array.isArray(opts.genres) ? opts.genres : []
   const moods = Array.isArray(opts.moods) ? opts.moods : []
   const themes = Array.isArray(opts.themes) ? opts.themes : []
@@ -3434,6 +3452,20 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
   body += `<label>Name
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
     <div class="field-hint">Displayed to users when choosing audio for productions.</div>
+  </label>`
+  body += `<label>License Source
+    <select name="licenseSourceId" required>
+      <option value="">Select a source…</option>
+      ${sources
+        .filter((s: any) => !(s as any).archived_at)
+        .map((s: any) => {
+          const sid = Number((s as any).id)
+          const selectedAttr = licenseSourceId != null && sid === licenseSourceId ? 'selected' : ''
+          return `<option value="${escapeHtml(String(sid))}" ${selectedAttr}>${escapeHtml(String((s as any).name || ''))}</option>`
+        })
+        .join('')}
+    </select>
+    <div class="field-hint">Required. Create new sources in <a href="/admin/license-sources">License Sources</a>.</div>
   </label>`
   body += `<label>Artist
     <input type="text" name="artist" value="${escapeHtml(artistValue)}" />
@@ -3494,16 +3526,17 @@ pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
     const db = getPool()
-    const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description, artist
-         FROM uploads
-        WHERE id = ? AND kind = 'audio' AND is_system = 1
-        LIMIT 1`,
-      [id]
-    )
-    const audio = (rows as any[])[0]
-    if (!audio) return res.status(404).send('Not found')
-	    const [genres, moods, themes, instruments, selectedTagIds] = await Promise.all([
+	    const [rows] = await db.query(
+	      `SELECT id, original_filename, modified_filename, description, artist, license_source_id
+	         FROM uploads
+	        WHERE id = ? AND kind = 'audio' AND is_system = 1
+	        LIMIT 1`,
+	      [id]
+	    )
+	    const audio = (rows as any[])[0]
+	    if (!audio) return res.status(404).send('Not found')
+	    const [sources, genres, moods, themes, instruments, selectedTagIds] = await Promise.all([
+	      licenseSourcesRepo.listSources('audio', { includeArchived: false }),
 	      audioTagsRepo.listTags('genre', { includeArchived: false }),
 	      audioTagsRepo.listTags('mood', { includeArchived: false }),
 	      audioTagsRepo.listTags('theme', { includeArchived: false }),
@@ -3512,7 +3545,7 @@ pagesRouter.get('/admin/audio/:id', async (req: any, res: any) => {
 	    ])
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
-	    const doc = renderAdminAudioEditPage({ audio, csrfToken, genres, moods, themes, instruments, selectedTagIds })
+	    const doc = renderAdminAudioEditPage({ audio, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds })
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.send(doc)
 	  } catch (err) {
@@ -3533,19 +3566,20 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
     const artist = rawArtist.trim().length ? rawArtist.trim() : null
 
     const db = getPool()
-    const [rows] = await db.query(
-      `SELECT id, original_filename, modified_filename, description, artist
-         FROM uploads
-        WHERE id = ? AND kind = 'audio' AND is_system = 1
-        LIMIT 1`,
-      [id]
-    )
-    const audio = (rows as any[])[0]
-    if (!audio) return res.status(404).send('Not found')
+	    const [rows] = await db.query(
+	      `SELECT id, original_filename, modified_filename, description, artist, license_source_id
+	         FROM uploads
+	        WHERE id = ? AND kind = 'audio' AND is_system = 1
+	        LIMIT 1`,
+	      [id]
+	    )
+	    const audio = (rows as any[])[0]
+	    if (!audio) return res.status(404).send('Not found')
 
-    const cookies = parseCookies(req.headers.cookie)
-    const csrfToken = cookies['csrf'] || ''
-	    const [genres, moods, themes, instruments] = await Promise.all([
+	    const cookies = parseCookies(req.headers.cookie)
+	    const csrfToken = cookies['csrf'] || ''
+	    const [sources, genres, moods, themes, instruments] = await Promise.all([
+	      licenseSourcesRepo.listSources('audio', { includeArchived: false }),
 	      audioTagsRepo.listTags('genre', { includeArchived: false }),
 	      audioTagsRepo.listTags('mood', { includeArchived: false }),
 	      audioTagsRepo.listTags('theme', { includeArchived: false }),
@@ -3554,25 +3588,40 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
 
 	    if (!rawName) {
 	      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
-	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, genres, moods, themes, instruments, selectedTagIds, error: 'Name is required.' })
+	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds, error: 'Name is required.' })
 	      res.set('Content-Type', 'text/html; charset=utf-8')
 	      return res.status(400).send(doc)
 	    }
 	    if (rawName.length > 512) {
 	      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
-	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, genres, moods, themes, instruments, selectedTagIds, error: 'Name is too long (max 512 characters).' })
+	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist }, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds, error: 'Name is too long (max 512 characters).' })
+	      res.set('Content-Type', 'text/html; charset=utf-8')
+	      return res.status(400).send(doc)
+	    }
+	    const rawLicenseSourceId = req.body?.licenseSourceId
+	    const licenseSourceId = rawLicenseSourceId != null && String(rawLicenseSourceId).trim() !== '' ? Number(rawLicenseSourceId) : null
+	    if (!licenseSourceId || !Number.isFinite(licenseSourceId) || licenseSourceId <= 0) {
+	      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
+	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist, license_source_id: licenseSourceId }, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds, error: 'License Source is required.' })
+	      res.set('Content-Type', 'text/html; charset=utf-8')
+	      return res.status(400).send(doc)
+	    }
+	    if (!sources.some((s: any) => Number((s as any).id) === licenseSourceId && !(s as any).archived_at)) {
+	      const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
+	      const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: rawDesc, artist: rawArtist, license_source_id: licenseSourceId }, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds, error: 'Invalid License Source.' })
 	      res.set('Content-Type', 'text/html; charset=utf-8')
 	      return res.status(400).send(doc)
 	    }
 
-    await db.query(
-      `UPDATE uploads
-          SET modified_filename = ?,
-              description = ?,
-              artist = ?
-        WHERE id = ? AND kind = 'audio' AND is_system = 1`,
-      [rawName, desc, artist, id]
-    )
+	    await db.query(
+	      `UPDATE uploads
+	          SET modified_filename = ?,
+	              description = ?,
+	              artist = ?,
+	              license_source_id = ?
+	        WHERE id = ? AND kind = 'audio' AND is_system = 1`,
+	      [rawName, desc, artist, licenseSourceId, id]
+	    )
 
 	    const parseIdList = (v: any): number[] => {
 	      if (v == null) return []
@@ -3588,7 +3637,7 @@ pagesRouter.post('/admin/audio/:id', async (req: any, res: any) => {
 	    await audioTagsRepo.replaceUploadTags(id, tagIds)
 	    const selectedTagIds = await audioTagsRepo.listTagIdsForUpload(id)
 
-	    const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: desc, artist }, csrfToken, genres, moods, themes, instruments, selectedTagIds, notice: 'Saved.' })
+	    const doc = renderAdminAudioEditPage({ audio: { ...audio, modified_filename: rawName, description: desc, artist, license_source_id: licenseSourceId }, csrfToken, sources, genres, moods, themes, instruments, selectedTagIds, notice: 'Saved.' })
 	    res.set('Content-Type', 'text/html; charset=utf-8')
 	    res.send(doc)
 	  } catch (err) {
@@ -3683,6 +3732,141 @@ pagesRouter.get('/admin/audio-tags', async (req: any, res: any) => {
   } catch (err) {
     console.error('admin audio-tags page failed', err)
     res.status(500).send('Failed to load audio tags')
+  }
+})
+
+// --- Admin license sources (Plan 52) ---
+pagesRouter.get('/admin/license-sources', async (req: any, res: any) => {
+  try {
+    const includeArchived = String(req.query?.include_archived || '0') === '1'
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/license-sources')}`)
+    const cookies = parseCookies(req.headers.cookie)
+    const csrfToken = cookies['csrf'] || ''
+
+    const items = await licenseSourcesSvc.listAdminSources('audio', { includeArchived }, { userId: currentUserId } as any)
+
+    let body = `<h1>License Sources</h1>`
+    body += `<div class="toolbar"><div><span class="pill">Audio</span></div><div></div></div>`
+    body += `<div class="section"><div class="section-title">Create</div>
+      <form method="post" action="/admin/license-sources">
+        ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+        <label>Name
+          <input type="text" name="name" value="" placeholder="e.g. Artlist" />
+        </label>
+        <div class="actions"><button type="submit">Create</button></div>
+      </form>
+      <div class="field-hint">These are required when uploading system audio, to track licensing/vendor source.</div>
+    </div>`
+
+    body += `<div class="section"><div class="section-title">List</div>
+      <div class="toolbar" style="margin:0">
+        <div></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <a href="/admin/license-sources?include_archived=${includeArchived ? '0' : '1'}" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">${includeArchived ? 'Hide archived' : 'Show archived'}</a>
+        </div>
+      </div>
+    `
+    if (!items.length) {
+      body += `<p>No license sources yet.</p>`
+    } else {
+      body += `<div style="display:grid; gap:10px">`
+      for (const t of items as any[]) {
+        const id = Number((t as any).id)
+        const name = String((t as any).name || '')
+        const slug = String((t as any).slug || '')
+        const archivedAt = (t as any).archived_at
+        body += `<div style="border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; background: rgba(255,255,255,0.03); display:grid; gap:8px">`
+        body += `<div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline">
+          <div style="font-weight:800">${escapeHtml(name)}</div>
+          <div style="font-size:12px; color:#888">${archivedAt ? 'Archived' : escapeHtml(slug)}</div>
+        </div>`
+        body += `<form method="post" action="/admin/license-sources/${id}">
+          ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+          <label>Rename
+            <input type="text" name="name" value="${escapeHtml(name)}" />
+          </label>
+          <div class="actions"><button type="submit">Save</button></div>
+        </form>`
+        if (archivedAt) {
+          body += `<form method="post" action="/admin/license-sources/${id}/unarchive" onsubmit="return confirm('Unarchive this source?')">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Unarchive</button>
+          </form>`
+        } else {
+          body += `<form method="post" action="/admin/license-sources/${id}/archive" onsubmit="return confirm('Archive this source? It will stop appearing in pickers.')">
+            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+            <button type="submit" class="btn" style="background:#300; border:1px solid rgba(255,120,120,0.5)">Archive</button>
+          </form>`
+        }
+        body += `</div>`
+      }
+      body += `</div>`
+    }
+    body += `</div>`
+
+    const doc = renderAdminPage({ title: 'License Sources', bodyHtml: body, active: 'license_sources' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err) {
+    console.error('admin license sources page failed', err)
+    res.status(500).send('Failed to load license sources')
+  }
+})
+
+pagesRouter.post('/admin/license-sources', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/license-sources')}`)
+    const name = String(req.body?.name || '')
+    await licenseSourcesSvc.createAdminSource({ kind: 'audio', name }, { userId: currentUserId } as any)
+    res.redirect(`/admin/license-sources`)
+  } catch (err) {
+    console.error('admin license sources create failed', err)
+    res.status(500).send('Failed to create license source')
+  }
+})
+
+pagesRouter.post('/admin/license-sources/:id', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/license-sources')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    const name = req.body?.name
+    await licenseSourcesSvc.renameAdminSource(id, name, { userId: currentUserId } as any)
+    res.redirect('/admin/license-sources')
+  } catch (err) {
+    console.error('admin license sources rename failed', err)
+    res.status(500).send('Failed to rename license source')
+  }
+})
+
+pagesRouter.post('/admin/license-sources/:id/archive', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/license-sources')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    await licenseSourcesSvc.archiveAdminSource(id, true, { userId: currentUserId } as any)
+    res.redirect('/admin/license-sources')
+  } catch (err) {
+    console.error('admin license sources archive failed', err)
+    res.status(500).send('Failed to archive license source')
+  }
+})
+
+pagesRouter.post('/admin/license-sources/:id/unarchive', async (req: any, res: any) => {
+  try {
+    const currentUserId = req.user?.id ? Number(req.user.id) : null
+    if (!currentUserId) return res.redirect(`/forbidden?from=${encodeURIComponent(req.originalUrl || '/admin/license-sources')}`)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(404).send('Not found')
+    await licenseSourcesSvc.archiveAdminSource(id, false, { userId: currentUserId } as any)
+    res.redirect('/admin/license-sources')
+  } catch (err) {
+    console.error('admin license sources unarchive failed', err)
+    res.status(500).send('Failed to unarchive license source')
   }
 })
 

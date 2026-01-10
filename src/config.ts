@@ -96,3 +96,7 @@ import path from 'path';
 export const REQUEST_LOGS_DIR = process.env.REQUEST_LOGS_DIR || path.join(process.cwd(), 'logs', 'request');
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || undefined;
 export const APP_BASE_URL = process.env.APP_BASE_URL || `http://localhost:${PORT}`;
+
+// Upload terms / rights attestation (Plan 52)
+export const TERMS_UPLOAD_KEY = process.env.TERMS_UPLOAD_KEY || 'ugc_upload'
+export const TERMS_UPLOAD_VERSION = process.env.TERMS_UPLOAD_VERSION || '2026-01-10'

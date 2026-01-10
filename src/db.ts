@@ -129,10 +129,43 @@ export async function ensureSchema(db: DB) {
 	      KEY idx_upload_audio_tags_upload (upload_id, tag_id),
 	      KEY idx_upload_audio_tags_tag (tag_id, upload_id)
 	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-	  `)
+		  `)
 
-			  await db.query(`
-			    CREATE TABLE IF NOT EXISTS logo_configurations (
+		  // Plan 52: license sources (system audio vendor/platform) + one-time user upload terms acceptance
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS license_sources (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		      kind VARCHAR(32) NOT NULL,
+		      name VARCHAR(120) NOT NULL,
+		      slug VARCHAR(140) NOT NULL,
+		      sort_order INT NOT NULL DEFAULT 0,
+		      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		      archived_at TIMESTAMP NULL DEFAULT NULL,
+		      UNIQUE KEY uniq_license_sources_kind_slug (kind, slug),
+		      KEY idx_license_sources_kind_archived (kind, archived_at, sort_order, id)
+		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+		  `)
+
+		  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS license_source_id BIGINT UNSIGNED NULL`)
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_license_source_id ON uploads (license_source_id, id)`); } catch {}
+
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS user_terms_acceptances (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		      user_id BIGINT UNSIGNED NOT NULL,
+		      terms_key VARCHAR(64) NOT NULL,
+		      terms_version VARCHAR(32) NOT NULL,
+		      accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		      accepted_ip VARCHAR(64) NULL,
+		      user_agent VARCHAR(512) NULL,
+		      UNIQUE KEY uniq_user_terms_acceptances (user_id, terms_key, terms_version),
+		      KEY idx_user_terms_user_key (user_id, terms_key, accepted_at, id)
+		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+		  `)
+
+				  await db.query(`
+				    CREATE TABLE IF NOT EXISTS logo_configurations (
 		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 		      owner_user_id BIGINT UNSIGNED NOT NULL,
 		      name VARCHAR(120) NOT NULL,
