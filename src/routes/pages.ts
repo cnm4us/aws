@@ -3453,6 +3453,10 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
     <input type="text" name="name" value="${escapeHtml(nameValue)}" />
     <div class="field-hint">Displayed to users when choosing audio for productions.</div>
   </label>`
+  body += `<label>Artist
+    <input type="text" name="artist" value="${escapeHtml(artistValue)}" />
+    <div class="field-hint">Optional. Used for filtering in the audio picker.</div>
+  </label>`
   body += `<label>License Source
     <select name="licenseSourceId" required>
       <option value="">Select a source…</option>
@@ -3466,10 +3470,6 @@ pagesRouter.get('/admin/audio', async (req: any, res: any) => {
         .join('')}
     </select>
     <div class="field-hint">Required. Create new sources in <a href="/admin/license-sources">License Sources</a>.</div>
-  </label>`
-  body += `<label>Artist
-    <input type="text" name="artist" value="${escapeHtml(artistValue)}" />
-    <div class="field-hint">Optional. Used for filtering in the audio picker.</div>
   </label>`
   body += `<label>Description
     <textarea name="description" style="min-height: 120px">${escapeHtml(descValue)}</textarea>
