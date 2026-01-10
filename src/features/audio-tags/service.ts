@@ -8,7 +8,7 @@ export type ServiceContext = { userId: number }
 
 function normalizeKind(kind: unknown): AudioTagKind {
   const k = String(kind || '').trim().toLowerCase()
-  if (k === 'genre' || k === 'mood') return k
+  if (k === 'genre' || k === 'mood' || k === 'theme' || k === 'instrument') return k
   throw new DomainError('invalid_kind', 'invalid_kind', 400)
 }
 
@@ -25,10 +25,20 @@ async function requireSiteAdmin(userId: number) {
   if (!ok) throw new ForbiddenError()
 }
 
-export async function listActiveTagsDto(ctx: ServiceContext): Promise<{ genres: Array<{ id: number; name: string; slug: string }>; moods: Array<{ id: number; name: string; slug: string }> }> {
+export async function listActiveTagsDto(ctx: ServiceContext): Promise<{
+  genres: Array<{ id: number; name: string; slug: string }>
+  moods: Array<{ id: number; name: string; slug: string }>
+  themes: Array<{ id: number; name: string; slug: string }>
+  instruments: Array<{ id: number; name: string; slug: string }>
+}> {
   if (!ctx.userId) throw new ForbiddenError()
-  const [genres, moods] = await Promise.all([repo.listTagSummariesByKind('genre'), repo.listTagSummariesByKind('mood')])
-  return { genres, moods }
+  const [genres, moods, themes, instruments] = await Promise.all([
+    repo.listTagSummariesByKind('genre'),
+    repo.listTagSummariesByKind('mood'),
+    repo.listTagSummariesByKind('theme'),
+    repo.listTagSummariesByKind('instrument'),
+  ])
+  return { genres, moods, themes, instruments }
 }
 
 export async function listAdminTags(kind: unknown, opts: { includeArchived?: boolean } | undefined, ctx: ServiceContext) {

@@ -99,26 +99,31 @@ export async function ensureSchema(db: DB) {
 	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
 	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
 
-	  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
-	  await db.query(`
-	    CREATE TABLE IF NOT EXISTS audio_tags (
-	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-	      kind ENUM('genre','mood') NOT NULL,
-	      name VARCHAR(120) NOT NULL,
-	      slug VARCHAR(140) NOT NULL,
-	      sort_order INT NOT NULL DEFAULT 0,
-	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	      archived_at TIMESTAMP NULL DEFAULT NULL,
-	      UNIQUE KEY uniq_audio_tags_kind_slug (kind, slug),
-	      KEY idx_audio_tags_kind_archived (kind, archived_at, sort_order, id)
-	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-	  `)
+		  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS audio_tags (
+		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		      kind ENUM('genre','mood','theme','instrument') NOT NULL,
+		      name VARCHAR(120) NOT NULL,
+		      slug VARCHAR(140) NOT NULL,
+		      sort_order INT NOT NULL DEFAULT 0,
+		      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		      archived_at TIMESTAMP NULL DEFAULT NULL,
+		      UNIQUE KEY uniq_audio_tags_kind_slug (kind, slug),
+		      KEY idx_audio_tags_kind_archived (kind, archived_at, sort_order, id)
+		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+		  `)
 
-	  await db.query(`
-	    CREATE TABLE IF NOT EXISTS upload_audio_tags (
-	      upload_id BIGINT UNSIGNED NOT NULL,
-	      tag_id BIGINT UNSIGNED NOT NULL,
+		  // Plan 52: extend audio tag kinds for video themes + instruments.
+		  try {
+		    await db.query(`ALTER TABLE audio_tags MODIFY kind ENUM('genre','mood','theme','instrument') NOT NULL`)
+		  } catch {}
+
+		  await db.query(`
+		    CREATE TABLE IF NOT EXISTS upload_audio_tags (
+		      upload_id BIGINT UNSIGNED NOT NULL,
+		      tag_id BIGINT UNSIGNED NOT NULL,
 	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	      UNIQUE KEY uniq_upload_audio_tags_pair (upload_id, tag_id),
 	      KEY idx_upload_audio_tags_upload (upload_id, tag_id),

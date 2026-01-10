@@ -95,9 +95,11 @@ export async function listTagSummariesByKind(kind: AudioTagKind): Promise<AudioT
   return tags.map((t) => ({ id: t.id, name: t.name, slug: t.slug }))
 }
 
-export async function listTagAssignmentsForUploadIds(uploadIds: number[]): Promise<Map<number, { genreTagIds: number[]; moodTagIds: number[] }>> {
+export async function listTagAssignmentsForUploadIds(uploadIds: number[]): Promise<
+  Map<number, { genreTagIds: number[]; moodTagIds: number[]; themeTagIds: number[]; instrumentTagIds: number[] }>
+> {
   const ids = Array.isArray(uploadIds) ? uploadIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) : []
-  const out = new Map<number, { genreTagIds: number[]; moodTagIds: number[] }>()
+  const out = new Map<number, { genreTagIds: number[]; moodTagIds: number[]; themeTagIds: number[]; instrumentTagIds: number[] }>()
   if (!ids.length) return out
   const db = getPool()
   const placeholders = ids.map(() => '?').join(',')
@@ -115,9 +117,11 @@ export async function listTagAssignmentsForUploadIds(uploadIds: number[]): Promi
     if (!Number.isFinite(uploadId) || uploadId <= 0) continue
     const tagId = Number(r.tag_id)
     const kind = String(r.kind || '').toLowerCase()
-    const current = out.get(uploadId) || { genreTagIds: [], moodTagIds: [] }
+    const current = out.get(uploadId) || { genreTagIds: [], moodTagIds: [], themeTagIds: [], instrumentTagIds: [] }
     if (kind === 'genre') current.genreTagIds.push(tagId)
     else if (kind === 'mood') current.moodTagIds.push(tagId)
+    else if (kind === 'theme') current.themeTagIds.push(tagId)
+    else if (kind === 'instrument') current.instrumentTagIds.push(tagId)
     out.set(uploadId, current)
   }
   return out
@@ -145,4 +149,3 @@ export async function replaceUploadTags(uploadId: number, tagIds: number[]): Pro
   }
   await db.query(`INSERT IGNORE INTO upload_audio_tags (upload_id, tag_id) VALUES ${values}`, args)
 }
-

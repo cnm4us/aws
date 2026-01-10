@@ -107,9 +107,16 @@ const UploadNewPage: React.FC = () => {
   const [modifiedName, setModifiedName] = useState('')
   const [description, setDescription] = useState('')
   const [artist, setArtist] = useState('')
-  const [audioTags, setAudioTags] = useState<{ genres: Array<{ id: number; name: string }>; moods: Array<{ id: number; name: string }> }>({ genres: [], moods: [] })
+  const [audioTags, setAudioTags] = useState<{
+    genres: Array<{ id: number; name: string }>
+    moods: Array<{ id: number; name: string }>
+    themes: Array<{ id: number; name: string }>
+    instruments: Array<{ id: number; name: string }>
+  }>({ genres: [], moods: [], themes: [], instruments: [] })
   const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([])
   const [selectedMoodIds, setSelectedMoodIds] = useState<number[]>([])
+  const [selectedThemeIds, setSelectedThemeIds] = useState<number[]>([])
+  const [selectedInstrumentIds, setSelectedInstrumentIds] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
@@ -161,6 +168,8 @@ const UploadNewPage: React.FC = () => {
             setAudioTags({
               genres: Array.isArray(json?.genres) ? json.genres : [],
               moods: Array.isArray(json?.moods) ? json.moods : [],
+              themes: Array.isArray(json?.themes) ? json.themes : [],
+              instruments: Array.isArray(json?.instruments) ? json.instruments : [],
             })
           }
         } catch {
@@ -244,6 +253,8 @@ const UploadNewPage: React.FC = () => {
                 artist: trimmedArtist || undefined,
                 genreTagIds: selectedGenreIds,
                 moodTagIds: selectedMoodIds,
+                themeTagIds: selectedThemeIds,
+                instrumentTagIds: selectedInstrumentIds,
               }
             : {}),
           kind,
@@ -319,6 +330,8 @@ const UploadNewPage: React.FC = () => {
         setArtist('')
         setSelectedGenreIds([])
         setSelectedMoodIds([])
+        setSelectedThemeIds([])
+        setSelectedInstrumentIds([])
         resetForm()
       } catch (err: any) {
         console.error('upload failed', err)
@@ -327,7 +340,7 @@ const UploadNewPage: React.FC = () => {
         setUploading(false)
       }
     },
-    [file, me, modifiedName, description, artist, selectedGenreIds, selectedMoodIds, resetForm, kind, imageRole]
+    [file, me, modifiedName, description, artist, selectedGenreIds, selectedMoodIds, selectedThemeIds, selectedInstrumentIds, resetForm, kind, imageRole]
   )
 
   if (me === null) {
@@ -590,6 +603,110 @@ const UploadNewPage: React.FC = () => {
 	                    </div>
 	                  ) : (
                     <div style={{ color: '#a0a0a0' }}>No mood tags yet. Create them in Admin → Audio Tags.</div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 700 }}>Video Themes</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedThemeIds([])}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                      disabled={uploading}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {audioTags.themes.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {audioTags.themes.map((t) => {
+                        const selected = selectedThemeIds.includes(t.id)
+                        return (
+                          <button
+                            key={`t-${t.id}`}
+                            type="button"
+                            onClick={() =>
+                              setSelectedThemeIds((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+                            }
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: selected ? '#0a84ff' : '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                            disabled={uploading}
+                          >
+                            {t.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#a0a0a0' }}>No video theme tags yet. Create them in Admin → Audio Tags.</div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 700 }}>Instruments</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInstrumentIds([])}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                      disabled={uploading}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {audioTags.instruments.length ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {audioTags.instruments.map((t) => {
+                        const selected = selectedInstrumentIds.includes(t.id)
+                        return (
+                          <button
+                            key={`i-${t.id}`}
+                            type="button"
+                            onClick={() =>
+                              setSelectedInstrumentIds((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+                            }
+                            style={{
+                              padding: '7px 10px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: selected ? '#0a84ff' : '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                            disabled={uploading}
+                          >
+                            {t.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#a0a0a0' }}>No instrument tags yet. Create them in Admin → Audio Tags.</div>
                   )}
                 </div>
               </>

@@ -246,9 +246,11 @@ export async function listSystemAudio(
       return rows.map((row) => {
         const enhanced: any = enhanceUploadRow(row)
         const id = Number((row as any).id)
-        const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [] }
+        const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [], themeTagIds: [], instrumentTagIds: [] }
         enhanced.genreTagIds = tags.genreTagIds
         enhanced.moodTagIds = tags.moodTagIds
+        enhanced.themeTagIds = tags.themeTagIds
+        enhanced.instrumentTagIds = tags.instrumentTagIds
         return enhanced
       })
 	  } catch (e: any) {
@@ -545,6 +547,8 @@ export async function createSignedUpload(input: {
   artist?: string
   genreTagIds?: number[]
   moodTagIds?: number[]
+  themeTagIds?: number[]
+  instrumentTagIds?: number[]
   kind?: 'video' | 'logo' | 'audio' | 'image'
   imageRole?: string | null
   ownerUserId?: number | null
@@ -725,9 +729,11 @@ export async function createSignedUpload(input: {
   if (kind === 'audio') {
     const genreIds = Array.isArray(input.genreTagIds) ? input.genreTagIds : []
     const moodIds = Array.isArray(input.moodTagIds) ? input.moodTagIds : []
+    const themeIds = Array.isArray(input.themeTagIds) ? input.themeTagIds : []
+    const instrumentIds = Array.isArray(input.instrumentTagIds) ? input.instrumentTagIds : []
     const requested = Array.from(
       new Set(
-        [...genreIds, ...moodIds]
+        [...genreIds, ...moodIds, ...themeIds, ...instrumentIds]
           .map((n) => Number(n))
           .filter((n) => Number.isFinite(n) && n > 0)
       )

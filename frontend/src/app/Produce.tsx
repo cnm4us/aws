@@ -55,6 +55,8 @@ type AssetItem = {
   artist?: string | null
   genreTagIds?: number[]
   moodTagIds?: number[]
+  themeTagIds?: number[]
+  instrumentTagIds?: number[]
   content_type?: string | null
   size_bytes?: number | null
   width?: number | null
@@ -545,7 +547,14 @@ export default function ProducePage() {
   const [audioSearch, setAudioSearch] = useState('')
   const [audioGenreFilters, setAudioGenreFilters] = useState<number[]>([])
   const [audioMoodFilters, setAudioMoodFilters] = useState<number[]>([])
-  const [audioTags, setAudioTags] = useState<{ genres: AudioTagSummary[]; moods: AudioTagSummary[] }>({ genres: [], moods: [] })
+  const [audioThemeFilters, setAudioThemeFilters] = useState<number[]>([])
+  const [audioInstrumentFilters, setAudioInstrumentFilters] = useState<number[]>([])
+  const [audioTags, setAudioTags] = useState<{ genres: AudioTagSummary[]; moods: AudioTagSummary[]; themes: AudioTagSummary[]; instruments: AudioTagSummary[] }>({
+    genres: [],
+    moods: [],
+    themes: [],
+    instruments: [],
+  })
   const [audioConfigSort, setAudioConfigSort] = useState<AudioConfigSortMode>('recent')
   const [logoConfigSort, setLogoConfigSort] = useState<LogoConfigSortMode>('recent')
   const [logoSort, setLogoSort] = useState<LogoSortMode>('recent')
@@ -848,6 +857,8 @@ export default function ProducePage() {
 		        setAudioTags({
 		          genres: Array.isArray((tagsJson as any)?.genres) ? ((tagsJson as any).genres as AudioTagSummary[]) : [],
 		          moods: Array.isArray((tagsJson as any)?.moods) ? ((tagsJson as any).moods as AudioTagSummary[]) : [],
+		          themes: Array.isArray((tagsJson as any)?.themes) ? ((tagsJson as any).themes as AudioTagSummary[]) : [],
+		          instruments: Array.isArray((tagsJson as any)?.instruments) ? ((tagsJson as any).instruments as AudioTagSummary[]) : [],
 		        })
 	        const cfgs = Array.isArray(cfgJson) ? (cfgJson as any[]) : []
 	        setLogoConfigs(cfgs as any)
@@ -899,6 +910,8 @@ export default function ProducePage() {
     const q = audioSearch.trim().toLowerCase()
     const genreSet = new Set(audioGenreFilters.filter((n) => Number.isFinite(n) && n > 0))
     const moodSet = new Set(audioMoodFilters.filter((n) => Number.isFinite(n) && n > 0))
+    const themeSet = new Set(audioThemeFilters.filter((n) => Number.isFinite(n) && n > 0))
+    const instrumentSet = new Set(audioInstrumentFilters.filter((n) => Number.isFinite(n) && n > 0))
     return sortedAudios.filter((a) => {
       if (q) {
         const name = String((a.modified_filename || a.original_filename || '')).trim().toLowerCase()
@@ -913,9 +926,17 @@ export default function ProducePage() {
         const ids = Array.isArray(a.moodTagIds) ? a.moodTagIds : []
         if (!ids.some((id) => moodSet.has(Number(id)))) return false
       }
+      if (themeSet.size) {
+        const ids = Array.isArray(a.themeTagIds) ? a.themeTagIds : []
+        if (!ids.some((id) => themeSet.has(Number(id)))) return false
+      }
+      if (instrumentSet.size) {
+        const ids = Array.isArray(a.instrumentTagIds) ? a.instrumentTagIds : []
+        if (!ids.some((id) => instrumentSet.has(Number(id)))) return false
+      }
       return true
     })
-  }, [sortedAudios, audioSearch, audioGenreFilters, audioMoodFilters])
+  }, [sortedAudios, audioSearch, audioGenreFilters, audioMoodFilters, audioThemeFilters, audioInstrumentFilters])
 
   const selectedAudioConfig = useMemo(() => {
     if (selectedAudioConfigId == null) return null
@@ -2616,6 +2637,8 @@ export default function ProducePage() {
 	                    setAudioSearch('')
 	                    setAudioGenreFilters([])
 	                    setAudioMoodFilters([])
+	                    setAudioThemeFilters([])
+	                    setAudioInstrumentFilters([])
 	                  }}
 	                  style={{
 	                    padding: '8px 12px',
@@ -2674,6 +2697,64 @@ export default function ProducePage() {
 	                        type="button"
 	                        onClick={() =>
 	                          setAudioMoodFilters((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+	                        }
+	                        style={{
+	                          padding: '7px 10px',
+	                          borderRadius: 999,
+	                          border: '1px solid rgba(255,255,255,0.18)',
+	                          background: selected ? '#0a84ff' : '#0c0c0c',
+	                          color: '#fff',
+	                          fontWeight: 800,
+	                          cursor: 'pointer',
+	                        }}
+	                      >
+	                        {t.name}
+	                      </button>
+	                    )
+	                  })}
+	                </div>
+	              ) : null}
+
+	              {audioTags.themes.length ? (
+	                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+	                  <div style={{ color: '#bbb', fontWeight: 700, marginRight: 4 }}>Video Theme</div>
+	                  {audioTags.themes.map((t) => {
+	                    const selected = audioThemeFilters.includes(t.id)
+	                    return (
+	                      <button
+	                        key={`t-${t.id}`}
+	                        type="button"
+	                        onClick={() =>
+	                          setAudioThemeFilters((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
+	                        }
+	                        style={{
+	                          padding: '7px 10px',
+	                          borderRadius: 999,
+	                          border: '1px solid rgba(255,255,255,0.18)',
+	                          background: selected ? '#0a84ff' : '#0c0c0c',
+	                          color: '#fff',
+	                          fontWeight: 800,
+	                          cursor: 'pointer',
+	                        }}
+	                      >
+	                        {t.name}
+	                      </button>
+	                    )
+	                  })}
+	                </div>
+	              ) : null}
+
+	              {audioTags.instruments.length ? (
+	                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+	                  <div style={{ color: '#bbb', fontWeight: 700, marginRight: 4 }}>Instrument</div>
+	                  {audioTags.instruments.map((t) => {
+	                    const selected = audioInstrumentFilters.includes(t.id)
+	                    return (
+	                      <button
+	                        key={`i-${t.id}`}
+	                        type="button"
+	                        onClick={() =>
+	                          setAudioInstrumentFilters((prev) => (prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id]))
 	                        }
 	                        style={{
 	                          padding: '7px 10px',

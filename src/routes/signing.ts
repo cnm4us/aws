@@ -21,6 +21,8 @@ const signSchema = z.object({
   artist: z.string().max(255).optional(),
   genreTagIds: z.array(z.number().int().positive()).max(200).optional(),
   moodTagIds: z.array(z.number().int().positive()).max(200).optional(),
+  themeTagIds: z.array(z.number().int().positive()).max(200).optional(),
+  instrumentTagIds: z.array(z.number().int().positive()).max(200).optional(),
 });
 
 signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res) => {
@@ -41,6 +43,8 @@ signingRouter.post('/api/sign-upload', requireAuthOrAdminToken, async (req, res)
       artist: parsed.artist,
       genreTagIds: parsed.genreTagIds,
       moodTagIds: parsed.moodTagIds,
+      themeTagIds: parsed.themeTagIds,
+      instrumentTagIds: parsed.instrumentTagIds,
       ownerUserId: parsed.userId ?? null,
     }, { userId: actorId })
     res.json(result)

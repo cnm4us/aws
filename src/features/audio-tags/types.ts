@@ -1,4 +1,4 @@
-export type AudioTagKind = 'genre' | 'mood'
+export type AudioTagKind = 'genre' | 'mood' | 'theme' | 'instrument'
 
 export type AudioTag = {
   id: number
@@ -16,4 +16,3 @@ export type AudioTagSummary = {
   name: string
   slug: string
 }
-
