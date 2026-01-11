@@ -257,6 +257,12 @@ export default function EditVideo() {
       syncFromVideo()
     }
     const onTime = () => {
+      // Some browsers only populate `duration` after playback starts; capture it here so we can
+      // initialize ranges and enable the scrubber even if loadedmetadata didn't fire.
+      if (durationOriginal <= 0) {
+        const d = Number.isFinite(v.duration) ? v.duration : 0
+        if (d > 0) setDurationOriginal(d)
+      }
       if (!ranges || !ranges.length) return
       const orig = Number.isFinite(v.currentTime) ? v.currentTime : 0
       // Enforce playback within kept ranges.
@@ -309,7 +315,7 @@ export default function EditVideo() {
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
     }
-  }, [ranges, syncFromVideo])
+  }, [durationOriginal, ranges, syncFromVideo])
 
   useEffect(() => {
     if (!uploadId) return
@@ -336,6 +342,12 @@ export default function EditVideo() {
         if (!alive) return
         setTimelineManifest(json)
         setTimelineError(null)
+        // Fallback: if the video element hasn't provided duration yet, use the proxy's probed duration
+        // so ranges + scrubber can initialize reliably.
+        try {
+          const d = Number((json as any)?.durationSeconds || 0)
+          if (durationOriginal <= 0 && Number.isFinite(d) && d > 0) setDurationOriginal(d)
+        } catch {}
       })
       .catch(() => {
         if (!alive) return
@@ -345,7 +357,7 @@ export default function EditVideo() {
     return () => {
       alive = false
     }
-  }, [retryNonce, uploadId])
+  }, [durationOriginal, retryNonce, uploadId])
 
   const seekEdited = useCallback((tEdited: number) => {
     if (!ranges || !ranges.length) return
