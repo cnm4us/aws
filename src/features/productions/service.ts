@@ -372,28 +372,64 @@ export async function create(
     }
   }
 
-  // Production edit recipe (Plan 53): trim applied per production (original upload remains immutable).
+  // Production edit recipe (Plan 53/54): edits applied per production (original upload remains immutable).
   // Config shape:
-  // - edit: { trimStartSeconds?: number, trimEndSeconds?: number|null } | null
+  // - edit: { ranges: Array<{start:number,end:number}> } | null
+  // - edit: { trimStartSeconds?: number, trimEndSeconds?: number|null } | null (back-compat)
   {
     const editRaw = mergedConfig.edit
     if (editRaw == null || editRaw === false) {
       mergedConfig.edit = null
     } else if (typeof editRaw === 'object') {
-      const startRaw = (editRaw as any).trimStartSeconds != null ? Number((editRaw as any).trimStartSeconds) : null
-      const endRaw = (editRaw as any).trimEndSeconds != null ? Number((editRaw as any).trimEndSeconds) : null
-      const start = startRaw != null && Number.isFinite(startRaw) ? Math.max(0, Math.round(startRaw * 10) / 10) : null
-      const end = endRaw != null && Number.isFinite(endRaw) ? Math.max(0, Math.round(endRaw * 10) / 10) : null
-      const effectiveStart = start != null ? Math.min(3600, start) : null
-      const effectiveEnd = end != null ? Math.min(3600, end) : null
-      if (effectiveStart == null && effectiveEnd == null) {
-        mergedConfig.edit = null
+      const rangesRaw = Array.isArray((editRaw as any).ranges) ? ((editRaw as any).ranges as any[]) : null
+      if (rangesRaw && rangesRaw.length) {
+        const normalized = rangesRaw
+          .map((r) => ({
+            start: r && (r as any).start != null ? Number((r as any).start) : NaN,
+            end: r && (r as any).end != null ? Number((r as any).end) : NaN,
+          }))
+          .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
+          .map((r) => ({
+            start: Math.max(0, Math.round(r.start * 10) / 10),
+            end: Math.max(0, Math.round(r.end * 10) / 10),
+          }))
+          .filter((r) => r.end > r.start)
+          .map((r) => ({
+            start: Math.min(3600, r.start),
+            end: Math.min(3600, r.end),
+          }))
+
+        if (!normalized.length) throw new DomainError('invalid_edit_ranges', 'invalid_edit_ranges', 400)
+        if (normalized.length > 21) throw new DomainError('too_many_edit_ranges', 'too_many_edit_ranges', 400)
+
+        // Ensure sorted & non-overlapping.
+        normalized.sort((a, b) => a.start - b.start || a.end - b.end)
+        for (let i = 0; i < normalized.length; i++) {
+          const r = normalized[i]
+          if (!(r.start >= 0 && r.end > r.start)) throw new DomainError('invalid_edit_ranges', 'invalid_edit_ranges', 400)
+          if (i > 0) {
+            const prev = normalized[i - 1]
+            if (r.start < prev.end) throw new DomainError('overlapping_edit_ranges', 'overlapping_edit_ranges', 400)
+          }
+        }
+
+        mergedConfig.edit = { ranges: normalized }
       } else {
-        const s = effectiveStart != null ? effectiveStart : 0
-        if (effectiveEnd != null && effectiveEnd <= s) throw new DomainError('invalid_trim_range', 'invalid_trim_range', 400)
-        // Do not store a no-op trim.
-        if (s === 0 && effectiveEnd == null) mergedConfig.edit = null
-        else mergedConfig.edit = { trimStartSeconds: s, trimEndSeconds: effectiveEnd ?? null }
+        const startRaw = (editRaw as any).trimStartSeconds != null ? Number((editRaw as any).trimStartSeconds) : null
+        const endRaw = (editRaw as any).trimEndSeconds != null ? Number((editRaw as any).trimEndSeconds) : null
+        const start = startRaw != null && Number.isFinite(startRaw) ? Math.max(0, Math.round(startRaw * 10) / 10) : null
+        const end = endRaw != null && Number.isFinite(endRaw) ? Math.max(0, Math.round(endRaw * 10) / 10) : null
+        const effectiveStart = start != null ? Math.min(3600, start) : null
+        const effectiveEnd = end != null ? Math.min(3600, end) : null
+        if (effectiveStart == null && effectiveEnd == null) {
+          mergedConfig.edit = null
+        } else {
+          const s = effectiveStart != null ? effectiveStart : 0
+          if (effectiveEnd != null && effectiveEnd <= s) throw new DomainError('invalid_trim_range', 'invalid_trim_range', 400)
+          // Do not store a no-op trim.
+          if (s === 0 && effectiveEnd == null) mergedConfig.edit = null
+          else mergedConfig.edit = { trimStartSeconds: s, trimEndSeconds: effectiveEnd ?? null }
+        }
       }
     } else {
       throw new DomainError('invalid_edit', 'invalid_edit', 400)

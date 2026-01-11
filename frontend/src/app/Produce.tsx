@@ -239,6 +239,30 @@ function parseEditEndSeconds(): number | null {
   }
 }
 
+function parseEditRanges(): Array<{ start: number; end: number }> | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('editRanges') || '').trim()
+    if (!raw) return null
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
+    const out: Array<{ start: number; end: number }> = []
+    for (const p of parts) {
+      const m = p.match(/^([0-9.]+)\s*-\s*([0-9.]+)$/)
+      if (!m) continue
+      const start = Math.round(Number(m[1]) * 10) / 10
+      const end = Math.round(Number(m[2]) * 10) / 10
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+      if (start < 0 || end <= start) continue
+      out.push({ start: Math.min(3600, start), end: Math.min(3600, end) })
+    }
+    if (!out.length) return null
+    out.sort((a, b) => a.start - b.start || a.end - b.end)
+    return out.slice(0, 21)
+  } catch {
+    return null
+  }
+}
+
 type FirstScreenMode = 'custom_image' | 'first_frame'
 
 function parseFirstScreenMode(): FirstScreenMode {
@@ -590,26 +614,34 @@ export default function ProducePage() {
   const [logoConfigAbout, setLogoConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [audioAbout, setAudioAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdAbout, setLowerThirdAbout] = useState<{ title: string; description: string | null } | null>(null)
-	const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
-	const [screenTitlePresetAbout, setScreenTitlePresetAbout] = useState<{ title: string; description: string | null } | null>(null)
-	const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
-	const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [screenTitlePresetAbout, setScreenTitlePresetAbout] = useState<{ title: string; description: string | null } | null>(null)
+  const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
+  const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const [editRanges, setEditRanges] = useState<Array<{ start: number; end: number }> | null>(() => parseEditRanges())
   const [editStartSeconds, setEditStartSeconds] = useState<number | null>(() => parseEditStartSeconds())
   const [editEndSeconds, setEditEndSeconds] = useState<number | null>(() => parseEditEndSeconds())
   const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
-	const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
+  const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
 	const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
 	const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const screenTitlePreviewAutoDoneRef = useRef(false)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
 
+  const editPreviewSeekSeconds = (() => {
+    if (editRanges && editRanges.length) return Math.max(0, Number(editRanges[0].start || 0))
+    if (editStartSeconds != null) return Math.max(0, Number(editStartSeconds))
+    return 0
+  })()
+
   useEffect(() => {
     if (!editProxyPreviewOk) return
-    if (editStartSeconds == null && editEndSeconds == null) return
+    const hasAnyEdit = Boolean((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null)
+    if (!hasAnyEdit) return
     const v = editProxyVideoRef.current
     if (!v) return
-    const t = Math.max(0, Number.isFinite(Number(editStartSeconds)) ? Number(editStartSeconds) : 0)
+    const t = Math.max(0, editPreviewSeekSeconds)
     const seek = () => {
       try {
         if (Number.isFinite(v.currentTime) && Math.abs(v.currentTime - t) <= 0.05) return
@@ -625,7 +657,7 @@ export default function ProducePage() {
       v.removeEventListener('loadedmetadata', onLoaded)
       v.removeEventListener('loadeddata', onLoaded)
     }
-  }, [editStartSeconds, editEndSeconds, editProxyPreviewOk])
+  }, [editEndSeconds, editProxyPreviewOk, editPreviewSeekSeconds, editRanges, editStartSeconds])
 
   useEffect(() => {
     // If the inputs change, invalidate the cached preview PNG.
@@ -1458,7 +1490,7 @@ export default function ProducePage() {
 	  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
 	  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
     const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
-    const useEditProxyPreview = editProxyPreviewOk && (editStartSeconds != null || editEndSeconds != null) && !!editProxySrc
+    const useEditProxyPreview = editProxyPreviewOk && ((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) && !!editProxySrc
 	  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
@@ -1489,7 +1521,9 @@ export default function ProducePage() {
 			      }
 
             const config: any = {}
-            if (editStartSeconds != null || editEndSeconds != null) {
+            if (editRanges && editRanges.length) {
+              config.edit = { ranges: editRanges }
+            } else if (editStartSeconds != null || editEndSeconds != null) {
               config.edit = {
                 trimStartSeconds: editStartSeconds ?? 0,
                 trimEndSeconds: editEndSeconds ?? null,
@@ -1546,14 +1580,20 @@ export default function ProducePage() {
 	                Edit Video
 	              </a>
 	            ) : null}
-	            {editStartSeconds != null || editEndSeconds != null ? (
+	            {editRanges && editRanges.length ? (
+	              <span style={{ fontSize: 12, color: '#bbb' }}>
+	                Edits: {editRanges.length} segments
+	              </span>
+	            ) : null}
+	            {((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) ? (
 	              <button
 	                type="button"
 	                onClick={() => {
+	                  setEditRanges(null)
 	                  setEditStartSeconds(null)
 	                  setEditEndSeconds(null)
 	                  setEditProxyPreviewOk(true)
-	                  pushQueryParams({ editStart: null, editEnd: null })
+	                  pushQueryParams({ editRanges: null, editStart: null, editEnd: null })
 	                }}
 	                style={{
 	                  padding: '8px 10px',
@@ -1566,7 +1606,7 @@ export default function ProducePage() {
 	                  fontSize: 12,
 	                }}
 	              >
-	                Clear Trim
+	                Clear Edits
 	              </button>
 	            ) : null}
 	          </div>

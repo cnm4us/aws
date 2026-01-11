@@ -137,3 +137,112 @@ export async function trimMp4Local(opts: {
   }
 }
 
+export async function spliceMp4Local(opts: {
+  inPath: string
+  outPath: string
+  ranges: Array<{ start: number; end: number }>
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}): Promise<{ durationSeconds: number | null }> {
+  const rawRanges = Array.isArray(opts.ranges) ? opts.ranges : []
+  const ranges = rawRanges
+    .map((r) => ({ start: clampTrimSeconds(r.start), end: clampTrimSeconds(r.end) }))
+    .filter((r) => r.start != null && r.end != null)
+    .map((r) => ({ start: r.start as number, end: r.end as number }))
+    .filter((r) => r.end > r.start)
+
+  if (!ranges.length) throw new Error('invalid_edit_ranges')
+  if (ranges.length === 1) {
+    return await trimMp4Local({ inPath: opts.inPath, outPath: opts.outPath, startSeconds: ranges[0].start, endSeconds: ranges[0].end, logPaths: opts.logPaths })
+  }
+
+  // Ensure sorted & non-overlapping.
+  ranges.sort((a, b) => a.start - b.start || a.end - b.end)
+  for (let i = 1; i < ranges.length; i++) {
+    if (ranges[i].start < ranges[i - 1].end) throw new Error('overlapping_edit_ranges')
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-splice-'))
+  const tmpOut = path.join(tmpDir, 'out.mp4')
+  try {
+    const hasAudio = await hasAudioStream(opts.inPath)
+    const parts: string[] = []
+    const concatInputs: string[] = []
+    for (let i = 0; i < ranges.length; i++) {
+      const r = ranges[i]
+      parts.push(`[0:v]trim=start=${r.start}:end=${r.end},setpts=PTS-STARTPTS[v${i}]`)
+      if (hasAudio) parts.push(`[0:a]atrim=start=${r.start}:end=${r.end},asetpts=PTS-STARTPTS[a${i}]`)
+      if (hasAudio) concatInputs.push(`[v${i}]`, `[a${i}]`)
+      else concatInputs.push(`[v${i}]`)
+    }
+
+    const concat = hasAudio
+      ? `${concatInputs.join('')}concat=n=${ranges.length}:v=1:a=1[v][a]`
+      : `${concatInputs.join('')}concat=n=${ranges.length}:v=1:a=0[v]`
+
+    const filter = `${parts.join(';')};${concat}`
+
+    if (hasAudio) {
+      await runFfmpeg(
+        [
+          '-i',
+          opts.inPath,
+          '-filter_complex',
+          filter,
+          '-map',
+          '[v]',
+          '-map',
+          '[a]',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '20',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '128k',
+          '-ar',
+          '48000',
+          '-ac',
+          '2',
+          '-movflags',
+          '+faststart',
+          tmpOut,
+        ],
+        opts.logPaths
+      )
+    } else {
+      await runFfmpeg(
+        [
+          '-i',
+          opts.inPath,
+          '-filter_complex',
+          filter,
+          '-map',
+          '[v]',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'veryfast',
+          '-crf',
+          '20',
+          '-pix_fmt',
+          'yuv420p',
+          '-movflags',
+          '+faststart',
+          tmpOut,
+        ],
+        opts.logPaths
+      )
+    }
+
+    fs.copyFileSync(tmpOut, opts.outPath)
+    const durationSeconds = await probeDurationSeconds(opts.outPath)
+    return { durationSeconds }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+}

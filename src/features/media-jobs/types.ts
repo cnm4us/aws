@@ -108,7 +108,11 @@ export type IntroV1 =
   | { kind: 'freeze_first_frame'; seconds: number }
   | { kind: 'title_image'; uploadId: number; holdSeconds: number; titleImage: S3Pointer }
 
-export type EditRecipeV1 = { trimStartSeconds?: number | null; trimEndSeconds?: number | null }
+export type EditRecipeV1 = {
+  trimStartSeconds?: number | null
+  trimEndSeconds?: number | null
+  ranges?: Array<{ start: number; end: number }> | null
+}
 
 export type AudioMasterV1Input = {
   productionId: number

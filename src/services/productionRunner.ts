@@ -347,12 +347,31 @@ export async function startProductionRender(options: RenderOptions) {
   const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
 
   const editRaw = cfgObj && (cfgObj as any).edit && typeof (cfgObj as any).edit === 'object' ? (cfgObj as any).edit : null
+  const rangesRaw = editRaw && Array.isArray((editRaw as any).ranges) ? ((editRaw as any).ranges as any[]) : null
+  const ranges =
+    rangesRaw && rangesRaw.length
+      ? rangesRaw
+          .map((r) => ({
+            start: r && (r as any).start != null ? Number((r as any).start) : NaN,
+            end: r && (r as any).end != null ? Number((r as any).end) : NaN,
+          }))
+          .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.start >= 0 && r.end > r.start)
+          .map((r) => ({
+            start: Math.round(Math.min(3600, r.start) * 10) / 10,
+            end: Math.round(Math.min(3600, r.end) * 10) / 10,
+          }))
+          .slice(0, 21)
+      : null
+
   const trimStartRaw = editRaw && (editRaw as any).trimStartSeconds != null ? Number((editRaw as any).trimStartSeconds) : null
   const trimEndRaw = editRaw && (editRaw as any).trimEndSeconds != null ? Number((editRaw as any).trimEndSeconds) : null
   const trimStartSeconds = trimStartRaw != null && Number.isFinite(trimStartRaw) ? Math.max(0, Math.min(3600, Math.round(trimStartRaw * 10) / 10)) : null
   const trimEndSeconds = trimEndRaw != null && Number.isFinite(trimEndRaw) ? Math.max(0, Math.min(3600, Math.round(trimEndRaw * 10) / 10)) : null
+
   const editForJob =
-    trimStartSeconds != null || trimEndSeconds != null ? { trimStartSeconds, trimEndSeconds } : null
+    ranges && ranges.length
+      ? { ranges }
+      : (trimStartSeconds != null || trimEndSeconds != null ? { trimStartSeconds, trimEndSeconds } : null)
 
   const wantsLogo = Boolean(
     MEDIA_FFMPEG_COMPOSITE_ENABLED &&

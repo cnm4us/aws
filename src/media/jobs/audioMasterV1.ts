@@ -3,7 +3,7 @@ import type { AudioMasterV1Input } from '../../features/media-jobs/types'
 import { burnScreenTitleIntoMp4, createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
 import { burnPngOverlaysIntoMp4, downloadOverlayPngToFile, probeVideoDisplayDimensions, withTempDir } from '../../services/ffmpeg/visualPipeline'
-import { trimMp4Local } from '../../services/ffmpeg/trimPipeline'
+import { spliceMp4Local, trimMp4Local } from '../../services/ffmpeg/trimPipeline'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -36,11 +36,21 @@ export async function runAudioMasterV1Job(
     input.videoDurationSeconds != null && Number.isFinite(Number(input.videoDurationSeconds)) ? Number(input.videoDurationSeconds) : null
 
   const edit = (input as any).edit && typeof (input as any).edit === 'object' ? (input as any).edit : null
+  const rangesRaw = edit && Array.isArray((edit as any).ranges) ? ((edit as any).ranges as any[]) : null
+  const ranges =
+    rangesRaw && rangesRaw.length
+      ? rangesRaw
+          .map((r) => ({
+            start: r && (r as any).start != null ? Number((r as any).start) : NaN,
+            end: r && (r as any).end != null ? Number((r as any).end) : NaN,
+          }))
+          .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
+      : null
   const trimStartRaw = edit && (edit as any).trimStartSeconds != null ? Number((edit as any).trimStartSeconds) : null
   const trimEndRaw = edit && (edit as any).trimEndSeconds != null ? Number((edit as any).trimEndSeconds) : null
   const trimStart = trimStartRaw != null && Number.isFinite(trimStartRaw) ? Math.max(0, trimStartRaw) : null
   const trimEnd = trimEndRaw != null && Number.isFinite(trimEndRaw) ? Math.max(0, trimEndRaw) : null
-  if (trimStart != null || trimEnd != null) {
+  if ((ranges && ranges.length) || trimStart != null || trimEnd != null) {
     const startSeconds = trimStart != null ? trimStart : 0
     const endSeconds = trimEnd != null ? trimEnd : null
     const folder = ymdToFolder(dateYmd)
@@ -51,13 +61,9 @@ export async function runAudioMasterV1Job(
       const inPath = path.join(tmpDir, 'in.mp4')
       const outPath = path.join(tmpDir, 'trim.mp4')
       await downloadS3ObjectToFile(videoPtr.bucket, videoPtr.key, inPath)
-      const { durationSeconds: trimmedDuration } = await trimMp4Local({
-        inPath,
-        outPath,
-        startSeconds,
-        endSeconds,
-        logPaths,
-      })
+      const { durationSeconds: trimmedDuration } = ranges && ranges.length
+        ? await spliceMp4Local({ inPath, outPath, ranges, logPaths })
+        : await trimMp4Local({ inPath, outPath, startSeconds, endSeconds, logPaths })
       await uploadFileToS3(uploadBucket, key, outPath, 'video/mp4')
       if (trimmedDuration != null && Number.isFinite(trimmedDuration) && trimmedDuration > 0) videoDurationSeconds = trimmedDuration
       return { bucket: uploadBucket, key, s3Url: `s3://${uploadBucket}/${key}` }
