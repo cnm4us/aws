@@ -226,16 +226,34 @@ export async function getUploadEditProxyStream(
     try {
       const sourceDeletedAt = (row as any).source_deleted_at != null ? String((row as any).source_deleted_at) : null
       if (MEDIA_JOBS_ENABLED && !sourceDeletedAt) {
-        await enqueueJob('upload_edit_proxy_v1', {
-          uploadId: Number(row.id),
-          userId: ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? Number(ownerId) : Number(ctx.userId),
-          video: { bucket: String(row.s3_bucket), key: String(row.s3_key) },
-          outputBucket: String(UPLOAD_BUCKET),
-          outputKey: buildUploadEditProxyKey(Number(row.id)),
-          longEdgePx: 540,
-          fps: 30,
-          gop: 8,
-        })
+        let alreadyQueued = false
+        try {
+          const db = getPool()
+          const [rows] = await db.query(
+            `SELECT id
+               FROM media_jobs
+              WHERE type = 'upload_edit_proxy_v1'
+                AND status IN ('pending','processing')
+                AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+              ORDER BY id DESC
+              LIMIT 1`,
+            [String(row.id)]
+          )
+          alreadyQueued = (rows as any[]).length > 0
+        } catch {}
+
+        if (!alreadyQueued) {
+          await enqueueJob('upload_edit_proxy_v1', {
+            uploadId: Number(row.id),
+            userId: ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? Number(ownerId) : Number(ctx.userId),
+            video: { bucket: String(row.s3_bucket), key: String(row.s3_key) },
+            outputBucket: String(UPLOAD_BUCKET),
+            outputKey: buildUploadEditProxyKey(Number(row.id)),
+            longEdgePx: 540,
+            fps: 30,
+            gop: 8,
+          })
+        }
       }
     } catch {}
 
