@@ -527,6 +527,7 @@ export default function EditVideo() {
                   seekEdited(playheadEdited - 0.1)
                 }}
                 disabled={total <= 0}
+                aria-label="Nudge back 0.1 seconds"
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
@@ -536,12 +537,16 @@ export default function EditVideo() {
                   fontWeight: 900,
                   cursor: total <= 0 ? 'default' : 'pointer',
                   minWidth: 64,
+                  display: 'grid',
+                  placeItems: 'center',
                 }}
               >
-                ← 0.1s
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
-              <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center' }}>
-                Nudge playhead
+              <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+                0.1s
               </div>
               <button
                 type="button"
@@ -551,6 +556,7 @@ export default function EditVideo() {
                   seekEdited(playheadEdited + 0.1)
                 }}
                 disabled={total <= 0}
+                aria-label="Nudge forward 0.1 seconds"
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
@@ -560,9 +566,13 @@ export default function EditVideo() {
                   fontWeight: 900,
                   cursor: total <= 0 ? 'default' : 'pointer',
                   minWidth: 64,
+                  display: 'grid',
+                  placeItems: 'center',
                 }}
               >
-                0.1s →
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             </div>
 
