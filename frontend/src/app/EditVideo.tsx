@@ -189,6 +189,7 @@ export default function EditVideo() {
   const [timelineError, setTimelineError] = useState<string | null>(null)
   const [timelineManifest, setTimelineManifest] = useState<TimelineManifestV1 | null>(null)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
+  const [timelinePadPx, setTimelinePadPx] = useState(0)
 
   const [durationOriginal, setDurationOriginal] = useState(0)
   const [ranges, setRanges] = useState<Range[] | null>(initialRanges)
@@ -470,13 +471,38 @@ export default function EditVideo() {
   }, [ranges, timelineManifest])
 
   useEffect(() => {
-    if (!timelineManifest || !thumbs || !thumbs.length) return
+    const sc = timelineScrollRef.current
+    if (!timelineManifest || !thumbs || !thumbs.length || !sc) return
+    const update = () => {
+      const w = Math.max(0, sc.clientWidth || 0)
+      const pad = Math.floor(w / 2)
+      setTimelinePadPx(pad)
+    }
+    update()
+    let ro: ResizeObserver | null = null
+    try {
+      ro = new ResizeObserver(() => update())
+      ro.observe(sc)
+    } catch {}
+    const onResize = () => update()
+    window.addEventListener('resize', onResize)
+    return () => {
+      try { ro?.disconnect() } catch {}
+      window.removeEventListener('resize', onResize)
+    }
+  }, [thumbs, timelineManifest])
+
+  useEffect(() => {
+    if (!timelineManifest || !thumbs) return
     const sc = timelineScrollRef.current
     if (!sc) return
+    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
     const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
-    const idx = clamp(Math.floor(playheadEdited), 0, thumbs.length - 1)
-    const targetCenter = idx * tileW + tileW / 2
-    const desiredLeft = Math.max(0, targetCenter - sc.clientWidth / 2)
+    // Allow aligning the playhead after the last thumb (end of video).
+    const maxIdx = Math.max(0, thumbs.length)
+    const idx = clamp(Math.floor(playheadEdited / interval), 0, maxIdx)
+    // With left/right padding, scrollLeft aligns the *start* of the thumb under the fixed playhead.
+    const desiredLeft = Math.max(0, idx * tileW)
     const maxLeft = Math.max(0, sc.scrollWidth - sc.clientWidth)
     const clamped = Math.max(0, Math.min(maxLeft, desiredLeft))
     try {
@@ -484,7 +510,7 @@ export default function EditVideo() {
     } catch {
       sc.scrollLeft = clamped
     }
-  }, [playheadEdited, thumbs, timelineManifest])
+  }, [playheadEdited, thumbs, timelineManifest, timelinePadPx])
 
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
@@ -593,6 +619,7 @@ export default function EditVideo() {
                   }}
                 >
                   <div style={{ display: 'flex', height: '100%' }}>
+                    <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                     {thumbs.map((tOrig, i) => {
                       const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
                       const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
@@ -614,7 +641,8 @@ export default function EditVideo() {
                           onClick={() => {
                             try { videoRef.current?.pause?.() } catch {}
                             setPlaying(false)
-                            seekEdited(i)
+                            const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+                            seekEdited(i * interval)
                           }}
                           style={{
                             width: tileW,
@@ -631,6 +659,7 @@ export default function EditVideo() {
                         />
                       )
                     })}
+                    <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                   </div>
                 </div>
                 <div
