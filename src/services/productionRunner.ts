@@ -345,6 +345,15 @@ export async function startProductionRender(options: RenderOptions) {
     }
   }
   const hasMusic = Boolean(musicUploadId && Number.isFinite(musicUploadId) && musicUploadId > 0)
+
+  const editRaw = cfgObj && (cfgObj as any).edit && typeof (cfgObj as any).edit === 'object' ? (cfgObj as any).edit : null
+  const trimStartRaw = editRaw && (editRaw as any).trimStartSeconds != null ? Number((editRaw as any).trimStartSeconds) : null
+  const trimEndRaw = editRaw && (editRaw as any).trimEndSeconds != null ? Number((editRaw as any).trimEndSeconds) : null
+  const trimStartSeconds = trimStartRaw != null && Number.isFinite(trimStartRaw) ? Math.max(0, Math.min(3600, Math.round(trimStartRaw * 10) / 10)) : null
+  const trimEndSeconds = trimEndRaw != null && Number.isFinite(trimEndRaw) ? Math.max(0, Math.min(3600, Math.round(trimEndRaw * 10) / 10)) : null
+  const editForJob =
+    trimStartSeconds != null || trimEndSeconds != null ? { trimStartSeconds, trimEndSeconds } : null
+
   const wantsLogo = Boolean(
     MEDIA_FFMPEG_COMPOSITE_ENABLED &&
       logoUploadId &&
@@ -360,7 +369,7 @@ export async function startProductionRender(options: RenderOptions) {
       lowerThirdImageConfigSnapshot
   )
   const needsMediaJob = Boolean(
-    MEDIA_JOBS_ENABLED && (hasMusic || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage)
+    MEDIA_JOBS_ENABLED && (hasMusic || editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage)
   )
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
@@ -456,20 +465,21 @@ export async function startProductionRender(options: RenderOptions) {
         ? Number(upload.duration_seconds)
         : null
 
-    jobInputBase = {
-      productionUlid: prodUlid,
-      userId: Number(userId),
-      uploadId: Number(upload.id),
-      dateYmd: createdDate,
-      originalLeaf,
-      videoDurationSeconds,
-      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
-      screenTitle: screenTitleForJob,
-      logo: logoForJob,
-      lowerThirdImage: lowerThirdImageForJob,
-      intro: introForJob,
-      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
+	    jobInputBase = {
+	      productionUlid: prodUlid,
+	      userId: Number(userId),
+	      uploadId: Number(upload.id),
+	      dateYmd: createdDate,
+	      originalLeaf,
+	      videoDurationSeconds,
+	      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+	      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+	      edit: editForJob,
+	      screenTitle: screenTitleForJob,
+	      logo: logoForJob,
+	      lowerThirdImage: lowerThirdImageForJob,
+	      intro: introForJob,
+	      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
       mode: mode === 'replace' ? 'replace' : 'mix',
       videoGainDb,
       musicGainDb,
@@ -495,37 +505,38 @@ export async function startProductionRender(options: RenderOptions) {
   )
   const productionId = Number((preIns as any).insertId)
 
-  if (needsMediaJob) {
-    if (hasMusic) {
-      const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
-      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
-    }
-    if (introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage) {
-      const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
-      const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
-      const videoDurationSeconds =
-        upload?.duration_seconds != null && Number.isFinite(Number(upload.duration_seconds)) && Number(upload.duration_seconds) > 0
-          ? Number(upload.duration_seconds)
-          : null
-      const job = await enqueueJob('video_master_v1', {
-        productionId,
-        productionUlid: prodUlid,
-        userId: Number(userId),
-        uploadId: Number(upload.id),
-        dateYmd: createdDate,
-        originalLeaf,
-        videoDurationSeconds,
-        video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-        screenTitle: screenTitleForJob,
-        logo: logoForJob,
-        lowerThirdImage: lowerThirdImageForJob,
-        intro: introForJob,
-        introSeconds: introForJob?.kind === 'freeze_first_frame' ? introSeconds : 0,
-        outputBucket: UPLOAD_BUCKET,
-      })
-      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
-    }
-  }
+	  if (needsMediaJob) {
+	    if (hasMusic) {
+	      const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
+	      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+	    }
+	    if (editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage) {
+	      const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+	      const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
+	      const videoDurationSeconds =
+	        upload?.duration_seconds != null && Number.isFinite(Number(upload.duration_seconds)) && Number(upload.duration_seconds) > 0
+	          ? Number(upload.duration_seconds)
+	          : null
+	      const job = await enqueueJob('video_master_v1', {
+	        productionId,
+	        productionUlid: prodUlid,
+	        userId: Number(userId),
+	        uploadId: Number(upload.id),
+	        dateYmd: createdDate,
+	        originalLeaf,
+	        videoDurationSeconds,
+	        video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+	        edit: editForJob,
+	        screenTitle: screenTitleForJob,
+	        logo: logoForJob,
+	        lowerThirdImage: lowerThirdImageForJob,
+	        intro: introForJob,
+	        introSeconds: introForJob?.kind === 'freeze_first_frame' ? introSeconds : 0,
+	        outputBucket: UPLOAD_BUCKET,
+	      })
+	      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
+	    }
+	  }
 
   // Inline fallback: if intro is selected but media jobs are disabled, pre-master the video synchronously.
   // This keeps feature parity in dev; production should prefer MEDIA_JOBS_ENABLED=1.

@@ -1,5 +1,6 @@
 import { enhanceUploadRow } from '../../utils/enhance'
 import { buildUploadThumbKey } from '../../utils/uploadThumb'
+import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
 import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
@@ -180,6 +181,38 @@ export async function getUploadFileStream(
     contentType: row.content_type != null ? String(row.content_type) : (resp.ContentType ? String(resp.ContentType) : null),
     body: resp.Body,
     contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : (row.size_bytes != null ? Number(row.size_bytes) : null),
+    contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
+  }
+}
+
+export async function getUploadEditProxyStream(
+  uploadId: number,
+  opts: { range?: string } | undefined,
+  ctx: ServiceContext
+): Promise<{ contentType: string | null; body: any; contentLength?: number | null; contentRange?: string | null }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const key = buildUploadEditProxyKey(Number(uploadId))
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  const range = opts?.range ? String(opts.range) : undefined
+  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) }))
+  return {
+    contentType: resp.ContentType ? String(resp.ContentType) : 'video/mp4',
+    body: resp.Body,
+    contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
     contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
   }
 }
@@ -896,21 +929,35 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
     const ownerUserId = (prev as any).user_id != null ? Number((prev as any).user_id) : null
     const isSystem = Number((prev as any).is_system || 0) === 1
     const sourceDeletedAt = (prev as any).source_deleted_at != null ? String((prev as any).source_deleted_at) : null
-    if (!isSystem && !sourceDeletedAt && kind === 'video' && ownerUserId && prevStatus !== 'uploaded') {
-      try {
-        await enqueueJob('upload_thumb_v1', {
-          uploadId: Number(prev.id),
-          userId: ownerUserId,
-          video: { bucket: String(prev.s3_bucket), key: String(prev.s3_key) },
-          outputBucket: String(UPLOAD_BUCKET),
-          outputKey: buildUploadThumbKey(Number(prev.id)),
-          longEdgePx: 640,
-        })
-      } catch (e) {
-        // Best-effort: thumbnails are optional and UI falls back.
-      }
-    }
-  }
+	    if (!isSystem && !sourceDeletedAt && kind === 'video' && ownerUserId && prevStatus !== 'uploaded') {
+	      try {
+	        await enqueueJob('upload_thumb_v1', {
+	          uploadId: Number(prev.id),
+	          userId: ownerUserId,
+	          video: { bucket: String(prev.s3_bucket), key: String(prev.s3_key) },
+	          outputBucket: String(UPLOAD_BUCKET),
+	          outputKey: buildUploadThumbKey(Number(prev.id)),
+	          longEdgePx: 640,
+	        })
+	      } catch (e) {
+	        // Best-effort: thumbnails are optional and UI falls back.
+	      }
+	      try {
+	        await enqueueJob('upload_edit_proxy_v1', {
+	          uploadId: Number(prev.id),
+	          userId: ownerUserId,
+	          video: { bucket: String(prev.s3_bucket), key: String(prev.s3_key) },
+	          outputBucket: String(UPLOAD_BUCKET),
+	          outputKey: buildUploadEditProxyKey(Number(prev.id)),
+	          longEdgePx: 540,
+	          fps: 30,
+	          gop: 8,
+	        })
+	      } catch (e) {
+	        // Best-effort: proxy is optional; editor can show a "generating" state.
+	      }
+	    }
+	  }
 
   return { ok: true }
 }

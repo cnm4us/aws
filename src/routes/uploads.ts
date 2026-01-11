@@ -108,6 +108,36 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   }
 })
 
+uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
+    const range = typeof req.headers.range === 'string' ? String(req.headers.range) : undefined
+    const { contentType, body, contentLength, contentRange } = await uploadsSvc.getUploadEditProxyStream(
+      id,
+      { range },
+      { userId: Number(req.user!.id) }
+    )
+    res.set('Cache-Control', 'no-store')
+    res.set('Accept-Ranges', 'bytes')
+    if (contentType) res.set('Content-Type', contentType)
+    if (contentRange) {
+      res.status(206)
+      res.set('Content-Range', contentRange)
+      if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
+    } else {
+      if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
+    }
+    return (body as any).pipe(res)
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('forbidden')
+    if (status === 404) return res.status(404).send('not_found')
+    console.error('upload edit proxy fetch failed', err)
+    return res.status(status).send('failed')
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)

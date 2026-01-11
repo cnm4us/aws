@@ -3,6 +3,7 @@ import type { AudioMasterV1Input } from '../../features/media-jobs/types'
 import { burnScreenTitleIntoMp4, createMuxedMp4WithLoopedMixedAudio, createMuxedMp4WithLoopedReplacementAudio, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
 import { burnPngOverlaysIntoMp4, downloadOverlayPngToFile, probeVideoDisplayDimensions, withTempDir } from '../../services/ffmpeg/visualPipeline'
+import { trimMp4Local } from '../../services/ffmpeg/trimPipeline'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -33,6 +34,37 @@ export async function runAudioMasterV1Job(
   let videoPtr = input.video
   let videoDurationSeconds =
     input.videoDurationSeconds != null && Number.isFinite(Number(input.videoDurationSeconds)) ? Number(input.videoDurationSeconds) : null
+
+  const edit = (input as any).edit && typeof (input as any).edit === 'object' ? (input as any).edit : null
+  const trimStartRaw = edit && (edit as any).trimStartSeconds != null ? Number((edit as any).trimStartSeconds) : null
+  const trimEndRaw = edit && (edit as any).trimEndSeconds != null ? Number((edit as any).trimEndSeconds) : null
+  const trimStart = trimStartRaw != null && Number.isFinite(trimStartRaw) ? Math.max(0, trimStartRaw) : null
+  const trimEnd = trimEndRaw != null && Number.isFinite(trimEndRaw) ? Math.max(0, trimEndRaw) : null
+  if (trimStart != null || trimEnd != null) {
+    const startSeconds = trimStart != null ? trimStart : 0
+    const endSeconds = trimEnd != null ? trimEnd : null
+    const folder = ymdToFolder(dateYmd)
+    const key = `video-trim/${folder}/${productionUlid}/${randomUUID()}/${originalLeaf}`
+    const t0 = Date.now()
+    appendLog(`trim:start start=${startSeconds} end=${endSeconds == null ? 'null' : String(endSeconds)}`)
+    const trimmedPtr = await withTempDir('bacs-audio-master-trim-', async (tmpDir) => {
+      const inPath = path.join(tmpDir, 'in.mp4')
+      const outPath = path.join(tmpDir, 'trim.mp4')
+      await downloadS3ObjectToFile(videoPtr.bucket, videoPtr.key, inPath)
+      const { durationSeconds: trimmedDuration } = await trimMp4Local({
+        inPath,
+        outPath,
+        startSeconds,
+        endSeconds,
+        logPaths,
+      })
+      await uploadFileToS3(uploadBucket, key, outPath, 'video/mp4')
+      if (trimmedDuration != null && Number.isFinite(trimmedDuration) && trimmedDuration > 0) videoDurationSeconds = trimmedDuration
+      return { bucket: uploadBucket, key, s3Url: `s3://${uploadBucket}/${key}` }
+    })
+    appendLog(`trim:done ms=${Date.now() - t0} s3Url=${trimmedPtr.s3Url}`)
+    videoPtr = { bucket: trimmedPtr.bucket, key: trimmedPtr.key }
+  }
 
   const legacyIntroSecondsRaw = input.introSeconds != null ? Number(input.introSeconds) : 0
   const legacyIntroSeconds = Number.isFinite(legacyIntroSecondsRaw) ? Math.max(0, Math.min(30, Math.round(legacyIntroSecondsRaw))) : 0

@@ -3,6 +3,7 @@ import type { VideoMasterV1Input } from '../../features/media-jobs/types'
 import { createMp4WithFrozenFirstFrame, createMp4WithTitleImageIntro } from '../../services/ffmpeg/introPipeline'
 import { burnScreenTitleIntoMp4, downloadS3ObjectToFile, uploadFileToS3, ymdToFolder } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, downloadOverlayPngToFile, probeVideoDisplayDimensions, withTempDir } from '../../services/ffmpeg/visualPipeline'
+import { trimMp4Local } from '../../services/ffmpeg/trimPipeline'
 import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -30,6 +31,34 @@ export async function runVideoMasterV1Job(
       ? Number(input.videoDurationSeconds)
       : null
 
+  const edit = (input as any).edit && typeof (input as any).edit === 'object' ? (input as any).edit : null
+  const trimStartRaw = edit && (edit as any).trimStartSeconds != null ? Number((edit as any).trimStartSeconds) : null
+  const trimEndRaw = edit && (edit as any).trimEndSeconds != null ? Number((edit as any).trimEndSeconds) : null
+  const trimStart = trimStartRaw != null && Number.isFinite(trimStartRaw) ? Math.max(0, trimStartRaw) : null
+  const trimEnd = trimEndRaw != null && Number.isFinite(trimEndRaw) ? Math.max(0, trimEndRaw) : null
+  if (trimStart != null || trimEnd != null) {
+    const startSeconds = trimStart != null ? trimStart : 0
+    const endSeconds = trimEnd != null ? trimEnd : null
+    const folder = ymdToFolder(dateYmd)
+    const key = `video-trim/${folder}/${productionUlid}/${randomUUID()}/${originalLeaf}`
+    out = await withTempDir('bacs-video-master-trim-', async (tmpDir) => {
+      const inPath = path.join(tmpDir, 'in.mp4')
+      const outPath = path.join(tmpDir, 'trim.mp4')
+      await downloadS3ObjectToFile(masteredVideoPtr.bucket, masteredVideoPtr.key, inPath)
+      const { durationSeconds: trimmedDuration } = await trimMp4Local({
+        inPath,
+        outPath,
+        startSeconds,
+        endSeconds,
+        logPaths,
+      })
+      await uploadFileToS3(uploadBucket, key, outPath, 'video/mp4')
+      if (trimmedDuration != null && Number.isFinite(trimmedDuration) && trimmedDuration > 0) durationSeconds = trimmedDuration
+      return { bucket: uploadBucket, key, s3Url: `s3://${uploadBucket}/${key}` }
+    })
+    masteredVideoPtr = { bucket: out.bucket, key: out.key }
+  }
+
   if (intro && intro.kind) {
     if (String(intro.kind) === 'title_image') {
       const holdSeconds = Number((intro as any).holdSeconds || 0)
@@ -40,7 +69,7 @@ export async function runVideoMasterV1Job(
         dateYmd,
         productionUlid,
         originalLeaf,
-        video: input.video,
+        video: masteredVideoPtr,
         titleImage,
         holdSeconds,
         logPaths,
@@ -54,7 +83,7 @@ export async function runVideoMasterV1Job(
         dateYmd,
         productionUlid,
         originalLeaf,
-        video: input.video,
+        video: masteredVideoPtr,
         freezeSeconds: introSeconds,
         logPaths,
       })

@@ -371,6 +371,35 @@ export async function create(
       throw new DomainError('invalid_intro', 'invalid_intro', 400)
     }
   }
+
+  // Production edit recipe (Plan 53): trim applied per production (original upload remains immutable).
+  // Config shape:
+  // - edit: { trimStartSeconds?: number, trimEndSeconds?: number|null } | null
+  {
+    const editRaw = mergedConfig.edit
+    if (editRaw == null || editRaw === false) {
+      mergedConfig.edit = null
+    } else if (typeof editRaw === 'object') {
+      const startRaw = (editRaw as any).trimStartSeconds != null ? Number((editRaw as any).trimStartSeconds) : null
+      const endRaw = (editRaw as any).trimEndSeconds != null ? Number((editRaw as any).trimEndSeconds) : null
+      const start = startRaw != null && Number.isFinite(startRaw) ? Math.max(0, Math.round(startRaw * 10) / 10) : null
+      const end = endRaw != null && Number.isFinite(endRaw) ? Math.max(0, Math.round(endRaw * 10) / 10) : null
+      const effectiveStart = start != null ? Math.min(3600, start) : null
+      const effectiveEnd = end != null ? Math.min(3600, end) : null
+      if (effectiveStart == null && effectiveEnd == null) {
+        mergedConfig.edit = null
+      } else {
+        const s = effectiveStart != null ? effectiveStart : 0
+        if (effectiveEnd != null && effectiveEnd <= s) throw new DomainError('invalid_trim_range', 'invalid_trim_range', 400)
+        // Do not store a no-op trim.
+        if (s === 0 && effectiveEnd == null) mergedConfig.edit = null
+        else mergedConfig.edit = { trimStartSeconds: s, trimEndSeconds: effectiveEnd ?? null }
+      }
+    } else {
+      throw new DomainError('invalid_edit', 'invalid_edit', 400)
+    }
+  }
+
   if (input.audioConfigId !== undefined) {
     if (input.audioConfigId == null) {
       mergedConfig.audioConfigId = null

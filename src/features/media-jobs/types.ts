@@ -1,6 +1,11 @@
 export type MediaJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'dead'
 
-export type MediaJobType = 'audio_master_v1' | 'video_master_v1' | 'upload_thumb_v1' | 'assemblyai_transcript_v1'
+export type MediaJobType =
+  | 'audio_master_v1'
+  | 'video_master_v1'
+  | 'upload_thumb_v1'
+  | 'upload_edit_proxy_v1'
+  | 'assemblyai_transcript_v1'
 
 export type MediaJobRow = {
   id: number
@@ -103,6 +108,8 @@ export type IntroV1 =
   | { kind: 'freeze_first_frame'; seconds: number }
   | { kind: 'title_image'; uploadId: number; holdSeconds: number; titleImage: S3Pointer }
 
+export type EditRecipeV1 = { trimStartSeconds?: number | null; trimEndSeconds?: number | null }
+
 export type AudioMasterV1Input = {
   productionId: number
   productionUlid: string
@@ -113,6 +120,7 @@ export type AudioMasterV1Input = {
   videoDurationSeconds: number | null
   video: S3Pointer
   music: S3Pointer
+  edit?: EditRecipeV1 | null
   screenTitle?: ScreenTitleV1 | null
   logo?: LogoOverlayV1 | null
   lowerThirdImage?: LowerThirdImageOverlayV1 | null
@@ -145,6 +153,7 @@ export type VideoMasterV1Input = {
   originalLeaf: string
   videoDurationSeconds: number | null
   video: S3Pointer
+  edit?: EditRecipeV1 | null
   screenTitle?: ScreenTitleV1 | null
   logo?: LogoOverlayV1 | null
   lowerThirdImage?: LowerThirdImageOverlayV1 | null
@@ -163,6 +172,17 @@ export type UploadThumbV1Input = {
   longEdgePx: number
 }
 
+export type UploadEditProxyV1Input = {
+  uploadId: number
+  userId: number
+  video: S3Pointer
+  outputBucket: string
+  outputKey: string
+  longEdgePx: number
+  fps: number
+  gop: number
+}
+
 export type AssemblyAiTranscriptV1Input = {
   productionId: number
 }
@@ -171,5 +191,6 @@ export type MediaJobInputByType = {
   audio_master_v1: AudioMasterV1Input
   video_master_v1: VideoMasterV1Input
   upload_thumb_v1: UploadThumbV1Input
+  upload_edit_proxy_v1: UploadEditProxyV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
 }

@@ -213,6 +213,32 @@ function parseTitleHoldSeconds(): number | null {
   }
 }
 
+function parseEditStartSeconds(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('editStart')
+    if (raw == null || raw === '') return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return null
+    return Math.min(3600, Math.round(n * 10) / 10)
+  } catch {
+    return null
+  }
+}
+
+function parseEditEndSeconds(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('editEnd')
+    if (raw == null || raw === '') return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return null
+    return Math.min(3600, Math.round(n * 10) / 10)
+  } catch {
+    return null
+  }
+}
+
 type FirstScreenMode = 'custom_image' | 'first_frame'
 
 function parseFirstScreenMode(): FirstScreenMode {
@@ -564,15 +590,42 @@ export default function ProducePage() {
   const [logoConfigAbout, setLogoConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [audioAbout, setAudioAbout] = useState<{ title: string; description: string | null } | null>(null)
   const [lowerThirdAbout, setLowerThirdAbout] = useState<{ title: string; description: string | null } | null>(null)
-  const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
-  const [screenTitlePresetAbout, setScreenTitlePresetAbout] = useState<{ title: string; description: string | null } | null>(null)
-  const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
-  const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
-  const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
-  const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
-  const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
+	const [lowerThirdConfigAbout, setLowerThirdConfigAbout] = useState<{ title: string; description: string | null } | null>(null)
+	const [screenTitlePresetAbout, setScreenTitlePresetAbout] = useState<{ title: string; description: string | null } | null>(null)
+	const [uploadPreviewMode, setUploadPreviewMode] = useState<'thumb' | 'poster' | 'none'>('thumb')
+	const [uploadThumbRetryNonce, setUploadThumbRetryNonce] = useState(0)
+  const [editStartSeconds, setEditStartSeconds] = useState<number | null>(() => parseEditStartSeconds())
+  const [editEndSeconds, setEditEndSeconds] = useState<number | null>(() => parseEditEndSeconds())
+  const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
+  const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
+	const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
+	const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
+	const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const screenTitlePreviewAutoDoneRef = useRef(false)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
+
+  useEffect(() => {
+    if (!editProxyPreviewOk) return
+    if (editStartSeconds == null && editEndSeconds == null) return
+    const v = editProxyVideoRef.current
+    if (!v) return
+    const t = Math.max(0, Number.isFinite(Number(editStartSeconds)) ? Number(editStartSeconds) : 0)
+    const seek = () => {
+      try {
+        if (Number.isFinite(v.currentTime) && Math.abs(v.currentTime - t) <= 0.05) return
+      } catch {}
+      try { v.currentTime = t } catch {}
+      try { v.pause() } catch {}
+    }
+    const onLoaded = () => seek()
+    v.addEventListener('loadedmetadata', onLoaded)
+    v.addEventListener('loadeddata', onLoaded)
+    seek()
+    return () => {
+      v.removeEventListener('loadedmetadata', onLoaded)
+      v.removeEventListener('loadeddata', onLoaded)
+    }
+  }, [editStartSeconds, editEndSeconds, editProxyPreviewOk])
 
   useEffect(() => {
     // If the inputs change, invalidate the cached preview PNG.
@@ -1400,11 +1453,13 @@ export default function ProducePage() {
     )
   }
 
-  const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
-  const poster = pickPoster(upload)
-  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
-  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
-  const sourceDeleted = !!upload.source_deleted_at
+	  const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
+	  const poster = pickPoster(upload)
+	  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
+	  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
+    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
+    const useEditProxyPreview = editProxyPreviewOk && (editStartSeconds != null || editEndSeconds != null) && !!editProxySrc
+	  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
     if (!uploadId) return
@@ -1420,28 +1475,38 @@ export default function ProducePage() {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
 
-		      const body: any = {
-		        uploadId,
-		        musicUploadId: selectedAudioId ?? null,
-		        audioConfigId: selectedAudioConfigId ?? null,
-		        logoUploadId: selectedLogoId ?? null,
-		        logoConfigId: selectedLogoConfigId ?? null,
-		        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
-		        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
-		        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
-		        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
-		        defaultStoryText: (defaultStoryText || '').trim() ? defaultStoryText : null,
+			      const body: any = {
+			        uploadId,
+			        musicUploadId: selectedAudioId ?? null,
+			        audioConfigId: selectedAudioConfigId ?? null,
+			        logoUploadId: selectedLogoId ?? null,
+			        logoConfigId: selectedLogoConfigId ?? null,
+			        lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
+			        lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
+			        screenTitlePresetId: selectedScreenTitlePresetId ?? null,
+			        screenTitleText: (screenTitleText || '').trim() ? screenTitleText : null,
+			        defaultStoryText: (defaultStoryText || '').trim() ? defaultStoryText : null,
+			      }
+
+            const config: any = {}
+            if (editStartSeconds != null || editEndSeconds != null) {
+              config.edit = {
+                trimStartSeconds: editStartSeconds ?? 0,
+                trimEndSeconds: editEndSeconds ?? null,
+              }
+            }
+
+		      if (firstScreenMode === 'custom_image') {
+		        if (selectedTitleUploadId == null) {
+		          throw new Error('Choose a title page image, or switch First Screen to First Frame of Video.')
+		        }
+		        config.intro = { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: firstScreenHoldSeconds || 0 }
+		      } else if (firstScreenHoldSeconds) {
+		        config.intro = { kind: 'freeze_first_frame', seconds: firstScreenHoldSeconds }
 		      }
-	      if (firstScreenMode === 'custom_image') {
-	        if (selectedTitleUploadId == null) {
-	          throw new Error('Choose a title page image, or switch First Screen to First Frame of Video.')
-	        }
-	        body.config = { intro: { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: firstScreenHoldSeconds || 0 } }
-	      } else if (firstScreenHoldSeconds) {
-	        body.config = { intro: { kind: 'freeze_first_frame', seconds: firstScreenHoldSeconds } }
-	      }
-	      const trimmedName = productionName.trim()
-	      if (trimmedName) body.name = trimmedName
+            if (Object.keys(config).length) body.config = config
+		      const trimmedName = productionName.trim()
+		      if (trimmedName) body.name = trimmedName
 
       const res = await fetch('/api/productions', {
         method: 'POST',
@@ -1467,53 +1532,102 @@ export default function ProducePage() {
     }
   }
 
-  return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back</a>
-        <header style={{ margin: '12px 0 18px' }}>
-          <h1 style={{ margin: '0 0 6px', fontSize: 28 }}>Build Production</h1>
-          <div style={{ color: '#bbb' }}>{displayName}</div>
-        </header>
-
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-	          <div>
-	            {uploadPreviewSrc ? (
-	              <div
+	  return (
+	    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+	      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+	        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+	          <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back</a>
+	          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	            {!sourceDeleted ? (
+	              <a
+	                href={`/edit-video?upload=${encodeURIComponent(String(uploadId))}&from=${fromHere}`}
+	                style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}
+	              >
+	                Edit Video
+	              </a>
+	            ) : null}
+	            {editStartSeconds != null || editEndSeconds != null ? (
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  setEditStartSeconds(null)
+	                  setEditEndSeconds(null)
+	                  setEditProxyPreviewOk(true)
+	                  pushQueryParams({ editStart: null, editEnd: null })
+	                }}
 	                style={{
-	                  width: 280,
-	                  aspectRatio: `${computePreviewAspectRatio(upload)}`,
-	                  borderRadius: 12,
-	                  background: '#111',
-	                  overflow: 'hidden',
-	                  position: 'relative',
+	                  padding: '8px 10px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(255,255,255,0.18)',
+	                  background: '#0c0c0c',
+	                  color: '#fff',
+	                  fontWeight: 800,
+	                  cursor: 'pointer',
+	                  fontSize: 12,
 	                }}
 	              >
-		                <img
-		                  src={uploadPreviewSrc}
-		                  alt="poster"
-		                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-		                  onError={() => {
-	                    if (uploadPreviewMode === 'thumb') {
-	                      if (poster) {
-	                        setUploadPreviewMode('poster')
-	                        return
-	                      }
-	                      if (uploadThumbRetryNonce < 8) {
-	                        window.setTimeout(() => setUploadThumbRetryNonce((n) => n + 1), 1500)
-	                        return
-	                      }
-	                      setUploadPreviewMode('none')
-	                      return
-	                    }
-	                    setUploadPreviewMode('none')
-		                  }}
-		                />
+	                Clear Trim
+	              </button>
+	            ) : null}
+	          </div>
+	        </div>
+	        <header style={{ margin: '12px 0 18px' }}>
+	          <h1 style={{ margin: '0 0 6px', fontSize: 28 }}>Build Production</h1>
+	          <div style={{ color: '#bbb' }}>{displayName}</div>
+	        </header>
 
-		                {firstScreenMode === 'custom_image' && selectedTitlePage ? (
-		                  <img
-		                    src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
-		                    alt=""
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+		          <div>
+		            {uploadPreviewSrc || useEditProxyPreview ? (
+		              <div
+		                style={{
+		                  width: 280,
+		                  aspectRatio: `${computePreviewAspectRatio(upload)}`,
+		                  borderRadius: 12,
+		                  background: '#111',
+		                  overflow: 'hidden',
+		                  position: 'relative',
+		                }}
+		              >
+                    {useEditProxyPreview ? (
+                      <video
+                        ref={editProxyVideoRef}
+                        src={editProxySrc || undefined}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+                        onError={() => {
+                          setEditProxyPreviewOk(false)
+                        }}
+                      />
+                    ) : (
+			                  <img
+			                    src={uploadPreviewSrc || undefined}
+			                    alt="poster"
+			                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+			                    onError={() => {
+		                      if (uploadPreviewMode === 'thumb') {
+		                        if (poster) {
+		                          setUploadPreviewMode('poster')
+		                          return
+		                        }
+		                        if (uploadThumbRetryNonce < 8) {
+		                          window.setTimeout(() => setUploadThumbRetryNonce((n) => n + 1), 1500)
+		                          return
+		                        }
+		                        setUploadPreviewMode('none')
+		                        return
+		                      }
+		                      setUploadPreviewMode('none')
+			                    }}
+			                  />
+                    )}
+
+			                {firstScreenMode === 'custom_image' && selectedTitlePage ? (
+			                  <img
+			                    src={`/api/uploads/${encodeURIComponent(String(selectedTitlePage.id))}/file`}
+			                    alt=""
 		                    style={{
 		                      position: 'absolute',
 		                      inset: 0,
