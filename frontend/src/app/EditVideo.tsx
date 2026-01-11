@@ -513,7 +513,9 @@ export default function EditVideo() {
     const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
     // Allow aligning the playhead after the last thumb (end of video).
     const maxIdx = Math.max(0, thumbs.length)
-    const atEndEps = 1e-3
+    // Our scrubber operates at 0.1s resolution, so treat "within ~0.1s of the end" as the end,
+    // otherwise we can never reach the final padding position when totalEditedDuration isn't a 0.1 multiple.
+    const atEndEps = 0.11
     const idx =
       totalEditedDuration > 0 && playheadEdited >= totalEditedDuration - atEndEps
         ? maxIdx
