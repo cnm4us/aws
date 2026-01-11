@@ -284,10 +284,12 @@ export default function EditVideo() {
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current
-    if (!v || !ranges || !ranges.length) return
+    if (!v) return
     if (v.paused) {
-      const mapped = editedToOriginalTime(playheadEdited, ranges)
-      try { v.currentTime = mapped.tOriginal } catch {}
+      if (ranges && ranges.length) {
+        const mapped = editedToOriginalTime(playheadEdited, ranges)
+        try { v.currentTime = mapped.tOriginal } catch {}
+      }
       v.play().catch(() => {})
     } else {
       try { v.pause() } catch {}
@@ -466,6 +468,12 @@ export default function EditVideo() {
               </div>
             </div>
 
+            {!proxyError && durationOriginal <= 0 ? (
+              <div style={{ color: '#bbb', fontSize: 13 }}>
+                Loading video… if this stays blank, tap Play once or hit Retry above.
+              </div>
+            ) : null}
+
             <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
               <div style={{ display: 'flex', height: '100%' }}>
                 {segs.map((r, i) => {
@@ -580,7 +588,7 @@ export default function EditVideo() {
               <button
                 type="button"
                 onClick={togglePlay}
-                disabled={total <= 0}
+                disabled={Boolean(proxyError)}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
@@ -588,7 +596,7 @@ export default function EditVideo() {
                   background: '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: total <= 0 ? 'default' : 'pointer',
+                  cursor: proxyError ? 'default' : 'pointer',
                 }}
               >
                 {playing ? 'Pause' : 'Play'}
