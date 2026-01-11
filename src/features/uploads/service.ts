@@ -208,12 +208,38 @@ export async function getUploadEditProxyStream(
   if (!bucket || !key) throw new NotFoundError('not_found')
 
   const range = opts?.range ? String(opts.range) : undefined
-  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) }))
-  return {
-    contentType: resp.ContentType ? String(resp.ContentType) : 'video/mp4',
-    body: resp.Body,
-    contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
-    contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, ...(range ? { Range: range } : {}) }))
+    return {
+      contentType: resp.ContentType ? String(resp.ContentType) : 'video/mp4',
+      body: resp.Body,
+      contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
+      contentRange: (resp as any).ContentRange != null ? String((resp as any).ContentRange) : null,
+    }
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+
+    // Best-effort: enqueue proxy generation on-demand (covers existing uploads created before this feature).
+    try {
+      const sourceDeletedAt = (row as any).source_deleted_at != null ? String((row as any).source_deleted_at) : null
+      if (MEDIA_JOBS_ENABLED && !sourceDeletedAt) {
+        await enqueueJob('upload_edit_proxy_v1', {
+          uploadId: Number(row.id),
+          userId: ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? Number(ownerId) : Number(ctx.userId),
+          video: { bucket: String(row.s3_bucket), key: String(row.s3_key) },
+          outputBucket: String(UPLOAD_BUCKET),
+          outputKey: buildUploadEditProxyKey(Number(row.id)),
+          longEdgePx: 540,
+          fps: 30,
+          gop: 8,
+        })
+      }
+    } catch {}
+
+    throw new NotFoundError('not_found')
   }
 }
 

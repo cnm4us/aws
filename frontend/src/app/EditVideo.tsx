@@ -55,13 +55,14 @@ export default function EditVideo() {
   const [trimStart, setTrimStart] = useState<number | null>(initialEdits.start)
   const [trimEnd, setTrimEnd] = useState<number | null>(initialEdits.end)
   const [error, setError] = useState<string | null>(null)
+  const [retryNonce, setRetryNonce] = useState(0)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [duration, setDuration] = useState<number>(0)
   const [currentTime, setCurrentTime] = useState<number>(0)
   const [proxyError, setProxyError] = useState<string | null>(null)
 
-  const src = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
+  const src = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}` : null
   const backHref = from || (uploadId ? `/produce?upload=${encodeURIComponent(String(uploadId))}` : '/produce')
 
   const syncTime = useCallback(() => {
@@ -154,8 +155,28 @@ export default function EditVideo() {
         <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Edit Video</h1>
 
         {proxyError ? (
-          <div style={{ marginBottom: 12, color: '#ff9b9b' }}>
-            {proxyError}
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <div style={{ color: '#ff9b9b' }}>{proxyError}</div>
+            <button
+              type="button"
+              onClick={() => {
+                setProxyError(null)
+                setRetryNonce((n) => n + 1)
+                try { videoRef.current?.load?.() } catch {}
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0c0c0c',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+            >
+              Retry
+            </button>
           </div>
         ) : null}
 
@@ -254,4 +275,3 @@ export default function EditVideo() {
     </div>
   )
 }
-
