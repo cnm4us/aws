@@ -5,6 +5,7 @@ export type MediaJobType =
   | 'video_master_v1'
   | 'upload_thumb_v1'
   | 'upload_edit_proxy_v1'
+  | 'upload_timeline_sprites_v1'
   | 'assemblyai_transcript_v1'
 
 export type MediaJobRow = {
@@ -187,6 +188,21 @@ export type UploadEditProxyV1Input = {
   gop: number
 }
 
+export type UploadTimelineSpritesV1Input = {
+  uploadId: number
+  userId: number
+  proxy: S3Pointer
+  outputBucket: string
+  manifestKey: string
+  spritePrefix: string
+  intervalSeconds: number
+  tileW: number
+  tileH: number
+  cols: number
+  rows: number
+  perSprite: number
+}
+
 export type AssemblyAiTranscriptV1Input = {
   productionId: number
 }
@@ -196,5 +212,6 @@ export type MediaJobInputByType = {
   video_master_v1: VideoMasterV1Input
   upload_thumb_v1: UploadThumbV1Input
   upload_edit_proxy_v1: UploadEditProxyV1Input
+  upload_timeline_sprites_v1: UploadTimelineSpritesV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
 }

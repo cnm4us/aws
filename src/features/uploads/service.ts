@@ -14,12 +14,13 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { randomUUID } from 'crypto'
 import { MEDIA_JOBS_ENABLED, OUTPUT_BUCKET, UPLOAD_BUCKET, MAX_UPLOAD_MB, UPLOAD_PREFIX } from '../../config'
 import { sanitizeFilename, pickExtension, nowDateYmd, buildUploadKey } from '../../utils/naming'
-import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
+import { DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
+import { buildUploadTimelineManifestKey, buildUploadTimelineSpriteKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
@@ -257,6 +258,149 @@ export async function getUploadEditProxyStream(
       }
     } catch {}
 
+    throw new NotFoundError('not_found')
+  }
+}
+
+async function readBodyText(body: any): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of body as any) {
+    if (!chunk) continue
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+async function ensureTimelineSpritesEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
+  try {
+    if (!MEDIA_JOBS_ENABLED) return
+    const uploadId = Number(uploadRow?.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const ownerId = uploadRow?.user_id != null ? Number(uploadRow.user_id) : null
+    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
+    if (sourceDeletedAt) return
+
+    // Only video uploads have edit proxies/timelines.
+    const kind = String(uploadRow?.kind || 'video').toLowerCase()
+    if (kind !== 'video') return
+
+    // Require the edit proxy to exist before enqueuing.
+    const proxyKey = buildUploadEditProxyKey(uploadId)
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
+    } catch {
+      return
+    }
+
+    let alreadyQueued = false
+    try {
+      const db = getPool()
+      const [rows] = await db.query(
+        `SELECT id
+           FROM media_jobs
+          WHERE type = 'upload_timeline_sprites_v1'
+            AND status IN ('pending','processing')
+            AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+          ORDER BY id DESC
+          LIMIT 1`,
+        [String(uploadId)]
+      )
+      alreadyQueued = (rows as any[]).length > 0
+    } catch {}
+    if (alreadyQueued) return
+
+    const userIdForJob = ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
+    if (!userIdForJob) return
+
+    await enqueueJob('upload_timeline_sprites_v1', {
+      uploadId,
+      userId: userIdForJob,
+      proxy: { bucket: String(UPLOAD_BUCKET), key: proxyKey },
+      outputBucket: String(UPLOAD_BUCKET),
+      manifestKey: buildUploadTimelineManifestKey(uploadId),
+      spritePrefix: buildUploadTimelineSpritePrefix(uploadId),
+      intervalSeconds: 1,
+      tileW: 96,
+      tileH: 54,
+      cols: 10,
+      rows: 6,
+      perSprite: 60,
+    })
+  } catch {
+    // best-effort
+  }
+}
+
+export async function getUploadTimelineManifest(
+  uploadId: number,
+  ctx: ServiceContext
+): Promise<any> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const key = buildUploadTimelineManifestKey(uploadId)
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    const txt = await readBodyText(resp.Body as any)
+    return JSON.parse(txt || '{}')
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+    await ensureTimelineSpritesEnqueued(row, ctx)
+    throw new NotFoundError('not_found')
+  }
+}
+
+export async function getUploadTimelineSpriteStream(
+  uploadId: number,
+  startSecond: number,
+  ctx: ServiceContext
+): Promise<{ contentType: string | null; body: any; contentLength?: number | null }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const key = buildUploadTimelineSpriteKey(uploadId, startSecond)
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    return {
+      contentType: resp.ContentType ? String(resp.ContentType) : 'image/jpeg',
+      body: resp.Body,
+      contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
+    }
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+    await ensureTimelineSpritesEnqueued(row, ctx)
     throw new NotFoundError('not_found')
   }
 }

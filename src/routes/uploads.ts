@@ -138,6 +138,51 @@ uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) =
   }
 })
 
+uploadsRouter.get('/api/uploads/:id/timeline/manifest', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
+    const data = await uploadsSvc.getUploadTimelineManifest(
+      id,
+      { userId: Number(req.user!.id) }
+    )
+    res.set('Cache-Control', 'no-store')
+    return res.json(data)
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('forbidden')
+    if (status === 404) return res.status(404).send('not_found')
+    console.error('upload timeline manifest fetch failed', err)
+    return res.status(status).send('failed')
+  }
+})
+
+uploadsRouter.get('/api/uploads/:id/timeline/sprite', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
+    const startRaw = (req.query as any)?.start
+    const start = startRaw != null && startRaw !== '' ? Number(startRaw) : 0
+    if (!Number.isFinite(start) || start < 0) return res.status(400).send('bad_start')
+
+    const { contentType, body, contentLength } = await uploadsSvc.getUploadTimelineSpriteStream(
+      id,
+      Math.floor(start),
+      { userId: Number(req.user!.id) }
+    )
+    res.set('Cache-Control', 'no-store')
+    if (contentType) res.set('Content-Type', contentType)
+    if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
+    return (body as any).pipe(res)
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).send('forbidden')
+    if (status === 404) return res.status(404).send('not_found')
+    console.error('upload timeline sprite fetch failed', err)
+    return res.status(status).send('failed')
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)

@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Range = { start: number; end: number }
+type TimelineManifestV1 = {
+  uploadId: number
+  intervalSeconds: number
+  tile: { w: number; h: number }
+  sprite: { cols: number; rows: number; perSprite: number }
+  durationSeconds: number
+  sprites: Array<{ startSecond: number; key: string }>
+}
 
 const MAX_CUTS = 20
 const MAX_SEGMENTS = MAX_CUTS + 1
@@ -141,6 +149,34 @@ function segmentEditedStarts(ranges: Range[]): number[] {
   return out
 }
 
+function buildEditedThumbSeconds(ranges: Range[], intervalSeconds: number, durationSeconds: number): number[] {
+  const interval = Math.max(1, Math.round(Number(intervalSeconds) || 1))
+  const maxSec = Math.max(0, Math.floor(Math.max(0, Number(durationSeconds) || 0) - 1e-6))
+  const out: number[] = []
+  const eps = 1e-6
+
+  for (const r of ranges) {
+    const start = Math.max(0, r.start)
+    const end = Math.max(0, r.end)
+    if (end <= start + eps) continue
+
+    const first = Math.max(0, Math.ceil(start / interval) * interval)
+    const last = Math.max(0, Math.floor((end - eps) / interval) * interval)
+    if (last >= first) {
+      for (let t = first; t <= last; t += interval) {
+        const sec = Math.max(0, Math.min(maxSec, Math.round(t)))
+        out.push(sec)
+      }
+    } else {
+      // Very short segment: include a single representative thumb.
+      const sec = Math.max(0, Math.min(maxSec, Math.floor((start + end) / 2)))
+      out.push(sec)
+    }
+  }
+
+  return out
+}
+
 export default function EditVideo() {
   const uploadId = useMemo(() => parseUploadId(), [])
   const from = useMemo(() => parseFrom(), [])
@@ -150,6 +186,9 @@ export default function EditVideo() {
   const [retryNonce, setRetryNonce] = useState(0)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [proxyError, setProxyError] = useState<string | null>(null)
+  const [timelineError, setTimelineError] = useState<string | null>(null)
+  const [timelineManifest, setTimelineManifest] = useState<TimelineManifestV1 | null>(null)
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null)
 
   const [durationOriginal, setDurationOriginal] = useState(0)
   const [ranges, setRanges] = useState<Range[] | null>(initialRanges)
@@ -271,6 +310,42 @@ export default function EditVideo() {
     }
   }, [ranges, syncFromVideo])
 
+  useEffect(() => {
+    if (!uploadId) return
+    let alive = true
+    setTimelineError(null)
+    setTimelineManifest(null)
+    fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/manifest?b=${retryNonce}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (r) => {
+        if (!alive) return
+        if (r.status === 404) {
+          setTimelineError('Generating thumbnails…')
+          setTimelineManifest(null)
+          return
+        }
+        if (!r.ok) {
+          setTimelineError('Thumbnails unavailable.')
+          setTimelineManifest(null)
+          return
+        }
+        const json = (await r.json()) as TimelineManifestV1
+        if (!alive) return
+        setTimelineManifest(json)
+        setTimelineError(null)
+      })
+      .catch(() => {
+        if (!alive) return
+        setTimelineError('Thumbnails unavailable.')
+        setTimelineManifest(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [retryNonce, uploadId])
+
   const seekEdited = useCallback((tEdited: number) => {
     if (!ranges || !ranges.length) return
     const v = videoRef.current
@@ -388,6 +463,29 @@ export default function EditVideo() {
     window.location.href = target
   }, [backHref, ranges])
 
+  const thumbs = useMemo(() => {
+    if (!ranges || !ranges.length) return null
+    if (!timelineManifest) return null
+    return buildEditedThumbSeconds(ranges, timelineManifest.intervalSeconds, timelineManifest.durationSeconds)
+  }, [ranges, timelineManifest])
+
+  useEffect(() => {
+    if (!timelineManifest || !thumbs || !thumbs.length) return
+    const sc = timelineScrollRef.current
+    if (!sc) return
+    const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
+    const idx = clamp(Math.floor(playheadEdited), 0, thumbs.length - 1)
+    const targetCenter = idx * tileW + tileW / 2
+    const desiredLeft = Math.max(0, targetCenter - sc.clientWidth / 2)
+    const maxLeft = Math.max(0, sc.scrollWidth - sc.clientWidth)
+    const clamped = Math.max(0, Math.min(maxLeft, desiredLeft))
+    try {
+      sc.scrollTo({ left: clamped, behavior: 'auto' })
+    } catch {
+      sc.scrollLeft = clamped
+    }
+  }, [playheadEdited, thumbs, timelineManifest])
+
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
   }
@@ -471,6 +569,102 @@ export default function EditVideo() {
             {!proxyError && durationOriginal <= 0 ? (
               <div style={{ color: '#bbb', fontSize: 13 }}>
                 Loading video… if this stays blank, tap Play once or hit Retry above.
+              </div>
+            ) : null}
+
+            {timelineManifest && thumbs && thumbs.length ? (
+              <div
+                style={{
+                  position: 'relative',
+                  height: Math.max(24, Number(timelineManifest.tile?.h) || 54),
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  background: 'rgba(0,0,0,0.35)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                }}
+              >
+                <div
+                  ref={timelineScrollRef}
+                  style={{
+                    height: '100%',
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
+                >
+                  <div style={{ display: 'flex', height: '100%' }}>
+                    {thumbs.map((tOrig, i) => {
+                      const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
+                      const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
+                      const cols = Math.max(1, Math.round(Number(timelineManifest.sprite?.cols) || 10))
+                      const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
+                      const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
+                      const spriteStart = Math.floor(tOrig / perSprite) * perSprite
+                      const idx = tOrig - spriteStart
+                      const col = idx % cols
+                      const row = Math.floor(idx / cols)
+                      const bgX = -col * tileW
+                      const bgY = -row * tileH
+                      const bgSize = `${tileW * cols}px ${tileH * rows}px`
+                      const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
+
+                      return (
+                        <div
+                          key={`${tOrig}-${i}`}
+                          onClick={() => {
+                            try { videoRef.current?.pause?.() } catch {}
+                            setPlaying(false)
+                            seekEdited(i)
+                          }}
+                          style={{
+                            width: tileW,
+                            height: tileH,
+                            flex: '0 0 auto',
+                            backgroundImage: `url(${spriteUrl})`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: `${bgX}px ${bgY}px`,
+                            backgroundSize: bgSize,
+                            cursor: 'pointer',
+                            borderRight: '1px solid rgba(0,0,0,0.22)',
+                          }}
+                          title={`${i}s`}
+                        />
+                      )
+                    })}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    bottom: -2,
+                    width: 2,
+                    left: '50%',
+                    transform: 'translateX(-1px)',
+                    background: '#ff3b30',
+                    pointerEvents: 'none',
+                  }}
+                />
+              </div>
+            ) : timelineError ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, color: '#bbb', fontSize: 13 }}>
+                <div>{timelineError}</div>
+                <button
+                  type="button"
+                  onClick={() => setRetryNonce((n) => n + 1)}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0c0c0c',
+                    color: '#fff',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  Retry
+                </button>
               </div>
             ) : null}
 

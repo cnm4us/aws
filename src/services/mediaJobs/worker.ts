@@ -9,10 +9,13 @@ import * as mediaJobsRepo from '../../features/media-jobs/repo'
 import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
 import { runAssemblyAiTranscriptV1Job } from '../../media/jobs/assemblyAiTranscriptV1'
 import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
+import { runUploadTimelineSpritesV1Job } from '../../media/jobs/uploadTimelineSpritesV1'
 import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
 import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
+import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
+import { buildUploadTimelineManifestKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 
 let workerTimer: ReturnType<typeof setInterval> | undefined
 let tickRunning = false
@@ -190,6 +193,61 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'upload_edit_proxy_v1') {
       const input = job.input_json as any
       const result = await runUploadEditProxyV1Job(input, { stdoutPath, stderrPath })
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+      })
+      await mediaJobsRepo.completeJob(jobId, result)
+
+      // Best-effort: enqueue timeline sprites once the edit proxy exists.
+      try {
+        const uploadId = Number(input.uploadId)
+        const userId = Number(input.userId)
+        if (Number.isFinite(uploadId) && uploadId > 0 && Number.isFinite(userId) && userId > 0) {
+          let alreadyQueued = false
+          try {
+            const db = getPool()
+            const [rows] = await db.query(
+              `SELECT id
+                 FROM media_jobs
+                WHERE type = 'upload_timeline_sprites_v1'
+                  AND status IN ('pending','processing')
+                  AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+                ORDER BY id DESC
+                LIMIT 1`,
+              [String(uploadId)]
+            )
+            alreadyQueued = (rows as any[]).length > 0
+          } catch {}
+
+          if (!alreadyQueued) {
+            await mediaJobs.enqueueJob('upload_timeline_sprites_v1', {
+              uploadId,
+              userId,
+              proxy: { bucket: String(UPLOAD_BUCKET), key: buildUploadEditProxyKey(uploadId) },
+              outputBucket: String(UPLOAD_BUCKET),
+              manifestKey: buildUploadTimelineManifestKey(uploadId),
+              spritePrefix: buildUploadTimelineSpritePrefix(uploadId),
+              intervalSeconds: 1,
+              tileW: 96,
+              tileH: 54,
+              cols: 10,
+              rows: 6,
+              perSprite: 60,
+            })
+          }
+        }
+      } catch {}
+      return
+    }
+
+    if (String(job.type) === 'upload_timeline_sprites_v1') {
+      const input = job.input_json as any
+      const result = await runUploadTimelineSpritesV1Job(input, { stdoutPath, stderrPath })
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
 
