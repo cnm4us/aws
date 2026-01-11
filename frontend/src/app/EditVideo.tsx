@@ -475,7 +475,8 @@ export default function EditVideo() {
     if (!timelineManifest || !thumbs || !thumbs.length || !sc) return
     const update = () => {
       const w = Math.max(0, sc.clientWidth || 0)
-      const pad = Math.floor(w / 2)
+      // Use ceil so we never end up 1px short of being able to align the last frame under the playhead.
+      const pad = Math.ceil(w / 2)
       setTimelinePadPx(pad)
     }
     update()
@@ -500,7 +501,11 @@ export default function EditVideo() {
     const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
     // Allow aligning the playhead after the last thumb (end of video).
     const maxIdx = Math.max(0, thumbs.length)
-    const idx = clamp(Math.floor(playheadEdited / interval), 0, maxIdx)
+    const atEndEps = 1e-3
+    const idx =
+      totalEditedDuration > 0 && playheadEdited >= totalEditedDuration - atEndEps
+        ? maxIdx
+        : clamp(Math.floor(playheadEdited / interval), 0, maxIdx)
     // With left/right padding, scrollLeft aligns the *start* of the thumb under the fixed playhead.
     const desiredLeft = Math.max(0, idx * tileW)
     const maxLeft = Math.max(0, sc.scrollWidth - sc.clientWidth)
@@ -510,7 +515,7 @@ export default function EditVideo() {
     } catch {
       sc.scrollLeft = clamped
     }
-  }, [playheadEdited, thumbs, timelineManifest, timelinePadPx])
+  }, [playheadEdited, thumbs, timelineManifest, timelinePadPx, totalEditedDuration])
 
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
