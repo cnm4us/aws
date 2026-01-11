@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/client-mediaconvert';
 import fs from 'fs';
 import path from 'path';
+import { awsRequestHandler } from './httpHandler'
 
 export type EndpointCache = {
   regions: Record<string, string>;
@@ -47,6 +48,7 @@ export async function discoverMediaConvertEndpoint(region: string): Promise<stri
   const bootstrapClient = new MediaConvertClient({
     region,
     endpoint: `https://mediaconvert.${region}.amazonaws.com`,
+    requestHandler: awsRequestHandler,
   } satisfies MediaConvertClientConfig);
 
   const resp = await bootstrapClient.send(new DescribeEndpointsCommand({ MaxResults: 1 }));
@@ -61,6 +63,5 @@ export async function discoverMediaConvertEndpoint(region: string): Promise<stri
 export async function getMediaConvertClient(region?: string): Promise<MediaConvertClient> {
   const resolvedRegion = region || getRegion();
   const endpoint = await discoverMediaConvertEndpoint(resolvedRegion);
-  return new MediaConvertClient({ region: resolvedRegion, endpoint });
+  return new MediaConvertClient({ region: resolvedRegion, endpoint, requestHandler: awsRequestHandler });
 }
-

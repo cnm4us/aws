@@ -12,6 +12,21 @@ function envBool(name: string, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+function envInt(name: string, defaultValue: number, opts?: { min?: number; max?: number }): number {
+  const raw = process.env[name]
+  if (raw == null || String(raw).trim() === '') return defaultValue
+  const n = Number(String(raw).trim())
+  if (!Number.isFinite(n)) return defaultValue
+  const rounded = Math.round(n)
+  const min = opts?.min != null ? opts.min : -Infinity
+  const max = opts?.max != null ? opts.max : Infinity
+  return Math.max(min, Math.min(max, rounded))
+}
+
+// AWS SDK HTTP pool sizing (helps when many clients request S3-backed assets in parallel).
+export const AWS_SDK_MAX_SOCKETS = envInt('AWS_SDK_MAX_SOCKETS', 200, { min: 10, max: 2000 })
+export const AWS_SDK_SOCKET_ACQUISITION_WARNING_TIMEOUT_MS = envInt('AWS_SDK_SOCKET_ACQUISITION_WARNING_TIMEOUT_MS', 1000, { min: 0, max: 60000 })
+
 // Upload/input bucket
 export const UPLOAD_BUCKET = process.env.UPLOAD_BUCKET || 'bacs-mc-uploads';
 export const UPLOAD_PREFIX = (process.env.UPLOAD_PREFIX ?? 'uploads/').replace(/^\/+/, '').replace(/\/+/g, '/');
