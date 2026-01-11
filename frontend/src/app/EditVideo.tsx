@@ -518,6 +518,54 @@ export default function EditVideo() {
               disabled={total <= 0}
             />
 
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  try { videoRef.current?.pause?.() } catch {}
+                  setPlaying(false)
+                  seekEdited(playheadEdited - 0.1)
+                }}
+                disabled={total <= 0}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: total <= 0 ? 'default' : 'pointer',
+                  minWidth: 64,
+                }}
+              >
+                ← 0.1s
+              </button>
+              <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center' }}>
+                Nudge playhead
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try { videoRef.current?.pause?.() } catch {}
+                  setPlaying(false)
+                  seekEdited(playheadEdited + 0.1)
+                }}
+                disabled={total <= 0}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: total <= 0 ? 'default' : 'pointer',
+                  minWidth: 64,
+                }}
+              >
+                0.1s →
+              </button>
+            </div>
+
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 type="button"
