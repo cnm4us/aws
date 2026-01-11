@@ -79,11 +79,18 @@ export default function EditVideo() {
     if (!v) return
     const onLoaded = () => syncTime()
     const onTime = () => syncTime()
+    const onDur = () => syncTime()
     v.addEventListener('loadedmetadata', onLoaded)
+    v.addEventListener('loadeddata', onLoaded)
+    v.addEventListener('canplay', onLoaded)
     v.addEventListener('timeupdate', onTime)
+    v.addEventListener('durationchange', onDur)
     return () => {
       v.removeEventListener('loadedmetadata', onLoaded)
+      v.removeEventListener('loadeddata', onLoaded)
+      v.removeEventListener('canplay', onLoaded)
       v.removeEventListener('timeupdate', onTime)
+      v.removeEventListener('durationchange', onDur)
     }
   }, [syncTime])
 
