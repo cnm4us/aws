@@ -554,14 +554,11 @@ export default function EditVideo() {
             onLoadedMetadata={() => syncFromVideo()}
           />
 
-          <div style={{ display: 'grid', gap: 10, padding: '12px 12px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-              <div style={{ color: '#bbb' }}>Playhead: {playheadEdited.toFixed(1)}s</div>
-              <div style={{ color: '#bbb' }}>
-                Segments: {segs.length} • Cuts: {cutCount}/{MAX_CUTS} • Total: {total > 0 ? `${total.toFixed(1)}s` : '—'}
-              </div>
-            </div>
+          <div style={{ color: '#bbb', fontSize: 13 }}>
+            Segments: {segs.length} • Cuts: {cutCount}/{MAX_CUTS} • Total: {total > 0 ? `${total.toFixed(1)}s` : '—'}
+          </div>
 
+          <div style={{ display: 'grid', gap: 10, padding: '12px 12px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)' }}>
             {!proxyError && durationOriginal <= 0 ? (
               <div style={{ color: '#bbb', fontSize: 13 }}>
                 Loading video… if this stays blank, tap Play once or hit Retry above.
@@ -569,172 +566,177 @@ export default function EditVideo() {
             ) : null}
 
             {total > 0 ? (
-              <div
-                style={{
-                  position: 'relative',
-                  height: rulerH * 2 + trackH,
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  background: 'rgba(0,0,0,0.35)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                }}
-              >
+              <>
+                <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
+                  {playheadEdited.toFixed(1)}
+                </div>
                 <div
-                  ref={timelineScrollRef}
                   style={{
-                    height: '100%',
-                    overflowX: 'hidden',
-                    overflowY: 'hidden',
-                    touchAction: 'none',
+                    position: 'relative',
+                    height: rulerH * 2 + trackH,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    background: 'rgba(0,0,0,0.35)',
+                    border: '1px solid rgba(255,255,255,0.12)',
                   }}
                 >
-                  {(() => {
-                    const stripContentW = Math.max(0, total * pxPerSecond)
-                    const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
-                    const segmentStartsEdited = segmentEditedStarts(segs)
-                    const cutBoundariesEdited = segmentStartsEdited.slice(1)
+                  <div
+                    ref={timelineScrollRef}
+                    style={{
+                      height: '100%',
+                      overflowX: 'hidden',
+                      overflowY: 'hidden',
+                      touchAction: 'none',
+                    }}
+                  >
+                    {(() => {
+                      const stripContentW = Math.max(0, total * pxPerSecond)
+                      const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
+                      const segmentStartsEdited = segmentEditedStarts(segs)
+                      const cutBoundariesEdited = segmentStartsEdited.slice(1)
 
-                    const selectAtClientX = (clientX: number) => {
-                      const sc = timelineScrollRef.current
-                      if (!sc || !segs.length) return
-                      const rect = sc.getBoundingClientRect()
-                      const x = clientX - rect.left + sc.scrollLeft - timelinePadPx
-                      const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, total))
-                      setSelectedIndex(editedTimeToSegmentIndex(tEdited, segs))
-                    }
+                      const selectAtClientX = (clientX: number) => {
+                        const sc = timelineScrollRef.current
+                        if (!sc || !segs.length) return
+                        const rect = sc.getBoundingClientRect()
+                        const x = clientX - rect.left + sc.scrollLeft - timelinePadPx
+                        const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, total))
+                        setSelectedIndex(editedTimeToSegmentIndex(tEdited, segs))
+                      }
 
-                    const renderRowHighlight = (opacity: number, withOutline: boolean) => (
-                      <>
-                        {segs.map((r, i) => {
-                          const len = Math.max(0, r.end - r.start)
-                          const wPx = len * pxPerSecond
-                          const leftPx = (segmentStartsEdited[i] || 0) * pxPerSecond
-                          const selected = i === selectedIndex
-                          if (!selected || wPx <= 0.5) return null
-                          return (
+                      const renderRowHighlight = (opacity: number, withOutline: boolean) => (
+                        <>
+                          {segs.map((r, i) => {
+                            const len = Math.max(0, r.end - r.start)
+                            const wPx = len * pxPerSecond
+                            const leftPx = (segmentStartsEdited[i] || 0) * pxPerSecond
+                            const selected = i === selectedIndex
+                            if (!selected || wPx <= 0.5) return null
+                            return (
+                              <div
+                                key={`sel-${opacity}-${i}-${r.start}-${r.end}`}
+                                style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  bottom: 0,
+                                  left: leftPx,
+                                  width: wPx,
+                                  background: `rgba(10,132,255,${opacity})`,
+                                  boxShadow: withOutline ? 'inset 0 0 0 2px rgba(10,132,255,0.65)' : 'none',
+                                  pointerEvents: 'none',
+                                }}
+                              />
+                            )
+                          })}
+                        </>
+                      )
+
+                      const renderBoundaries = (color: string, alpha: number) => (
+                        <>
+                          {cutBoundariesEdited.map((t, i) => (
                             <div
-                              key={`sel-${opacity}-${i}-${r.start}-${r.end}`}
+                              key={`b-${color}-${i}-${t}`}
                               style={{
                                 position: 'absolute',
                                 top: 0,
                                 bottom: 0,
-                                left: leftPx,
-                                width: wPx,
-                                background: `rgba(10,132,255,${opacity})`,
-                                boxShadow: withOutline ? 'inset 0 0 0 2px rgba(10,132,255,0.65)' : 'none',
+                                left: t * pxPerSecond,
+                                width: 2,
+                                transform: 'translateX(-1px)',
+                                background: `rgba(${color},${alpha})`,
                                 pointerEvents: 'none',
                               }}
                             />
-                          )
-                        })}
-                      </>
-                    )
+                          ))}
+                        </>
+                      )
 
-                    const renderBoundaries = (color: string, alpha: number) => (
-                      <>
-                        {cutBoundariesEdited.map((t, i) => (
-                          <div
-                            key={`b-${color}-${i}-${t}`}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              bottom: 0,
-                              left: t * pxPerSecond,
-                              width: 2,
-                              transform: 'translateX(-1px)',
-                              background: `rgba(${color},${alpha})`,
-                              pointerEvents: 'none',
-                            }}
-                          />
-                        ))}
-                      </>
-                    )
-
-                    return (
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateRows: `${rulerH}px ${trackH}px ${rulerH}px`,
-                          height: '100%',
-                          width: stripTotalW,
-                          minWidth: stripTotalW,
-                        }}
-                      >
-                        <div style={{ display: 'flex', height: rulerH }}>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                          <div
-                            onClick={(e) => selectAtClientX(e.clientX)}
-                            style={{
-                              position: 'relative',
-                              width: stripContentW,
-                              height: rulerH,
-                              flex: '0 0 auto',
-                              cursor: 'pointer',
-                              background: 'rgba(255,255,255,0.02)',
-                              backgroundImage: rulerBg,
-                            }}
-                          >
-                            {renderRowHighlight(0.2, true)}
-                            {renderBoundaries('255,255,255', 0.65)}
+                      return (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateRows: `${rulerH}px ${trackH}px ${rulerH}px`,
+                            height: '100%',
+                            width: stripTotalW,
+                            minWidth: stripTotalW,
+                          }}
+                        >
+                          <div style={{ display: 'flex', height: rulerH }}>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                            <div
+                              onClick={(e) => selectAtClientX(e.clientX)}
+                              style={{
+                                position: 'relative',
+                                width: stripContentW,
+                                height: rulerH,
+                                flex: '0 0 auto',
+                                cursor: 'pointer',
+                                background: 'rgba(255,255,255,0.02)',
+                                backgroundImage: rulerBg,
+                              }}
+                            >
+                              {renderRowHighlight(0.2, true)}
+                              {renderBoundaries('255,255,255', 0.65)}
+                            </div>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                           </div>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                        </div>
 
-                        <div style={{ display: 'flex', height: trackH }}>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                          <div
-                            onClick={(e) => selectAtClientX(e.clientX)}
-                            style={{
-                              position: 'relative',
-                              width: stripContentW,
-                              height: trackH,
-                              flex: '0 0 auto',
-                              cursor: 'pointer',
-                              background: 'rgba(0,0,0,0.12)',
-                            }}
-                          >
-                            {renderRowHighlight(0.1, false)}
-                            {renderBoundaries('255,255,255', 0.28)}
+                          <div style={{ display: 'flex', height: trackH }}>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                            <div
+                              onClick={(e) => selectAtClientX(e.clientX)}
+                              style={{
+                                position: 'relative',
+                                width: stripContentW,
+                                height: trackH,
+                                flex: '0 0 auto',
+                                cursor: 'pointer',
+                                background: 'rgba(0,0,0,0.12)',
+                              }}
+                            >
+                              {renderRowHighlight(0.1, false)}
+                              {renderBoundaries('255,255,255', 0.28)}
+                            </div>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                           </div>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                        </div>
 
-                        <div style={{ display: 'flex', height: rulerH }}>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                          <div
-                            onClick={(e) => selectAtClientX(e.clientX)}
-                            style={{
-                              position: 'relative',
-                              width: stripContentW,
-                              height: rulerH,
-                              flex: '0 0 auto',
-                              cursor: 'pointer',
-                              background: 'rgba(255,255,255,0.015)',
-                              backgroundImage: rulerBg,
-                            }}
-                          >
-                            {renderRowHighlight(0.14, false)}
-                            {renderBoundaries('255,255,255', 0.45)}
+                          <div style={{ display: 'flex', height: rulerH }}>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                            <div
+                              onClick={(e) => selectAtClientX(e.clientX)}
+                              style={{
+                                position: 'relative',
+                                width: stripContentW,
+                                height: rulerH,
+                                flex: '0 0 auto',
+                                cursor: 'pointer',
+                                background: 'rgba(255,255,255,0.015)',
+                                backgroundImage: rulerBg,
+                              }}
+                            >
+                              {renderRowHighlight(0.14, false)}
+                              {renderBoundaries('255,255,255', 0.45)}
+                            </div>
+                            <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                           </div>
-                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                         </div>
-                      </div>
-                    )
-                  })()}
+                      )
+                    })()}
+                  </div>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: -2,
+                      bottom: -2,
+                      width: 2,
+                      left: '50%',
+                      transform: 'translateX(-1px)',
+                      background: '#ff3b30',
+                      pointerEvents: 'none',
+                    }}
+                  />
                 </div>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    bottom: -2,
-                    width: 2,
-                    left: '50%',
-                    transform: 'translateX(-1px)',
-                    background: '#ff3b30',
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
+              </>
             ) : (
               <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
                 <div style={{ display: 'flex', height: '100%' }}>
