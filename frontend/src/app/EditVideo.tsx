@@ -512,12 +512,45 @@ export default function EditVideo() {
       segIndexByThumb.push(segIdx)
     }
 
-    const boundaryStarts = new Set<number>()
-    boundaryStarts.add(0)
-    for (let i = 1; i < segIndexByThumb.length; i++) {
-      if (segIndexByThumb[i] !== segIndexByThumb[i - 1]) boundaryStarts.add(i)
+    // Cut markers in edited time (sub-second offsets inside a 1s tile).
+    const cutBoundaryStarts = new Set<number>()
+    const markersByThumbIndex = new Map<number, number[]>()
+    cutBoundaryStarts.add(0)
+
+    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+    let acc = 0
+    for (let seg = 0; seg < ranges.length - 1; seg++) {
+      const len = Math.max(0, ranges[seg].end - ranges[seg].start)
+      acc += len
+      const boundary = acc
+      if (!Number.isFinite(boundary) || boundary < 0) continue
+      const idx = Math.floor(boundary / interval)
+      if (idx < 0 || idx > thumbs.length) continue
+      const frac = (boundary - idx * interval) / interval
+      // Integer boundary: boundary at the left edge of the next thumb.
+      if (Math.abs(frac) < 1e-6) {
+        if (idx >= 0 && idx < thumbs.length) cutBoundaryStarts.add(idx)
+        continue
+      }
+      if (idx >= 0 && idx < thumbs.length && frac > 0 && frac < 1) {
+        const list = markersByThumbIndex.get(idx) || []
+        list.push(frac)
+        markersByThumbIndex.set(idx, list)
+      }
     }
-    return { segIndexByThumb, boundaryStarts }
+
+    // Boundaries implied by segment-id changes (coarse 1s view), for safety/consistency.
+    const coarseBoundaryStarts = new Set<number>()
+    coarseBoundaryStarts.add(0)
+    for (let i = 1; i < segIndexByThumb.length; i++) {
+      if (segIndexByThumb[i] !== segIndexByThumb[i - 1]) coarseBoundaryStarts.add(i)
+    }
+
+    const boundaryStarts = new Set<number>()
+    for (const i of cutBoundaryStarts) boundaryStarts.add(i)
+    for (const i of coarseBoundaryStarts) boundaryStarts.add(i)
+
+    return { segIndexByThumb, boundaryStarts, markersByThumbIndex }
   }, [ranges, thumbs, timelineManifest])
 
   useEffect(() => {
@@ -704,6 +737,7 @@ export default function EditVideo() {
                           const segIdx = filmstripSegments?.segIndexByThumb?.[i] ?? 0
                           const isSelected = segIdx === selectedIndex
                           const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
+                          const markers = filmstripSegments?.markersByThumbIndex?.get(i) || []
 
                           return (
                             <div
@@ -720,7 +754,7 @@ export default function EditVideo() {
                                 cursor: 'pointer',
                                 borderRight: '1px solid rgba(0,0,0,0.22)',
                               }}
-                              title={`${i}s`}
+                              title={`Segment ${segIdx + 1}`}
                             >
                               <div
                                 style={{
@@ -755,6 +789,25 @@ export default function EditVideo() {
                                     pointerEvents: 'none',
                                   }}
                                 />
+                              ) : null}
+                              {markers.length ? (
+                                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                                  {markers.map((frac, mi) => (
+                                    <div
+                                      key={`${i}-m-${mi}`}
+                                      style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        bottom: 0,
+                                        left: `${Math.max(0, Math.min(1, frac)) * 100}%`,
+                                        width: 2,
+                                        transform: 'translateX(-1px)',
+                                        background: 'rgba(255,255,255,0.9)',
+                                        boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                                      }}
+                                    />
+                                  ))}
+                                </div>
                               ) : null}
                             </div>
                           )
