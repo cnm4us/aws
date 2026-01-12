@@ -833,6 +833,69 @@ export default function ProducePage() {
     }
   }, [editProxyPreviewOk, editPreviewRanges, editPreviewSeekSeconds])
 
+  // Some browsers (notably iOS Safari) can fire timeupdate events sparsely for inline video.
+  // Use a lightweight RAF loop while playing so the scrubber stays in sync.
+  useEffect(() => {
+    if (!editProxyPreviewOk) return
+    if (!editProxyPlaying) return
+    const v = editProxyVideoRef.current
+    if (!v) return
+    if (!editPreviewRanges || !editPreviewRanges.length) return
+
+    const boundaryNudge = 0.07
+    const eps = 0.06
+    let raf = 0
+
+    const tick = () => {
+      const vv = editProxyVideoRef.current
+      if (!vv) return
+      if (vv.paused) return
+
+      const rangesForMap = clampRangesToDuration(editPreviewRanges, vv.duration)
+      if (!rangesForMap.length) return
+
+      const orig = Number.isFinite(vv.currentTime) ? vv.currentTime : 0
+      let idx = -1
+      for (let i = 0; i < rangesForMap.length; i++) {
+        if (orig + eps < rangesForMap[i].start) {
+          idx = i
+          break
+        }
+        if (orig >= rangesForMap[i].start - eps && orig <= rangesForMap[i].end + eps) {
+          idx = i
+          break
+        }
+      }
+      if (idx === -1) idx = rangesForMap.length - 1
+      const r = rangesForMap[idx]
+
+      if (orig < r.start - eps) {
+        try { vv.currentTime = r.start } catch {}
+      } else if (orig > r.end - eps) {
+        const next = rangesForMap[idx + 1]
+        if (next) {
+          const maxStart = Math.max(next.start, next.end - boundaryNudge)
+          const target = clamp(next.start + boundaryNudge, next.start, maxStart)
+          try { vv.currentTime = target } catch {}
+        } else {
+          try { vv.pause() } catch {}
+          setEditProxyPlaying(false)
+          return
+        }
+      }
+
+      const mapped = originalToEditedTime(Number.isFinite(vv.currentTime) ? vv.currentTime : 0, rangesForMap)
+      setEditProxyPlayheadEdited(Math.round(mapped.tEdited * 10) / 10)
+
+      raf = window.requestAnimationFrame(tick)
+    }
+
+    raf = window.requestAnimationFrame(tick)
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf)
+    }
+  }, [editProxyPreviewOk, editProxyPlaying, editPreviewRanges])
+
   const seekEditPreviewEdited = useCallback((tEdited: number) => {
     const v = editProxyVideoRef.current
     if (!v) return
