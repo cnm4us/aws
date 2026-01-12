@@ -27,12 +27,6 @@ export function getPool(): DB {
     dateStrings: true,
   });
 
-  const close = async () => {
-    try { await pool!.end(); } catch {}
-  };
-  process.on('SIGINT', close);
-  process.on('SIGTERM', close);
-
   return pool;
 }
 
