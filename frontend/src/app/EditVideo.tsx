@@ -638,7 +638,7 @@ export default function EditVideo() {
                   }}
                 >
                   <div style={{ display: 'flex', height: '100%' }}>
-                    <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                    <div style={{ display: 'inline-flex', height: '100%', paddingLeft: timelinePadPx, paddingRight: timelinePadPx, boxSizing: 'content-box', minWidth: 'max-content' }}>
                     {thumbs.map((tOrig, i) => {
                       const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
                       const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
@@ -678,7 +678,7 @@ export default function EditVideo() {
                         />
                       )
                     })}
-                    <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                    </div>
                   </div>
                 </div>
                 <div
