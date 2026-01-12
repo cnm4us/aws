@@ -271,7 +271,8 @@ export default function EditVideo() {
       const orig = Number.isFinite(v.currentTime) ? v.currentTime : 0
       // Enforce playback within kept ranges.
       const eps = 0.06
-      const jumpEps = 0.001
+      // Needs to be > eps so we're unambiguously inside the next segment.
+      const boundaryNudge = 0.07
       // Find the first range that could contain or follow orig.
       let idx = -1
       for (let i = 0; i < ranges.length; i++) {
@@ -291,8 +292,8 @@ export default function EditVideo() {
       } else if (orig > r.end - eps) {
         const next = ranges[idx + 1]
         if (next) {
-          const maxStart = Math.max(next.start, next.end - jumpEps)
-          const target = clamp(next.start + jumpEps, next.start, maxStart)
+          const maxStart = Math.max(next.start, next.end - boundaryNudge)
+          const target = clamp(next.start + boundaryNudge, next.start, maxStart)
           try { v.currentTime = target } catch {}
         } else {
           try { v.pause() } catch {}
@@ -346,12 +347,13 @@ export default function EditVideo() {
         let target = mapped.tOriginal
         // If we're exactly on a segment boundary, nudge forward slightly so playback doesn't
         // get stuck on the previous segment's inclusive end in some browsers.
-        const jumpEps = 0.001
+        // Needs to be > the playback enforcement eps (0.06) to avoid being classified in the prior segment.
+        const boundaryNudge = 0.07
         try {
           const seg = ranges[mapped.segIndex]
           if (seg && mapped.segIndex > 0 && Math.abs(target - seg.start) < 1e-6) {
-            const maxStart = Math.max(seg.start, seg.end - jumpEps)
-            target = clamp(seg.start + jumpEps, seg.start, maxStart)
+            const maxStart = Math.max(seg.start, seg.end - boundaryNudge)
+            target = clamp(seg.start + boundaryNudge, seg.start, maxStart)
           }
         } catch {}
         try { v.currentTime = target } catch {}
