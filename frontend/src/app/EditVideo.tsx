@@ -645,9 +645,10 @@ export default function EditVideo() {
                   ref={timelineScrollRef}
                   style={{
                     height: '100%',
-                    overflowX: 'auto',
+                    // Disable user-driven scrolling; filmstrip is controlled by the scrubber / nudges.
+                    overflowX: 'hidden',
                     overflowY: 'hidden',
-                    WebkitOverflowScrolling: 'touch',
+                    touchAction: 'none',
                   }}
                 >
                   {(() => {
@@ -688,9 +689,8 @@ export default function EditVideo() {
                             <div
                               key={`${tOrig}-${i}`}
                               onClick={() => {
-                                try { videoRef.current?.pause?.() } catch {}
-                                setPlaying(false)
-                                seekEdited(i * interval)
+                                // Select the segment without moving the filmstrip/playhead.
+                                setSelectedIndex(segIdx)
                               }}
                               style={{
                                 position: 'relative',
