@@ -166,6 +166,7 @@ export default function EditVideo() {
 
   const [retryNonce, setRetryNonce] = useState(0)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const initialSeekDoneRef = useRef(false)
   const [proxyError, setProxyError] = useState<string | null>(null)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelinePadPx, setTimelinePadPx] = useState(0)
@@ -183,6 +184,10 @@ export default function EditVideo() {
 
   const totalEditedDuration = useMemo(() => (ranges ? sumRanges(ranges) : 0), [ranges])
   const cutCount = useMemo(() => (ranges ? Math.max(0, ranges.length - 1) : 0), [ranges])
+
+  useEffect(() => {
+    initialSeekDoneRef.current = false
+  }, [retryNonce, uploadId])
 
   // Ensure we have a duration even if the browser delays `video.duration` until user interaction.
   useEffect(() => {
@@ -258,6 +263,23 @@ export default function EditVideo() {
     const onLoaded = () => {
       const d = Number.isFinite(v.duration) ? v.duration : 0
       if (d > 0) setDurationOriginal(d)
+      // If we have saved edits (ranges), show the first frame of the kept sequence even before play.
+      // This avoids showing the original frame-0 when the first kept range starts later.
+      if (!initialSeekDoneRef.current && ranges && ranges.length) {
+        const start = clamp(Number(ranges[0].start) || 0, 0, d > 0 ? d : Number.MAX_SAFE_INTEGER)
+        try {
+          v.currentTime = start
+          initialSeekDoneRef.current = true
+        } catch {
+          // Some browsers only allow seeking after metadata is fully ready; retry shortly.
+          setTimeout(() => {
+            try {
+              v.currentTime = start
+              initialSeekDoneRef.current = true
+            } catch {}
+          }, 50)
+        }
+      }
       syncFromVideo()
     }
     const onTime = () => {
