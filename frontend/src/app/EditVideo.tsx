@@ -600,7 +600,7 @@ export default function EditVideo() {
                   style={{
                     position: 'relative',
                     height: rulerH * 2 + trackH,
-                    borderRadius: 12,
+                    borderRadius: 0,
                     overflow: 'hidden',
                     background: 'rgba(0,0,0,0.35)',
                     border: '1px solid rgba(255,255,255,0.12)',
