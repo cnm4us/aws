@@ -644,20 +644,19 @@ export default function EditVideo() {
                     const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
                     const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
                     const stripContentW = Math.max(0, thumbs.length * tileW)
+                    const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
 
                     return (
                       <div
                         style={{
                           display: 'flex',
                           height: '100%',
-                          paddingLeft: timelinePadPx,
-                          paddingRight: timelinePadPx,
-                          boxSizing: 'content-box',
                           flex: '0 0 auto',
-                          width: stripContentW,
-                          minWidth: stripContentW,
+                          width: stripTotalW,
+                          minWidth: stripTotalW,
                         }}
                       >
+                        <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                         {thumbs.map((tOrig, i) => {
                           const spriteStart = Math.floor(tOrig / perSprite) * perSprite
                           const idx = tOrig - spriteStart
@@ -692,6 +691,7 @@ export default function EditVideo() {
                             />
                           )
                         })}
+                        <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                       </div>
                     )
                   })()}
