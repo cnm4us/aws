@@ -294,7 +294,11 @@ export default function EditVideo() {
         if (next) {
           const maxStart = Math.max(next.start, next.end - boundaryNudge)
           const target = clamp(next.start + boundaryNudge, next.start, maxStart)
-          try { v.currentTime = target } catch {}
+          // Only auto-advance while playing; when paused/scrubbing we should allow the user to
+          // sit exactly on boundaries and scrub backward across a cut.
+          if (!v.paused) {
+            try { v.currentTime = target } catch {}
+          }
         } else {
           try { v.pause() } catch {}
           setPlaying(false)
