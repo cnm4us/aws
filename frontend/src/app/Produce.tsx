@@ -705,6 +705,17 @@ export default function ProducePage() {
     return null
   }, [editEndSeconds, editRanges, editStartSeconds])
 
+  const hasAnyEdit = Boolean(editPreviewRanges && editPreviewRanges.length)
+
+  // For the preview player on /produce, treat "no edits" as a single full-length range.
+  // Duration is clamped later once metadata is available.
+  const previewPlayerRanges: Range[] | null = useMemo(() => {
+    if (hasAnyEdit) return editPreviewRanges
+    return [{ start: 0, end: Number.POSITIVE_INFINITY }]
+  }, [editPreviewRanges, hasAnyEdit])
+
+  const previewPlayerSeekSeconds = hasAnyEdit ? editPreviewSeekSeconds : 0
+
   useEffect(() => {
     editProxyInitialSeekDoneRef.current = false
     setEditProxyPlaying(false)
@@ -713,10 +724,10 @@ export default function ProducePage() {
   }, [editRanges, editStartSeconds, editEndSeconds, uploadId])
 
   const editPreviewDurationFallback = useMemo(() => {
-    const finite = (editPreviewRanges || []).filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+    const finite = (previewPlayerRanges || []).filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
     const total = sumRanges(finite)
     return Number.isFinite(total) && total > 0 ? total : 0
-  }, [editPreviewRanges])
+  }, [previewPlayerRanges])
 
   useEffect(() => {
     // Enable the scrubber even before the video metadata loads by using the URL ranges as a fallback.
@@ -725,14 +736,12 @@ export default function ProducePage() {
 
   useEffect(() => {
     if (!editProxyPreviewOk) return
-    const hasAnyEdit = Boolean(editPreviewRanges && editPreviewRanges.length)
-    if (!hasAnyEdit) return
     const v = editProxyVideoRef.current
     if (!v) return
-    const t = Math.max(0, editPreviewSeekSeconds)
+    const t = Math.max(0, previewPlayerSeekSeconds)
     const boundaryNudge = 0.07
 
-    const clampRanges = (): Range[] => clampRangesToDuration(editPreviewRanges, v.duration)
+    const clampRanges = (): Range[] => clampRangesToDuration(previewPlayerRanges, v.duration)
 
     const applyInitialSeek = () => {
       if (editProxyInitialSeekDoneRef.current) return
@@ -831,7 +840,7 @@ export default function ProducePage() {
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
     }
-  }, [editProxyPreviewOk, editPreviewRanges, editPreviewSeekSeconds])
+  }, [editProxyPreviewOk, previewPlayerRanges, previewPlayerSeekSeconds])
 
   // Some browsers (notably iOS Safari) can fire timeupdate events sparsely for inline video.
   // Use a lightweight RAF loop while playing so the scrubber stays in sync.
@@ -840,7 +849,7 @@ export default function ProducePage() {
     if (!editProxyPlaying) return
     const v = editProxyVideoRef.current
     if (!v) return
-    if (!editPreviewRanges || !editPreviewRanges.length) return
+    if (!previewPlayerRanges || !previewPlayerRanges.length) return
 
     const boundaryNudge = 0.07
     const eps = 0.06
@@ -851,7 +860,7 @@ export default function ProducePage() {
       if (!vv) return
       if (vv.paused) return
 
-      const rangesForMap = clampRangesToDuration(editPreviewRanges, vv.duration)
+      const rangesForMap = clampRangesToDuration(previewPlayerRanges, vv.duration)
       if (!rangesForMap.length) return
 
       const orig = Number.isFinite(vv.currentTime) ? vv.currentTime : 0
@@ -894,24 +903,24 @@ export default function ProducePage() {
     return () => {
       if (raf) window.cancelAnimationFrame(raf)
     }
-  }, [editProxyPreviewOk, editProxyPlaying, editPreviewRanges])
+  }, [editProxyPreviewOk, editProxyPlaying, previewPlayerRanges])
 
   const seekEditPreviewEdited = useCallback((tEdited: number) => {
     const v = editProxyVideoRef.current
     if (!v) return
-    const rangesForMap = clampRangesToDuration(editPreviewRanges, v.duration)
+    const rangesForMap = clampRangesToDuration(previewPlayerRanges, v.duration)
     if (!rangesForMap.length) return
     const total = sumRanges(rangesForMap)
     const t = Math.max(0, Math.min(total, Math.round(Number(tEdited) * 10) / 10))
     setEditProxyPlayheadEdited(t)
     const mapped = editedToOriginalTime(t, rangesForMap)
     try { v.currentTime = mapped.tOriginal } catch {}
-  }, [editPreviewRanges])
+  }, [previewPlayerRanges])
 
   const toggleEditPreviewPlay = useCallback(() => {
     const v = editProxyVideoRef.current
     if (!v) return
-    const rangesForMap = clampRangesToDuration(editPreviewRanges, v.duration)
+    const rangesForMap = clampRangesToDuration(previewPlayerRanges, v.duration)
     if (!rangesForMap.length) return
     const boundaryNudge = 0.07
     if (v.paused) {
@@ -935,7 +944,7 @@ export default function ProducePage() {
       setEditProxyPlaying(false)
       try { v.pause() } catch {}
     }
-  }, [editPreviewRanges, editProxyPlayheadEdited])
+  }, [previewPlayerRanges, editProxyPlayheadEdited])
 
   useEffect(() => {
     // If the inputs change, invalidate the cached preview PNG.
@@ -1768,9 +1777,9 @@ export default function ProducePage() {
 		  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
 		  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
 	    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
-	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc && !!(editPreviewRanges && editPreviewRanges.length)
+	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc
 	    const editProxyPreviewSrc =
-	      useEditProxyPreview && editPreviewSeekSeconds > 0 ? `${editProxySrc}#t=${encodeURIComponent(String(editPreviewSeekSeconds))}` : editProxySrc
+	      useEditProxyPreview && previewPlayerSeekSeconds > 0 ? `${editProxySrc}#t=${encodeURIComponent(String(previewPlayerSeekSeconds))}` : editProxySrc
 	    const editProxyDurationMax = useEditProxyPreview
 	      ? (editProxyDurationEdited > 0 ? editProxyDurationEdited : editPreviewDurationFallback)
 	      : 0
@@ -1917,6 +1926,7 @@ export default function ProducePage() {
 	                      <video
 	                        ref={editProxyVideoRef}
 	                        src={editProxyPreviewSrc || undefined}
+	                        controls={false}
 	                        playsInline
 	                        preload="auto"
 	                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
