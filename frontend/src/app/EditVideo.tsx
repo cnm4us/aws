@@ -1,16 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Range = { start: number; end: number }
-type TimelineManifestV1 = {
-  uploadId: number
-  intervalSeconds: number
-  tile: { w: number; h: number }
-  sprite: { cols: number; rows: number; perSprite: number }
-  durationSeconds: number
-  sprites: Array<{ startSecond: number; key: string }>
-}
-
-type TimelineTile = { origSecond: number; widthScale: number }
 
 const MAX_CUTS = 20
 const MAX_SEGMENTS = MAX_CUTS + 1
@@ -162,32 +152,6 @@ function editedTimeToSegmentIndex(tEdited: number, ranges: Range[]): number {
   return Math.max(0, ranges.length - 1)
 }
 
-function buildEditedTimelineTiles(ranges: Range[], intervalSeconds: number, durationSeconds: number): TimelineTile[] {
-  const interval = Math.max(1, Math.round(Number(intervalSeconds) || 1))
-  const maxSec = Math.max(0, Math.floor(Math.max(0, Number(durationSeconds) || 0) - 1e-6))
-  const totalEdited = sumRanges(ranges)
-  if (!Number.isFinite(totalEdited) || totalEdited <= 0) return []
-
-  const eps = 1e-3
-  const full = Math.floor((totalEdited + 1e-6) / interval)
-  const rem = totalEdited - full * interval
-
-  const out: TimelineTile[] = []
-  for (let i = 0; i < full; i++) {
-    const tEdited = i * interval + eps
-    const mapped = editedToOriginalTime(tEdited, ranges)
-    const sec = clamp(Math.floor(mapped.tOriginal), 0, maxSec)
-    out.push({ origSecond: sec, widthScale: 1 })
-  }
-  if (rem > 1e-6) {
-    const tEdited = full * interval + eps
-    const mapped = editedToOriginalTime(tEdited, ranges)
-    const sec = clamp(Math.floor(mapped.tOriginal), 0, maxSec)
-    out.push({ origSecond: sec, widthScale: clamp(rem / interval, 0, 1) })
-  }
-  return out
-}
-
 export default function EditVideo() {
   const uploadId = useMemo(() => parseUploadId(), [])
   const from = useMemo(() => parseFrom(), [])
@@ -197,8 +161,6 @@ export default function EditVideo() {
   const [retryNonce, setRetryNonce] = useState(0)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [proxyError, setProxyError] = useState<string | null>(null)
-  const [timelineError, setTimelineError] = useState<string | null>(null)
-  const [timelineManifest, setTimelineManifest] = useState<TimelineManifestV1 | null>(null)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelinePadPx, setTimelinePadPx] = useState(0)
 
@@ -328,47 +290,7 @@ export default function EditVideo() {
     }
   }, [durationOriginal, ranges, syncFromVideo])
 
-  useEffect(() => {
-    if (!uploadId) return
-    let alive = true
-    setTimelineError(null)
-    setTimelineManifest(null)
-    fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/manifest?b=${retryNonce}`, {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    })
-      .then(async (r) => {
-        if (!alive) return
-        if (r.status === 404) {
-          setTimelineError('Generating thumbnails…')
-          setTimelineManifest(null)
-          return
-        }
-        if (!r.ok) {
-          setTimelineError('Thumbnails unavailable.')
-          setTimelineManifest(null)
-          return
-        }
-        const json = (await r.json()) as TimelineManifestV1
-        if (!alive) return
-        setTimelineManifest(json)
-        setTimelineError(null)
-        // Fallback: if the video element hasn't provided duration yet, use the proxy's probed duration
-        // so ranges + scrubber can initialize reliably.
-        try {
-          const d = Number((json as any)?.durationSeconds || 0)
-          if (durationOriginal <= 0 && Number.isFinite(d) && d > 0) setDurationOriginal(d)
-        } catch {}
-      })
-      .catch(() => {
-        if (!alive) return
-        setTimelineError('Thumbnails unavailable.')
-        setTimelineManifest(null)
-      })
-    return () => {
-      alive = false
-    }
-  }, [durationOriginal, retryNonce, uploadId])
+  // Timeline thumbnails are intentionally not used for editing now; we keep the editor UI time-based.
 
   const seekEdited = useCallback((tEdited: number) => {
     if (!ranges || !ranges.length) return
@@ -487,73 +409,24 @@ export default function EditVideo() {
     window.location.href = target
   }, [backHref, ranges])
 
-  const tiles = useMemo(() => {
-    if (!ranges || !ranges.length) return null
-    if (!timelineManifest) return null
-    return buildEditedTimelineTiles(ranges, timelineManifest.intervalSeconds, timelineManifest.durationSeconds)
-  }, [ranges, timelineManifest])
-
-  const filmstripSegments = useMemo(() => {
-    if (!ranges || !ranges.length) return null
-    if (!timelineManifest) return null
-    if (!tiles || !tiles.length) return null
-
-    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
-    const segIndexByTile: number[] = []
-    const eps = 1e-3
-
-    for (let i = 0; i < tiles.length; i++) {
-      const tEdited = i * interval + eps
-      const mapped = editedToOriginalTime(tEdited, ranges)
-      segIndexByTile.push(clamp(mapped.segIndex, 0, ranges.length - 1))
-    }
-
-    // Cut markers in edited time (sub-second offsets inside a 1s tile).
-    const cutBoundaryStarts = new Set<number>()
-    const markersByTileIndex = new Map<number, number[]>()
-    cutBoundaryStarts.add(0)
-
-    let acc = 0
-    for (let seg = 0; seg < ranges.length - 1; seg++) {
-      const len = Math.max(0, ranges[seg].end - ranges[seg].start)
-      acc += len
-      const boundary = acc
-      if (!Number.isFinite(boundary) || boundary < 0) continue
-      const idx = Math.floor(boundary / interval)
-      if (idx < 0 || idx > tiles.length) continue
-      const frac = (boundary - idx * interval) / interval
-      // Integer boundary: boundary at the left edge of the next thumb.
-      if (Math.abs(frac) < 1e-6) {
-        if (idx >= 0 && idx < tiles.length) cutBoundaryStarts.add(idx)
-        continue
-      }
-      if (idx >= 0 && idx < tiles.length && frac > 0 && frac < 1) {
-        const list = markersByTileIndex.get(idx) || []
-        list.push(frac)
-        markersByTileIndex.set(idx, list)
-      }
-    }
-
-    // Boundaries implied by segment-id changes (coarse 1s view), for safety/consistency.
-    const coarseBoundaryStarts = new Set<number>()
-    coarseBoundaryStarts.add(0)
-    for (let i = 1; i < segIndexByTile.length; i++) {
-      if (segIndexByTile[i] !== segIndexByTile[i - 1]) coarseBoundaryStarts.add(i)
-    }
-
-    const boundaryStarts = new Set<number>()
-    for (const i of cutBoundaryStarts) boundaryStarts.add(i)
-    for (const i of coarseBoundaryStarts) boundaryStarts.add(i)
-
-    return { segIndexByTile, boundaryStarts, markersByTileIndex }
-  }, [ranges, tiles, timelineManifest])
+  const segs = ranges || []
+  const pxPerSecond = 96
+  const rulerH = 20
+  const trackH = 46
+  const rulerBg = useMemo(() => {
+    const tickMinorPx = pxPerSecond / 10
+    const tickMajorPx = pxPerSecond
+    return [
+      `repeating-linear-gradient(to right, rgba(255,255,255,0.16) 0, rgba(255,255,255,0.16) 1px, transparent 1px, transparent ${tickMinorPx}px)`,
+      `repeating-linear-gradient(to right, rgba(255,255,255,0.30) 0, rgba(255,255,255,0.30) 1px, transparent 1px, transparent ${tickMajorPx}px)`,
+    ].join(',')
+  }, [pxPerSecond])
 
   useEffect(() => {
     const sc = timelineScrollRef.current
-    if (!timelineManifest || !tiles || !tiles.length || !sc) return
+    if (!sc || !segs.length) return
     const update = () => {
       const w = Math.max(0, sc.clientWidth || 0)
-      // Use ceil so we never end up 1px short of being able to align the last frame under the playhead.
       const pad = Math.ceil(w / 2)
       setTimelinePadPx(pad)
     }
@@ -569,34 +442,26 @@ export default function EditVideo() {
       try { ro?.disconnect() } catch {}
       window.removeEventListener('resize', onResize)
     }
-  }, [tiles, timelineManifest])
+  }, [segs.length])
 
   useEffect(() => {
-    if (!timelineManifest || !tiles) return
     const sc = timelineScrollRef.current
-    if (!sc) return
-    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
-    const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
-    // Our scrubber operates at 0.1s resolution, so treat "within ~0.1s of the end" as the end,
-    // otherwise we can never reach the final padding position when totalEditedDuration isn't a 0.1 multiple.
+    if (!sc || !segs.length) return
     const atEndEps = 0.11
     const atEnd = totalEditedDuration > 0 && playheadEdited >= totalEditedDuration - atEndEps
     const maxLeft = Math.max(0, sc.scrollWidth - sc.clientWidth)
-    // Continuous mapping (filmstrip moves on every 0.1s nudge/scrub).
-    const desiredLeft = atEnd ? maxLeft : Math.max(0, (playheadEdited / interval) * tileW)
+    const desiredLeft = atEnd ? maxLeft : Math.max(0, playheadEdited * pxPerSecond)
     const clamped = Math.max(0, Math.min(maxLeft, desiredLeft))
     try {
       sc.scrollTo({ left: clamped, behavior: 'auto' })
     } catch {
       sc.scrollLeft = clamped
     }
-  }, [playheadEdited, tiles, timelineManifest, timelinePadPx, totalEditedDuration])
+  }, [playheadEdited, pxPerSecond, segs.length, timelinePadPx, totalEditedDuration])
 
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
   }
-
-  const segs = ranges || []
   const total = totalEditedDuration > 0 ? totalEditedDuration : 0
   const playheadPct = total > 0 ? clamp(playheadEdited / total, 0, 1) : 0
   const canSplit = segs.length > 0 && cutCount < MAX_CUTS && segs.length < MAX_SEGMENTS
@@ -678,15 +543,11 @@ export default function EditVideo() {
               </div>
             ) : null}
 
-            {timelineManifest && tiles && tiles.length ? (
+            {total > 0 ? (
               <div
                 style={{
                   position: 'relative',
-                  height: (() => {
-                    const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
-                    const rulerH = 20
-                    return Math.max(28, tileH + rulerH)
-                  })(),
+                  height: rulerH * 2 + trackH,
                   borderRadius: 12,
                   overflow: 'hidden',
                   background: 'rgba(0,0,0,0.35)',
@@ -697,39 +558,79 @@ export default function EditVideo() {
                   ref={timelineScrollRef}
                   style={{
                     height: '100%',
-                    // Disable user-driven scrolling; filmstrip is controlled by the scrubber / nudges.
                     overflowX: 'hidden',
                     overflowY: 'hidden',
                     touchAction: 'none',
                   }}
                 >
                   {(() => {
-                    const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
-                    const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
-                    const cols = Math.max(1, Math.round(Number(timelineManifest.sprite?.cols) || 10))
-                    const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
-                    const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
-                    const stripContentW = Math.max(0, tiles.reduce((acc, t) => acc + t.widthScale * tileW, 0))
+                    const stripContentW = Math.max(0, total * pxPerSecond)
                     const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
-                    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
-                    const rulerH = 20
-                    const pxPerSecond = tileW / interval
                     const segmentStartsEdited = segmentEditedStarts(segs)
                     const cutBoundariesEdited = segmentStartsEdited.slice(1)
-                    const tickMinor = Math.max(6, tileW / 10)
-                    const tickMajor = Math.max(20, tileW)
-                    const rulerBg = [
-                      `repeating-linear-gradient(to right, rgba(255,255,255,0.16) 0, rgba(255,255,255,0.16) 1px, transparent 1px, transparent ${tickMinor}px)`,
-                      `repeating-linear-gradient(to right, rgba(255,255,255,0.30) 0, rgba(255,255,255,0.30) 1px, transparent 1px, transparent ${tickMajor}px)`,
-                    ].join(',')
+
+                    const selectAtClientX = (clientX: number) => {
+                      const sc = timelineScrollRef.current
+                      if (!sc || !segs.length) return
+                      const rect = sc.getBoundingClientRect()
+                      const x = clientX - rect.left + sc.scrollLeft - timelinePadPx
+                      const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, total))
+                      setSelectedIndex(editedTimeToSegmentIndex(tEdited, segs))
+                    }
+
+                    const renderRowHighlight = (opacity: number, withOutline: boolean) => (
+                      <>
+                        {segs.map((r, i) => {
+                          const len = Math.max(0, r.end - r.start)
+                          const wPx = len * pxPerSecond
+                          const leftPx = (segmentStartsEdited[i] || 0) * pxPerSecond
+                          const selected = i === selectedIndex
+                          if (!selected || wPx <= 0.5) return null
+                          return (
+                            <div
+                              key={`sel-${opacity}-${i}-${r.start}-${r.end}`}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                bottom: 0,
+                                left: leftPx,
+                                width: wPx,
+                                background: `rgba(10,132,255,${opacity})`,
+                                boxShadow: withOutline ? 'inset 0 0 0 2px rgba(10,132,255,0.65)' : 'none',
+                                pointerEvents: 'none',
+                              }}
+                            />
+                          )
+                        })}
+                      </>
+                    )
+
+                    const renderBoundaries = (color: string, alpha: number) => (
+                      <>
+                        {cutBoundariesEdited.map((t, i) => (
+                          <div
+                            key={`b-${color}-${i}-${t}`}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              bottom: 0,
+                              left: t * pxPerSecond,
+                              width: 2,
+                              transform: 'translateX(-1px)',
+                              background: `rgba(${color},${alpha})`,
+                              pointerEvents: 'none',
+                            }}
+                          />
+                        ))}
+                      </>
+                    )
 
                     return (
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateRows: `${rulerH}px ${tileH}px`,
+                          gridTemplateRows: `${rulerH}px ${trackH}px ${rulerH}px`,
                           height: '100%',
-                          flex: '0 0 auto',
                           width: stripTotalW,
                           minWidth: stripTotalW,
                         }}
@@ -737,15 +638,7 @@ export default function EditVideo() {
                         <div style={{ display: 'flex', height: rulerH }}>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                           <div
-                            onClick={(e) => {
-                              const sc = timelineScrollRef.current
-                              if (!sc || !segs.length) return
-                              const rect = sc.getBoundingClientRect()
-                              const x = e.clientX - rect.left + sc.scrollLeft - timelinePadPx
-                              const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, totalEditedDuration))
-                              const idx = editedTimeToSegmentIndex(tEdited, segs)
-                              setSelectedIndex(idx)
-                            }}
+                            onClick={(e) => selectAtClientX(e.clientX)}
                             style={{
                               position: 'relative',
                               width: stripContentW,
@@ -754,129 +647,50 @@ export default function EditVideo() {
                               cursor: 'pointer',
                               background: 'rgba(255,255,255,0.02)',
                               backgroundImage: rulerBg,
-                              backgroundSize: 'auto',
                             }}
                           >
-                            {segs.map((r, i) => {
-                              const len = Math.max(0, r.end - r.start)
-                              const wPx = len * pxPerSecond
-                              const leftPx = (segmentStartsEdited[i] || 0) * pxPerSecond
-                              const selected = i === selectedIndex
-                              if (wPx <= 0.5) return null
-                              return (
-                                <div
-                                  key={`seg-${i}-${r.start}-${r.end}`}
-                                  style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    bottom: 0,
-                                    left: leftPx,
-                                    width: wPx,
-                                    background: selected ? 'rgba(10,132,255,0.20)' : 'transparent',
-                                    boxShadow: selected ? 'inset 0 0 0 2px rgba(10,132,255,0.65)' : 'none',
-                                    pointerEvents: 'none',
-                                  }}
-                                />
-                              )
-                            })}
-                            {cutBoundariesEdited.map((t, i) => (
-                              <div
-                                key={`b-${i}-${t}`}
-                                style={{
-                                  position: 'absolute',
-                                  top: 0,
-                                  bottom: 0,
-                                  left: t * pxPerSecond,
-                                  width: 2,
-                                  transform: 'translateX(-1px)',
-                                  background: 'rgba(255,255,255,0.65)',
-                                  pointerEvents: 'none',
-                                }}
-                              />
-                            ))}
+                            {renderRowHighlight(0.2, true)}
+                            {renderBoundaries('255,255,255', 0.65)}
                           </div>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                         </div>
 
-                        <div style={{ display: 'flex', height: tileH }}>
+                        <div style={{ display: 'flex', height: trackH }}>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                          {tiles.map((t, i) => {
-                            const tOrig = Number(t.origSecond) || 0
-                            const w = Math.max(1, t.widthScale * tileW)
-                            const spriteStart = Math.floor(tOrig / perSprite) * perSprite
-                            const idx = tOrig - spriteStart
-                            const col = idx % cols
-                            const row = Math.floor(idx / cols)
-                            const bgX = -col * tileW
-                            const bgY = -row * tileH
-                            const bgSize = `${tileW * cols}px ${tileH * rows}px`
-                            const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
-                            const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
-                            const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
-                            const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
+                          <div
+                            onClick={(e) => selectAtClientX(e.clientX)}
+                            style={{
+                              position: 'relative',
+                              width: stripContentW,
+                              height: trackH,
+                              flex: '0 0 auto',
+                              cursor: 'pointer',
+                              background: 'rgba(0,0,0,0.12)',
+                            }}
+                          >
+                            {renderRowHighlight(0.1, false)}
+                            {renderBoundaries('255,255,255', 0.28)}
+                          </div>
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                        </div>
 
-                            return (
-                              <div
-                                key={`${tOrig}-${i}`}
-                                onClick={() => {
-                                  // Select the segment without moving the filmstrip/playhead.
-                                  setSelectedIndex(segIdx)
-                                }}
-                                style={{
-                                  position: 'relative',
-                                  width: w,
-                                  height: tileH,
-                                  flex: '0 0 auto',
-                                  cursor: 'pointer',
-                                  borderRight: '1px solid rgba(0,0,0,0.22)',
-                                }}
-                                title={`Segment ${segIdx + 1}`}
-                              >
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    inset: 0,
-                                    backgroundImage: `url(${spriteUrl})`,
-                                    backgroundRepeat: 'no-repeat',
-                                    backgroundPosition: `${bgX}px ${bgY}px`,
-                                    backgroundSize: bgSize,
-                                  }}
-                                />
-                                {i > 0 && isBoundary ? (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      top: 0,
-                                    bottom: 0,
-                                    left: 0,
-                                    width: 2,
-                                    background: 'rgba(255,255,255,0.55)',
-                                    pointerEvents: 'none',
-                                  }}
-                                />
-                              ) : null}
-                              {markers.length ? (
-                                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                                  {markers.map((frac, mi) => (
-                                    <div
-                                      key={`${i}-m-${mi}`}
-                                      style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        bottom: 0,
-                                        left: `${Math.max(0, Math.min(1, frac)) * 100}%`,
-                                        width: 2,
-                                        transform: 'translateX(-1px)',
-                                        background: 'rgba(255,255,255,0.9)',
-                                        boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
-                                      }}
-                                    />
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          )
-                        })}
+                        <div style={{ display: 'flex', height: rulerH }}>
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                          <div
+                            onClick={(e) => selectAtClientX(e.clientX)}
+                            style={{
+                              position: 'relative',
+                              width: stripContentW,
+                              height: rulerH,
+                              flex: '0 0 auto',
+                              cursor: 'pointer',
+                              background: 'rgba(255,255,255,0.015)',
+                              backgroundImage: rulerBg,
+                            }}
+                          >
+                            {renderRowHighlight(0.14, false)}
+                            {renderBoundaries('255,255,255', 0.45)}
+                          </div>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                         </div>
                       </div>
@@ -896,29 +710,7 @@ export default function EditVideo() {
                   }}
                 />
               </div>
-            ) : timelineError ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, color: '#bbb', fontSize: 13 }}>
-                <div>{timelineError}</div>
-                <button
-                  type="button"
-                  onClick={() => setRetryNonce((n) => n + 1)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#0c0c0c',
-                    color: '#fff',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    fontSize: 12,
-                  }}
-                >
-                  Retry
-                </button>
-              </div>
-            ) : null}
-
-            {!timelineManifest || !tiles || !tiles.length ? (
+            ) : (
               <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
                 <div style={{ display: 'flex', height: '100%' }}>
                   {segs.map((r, i) => {
@@ -952,7 +744,7 @@ export default function EditVideo() {
                   }}
                 />
               </div>
-            ) : null}
+            )}
 
             <input
               type="range"
