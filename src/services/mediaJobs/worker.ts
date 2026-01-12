@@ -67,6 +67,16 @@ export function stopMediaJobsWorker() {
   }
 }
 
+export async function stopMediaJobsWorkerAndWait(opts?: { timeoutMs?: number }) {
+  stopMediaJobsWorker()
+  const timeoutMs = Math.max(0, Math.round(Number(opts?.timeoutMs ?? 1500)))
+  const deadline = Date.now() + timeoutMs
+  while (tickRunning && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return !tickRunning
+}
+
 async function runOne(job: any, attempt: any, workerId: string) {
   const jobId = Number(job.id)
   const attemptNo = Number(attempt.attempt_no)

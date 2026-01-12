@@ -5,7 +5,7 @@ import { buildServer } from './app';
 import { ensureSchema, getPool, seedRbac } from './db';
 import { getMediaConvertClient } from './aws/mediaconvert';
 import { ASSEMBLYAI_AUTOTRANSCRIBE, ASSEMBLYAI_ENABLED, MEDIA_JOBS_ENABLED, PORT, STATUS_POLL_MS } from './config';
-import { startMediaJobsWorker, stopMediaJobsWorker } from './services/mediaJobs/worker';
+import { startMediaJobsWorker, stopMediaJobsWorkerAndWait } from './services/mediaJobs/worker';
 import * as mediaJobs from './features/media-jobs/service'
 
 const db = getPool();
@@ -240,7 +240,7 @@ async function gracefulStop(signal: NodeJS.Signals) {
     pollTimer = undefined;
   }
 
-  try { stopMediaJobsWorker(); } catch {}
+  try { await stopMediaJobsWorkerAndWait({ timeoutMs: 1500 }); } catch {}
 
   const waitForPolling = (async () => {
     const deadline = Date.now() + 5000;
@@ -269,7 +269,12 @@ async function gracefulStop(signal: NodeJS.Signals) {
   try {
     await db.end();
   } catch (err) {
-    console.warn('Error closing DB pool', err);
+    const msg = String((err as any)?.message || err || '')
+    // During dev shutdown, in-flight queries (worker/request) can race the pool close.
+    // It's safe to ignore these on process exit.
+    if (!(msg.includes('closed state') || msg.includes('Pool is closed'))) {
+      console.warn('Error closing DB pool', err);
+    }
   }
 
   console.log(`Shutdown complete (${signal}).`);
