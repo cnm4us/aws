@@ -30,6 +30,7 @@ type UploadDetail = {
   size_bytes?: number | null
   width?: number | null
   height?: number | null
+  duration_seconds?: number | null
   created_at?: string | null
   source_deleted_at?: string | null
   poster_portrait_cdn?: string | null
@@ -706,13 +707,17 @@ export default function ProducePage() {
   }, [editEndSeconds, editRanges, editStartSeconds])
 
   const hasAnyEdit = Boolean(editPreviewRanges && editPreviewRanges.length)
+  const uploadDurationSeconds =
+    upload?.duration_seconds != null && Number.isFinite(Number(upload.duration_seconds)) && Number(upload.duration_seconds) > 0
+      ? Number(upload.duration_seconds)
+      : null
 
   // For the preview player on /produce, treat "no edits" as a single full-length range.
   // Duration is clamped later once metadata is available.
   const previewPlayerRanges: Range[] | null = useMemo(() => {
     if (hasAnyEdit) return editPreviewRanges
-    return [{ start: 0, end: Number.POSITIVE_INFINITY }]
-  }, [editPreviewRanges, hasAnyEdit])
+    return [{ start: 0, end: uploadDurationSeconds != null ? uploadDurationSeconds : Number.POSITIVE_INFINITY }]
+  }, [editPreviewRanges, hasAnyEdit, uploadDurationSeconds])
 
   const previewPlayerSeekSeconds = hasAnyEdit ? editPreviewSeekSeconds : 0
 
@@ -815,6 +820,7 @@ export default function ProducePage() {
     const onTime = () => {
       const rangesForMap = clampRanges()
       if (!rangesForMap.length) return
+      updateEditedDuration(rangesForMap)
       enforceRanges(rangesForMap)
       syncPlayhead(rangesForMap)
     }
@@ -862,6 +868,8 @@ export default function ProducePage() {
 
       const rangesForMap = clampRangesToDuration(previewPlayerRanges, vv.duration)
       if (!rangesForMap.length) return
+      const total = sumRanges(rangesForMap)
+      if (Number.isFinite(total) && total > 0) setEditProxyDurationEdited(total)
 
       const orig = Number.isFinite(vv.currentTime) ? vv.currentTime : 0
       let idx = -1
