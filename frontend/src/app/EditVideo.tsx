@@ -151,6 +151,17 @@ function segmentEditedStarts(ranges: Range[]): number[] {
   return out
 }
 
+function editedTimeToSegmentIndex(tEdited: number, ranges: Range[]): number {
+  const starts = segmentEditedStarts(ranges)
+  for (let i = 0; i < ranges.length; i++) {
+    const len = Math.max(0, ranges[i].end - ranges[i].start)
+    const a = starts[i]
+    const b = a + len
+    if (tEdited >= a && tEdited < b) return i
+  }
+  return Math.max(0, ranges.length - 1)
+}
+
 function buildEditedTimelineTiles(ranges: Range[], intervalSeconds: number, durationSeconds: number): TimelineTile[] {
   const interval = Math.max(1, Math.round(Number(intervalSeconds) || 1))
   const maxSec = Math.max(0, Math.floor(Math.max(0, Number(durationSeconds) || 0) - 1e-6))
@@ -702,6 +713,15 @@ export default function EditVideo() {
                     const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
                     const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
                     const rulerH = 20
+                    const pxPerSecond = tileW / interval
+                    const segmentStartsEdited = segmentEditedStarts(segs)
+                    const cutBoundariesEdited = segmentStartsEdited.slice(1)
+                    const tickMinor = Math.max(6, tileW / 10)
+                    const tickMajor = Math.max(20, tileW)
+                    const rulerBg = [
+                      `repeating-linear-gradient(to right, rgba(255,255,255,0.16) 0, rgba(255,255,255,0.16) 1px, transparent 1px, transparent ${tickMinor}px)`,
+                      `repeating-linear-gradient(to right, rgba(255,255,255,0.30) 0, rgba(255,255,255,0.30) 1px, transparent 1px, transparent ${tickMajor}px)`,
+                    ].join(',')
 
                     return (
                       <div
@@ -716,74 +736,65 @@ export default function EditVideo() {
                       >
                         <div style={{ display: 'flex', height: rulerH }}>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                          {tiles.map((t, i) => {
-                            const w = Math.max(1, t.widthScale * tileW)
-                            const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
-                            const isSelected = segIdx === selectedIndex
-                            const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
-                            const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
-                            return (
+                          <div
+                            onClick={(e) => {
+                              const sc = timelineScrollRef.current
+                              if (!sc || !segs.length) return
+                              const rect = sc.getBoundingClientRect()
+                              const x = e.clientX - rect.left + sc.scrollLeft - timelinePadPx
+                              const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, totalEditedDuration))
+                              const idx = editedTimeToSegmentIndex(tEdited, segs)
+                              setSelectedIndex(idx)
+                            }}
+                            style={{
+                              position: 'relative',
+                              width: stripContentW,
+                              height: rulerH,
+                              flex: '0 0 auto',
+                              cursor: 'pointer',
+                              background: 'rgba(255,255,255,0.02)',
+                              backgroundImage: rulerBg,
+                              backgroundSize: 'auto',
+                            }}
+                          >
+                            {segs.map((r, i) => {
+                              const len = Math.max(0, r.end - r.start)
+                              const wPx = len * pxPerSecond
+                              const leftPx = (segmentStartsEdited[i] || 0) * pxPerSecond
+                              const selected = i === selectedIndex
+                              if (wPx <= 0.5) return null
+                              return (
+                                <div
+                                  key={`seg-${i}-${r.start}-${r.end}`}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    bottom: 0,
+                                    left: leftPx,
+                                    width: wPx,
+                                    background: selected ? 'rgba(10,132,255,0.20)' : 'transparent',
+                                    boxShadow: selected ? 'inset 0 0 0 2px rgba(10,132,255,0.65)' : 'none',
+                                    pointerEvents: 'none',
+                                  }}
+                                />
+                              )
+                            })}
+                            {cutBoundariesEdited.map((t, i) => (
                               <div
-                                key={`r-${t.origSecond}-${i}`}
-                                onClick={() => setSelectedIndex(segIdx)}
+                                key={`b-${i}-${t}`}
                                 style={{
-                                  position: 'relative',
-                                  width: w,
-                                  height: rulerH,
-                                  flex: '0 0 auto',
-                                  cursor: 'pointer',
-                                  background: 'rgba(255,255,255,0.02)',
-                                  backgroundImage:
-                                    'repeating-linear-gradient(to right, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 1px, transparent 1px, transparent 10%)',
+                                  position: 'absolute',
+                                  top: 0,
+                                  bottom: 0,
+                                  left: t * pxPerSecond,
+                                  width: 2,
+                                  transform: 'translateX(-1px)',
+                                  background: 'rgba(255,255,255,0.65)',
+                                  pointerEvents: 'none',
                                 }}
-                                title={`Segment ${segIdx + 1}`}
-                              >
-                                {isSelected ? (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      inset: 0,
-                                      background: 'rgba(10,132,255,0.18)',
-                                      boxShadow: 'inset 0 0 0 2px rgba(10,132,255,0.6)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
-                                ) : null}
-                                {i > 0 && isBoundary ? (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      top: 0,
-                                      bottom: 0,
-                                      left: 0,
-                                      width: 2,
-                                      background: 'rgba(255,255,255,0.65)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
-                                ) : null}
-                                {markers.length ? (
-                                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-                                    {markers.map((frac, mi) => (
-                                      <div
-                                        key={`${i}-rm-${mi}`}
-                                        style={{
-                                          position: 'absolute',
-                                          top: 0,
-                                          bottom: 0,
-                                          left: `${Math.max(0, Math.min(1, frac)) * 100}%`,
-                                          width: 2,
-                                          transform: 'translateX(-1px)',
-                                          background: '#ff3b30',
-                                          boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          })}
+                              />
+                            ))}
+                          </div>
                           <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                         </div>
 
@@ -796,58 +807,46 @@ export default function EditVideo() {
                             const idx = tOrig - spriteStart
                             const col = idx % cols
                             const row = Math.floor(idx / cols)
-                          const bgX = -col * tileW
-                          const bgY = -row * tileH
-                          const bgSize = `${tileW * cols}px ${tileH * rows}px`
-                          const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
-                          const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
-                          const isSelected = segIdx === selectedIndex
-                          const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
-                          const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
+                            const bgX = -col * tileW
+                            const bgY = -row * tileH
+                            const bgSize = `${tileW * cols}px ${tileH * rows}px`
+                            const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
+                            const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
+                            const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
+                            const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
 
-                          return (
-                            <div
-                              key={`${tOrig}-${i}`}
-                              onClick={() => {
-                                // Select the segment without moving the filmstrip/playhead.
-                                setSelectedIndex(segIdx)
-                              }}
-                              style={{
-                                position: 'relative',
-                                width: w,
-                                height: tileH,
-                                flex: '0 0 auto',
-                                cursor: 'pointer',
-                                borderRight: '1px solid rgba(0,0,0,0.22)',
-                              }}
-                              title={`Segment ${segIdx + 1}`}
-                            >
+                            return (
                               <div
-                                style={{
-                                  position: 'absolute',
-                                  inset: 0,
-                                  backgroundImage: `url(${spriteUrl})`,
-                                  backgroundRepeat: 'no-repeat',
-                                  backgroundPosition: `${bgX}px ${bgY}px`,
-                                  backgroundSize: bgSize,
+                                key={`${tOrig}-${i}`}
+                                onClick={() => {
+                                  // Select the segment without moving the filmstrip/playhead.
+                                  setSelectedIndex(segIdx)
                                 }}
-                              />
-                              {isSelected ? (
+                                style={{
+                                  position: 'relative',
+                                  width: w,
+                                  height: tileH,
+                                  flex: '0 0 auto',
+                                  cursor: 'pointer',
+                                  borderRight: '1px solid rgba(0,0,0,0.22)',
+                                }}
+                                title={`Segment ${segIdx + 1}`}
+                              >
                                 <div
                                   style={{
                                     position: 'absolute',
                                     inset: 0,
-                                    background: 'rgba(10,132,255,0.32)',
-                                    boxShadow: 'inset 0 0 0 2px rgba(10,132,255,0.75)',
-                                    pointerEvents: 'none',
+                                    backgroundImage: `url(${spriteUrl})`,
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundPosition: `${bgX}px ${bgY}px`,
+                                    backgroundSize: bgSize,
                                   }}
                                 />
-                              ) : null}
-                              {i > 0 && isBoundary ? (
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    top: 0,
+                                {i > 0 && isBoundary ? (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: 0,
                                     bottom: 0,
                                     left: 0,
                                     width: 2,
