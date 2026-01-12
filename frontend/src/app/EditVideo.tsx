@@ -178,6 +178,31 @@ export default function EditVideo() {
   const totalEditedDuration = useMemo(() => (ranges ? sumRanges(ranges) : 0), [ranges])
   const cutCount = useMemo(() => (ranges ? Math.max(0, ranges.length - 1) : 0), [ranges])
 
+  // Ensure we have a duration even if the browser delays `video.duration` until user interaction.
+  useEffect(() => {
+    if (!uploadId) return
+    let alive = true
+    fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (r) => {
+        if (!alive) return
+        if (!r.ok) return
+        const json: any = await r.json().catch(() => null)
+        if (!alive || !json) return
+        const dRaw = json.duration_seconds ?? json.durationSeconds ?? null
+        const d = dRaw != null ? Number(dRaw) : 0
+        if (Number.isFinite(d) && d > 0) {
+          setDurationOriginal((prev) => (prev > 0 ? prev : d))
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [uploadId])
+
   const syncFromVideo = useCallback(() => {
     const v = videoRef.current
     if (!v) return
