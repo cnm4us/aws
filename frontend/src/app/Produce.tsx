@@ -712,6 +712,17 @@ export default function ProducePage() {
     setEditProxyDurationEdited(0)
   }, [editRanges, editStartSeconds, editEndSeconds, uploadId])
 
+  const editPreviewDurationFallback = useMemo(() => {
+    const finite = (editPreviewRanges || []).filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+    const total = sumRanges(finite)
+    return Number.isFinite(total) && total > 0 ? total : 0
+  }, [editPreviewRanges])
+
+  useEffect(() => {
+    // Enable the scrubber even before the video metadata loads by using the URL ranges as a fallback.
+    if (editPreviewDurationFallback > 0) setEditProxyDurationEdited(editPreviewDurationFallback)
+  }, [editPreviewDurationFallback])
+
   useEffect(() => {
     if (!editProxyPreviewOk) return
     const hasAnyEdit = Boolean(editPreviewRanges && editPreviewRanges.length)
@@ -851,6 +862,10 @@ export default function ProducePage() {
         }
       } catch {}
       try { v.currentTime = target } catch {}
+      try {
+        v.muted = false
+        v.volume = 1
+      } catch {}
       setEditProxyPlaying(true)
       v.play().catch(() => setEditProxyPlaying(false))
     } else {
@@ -1693,6 +1708,9 @@ export default function ProducePage() {
 	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc && !!(editPreviewRanges && editPreviewRanges.length)
 	    const editProxyPreviewSrc =
 	      useEditProxyPreview && editPreviewSeekSeconds > 0 ? `${editProxySrc}#t=${encodeURIComponent(String(editPreviewSeekSeconds))}` : editProxySrc
+	    const editProxyDurationMax = useEditProxyPreview
+	      ? (editProxyDurationEdited > 0 ? editProxyDurationEdited : editPreviewDurationFallback)
+	      : 0
 		  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
@@ -2005,31 +2023,38 @@ export default function ProducePage() {
 	                ) : null}
                     </div>
 
-                    {useEditProxyPreview ? (
-                      <div style={{ display: 'grid', gap: 6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#bbb', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-                          <div>{editProxyPlayheadEdited.toFixed(1)}s</div>
-                          <div>{editProxyDurationEdited > 0 ? `${editProxyDurationEdited.toFixed(1)}s` : ''}</div>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={editProxyDurationEdited > 0 ? editProxyDurationEdited : 0}
-                          step={0.1}
-                          value={Math.max(0, Math.min(editProxyDurationEdited || 0, editProxyPlayheadEdited))}
-                          onChange={(e) => {
-                            const v = Number(e.target.value)
-                            if (!Number.isFinite(v)) return
-                            try { editProxyVideoRef.current?.pause?.() } catch {}
-                            setEditProxyPlaying(false)
-                            seekEditPreviewEdited(v)
-                          }}
-                          style={{ width: '100%' }}
-                          disabled={editProxyDurationEdited <= 0}
-                        />
-                        <button
-                          type="button"
-                          onClick={toggleEditPreviewPlay}
+	                    {useEditProxyPreview ? (
+	                      <div style={{ display: 'grid', gap: 6 }}>
+	                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#bbb', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+	                          <div>{editProxyPlayheadEdited.toFixed(1)}s</div>
+	                          <div>{editProxyDurationMax > 0 ? `${editProxyDurationMax.toFixed(1)}s` : ''}</div>
+	                        </div>
+	                        <input
+	                          type="range"
+	                          min={0}
+	                          max={editProxyDurationMax > 0 ? editProxyDurationMax : 0}
+	                          step={0.1}
+	                          value={Math.max(0, Math.min(editProxyDurationMax || 0, editProxyPlayheadEdited))}
+	                          onChange={(e) => {
+	                            const v = Number((e.target as HTMLInputElement).value)
+	                            if (!Number.isFinite(v)) return
+	                            try { editProxyVideoRef.current?.pause?.() } catch {}
+	                            setEditProxyPlaying(false)
+	                            seekEditPreviewEdited(v)
+	                          }}
+	                          onInput={(e) => {
+	                            const v = Number((e.target as HTMLInputElement).value)
+	                            if (!Number.isFinite(v)) return
+	                            try { editProxyVideoRef.current?.pause?.() } catch {}
+	                            setEditProxyPlaying(false)
+	                            seekEditPreviewEdited(v)
+	                          }}
+	                          style={{ width: '100%' }}
+	                          disabled={editProxyDurationMax <= 0}
+	                        />
+	                        <button
+	                          type="button"
+	                          onClick={toggleEditPreviewPlay}
                           style={{
                             padding: '8px 10px',
                             borderRadius: 10,
@@ -2042,10 +2067,10 @@ export default function ProducePage() {
                             fontSize: 12,
                           }}
                         >
-                          {editProxyPlaying ? 'Pause' : 'Play'}
-                        </button>
-                      </div>
-                    ) : null}
+	                          {editProxyPlaying ? 'Pause' : 'Play'}
+	                        </button>
+	                      </div>
+	                    ) : null}
                   </div>
 	            ) : (
 	              <div style={{ width: 280, height: 158, borderRadius: 12, background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, color: '#888', fontSize: 13, textAlign: 'center', lineHeight: 1.3 }}>
