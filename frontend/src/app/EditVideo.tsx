@@ -637,49 +637,64 @@ export default function EditVideo() {
                     WebkitOverflowScrolling: 'touch',
                   }}
                 >
-                  <div style={{ display: 'flex', height: '100%' }}>
-                    <div style={{ display: 'inline-flex', height: '100%', paddingLeft: timelinePadPx, paddingRight: timelinePadPx, boxSizing: 'content-box', minWidth: 'max-content' }}>
-                    {thumbs.map((tOrig, i) => {
-                      const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
-                      const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
-                      const cols = Math.max(1, Math.round(Number(timelineManifest.sprite?.cols) || 10))
-                      const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
-                      const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
-                      const spriteStart = Math.floor(tOrig / perSprite) * perSprite
-                      const idx = tOrig - spriteStart
-                      const col = idx % cols
-                      const row = Math.floor(idx / cols)
-                      const bgX = -col * tileW
-                      const bgY = -row * tileH
-                      const bgSize = `${tileW * cols}px ${tileH * rows}px`
-                      const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
+                  {(() => {
+                    const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
+                    const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
+                    const cols = Math.max(1, Math.round(Number(timelineManifest.sprite?.cols) || 10))
+                    const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
+                    const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
+                    const stripContentW = Math.max(0, thumbs.length * tileW)
 
-                      return (
-                        <div
-                          key={`${tOrig}-${i}`}
-                          onClick={() => {
-                            try { videoRef.current?.pause?.() } catch {}
-                            setPlaying(false)
-                            const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
-                            seekEdited(i * interval)
-                          }}
-                          style={{
-                            width: tileW,
-                            height: tileH,
-                            flex: '0 0 auto',
-                            backgroundImage: `url(${spriteUrl})`,
-                            backgroundRepeat: 'no-repeat',
-                            backgroundPosition: `${bgX}px ${bgY}px`,
-                            backgroundSize: bgSize,
-                            cursor: 'pointer',
-                            borderRight: '1px solid rgba(0,0,0,0.22)',
-                          }}
-                          title={`${i}s`}
-                        />
-                      )
-                    })}
-                    </div>
-                  </div>
+                    return (
+                      <div
+                        style={{
+                          display: 'flex',
+                          height: '100%',
+                          paddingLeft: timelinePadPx,
+                          paddingRight: timelinePadPx,
+                          boxSizing: 'content-box',
+                          flex: '0 0 auto',
+                          width: stripContentW,
+                          minWidth: stripContentW,
+                        }}
+                      >
+                        {thumbs.map((tOrig, i) => {
+                          const spriteStart = Math.floor(tOrig / perSprite) * perSprite
+                          const idx = tOrig - spriteStart
+                          const col = idx % cols
+                          const row = Math.floor(idx / cols)
+                          const bgX = -col * tileW
+                          const bgY = -row * tileH
+                          const bgSize = `${tileW * cols}px ${tileH * rows}px`
+                          const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
+
+                          return (
+                            <div
+                              key={`${tOrig}-${i}`}
+                              onClick={() => {
+                                try { videoRef.current?.pause?.() } catch {}
+                                setPlaying(false)
+                                const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+                                seekEdited(i * interval)
+                              }}
+                              style={{
+                                width: tileW,
+                                height: tileH,
+                                flex: '0 0 auto',
+                                backgroundImage: `url(${spriteUrl})`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: `${bgX}px ${bgY}px`,
+                                backgroundSize: bgSize,
+                                cursor: 'pointer',
+                                borderRight: '1px solid rgba(0,0,0,0.22)',
+                              }}
+                              title={`${i}s`}
+                            />
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div
                   style={{
