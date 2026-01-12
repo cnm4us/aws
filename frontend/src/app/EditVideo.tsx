@@ -97,11 +97,14 @@ function sumRanges(ranges: Range[]): number {
 }
 
 function editedToOriginalTime(tEdited: number, ranges: Range[]): { tOriginal: number; segIndex: number } {
+  const eps = 1e-6
   let acc = 0
   for (let i = 0; i < ranges.length; i++) {
     const len = Math.max(0, ranges[i].end - ranges[i].start)
     const next = acc + len
-    if (tEdited <= next || i === ranges.length - 1) {
+    // Treat segment ends as exclusive so an exact boundary maps to the *next* segment,
+    // avoiding "stuck at segment end" playback behavior.
+    if (tEdited < next - eps || i === ranges.length - 1) {
       const within = clamp(tEdited - acc, 0, len)
       return { tOriginal: ranges[i].start + within, segIndex: i }
     }
@@ -111,11 +114,14 @@ function editedToOriginalTime(tEdited: number, ranges: Range[]): { tOriginal: nu
 }
 
 function originalToEditedTime(tOriginal: number, ranges: Range[]): { tEdited: number; segIndex: number } {
+  const eps = 1e-6
   let acc = 0
   for (let i = 0; i < ranges.length; i++) {
     const r = ranges[i]
     const len = Math.max(0, r.end - r.start)
-    if (tOriginal >= r.start && tOriginal <= r.end) {
+    const isLast = i === ranges.length - 1
+    const inRange = isLast ? (tOriginal >= r.start - eps && tOriginal <= r.end + eps) : (tOriginal >= r.start - eps && tOriginal < r.end - eps)
+    if (inRange) {
       return { tEdited: acc + clamp(tOriginal - r.start, 0, len), segIndex: i }
     }
     acc += len
