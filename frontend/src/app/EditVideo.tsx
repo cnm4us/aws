@@ -482,6 +482,24 @@ export default function EditVideo() {
     return buildEditedThumbSeconds(ranges, timelineManifest.intervalSeconds, timelineManifest.durationSeconds)
   }, [ranges, timelineManifest])
 
+  const filmstripSegments = useMemo(() => {
+    if (!ranges || !ranges.length) return null
+    if (!timelineManifest) return null
+    if (!thumbs || !thumbs.length) return null
+    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+
+    const segIndexByThumb = thumbs.map((_, i) => {
+      const tEdited = i * interval
+      return editedToOriginalTime(tEdited, ranges).segIndex
+    })
+    const boundaryStarts = new Set<number>()
+    boundaryStarts.add(0)
+    for (let i = 1; i < segIndexByThumb.length; i++) {
+      if (segIndexByThumb[i] !== segIndexByThumb[i - 1]) boundaryStarts.add(i)
+    }
+    return { interval, segIndexByThumb, boundaryStarts }
+  }, [ranges, thumbs, timelineManifest])
+
   useEffect(() => {
     const sc = timelineScrollRef.current
     if (!timelineManifest || !thumbs || !thumbs.length || !sc) return
@@ -511,19 +529,13 @@ export default function EditVideo() {
     if (!sc) return
     const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
     const tileW = Math.max(1, Math.round(Number(timelineManifest.tile?.w) || 96))
-    // Allow aligning the playhead after the last thumb (end of video).
-    const maxIdx = Math.max(0, thumbs.length)
     // Our scrubber operates at 0.1s resolution, so treat "within ~0.1s of the end" as the end,
     // otherwise we can never reach the final padding position when totalEditedDuration isn't a 0.1 multiple.
     const atEndEps = 0.11
     const atEnd = totalEditedDuration > 0 && playheadEdited >= totalEditedDuration - atEndEps
-    const idx =
-      totalEditedDuration > 0 && playheadEdited >= totalEditedDuration - atEndEps
-        ? maxIdx
-        : clamp(Math.floor(playheadEdited / interval), 0, maxIdx)
-    // With left/right padding, scrollLeft aligns the *start* of the thumb under the fixed playhead.
     const maxLeft = Math.max(0, sc.scrollWidth - sc.clientWidth)
-    const desiredLeft = atEnd ? maxLeft : Math.max(0, idx * tileW)
+    // Continuous mapping (filmstrip moves on every 0.1s nudge/scrub).
+    const desiredLeft = atEnd ? maxLeft : Math.max(0, (playheadEdited / interval) * tileW)
     const clamped = Math.max(0, Math.min(maxLeft, desiredLeft))
     try {
       sc.scrollTo({ left: clamped, behavior: 'auto' })
@@ -646,6 +658,7 @@ export default function EditVideo() {
                     const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
                     const stripContentW = Math.max(0, thumbs.length * tileW)
                     const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
+                    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
 
                     return (
                       <div
@@ -667,6 +680,9 @@ export default function EditVideo() {
                           const bgY = -row * tileH
                           const bgSize = `${tileW * cols}px ${tileH * rows}px`
                           const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
+                          const segIdx = filmstripSegments?.segIndexByThumb?.[i] ?? 0
+                          const isSelected = segIdx === selectedIndex
+                          const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
 
                           return (
                             <div
@@ -674,22 +690,52 @@ export default function EditVideo() {
                               onClick={() => {
                                 try { videoRef.current?.pause?.() } catch {}
                                 setPlaying(false)
-                                const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
                                 seekEdited(i * interval)
                               }}
                               style={{
+                                position: 'relative',
                                 width: tileW,
                                 height: tileH,
                                 flex: '0 0 auto',
-                                backgroundImage: `url(${spriteUrl})`,
-                                backgroundRepeat: 'no-repeat',
-                                backgroundPosition: `${bgX}px ${bgY}px`,
-                                backgroundSize: bgSize,
                                 cursor: 'pointer',
                                 borderRight: '1px solid rgba(0,0,0,0.22)',
                               }}
                               title={`${i}s`}
-                            />
+                            >
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  backgroundImage: `url(${spriteUrl})`,
+                                  backgroundRepeat: 'no-repeat',
+                                  backgroundPosition: `${bgX}px ${bgY}px`,
+                                  backgroundSize: bgSize,
+                                }}
+                              />
+                              {isSelected ? (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: 'rgba(10,132,255,0.16)',
+                                    pointerEvents: 'none',
+                                  }}
+                                />
+                              ) : null}
+                              {i > 0 && isBoundary ? (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    bottom: 0,
+                                    left: 0,
+                                    width: 2,
+                                    background: 'rgba(255,255,255,0.55)',
+                                    pointerEvents: 'none',
+                                  }}
+                                />
+                              ) : null}
+                            </div>
                           )
                         })}
                         <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
@@ -732,39 +778,41 @@ export default function EditVideo() {
               </div>
             ) : null}
 
-            <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
-              <div style={{ display: 'flex', height: '100%' }}>
-                {segs.map((r, i) => {
-                  const len = Math.max(0, r.end - r.start)
-                  const wPct = total > 0 ? (len / total) * 100 : 0
-                  const selected = i === selectedIndex
-                  return (
-                    <div
-                      key={`${r.start}-${r.end}-${i}`}
-                      onClick={() => setSelectedIndex(i)}
-                      title={`${r.start.toFixed(1)}–${r.end.toFixed(1)}s`}
-                      style={{
-                        width: `${wPct}%`,
-                        background: selected ? 'rgba(10,132,255,0.95)' : 'rgba(212,175,55,0.6)',
-                        borderRight: i < segs.length - 1 ? '1px solid rgba(0,0,0,0.35)' : 'none',
-                        cursor: 'pointer',
-                      }}
-                    />
-                  )
-                })}
+            {!timelineManifest || !thumbs || !thumbs.length ? (
+              <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <div style={{ display: 'flex', height: '100%' }}>
+                  {segs.map((r, i) => {
+                    const len = Math.max(0, r.end - r.start)
+                    const wPct = total > 0 ? (len / total) * 100 : 0
+                    const selected = i === selectedIndex
+                    return (
+                      <div
+                        key={`${r.start}-${r.end}-${i}`}
+                        onClick={() => setSelectedIndex(i)}
+                        title={`${r.start.toFixed(1)}–${r.end.toFixed(1)}s`}
+                        style={{
+                          width: `${wPct}%`,
+                          background: selected ? 'rgba(10,132,255,0.95)' : 'rgba(212,175,55,0.6)',
+                          borderRight: i < segs.length - 1 ? '1px solid rgba(0,0,0,0.35)' : 'none',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    bottom: -2,
+                    width: 2,
+                    left: `${playheadPct * 100}%`,
+                    transform: 'translateX(-1px)',
+                    background: '#ff3b30',
+                  }}
+                />
               </div>
-              <div
-                style={{
-                  position: 'absolute',
-                  top: -2,
-                  bottom: -2,
-                  width: 2,
-                  left: `${playheadPct * 100}%`,
-                  transform: 'translateX(-1px)',
-                  background: '#ff3b30',
-                }}
-              />
-            </div>
+            ) : null}
 
             <input
               type="range"
