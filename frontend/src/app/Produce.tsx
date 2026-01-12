@@ -47,6 +47,53 @@ function computePreviewAspectRatio(upload: UploadDetail | null): number {
   return 9 / 16
 }
 
+type Range = { start: number; end: number }
+
+function sumRanges(ranges: Range[]): number {
+  return ranges.reduce((acc, r) => acc + Math.max(0, r.end - r.start), 0)
+}
+
+function clampRangesToDuration(ranges: Range[] | null, durationSeconds: number): Range[] {
+  const d = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null
+  return (ranges || [])
+    .map((r) => {
+      const start = Math.max(0, Number(r.start || 0))
+      const rawEnd = Number(r.end)
+      const end = Number.isFinite(rawEnd) ? Math.min(rawEnd, d ?? rawEnd) : d
+      return { start, end: end == null ? Number.NaN : end }
+    })
+    .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+}
+
+function editedToOriginalTime(tEdited: number, ranges: Range[]): { tOriginal: number; segIndex: number } {
+  const eps = 1e-6
+  let acc = 0
+  for (let i = 0; i < ranges.length; i++) {
+    const len = Math.max(0, ranges[i].end - ranges[i].start)
+    const next = acc + len
+    if (tEdited < next - eps || i === ranges.length - 1) {
+      const within = Math.max(0, Math.min(len, tEdited - acc))
+      return { tOriginal: ranges[i].start + within, segIndex: i }
+    }
+    acc = next
+  }
+  return { tOriginal: ranges[0]?.start || 0, segIndex: 0 }
+}
+
+function originalToEditedTime(tOriginal: number, ranges: Range[]): { tEdited: number; segIndex: number } {
+  const eps = 1e-6
+  let acc = 0
+  for (let i = 0; i < ranges.length; i++) {
+    const r = ranges[i]
+    const len = Math.max(0, r.end - r.start)
+    const isLast = i === ranges.length - 1
+    const inRange = isLast ? (tOriginal >= r.start - eps && tOriginal <= r.end + eps) : (tOriginal >= r.start - eps && tOriginal < r.end - eps)
+    if (inRange) return { tEdited: acc + Math.max(0, Math.min(len, tOriginal - r.start)), segIndex: i }
+    acc += len
+  }
+  return { tEdited: Math.max(0, acc), segIndex: Math.max(0, ranges.length - 1) }
+}
+
 type AssetItem = {
   id: number
   original_filename: string
@@ -448,6 +495,10 @@ function clampNumber(n: any, min: number, max: number): number {
   return Math.min(Math.max(v, min), max)
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(Math.max(n, min), max)
+}
+
 function computeOverlayCss(cfg: {
   position?: string | null
   sizePctWidth?: number | null
@@ -623,9 +674,13 @@ export default function ProducePage() {
   const [editEndSeconds, setEditEndSeconds] = useState<number | null>(() => parseEditEndSeconds())
   const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
+  const editProxyInitialSeekDoneRef = useRef(false)
+  const [editProxyPlaying, setEditProxyPlaying] = useState(false)
+  const [editProxyPlayheadEdited, setEditProxyPlayheadEdited] = useState(0)
+  const [editProxyDurationEdited, setEditProxyDurationEdited] = useState(0)
   const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
-	const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
-	const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
+  const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
+  const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const screenTitlePreviewAutoDoneRef = useRef(false)
   const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
 
@@ -635,29 +690,165 @@ export default function ProducePage() {
     return 0
   })()
 
+  const editPreviewRanges: Range[] | null = useMemo(() => {
+    if (editRanges && editRanges.length) {
+      return editRanges
+        .map((r) => ({ start: Math.max(0, Number(r.start || 0)), end: Math.max(0, Number(r.end || 0)) }))
+        .filter((r) => r.end > r.start)
+    }
+    if (editStartSeconds != null || editEndSeconds != null) {
+      const start = Math.max(0, Number(editStartSeconds ?? 0))
+      const end = editEndSeconds != null ? Math.max(0, Number(editEndSeconds)) : Number.POSITIVE_INFINITY
+      if (Number.isFinite(end) && end > start) return [{ start, end }]
+      if (!Number.isFinite(end)) return [{ start, end }]
+    }
+    return null
+  }, [editEndSeconds, editRanges, editStartSeconds])
+
+  useEffect(() => {
+    editProxyInitialSeekDoneRef.current = false
+    setEditProxyPlaying(false)
+    setEditProxyPlayheadEdited(0)
+    setEditProxyDurationEdited(0)
+  }, [editRanges, editStartSeconds, editEndSeconds, uploadId])
+
   useEffect(() => {
     if (!editProxyPreviewOk) return
-    const hasAnyEdit = Boolean((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null)
+    const hasAnyEdit = Boolean(editPreviewRanges && editPreviewRanges.length)
     if (!hasAnyEdit) return
     const v = editProxyVideoRef.current
     if (!v) return
     const t = Math.max(0, editPreviewSeekSeconds)
-    const seek = () => {
+    const boundaryNudge = 0.07
+
+    const clampRanges = (): Range[] => clampRangesToDuration(editPreviewRanges, v.duration)
+
+    const applyInitialSeek = () => {
+      if (editProxyInitialSeekDoneRef.current) return
+      if (!(t > 0)) return
+      if (v.readyState < 1) return
       try {
-        if (Number.isFinite(v.currentTime) && Math.abs(v.currentTime - t) <= 0.05) return
+        v.currentTime = t
+        editProxyInitialSeekDoneRef.current = true
       } catch {}
-      try { v.currentTime = t } catch {}
-      try { v.pause() } catch {}
     }
-    const onLoaded = () => seek()
+
+    const updateEditedDuration = (rangesForMap: Range[]) => {
+      const total = sumRanges(rangesForMap)
+      if (Number.isFinite(total) && total > 0) setEditProxyDurationEdited(total)
+    }
+
+    const syncPlayhead = (rangesForMap: Range[]) => {
+      if (!rangesForMap.length) return
+      const mapped = originalToEditedTime(Number.isFinite(v.currentTime) ? v.currentTime : 0, rangesForMap)
+      setEditProxyPlayheadEdited(Math.round(mapped.tEdited * 10) / 10)
+    }
+
+    const enforceRanges = (rangesForMap: Range[]) => {
+      if (!rangesForMap.length) return
+      const orig = Number.isFinite(v.currentTime) ? v.currentTime : 0
+      const eps = 0.06
+
+      let idx = -1
+      for (let i = 0; i < rangesForMap.length; i++) {
+        if (orig + eps < rangesForMap[i].start) {
+          idx = i
+          break
+        }
+        if (orig >= rangesForMap[i].start - eps && orig <= rangesForMap[i].end + eps) {
+          idx = i
+          break
+        }
+      }
+      if (idx === -1) idx = rangesForMap.length - 1
+      const r = rangesForMap[idx]
+
+      if (orig < r.start - eps) {
+        try { v.currentTime = r.start } catch {}
+      } else if (orig > r.end - eps) {
+        const next = rangesForMap[idx + 1]
+        if (next) {
+          const maxStart = Math.max(next.start, next.end - boundaryNudge)
+          const target = clamp(next.start + boundaryNudge, next.start, maxStart)
+          if (!v.paused) {
+            try { v.currentTime = target } catch {}
+          }
+        } else {
+          try { v.pause() } catch {}
+          setEditProxyPlaying(false)
+        }
+      }
+    }
+
+    const onLoaded = () => {
+      applyInitialSeek()
+      const rangesForMap = clampRanges()
+      if (!rangesForMap.length) return
+      updateEditedDuration(rangesForMap)
+      syncPlayhead(rangesForMap)
+    }
+    const onTime = () => {
+      const rangesForMap = clampRanges()
+      if (!rangesForMap.length) return
+      enforceRanges(rangesForMap)
+      syncPlayhead(rangesForMap)
+    }
+    const onPlay = () => setEditProxyPlaying(true)
+    const onPause = () => setEditProxyPlaying(false)
+
     v.addEventListener('loadedmetadata', onLoaded)
     v.addEventListener('loadeddata', onLoaded)
-    seek()
+    v.addEventListener('canplay', onLoaded)
+    v.addEventListener('durationchange', onLoaded)
+    v.addEventListener('timeupdate', onTime)
+    v.addEventListener('play', onPlay)
+    v.addEventListener('pause', onPause)
+    onLoaded()
     return () => {
       v.removeEventListener('loadedmetadata', onLoaded)
       v.removeEventListener('loadeddata', onLoaded)
+      v.removeEventListener('canplay', onLoaded)
+      v.removeEventListener('durationchange', onLoaded)
+      v.removeEventListener('timeupdate', onTime)
+      v.removeEventListener('play', onPlay)
+      v.removeEventListener('pause', onPause)
     }
-  }, [editEndSeconds, editProxyPreviewOk, editPreviewSeekSeconds, editRanges, editStartSeconds])
+  }, [editProxyPreviewOk, editPreviewRanges, editPreviewSeekSeconds])
+
+  const seekEditPreviewEdited = useCallback((tEdited: number) => {
+    const v = editProxyVideoRef.current
+    if (!v) return
+    const rangesForMap = clampRangesToDuration(editPreviewRanges, v.duration)
+    if (!rangesForMap.length) return
+    const total = sumRanges(rangesForMap)
+    const t = Math.max(0, Math.min(total, Math.round(Number(tEdited) * 10) / 10))
+    setEditProxyPlayheadEdited(t)
+    const mapped = editedToOriginalTime(t, rangesForMap)
+    try { v.currentTime = mapped.tOriginal } catch {}
+  }, [editPreviewRanges])
+
+  const toggleEditPreviewPlay = useCallback(() => {
+    const v = editProxyVideoRef.current
+    if (!v) return
+    const rangesForMap = clampRangesToDuration(editPreviewRanges, v.duration)
+    if (!rangesForMap.length) return
+    const boundaryNudge = 0.07
+    if (v.paused) {
+      const mapped = editedToOriginalTime(editProxyPlayheadEdited, rangesForMap)
+      let target = mapped.tOriginal
+      try {
+        const seg = rangesForMap[mapped.segIndex]
+        if (seg && mapped.segIndex > 0 && Math.abs(target - seg.start) < 1e-6) {
+          const maxStart = Math.max(seg.start, seg.end - boundaryNudge)
+          target = clamp(seg.start + boundaryNudge, seg.start, maxStart)
+        }
+      } catch {}
+      try { v.currentTime = target } catch {}
+      v.play().catch(() => {})
+    } else {
+      try { v.pause() } catch {}
+    }
+  }, [editPreviewRanges, editProxyPlayheadEdited])
 
   useEffect(() => {
     // If the inputs change, invalidate the cached preview PNG.
@@ -1486,12 +1677,12 @@ export default function ProducePage() {
   }
 
 	  const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
-	  const poster = pickPoster(upload)
-	  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
-	  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
-    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
-    const useEditProxyPreview = editProxyPreviewOk && ((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) && !!editProxySrc
-	  const sourceDeleted = !!upload.source_deleted_at
+		  const poster = pickPoster(upload)
+		  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
+		  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
+	    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
+	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc && !!(editPreviewRanges && editPreviewRanges.length)
+		  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
     if (!uploadId) return
@@ -1619,23 +1810,24 @@ export default function ProducePage() {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 		          <div>
 		            {uploadPreviewSrc || useEditProxyPreview ? (
-		              <div
-		                style={{
-		                  width: 280,
-		                  aspectRatio: `${computePreviewAspectRatio(upload)}`,
-		                  borderRadius: 12,
-		                  background: '#111',
-		                  overflow: 'hidden',
-		                  position: 'relative',
-		                }}
-		              >
+                  <div style={{ width: 280, display: 'grid', gap: 10 }}>
+                    <div
+                      style={{
+                        width: 280,
+                        aspectRatio: `${computePreviewAspectRatio(upload)}`,
+                        borderRadius: 12,
+                        background: '#111',
+                        overflow: 'hidden',
+                        position: 'relative',
+                      }}
+                    >
                     {useEditProxyPreview ? (
                       <video
                         ref={editProxyVideoRef}
                         src={editProxySrc || undefined}
                         muted
                         playsInline
-                        preload="metadata"
+                        preload="auto"
                         style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
                         onError={() => {
                           setEditProxyPreviewOk(false)
@@ -1801,7 +1993,50 @@ export default function ProducePage() {
 	                    }}
 	                  />
 	                ) : null}
-	              </div>
+                    </div>
+
+                    {useEditProxyPreview ? (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#bbb', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                          <div>{editProxyPlayheadEdited.toFixed(1)}s</div>
+                          <div>{editProxyDurationEdited > 0 ? `${editProxyDurationEdited.toFixed(1)}s` : ''}</div>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={editProxyDurationEdited > 0 ? editProxyDurationEdited : 0}
+                          step={0.1}
+                          value={Math.max(0, Math.min(editProxyDurationEdited || 0, editProxyPlayheadEdited))}
+                          onChange={(e) => {
+                            const v = Number(e.target.value)
+                            if (!Number.isFinite(v)) return
+                            try { editProxyVideoRef.current?.pause?.() } catch {}
+                            setEditProxyPlaying(false)
+                            seekEditPreviewEdited(v)
+                          }}
+                          style={{ width: '100%' }}
+                          disabled={editProxyDurationEdited <= 0}
+                        />
+                        <button
+                          type="button"
+                          onClick={toggleEditPreviewPlay}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                            justifySelf: 'end',
+                            fontSize: 12,
+                          }}
+                        >
+                          {editProxyPlaying ? 'Pause' : 'Play'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
 	            ) : (
 	              <div style={{ width: 280, height: 158, borderRadius: 12, background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, color: '#888', fontSize: 13, textAlign: 'center', lineHeight: 1.3 }}>
 	                Preview generating…
