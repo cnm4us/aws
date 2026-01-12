@@ -189,6 +189,24 @@ export default function EditVideo() {
     initialSeekDoneRef.current = false
   }, [retryNonce, uploadId])
 
+  const attemptInitialSeekToFirstKeptFrame = useCallback(() => {
+    if (initialSeekDoneRef.current) return
+    const v = videoRef.current
+    if (!v) return
+    if (!ranges || !ranges.length) return
+    const start = Number(ranges[0]?.start || 0)
+    if (!Number.isFinite(start) || start <= 0) return
+
+    // Only seek once the browser has at least loaded metadata/seekable ranges.
+    const canSeek = v.readyState >= 1 && (v.seekable?.length ? v.seekable.length > 0 : true)
+    if (!canSeek) return
+
+    try {
+      v.currentTime = start
+      initialSeekDoneRef.current = true
+    } catch {}
+  }, [ranges])
+
   // Ensure we have a duration even if the browser delays `video.duration` until user interaction.
   useEffect(() => {
     if (!uploadId) return
@@ -225,6 +243,11 @@ export default function EditVideo() {
     const mapped = originalToEditedTime(orig, ranges)
     setPlayheadEdited(roundToTenth(mapped.tEdited))
   }, [ranges])
+
+  // If ranges become available after metadata is loaded, still seek to the first kept frame.
+  useEffect(() => {
+    attemptInitialSeekToFirstKeptFrame()
+  }, [attemptInitialSeekToFirstKeptFrame])
 
   // Initialize default ranges once we know duration.
   useEffect(() => {
@@ -263,23 +286,7 @@ export default function EditVideo() {
     const onLoaded = () => {
       const d = Number.isFinite(v.duration) ? v.duration : 0
       if (d > 0) setDurationOriginal(d)
-      // If we have saved edits (ranges), show the first frame of the kept sequence even before play.
-      // This avoids showing the original frame-0 when the first kept range starts later.
-      if (!initialSeekDoneRef.current && ranges && ranges.length) {
-        const start = clamp(Number(ranges[0].start) || 0, 0, d > 0 ? d : Number.MAX_SAFE_INTEGER)
-        try {
-          v.currentTime = start
-          initialSeekDoneRef.current = true
-        } catch {
-          // Some browsers only allow seeking after metadata is fully ready; retry shortly.
-          setTimeout(() => {
-            try {
-              v.currentTime = start
-              initialSeekDoneRef.current = true
-            } catch {}
-          }, 50)
-        }
-      }
+      attemptInitialSeekToFirstKeptFrame()
       syncFromVideo()
     }
     const onTime = () => {
@@ -596,7 +603,7 @@ export default function EditVideo() {
             ref={videoRef}
             src={src || undefined}
             playsInline
-            preload="metadata"
+            preload="auto"
             style={{ width: '100%', borderRadius: 12, background: '#000' }}
             onError={() => setProxyError('Generating edit proxy… try again in a moment.')}
             onLoadedMetadata={() => syncFromVideo()}
