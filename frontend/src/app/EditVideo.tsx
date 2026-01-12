@@ -737,7 +737,8 @@ export default function EditVideo() {
                                   style={{
                                     position: 'absolute',
                                     inset: 0,
-                                    background: 'rgba(10,132,255,0.16)',
+                                    background: 'rgba(10,132,255,0.32)',
+                                    boxShadow: 'inset 0 0 0 2px rgba(10,132,255,0.75)',
                                     pointerEvents: 'none',
                                   }}
                                 />
