@@ -10,6 +10,8 @@ type TimelineManifestV1 = {
   sprites: Array<{ startSecond: number; key: string }>
 }
 
+type TimelineTile = { origSecond: number; widthScale: number }
+
 const MAX_CUTS = 20
 const MAX_SEGMENTS = MAX_CUTS + 1
 const MIN_SEGMENT_SECONDS = 0.2
@@ -149,31 +151,29 @@ function segmentEditedStarts(ranges: Range[]): number[] {
   return out
 }
 
-function buildEditedThumbSeconds(ranges: Range[], intervalSeconds: number, durationSeconds: number): number[] {
+function buildEditedTimelineTiles(ranges: Range[], intervalSeconds: number, durationSeconds: number): TimelineTile[] {
   const interval = Math.max(1, Math.round(Number(intervalSeconds) || 1))
   const maxSec = Math.max(0, Math.floor(Math.max(0, Number(durationSeconds) || 0) - 1e-6))
-  const out: number[] = []
-  const eps = 1e-6
+  const totalEdited = sumRanges(ranges)
+  if (!Number.isFinite(totalEdited) || totalEdited <= 0) return []
 
-  for (const r of ranges) {
-    const start = Math.max(0, r.start)
-    const end = Math.max(0, r.end)
-    if (end <= start + eps) continue
+  const eps = 1e-3
+  const full = Math.floor((totalEdited + 1e-6) / interval)
+  const rem = totalEdited - full * interval
 
-    const first = Math.max(0, Math.ceil(start / interval) * interval)
-    const last = Math.max(0, Math.floor((end - eps) / interval) * interval)
-    if (last >= first) {
-      for (let t = first; t <= last; t += interval) {
-        const sec = Math.max(0, Math.min(maxSec, Math.round(t)))
-        out.push(sec)
-      }
-    } else {
-      // Very short segment: include a single representative thumb.
-      const sec = Math.max(0, Math.min(maxSec, Math.floor((start + end) / 2)))
-      out.push(sec)
-    }
+  const out: TimelineTile[] = []
+  for (let i = 0; i < full; i++) {
+    const tEdited = i * interval + eps
+    const mapped = editedToOriginalTime(tEdited, ranges)
+    const sec = clamp(Math.floor(mapped.tOriginal), 0, maxSec)
+    out.push({ origSecond: sec, widthScale: 1 })
   }
-
+  if (rem > 1e-6) {
+    const tEdited = full * interval + eps
+    const mapped = editedToOriginalTime(tEdited, ranges)
+    const sec = clamp(Math.floor(mapped.tOriginal), 0, maxSec)
+    out.push({ origSecond: sec, widthScale: clamp(rem / interval, 0, 1) })
+  }
   return out
 }
 
@@ -476,48 +476,32 @@ export default function EditVideo() {
     window.location.href = target
   }, [backHref, ranges])
 
-  const thumbs = useMemo(() => {
+  const tiles = useMemo(() => {
     if (!ranges || !ranges.length) return null
     if (!timelineManifest) return null
-    return buildEditedThumbSeconds(ranges, timelineManifest.intervalSeconds, timelineManifest.durationSeconds)
+    return buildEditedTimelineTiles(ranges, timelineManifest.intervalSeconds, timelineManifest.durationSeconds)
   }, [ranges, timelineManifest])
 
   const filmstripSegments = useMemo(() => {
     if (!ranges || !ranges.length) return null
     if (!timelineManifest) return null
-    if (!thumbs || !thumbs.length) return null
+    if (!tiles || !tiles.length) return null
 
-    const segIndexByThumb: number[] = []
-    const overlaps = (aStart: number, aEnd: number, bStart: number, bEnd: number) => Math.max(aStart, bStart) < Math.min(aEnd, bEnd)
+    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+    const segIndexByTile: number[] = []
+    const eps = 1e-3
 
-    // Thumbs are in edited order, but each thumb is keyed by an integer original-second tile.
-    // Map each thumb to a segment by checking overlap between:
-    // - the second interval [tSec, tSec+1)
-    // - the original-time kept range [start, end)
-    //
-    // This is robust when a segment starts/ends at non-integer times.
-    let segCursor = 0
-    for (let i = 0; i < thumbs.length; i++) {
-      const tSec = Number(thumbs[i]) || 0
-      while (segCursor < ranges.length && ranges[segCursor].end <= tSec) segCursor++
-      let segIdx = Math.max(0, Math.min(ranges.length - 1, segCursor))
-
-      const secStart = tSec
-      const secEnd = tSec + 1
-      const r = ranges[segIdx]
-      if (!overlaps(secStart, secEnd, r.start, r.end) && segIdx > 0) {
-        const prev = ranges[segIdx - 1]
-        if (overlaps(secStart, secEnd, prev.start, prev.end)) segIdx = segIdx - 1
-      }
-      segIndexByThumb.push(segIdx)
+    for (let i = 0; i < tiles.length; i++) {
+      const tEdited = i * interval + eps
+      const mapped = editedToOriginalTime(tEdited, ranges)
+      segIndexByTile.push(clamp(mapped.segIndex, 0, ranges.length - 1))
     }
 
     // Cut markers in edited time (sub-second offsets inside a 1s tile).
     const cutBoundaryStarts = new Set<number>()
-    const markersByThumbIndex = new Map<number, number[]>()
+    const markersByTileIndex = new Map<number, number[]>()
     cutBoundaryStarts.add(0)
 
-    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
     let acc = 0
     for (let seg = 0; seg < ranges.length - 1; seg++) {
       const len = Math.max(0, ranges[seg].end - ranges[seg].start)
@@ -525,37 +509,37 @@ export default function EditVideo() {
       const boundary = acc
       if (!Number.isFinite(boundary) || boundary < 0) continue
       const idx = Math.floor(boundary / interval)
-      if (idx < 0 || idx > thumbs.length) continue
+      if (idx < 0 || idx > tiles.length) continue
       const frac = (boundary - idx * interval) / interval
       // Integer boundary: boundary at the left edge of the next thumb.
       if (Math.abs(frac) < 1e-6) {
-        if (idx >= 0 && idx < thumbs.length) cutBoundaryStarts.add(idx)
+        if (idx >= 0 && idx < tiles.length) cutBoundaryStarts.add(idx)
         continue
       }
-      if (idx >= 0 && idx < thumbs.length && frac > 0 && frac < 1) {
-        const list = markersByThumbIndex.get(idx) || []
+      if (idx >= 0 && idx < tiles.length && frac > 0 && frac < 1) {
+        const list = markersByTileIndex.get(idx) || []
         list.push(frac)
-        markersByThumbIndex.set(idx, list)
+        markersByTileIndex.set(idx, list)
       }
     }
 
     // Boundaries implied by segment-id changes (coarse 1s view), for safety/consistency.
     const coarseBoundaryStarts = new Set<number>()
     coarseBoundaryStarts.add(0)
-    for (let i = 1; i < segIndexByThumb.length; i++) {
-      if (segIndexByThumb[i] !== segIndexByThumb[i - 1]) coarseBoundaryStarts.add(i)
+    for (let i = 1; i < segIndexByTile.length; i++) {
+      if (segIndexByTile[i] !== segIndexByTile[i - 1]) coarseBoundaryStarts.add(i)
     }
 
     const boundaryStarts = new Set<number>()
     for (const i of cutBoundaryStarts) boundaryStarts.add(i)
     for (const i of coarseBoundaryStarts) boundaryStarts.add(i)
 
-    return { segIndexByThumb, boundaryStarts, markersByThumbIndex }
-  }, [ranges, thumbs, timelineManifest])
+    return { segIndexByTile, boundaryStarts, markersByTileIndex }
+  }, [ranges, tiles, timelineManifest])
 
   useEffect(() => {
     const sc = timelineScrollRef.current
-    if (!timelineManifest || !thumbs || !thumbs.length || !sc) return
+    if (!timelineManifest || !tiles || !tiles.length || !sc) return
     const update = () => {
       const w = Math.max(0, sc.clientWidth || 0)
       // Use ceil so we never end up 1px short of being able to align the last frame under the playhead.
@@ -574,10 +558,10 @@ export default function EditVideo() {
       try { ro?.disconnect() } catch {}
       window.removeEventListener('resize', onResize)
     }
-  }, [thumbs, timelineManifest])
+  }, [tiles, timelineManifest])
 
   useEffect(() => {
-    if (!timelineManifest || !thumbs) return
+    if (!timelineManifest || !tiles) return
     const sc = timelineScrollRef.current
     if (!sc) return
     const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
@@ -595,7 +579,7 @@ export default function EditVideo() {
     } catch {
       sc.scrollLeft = clamped
     }
-  }, [playheadEdited, thumbs, timelineManifest, timelinePadPx, totalEditedDuration])
+  }, [playheadEdited, tiles, timelineManifest, timelinePadPx, totalEditedDuration])
 
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
@@ -683,11 +667,15 @@ export default function EditVideo() {
               </div>
             ) : null}
 
-            {timelineManifest && thumbs && thumbs.length ? (
+            {timelineManifest && tiles && tiles.length ? (
               <div
                 style={{
                   position: 'relative',
-                  height: Math.max(24, Number(timelineManifest.tile?.h) || 54),
+                  height: (() => {
+                    const tileH = Math.max(1, Math.round(Number(timelineManifest.tile?.h) || 54))
+                    const rulerH = 20
+                    return Math.max(28, tileH + rulerH)
+                  })(),
                   borderRadius: 12,
                   overflow: 'hidden',
                   background: 'rgba(0,0,0,0.35)',
@@ -710,34 +698,112 @@ export default function EditVideo() {
                     const cols = Math.max(1, Math.round(Number(timelineManifest.sprite?.cols) || 10))
                     const rows = Math.max(1, Math.round(Number(timelineManifest.sprite?.rows) || 6))
                     const perSprite = Math.max(1, Math.round(Number(timelineManifest.sprite?.perSprite) || cols * rows))
-                    const stripContentW = Math.max(0, thumbs.length * tileW)
+                    const stripContentW = Math.max(0, tiles.reduce((acc, t) => acc + t.widthScale * tileW, 0))
                     const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
                     const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
+                    const rulerH = 20
 
                     return (
                       <div
                         style={{
-                          display: 'flex',
+                          display: 'grid',
+                          gridTemplateRows: `${rulerH}px ${tileH}px`,
                           height: '100%',
                           flex: '0 0 auto',
                           width: stripTotalW,
                           minWidth: stripTotalW,
                         }}
                       >
-                        <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                        {thumbs.map((tOrig, i) => {
-                          const spriteStart = Math.floor(tOrig / perSprite) * perSprite
-                          const idx = tOrig - spriteStart
-                          const col = idx % cols
-                          const row = Math.floor(idx / cols)
+                        <div style={{ display: 'flex', height: rulerH }}>
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                          {tiles.map((t, i) => {
+                            const w = Math.max(1, t.widthScale * tileW)
+                            const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
+                            const isSelected = segIdx === selectedIndex
+                            const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
+                            const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
+                            return (
+                              <div
+                                key={`r-${t.origSecond}-${i}`}
+                                onClick={() => setSelectedIndex(segIdx)}
+                                style={{
+                                  position: 'relative',
+                                  width: w,
+                                  height: rulerH,
+                                  flex: '0 0 auto',
+                                  cursor: 'pointer',
+                                  background: 'rgba(255,255,255,0.02)',
+                                  backgroundImage:
+                                    'repeating-linear-gradient(to right, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 1px, transparent 1px, transparent 10%)',
+                                }}
+                                title={`Segment ${segIdx + 1}`}
+                              >
+                                {isSelected ? (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      inset: 0,
+                                      background: 'rgba(10,132,255,0.18)',
+                                      boxShadow: 'inset 0 0 0 2px rgba(10,132,255,0.6)',
+                                      pointerEvents: 'none',
+                                    }}
+                                  />
+                                ) : null}
+                                {i > 0 && isBoundary ? (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: 0,
+                                      bottom: 0,
+                                      left: 0,
+                                      width: 2,
+                                      background: 'rgba(255,255,255,0.65)',
+                                      pointerEvents: 'none',
+                                    }}
+                                  />
+                                ) : null}
+                                {markers.length ? (
+                                  <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                                    {markers.map((frac, mi) => (
+                                      <div
+                                        key={`${i}-rm-${mi}`}
+                                        style={{
+                                          position: 'absolute',
+                                          top: 0,
+                                          bottom: 0,
+                                          left: `${Math.max(0, Math.min(1, frac)) * 100}%`,
+                                          width: 2,
+                                          transform: 'translateX(-1px)',
+                                          background: '#ff3b30',
+                                          boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                        </div>
+
+                        <div style={{ display: 'flex', height: tileH }}>
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                          {tiles.map((t, i) => {
+                            const tOrig = Number(t.origSecond) || 0
+                            const w = Math.max(1, t.widthScale * tileW)
+                            const spriteStart = Math.floor(tOrig / perSprite) * perSprite
+                            const idx = tOrig - spriteStart
+                            const col = idx % cols
+                            const row = Math.floor(idx / cols)
                           const bgX = -col * tileW
                           const bgY = -row * tileH
                           const bgSize = `${tileW * cols}px ${tileH * rows}px`
                           const spriteUrl = `/api/uploads/${encodeURIComponent(String(uploadId))}/timeline/sprite?start=${encodeURIComponent(String(spriteStart))}&b=${retryNonce}`
-                          const segIdx = filmstripSegments?.segIndexByThumb?.[i] ?? 0
+                          const segIdx = filmstripSegments?.segIndexByTile?.[i] ?? 0
                           const isSelected = segIdx === selectedIndex
                           const isBoundary = Boolean(filmstripSegments?.boundaryStarts?.has(i))
-                          const markers = filmstripSegments?.markersByThumbIndex?.get(i) || []
+                          const markers = filmstripSegments?.markersByTileIndex?.get(i) || []
 
                           return (
                             <div
@@ -748,7 +814,7 @@ export default function EditVideo() {
                               }}
                               style={{
                                 position: 'relative',
-                                width: tileW,
+                                width: w,
                                 height: tileH,
                                 flex: '0 0 auto',
                                 cursor: 'pointer',
@@ -812,7 +878,8 @@ export default function EditVideo() {
                             </div>
                           )
                         })}
-                        <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                          <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
+                        </div>
                       </div>
                     )
                   })()}
@@ -852,7 +919,7 @@ export default function EditVideo() {
               </div>
             ) : null}
 
-            {!timelineManifest || !thumbs || !thumbs.length ? (
+            {!timelineManifest || !tiles || !tiles.length ? (
               <div style={{ position: 'relative', height: 16, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}>
                 <div style={{ display: 'flex', height: '100%' }}>
                   {segs.map((r, i) => {
