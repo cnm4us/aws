@@ -271,6 +271,7 @@ export default function EditVideo() {
       const orig = Number.isFinite(v.currentTime) ? v.currentTime : 0
       // Enforce playback within kept ranges.
       const eps = 0.06
+      const jumpEps = 0.001
       // Find the first range that could contain or follow orig.
       let idx = -1
       for (let i = 0; i < ranges.length; i++) {
@@ -290,7 +291,9 @@ export default function EditVideo() {
       } else if (orig > r.end - eps) {
         const next = ranges[idx + 1]
         if (next) {
-          try { v.currentTime = next.start } catch {}
+          const maxStart = Math.max(next.start, next.end - jumpEps)
+          const target = clamp(next.start + jumpEps, next.start, maxStart)
+          try { v.currentTime = target } catch {}
         } else {
           try { v.pause() } catch {}
           setPlaying(false)
@@ -340,7 +343,18 @@ export default function EditVideo() {
     if (v.paused) {
       if (ranges && ranges.length) {
         const mapped = editedToOriginalTime(playheadEdited, ranges)
-        try { v.currentTime = mapped.tOriginal } catch {}
+        let target = mapped.tOriginal
+        // If we're exactly on a segment boundary, nudge forward slightly so playback doesn't
+        // get stuck on the previous segment's inclusive end in some browsers.
+        const jumpEps = 0.001
+        try {
+          const seg = ranges[mapped.segIndex]
+          if (seg && mapped.segIndex > 0 && Math.abs(target - seg.start) < 1e-6) {
+            const maxStart = Math.max(seg.start, seg.end - jumpEps)
+            target = clamp(seg.start + jumpEps, seg.start, maxStart)
+          }
+        } catch {}
+        try { v.currentTime = target } catch {}
       }
       v.play().catch(() => {})
     } else {
