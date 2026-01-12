@@ -725,7 +725,6 @@ export default function ProducePage() {
 
     const applyInitialSeek = () => {
       if (editProxyInitialSeekDoneRef.current) return
-      if (!(t > 0)) return
       if (v.readyState < 1) return
       try {
         v.currentTime = t
@@ -787,6 +786,12 @@ export default function ProducePage() {
       updateEditedDuration(rangesForMap)
       syncPlayhead(rangesForMap)
     }
+    const onSeeked = () => {
+      const rangesForMap = clampRanges()
+      if (!rangesForMap.length) return
+      enforceRanges(rangesForMap)
+      syncPlayhead(rangesForMap)
+    }
     const onTime = () => {
       const rangesForMap = clampRanges()
       if (!rangesForMap.length) return
@@ -800,6 +805,7 @@ export default function ProducePage() {
     v.addEventListener('loadeddata', onLoaded)
     v.addEventListener('canplay', onLoaded)
     v.addEventListener('durationchange', onLoaded)
+    v.addEventListener('seeked', onSeeked)
     v.addEventListener('timeupdate', onTime)
     v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause)
@@ -809,6 +815,7 @@ export default function ProducePage() {
       v.removeEventListener('loadeddata', onLoaded)
       v.removeEventListener('canplay', onLoaded)
       v.removeEventListener('durationchange', onLoaded)
+      v.removeEventListener('seeked', onSeeked)
       v.removeEventListener('timeupdate', onTime)
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
@@ -844,8 +851,10 @@ export default function ProducePage() {
         }
       } catch {}
       try { v.currentTime = target } catch {}
-      v.play().catch(() => {})
+      setEditProxyPlaying(true)
+      v.play().catch(() => setEditProxyPlaying(false))
     } else {
+      setEditProxyPlaying(false)
       try { v.pause() } catch {}
     }
   }, [editPreviewRanges, editProxyPlayheadEdited])
@@ -1682,6 +1691,8 @@ export default function ProducePage() {
 		  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
 	    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
 	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc && !!(editPreviewRanges && editPreviewRanges.length)
+	    const editProxyPreviewSrc =
+	      useEditProxyPreview && editPreviewSeekSeconds > 0 ? `${editProxySrc}#t=${encodeURIComponent(String(editPreviewSeekSeconds))}` : editProxySrc
 		  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
@@ -1821,16 +1832,15 @@ export default function ProducePage() {
                         position: 'relative',
                       }}
                     >
-                    {useEditProxyPreview ? (
-                      <video
-                        ref={editProxyVideoRef}
-                        src={editProxySrc || undefined}
-                        muted
-                        playsInline
-                        preload="auto"
-                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-                        onError={() => {
-                          setEditProxyPreviewOk(false)
+	                    {useEditProxyPreview ? (
+	                      <video
+	                        ref={editProxyVideoRef}
+	                        src={editProxyPreviewSrc || undefined}
+	                        playsInline
+	                        preload="auto"
+	                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+	                        onError={() => {
+	                          setEditProxyPreviewOk(false)
                         }}
                       />
                     ) : (
