@@ -486,18 +486,38 @@ export default function EditVideo() {
     if (!ranges || !ranges.length) return null
     if (!timelineManifest) return null
     if (!thumbs || !thumbs.length) return null
-    const interval = Math.max(1, Math.round(Number(timelineManifest.intervalSeconds) || 1))
 
-    const segIndexByThumb = thumbs.map((_, i) => {
-      const tEdited = i * interval
-      return editedToOriginalTime(tEdited, ranges).segIndex
-    })
+    const segIndexByThumb: number[] = []
+    const overlaps = (aStart: number, aEnd: number, bStart: number, bEnd: number) => Math.max(aStart, bStart) < Math.min(aEnd, bEnd)
+
+    // Thumbs are in edited order, but each thumb is keyed by an integer original-second tile.
+    // Map each thumb to a segment by checking overlap between:
+    // - the second interval [tSec, tSec+1)
+    // - the original-time kept range [start, end)
+    //
+    // This is robust when a segment starts/ends at non-integer times.
+    let segCursor = 0
+    for (let i = 0; i < thumbs.length; i++) {
+      const tSec = Number(thumbs[i]) || 0
+      while (segCursor < ranges.length && ranges[segCursor].end <= tSec) segCursor++
+      let segIdx = Math.max(0, Math.min(ranges.length - 1, segCursor))
+
+      const secStart = tSec
+      const secEnd = tSec + 1
+      const r = ranges[segIdx]
+      if (!overlaps(secStart, secEnd, r.start, r.end) && segIdx > 0) {
+        const prev = ranges[segIdx - 1]
+        if (overlaps(secStart, secEnd, prev.start, prev.end)) segIdx = segIdx - 1
+      }
+      segIndexByThumb.push(segIdx)
+    }
+
     const boundaryStarts = new Set<number>()
     boundaryStarts.add(0)
     for (let i = 1; i < segIndexByThumb.length; i++) {
       if (segIndexByThumb[i] !== segIndexByThumb[i - 1]) boundaryStarts.add(i)
     }
-    return { interval, segIndexByThumb, boundaryStarts }
+    return { segIndexByThumb, boundaryStarts }
   }, [ranges, thumbs, timelineManifest])
 
   useEffect(() => {
