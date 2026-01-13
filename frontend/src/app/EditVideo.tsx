@@ -836,37 +836,39 @@ export default function EditVideo() {
                   }}
                 >
                   <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: rulerH,
+                      height: trackH,
+                      pointerEvents: 'none',
+                      zIndex: 1,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <canvas
+                      ref={audioCanvasRef}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'block',
+                        opacity: audioEnvelopeStatus === 'ready' ? 1 : 0.35,
+                      }}
+                    />
+                  </div>
+                  <div
                     ref={timelineScrollRef}
                     style={{
                       position: 'relative',
+                      zIndex: 2,
                       height: '100%',
                       overflowX: 'hidden',
                       overflowY: 'hidden',
                       touchAction: 'none',
                     }}
                   >
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        right: 0,
-                        top: rulerH,
-                        height: trackH,
-                        pointerEvents: 'none',
-                        zIndex: 1,
-                      }}
-                    >
-                      <canvas
-                        ref={audioCanvasRef}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          display: 'block',
-                          opacity: audioEnvelopeStatus === 'ready' ? 1 : 0.35,
-                        }}
-                      />
-                    </div>
-                    <div style={{ position: 'relative', zIndex: 2 }}>
+                    <div style={{ position: 'relative' }}>
                     {(() => {
                       const stripContentW = Math.max(0, total * pxPerSecond)
                       const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
@@ -1012,6 +1014,7 @@ export default function EditVideo() {
                       transform: 'translateX(-1px)',
                       background: '#ff3b30',
                       pointerEvents: 'none',
+                      zIndex: 3,
                     }}
                   />
                 </div>
