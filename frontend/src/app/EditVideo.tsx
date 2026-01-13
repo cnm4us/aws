@@ -10,34 +10,12 @@ type AudioEnvelope = {
   points?: Array<{ t: number; v: number }>
 }
 
-function drawAudioEnvelopeLine(opts: {
-  canvas: HTMLCanvasElement
-  widthPx: number
-  heightPx: number
-  pxPerSecond: number
-  ranges: Range[]
-  envelope: AudioEnvelope
-}): void {
-  const c = opts.canvas
-  const widthPx = Math.max(0, Math.round(opts.widthPx))
-  const heightPx = Math.max(0, Math.round(opts.heightPx))
-  const dpr = Math.max(1, Math.round((window.devicePixelRatio || 1) * 100) / 100)
-
-  c.width = Math.max(1, Math.floor(widthPx * dpr))
-  c.height = Math.max(1, Math.floor(heightPx * dpr))
-
-  const ctx = c.getContext('2d')
-  if (!ctx) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, widthPx, heightPx)
-
-  const points = Array.isArray(opts.envelope.points) ? opts.envelope.points : []
-  const intervalSeconds = opts.envelope.intervalSeconds != null && Number.isFinite(Number(opts.envelope.intervalSeconds)) ? Number(opts.envelope.intervalSeconds) : 0.1
-  const durationSeconds =
-    opts.envelope.durationSeconds != null && Number.isFinite(Number(opts.envelope.durationSeconds)) ? Number(opts.envelope.durationSeconds) : null
-
-  if (!points.length || !intervalSeconds || intervalSeconds <= 0) return
-
+function buildEnvelopeValues(envelope: AudioEnvelope | null): { intervalSeconds: number; vals: number[] } | null {
+  if (!envelope) return null
+  const points = Array.isArray(envelope.points) ? envelope.points : []
+  const intervalSeconds = envelope.intervalSeconds != null && Number.isFinite(Number(envelope.intervalSeconds)) ? Number(envelope.intervalSeconds) : 0.1
+  const durationSeconds = envelope.durationSeconds != null && Number.isFinite(Number(envelope.durationSeconds)) ? Number(envelope.durationSeconds) : null
+  if (!points.length || !intervalSeconds || intervalSeconds <= 0) return null
   const len = durationSeconds != null ? Math.ceil(durationSeconds / intervalSeconds) + 2 : Math.ceil((points[points.length - 1]?.t || 0) / intervalSeconds) + 2
   const vals = new Array<number>(Math.max(0, len)).fill(0)
   for (const p of points) {
@@ -48,39 +26,91 @@ function drawAudioEnvelopeLine(opts: {
     if (idx < 0 || idx >= vals.length) continue
     vals[idx] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0
   }
+  return { intervalSeconds, vals }
+}
 
-  const pad = 1
-  const usableH = Math.max(1, heightPx - pad * 2)
+function drawAudioEnvelopeViewport(opts: {
+  canvas: HTMLCanvasElement
+  viewportWidthPx: number
+  heightPx: number
+  pxPerSecond: number
+  padPx: number
+  scrollLeftPx: number
+  totalEditedSeconds: number
+  segs: Range[]
+  envelopeVals: { intervalSeconds: number; vals: number[] }
+  lineColor?: string
+}): void {
+  const c = opts.canvas
+  const viewportW = Math.max(0, Math.round(opts.viewportWidthPx))
+  const heightPx = Math.max(0, Math.round(opts.heightPx))
+  const dpr = Math.max(1, Math.round((window.devicePixelRatio || 1) * 100) / 100)
+
+  c.width = Math.max(1, Math.floor(viewportW * dpr))
+  c.height = Math.max(1, Math.floor(heightPx * dpr))
+
+  const ctx = c.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, viewportW, heightPx)
+
+  if (!opts.segs.length || opts.totalEditedSeconds <= 0) return
+
+  const interval = opts.envelopeVals.intervalSeconds
+  const vals = opts.envelopeVals.vals
+  if (!interval || interval <= 0 || !vals.length) return
+
+  const pps = Math.max(1, opts.pxPerSecond)
+  const padPx = Math.max(0, opts.padPx)
+  const scrollLeft = Math.max(0, opts.scrollLeftPx)
+
+  const tStart = clamp((scrollLeft - padPx) / pps, 0, Math.max(0, opts.totalEditedSeconds))
+  const tEnd = clamp((scrollLeft + viewportW - padPx) / pps, 0, Math.max(0, opts.totalEditedSeconds))
+  if (!(tEnd > tStart)) return
+
+  const padY = 1
+  const usableH = Math.max(1, heightPx - padY * 2)
   ctx.lineWidth = 1.25
-  ctx.strokeStyle = 'rgba(212,175,55,0.9)'
+  ctx.strokeStyle = opts.lineColor || 'rgba(212,175,55,0.9)'
   ctx.beginPath()
 
+  const segmentStartsEdited = segmentEditedStarts(opts.segs)
+  let segIdx = 0
+  const eps = 1e-6
+
+  const firstSample = Math.floor(tStart / interval) * interval
+  const lastSample = Math.ceil(tEnd / interval) * interval
+  const sampleCount = Math.max(1, Math.ceil((lastSample - firstSample) / interval) + 1)
+  const step = Math.max(1, Math.ceil(sampleCount / 1500))
+
   let hasMoved = false
-  let editedOffset = 0
+  for (let n = 0; n < sampleCount; n += step) {
+    const tEdited = firstSample + n * interval
+    if (tEdited < tStart - eps) continue
+    if (tEdited > tEnd + eps) break
 
-  for (const seg of opts.ranges) {
-    const segStart = Math.max(0, Number(seg.start || 0))
-    const segEnd = Math.max(segStart, Number(seg.end || 0))
-    const segLen = Math.max(0, segEnd - segStart)
-    if (segLen <= 0) continue
-
-    const startIdx = Math.floor(segStart / intervalSeconds)
-    const endIdx = Math.ceil(segEnd / intervalSeconds)
-    for (let idx = startIdx; idx <= endIdx; idx++) {
-      const t = idx * intervalSeconds
-      if (t < segStart) continue
-      if (t > segEnd) continue
-      const v = idx >= 0 && idx < vals.length ? vals[idx] : 0
-      const x = (editedOffset + (t - segStart)) * opts.pxPerSecond
-      const y = pad + (1 - Math.max(0, Math.min(1, v))) * usableH
-      if (!hasMoved) {
-        ctx.moveTo(x, y)
-        hasMoved = true
-      } else {
-        ctx.lineTo(x, y)
-      }
+    while (segIdx < opts.segs.length - 1) {
+      const segStartE = segmentStartsEdited[segIdx] || 0
+      const segLen = Math.max(0, (opts.segs[segIdx]?.end || 0) - (opts.segs[segIdx]?.start || 0))
+      const segEndE = segStartE + segLen
+      if (tEdited < segEndE - eps) break
+      segIdx++
     }
-    editedOffset += segLen
+
+    const seg = opts.segs[segIdx]
+    const segStartE = segmentStartsEdited[segIdx] || 0
+    const tOrig = Math.max(0, Number(seg.start || 0) + (tEdited - segStartE))
+    const vIdx = Math.round(tOrig / interval)
+    const v = vIdx >= 0 && vIdx < vals.length ? vals[vIdx] : 0
+
+    const x = padPx + tEdited * pps - scrollLeft
+    const y = padY + (1 - Math.max(0, Math.min(1, v))) * usableH
+    if (!hasMoved) {
+      ctx.moveTo(x, y)
+      hasMoved = true
+    } else {
+      ctx.lineTo(x, y)
+    }
   }
 
   if (hasMoved) ctx.stroke()
@@ -258,6 +288,10 @@ export default function EditVideo() {
   const [audioEnvelope, setAudioEnvelope] = useState<AudioEnvelope | null>(null)
   const [audioEnvelopeStatus, setAudioEnvelopeStatus] = useState<'idle' | 'pending' | 'ready' | 'error'>('idle')
   const audioCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const envelopeVals = useMemo(
+    () => (audioEnvelopeStatus === 'ready' ? buildEnvelopeValues(audioEnvelope) : null),
+    [audioEnvelope, audioEnvelopeStatus],
+  )
 
   const [durationOriginal, setDurationOriginal] = useState(0)
   const [ranges, setRanges] = useState<Range[] | null>(initialRanges)
@@ -680,23 +714,29 @@ export default function EditVideo() {
 
   useEffect(() => {
     const c = audioCanvasRef.current
-    if (!c) return
+    const sc = timelineScrollRef.current
+    if (!c || !sc) return
     const total = totalEditedDuration > 0 ? totalEditedDuration : 0
-    if (!segs.length || total <= 0 || !audioEnvelope || audioEnvelopeStatus !== 'ready') {
+    if (!segs.length || total <= 0 || audioEnvelopeStatus !== 'ready' || !envelopeVals) {
       const ctx = c.getContext('2d')
       if (ctx) ctx.clearRect(0, 0, c.width, c.height)
       return
     }
-    const widthPx = Math.max(0, total * pxPerSecond)
-    drawAudioEnvelopeLine({
-      canvas: c,
-      widthPx,
-      heightPx: trackH,
-      pxPerSecond,
-      ranges: segs,
-      envelope: audioEnvelope,
+    const raf = window.requestAnimationFrame(() => {
+      drawAudioEnvelopeViewport({
+        canvas: c,
+        viewportWidthPx: sc.clientWidth || 0,
+        heightPx: trackH,
+        pxPerSecond,
+        padPx: timelinePadPx,
+        scrollLeftPx: sc.scrollLeft || 0,
+        totalEditedSeconds: total,
+        segs,
+        envelopeVals,
+      })
     })
-  }, [audioEnvelope, audioEnvelopeStatus, pxPerSecond, segs, totalEditedDuration, trackH])
+    return () => window.cancelAnimationFrame(raf)
+  }, [audioEnvelopeStatus, envelopeVals, pxPerSecond, segs, timelinePadPx, totalEditedDuration, trackH, playheadEdited])
 
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
@@ -798,12 +838,35 @@ export default function EditVideo() {
                   <div
                     ref={timelineScrollRef}
                     style={{
+                      position: 'relative',
                       height: '100%',
                       overflowX: 'hidden',
                       overflowY: 'hidden',
                       touchAction: 'none',
                     }}
                   >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: rulerH,
+                        height: trackH,
+                        pointerEvents: 'none',
+                        zIndex: 1,
+                      }}
+                    >
+                      <canvas
+                        ref={audioCanvasRef}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'block',
+                          opacity: audioEnvelopeStatus === 'ready' ? 1 : 0.35,
+                        }}
+                      />
+                    </div>
+                    <div style={{ position: 'relative', zIndex: 2 }}>
                     {(() => {
                       const stripContentW = Math.max(0, total * pxPerSecond)
                       const stripTotalW = Math.max(0, stripContentW + timelinePadPx * 2)
@@ -909,17 +972,6 @@ export default function EditVideo() {
 	                                background: 'rgba(0,0,0,0.12)',
 	                              }}
 	                            >
-	                              <canvas
-	                                ref={audioCanvasRef}
-	                                style={{
-	                                  position: 'absolute',
-	                                  inset: 0,
-	                                  width: '100%',
-	                                  height: '100%',
-	                                  pointerEvents: 'none',
-	                                  opacity: audioEnvelopeStatus === 'ready' ? 1 : 0.35,
-	                                }}
-	                              />
 	                              {renderRowHighlight(0.1, false)}
 	                              {renderBoundaries('255,255,255', 0.28)}
 	                            </div>
@@ -948,6 +1000,7 @@ export default function EditVideo() {
                         </div>
                       )
                     })()}
+                    </div>
                   </div>
                   <div
                     style={{
