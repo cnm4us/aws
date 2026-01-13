@@ -678,6 +678,7 @@ export default function ProducePage() {
   const editProxyInitialSeekDoneRef = useRef(false)
   const [editProxyPlaying, setEditProxyPlaying] = useState(false)
   const [editProxyMuted, setEditProxyMuted] = useState(true)
+  const [editProxyHasPlayedOnce, setEditProxyHasPlayedOnce] = useState(false)
   const [editProxyPlayheadEdited, setEditProxyPlayheadEdited] = useState(0)
   const [editProxyDurationEdited, setEditProxyDurationEdited] = useState(0)
   const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
@@ -726,6 +727,7 @@ export default function ProducePage() {
     editProxyInitialSeekDoneRef.current = false
     setEditProxyPlaying(false)
     setEditProxyMuted(true)
+    setEditProxyHasPlayedOnce(false)
     setEditProxyPlayheadEdited(0)
     setEditProxyDurationEdited(0)
   }, [editRanges, editStartSeconds, editEndSeconds, uploadId])
@@ -826,7 +828,10 @@ export default function ProducePage() {
       enforceRanges(rangesForMap)
       syncPlayhead(rangesForMap)
     }
-    const onPlay = () => setEditProxyPlaying(true)
+    const onPlay = () => {
+      setEditProxyPlaying(true)
+      setEditProxyHasPlayedOnce(true)
+    }
     const onPause = () => setEditProxyPlaying(false)
 
     v.addEventListener('loadedmetadata', onLoaded)
@@ -950,6 +955,7 @@ export default function ProducePage() {
       } catch {}
       setEditProxyMuted(false)
       setEditProxyPlaying(true)
+      setEditProxyHasPlayedOnce(true)
       v.play().catch(() => setEditProxyPlaying(false))
     } else {
       setEditProxyPlaying(false)
@@ -1794,6 +1800,7 @@ export default function ProducePage() {
 	    const editProxyDurationMax = useEditProxyPreview
 	      ? (editProxyDurationEdited > 0 ? editProxyDurationEdited : editPreviewDurationFallback)
 	      : 0
+	    const editProxyPosterSrc = uploadPreviewSrc || poster || null
 		  const sourceDeleted = !!upload.source_deleted_at
 
 		  const onProduce = async () => {
@@ -1934,24 +1941,41 @@ export default function ProducePage() {
                       }}
                     >
 	                    {useEditProxyPreview ? (
-	                      <video
-	                        ref={editProxyVideoRef}
-	                        src={editProxyPreviewSrc || undefined}
-	                        poster={uploadPreviewSrc || poster || undefined}
-	                        controls={false}
-	                        muted={editProxyMuted}
-	                        playsInline
-	                        preload="auto"
-	                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-	                        onError={() => {
-	                          setEditProxyPreviewOk(false)
-                        }}
-                      />
-                    ) : (
-			                  <img
-			                    src={uploadPreviewSrc || undefined}
-			                    alt="poster"
-			                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+	                      <>
+	                        {editProxyPosterSrc && !editProxyHasPlayedOnce ? (
+	                          <img
+	                            src={editProxyPosterSrc}
+	                            alt=""
+	                            style={{
+	                              position: 'absolute',
+	                              inset: 0,
+	                              width: '100%',
+	                              height: '100%',
+	                              objectFit: 'cover',
+	                              display: 'block',
+	                              zIndex: 0,
+	                            }}
+	                          />
+	                        ) : null}
+	                        <video
+	                          ref={editProxyVideoRef}
+	                          src={editProxyPreviewSrc || undefined}
+	                          poster={editProxyPosterSrc || undefined}
+	                          controls={false}
+	                          muted={editProxyMuted}
+	                          playsInline
+	                          preload="auto"
+	                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', objectFit: 'cover', zIndex: 0 }}
+	                          onError={() => {
+	                            setEditProxyPreviewOk(false)
+	                          }}
+	                        />
+	                      </>
+	                    ) : (
+				                  <img
+				                    src={uploadPreviewSrc || undefined}
+				                    alt="poster"
+				                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
 			                    onError={() => {
 		                      if (uploadPreviewMode === 'thumb') {
 		                        if (poster) {
