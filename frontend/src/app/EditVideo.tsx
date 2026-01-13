@@ -170,6 +170,7 @@ export default function EditVideo() {
   const [proxyError, setProxyError] = useState<string | null>(null)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelinePadPx, setTimelinePadPx] = useState(0)
+  const [videoMuted, setVideoMuted] = useState(true)
 
   const [durationOriginal, setDurationOriginal] = useState(0)
   const [ranges, setRanges] = useState<Range[] | null>(initialRanges)
@@ -179,7 +180,9 @@ export default function EditVideo() {
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<Array<{ ranges: Range[]; selectedIndex: number; playheadEdited: number }>>([])
 
-  const src = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}` : null
+  // iOS Safari often won’t render an initial paused frame for a <video> without a poster until playback begins.
+  // Adding a time fragment and starting muted improves first-frame paint reliability.
+  const src = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}#t=0.1` : null
   const backHref = from || (uploadId ? `/produce?upload=${encodeURIComponent(String(uploadId))}` : '/produce')
 
   const totalEditedDuration = useMemo(() => (ranges ? sumRanges(ranges) : 0), [ranges])
@@ -187,6 +190,7 @@ export default function EditVideo() {
 
   useEffect(() => {
     initialSeekDoneRef.current = false
+    setVideoMuted(true)
   }, [retryNonce, uploadId])
 
   const attemptInitialSeekToFirstKeptFrame = useCallback(() => {
@@ -391,6 +395,11 @@ export default function EditVideo() {
         } catch {}
         try { v.currentTime = target } catch {}
       }
+      try {
+        v.muted = false
+        v.volume = 1
+      } catch {}
+      setVideoMuted(false)
       v.play().catch(() => {})
     } else {
       try { v.pause() } catch {}
@@ -599,15 +608,16 @@ export default function EditVideo() {
         ) : null}
 
         <div style={{ display: 'grid', gap: 12 }}>
-          <video
-            ref={videoRef}
-            src={src || undefined}
-            playsInline
-            preload="auto"
-            style={{ width: '100%', borderRadius: 12, background: '#000' }}
-            onError={() => setProxyError('Generating edit proxy… try again in a moment.')}
-            onLoadedMetadata={() => syncFromVideo()}
-          />
+	          <video
+	            ref={videoRef}
+	            src={src || undefined}
+	            muted={videoMuted}
+	            playsInline
+	            preload="auto"
+	            style={{ width: '100%', borderRadius: 12, background: '#000' }}
+	            onError={() => setProxyError('Generating edit proxy… try again in a moment.')}
+	            onLoadedMetadata={() => syncFromVideo()}
+	          />
 
           <div style={{ color: '#bbb', fontSize: 13 }}>
             Segments: {segs.length} • Cuts: {cutCount}/{MAX_CUTS} • Total: {total > 0 ? `${total.toFixed(1)}s` : '—'}
