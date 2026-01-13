@@ -420,6 +420,53 @@ export async function getUploadTimelineManifest(
   }
 }
 
+async function ensureThumbEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
+  try {
+    if (!MEDIA_JOBS_ENABLED) return
+    const uploadId = Number(uploadRow?.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
+    if (sourceDeletedAt) return
+
+    const kind = String(uploadRow?.kind || 'video').toLowerCase()
+    const isSystem = Number(uploadRow?.is_system || 0) === 1
+    if (isSystem || kind !== 'video') return
+
+    const ownerId = uploadRow?.user_id != null ? Number(uploadRow.user_id) : null
+    const userIdForJob =
+      ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
+    if (!userIdForJob) return
+
+    let alreadyQueued = false
+    try {
+      const db = getPool()
+      const [rows] = await db.query(
+        `SELECT id
+           FROM media_jobs
+          WHERE type = 'upload_thumb_v1'
+            AND status IN ('pending','processing')
+            AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+          ORDER BY id DESC
+          LIMIT 1`,
+        [String(uploadId)]
+      )
+      alreadyQueued = (rows as any[]).length > 0
+    } catch {}
+    if (alreadyQueued) return
+
+    await enqueueJob('upload_thumb_v1', {
+      uploadId,
+      userId: userIdForJob,
+      video: { bucket: String(uploadRow.s3_bucket), key: String(uploadRow.s3_key) },
+      outputBucket: String(UPLOAD_BUCKET),
+      outputKey: buildUploadThumbKey(uploadId),
+      longEdgePx: 640,
+    })
+  } catch {
+    // Best-effort: thumbnails are optional and UI can fall back.
+  }
+}
+
 export async function getUploadAudioEnvelope(
   uploadId: number,
   ctx: ServiceContext
@@ -531,9 +578,41 @@ export async function getUploadThumbStream(
   } catch (e: any) {
     const name = String(e?.name || e?.Code || '')
     const status = Number(e?.$metadata?.httpStatusCode || 0)
-    if (status === 404 || name === 'NoSuchKey' || name === 'NotFound') throw new NotFoundError('not_found')
+    if (status === 404 || name === 'NoSuchKey' || name === 'NotFound') {
+      await ensureThumbEnqueued(row, ctx)
+      throw new NotFoundError('not_found')
+    }
     throw e
   }
+}
+
+export async function getUploadThumbFallbackUrl(uploadId: number, ctx: ServiceContext): Promise<string | null> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') return null
+
+  const isSystem = Number((row as any).is_system || 0) === 1
+  if (!isSystem) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
+
+  const enhanced: any = enhanceUploadRow(row as any)
+  const url =
+    enhanced.poster_portrait_cdn ||
+    enhanced.poster_landscape_cdn ||
+    enhanced.poster_cdn ||
+    enhanced.poster_portrait_s3 ||
+    enhanced.poster_landscape_s3 ||
+    enhanced.poster_s3 ||
+    null
+  return url ? String(url) : null
 }
 
 export async function listSystemAudio(

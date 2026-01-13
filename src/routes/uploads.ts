@@ -213,7 +213,26 @@ uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
   } catch (err: any) {
     const status = err?.status || 500
     if (status === 403) return res.status(403).send('forbidden')
-    if (status === 404) return res.status(404).send('not_found')
+    if (status === 404) {
+      try {
+        const fallbackUrl = await uploadsSvc.getUploadThumbFallbackUrl(
+          Number(req.params.id),
+          { userId: Number(req.user!.id) }
+        )
+        if (fallbackUrl) {
+          res.set('Cache-Control', 'no-store')
+          res.status(302).set('Location', fallbackUrl)
+          return res.end()
+        }
+      } catch (e: any) {
+        const st = e?.status || 500
+        if (st === 403) return res.status(403).send('forbidden')
+      }
+      // As a last resort, return a tiny transparent placeholder instead of 404 to avoid console noise.
+      res.set('Cache-Control', 'no-store')
+      res.set('Content-Type', 'image/svg+xml; charset=utf-8')
+      return res.status(200).send(`<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>`)
+    }
     console.error('upload thumb fetch failed', err)
     return res.status(status).send('failed')
   }
