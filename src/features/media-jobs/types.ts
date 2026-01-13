@@ -116,6 +116,20 @@ export type EditRecipeV1 = {
   ranges?: Array<{ start: number; end: number }> | null
 }
 
+export type TimelineOverlayImageV1 = {
+  id: string
+  kind: 'image'
+  track: 'A'
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  fit: 'cover'
+  opacityPct: number
+  image: S3Pointer
+  width: number
+  height: number
+}
+
 export type AudioMasterV1Input = {
   productionId: number
   productionUlid: string
@@ -131,6 +145,7 @@ export type AudioMasterV1Input = {
   logo?: LogoOverlayV1 | null
   lowerThirdImage?: LowerThirdImageOverlayV1 | null
   intro?: IntroV1 | null
+  timeline?: { overlays?: TimelineOverlayImageV1[] } | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number | null
   mode: 'replace' | 'mix'
@@ -164,6 +179,7 @@ export type VideoMasterV1Input = {
   logo?: LogoOverlayV1 | null
   lowerThirdImage?: LowerThirdImageOverlayV1 | null
   intro?: IntroV1 | null
+  timeline?: { overlays?: TimelineOverlayImageV1[] } | null
   // Legacy (Plan 37): kept for backward compatibility with older queued jobs.
   introSeconds?: number
   outputBucket: string

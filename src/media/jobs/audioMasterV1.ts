@@ -156,6 +156,7 @@ export async function runAudioMasterV1Job(
         originalLeaf,
         masteredS3Url: out.s3Url,
         videoDurationSeconds,
+        timeline: (input as any).timeline ?? null,
         logo: (input as any).logo,
         lowerThirdImage: (input as any).lowerThirdImage,
         screenTitle: input.screenTitle ?? null,
@@ -195,6 +196,7 @@ export async function runAudioMasterV1Job(
     originalLeaf,
     masteredS3Url: out.s3Url,
     videoDurationSeconds,
+    timeline: (input as any).timeline ?? null,
     logo: (input as any).logo,
     lowerThirdImage: (input as any).lowerThirdImage,
     screenTitle: input.screenTitle ?? null,
@@ -210,15 +212,21 @@ async function maybeApplyVisualOverlays(opts: {
   originalLeaf: string
   masteredS3Url: string
   videoDurationSeconds: number | null
+  timeline: any
   logo: any
   lowerThirdImage: any
   screenTitle: any
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }): Promise<{ bucket: string; key: string; s3Url: string } | null> {
+  const timelineOverlaysRaw =
+    opts.timeline && typeof opts.timeline === 'object' && Array.isArray((opts.timeline as any).overlays)
+      ? (((opts.timeline as any).overlays as any[]) || [])
+      : []
+  const hasTimelineOverlays = Boolean(timelineOverlaysRaw.length)
   const hasLowerThird = Boolean(opts.lowerThirdImage && opts.lowerThirdImage.image && opts.lowerThirdImage.image.bucket && opts.lowerThirdImage.image.key)
   const hasLogo = Boolean(opts.logo && opts.logo.image && opts.logo.image.bucket && opts.logo.image.key)
   const hasScreenTitle = Boolean(opts.screenTitle && opts.screenTitle.text && opts.screenTitle.preset)
-  if (!hasLowerThird && !hasLogo && !hasScreenTitle) return null
+  if (!hasTimelineOverlays && !hasLowerThird && !hasLogo && !hasScreenTitle) return null
 
   const s3 = masteredS3UrlToPtr(opts.masteredS3Url)
   if (!s3) return null
@@ -234,6 +242,29 @@ async function maybeApplyVisualOverlays(opts: {
     const dims = await probeVideoDisplayDimensions(inPath)
 
     const overlays: any[] = []
+    if (hasTimelineOverlays) {
+      for (let i = 0; i < Math.min(20, timelineOverlaysRaw.length); i++) {
+        const ov = timelineOverlaysRaw[i] || {}
+        const img = ov.image
+        if (!img || !img.bucket || !img.key) continue
+        const pngPath = path.join(tmpDir, `timeline_${i}.png`)
+        await downloadOverlayPngToFile(img, pngPath)
+        const imgW = Number(ov.width || 0)
+        const imgH = Number(ov.height || 0)
+        const startSeconds = Number(ov.startSeconds)
+        const endSeconds = Number(ov.endSeconds)
+        if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) continue
+        overlays.push({
+          pngPath,
+          imgW,
+          imgH,
+          mode: 'full_frame_cover',
+          startSeconds,
+          endSeconds,
+          cfg: { opacityPct: 100 },
+        })
+      }
+    }
     if (hasLowerThird) {
       await downloadOverlayPngToFile(opts.lowerThirdImage.image, lowerPath)
       const imgW = Number(opts.lowerThirdImage.width || 0)

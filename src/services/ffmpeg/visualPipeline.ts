@@ -97,6 +97,18 @@ function computeOverlayRect(outputW: number, outputH: number, imgW: number, imgH
   return { x, y, width: renderW, height: renderH, opacity }
 }
 
+function computeFullFrameCoverRect(outputW: number, outputH: number, imgW: number, imgH: number, cfg: { opacityPct?: any }) {
+  const opacity = clampInt((cfg as any).opacityPct ?? 100, 0, 100)
+  const w = Math.max(1, clampNum(imgW, 1, 999999))
+  const h = Math.max(1, clampNum(imgH, 1, 999999))
+  const scale = Math.max(outputW / w, outputH / h)
+  const renderW = Math.max(1, Math.round(w * scale))
+  const renderH = Math.max(1, Math.round(h * scale))
+  const x = Math.round((outputW - renderW) / 2)
+  const y = Math.round((outputH - renderH) / 2)
+  return { x, y, width: renderW, height: renderH, opacity }
+}
+
 function computeTimingSeconds(cfg: { timingRule?: any; timingSeconds?: any }, videoDurationSeconds: number | null) {
   const rule = String(cfg.timingRule || 'entire')
   const secs = cfg.timingSeconds == null ? null : clampInt(cfg.timingSeconds, 0, 3600)
@@ -258,6 +270,9 @@ export async function burnPngOverlaysIntoMp4(opts: {
     imgW: number
     imgH: number
     cfg: LogoConfigSnapshot
+    mode?: 'full_frame_cover'
+    startSeconds?: number
+    endSeconds?: number
   }>
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }): Promise<void> {
@@ -275,9 +290,15 @@ export async function burnPngOverlaysIntoMp4(opts: {
     const ov = opts.overlays[i]
     const idx = i + 1
 
-    const rect = computeOverlayRect(dims.width, dims.height, ov.imgW, ov.imgH, ov.cfg)
+    const rect =
+      ov.mode === 'full_frame_cover'
+        ? computeFullFrameCoverRect(dims.width, dims.height, ov.imgW, ov.imgH, ov.cfg)
+        : computeOverlayRect(dims.width, dims.height, ov.imgW, ov.imgH, ov.cfg)
     const opacity = clampNum(rect.opacity / 100, 0, 1)
-    const timing = computeTimingSeconds(ov.cfg, opts.videoDurationSeconds)
+    const timing =
+      ov.startSeconds != null && ov.endSeconds != null
+        ? { startS: Math.max(0, Number(ov.startSeconds) || 0), durationS: Math.max(0, (Number(ov.endSeconds) || 0) - (Number(ov.startSeconds) || 0)) }
+        : computeTimingSeconds(ov.cfg, opts.videoDurationSeconds)
     const fades = computeFadeSeconds(ov.cfg)
     const durationS = Math.max(0, Number(timing.durationS) || 0)
     const startS = Math.max(0, Number(timing.startS) || 0)

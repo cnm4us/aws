@@ -373,6 +373,14 @@ export async function startProductionRender(options: RenderOptions) {
       ? { ranges }
       : (trimStartSeconds != null || trimEndSeconds != null ? { trimStartSeconds, trimEndSeconds } : null)
 
+  const timelineRaw = cfgObj && (cfgObj as any).timeline && typeof (cfgObj as any).timeline === 'object' ? (cfgObj as any).timeline : null
+  const timelineOverlaysRaw = timelineRaw && Array.isArray((timelineRaw as any).overlays) ? ((timelineRaw as any).overlays as any[]) : null
+  const wantsTimelineOverlays = Boolean(
+    MEDIA_FFMPEG_COMPOSITE_ENABLED &&
+      timelineOverlaysRaw &&
+      timelineOverlaysRaw.length
+  )
+
   const wantsLogo = Boolean(
     MEDIA_FFMPEG_COMPOSITE_ENABLED &&
       logoUploadId &&
@@ -388,13 +396,14 @@ export async function startProductionRender(options: RenderOptions) {
       lowerThirdImageConfigSnapshot
   )
   const needsMediaJob = Boolean(
-    MEDIA_JOBS_ENABLED && (hasMusic || editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage)
+    MEDIA_JOBS_ENABLED && (hasMusic || editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage || wantsTimelineOverlays)
   )
   const initialStatus = needsMediaJob ? 'pending_media' : 'queued'
   let jobInputBase: any = null
 
   let logoForJob: any = null
   let lowerThirdImageForJob: any = null
+  let timelineOverlaysForJob: any[] | null = null
   if (needsMediaJob && (wantsLogo || wantsLowerThirdImage)) {
     if (wantsLogo) {
       const [rows] = await db.query(
@@ -441,6 +450,64 @@ export async function startProductionRender(options: RenderOptions) {
       }
     }
   }
+
+  if (needsMediaJob && wantsTimelineOverlays && timelineOverlaysRaw) {
+    const introShiftSeconds =
+      introForJob && typeof introForJob === 'object'
+        ? (String((introForJob as any).kind || '') === 'freeze_first_frame'
+            ? Math.max(0, Math.round(Number((introForJob as any).seconds || 0)))
+            : (String((introForJob as any).kind || '') === 'title_image'
+                ? Math.max(0, Math.round(Number((introForJob as any).holdSeconds || 0)))
+                : 0))
+        : 0
+    const out: any[] = []
+    for (const raw of timelineOverlaysRaw.slice(0, 20)) {
+      const kind = String(raw?.kind || '').toLowerCase()
+      const track = String(raw?.track || '').toUpperCase()
+      const uploadId = Number(raw?.uploadId)
+      const startSecondsRaw = Number(raw?.startSeconds)
+      const endSecondsRaw = Number(raw?.endSeconds)
+      if (kind !== 'image' || track !== 'A') continue
+      if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+      if (!Number.isFinite(startSecondsRaw) || !Number.isFinite(endSecondsRaw) || endSecondsRaw <= startSecondsRaw) continue
+      const startSeconds = Math.max(0, Math.min(3600, Math.round(startSecondsRaw * 10) / 10))
+      const endSeconds = Math.max(0, Math.min(3600, Math.round(endSecondsRaw * 10) / 10))
+      const shiftedStart = Math.round((startSeconds + introShiftSeconds) * 10) / 10
+      const shiftedEnd = Math.round((endSeconds + introShiftSeconds) * 10) / 10
+
+      const [rows] = await db.query(
+        `SELECT id, kind, image_role, status, s3_bucket, s3_key, width, height
+           FROM uploads
+          WHERE id = ?
+          LIMIT 1`,
+        [uploadId]
+      )
+      const r = (rows as any[])[0]
+      if (!r) throw new DomainError('overlay_upload_not_found', 'overlay_upload_not_found', 404)
+      const k = String(r.kind || '').toLowerCase()
+      if (k !== 'image') throw new DomainError('invalid_overlay_upload_kind', 'invalid_overlay_upload_kind', 400)
+      const role = String(r.image_role || '').toLowerCase()
+      if (role !== 'overlay') throw new DomainError('invalid_overlay_image_role', 'invalid_overlay_image_role', 400)
+      const st = String(r.status || '').toLowerCase()
+      if (st !== 'uploaded' && st !== 'completed') throw new DomainError('invalid_overlay_upload_state', 'invalid_overlay_upload_state', 422)
+
+      out.push({
+        id: raw?.id != null ? String(raw.id) : `ov_${uploadId}_${startSeconds}_${endSeconds}`,
+        kind: 'image',
+        track: 'A',
+        uploadId,
+        startSeconds: shiftedStart,
+        endSeconds: shiftedEnd,
+        fit: 'cover',
+        opacityPct: 100,
+        image: { bucket: String(r.s3_bucket), key: String(r.s3_key) },
+        width: Number(r.width || 0),
+        height: Number(r.height || 0),
+      })
+    }
+    out.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || Number(a.endSeconds) - Number(b.endSeconds) || Number(a.uploadId) - Number(b.uploadId))
+    timelineOverlaysForJob = out.length ? out : null
+  }
   if (needsMediaJob && hasMusic) {
     const [rows] = await db.query(
       `SELECT id, kind, status, s3_bucket, s3_key, content_type
@@ -484,21 +551,22 @@ export async function startProductionRender(options: RenderOptions) {
         ? Number(upload.duration_seconds)
         : null
 
-	    jobInputBase = {
-	      productionUlid: prodUlid,
-	      userId: Number(userId),
-	      uploadId: Number(upload.id),
-	      dateYmd: createdDate,
-	      originalLeaf,
-	      videoDurationSeconds,
-	      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
-	      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
-	      edit: editForJob,
-	      screenTitle: screenTitleForJob,
-	      logo: logoForJob,
-	      lowerThirdImage: lowerThirdImageForJob,
-	      intro: introForJob,
-	      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
+		    jobInputBase = {
+		      productionUlid: prodUlid,
+		      userId: Number(userId),
+		      uploadId: Number(upload.id),
+		      dateYmd: createdDate,
+		      originalLeaf,
+		      videoDurationSeconds,
+		      video: { bucket: String(upload.s3_bucket), key: String(upload.s3_key) },
+		      music: { bucket: String(au.s3_bucket), key: String(au.s3_key) },
+		      edit: editForJob,
+		      screenTitle: screenTitleForJob,
+		      logo: logoForJob,
+		      lowerThirdImage: lowerThirdImageForJob,
+		      intro: introForJob,
+		      timeline: timelineOverlaysForJob ? { overlays: timelineOverlaysForJob } : null,
+		      introSeconds: introForJob && introForJob.kind === 'freeze_first_frame' ? introSeconds : null,
       mode: mode === 'replace' ? 'replace' : 'mix',
       videoGainDb,
       musicGainDb,
@@ -529,7 +597,7 @@ export async function startProductionRender(options: RenderOptions) {
 	      const job = await enqueueJob('audio_master_v1', { productionId, ...jobInputBase })
 	      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }
 	    }
-	    if (editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage) {
+		    if (editForJob != null || introForJob != null || screenTitleForJob != null || wantsLogo || wantsLowerThirdImage || wantsTimelineOverlays) {
 	      const createdDate = (upload.created_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
 	      const originalLeaf = path.posix.basename(String(upload.s3_key || '')) || 'video.mp4'
 	      const videoDurationSeconds =
@@ -551,6 +619,7 @@ export async function startProductionRender(options: RenderOptions) {
 	        lowerThirdImage: lowerThirdImageForJob,
 	        intro: introForJob,
 	        introSeconds: introForJob?.kind === 'freeze_first_frame' ? introSeconds : 0,
+	        timeline: timelineOverlaysForJob ? { overlays: timelineOverlaysForJob } : null,
 	        outputBucket: UPLOAD_BUCKET,
 	      })
 	      return { jobId: null, outPrefix: null, productionId, profile: profile ?? null, mediaJobId: Number((job as any).id) }

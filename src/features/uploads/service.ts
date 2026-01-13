@@ -1017,7 +1017,7 @@ export async function createSignedUpload(input: {
 
   if (kind === 'image') {
     // First role shipped: title_page. Keep a tight allowlist for now.
-    if (imageRole && imageRole !== 'title_page' && imageRole !== 'lower_third') {
+    if (imageRole && imageRole !== 'title_page' && imageRole !== 'lower_third' && imageRole !== 'overlay') {
       const err: any = new DomainError('invalid_image_role', 'invalid_image_role', 400)
       err.detail = { imageRole }
       throw err

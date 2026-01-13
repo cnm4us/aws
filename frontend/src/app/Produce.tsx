@@ -311,6 +311,54 @@ function parseEditRanges(): Array<{ start: number; end: number }> | null {
   }
 }
 
+type TimelineOverlayItem = {
+  id: string
+  track: 'A'
+  kind: 'image'
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  fit: 'cover'
+  opacityPct: 100
+}
+
+function parseTimelineOverlayItems(): TimelineOverlayItem[] | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('overlayItems') || '').trim()
+    if (!raw) return null
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
+    const out: TimelineOverlayItem[] = []
+    for (const p of parts) {
+      const m = p.match(/^img:(\d+):([A-Za-z]+):([0-9.]+)\s*-\s*([0-9.]+)(?::.*)?$/)
+      if (!m) continue
+      const uploadId = Number(m[1])
+      const track = String(m[2] || '').toUpperCase()
+      const startSeconds = Math.min(3600, Math.round(Number(m[3]) * 10) / 10)
+      const endSeconds = Math.min(3600, Math.round(Number(m[4]) * 10) / 10)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+      if (track !== 'A') continue
+      if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) continue
+      if (startSeconds < 0 || endSeconds <= startSeconds) continue
+      out.push({
+        id: `ov_${uploadId}_${startSeconds}_${endSeconds}`,
+        track: 'A',
+        kind: 'image',
+        uploadId,
+        startSeconds,
+        endSeconds,
+        fit: 'cover',
+        opacityPct: 100,
+      })
+    }
+    if (!out.length) return null
+    out.sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds || a.uploadId - b.uploadId)
+    return out.slice(0, 20)
+  } catch {
+    return null
+  }
+}
+
 type FirstScreenMode = 'custom_image' | 'first_frame'
 
 function parseFirstScreenMode(): FirstScreenMode {
@@ -673,6 +721,7 @@ export default function ProducePage() {
   const [editRanges, setEditRanges] = useState<Array<{ start: number; end: number }> | null>(() => parseEditRanges())
   const [editStartSeconds, setEditStartSeconds] = useState<number | null>(() => parseEditStartSeconds())
   const [editEndSeconds, setEditEndSeconds] = useState<number | null>(() => parseEditEndSeconds())
+  const timelineOverlayItems = useMemo(() => parseTimelineOverlayItems(), [])
   const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
   const editProxyInitialSeekDoneRef = useRef(false)
@@ -1848,6 +1897,9 @@ export default function ProducePage() {
 		      } else if (firstScreenHoldSeconds) {
 		        config.intro = { kind: 'freeze_first_frame', seconds: firstScreenHoldSeconds }
 		      }
+            if (timelineOverlayItems && timelineOverlayItems.length) {
+              config.timeline = { overlays: timelineOverlayItems }
+            }
             if (Object.keys(config).length) body.config = config
 		      const trimmedName = productionName.trim()
 		      if (trimmedName) body.name = trimmedName
@@ -1890,13 +1942,18 @@ export default function ProducePage() {
 	                Edit Video
 	              </a>
 	            ) : null}
-	            {editRanges && editRanges.length ? (
-	              <span style={{ fontSize: 12, color: '#bbb' }}>
-	                Edits: {editRanges.length} segments
-	              </span>
-	            ) : null}
-	            {((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) ? (
-	              <button
+		            {editRanges && editRanges.length ? (
+		              <span style={{ fontSize: 12, color: '#bbb' }}>
+		                Edits: {editRanges.length} segments
+		              </span>
+		            ) : null}
+		            {timelineOverlayItems && timelineOverlayItems.length ? (
+		              <span style={{ fontSize: 12, color: '#bbb' }}>
+		                Overlays: {timelineOverlayItems.length}
+		              </span>
+		            ) : null}
+		            {((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) ? (
+		              <button
 	                type="button"
 	                onClick={() => {
 	                  setEditRanges(null)

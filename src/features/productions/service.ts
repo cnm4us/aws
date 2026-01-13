@@ -291,6 +291,54 @@ export async function create(
   if (input.logoUploadId !== undefined) mergedConfig.logoUploadId = input.logoUploadId
   if (input.lowerThirdUploadId !== undefined) mergedConfig.lowerThirdUploadId = input.lowerThirdUploadId
 
+  // Timeline overlays (Plan 60): edited-time image overlays.
+  {
+    const timelineRaw = mergedConfig.timeline
+    if (!timelineRaw || typeof timelineRaw !== 'object') {
+      mergedConfig.timeline = null
+    } else {
+      const overlaysRaw = Array.isArray((timelineRaw as any).overlays) ? ((timelineRaw as any).overlays as any[]) : []
+      if (overlaysRaw.length > 20) throw new DomainError('too_many_overlays', 'too_many_overlays', 400)
+      const out: any[] = []
+      for (const raw of overlaysRaw) {
+        if (!raw || typeof raw !== 'object') continue
+        const kind = String((raw as any).kind || '').toLowerCase()
+        const track = String((raw as any).track || '').toUpperCase()
+        const uploadId = Number((raw as any).uploadId)
+        const startSecondsRaw = Number((raw as any).startSeconds)
+        const endSecondsRaw = Number((raw as any).endSeconds)
+        if (kind !== 'image') throw new DomainError('invalid_overlay_kind', 'invalid_overlay_kind', 400)
+        if (track !== 'A') throw new DomainError('invalid_overlay_track', 'invalid_overlay_track', 400)
+        if (!Number.isFinite(uploadId) || uploadId <= 0) throw new DomainError('invalid_overlay_upload', 'invalid_overlay_upload', 400)
+        if (!Number.isFinite(startSecondsRaw) || !Number.isFinite(endSecondsRaw)) throw new DomainError('invalid_overlay_window', 'invalid_overlay_window', 400)
+        const startSeconds = Math.max(0, Math.min(3600, Math.round(startSecondsRaw * 10) / 10))
+        const endSeconds = Math.max(0, Math.min(3600, Math.round(endSecondsRaw * 10) / 10))
+        if (endSeconds <= startSeconds) throw new DomainError('invalid_overlay_window', 'invalid_overlay_window', 400)
+
+        // Validate referenced upload.
+        await loadAssetUploadOrThrow(uploadId, currentUserId, { expectedKind: 'image', imageRole: 'overlay', allowAdmin: canProduceAny })
+
+        out.push({
+          id: (raw as any).id != null ? String((raw as any).id) : `ov_${uploadId}_${startSeconds}_${endSeconds}`,
+          kind: 'image',
+          track: 'A',
+          uploadId,
+          startSeconds,
+          endSeconds,
+          fit: 'cover',
+          opacityPct: 100,
+        })
+      }
+      out.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || Number(a.endSeconds) - Number(b.endSeconds) || Number(a.uploadId) - Number(b.uploadId))
+      for (let i = 1; i < out.length; i++) {
+        if (Number(out[i - 1].endSeconds) > Number(out[i].startSeconds)) {
+          throw new DomainError('overlay_overlap', 'overlay_overlap', 400)
+        }
+      }
+      mergedConfig.timeline = out.length ? { overlays: out } : null
+    }
+  }
+
   // Screen title (Plan 47): per-production text + preset snapshot.
   {
     const presetIdRaw = input.screenTitlePresetId

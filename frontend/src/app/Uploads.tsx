@@ -697,6 +697,8 @@ const UploadsPage: React.FC = () => {
 		            { label: 'Videos', kind: 'video' },
 		            { label: 'Logos', kind: 'logo' },
 		            { label: 'Title Pages', kind: 'image', image_role: 'title_page' },
+		            { label: 'Lower Third Images', kind: 'image', image_role: 'lower_third' },
+		            { label: 'Overlay Images', kind: 'image', image_role: 'overlay' },
 		          ].map((t: any) => {
 		            const active = kind === t.kind && (t.kind !== 'image' || String(imageRole || '') === String(t.image_role || 'title_page'))
 		            const href =
@@ -731,14 +733,26 @@ const UploadsPage: React.FC = () => {
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
 		            <h1 style={{ margin: 0, fontSize: 28 }}>
-		              {kind === 'video' ? 'My Videos' : kind === 'logo' ? 'My Logos' : 'My Title Pages'}
+		              {kind === 'video'
+		                ? 'My Videos'
+		                : kind === 'logo'
+		                  ? 'My Logos'
+		                  : imageRole === 'lower_third'
+		                    ? 'My Lower Third Images'
+		                    : imageRole === 'overlay'
+		                      ? 'My Overlay Images'
+		                      : 'My Title Pages'}
 		            </h1>
 	            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
 		              {kind === 'video'
 		                ? 'Upload new videos and manage where they’re published.'
 		                : kind === 'logo'
 		                  ? 'Upload logos to use as watermarks in future productions.'
-		                  : 'Upload title page images to use as posters and optional intro holds.'}
+		                  : imageRole === 'lower_third'
+		                    ? 'Upload PNG lower third images to overlay on your productions.'
+		                    : imageRole === 'overlay'
+		                      ? 'Upload images to insert as full-screen overlays in the video editor.'
+		                      : 'Upload title page images to use as posters and optional intro holds.'}
 		            </p>
 		          </div>
 		          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>

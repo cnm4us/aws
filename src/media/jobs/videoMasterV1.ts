@@ -103,11 +103,16 @@ export async function runVideoMasterV1Job(
     out = { bucket: masteredVideoPtr.bucket, key: masteredVideoPtr.key, s3Url: `s3://${masteredVideoPtr.bucket}/${masteredVideoPtr.key}` }
   }
 
+  const timelineOverlaysRaw =
+    (input as any).timeline && typeof (input as any).timeline === 'object' && Array.isArray(((input as any).timeline as any).overlays)
+      ? ((((input as any).timeline as any).overlays as any[]) || [])
+      : []
+  const hasTimelineOverlays = Boolean(timelineOverlaysRaw.length)
   const hasLowerThird = Boolean(input.lowerThirdImage && input.lowerThirdImage.image && input.lowerThirdImage.image.bucket && input.lowerThirdImage.image.key)
   const hasLogo = Boolean(input.logo && input.logo.image && input.logo.image.bucket && input.logo.image.key)
   const hasScreenTitle = Boolean(input.screenTitle && input.screenTitle.text && (input.screenTitle as any).preset)
 
-  if (hasLowerThird || hasLogo || hasScreenTitle) {
+  if (hasTimelineOverlays || hasLowerThird || hasLogo || hasScreenTitle) {
     const folder = ymdToFolder(dateYmd)
     const key = `video-master/${folder}/${productionUlid}/${randomUUID()}/${originalLeaf}`
 
@@ -122,6 +127,29 @@ export async function runVideoMasterV1Job(
       const dims = await probeVideoDisplayDimensions(inPath)
 
       const overlays: any[] = []
+      if (hasTimelineOverlays) {
+        for (let i = 0; i < Math.min(20, timelineOverlaysRaw.length); i++) {
+          const ov = timelineOverlaysRaw[i] || {}
+          const img = ov.image
+          if (!img || !img.bucket || !img.key) continue
+          const pngPath = path.join(tmpDir, `timeline_${i}.png`)
+          await downloadOverlayPngToFile(img, pngPath)
+          const imgW = Number(ov.width || 0)
+          const imgH = Number(ov.height || 0)
+          const startSeconds = Number(ov.startSeconds)
+          const endSeconds = Number(ov.endSeconds)
+          if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds) || endSeconds <= startSeconds) continue
+          overlays.push({
+            pngPath,
+            imgW,
+            imgH,
+            mode: 'full_frame_cover',
+            startSeconds,
+            endSeconds,
+            cfg: { opacityPct: 100 },
+          })
+        }
+      }
       if (hasLowerThird) {
         await downloadOverlayPngToFile((input.lowerThirdImage as any).image, lowerPath)
         const imgW = Number((input.lowerThirdImage as any).width || 0)
