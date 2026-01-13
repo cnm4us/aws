@@ -677,6 +677,7 @@ export default function ProducePage() {
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
   const editProxyInitialSeekDoneRef = useRef(false)
   const [editProxyPlaying, setEditProxyPlaying] = useState(false)
+  const [editProxyMuted, setEditProxyMuted] = useState(true)
   const [editProxyPlayheadEdited, setEditProxyPlayheadEdited] = useState(0)
   const [editProxyDurationEdited, setEditProxyDurationEdited] = useState(0)
   const [screenTitlePreviewPngUrl, setScreenTitlePreviewPngUrl] = useState<string | null>(null)
@@ -724,6 +725,7 @@ export default function ProducePage() {
   useEffect(() => {
     editProxyInitialSeekDoneRef.current = false
     setEditProxyPlaying(false)
+    setEditProxyMuted(true)
     setEditProxyPlayheadEdited(0)
     setEditProxyDurationEdited(0)
   }, [editRanges, editStartSeconds, editEndSeconds, uploadId])
@@ -946,6 +948,7 @@ export default function ProducePage() {
         v.muted = false
         v.volume = 1
       } catch {}
+      setEditProxyMuted(false)
       setEditProxyPlaying(true)
       v.play().catch(() => setEditProxyPlaying(false))
     } else {
@@ -1934,7 +1937,9 @@ export default function ProducePage() {
 	                      <video
 	                        ref={editProxyVideoRef}
 	                        src={editProxyPreviewSrc || undefined}
+	                        poster={uploadPreviewSrc || poster || undefined}
 	                        controls={false}
+	                        muted={editProxyMuted}
 	                        playsInline
 	                        preload="auto"
 	                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
