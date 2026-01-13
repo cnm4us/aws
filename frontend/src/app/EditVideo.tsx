@@ -914,7 +914,7 @@ export default function EditVideo() {
               </button>
             </div>
 
-	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+	            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 20 }}>
               <button
                 type="button"
                 onClick={togglePlay}
