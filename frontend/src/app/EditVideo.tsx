@@ -11,6 +11,13 @@ type OverlayItem = {
   endSeconds: number
 }
 
+type TimingRule = 'entire' | 'start_after' | 'first_only' | 'last_only'
+
+type BuildOverlayCfg = {
+  timingRule?: TimingRule | string
+  timingSeconds?: number | null
+}
+
 type AudioEnvelope = {
   version?: string
   intervalSeconds?: number
@@ -238,6 +245,68 @@ function formatOverlayItemsParam(items: OverlayItem[]): string {
     .join(',')
 }
 
+function parseBuildParamsFromFromUrl(from: string | null): {
+  introHoldSeconds: number
+  logoUploadId: number | null
+  logoConfigId: number | null
+  lowerThirdUploadId: number | null
+  lowerThirdConfigId: number | null
+  screenTitlePresetId: number | null
+} {
+  try {
+    if (!from) {
+      return { introHoldSeconds: 0, logoUploadId: null, logoConfigId: null, lowerThirdUploadId: null, lowerThirdConfigId: null, screenTitlePresetId: null }
+    }
+    const u = new URL(from, window.location.origin)
+    const introSecondsRaw = Number(u.searchParams.get('introSeconds') || 0)
+    const titleHoldSecondsRaw = Number(u.searchParams.get('titleHoldSeconds') || 0)
+    const titleUploadId = Number(u.searchParams.get('titleUploadId') || 0)
+    const introHoldSeconds =
+      titleUploadId > 0
+        ? (Number.isFinite(titleHoldSecondsRaw) ? Math.max(0, Math.min(5, Math.round(titleHoldSecondsRaw))) : 0)
+        : (Number.isFinite(introSecondsRaw) ? Math.max(0, Math.min(5, Math.round(introSecondsRaw))) : 0)
+
+    const logoUploadId = Number(u.searchParams.get('logoUploadId') || 0)
+    const logoConfigId = Number(u.searchParams.get('logoConfigId') || 0)
+    const lowerThirdUploadId = Number(u.searchParams.get('lowerThirdUploadId') || 0)
+    const lowerThirdConfigId = Number(u.searchParams.get('lowerThirdConfigId') || 0)
+    const screenTitlePresetId = Number(u.searchParams.get('screenTitlePresetId') || 0)
+    return {
+      introHoldSeconds,
+      logoUploadId: logoUploadId > 0 ? logoUploadId : null,
+      logoConfigId: logoConfigId > 0 ? logoConfigId : null,
+      lowerThirdUploadId: lowerThirdUploadId > 0 ? lowerThirdUploadId : null,
+      lowerThirdConfigId: lowerThirdConfigId > 0 ? lowerThirdConfigId : null,
+      screenTitlePresetId: screenTitlePresetId > 0 ? screenTitlePresetId : null,
+    }
+  } catch {
+    return { introHoldSeconds: 0, logoUploadId: null, logoConfigId: null, lowerThirdUploadId: null, lowerThirdConfigId: null, screenTitlePresetId: null }
+  }
+}
+
+function computeTimingWindow(cfg: BuildOverlayCfg, totalSeconds: number): { start: number; end: number } {
+  const total = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 0
+  const ruleRaw = String(cfg.timingRule || 'entire').toLowerCase()
+  const rule: TimingRule =
+    ruleRaw === 'start_after' || ruleRaw === 'first_only' || ruleRaw === 'last_only' || ruleRaw === 'entire' ? (ruleRaw as any) : 'entire'
+  const secsRaw = cfg.timingSeconds != null ? Number(cfg.timingSeconds) : null
+  const secs = secsRaw != null && Number.isFinite(secsRaw) ? Math.max(0, Math.min(3600, Math.round(secsRaw))) : null
+
+  if (rule === 'entire') return { start: 0, end: total }
+  if (rule === 'start_after') {
+    const start = secs ?? 0
+    return { start, end: total }
+  }
+  if (rule === 'first_only') {
+    const end = secs ?? 0
+    return { start: 0, end: Math.min(total, Math.max(0, end)) }
+  }
+  // last_only
+  const d = secs ?? total
+  const start = Math.max(0, total - d)
+  return { start, end: total }
+}
+
 function parseTrimFromFromUrl(from: string | null): { start: number | null; end: number | null } {
   try {
     if (!from) return { start: null, end: null }
@@ -396,6 +465,7 @@ export default function EditVideo() {
   const initialRanges = useMemo(() => parseEditRangesFromFromUrl(from), [from])
   const initialTrim = useMemo(() => parseTrimFromFromUrl(from), [from])
   const initialOverlayItems = useMemo(() => parseOverlayItemsFromFromUrl(from), [from])
+  const buildParams = useMemo(() => parseBuildParamsFromFromUrl(from), [from])
 
   const [retryNonce, setRetryNonce] = useState(0)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -426,6 +496,10 @@ export default function EditVideo() {
   const [overlayPickerLoading, setOverlayPickerLoading] = useState(false)
   const [overlayPickerError, setOverlayPickerError] = useState<string | null>(null)
   const [overlayPickerItems, setOverlayPickerItems] = useState<any[]>([])
+
+  const [logoCfg, setLogoCfg] = useState<any | null>(null)
+  const [lowerThirdCfg, setLowerThirdCfg] = useState<any | null>(null)
+  const [screenTitlePreset, setScreenTitlePreset] = useState<any | null>(null)
 
   // iOS Safari often won’t render an initial paused frame for a <video> without a poster until playback begins.
   // Adding a time fragment and starting muted improves first-frame paint reliability.
@@ -487,6 +561,48 @@ export default function EditVideo() {
       alive = false
     }
   }, [pick])
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        if (buildParams.logoConfigId) {
+          const res = await fetch(`/api/logo-configs/${encodeURIComponent(String(buildParams.logoConfigId))}`, { credentials: 'same-origin' })
+          const json = await res.json().catch(() => null)
+          if (alive && res.ok) setLogoCfg(json || null)
+          else if (alive) setLogoCfg(null)
+        } else if (alive) setLogoCfg(null)
+      } catch {
+        if (alive) setLogoCfg(null)
+      }
+
+      try {
+        if (buildParams.lowerThirdConfigId) {
+          const res = await fetch(`/api/lower-third-configs/${encodeURIComponent(String(buildParams.lowerThirdConfigId))}`, { credentials: 'same-origin' })
+          const json = await res.json().catch(() => null)
+          if (alive && res.ok) setLowerThirdCfg(json || null)
+          else if (alive) setLowerThirdCfg(null)
+        } else if (alive) setLowerThirdCfg(null)
+      } catch {
+        if (alive) setLowerThirdCfg(null)
+      }
+
+      try {
+        if (buildParams.screenTitlePresetId) {
+          const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(buildParams.screenTitlePresetId))}`, { credentials: 'same-origin' })
+          const json = await res.json().catch(() => null)
+          if (alive && res.ok) setScreenTitlePreset(json || null)
+          else if (alive) setScreenTitlePreset(null)
+        } else if (alive) setScreenTitlePreset(null)
+      } catch {
+        if (alive) setScreenTitlePreset(null)
+      }
+    }
+    void load()
+    return () => {
+      alive = false
+    }
+  }, [buildParams.logoConfigId, buildParams.lowerThirdConfigId, buildParams.screenTitlePresetId])
 
   useEffect(() => {
     initialSeekDoneRef.current = false
@@ -1244,31 +1360,43 @@ export default function EditVideo() {
                             >
                               {(() => {
                                 try {
-                                  if (!from || total <= 0) return null
-                                  const u = new URL(from, window.location.origin)
                                   const items: Array<{ label: string; start: number; end: number; color: string }> = []
-                                  const logoUploadId = Number(u.searchParams.get('logoUploadId') || 0)
-                                  const lowerThirdUploadId = Number(u.searchParams.get('lowerThirdUploadId') || 0)
-                                  const screenTitlePresetId = Number(u.searchParams.get('screenTitlePresetId') || 0)
-                                  const introSeconds = Number(u.searchParams.get('introSeconds') || 0)
-                                  const titleUploadId = Number(u.searchParams.get('titleUploadId') || 0)
-                                  const titleHoldSeconds = Number(u.searchParams.get('titleHoldSeconds') || 0)
+                                  if (total <= 0) return null
+                                  const introHold = buildParams.introHoldSeconds || 0
+                                  const totalOutput = total + introHold
 
-                                  if (Number.isFinite(titleUploadId) && titleUploadId > 0) {
-                                    const hold = Number.isFinite(titleHoldSeconds) ? Math.max(0, Math.min(5, Math.round(titleHoldSeconds))) : 0
-                                    if (hold > 0) items.push({ label: 'First Screen', start: 0, end: Math.min(total, hold), color: 'rgba(10,132,255,0.35)' })
-                                  } else {
-                                    const hold = Number.isFinite(introSeconds) ? Math.max(0, Math.min(5, Math.round(introSeconds))) : 0
-                                    if (hold > 0) items.push({ label: 'First Screen', start: 0, end: Math.min(total, hold), color: 'rgba(10,132,255,0.35)' })
+                                  if (introHold > 0) {
+                                    // Show intro duration as a hint by clamping it into the edited timeline at t=0.
+                                    items.push({ label: `First Screen (${introHold}s)`, start: 0, end: 0.1, color: 'rgba(10,132,255,0.45)' })
                                   }
-                                  if (Number.isFinite(screenTitlePresetId) && screenTitlePresetId > 0) {
-                                    items.push({ label: 'Screen Title', start: 0, end: Math.min(total, 10), color: 'rgba(255,159,10,0.35)' })
+
+                                  const pushWindow = (label: string, win: { start: number; end: number }, color: string) => {
+                                    // Map output-time into edited-time by removing the intro segment.
+                                    const s = Math.max(0, win.start - introHold)
+                                    const e = Math.max(0, win.end - introHold)
+                                    if (e > s) items.push({ label, start: Math.min(total, s), end: Math.min(total, e), color })
                                   }
-                                  if (Number.isFinite(lowerThirdUploadId) && lowerThirdUploadId > 0) {
-                                    items.push({ label: 'Lower Third', start: 0, end: Math.min(total, 10), color: 'rgba(175,82,222,0.35)' })
+
+                                  if (buildParams.logoUploadId && buildParams.logoConfigId && logoCfg) {
+                                    const win = computeTimingWindow(
+                                      { timingRule: (logoCfg as any)?.timingRule ?? 'entire', timingSeconds: (logoCfg as any)?.timingSeconds ?? null },
+                                      totalOutput,
+                                    )
+                                    pushWindow('Logo', win, 'rgba(212,175,55,0.25)')
                                   }
-                                  if (Number.isFinite(logoUploadId) && logoUploadId > 0) {
-                                    items.push({ label: 'Logo', start: 0, end: Math.min(total, total), color: 'rgba(212,175,55,0.25)' })
+                                  if (buildParams.lowerThirdUploadId && buildParams.lowerThirdConfigId && lowerThirdCfg) {
+                                    const win = computeTimingWindow(
+                                      { timingRule: (lowerThirdCfg as any)?.timingRule ?? 'first_only', timingSeconds: (lowerThirdCfg as any)?.timingSeconds ?? 10 },
+                                      totalOutput,
+                                    )
+                                    pushWindow('Lower Third', win, 'rgba(175,82,222,0.35)')
+                                  }
+                                  if (buildParams.screenTitlePresetId && screenTitlePreset) {
+                                    const win = computeTimingWindow(
+                                      { timingRule: (screenTitlePreset as any)?.timingRule ?? 'first_only', timingSeconds: (screenTitlePreset as any)?.timingSeconds ?? 10 },
+                                      totalOutput,
+                                    )
+                                    pushWindow('Screen Title', win, 'rgba(255,159,10,0.35)')
                                   }
                                   if (!items.length) return null
 
