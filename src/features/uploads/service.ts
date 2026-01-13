@@ -21,6 +21,7 @@ import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 import { buildUploadTimelineManifestKey, buildUploadTimelineSpriteKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
+import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
@@ -331,6 +332,59 @@ async function ensureTimelineSpritesEnqueued(uploadRow: any, ctx: ServiceContext
   }
 }
 
+async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
+  try {
+    if (!MEDIA_JOBS_ENABLED) return
+    const uploadId = Number(uploadRow?.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const ownerId = uploadRow?.user_id != null ? Number(uploadRow.user_id) : null
+    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
+    if (sourceDeletedAt) return
+
+    const kind = String(uploadRow?.kind || 'video').toLowerCase()
+    if (kind !== 'video') return
+
+    const userIdForJob = ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
+    if (!userIdForJob) return
+
+    // Require the edit proxy to exist before enqueuing.
+    const proxyKey = buildUploadEditProxyKey(uploadId)
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
+    } catch {
+      return
+    }
+
+    let alreadyQueued = false
+    try {
+      const db = getPool()
+      const [rows] = await db.query(
+        `SELECT id
+           FROM media_jobs
+          WHERE type = 'upload_audio_envelope_v1'
+            AND status IN ('pending','processing')
+            AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+          ORDER BY id DESC
+          LIMIT 1`,
+        [String(uploadId)]
+      )
+      alreadyQueued = (rows as any[]).length > 0
+    } catch {}
+    if (alreadyQueued) return
+
+    await enqueueJob('upload_audio_envelope_v1', {
+      uploadId,
+      userId: userIdForJob,
+      proxy: { bucket: String(UPLOAD_BUCKET), key: proxyKey },
+      outputBucket: String(UPLOAD_BUCKET),
+      outputKey: buildUploadAudioEnvelopeKey(uploadId),
+      intervalSeconds: 0.1,
+    })
+  } catch {
+    // best-effort
+  }
+}
+
 export async function getUploadTimelineManifest(
   uploadId: number,
   ctx: ServiceContext
@@ -363,6 +417,42 @@ export async function getUploadTimelineManifest(
     if (!isMissing) throw e
     await ensureTimelineSpritesEnqueued(row, ctx)
     throw new NotFoundError('not_found')
+  }
+}
+
+export async function getUploadAudioEnvelope(
+  uploadId: number,
+  ctx: ServiceContext
+): Promise<{ status: 'ready'; envelope: any } | { status: 'pending' }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const key = buildUploadAudioEnvelopeKey(uploadId)
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    const txt = await readBodyText(resp.Body as any)
+    const json = JSON.parse(txt || '{}')
+    return { status: 'ready', envelope: json }
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+    await ensureAudioEnvelopeEnqueued(row, ctx)
+    return { status: 'pending' }
   }
 }
 

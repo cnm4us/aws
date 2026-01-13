@@ -2,6 +2,90 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Range = { start: number; end: number }
 
+type AudioEnvelope = {
+  version?: string
+  intervalSeconds?: number
+  durationSeconds?: number
+  hasAudio?: boolean
+  points?: Array<{ t: number; v: number }>
+}
+
+function drawAudioEnvelopeLine(opts: {
+  canvas: HTMLCanvasElement
+  widthPx: number
+  heightPx: number
+  pxPerSecond: number
+  ranges: Range[]
+  envelope: AudioEnvelope
+}): void {
+  const c = opts.canvas
+  const widthPx = Math.max(0, Math.round(opts.widthPx))
+  const heightPx = Math.max(0, Math.round(opts.heightPx))
+  const dpr = Math.max(1, Math.round((window.devicePixelRatio || 1) * 100) / 100)
+
+  c.width = Math.max(1, Math.floor(widthPx * dpr))
+  c.height = Math.max(1, Math.floor(heightPx * dpr))
+
+  const ctx = c.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, widthPx, heightPx)
+
+  const points = Array.isArray(opts.envelope.points) ? opts.envelope.points : []
+  const intervalSeconds = opts.envelope.intervalSeconds != null && Number.isFinite(Number(opts.envelope.intervalSeconds)) ? Number(opts.envelope.intervalSeconds) : 0.1
+  const durationSeconds =
+    opts.envelope.durationSeconds != null && Number.isFinite(Number(opts.envelope.durationSeconds)) ? Number(opts.envelope.durationSeconds) : null
+
+  if (!points.length || !intervalSeconds || intervalSeconds <= 0) return
+
+  const len = durationSeconds != null ? Math.ceil(durationSeconds / intervalSeconds) + 2 : Math.ceil((points[points.length - 1]?.t || 0) / intervalSeconds) + 2
+  const vals = new Array<number>(Math.max(0, len)).fill(0)
+  for (const p of points) {
+    const t = Number(p?.t)
+    const v = Number(p?.v)
+    if (!Number.isFinite(t) || t < 0) continue
+    const idx = Math.round(t / intervalSeconds)
+    if (idx < 0 || idx >= vals.length) continue
+    vals[idx] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0
+  }
+
+  const midY = heightPx / 2
+  const amp = Math.max(1, heightPx * 0.42)
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = 'rgba(212,175,55,0.9)'
+  ctx.beginPath()
+
+  let hasMoved = false
+  let editedOffset = 0
+
+  for (const seg of opts.ranges) {
+    const segStart = Math.max(0, Number(seg.start || 0))
+    const segEnd = Math.max(segStart, Number(seg.end || 0))
+    const segLen = Math.max(0, segEnd - segStart)
+    if (segLen <= 0) continue
+
+    const startIdx = Math.floor(segStart / intervalSeconds)
+    const endIdx = Math.ceil(segEnd / intervalSeconds)
+    for (let idx = startIdx; idx <= endIdx; idx++) {
+      const t = idx * intervalSeconds
+      if (t < segStart) continue
+      if (t > segEnd) continue
+      const v = idx >= 0 && idx < vals.length ? vals[idx] : 0
+      const x = (editedOffset + (t - segStart)) * opts.pxPerSecond
+      const y = midY - v * amp
+      if (!hasMoved) {
+        ctx.moveTo(x, y)
+        hasMoved = true
+      } else {
+        ctx.lineTo(x, y)
+      }
+    }
+    editedOffset += segLen
+  }
+
+  if (hasMoved) ctx.stroke()
+}
+
 const MAX_CUTS = 20
 const MAX_SEGMENTS = MAX_CUTS + 1
 const MIN_SEGMENT_SECONDS = 0.2
@@ -171,6 +255,9 @@ export default function EditVideo() {
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelinePadPx, setTimelinePadPx] = useState(0)
   const [videoMuted, setVideoMuted] = useState(true)
+  const [audioEnvelope, setAudioEnvelope] = useState<AudioEnvelope | null>(null)
+  const [audioEnvelopeStatus, setAudioEnvelopeStatus] = useState<'idle' | 'pending' | 'ready' | 'error'>('idle')
+  const audioCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const [durationOriginal, setDurationOriginal] = useState(0)
   const [ranges, setRanges] = useState<Range[] | null>(initialRanges)
@@ -233,6 +320,49 @@ export default function EditVideo() {
       .catch(() => {})
     return () => {
       alive = false
+    }
+  }, [uploadId])
+
+  // Fetch audio envelope (best-effort), polling while pending.
+  useEffect(() => {
+    if (!uploadId) return
+    let alive = true
+    let timer: any = null
+    let attempt = 0
+
+    const poll = async () => {
+      if (!alive) return
+      setAudioEnvelopeStatus((s) => (s === 'ready' ? 'ready' : 'pending'))
+      try {
+        const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/audio-envelope`, { credentials: 'same-origin' })
+        if (!alive) return
+        if (res.status === 202) {
+          setAudioEnvelopeStatus('pending')
+        } else if (res.ok) {
+          const json = (await res.json().catch(() => null)) as any
+          if (!alive) return
+          setAudioEnvelope(json || null)
+          setAudioEnvelopeStatus('ready')
+          return
+        } else {
+          setAudioEnvelopeStatus('error')
+          return
+        }
+      } catch {
+        if (!alive) return
+        setAudioEnvelopeStatus('error')
+        return
+      }
+
+      attempt++
+      const delay = Math.min(10000, 500 + attempt * 500)
+      timer = window.setTimeout(poll, delay)
+    }
+
+    poll()
+    return () => {
+      alive = false
+      if (timer) window.clearTimeout(timer)
     }
   }, [uploadId])
 
@@ -548,6 +678,26 @@ export default function EditVideo() {
     }
   }, [playheadEdited, pxPerSecond, segs.length, timelinePadPx, totalEditedDuration])
 
+  useEffect(() => {
+    const c = audioCanvasRef.current
+    if (!c) return
+    const total = totalEditedDuration > 0 ? totalEditedDuration : 0
+    if (!segs.length || total <= 0 || !audioEnvelope || audioEnvelopeStatus !== 'ready') {
+      const ctx = c.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, c.width, c.height)
+      return
+    }
+    const widthPx = Math.max(0, total * pxPerSecond)
+    drawAudioEnvelopeLine({
+      canvas: c,
+      widthPx,
+      heightPx: trackH,
+      pxPerSecond,
+      ranges: segs,
+      envelope: audioEnvelope,
+    })
+  }, [audioEnvelope, audioEnvelopeStatus, pxPerSecond, segs, totalEditedDuration, trackH])
+
   if (!uploadId) {
     return <div style={{ padding: 20, color: '#fff' }}>Missing upload id.</div>
   }
@@ -748,20 +898,31 @@ export default function EditVideo() {
 
                           <div style={{ display: 'flex', height: trackH }}>
                             <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
-                            <div
-                              onClick={(e) => selectAtClientX(e.clientX)}
-                              style={{
-                                position: 'relative',
-                                width: stripContentW,
-                                height: trackH,
-                                flex: '0 0 auto',
-                                cursor: 'pointer',
-                                background: 'rgba(0,0,0,0.12)',
-                              }}
-                            >
-                              {renderRowHighlight(0.1, false)}
-                              {renderBoundaries('255,255,255', 0.28)}
-                            </div>
+	                            <div
+	                              onClick={(e) => selectAtClientX(e.clientX)}
+	                              style={{
+	                                position: 'relative',
+	                                width: stripContentW,
+	                                height: trackH,
+	                                flex: '0 0 auto',
+	                                cursor: 'pointer',
+	                                background: 'rgba(0,0,0,0.12)',
+	                              }}
+	                            >
+	                              <canvas
+	                                ref={audioCanvasRef}
+	                                style={{
+	                                  position: 'absolute',
+	                                  inset: 0,
+	                                  width: '100%',
+	                                  height: '100%',
+	                                  pointerEvents: 'none',
+	                                  opacity: audioEnvelopeStatus === 'ready' ? 1 : 0.35,
+	                                }}
+	                              />
+	                              {renderRowHighlight(0.1, false)}
+	                              {renderBoundaries('255,255,255', 0.28)}
+	                            </div>
                             <div style={{ width: timelinePadPx, flex: '0 0 auto' }} />
                           </div>
 

@@ -6,6 +6,7 @@ export type MediaJobType =
   | 'upload_thumb_v1'
   | 'upload_edit_proxy_v1'
   | 'upload_timeline_sprites_v1'
+  | 'upload_audio_envelope_v1'
   | 'assemblyai_transcript_v1'
 
 export type MediaJobRow = {
@@ -203,6 +204,15 @@ export type UploadTimelineSpritesV1Input = {
   perSprite: number
 }
 
+export type UploadAudioEnvelopeV1Input = {
+  uploadId: number
+  userId: number
+  proxy: S3Pointer
+  outputBucket: string
+  outputKey: string
+  intervalSeconds: number
+}
+
 export type AssemblyAiTranscriptV1Input = {
   productionId: number
 }
@@ -213,5 +223,6 @@ export type MediaJobInputByType = {
   upload_thumb_v1: UploadThumbV1Input
   upload_edit_proxy_v1: UploadEditProxyV1Input
   upload_timeline_sprites_v1: UploadTimelineSpritesV1Input
+  upload_audio_envelope_v1: UploadAudioEnvelopeV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
 }

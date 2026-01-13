@@ -8,6 +8,7 @@ import * as mediaJobs from '../../features/media-jobs/service'
 import * as mediaJobsRepo from '../../features/media-jobs/repo'
 import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
 import { runAssemblyAiTranscriptV1Job } from '../../media/jobs/assemblyAiTranscriptV1'
+import { runUploadAudioEnvelopeV1Job } from '../../media/jobs/uploadAudioEnvelopeV1'
 import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
 import { runUploadTimelineSpritesV1Job } from '../../media/jobs/uploadTimelineSpritesV1'
 import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
@@ -16,6 +17,7 @@ import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
 import { buildUploadTimelineManifestKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
+import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 
 let workerTimer: ReturnType<typeof setInterval> | undefined
 let tickRunning = false
@@ -250,8 +252,52 @@ async function runOne(job: any, attempt: any, workerId: string) {
               perSprite: 60,
             })
           }
+
+          // Best-effort: enqueue audio envelope once the edit proxy exists.
+          try {
+            let alreadyQueuedEnv = false
+            try {
+              const db = getPool()
+              const [rows] = await db.query(
+                `SELECT id
+                   FROM media_jobs
+                  WHERE type = 'upload_audio_envelope_v1'
+                    AND status IN ('pending','processing')
+                    AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+                  ORDER BY id DESC
+                  LIMIT 1`,
+                [String(uploadId)]
+              )
+              alreadyQueuedEnv = (rows as any[]).length > 0
+            } catch {}
+            if (!alreadyQueuedEnv) {
+              await mediaJobs.enqueueJob('upload_audio_envelope_v1', {
+                uploadId,
+                userId,
+                proxy: { bucket: String(UPLOAD_BUCKET), key: buildUploadEditProxyKey(uploadId) },
+                outputBucket: String(UPLOAD_BUCKET),
+                outputKey: buildUploadAudioEnvelopeKey(uploadId),
+                intervalSeconds: 0.1,
+              })
+            }
+          } catch {}
         }
       } catch {}
+      return
+    }
+
+    if (String(job.type) === 'upload_audio_envelope_v1') {
+      const input = job.input_json as any
+      const result = await runUploadAudioEnvelopeV1Job(input, { stdoutPath, stderrPath })
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+      })
+      await mediaJobsRepo.completeJob(jobId, result)
       return
     }
 

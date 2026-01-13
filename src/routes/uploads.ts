@@ -183,6 +183,21 @@ uploadsRouter.get('/api/uploads/:id/timeline/sprite', requireAuth, async (req, r
   }
 })
 
+uploadsRouter.get('/api/uploads/:id/audio-envelope', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const result = await uploadsSvc.getUploadAudioEnvelope(id, { userId: Number(req.user!.id) })
+    if (result.status === 'pending') return res.status(202).json({ status: 'pending' })
+    return res.json(result.envelope)
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).json({ error: 'forbidden' })
+    console.error('get upload audio envelope error', err)
+    return res.status(status).json({ error: err?.code || 'failed', detail: String(err?.message || err) })
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
