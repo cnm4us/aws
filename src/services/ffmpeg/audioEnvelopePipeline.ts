@@ -87,7 +87,7 @@ function parseAstatsMetadataFile(txt: string, intervalSeconds: number): Array<{ 
 }
 
 export type AudioEnvelopeV1 = {
-  version: 'audio_envelope_v1'
+  version: 'audio_envelope_v2'
   intervalSeconds: number
   durationSeconds: number
   hasAudio: boolean
@@ -117,14 +117,21 @@ export async function createUploadAudioEnvelopeJson(opts: {
     let points: Array<{ t: number; v: number }> = []
     if (hasAudio) {
       // Write astats metadata to a file so we can parse it without scraping stderr logs.
-      const af = `astats=metadata=1:reset=${intervalSeconds},ametadata=print:key=lavfi.astats.Overall.RMS_level:file=${metaPath}`
+      const sampleRate = 48000
+      const n = Math.max(64, Math.round(sampleRate * intervalSeconds))
+      const af = [
+        `aresample=${sampleRate}`,
+        `asetnsamples=n=${n}:p=1`,
+        `astats=metadata=1:reset=1`,
+        `ametadata=print:key=lavfi.astats.Overall.RMS_level:file=${metaPath}`,
+      ].join(',')
       await runFfmpeg(['-i', proxyPath, '-vn', '-sn', '-dn', '-af', af, '-f', 'null', '-'], opts.logPaths)
       const txt = fs.existsSync(metaPath) ? fs.readFileSync(metaPath, 'utf8') : ''
       points = parseAstatsMetadataFile(txt, intervalSeconds)
     }
 
     const envelope: AudioEnvelopeV1 = {
-      version: 'audio_envelope_v1',
+      version: 'audio_envelope_v2',
       intervalSeconds,
       durationSeconds,
       hasAudio,
@@ -141,4 +148,3 @@ export async function createUploadAudioEnvelopeJson(opts: {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }
 }
-

@@ -14,13 +14,13 @@ Generate a lightweight “audio volume over time” dataset for each upload’s 
 - Output shape: JSON array of `{ t: number, v: number }` where:
   - `t` = seconds from start of proxy
   - `v` = normalized loudness in `[0..1]`
-- Storage: S3 object in `UPLOAD_BUCKET` (no DB table yet).
+- Storage: S3 object in `UPLOAD_BUCKET` (no DB table yet). Use versioned key `audio_envelope_v2.json`.
 - If there’s no audio track: return an array of zeros (or an empty array with `hasAudio=false`).
 
 ## Phase A — Backend: generate + store envelope
 ### 1) Add S3 key helper
 Add helper for a stable location:
-- `buildUploadAudioEnvelopeKey(uploadId)` → `uploads/<uploadId>/audio-envelope-v1.json` (or similar)
+- `buildUploadAudioEnvelopeKey(uploadId)` → `proxies/uploads/<uploadId>/audio/audio_envelope_v2.json`
 
 ### 2) New media job type
 Add a new job type:
@@ -102,8 +102,5 @@ When `ranges` exists:
 5) Video with no audio:
    - Graph should be flat/empty but page still works.
 
-## Open questions (answer before implementation)
-1) API response when missing: prefer `202 pending` vs `404 not_found` + UI polling?
-2) IntervalSeconds: stick with `0.1` or start with `0.2` for less data?
-3) Graph style: line-only vs filled area?
-
+## Notes
+- Envelope generation uses `aresample + asetnsamples` to compute per-interval RMS (avoids cumulative RMS flattening).
