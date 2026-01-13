@@ -47,9 +47,13 @@ async function hasAudioStream(filePath: string): Promise<boolean> {
 }
 
 function dbToNorm(db: number | null): number {
+  // Convert dBFS to a perceptually useful 0..1 value without normalizing per-video.
+  // Use linear amplitude (10^(dB/20)) and a mild gamma to keep quiet material visible.
   if (db == null || !Number.isFinite(db)) return 0
   const clamped = clamp(db, -60, 0)
-  return (clamped + 60) / 60
+  const amp = Math.pow(10, clamped / 20) // 0..1
+  const gamma = 0.5
+  return clamp(Math.pow(amp, gamma), 0, 1)
 }
 
 function parseAstatsMetadataFile(txt: string, intervalSeconds: number): Array<{ t: number; v: number }> {
@@ -87,7 +91,7 @@ function parseAstatsMetadataFile(txt: string, intervalSeconds: number): Array<{ 
 }
 
 export type AudioEnvelopeV1 = {
-  version: 'audio_envelope_v2'
+  version: 'audio_envelope_v3'
   intervalSeconds: number
   durationSeconds: number
   hasAudio: boolean
@@ -131,7 +135,7 @@ export async function createUploadAudioEnvelopeJson(opts: {
     }
 
     const envelope: AudioEnvelopeV1 = {
-      version: 'audio_envelope_v2',
+      version: 'audio_envelope_v3',
       intervalSeconds,
       durationSeconds,
       hasAudio,

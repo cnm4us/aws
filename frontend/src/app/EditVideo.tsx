@@ -49,8 +49,8 @@ function drawAudioEnvelopeLine(opts: {
     vals[idx] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0
   }
 
-  const midY = heightPx / 2
-  const amp = Math.max(1, heightPx * 0.42)
+  const pad = 1
+  const usableH = Math.max(1, heightPx - pad * 2)
   ctx.lineWidth = 1.25
   ctx.strokeStyle = 'rgba(212,175,55,0.9)'
   ctx.beginPath()
@@ -72,7 +72,7 @@ function drawAudioEnvelopeLine(opts: {
       if (t > segEnd) continue
       const v = idx >= 0 && idx < vals.length ? vals[idx] : 0
       const x = (editedOffset + (t - segStart)) * opts.pxPerSecond
-      const y = midY - v * amp
+      const y = pad + (1 - Math.max(0, Math.min(1, v))) * usableH
       if (!hasMoved) {
         ctx.moveTo(x, y)
         hasMoved = true
