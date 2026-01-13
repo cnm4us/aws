@@ -454,6 +454,15 @@ export default function EditVideo() {
   }, [])
 
   useEffect(() => {
+    if (!pick) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [pick])
+
+  useEffect(() => {
     if (pick !== 'overlayImage') return
     let alive = true
     setOverlayPickerLoading(true)
@@ -814,8 +823,10 @@ export default function EditVideo() {
     const segEndE = segStartE + segLen
 
     const defaultWindow = 2
-    const startSeconds = roundToTenth(clamp(segLen > 0 ? segStartE : playheadEdited, 0, Math.max(0, total)))
-    const endSeconds = roundToTenth(clamp(segLen > 0 ? segEndE : startSeconds + defaultWindow, 0, Math.max(0, total)))
+    const startSeconds = roundToTenth(clamp(playheadEdited, 0, Math.max(0, total)))
+    const preferSpanSegment = segLen > 0 && segLen <= 10
+    const endTarget = preferSpanSegment ? segEndE : startSeconds + defaultWindow
+    const endSeconds = roundToTenth(clamp(Math.min(endTarget, segEndE || endTarget), 0, Math.max(0, total)))
     if (!(endSeconds > startSeconds)) {
       setError('Cannot add overlay at this time position.')
       return
@@ -976,80 +987,6 @@ export default function EditVideo() {
   const canDelete = segs.length > 1
   const canUndo = history.length > 0
   const canDeleteOverlay = selectedOverlayId != null && overlayItems.some((it) => it.id === selectedOverlayId)
-
-  if (pick === 'overlayImage') {
-    return (
-      <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => pushQueryParams({ pick: null })}
-              style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-            >
-              ← Back to editor
-            </button>
-            <div style={{ color: '#bbb', fontSize: 13 }}>Overlay images: {overlayPickerItems.length}</div>
-          </div>
-
-          <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Overlay Image</h1>
-
-          {overlayPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-          {overlayPickerError ? <div style={{ color: '#ff9b9b' }}>{overlayPickerError}</div> : null}
-
-          <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-            {overlayPickerItems.map((it: any) => {
-              const id = Number(it?.id)
-              if (!Number.isFinite(id) || id <= 0) return null
-              const name = String(it?.modified_filename || it?.original_filename || `Image ${id}`)
-              const thumbSrc = `/api/uploads/${encodeURIComponent(String(id))}/file`
-              return (
-                <div
-                  key={`ovimg-${id}`}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '96px 1fr auto',
-                    gap: 12,
-                    alignItems: 'center',
-                    padding: 12,
-                    borderRadius: 12,
-                    border: '1px solid rgba(212,175,55,0.55)',
-                    background: 'rgba(0,0,0,0.35)',
-                  }}
-                >
-                  <img src={thumbSrc} alt="" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
-                      {it?.description ? String(it.description).slice(0, 80) : 'No description'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      addOverlayImage(id)
-                      pushQueryParams({ pick: null })
-                    }}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#0a84ff',
-                      color: '#fff',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Select
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -1695,10 +1632,95 @@ export default function EditVideo() {
               </button>
             </div>
 
-            {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+	            {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
+	          </div>
+	        </div>
+	      </div>
+	      {pick === 'overlayImage' ? (
+	        <div
+	          role="dialog"
+	          aria-modal="true"
+	          style={{
+	            position: 'fixed',
+	            inset: 0,
+	            background: 'rgba(0,0,0,0.92)',
+	            zIndex: 1000,
+	            overflowY: 'auto',
+	            WebkitOverflowScrolling: 'touch',
+	          }}
+	        >
+	          <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+	            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+	              <button
+	                type="button"
+	                onClick={() => pushQueryParams({ pick: null })}
+	                style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+	              >
+	                ← Back to editor
+	              </button>
+	              <div style={{ color: '#bbb', fontSize: 13 }}>Overlay images: {overlayPickerItems.length}</div>
+	            </div>
+
+	            <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Overlay Image</h1>
+	            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 12 }}>
+	              Tip: overlay clips are applied when you Produce.
+	            </div>
+
+	            {overlayPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+	            {overlayPickerError ? <div style={{ color: '#ff9b9b' }}>{overlayPickerError}</div> : null}
+
+	            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+	              {overlayPickerItems.map((it: any) => {
+	                const id = Number(it?.id)
+	                if (!Number.isFinite(id) || id <= 0) return null
+	                const name = String(it?.modified_filename || it?.original_filename || `Image ${id}`)
+	                const thumbSrc = `/api/uploads/${encodeURIComponent(String(id))}/file`
+	                return (
+	                  <div
+	                    key={`ovimg-${id}`}
+	                    style={{
+	                      display: 'grid',
+	                      gridTemplateColumns: '96px 1fr auto',
+	                      gap: 12,
+	                      alignItems: 'center',
+	                      padding: 12,
+	                      borderRadius: 12,
+	                      border: '1px solid rgba(212,175,55,0.55)',
+	                      background: 'rgba(0,0,0,0.35)',
+	                    }}
+	                  >
+	                    <img src={thumbSrc} alt="" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
+	                    <div style={{ minWidth: 0 }}>
+	                      <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+	                      <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+	                        {it?.description ? String(it.description).slice(0, 80) : 'No description'}
+	                      </div>
+	                    </div>
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        addOverlayImage(id)
+	                        pushQueryParams({ pick: null })
+	                      }}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 800,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
+	                      Select
+	                    </button>
+	                  </div>
+	                )
+	              })}
+	            </div>
+	          </div>
+	        </div>
+	      ) : null}
+	    </div>
+	  )
+	}
