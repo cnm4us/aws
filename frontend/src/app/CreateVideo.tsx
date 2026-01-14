@@ -299,9 +299,9 @@ export default function CreateVideo() {
     ctx.clearRect(0, 0, wCss, hCss)
 
     // Background
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.fillRect(0, 0, wCss, rulerH)
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
     ctx.fillRect(0, rulerH, wCss, trackH)
 
     // Ticks (0.1s minor, 1.0s major, 5.0s extra-major)
@@ -323,10 +323,10 @@ export default function CreateVideo() {
       const isOne = Math.abs(t - Math.round(t)) < eps
       const isFive = isOne && (Math.round(t) % 5 === 0)
       ctx.strokeStyle = isFive
-        ? 'rgba(255,255,255,0.26)'
+        ? 'rgba(255,255,255,0.62)'
         : isOne
-          ? 'rgba(255,255,255,0.18)'
-          : 'rgba(255,255,255,0.10)'
+          ? 'rgba(255,255,255,0.46)'
+          : 'rgba(255,255,255,0.28)'
       ctx.lineWidth = 1
       const tickLen = isFive ? 14 : isOne ? 10 : 6
       ctx.beginPath()
@@ -336,7 +336,7 @@ export default function CreateVideo() {
 
       // Optional faint guide line down into the track for 1s/5s marks.
       if (isOne) {
-        ctx.strokeStyle = isFive ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.07)'
+        ctx.strokeStyle = isFive ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)'
         ctx.beginPath()
         ctx.moveTo(x + 0.5, rulerH)
         ctx.lineTo(x + 0.5, hCss)
@@ -988,8 +988,8 @@ export default function CreateVideo() {
                   overflowY: 'hidden',
                   WebkitOverflowScrolling: 'touch',
                   borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  background: 'rgba(0,0,0,0.40)',
+                  border: '1px solid rgba(255,255,255,0.28)',
+                  background: 'rgba(0,0,0,0.60)',
                   height: 64,
                   position: 'relative',
                 }}
