@@ -569,7 +569,7 @@ export default function EditVideo() {
         if (buildParams.logoConfigId) {
           const res = await fetch(`/api/logo-configs/${encodeURIComponent(String(buildParams.logoConfigId))}`, { credentials: 'same-origin' })
           const json = await res.json().catch(() => null)
-          if (alive && res.ok) setLogoCfg(json || null)
+          if (alive && res.ok) setLogoCfg(json?.config || null)
           else if (alive) setLogoCfg(null)
         } else if (alive) setLogoCfg(null)
       } catch {
@@ -580,7 +580,7 @@ export default function EditVideo() {
         if (buildParams.lowerThirdConfigId) {
           const res = await fetch(`/api/lower-third-configs/${encodeURIComponent(String(buildParams.lowerThirdConfigId))}`, { credentials: 'same-origin' })
           const json = await res.json().catch(() => null)
-          if (alive && res.ok) setLowerThirdCfg(json || null)
+          if (alive && res.ok) setLowerThirdCfg(json?.config || null)
           else if (alive) setLowerThirdCfg(null)
         } else if (alive) setLowerThirdCfg(null)
       } catch {
@@ -591,7 +591,7 @@ export default function EditVideo() {
         if (buildParams.screenTitlePresetId) {
           const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(buildParams.screenTitlePresetId))}`, { credentials: 'same-origin' })
           const json = await res.json().catch(() => null)
-          if (alive && res.ok) setScreenTitlePreset(json || null)
+          if (alive && res.ok) setScreenTitlePreset(json?.preset || null)
           else if (alive) setScreenTitlePreset(null)
         } else if (alive) setScreenTitlePreset(null)
       } catch {
