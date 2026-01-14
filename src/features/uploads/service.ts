@@ -652,6 +652,33 @@ export async function listSystemAudio(
 	  }
 }
 
+export async function listSummariesByIds(
+  input: { ids: number[] },
+  ctx: ServiceContext
+): Promise<{ items: Array<{ id: number; original_filename: string; modified_filename: string | null }> }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const ids = Array.isArray(input.ids) ? input.ids : []
+  const cleaned = ids.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+  if (!cleaned.length) return { items: [] }
+  const uniq = Array.from(new Set(cleaned)).slice(0, 50)
+
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, original_filename, modified_filename
+       FROM uploads
+      WHERE id IN (?)
+        AND (user_id = ? OR user_id IS NULL)
+      ORDER BY id ASC`,
+    [uniq, Number(ctx.userId)]
+  )
+  const items = (rows as any[]).map((r) => ({
+    id: Number(r.id),
+    original_filename: String(r.original_filename || ''),
+    modified_filename: r.modified_filename == null ? null : String(r.modified_filename),
+  }))
+  return { items }
+}
+
 export async function getPublishOptions(uploadId: number, ctx: ServiceContext) {
   if (!ctx.userId) throw new ForbiddenError()
   const basic = await repo.getBasicForPublishOptions(uploadId)

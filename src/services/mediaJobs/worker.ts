@@ -13,11 +13,13 @@ import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
 import { runUploadTimelineSpritesV1Job } from '../../media/jobs/uploadTimelineSpritesV1'
 import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
 import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
+import { runCreateVideoExportV1Job } from '../../media/jobs/createVideoExportV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
 import { buildUploadTimelineManifestKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
+import { buildUploadThumbKey } from '../../utils/uploadThumb'
 
 let workerTimer: ReturnType<typeof setInterval> | undefined
 let tickRunning = false
@@ -184,6 +186,65 @@ async function runOne(job: any, attempt: any, workerId: string) {
         stderr: stderrPtr || undefined,
       })
       await mediaJobsRepo.completeJob(jobId, finalResult)
+      return
+    }
+
+    if (String(job.type) === 'create_video_export_v1') {
+      const input = job.input_json as any
+      const result = await runCreateVideoExportV1Job(input, { stdoutPath, stderrPath })
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+      })
+      await mediaJobsRepo.completeJob(jobId, result)
+
+      // Best-effort: record the resulting upload id on the project for quick resume.
+      try {
+        const projectId = Number(input?.projectId)
+        const resultUploadId = Number((result as any)?.resultUploadId)
+        if (Number.isFinite(projectId) && projectId > 0 && Number.isFinite(resultUploadId) && resultUploadId > 0) {
+          const db = getPool()
+          await db.query(
+            `UPDATE create_video_projects
+                SET last_export_upload_id = ?
+              WHERE id = ?
+              LIMIT 1`,
+            [resultUploadId, projectId]
+          )
+        }
+      } catch {}
+
+      // Best-effort: generate thumb + edit proxy for the newly created upload so /produce can preview immediately.
+      try {
+        const resultUploadId = Number((result as any)?.resultUploadId)
+        const userId = Number(input?.userId)
+        const outBucket = String((result as any)?.output?.bucket || '')
+        const outKey = String((result as any)?.output?.key || '')
+        if (Number.isFinite(resultUploadId) && resultUploadId > 0 && Number.isFinite(userId) && userId > 0 && outBucket && outKey) {
+          await mediaJobs.enqueueJob('upload_thumb_v1', {
+            uploadId: resultUploadId,
+            userId,
+            video: { bucket: outBucket, key: outKey },
+            outputBucket: String(UPLOAD_BUCKET),
+            outputKey: buildUploadThumbKey(resultUploadId),
+            longEdgePx: 640,
+          })
+          await mediaJobs.enqueueJob('upload_edit_proxy_v1', {
+            uploadId: resultUploadId,
+            userId,
+            video: { bucket: outBucket, key: outKey },
+            outputBucket: String(UPLOAD_BUCKET),
+            outputKey: buildUploadEditProxyKey(resultUploadId),
+            longEdgePx: 540,
+            fps: 30,
+            gop: 8,
+          })
+        }
+      } catch {}
       return
     }
 

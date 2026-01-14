@@ -95,6 +95,7 @@ Commands:
   get PATH      Authenticated GET to BASE_URL+PATH
   post PATH ... Authenticated POST with x-csrf-token header
   put PATH ...  Authenticated PUT with x-csrf-token header
+  patch PATH ... Authenticated PATCH with x-csrf-token header
   delete PATH ... Authenticated DELETE with x-csrf-token header
 EOF
 }
@@ -213,7 +214,7 @@ case "$cmd" in
     curl_req "GET" "${BASE_URL}${PATH_PART}" -b "$COOKIE_JAR" "$@"
     ;;
 
-  post|put|delete)
+  post|put|patch|delete)
     if [ "${1-}" = "" ]; then
       echo "$cmd requires a PATH argument, e.g. /api/profile/slug" >&2
       exit 1

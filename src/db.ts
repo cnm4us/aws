@@ -545,6 +545,56 @@ export async function ensureSchema(db: DB) {
     )
   } catch {}
 
+  // --- Production drafts (Plan 61) ---
+  // Persist in-progress /produce + /edit-video selections without URL bloat.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS production_drafts (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      upload_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('active','archived') NOT NULL DEFAULT 'active',
+      config_json JSON NOT NULL,
+      rendered_production_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      archived_at TIMESTAMP NULL DEFAULT NULL,
+      active_key TINYINT GENERATED ALWAYS AS (CASE WHEN archived_at IS NULL THEN 1 ELSE NULL END) STORED,
+      UNIQUE KEY uniq_production_drafts_active (user_id, upload_id, active_key),
+      KEY idx_production_drafts_user_upload (user_id, upload_id, id),
+      KEY idx_production_drafts_upload (upload_id, id),
+      KEY idx_production_drafts_status (status, archived_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await db.query(`ALTER TABLE production_drafts ADD COLUMN IF NOT EXISTS status ENUM('active','archived') NOT NULL DEFAULT 'active'`);
+  await db.query(`ALTER TABLE production_drafts ADD COLUMN IF NOT EXISTS rendered_production_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE production_drafts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_production_drafts_user_upload ON production_drafts (user_id, upload_id, id)`); } catch {}
+
+  // --- Create Video projects (Plan 62) ---
+  // Timeline-first composer projects (separate from production drafts).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS create_video_projects (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('active','archived') NOT NULL DEFAULT 'active',
+      timeline_json JSON NOT NULL,
+      last_export_upload_id BIGINT UNSIGNED NULL,
+      last_export_job_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      archived_at TIMESTAMP NULL DEFAULT NULL,
+      active_key TINYINT GENERATED ALWAYS AS (CASE WHEN archived_at IS NULL THEN 1 ELSE NULL END) STORED,
+      UNIQUE KEY uniq_create_video_projects_active (user_id, active_key),
+      KEY idx_create_video_projects_user (user_id, updated_at, id),
+      KEY idx_create_video_projects_status (status, archived_at, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS status ENUM('active','archived') NOT NULL DEFAULT 'active'`);
+  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
+  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_upload_id BIGINT UNSIGNED NULL`);
+  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_job_id BIGINT UNSIGNED NULL`);
+  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_create_video_projects_user ON create_video_projects (user_id, updated_at, id)`); } catch {}
+
 	  // --- Media processing jobs (Plan 36 / feature_08) ---
 	  // DB-backed queue; logs/artifacts stored in S3 with pointers in DB.
 	  await db.query(`

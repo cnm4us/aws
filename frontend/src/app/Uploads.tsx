@@ -48,6 +48,12 @@ type MeResponse = {
   displayName: string | null
 }
 
+type ActiveDraftSummary = {
+  id: number
+  uploadId: number
+  updatedAt: string
+}
+
 type SpaceBuckets = {
   personal: PublicationSummary[]
   groups: PublicationSummary[]
@@ -171,6 +177,7 @@ const UploadsPage: React.FC = () => {
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [uploads, setUploads] = useState<UploadListItem[]>([])
+  const [draftsByUploadId, setDraftsByUploadId] = useState<Record<number, ActiveDraftSummary>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Record<number, boolean>>({})
@@ -184,7 +191,7 @@ const UploadsPage: React.FC = () => {
   const [openUploadId, setOpenUploadId] = useState<number | null>(null)
   const [isNarrowScreen, setIsNarrowScreen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 640 : false))
 
-	  const loadUploads = useCallback(
+	const loadUploads = useCallback(
 	    async (userId: number) => {
       setLoading(true)
       setError(null)
@@ -196,12 +203,31 @@ const UploadsPage: React.FC = () => {
 	          kind,
 	        })
 	        if (kind === 'image' && imageRole) params.set('image_role', imageRole)
-	        const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
+	        const [res, draftsRes] = await Promise.all([
+	          fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' }),
+	          kind === 'video' ? fetch('/api/production-drafts/active', { credentials: 'same-origin' }) : Promise.resolve(null as any),
+	        ])
 	        if (!res.ok) throw new Error('failed_to_fetch_uploads')
 	        const data = (await res.json()) as UploadListItem[]
         const items = Array.isArray(data) ? data : []
         // Hide uploads whose source file was deleted (keeps DB rows + publications intact, but removes them from the "Uploads" view).
         setUploads(kind === 'video' ? items.filter((u) => !u.source_deleted_at) : items)
+
+        if (kind === 'video') {
+          const dj = draftsRes ? await draftsRes.json().catch(() => ({})) : {}
+          const rows: ActiveDraftSummary[] = Array.isArray(dj?.items) ? dj.items : []
+          const map: Record<number, ActiveDraftSummary> = {}
+          for (const r of rows) {
+            const uploadId = Number((r as any).uploadId)
+            const id = Number((r as any).id)
+            if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+            if (!Number.isFinite(id) || id <= 0) continue
+            map[uploadId] = { id, uploadId, updatedAt: String((r as any).updatedAt || '') }
+          }
+          setDraftsByUploadId(map)
+        } else {
+          setDraftsByUploadId({})
+        }
       } catch (err: any) {
         setError(err?.message ?? 'Failed to load uploads')
       } finally {
@@ -318,6 +344,8 @@ const UploadsPage: React.FC = () => {
 
 	      if (kind === 'video') {
 	        const href = productionHref
+	        const produceHref = `/produce?upload=${encodeURIComponent(String(upload.id))}&from=${encodeURIComponent(fromHref)}`
+	        const activeDraft = draftsByUploadId[upload.id] || null
 	        const sourceDeleted = !!upload.source_deleted_at
         const isDeletingSource = !!deletingSource[upload.id]
         const baseAspectRatio = upload.width && upload.height ? `${upload.width} / ${upload.height}` : '9 / 16'
@@ -484,6 +512,90 @@ const UploadsPage: React.FC = () => {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+                      {activeDraft ? (
+                        <>
+                          <a
+                            href={produceHref}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '8px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(212,175,55,0.65)',
+                              background: 'rgba(212,175,55,0.10)',
+                              color: '#fff',
+                              textDecoration: 'none',
+                              fontWeight: 850,
+                            }}
+                          >
+                            Resume Production
+                          </a>
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const ok = window.confirm('Discard this in-progress production draft and start over?')
+                              if (!ok) return
+                              try {
+                                const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                                const csrf = getCsrfToken()
+                                if (csrf) headers['x-csrf-token'] = csrf
+                                const res = await fetch(`/api/production-drafts/${encodeURIComponent(String(activeDraft.id))}/archive`, {
+                                  method: 'POST',
+                                  credentials: 'same-origin',
+                                  headers,
+                                  body: '{}',
+                                })
+                                const data = await res.json().catch(() => ({}))
+                                if (!res.ok) throw new Error(data?.error || 'Failed to discard draft')
+                                setDraftsByUploadId((prev) => {
+                                  const next = { ...prev }
+                                  delete next[upload.id]
+                                  return next
+                                })
+                                window.location.href = produceHref
+                              } catch (err: any) {
+                                setDeleteError(err?.message || 'Failed to discard draft')
+                              }
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '8px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: 'rgba(255,255,255,0.06)',
+                              color: '#fff',
+                              fontWeight: 750,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Start Over
+                          </button>
+                        </>
+                      ) : (
+                        <a
+                          href={produceHref}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '8px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(212,175,55,0.65)',
+                            background: 'rgba(212,175,55,0.10)',
+                            color: '#fff',
+                            textDecoration: 'none',
+                            fontWeight: 850,
+                          }}
+                        >
+                          New Production
+                        </a>
+                      )}
+
                       <a
                         href={href}
                         style={{
@@ -756,14 +868,14 @@ const UploadsPage: React.FC = () => {
 		            </p>
 		          </div>
 		          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-	            <a
-	              href={
-	                kind === 'video'
-	                  ? '/uploads/new'
-	                  : kind === 'image'
-	                    ? `/uploads/new?kind=image&imageRole=${encodeURIComponent(imageRole || 'title_page')}`
-	                    : `/uploads/new?kind=${encodeURIComponent(kind)}`
-	              }
+            <a
+              href={
+                kind === 'video'
+                  ? '/uploads/new'
+                  : kind === 'image'
+                    ? `/uploads/new?kind=image&imageRole=${encodeURIComponent(imageRole || 'title_page')}`
+                    : `/uploads/new?kind=${encodeURIComponent(kind)}`
+              }
 	              style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -780,6 +892,25 @@ const UploadsPage: React.FC = () => {
             >
               Upload
             </a>
+            {kind === 'video' ? (
+              <a
+                href="/create-video"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '10px 18px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(212,175,55,0.65)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                  fontWeight: 650,
+                  background: 'rgba(212,175,55,0.10)',
+                }}
+              >
+                Create Video
+              </a>
+            ) : null}
             {kind === 'video' ? (
               <a
                 href="/productions"

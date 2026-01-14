@@ -9,6 +9,7 @@ export const loadPublish = () => import('../app/Publish')
 export const loadPublishStory = () => import('../app/PublishStory')
 export const loadProduce = () => import('../app/Produce')
 export const loadEditVideo = () => import('../app/EditVideo')
+export const loadCreateVideo = () => import('../app/CreateVideo')
 export const loadLogoConfigs = () => import('../app/LogoConfigs')
 export const loadLowerThirds = () => import('../app/LowerThirds')
 export const loadScreenTitlePresets = () => import('../app/ScreenTitlePresets')
@@ -29,6 +30,7 @@ export function prefetchForHref(href: string) {
     else if (href.startsWith('/publish')) { void loadPublish() }
     else if (href.startsWith('/produce')) { void loadProduce() }
     else if (href.startsWith('/edit-video')) { void loadEditVideo() }
+    else if (href.startsWith('/create-video')) { void loadCreateVideo() }
     else if (href.startsWith('/logo-configs')) { void loadLogoConfigs() }
     else if (href.startsWith('/lower-thirds')) { void loadLowerThirds() }
     else if (href.startsWith('/screen-title-presets')) { void loadScreenTitlePresets() }

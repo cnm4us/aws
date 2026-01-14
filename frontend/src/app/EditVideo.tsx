@@ -11,6 +11,8 @@ type OverlayItem = {
   endSeconds: number
 }
 
+type UploadSummary = { id: number; original_filename: string; modified_filename: string | null }
+
 type TimingRule = 'entire' | 'start_after' | 'first_only' | 'last_only'
 
 type BuildOverlayCfg = {
@@ -163,6 +165,33 @@ function parsePick(): 'overlayImage' | null {
     if (raw === 'overlayimage') return 'overlayImage'
   } catch {}
   return null
+}
+
+function getCsrfToken(): string | null {
+  try {
+    const parts = String(document.cookie || '').split(';')
+    for (const p of parts) {
+      const [kRaw, ...rest] = p.split('=')
+      const k = (kRaw || '').trim()
+      if (k !== 'csrf') continue
+      return decodeURIComponent(rest.join('=').trim() || '')
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function sanitizeFromPath(from: string | null): string | null {
+  try {
+    if (!from) return null
+    const u = new URL(from, window.location.origin)
+    for (const k of ['editRanges', 'editStart', 'editEnd', 'overlayItems']) u.searchParams.delete(k)
+    const qs = u.searchParams.toString()
+    return qs ? `${u.pathname}?${qs}` : u.pathname
+  } catch {
+    return from
+  }
 }
 
 function roundToTenth(n: number): number {
@@ -460,12 +489,14 @@ function editedTimeToSegmentIndex(tEdited: number, ranges: Range[]): number {
 
 export default function EditVideo() {
   const uploadId = useMemo(() => parseUploadId(), [])
-  const from = useMemo(() => parseFrom(), [])
+  const fromRaw = useMemo(() => parseFrom(), [])
+  const from = useMemo(() => sanitizeFromPath(fromRaw), [fromRaw])
   const [pick, setPick] = useState<'overlayImage' | null>(() => parsePick())
-  const initialRanges = useMemo(() => parseEditRangesFromFromUrl(from), [from])
-  const initialTrim = useMemo(() => parseTrimFromFromUrl(from), [from])
-  const initialOverlayItems = useMemo(() => parseOverlayItemsFromFromUrl(from), [from])
-  const buildParams = useMemo(() => parseBuildParamsFromFromUrl(from), [from])
+  const initialRanges = useMemo(() => parseEditRangesFromFromUrl(fromRaw), [fromRaw])
+  const initialTrim = useMemo(() => parseTrimFromFromUrl(fromRaw), [fromRaw])
+  const initialOverlayItems = useMemo(() => parseOverlayItemsFromFromUrl(fromRaw), [fromRaw])
+  const initialBuildParams = useMemo(() => parseBuildParamsFromFromUrl(fromRaw), [fromRaw])
+  const [buildParams, setBuildParams] = useState(() => initialBuildParams)
 
   const [retryNonce, setRetryNonce] = useState(0)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -487,6 +518,21 @@ export default function EditVideo() {
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
   const [overlayItems, setOverlayItems] = useState<OverlayItem[]>(() => initialOverlayItems || [])
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null)
+  const [overlayEditor, setOverlayEditor] = useState<{ id: string; startSeconds: number; endSeconds: number } | null>(null)
+  const [overlayEditorError, setOverlayEditorError] = useState<string | null>(null)
+  const [overlayPreview, setOverlayPreview] = useState<{ uploadId: number; name: string } | null>(null)
+  const [overlayNamesByUploadId, setOverlayNamesByUploadId] = useState<Record<number, string>>({})
+  const overlayDragRef = useRef<{
+    id: string
+    edge: 'start' | 'end'
+    pointerId: number
+    startClientX: number
+    startStartSeconds: number
+    startEndSeconds: number
+    minStartSeconds: number
+    maxEndSeconds: number
+  } | null>(null)
+  const [overlayDragging, setOverlayDragging] = useState(false)
   const [playheadEdited, setPlayheadEdited] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -506,7 +552,17 @@ export default function EditVideo() {
   const src = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}#t=0.1` : null
   const backHref = from || (uploadId ? `/produce?upload=${encodeURIComponent(String(uploadId))}` : '/produce')
 
+  const [draftId, setDraftId] = useState<number | null>(null)
+  const [draftConfig, setDraftConfig] = useState<any>({})
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null)
+  const draftHydratingRef = useRef(false)
+  const draftLastSavedRef = useRef<string>('')
+  const draftTrimPendingRef = useRef<{ start: number | null; end: number | null } | null>(null)
+
   const totalEditedDuration = useMemo(() => (ranges ? sumRanges(ranges) : 0), [ranges])
+  const pxPerSecond = 96
   const cutCount = useMemo(() => (ranges ? Math.max(0, ranges.length - 1) : 0), [ranges])
 
   const pushQueryParams = useCallback((updates: Record<string, string | null>, state: any = {}) => {
@@ -521,6 +577,207 @@ export default function EditVideo() {
     setPick(parsePick())
   }, [])
 
+  const deriveBuildParamsFromDraftConfig = useCallback((cfg: any) => {
+    const safeId = (v: any): number | null => {
+      const n = Number(v)
+      return Number.isFinite(n) && n > 0 ? n : null
+    }
+    const nested = cfg && typeof cfg === 'object' ? (cfg as any).config : null
+    const intro = nested && typeof nested === 'object' ? (nested as any).intro : null
+    let introHoldSeconds = 0
+    if (intro && typeof intro === 'object') {
+      const kind = String((intro as any).kind || '')
+      if (kind === 'title_image') {
+        const hs = Number((intro as any).holdSeconds ?? 0)
+        introHoldSeconds = Number.isFinite(hs) ? Math.max(0, Math.min(5, Math.round(hs))) : 0
+      } else if (kind === 'freeze_first_frame') {
+        const secs = Number((intro as any).seconds ?? 0)
+        introHoldSeconds = Number.isFinite(secs) ? Math.max(0, Math.min(5, Math.round(secs))) : 0
+      }
+    }
+    return {
+      introHoldSeconds,
+      logoUploadId: safeId((cfg as any)?.logoUploadId),
+      logoConfigId: safeId((cfg as any)?.logoConfigId),
+      lowerThirdUploadId: safeId((cfg as any)?.lowerThirdUploadId),
+      lowerThirdConfigId: safeId((cfg as any)?.lowerThirdConfigId),
+      screenTitlePresetId: safeId((cfg as any)?.screenTitlePresetId),
+    }
+  }, [])
+
+  const buildDraftConfigForSave = useCallback(
+    (base: any): any => {
+      const out: any = base && typeof base === 'object' && !Array.isArray(base) ? { ...(base as any) } : {}
+      const nested: any = out.config && typeof out.config === 'object' && !Array.isArray(out.config) ? { ...(out.config as any) } : {}
+      if (ranges && ranges.length) {
+        nested.edit = { ranges: ranges.map((r) => ({ start: roundToTenth(Number(r.start || 0)), end: roundToTenth(Number(r.end || 0)) })) }
+      } else {
+        nested.edit = null
+      }
+      if (overlayItems && overlayItems.length) {
+        nested.timeline = { overlays: overlayItems.map((it) => ({ ...it, startSeconds: roundToTenth(it.startSeconds), endSeconds: roundToTenth(it.endSeconds) })) }
+      } else {
+        nested.timeline = null
+      }
+      out.config = Object.keys(nested).some((k) => nested[k] != null) ? nested : null
+      return out
+    },
+    [overlayItems, ranges]
+  )
+
+  useEffect(() => {
+    if (!uploadId) return
+    let cancelled = false
+    ;(async () => {
+      setDraftLoaded(false)
+      setDraftLoadError(null)
+      setDraftSaveError(null)
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch('/api/production-drafts', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ uploadId }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(String(data?.error || 'draft_load_failed'))
+        const draft = data?.draft
+        const id = Number(draft?.id)
+        if (!Number.isFinite(id) || id <= 0) throw new Error('draft_load_failed')
+        const cfg = draft?.config && typeof draft.config === 'object' ? draft.config : {}
+        if (cancelled) return
+
+        setDraftId(id)
+        setDraftConfig(cfg)
+        setBuildParams(deriveBuildParamsFromDraftConfig(cfg))
+
+        draftHydratingRef.current = true
+        try {
+          // Hydrate edits/overlays from draft.
+          const nested = cfg && typeof cfg === 'object' ? (cfg as any).config : null
+          const edit = nested && typeof nested === 'object' ? (nested as any).edit : null
+          const timeline = nested && typeof nested === 'object' ? (nested as any).timeline : null
+
+          let hasEditFromDraft = false
+          if (edit && typeof edit === 'object' && Array.isArray((edit as any).ranges) && (edit as any).ranges.length) {
+            const dr = (edit as any).ranges
+              .map((r: any) => ({ start: roundToTenth(Number(r?.start)), end: roundToTenth(Number(r?.end)) }))
+              .filter((r: any) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+            if (dr.length) {
+              setRanges(dr)
+              setSelectedIndex(0)
+              setPlayheadEdited(0)
+              hasEditFromDraft = true
+            }
+          } else if (edit && typeof edit === 'object' && ((edit as any).trimStartSeconds != null || (edit as any).trimEndSeconds != null)) {
+            const s = (edit as any).trimStartSeconds != null ? roundToTenth(Number((edit as any).trimStartSeconds)) : null
+            const e = (edit as any).trimEndSeconds != null ? roundToTenth(Number((edit as any).trimEndSeconds)) : null
+            draftTrimPendingRef.current = {
+              start: Number.isFinite(Number(s)) ? Math.max(0, Number(s)) : null,
+              end: Number.isFinite(Number(e)) ? Math.max(0, Number(e)) : null,
+            }
+            hasEditFromDraft = true
+          }
+
+          if (timeline && typeof timeline === 'object' && Array.isArray((timeline as any).overlays)) {
+            const overlays = (timeline as any).overlays
+              .map((it: any) => ({
+                id: String(it?.id || ''),
+                kind: 'image' as const,
+                track: 'A' as const,
+                uploadId: Number(it?.uploadId),
+                startSeconds: roundToTenth(Number(it?.startSeconds)),
+                endSeconds: roundToTenth(Number(it?.endSeconds)),
+              }))
+              .filter((it: any) => Number.isFinite(it.uploadId) && it.uploadId > 0 && Number.isFinite(it.startSeconds) && Number.isFinite(it.endSeconds) && it.endSeconds > it.startSeconds)
+            setOverlayItems(overlays)
+          }
+
+          // If the draft has no edits yet, seed it from legacy ?from= URL state (for transition).
+          if (!hasEditFromDraft && (initialRanges?.length || initialTrim.start != null || initialTrim.end != null || (initialOverlayItems && initialOverlayItems.length))) {
+            if (initialRanges && initialRanges.length) {
+              setRanges(initialRanges)
+              setSelectedIndex(0)
+              setPlayheadEdited(0)
+            }
+            if (initialOverlayItems && initialOverlayItems.length) setOverlayItems(initialOverlayItems)
+            const seeded = buildDraftConfigForSave(cfg)
+            const seededJson = JSON.stringify(seeded)
+            draftLastSavedRef.current = seededJson
+            try {
+              const r2 = await fetch(`/api/production-drafts/${encodeURIComponent(String(id))}`, {
+                method: 'PATCH',
+                credentials: 'same-origin',
+                headers,
+                body: JSON.stringify({ config: seeded }),
+              })
+              if (!r2.ok) {
+                const d2 = await r2.json().catch(() => ({}))
+                setDraftSaveError(String(d2?.error || 'draft_seed_failed'))
+              } else {
+                const d2 = await r2.json().catch(() => ({}))
+                const updatedCfg = d2?.draft?.config && typeof d2.draft.config === 'object' ? d2.draft.config : seeded
+                setDraftConfig(updatedCfg)
+                setBuildParams(deriveBuildParamsFromDraftConfig(updatedCfg))
+              }
+            } catch (e: any) {
+              setDraftSaveError(e?.message || 'draft_seed_failed')
+            }
+          } else {
+            draftLastSavedRef.current = JSON.stringify(cfg)
+          }
+        } finally {
+          draftHydratingRef.current = false
+        }
+
+        setDraftLoaded(true)
+      } catch (e: any) {
+        if (cancelled) return
+        setDraftLoadError(e?.message || 'draft_load_failed')
+        setDraftLoaded(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadId])
+
+  useEffect(() => {
+    if (!draftId) return
+    if (!draftLoaded) return
+    if (draftHydratingRef.current) return
+    const next = buildDraftConfigForSave(draftConfig)
+    const nextJson = JSON.stringify(next)
+    if (nextJson === draftLastSavedRef.current) return
+    const timer = window.setTimeout(async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch(`/api/production-drafts/${encodeURIComponent(String(draftId))}`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ config: next }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(String(data?.error || 'draft_save_failed'))
+        const updatedCfg = data?.draft?.config && typeof data.draft.config === 'object' ? data.draft.config : next
+        setDraftConfig(updatedCfg)
+        setBuildParams(deriveBuildParamsFromDraftConfig(updatedCfg))
+        draftLastSavedRef.current = JSON.stringify(updatedCfg)
+        setDraftSaveError(null)
+      } catch (e: any) {
+        setDraftSaveError(e?.message || 'draft_save_failed')
+      }
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [buildDraftConfigForSave, draftConfig, draftId, draftLoaded, deriveBuildParamsFromDraftConfig])
+
   useEffect(() => {
     const onPop = () => setPick(parsePick())
     window.addEventListener('popstate', onPop)
@@ -528,13 +785,33 @@ export default function EditVideo() {
   }, [])
 
   useEffect(() => {
-    if (!pick) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (overlayPreview) {
+        setOverlayPreview(null)
+        return
+      }
+      if (overlayEditor) {
+        setOverlayEditor(null)
+        setOverlayEditorError(null)
+        return
+      }
+      if (pick) {
+        pushQueryParams({ pick: null }, {})
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [overlayEditor, overlayPreview, pick, pushQueryParams])
+
+  useEffect(() => {
+    if (!pick && !overlayEditor && !overlayPreview) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = prev
     }
-  }, [pick])
+  }, [overlayEditor, overlayPreview, pick])
 
   useEffect(() => {
     if (pick !== 'overlayImage') return
@@ -561,6 +838,37 @@ export default function EditVideo() {
       alive = false
     }
   }, [pick])
+
+  useEffect(() => {
+    const ids = Array.from(new Set((overlayItems || []).map((o) => Number(o.uploadId)).filter((n) => Number.isFinite(n) && n > 0)))
+    if (!ids.length) return
+    const missing = ids.filter((id) => !overlayNamesByUploadId[id])
+    if (!missing.length) return
+    let alive = true
+    const qs = encodeURIComponent(missing.slice(0, 50).join(','))
+    fetch(`/api/uploads/summary?ids=${qs}`, { credentials: 'same-origin' })
+      .then(async (r) => {
+        const json: any = await r.json().catch(() => null)
+        if (!alive) return
+        if (!r.ok) return
+        const items: UploadSummary[] = Array.isArray(json?.items) ? json.items : []
+        if (!items.length) return
+        setOverlayNamesByUploadId((prev) => {
+          const next = { ...prev }
+          for (const it of items) {
+            const id = Number((it as any).id)
+            if (!Number.isFinite(id) || id <= 0) continue
+            const name = String((it as any).modified_filename || (it as any).original_filename || `Image ${id}`)
+            next[id] = name
+          }
+          return next
+        })
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [overlayItems, overlayNamesByUploadId])
 
   useEffect(() => {
     let alive = true
@@ -716,6 +1024,19 @@ export default function EditVideo() {
   useEffect(() => {
     if (durationOriginal <= 0) return
     if (ranges && ranges.length) return
+
+    const pending = draftTrimPendingRef.current
+    if (pending && (pending.start != null || pending.end != null)) {
+      const s = clamp(pending.start ?? 0, 0, durationOriginal)
+      const e = pending.end != null ? clamp(pending.end, 0, durationOriginal) : durationOriginal
+      draftTrimPendingRef.current = null
+      if (e > s) {
+        setRanges([{ start: s, end: e }])
+        setSelectedIndex(0)
+        setPlayheadEdited(0)
+        return
+      }
+    }
 
     if (initialRanges && initialRanges.length) {
       const clamped = initialRanges
@@ -961,6 +1282,100 @@ export default function EditVideo() {
     setError(null)
   }, [overlayItems, playheadEdited, pushHistory, ranges, selectedIndex, totalEditedDuration])
 
+  const beginOverlayResize = useCallback(
+    (e: React.PointerEvent, it: OverlayItem, edge: 'start' | 'end') => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!ranges || !ranges.length) return
+      const total = totalEditedDuration > 0 ? totalEditedDuration : 0
+      if (total <= 0) return
+
+      setOverlayEditor(null)
+      setOverlayEditorError(null)
+      setSelectedOverlayId(it.id)
+
+      // Snapshot for Undo once, at drag start.
+      pushHistory(ranges, selectedIndex, playheadEdited, overlayItems, it.id)
+
+      const sorted = overlayItems
+        .filter((o) => o.track === 'A')
+        .slice()
+        .sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds || a.uploadId - b.uploadId)
+      const idx = sorted.findIndex((o) => o.id === it.id)
+      const prevEnd = idx > 0 ? Number(sorted[idx - 1].endSeconds) : 0
+      const nextStart = idx >= 0 && idx < sorted.length - 1 ? Number(sorted[idx + 1].startSeconds) : total
+
+      overlayDragRef.current = {
+        id: it.id,
+        edge,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startStartSeconds: Number(it.startSeconds),
+        startEndSeconds: Number(it.endSeconds),
+        minStartSeconds: Math.max(0, prevEnd),
+        maxEndSeconds: Math.max(0, nextStart),
+      }
+      setOverlayDragging(true)
+      try {
+        ;(e.currentTarget as any)?.setPointerCapture?.(e.pointerId)
+      } catch {}
+    },
+    [overlayItems, playheadEdited, pushHistory, ranges, selectedIndex, totalEditedDuration],
+  )
+
+  useEffect(() => {
+    if (!overlayDragging) return
+    const onMove = (ev: PointerEvent) => {
+      const drag = overlayDragRef.current
+      if (!drag) return
+      if (ev.pointerId !== drag.pointerId) return
+      ev.preventDefault()
+
+      const dx = ev.clientX - drag.startClientX
+      const deltaSeconds = dx / pxPerSecond
+      const minLen = 0.1
+
+      let start = drag.startStartSeconds
+      let end = drag.startEndSeconds
+      if (drag.edge === 'start') {
+        start = roundToTenth(drag.startStartSeconds + deltaSeconds)
+        start = clamp(start, drag.minStartSeconds, end - minLen)
+      } else {
+        end = roundToTenth(drag.startEndSeconds + deltaSeconds)
+        end = clamp(end, start + minLen, drag.maxEndSeconds)
+      }
+
+      setOverlayItems((prev) =>
+        prev.map((o) => (o.id === drag.id ? { ...o, startSeconds: start, endSeconds: end } : o)),
+      )
+    }
+    const onUp = (ev: PointerEvent) => {
+      const drag = overlayDragRef.current
+      if (!drag) return
+      if (ev.pointerId !== drag.pointerId) return
+      ev.preventDefault()
+      overlayDragRef.current = null
+      setOverlayDragging(false)
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp, { passive: false })
+    window.addEventListener('pointercancel', onUp, { passive: false })
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [overlayDragging, pxPerSecond])
+
+  useEffect(() => {
+    if (!overlayEditor) return
+    const exists = overlayItems.some((o) => o.id === overlayEditor.id)
+    if (!exists) {
+      setOverlayEditor(null)
+      setOverlayEditorError(null)
+    }
+  }, [overlayEditor, overlayItems])
+
   const deleteSelectedOverlay = useCallback(() => {
     if (!selectedOverlayId) return
     if (!ranges || !ranges.length) return
@@ -969,6 +1384,35 @@ export default function EditVideo() {
     const next = overlayItems.filter((it) => it.id !== selectedOverlayId)
     pushHistory(ranges, selectedIndex, playheadEdited, next, null)
   }, [overlayItems, playheadEdited, pushHistory, ranges, selectedIndex, selectedOverlayId])
+
+  const updateOverlayWindow = useCallback(
+    (id: string, startSecondsRaw: number, endSecondsRaw: number) => {
+      if (!ranges || !ranges.length) return { ok: false as const, error: 'Video not ready.' }
+      const total = totalEditedDuration > 0 ? totalEditedDuration : 0
+      if (total <= 0) return { ok: false as const, error: 'Video not ready.' }
+
+      const startSeconds = roundToTenth(Number(startSecondsRaw))
+      const endSeconds = roundToTenth(Number(endSecondsRaw))
+      if (!Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) return { ok: false as const, error: 'Start and end must be numbers.' }
+      if (!(endSeconds > startSeconds)) return { ok: false as const, error: 'End must be after start.' }
+      const clampedStart = clamp(startSeconds, 0, Math.max(0, total))
+      const clampedEnd = clamp(endSeconds, 0, Math.max(0, total))
+      if (!(clampedEnd > clampedStart)) return { ok: false as const, error: 'End must be after start.' }
+
+      const overlaps = overlayItems.some(
+        (o) => o.track === 'A' && o.id !== id && clampedEnd > o.startSeconds && clampedStart < o.endSeconds,
+      )
+      if (overlaps) return { ok: false as const, error: 'Overlay overlaps an existing overlay. Shorten one of them first.' }
+
+      const next = overlayItems
+        .map((o) => (o.id === id ? { ...o, startSeconds: clampedStart, endSeconds: clampedEnd } : o))
+        .slice()
+      next.sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds || a.uploadId - b.uploadId)
+      pushHistory(ranges, selectedIndex, playheadEdited, next, id)
+      return { ok: true as const, startSeconds: clampedStart, endSeconds: clampedEnd }
+    },
+    [overlayItems, playheadEdited, pushHistory, ranges, selectedIndex, totalEditedDuration],
+  )
 
   const del = useCallback(() => {
     if (!ranges || ranges.length <= 1) return
@@ -996,14 +1440,14 @@ export default function EditVideo() {
     pushHistory(next, nextSel, nextPlayhead, nextOverlayItems, selectedStillExists ? selectedOverlayId : null)
   }, [overlayItems, playheadEdited, pushHistory, ranges, selectedIndex, selectedOverlayId])
 
-  const save = useCallback(() => {
+  const save = useCallback(async () => {
     setError(null)
     if (!ranges || !ranges.length) return
-    const normalized = ranges
+    const normalizedRanges = ranges
       .map((r) => ({ start: roundToTenth(r.start), end: roundToTenth(r.end) }))
       .filter((r) => r.end > r.start)
       .slice(0, MAX_SEGMENTS)
-    const overlaysNormalized = (overlayItems || [])
+    const normalizedOverlays = (overlayItems || [])
       .map((it) => ({
         ...it,
         startSeconds: roundToTenth(it.startSeconds),
@@ -1011,13 +1455,49 @@ export default function EditVideo() {
       }))
       .filter((it) => Number.isFinite(it.uploadId) && it.uploadId > 0 && Number.isFinite(it.startSeconds) && Number.isFinite(it.endSeconds) && it.endSeconds > it.startSeconds)
       .slice(0, 20)
-    const withRanges = applyRangesToUrl(backHref, normalized)
-    const target = applyOverlayItemsToUrl(withRanges, overlaysNormalized.length ? overlaysNormalized : null)
-    window.location.href = target
-  }, [backHref, overlayItems, ranges])
+
+    // Ensure state reflects the normalized values immediately.
+    setRanges(normalizedRanges)
+    setOverlayItems(normalizedOverlays)
+
+    // Flush to the draft (best-effort) and navigate back.
+    if (draftId) {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+
+        const base: any = draftConfig && typeof draftConfig === 'object' && !Array.isArray(draftConfig) ? { ...draftConfig } : {}
+        const nested: any = base.config && typeof base.config === 'object' && !Array.isArray(base.config) ? { ...base.config } : {}
+        nested.edit = normalizedRanges.length ? { ranges: normalizedRanges } : null
+        nested.timeline = normalizedOverlays.length ? { overlays: normalizedOverlays } : null
+        base.config = Object.keys(nested).some((k) => nested[k] != null) ? nested : null
+
+        const res = await fetch(`/api/production-drafts/${encodeURIComponent(String(draftId))}`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ config: base }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) {
+          const updatedCfg = data?.draft?.config && typeof data.draft.config === 'object' ? data.draft.config : base
+          setDraftConfig(updatedCfg)
+          setBuildParams(deriveBuildParamsFromDraftConfig(updatedCfg))
+          draftLastSavedRef.current = JSON.stringify(updatedCfg)
+          setDraftSaveError(null)
+        } else {
+          setDraftSaveError(String(data?.error || 'draft_save_failed'))
+        }
+      } catch (e: any) {
+        setDraftSaveError(e?.message || 'draft_save_failed')
+      }
+    }
+
+    window.location.href = backHref
+  }, [backHref, deriveBuildParamsFromDraftConfig, draftConfig, draftId, overlayItems, ranges])
 
   const segs = ranges || []
-  const pxPerSecond = 96
   const rulerH = 20
   const buildH = 22
   const overlayH = 22
@@ -1446,6 +1926,8 @@ export default function EditVideo() {
                                 const tEdited = clamp(x / pxPerSecond, 0, Math.max(0, total))
                                 const found = overlayItems.find((it) => it.track === 'A' && tEdited >= it.startSeconds && tEdited < it.endSeconds)
                                 setSelectedOverlayId(found ? found.id : null)
+                                setOverlayEditor(null)
+                                setOverlayEditorError(null)
                               }}
                               style={{
                                 position: 'relative',
@@ -1461,6 +1943,8 @@ export default function EditVideo() {
                                 const left = it.startSeconds * pxPerSecond
                                 const width = Math.max(2, (it.endSeconds - it.startSeconds) * pxPerSecond)
                                 const selected = it.id === selectedOverlayId
+                                const label = overlayNamesByUploadId[it.uploadId] || `Image ${it.uploadId}`
+                                const showLabel = width >= 64
                                 return (
                                   <div
                                     key={it.id}
@@ -1476,7 +1960,155 @@ export default function EditVideo() {
                                       borderRadius: 6,
                                       overflow: 'hidden',
                                     }}
-                                  />
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      setOverlayEditorError(null)
+                                      if (!selected) {
+                                        setSelectedOverlayId(it.id)
+                                        return
+                                      }
+                                      setOverlayEditor({ id: it.id, startSeconds: it.startSeconds, endSeconds: it.endSeconds })
+                                    }}
+                                  >
+                                    {showLabel ? (
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          inset: 0,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          padding: '0 18px',
+                                          color: 'rgba(255,255,255,0.92)',
+                                          textShadow: '0 1px 2px rgba(0,0,0,0.65)',
+                                          zIndex: 1,
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: 6,
+                                            minWidth: 0,
+                                            maxWidth: '100%',
+                                          }}
+                                        >
+                                          <button
+                                            type="button"
+                                            title="Preview image"
+                                            aria-label="Preview image"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                              e.stopPropagation()
+                                              setSelectedOverlayId(it.id)
+                                              setOverlayPreview({ uploadId: it.uploadId, name: label })
+                                            }}
+                                            style={{
+                                              width: 18,
+                                              height: 18,
+                                              display: 'grid',
+                                              placeItems: 'center',
+                                              borderRadius: 6,
+                                              border: '1px solid rgba(255,255,255,0.22)',
+                                              background: 'rgba(0,0,0,0.18)',
+                                              color: '#fff',
+                                              cursor: 'pointer',
+                                              flex: '0 0 auto',
+                                              padding: 0,
+                                            }}
+                                          >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                              <path
+                                                d="M21 16V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2Z"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                opacity="0.9"
+                                              />
+                                              <path
+                                                d="M8.5 11.5 6 15h12l-3.5-5-2.5 3-1.5-2Z"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                opacity="0.9"
+                                              />
+                                              <path
+                                                d="M9 9.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z"
+                                                fill="currentColor"
+                                                opacity="0.9"
+                                              />
+                                            </svg>
+                                          </button>
+                                          <div
+                                            style={{
+                                              minWidth: 0,
+                                              fontSize: 11,
+                                              fontWeight: 800,
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                            }}
+                                          >
+                                            {label}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                    {selected ? (
+                                      <>
+                                        <div
+                                          onPointerDown={(e) => beginOverlayResize(e, it, 'start')}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                          }}
+                                          style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            bottom: 0,
+                                            left: 0,
+                                            width: 14,
+                                            cursor: 'ew-resize',
+                                            touchAction: 'none',
+                                            display: 'grid',
+                                            placeItems: 'center',
+                                            background: 'linear-gradient(90deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.00) 100%)',
+                                            zIndex: 2,
+                                          }}
+                                          aria-label="Resize overlay start"
+                                        >
+                                          <div style={{ width: 2, height: 10, borderRadius: 2, background: 'rgba(255,255,255,0.70)' }} />
+                                        </div>
+                                        <div
+                                          onPointerDown={(e) => beginOverlayResize(e, it, 'end')}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                          }}
+                                          style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            bottom: 0,
+                                            right: 0,
+                                            width: 14,
+                                            cursor: 'ew-resize',
+                                            touchAction: 'none',
+                                            display: 'grid',
+                                            placeItems: 'center',
+                                            background: 'linear-gradient(270deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.00) 100%)',
+                                            zIndex: 2,
+                                          }}
+                                          aria-label="Resize overlay end"
+                                        >
+                                          <div style={{ width: 2, height: 10, borderRadius: 2, background: 'rgba(255,255,255,0.70)' }} />
+                                        </div>
+                                      </>
+                                    ) : null}
+                                  </div>
                                 )
                               })}
                               {renderBoundaries('255,255,255', 0.18)}
@@ -1764,6 +2396,239 @@ export default function EditVideo() {
 	          </div>
 	        </div>
 	      </div>
+
+        {overlayEditor ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.86)',
+              zIndex: 1100,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: '24px 16px 80px',
+            }}
+            onClick={() => {
+              setOverlayEditor(null)
+              setOverlayEditorError(null)
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: 560,
+                margin: '0 auto',
+                borderRadius: 14,
+                border: '1px solid rgba(212,175,55,0.55)',
+                background: 'rgba(15,15,15,0.96)',
+                padding: 16,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                <div style={{ fontSize: 18, fontWeight: 900 }}>Edit Overlay</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverlayEditor(null)
+                    setOverlayEditorError(null)
+                  }}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.20)',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    borderRadius: 10,
+                    padding: '8px 10px',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={Number.isFinite(overlayEditor.startSeconds) ? String(overlayEditor.startSeconds) : ''}
+                    onChange={(e) => {
+                      setOverlayEditorError(null)
+                      const n = Number(e.target.value)
+                      setOverlayEditor((prev) => (prev ? { ...prev, startSeconds: n } : prev))
+                    }}
+                    style={{
+                      width: '100%',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
+                      color: '#fff',
+                      padding: '10px 12px',
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={Number.isFinite(overlayEditor.endSeconds) ? String(overlayEditor.endSeconds) : ''}
+                    onChange={(e) => {
+                      setOverlayEditorError(null)
+                      const n = Number(e.target.value)
+                      setOverlayEditor((prev) => (prev ? { ...prev, endSeconds: n } : prev))
+                    }}
+                    style={{
+                      width: '100%',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
+                      color: '#fff',
+                      padding: '10px 12px',
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+
+                {overlayEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{overlayEditorError}</div> : null}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOverlayEditor(null)
+                      setOverlayEditorError(null)
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = updateOverlayWindow(overlayEditor.id, overlayEditor.startSeconds, overlayEditor.endSeconds)
+                      if (!res.ok) {
+                        setOverlayEditorError(res.error)
+                        return
+                      }
+                      setOverlayEditor((prev) => (prev ? { ...prev, startSeconds: res.startSeconds, endSeconds: res.endSeconds } : prev))
+                      setOverlayEditorError(null)
+                      setOverlayEditor(null)
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(212,175,55,0.65)',
+                      background: 'rgba(212,175,55,0.14)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {overlayPreview ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.88)',
+              zIndex: 1200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px 16px',
+            }}
+            onClick={() => setOverlayPreview(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 'min(960px, 100%)',
+                maxHeight: 'min(92vh, 820px)',
+                borderRadius: 14,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(12,12,12,0.98)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'center',
+                  padding: '12px 12px',
+                  borderBottom: '1px solid rgba(255,255,255,0.10)',
+                }}
+              >
+                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {overlayPreview.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOverlayPreview(null)}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.20)',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    display: 'grid',
+                    placeItems: 'center',
+                    cursor: 'pointer',
+                    flex: '0 0 auto',
+                  }}
+                  aria-label="Close"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+              <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                <img
+                  src={`/api/uploads/${encodeURIComponent(String(overlayPreview.uploadId))}/file`}
+                  alt={overlayPreview.name}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain',
+                    borderRadius: 10,
+                    background: '#000',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
 	      {pick === 'overlayImage' ? (
 	        <div
 	          role="dialog"

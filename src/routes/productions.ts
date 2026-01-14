@@ -1,11 +1,13 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import * as prodSvc from '../features/productions/service'
+import * as draftsSvc from '../features/production-drafts/service'
 import { requireAuth } from '../middleware/auth'
 
 const productionsRouter = Router()
 
 const createProductionSchema = z.object({
+  draftId: z.number().int().positive().optional(),
   uploadId: z.number().int().positive(),
   name: z.string().min(1).max(255).optional(),
   defaultStoryText: z.union([z.string().max(2000), z.null()]).optional(),
@@ -76,12 +78,19 @@ productionsRouter.post('/api/productions', requireAuth, async (req, res, next) =
   try {
     const parsed = createProductionSchema.safeParse(req.body || {})
     if (!parsed.success) return res.status(400).json({ error: 'invalid_body', detail: parsed.error.flatten() })
-    const { uploadId, name, defaultStoryText, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, screenTitlePresetId, screenTitleText, profile, quality, sound } = parsed.data
+    const { draftId, uploadId, name, defaultStoryText, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, screenTitlePresetId, screenTitleText, profile, quality, sound } = parsed.data
     const currentUserId = req.user!.id
     const result = await prodSvc.create(
       { uploadId, name, defaultStoryText, config, musicUploadId, logoUploadId, logoConfigId, audioConfigId, lowerThirdUploadId, lowerThirdConfigId, screenTitlePresetId, screenTitleText, profile, quality, sound },
       currentUserId
     )
+    if (draftId) {
+      try {
+        await draftsSvc.archiveForUser(draftId, Number(currentUserId))
+      } catch {
+        // Best-effort: production is created even if draft archiving fails.
+      }
+    }
     res.status(201).json(result)
   } catch (err: any) { next(err) }
 })

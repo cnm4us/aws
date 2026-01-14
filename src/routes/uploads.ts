@@ -32,6 +32,28 @@ uploadsRouter.get('/api/uploads', async (req, res) => {
   }
 })
 
+uploadsRouter.get('/api/uploads/summary', requireAuth, async (req, res) => {
+  try {
+    const raw = String((req.query as any)?.ids || '').trim()
+    if (!raw) return res.json({ items: [] })
+    const ids = raw
+      .split(',')
+      .map((s) => Number(String(s).trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    if (!ids.length) return res.json({ items: [] })
+    const uniq = Array.from(new Set(ids)).slice(0, 50)
+    const data = await uploadsSvc.listSummariesByIds(
+      { ids: uniq },
+      { userId: Number(req.user!.id) }
+    )
+    return res.json(data)
+  } catch (err: any) {
+    console.error('list upload summaries error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: 'failed_to_list', detail: String(err?.message || err) })
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id', async (req, res) => {
   try {
     const id = Number(req.params.id)

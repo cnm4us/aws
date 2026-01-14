@@ -17,6 +17,8 @@ import { audioConfigsRouter } from './routes/audio-configs';
 import { lowerThirdsRouter } from './routes/lower-thirds';
 import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
+import { productionDraftsRouter } from './routes/production-drafts';
+import { createVideoRouter } from './routes/create-video';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { SCREEN_TITLE_RENDERER, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from './config'
@@ -69,6 +71,8 @@ export function buildServer(): express.Application {
   app.use(lowerThirdsRouter);
   app.use(screenTitlePresetsRouter);
   app.use(screenTitlePreviewRouter);
+  app.use(productionDraftsRouter);
+  app.use(createVideoRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 

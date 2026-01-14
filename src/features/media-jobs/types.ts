@@ -3,6 +3,7 @@ export type MediaJobStatus = 'pending' | 'processing' | 'completed' | 'failed' |
 export type MediaJobType =
   | 'audio_master_v1'
   | 'video_master_v1'
+  | 'create_video_export_v1'
   | 'upload_thumb_v1'
   | 'upload_edit_proxy_v1'
   | 'upload_timeline_sprites_v1'

@@ -721,7 +721,15 @@ export default function ProducePage() {
   const [editRanges, setEditRanges] = useState<Array<{ start: number; end: number }> | null>(() => parseEditRanges())
   const [editStartSeconds, setEditStartSeconds] = useState<number | null>(() => parseEditStartSeconds())
   const [editEndSeconds, setEditEndSeconds] = useState<number | null>(() => parseEditEndSeconds())
-  const timelineOverlayItems = useMemo(() => parseTimelineOverlayItems(), [])
+  const [timelineOverlayItems, setTimelineOverlayItems] = useState<TimelineOverlayItem[] | null>(() => parseTimelineOverlayItems())
+
+  const [draftId, setDraftId] = useState<number | null>(null)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null)
+  const draftHydratingRef = useRef(false)
+  const draftLastSavedRef = useRef<string>('')
+  const draftSeededFromUrlRef = useRef(false)
   const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
   const editProxyInitialSeekDoneRef = useRef(false)
@@ -734,7 +742,341 @@ export default function ProducePage() {
   const [screenTitlePreviewLoading, setScreenTitlePreviewLoading] = useState(false)
   const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const screenTitlePreviewAutoDoneRef = useRef(false)
-  const fromHere = encodeURIComponent(window.location.pathname + window.location.search)
+  const [fromHere, setFromHere] = useState(() => encodeURIComponent(window.location.pathname + window.location.search))
+
+  const stripStateParamsFromUrl = () => {
+    const params = new URLSearchParams(window.location.search)
+    const keepKeys = ['upload', 'from', 'pick']
+    const next = new URLSearchParams()
+    for (const k of keepKeys) {
+      const v = params.get(k)
+      if (v != null && v !== '') next.set(k, v)
+    }
+    const qs = next.toString()
+    const nextUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+    try {
+      window.history.replaceState(window.history.state || {}, '', nextUrl)
+      setFromHere(encodeURIComponent(window.location.pathname + window.location.search))
+    } catch {}
+  }
+
+  const buildDraftConfigFromState = (): any => {
+    const name = (productionName || '').trim()
+    const story = (defaultStoryText || '').trim()
+    const titleText = (screenTitleText || '').trim()
+
+    const out: any = {
+      name: name ? name : null,
+      defaultStoryText: story ? defaultStoryText : null,
+      musicUploadId: selectedAudioId ?? null,
+      audioConfigId: selectedAudioConfigId ?? null,
+      logoUploadId: selectedLogoId ?? null,
+      logoConfigId: selectedLogoConfigId ?? null,
+      lowerThirdUploadId: selectedLowerThirdUploadId ?? null,
+      lowerThirdConfigId: selectedLowerThirdConfigId ?? null,
+      screenTitlePresetId: selectedScreenTitlePresetId ?? null,
+      screenTitleText: titleText ? titleText : null,
+    }
+
+    const cfg: any = {}
+    if (editRanges && editRanges.length) {
+      cfg.edit = { ranges: editRanges }
+    } else if (editStartSeconds != null || editEndSeconds != null) {
+      cfg.edit = { trimStartSeconds: editStartSeconds ?? 0, trimEndSeconds: editEndSeconds ?? null }
+    }
+
+    if (firstScreenMode === 'custom_image') {
+      cfg.intro = { kind: 'title_image', uploadId: selectedTitleUploadId, holdSeconds: firstScreenHoldSeconds || 0 }
+    } else if (firstScreenHoldSeconds) {
+      cfg.intro = { kind: 'freeze_first_frame', seconds: firstScreenHoldSeconds }
+    }
+
+    if (timelineOverlayItems && timelineOverlayItems.length) {
+      cfg.timeline = { overlays: timelineOverlayItems }
+    }
+
+    if (Object.keys(cfg).length) out.config = cfg
+    else out.config = null
+
+    return out
+  }
+
+  const hydrateStateFromDraftConfig = (cfg: any) => {
+    const next = cfg && typeof cfg === 'object' ? cfg : {}
+
+    setProductionName(typeof next.name === 'string' ? next.name : (next.name == null ? '' : String(next.name || '')))
+    setDefaultStoryText(typeof next.defaultStoryText === 'string' ? next.defaultStoryText : '')
+
+    const idOrNull = (v: any): number | null => {
+      if (v == null || v === '') return null
+      const n = Number(v)
+      return Number.isFinite(n) && n > 0 ? n : null
+    }
+
+    setSelectedAudioId(idOrNull(next.musicUploadId))
+    setSelectedAudioConfigId(idOrNull(next.audioConfigId))
+    setSelectedLogoId(idOrNull(next.logoUploadId))
+    setSelectedLogoConfigId(idOrNull(next.logoConfigId))
+    setSelectedLowerThirdUploadId(idOrNull(next.lowerThirdUploadId))
+    setSelectedLowerThirdConfigId(idOrNull(next.lowerThirdConfigId))
+    setSelectedScreenTitlePresetId(idOrNull(next.screenTitlePresetId))
+    setScreenTitleText(typeof next.screenTitleText === 'string' ? next.screenTitleText : '')
+
+    const nested = next.config && typeof next.config === 'object' ? next.config : null
+    const edit = nested && typeof (nested as any).edit === 'object' ? (nested as any).edit : null
+    const intro = nested && typeof (nested as any).intro === 'object' ? (nested as any).intro : null
+    const timeline = nested && typeof (nested as any).timeline === 'object' ? (nested as any).timeline : null
+
+    if (edit && Array.isArray((edit as any).ranges) && (edit as any).ranges.length) {
+      const ranges = (edit as any).ranges
+        .map((r: any) => ({ start: Number(r?.start), end: Number(r?.end) }))
+        .filter((r: any) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start)
+      setEditRanges(ranges.length ? ranges : null)
+      setEditStartSeconds(null)
+      setEditEndSeconds(null)
+    } else if (edit && ((edit as any).trimStartSeconds != null || (edit as any).trimEndSeconds != null)) {
+      const ts = Number((edit as any).trimStartSeconds ?? 0)
+      const te = (edit as any).trimEndSeconds == null ? null : Number((edit as any).trimEndSeconds)
+      setEditRanges(null)
+      setEditStartSeconds(Number.isFinite(ts) ? ts : null)
+      setEditEndSeconds(te != null && Number.isFinite(te) ? te : null)
+    } else {
+      setEditRanges(null)
+      setEditStartSeconds(null)
+      setEditEndSeconds(null)
+    }
+
+    if (intro && String((intro as any).kind || '') === 'title_image') {
+      setFirstScreenMode('custom_image')
+      setSelectedTitleUploadId(idOrNull((intro as any).uploadId))
+      const hs = Number((intro as any).holdSeconds ?? 0)
+      setFirstScreenHoldSeconds(Number.isFinite(hs) ? Math.max(0, Math.round(hs)) : 0)
+    } else if (intro && String((intro as any).kind || '') === 'freeze_first_frame') {
+      setFirstScreenMode('first_frame')
+      setSelectedTitleUploadId(null)
+      const secs = Number((intro as any).seconds ?? 0)
+      setFirstScreenHoldSeconds(Number.isFinite(secs) ? Math.max(0, Math.round(secs)) : 0)
+    } else {
+      setFirstScreenMode('first_frame')
+      setSelectedTitleUploadId(null)
+      setFirstScreenHoldSeconds(0)
+    }
+
+    const overlays = timeline && Array.isArray((timeline as any).overlays) ? (timeline as any).overlays : []
+    if (overlays && overlays.length) {
+      setTimelineOverlayItems(
+        overlays
+          .map((o: any) => ({
+            id: String(o?.id || ''),
+            track: 'A' as const,
+            kind: 'image' as const,
+            uploadId: Number(o?.uploadId),
+            startSeconds: Number(o?.startSeconds),
+            endSeconds: Number(o?.endSeconds),
+            fit: 'cover' as const,
+            opacityPct: 100 as const,
+          }))
+          .filter((o: any) => Number.isFinite(o.uploadId) && o.uploadId > 0 && Number.isFinite(o.startSeconds) && Number.isFinite(o.endSeconds) && o.endSeconds > o.startSeconds)
+      )
+    } else {
+      setTimelineOverlayItems(null)
+    }
+  }
+
+  useEffect(() => {
+    if (!uploadId) return
+    let cancelled = false
+    ;(async () => {
+      setDraftLoaded(false)
+      setDraftLoadError(null)
+      setDraftSaveError(null)
+      try {
+        // Transitional support: if /edit-video still returns edits via URL params, prefer those.
+        const urlEditRanges = parseEditRanges()
+        const urlEditStart = parseEditStartSeconds()
+        const urlEditEnd = parseEditEndSeconds()
+        const urlOverlayItems = parseTimelineOverlayItems()
+        const urlTitleUploadId = parseTitleUploadId()
+        const urlIntroSeconds = parseIntroSeconds()
+        const urlTitleHoldSeconds = parseTitleHoldSeconds()
+
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch('/api/production-drafts', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ uploadId }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(String(data?.error || 'draft_load_failed'))
+        const draft = data?.draft
+        const id = Number(draft?.id)
+        if (!Number.isFinite(id) || id <= 0) throw new Error('draft_load_failed')
+        if (cancelled) return
+        setDraftId(id)
+
+        const cfg = draft?.config && typeof draft.config === 'object' ? draft.config : {}
+        const hasKeys = cfg && typeof cfg === 'object' ? Object.keys(cfg).length > 0 : false
+
+        draftHydratingRef.current = true
+        try {
+          if (hasKeys) {
+            hydrateStateFromDraftConfig(cfg)
+            let mergedCfg: any = cfg
+            // Apply URL-seeded edits/overlays/intro on top (v1: URL wins during transition).
+            if ((urlEditRanges && urlEditRanges.length) || urlEditStart != null || urlEditEnd != null || (urlOverlayItems && urlOverlayItems.length) || urlTitleUploadId != null || urlIntroSeconds != null) {
+              mergedCfg = { ...(cfg as any) }
+              const nested: any = mergedCfg.config && typeof mergedCfg.config === 'object' ? { ...(mergedCfg.config as any) } : {}
+              if (urlEditRanges && urlEditRanges.length) {
+                nested.edit = { ranges: urlEditRanges }
+              } else if (urlEditStart != null || urlEditEnd != null) {
+                nested.edit = { trimStartSeconds: urlEditStart ?? 0, trimEndSeconds: urlEditEnd ?? null }
+              }
+              if (urlOverlayItems && urlOverlayItems.length) {
+                nested.timeline = { overlays: urlOverlayItems }
+              }
+              if (urlTitleUploadId != null) {
+                nested.intro = { kind: 'title_image', uploadId: urlTitleUploadId, holdSeconds: urlTitleHoldSeconds ?? 0 }
+              } else if (urlIntroSeconds != null) {
+                nested.intro = { kind: 'freeze_first_frame', seconds: urlIntroSeconds }
+              }
+              mergedCfg.config = Object.keys(nested).length ? nested : null
+            }
+
+            // Bring state in sync with URL seeds (if any)
+            if (urlEditRanges && urlEditRanges.length) {
+              setEditRanges(urlEditRanges)
+              setEditStartSeconds(null)
+              setEditEndSeconds(null)
+            } else if (urlEditStart != null || urlEditEnd != null) {
+              setEditRanges(null)
+              setEditStartSeconds(urlEditStart)
+              setEditEndSeconds(urlEditEnd)
+            }
+            if (urlOverlayItems && urlOverlayItems.length) {
+              setTimelineOverlayItems(urlOverlayItems)
+            }
+            if (urlTitleUploadId != null) {
+              setFirstScreenMode('custom_image')
+              setSelectedTitleUploadId(urlTitleUploadId)
+              setFirstScreenHoldSeconds(urlTitleHoldSeconds ?? 0)
+            } else if (urlIntroSeconds != null) {
+              setFirstScreenMode('first_frame')
+              setSelectedTitleUploadId(null)
+              setFirstScreenHoldSeconds(urlIntroSeconds)
+            }
+
+            const mergedJson = JSON.stringify(mergedCfg)
+            draftLastSavedRef.current = mergedJson
+            // If we merged anything from the URL, persist it to the draft immediately.
+            if (mergedCfg !== cfg) {
+              try {
+                const r2 = await fetch(`/api/production-drafts/${encodeURIComponent(String(id))}`, {
+                  method: 'PATCH',
+                  credentials: 'same-origin',
+                  headers,
+                  body: JSON.stringify({ config: mergedCfg }),
+                })
+                if (!r2.ok) {
+                  const d2 = await r2.json().catch(() => ({}))
+                  setDraftSaveError(String(d2?.error || 'draft_seed_failed'))
+                }
+              } catch (e: any) {
+                setDraftSaveError(e?.message || 'draft_seed_failed')
+              }
+            }
+          } else if (!draftSeededFromUrlRef.current) {
+            const seed = buildDraftConfigFromState()
+            const seedJson = JSON.stringify(seed)
+            draftSeededFromUrlRef.current = true
+            draftLastSavedRef.current = seedJson
+            // Best-effort seed immediately (don’t block UI if it fails).
+            try {
+              const r2 = await fetch(`/api/production-drafts/${encodeURIComponent(String(id))}`, {
+                method: 'PATCH',
+                credentials: 'same-origin',
+                headers,
+                body: JSON.stringify({ config: seed }),
+              })
+              if (!r2.ok) {
+                const d2 = await r2.json().catch(() => ({}))
+                setDraftSaveError(String(d2?.error || 'draft_seed_failed'))
+              }
+            } catch (e: any) {
+              setDraftSaveError(e?.message || 'draft_seed_failed')
+            }
+          }
+        } finally {
+          draftHydratingRef.current = false
+        }
+
+        stripStateParamsFromUrl()
+        setDraftLoaded(true)
+      } catch (e: any) {
+        if (cancelled) return
+        setDraftLoadError(e?.message || 'draft_load_failed')
+        setDraftLoaded(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadId])
+
+  useEffect(() => {
+    if (!draftId) return
+    if (!draftLoaded) return
+    if (draftHydratingRef.current) return
+
+    const next = buildDraftConfigFromState()
+    const nextJson = JSON.stringify(next)
+    if (nextJson === draftLastSavedRef.current) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch(`/api/production-drafts/${encodeURIComponent(String(draftId))}`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ config: next }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(String(data?.error || 'draft_save_failed'))
+        draftLastSavedRef.current = nextJson
+        setDraftSaveError(null)
+      } catch (e: any) {
+        setDraftSaveError(e?.message || 'draft_save_failed')
+      }
+    }, 500)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    draftId,
+    draftLoaded,
+    productionName,
+    defaultStoryText,
+    selectedAudioId,
+    selectedAudioConfigId,
+    selectedLogoId,
+    selectedLogoConfigId,
+    selectedLowerThirdUploadId,
+    selectedLowerThirdConfigId,
+    selectedScreenTitlePresetId,
+    screenTitleText,
+    firstScreenMode,
+    selectedTitleUploadId,
+    firstScreenHoldSeconds,
+    editRanges,
+    editStartSeconds,
+    editEndSeconds,
+    timelineOverlayItems,
+  ])
 
   const editPreviewSeekSeconds = (() => {
     if (editRanges && editRanges.length) return Math.max(0, Number(editRanges[0].start || 0))
@@ -1147,7 +1489,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedAudioId(nextId)
-          replaceQueryParams({ musicUploadId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1158,7 +1500,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedAudioConfigId(nextId)
-          replaceQueryParams({ audioConfigId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1169,7 +1511,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedLogoConfigId(nextId)
-          replaceQueryParams({ logoConfigId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1180,10 +1522,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedLowerThirdUploadId(nextId)
-          replaceQueryParams(
-            { lowerThirdUploadId: nextId == null ? null : String(nextId), pick: null },
-            { ...(window.history.state || {}), modal: null }
-          )
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1194,10 +1533,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedLowerThirdConfigId(nextId)
-          replaceQueryParams(
-            { lowerThirdConfigId: nextId == null ? null : String(nextId), pick: null },
-            { ...(window.history.state || {}), modal: null }
-          )
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1208,7 +1544,7 @@ export default function ProducePage() {
           const pending = pendingRaw === '' ? null : Number(pendingRaw)
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedLogoId(nextId)
-          replaceQueryParams({ logoUploadId: nextId == null ? null : String(nextId), pick: null }, { ...(window.history.state || {}), modal: null })
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
@@ -1220,25 +1556,13 @@ export default function ProducePage() {
           const nextId = pending != null && Number.isFinite(pending) && pending > 0 ? pending : null
           setSelectedTitleUploadId(nextId)
           if (nextId != null) setFirstScreenMode('custom_image')
-          replaceQueryParams(
-            { titleUploadId: nextId == null ? null : String(nextId), pick: null, introSeconds: null },
-            { ...(window.history.state || {}), modal: null }
-          )
+          replaceQueryParams({ pick: null }, { ...(window.history.state || {}), modal: null })
           return
         }
       } catch {}
-      setSelectedAudioId(parseMusicUploadId())
-      setSelectedLogoId(parseLogoUploadId())
-      setSelectedTitleUploadId(parseTitleUploadId())
-      setFirstScreenMode(parseFirstScreenMode())
-      setFirstScreenHoldSeconds(parseFirstScreenHoldSeconds())
-      setSelectedLogoConfigId(parseLogoConfigId())
-      setSelectedAudioConfigId(parseAudioConfigId())
-      setSelectedLowerThirdUploadId(parseLowerThirdUploadId())
-      setSelectedLowerThirdConfigId(parseLowerThirdConfigId())
-      setSelectedScreenTitlePresetId(parseScreenTitlePresetId())
     }
     window.addEventListener('popstate', applyFromLocation)
+    applyFromLocation()
     return () => window.removeEventListener('popstate', applyFromLocation)
   }, [])
 
@@ -1645,51 +1969,36 @@ export default function ProducePage() {
     setSelectedAudioId(id)
     if (id == null) {
       setSelectedAudioConfigId(null)
-      replaceQueryParams({ musicUploadId: null, audioConfigId: null }, { ...(window.history.state || {}), modal: null })
       return
     }
-    replaceQueryParams({ musicUploadId: String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLogoSelection = (id: number | null) => {
     setSelectedLogoId(id)
-    replaceQueryParams({ logoUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLowerThirdImageSelection = (id: number | null) => {
     setSelectedLowerThirdUploadId(id)
-    replaceQueryParams({ lowerThirdUploadId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyTitlePageSelection = (id: number | null) => {
     setSelectedTitleUploadId(id)
     if (id == null) {
-      replaceQueryParams(
-        { titleUploadId: null, titleHoldSeconds: null, introSeconds: null },
-        { ...(window.history.state || {}), modal: null }
-      )
       return
     }
     setFirstScreenMode('custom_image')
-    replaceQueryParams(
-      { titleUploadId: String(id), titleHoldSeconds: String(firstScreenHoldSeconds || 0), introSeconds: null },
-      { ...(window.history.state || {}), modal: null }
-    )
   }
 
   const applyAudioConfigSelection = (id: number | null) => {
     setSelectedAudioConfigId(id)
-    replaceQueryParams({ audioConfigId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLogoConfigSelection = (id: number | null) => {
     setSelectedLogoConfigId(id)
-    replaceQueryParams({ logoConfigId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const applyLowerThirdConfigSelection = (id: number | null) => {
     setSelectedLowerThirdConfigId(id)
-    replaceQueryParams({ lowerThirdConfigId: id == null ? null : String(id) }, { ...(window.history.state || {}), modal: null })
   }
 
   const chooseAudio = (id: number | null) => {
@@ -1867,6 +2176,7 @@ export default function ProducePage() {
       if (csrf) headers['x-csrf-token'] = csrf
 
 			      const body: any = {
+              ...(draftId ? { draftId } : {}),
 			        uploadId,
 			        musicUploadId: selectedAudioId ?? null,
 			        audioConfigId: selectedAudioConfigId ?? null,
@@ -1952,6 +2262,15 @@ export default function ProducePage() {
 		                Overlays: {timelineOverlayItems.length}
 		              </span>
 		            ) : null}
+                {draftLoadError ? (
+                  <span style={{ fontSize: 12, color: '#ff9b9b' }}>
+                    Draft: {draftLoadError}
+                  </span>
+                ) : draftSaveError ? (
+                  <span style={{ fontSize: 12, color: '#ffcc66' }}>
+                    Draft not saved
+                  </span>
+                ) : null}
 		            {((editRanges && editRanges.length) || editStartSeconds != null || editEndSeconds != null) ? (
 		              <button
 	                type="button"
@@ -1960,7 +2279,6 @@ export default function ProducePage() {
 	                  setEditStartSeconds(null)
 	                  setEditEndSeconds(null)
 	                  setEditProxyPreviewOk(true)
-	                  pushQueryParams({ editRanges: null, editStart: null, editEnd: null })
 	                }}
 	                style={{
 	                  padding: '8px 10px',
@@ -2339,7 +2657,6 @@ export default function ProducePage() {
                           setScreenTitlePreviewPngUrl(null)
                           setSelectedScreenTitlePresetId(null)
                           setScreenTitleText('')
-                          pushQueryParams({ screenTitlePresetId: null })
                         }}
                         style={{
                           padding: '10px 12px',
@@ -2365,7 +2682,6 @@ export default function ProducePage() {
                         const next = raw ? Number(raw) : null
                         const id = next != null && Number.isFinite(next) && next > 0 ? next : null
                         setSelectedScreenTitlePresetId(id)
-                        pushQueryParams({ screenTitlePresetId: id == null ? null : String(id) })
                       }}
                       style={{
                         padding: '10px 12px',
@@ -2456,23 +2772,6 @@ export default function ProducePage() {
                         setFirstScreenMode(next)
                         if (next === 'first_frame') {
                           setSelectedTitleUploadId(null)
-                          replaceQueryParams(
-                            {
-                              titleUploadId: null,
-                              titleHoldSeconds: null,
-                              introSeconds: firstScreenHoldSeconds ? String(firstScreenHoldSeconds) : null,
-                            },
-                            { ...(window.history.state || {}), modal: null }
-                          )
-                        } else {
-                          replaceQueryParams(
-                            {
-                              introSeconds: null,
-                              titleUploadId: selectedTitleUploadId == null ? null : String(selectedTitleUploadId),
-                              titleHoldSeconds: String(firstScreenHoldSeconds || 0),
-                            },
-                            { ...(window.history.state || {}), modal: null }
-                          )
                         }
                       }}
                       style={{
@@ -2559,11 +2858,6 @@ export default function ProducePage() {
                         const next = raw ? Math.round(Number(raw)) : 0
                         const final = [0, 2, 3, 4, 5].includes(next) ? next : 0
                         setFirstScreenHoldSeconds(final)
-                        if (firstScreenMode === 'custom_image') {
-                          pushQueryParams({ titleHoldSeconds: String(final), introSeconds: null })
-                        } else {
-                          pushQueryParams({ introSeconds: final ? String(final) : null, titleHoldSeconds: null, titleUploadId: null })
-                        }
                       }}
                       style={{
                         padding: '10px 12px',

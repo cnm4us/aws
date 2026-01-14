@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadLogoConfigs, loadLowerThirds, loadScreenTitlePresets, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadLogoConfigs, loadLowerThirds, loadScreenTitlePresets, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -17,6 +17,7 @@ const PublishPage = React.lazy(loadPublish)
 const PublishStoryPage = React.lazy(loadPublishStory)
 const ProducePage = React.lazy(loadProduce)
 const EditVideoPage = React.lazy(loadEditVideo)
+const CreateVideoPage = React.lazy(loadCreateVideo)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const LowerThirdsPage = React.lazy(loadLowerThirds)
 const ScreenTitlePresetsPage = React.lazy(loadScreenTitlePresets)
@@ -198,6 +199,14 @@ if (path === '/' || path === '') {
     <Layout label="Edit Video">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <EditVideoPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/create-video')) {
+  root.render(
+    <Layout label="Create Video">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <CreateVideoPage />
       </Suspense>
     </Layout>
   )

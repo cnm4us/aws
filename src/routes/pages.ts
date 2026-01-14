@@ -6748,6 +6748,13 @@ pagesRouter.get('/edit-video', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/create-video', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/create-video/', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/logo-configs', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
