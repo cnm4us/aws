@@ -183,6 +183,24 @@ export default function CreateVideo() {
   const playheadFromScrollRef = useRef(false)
   const ignoreScrollRef = useRef(false)
   const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
+  const primedFrameSrcRef = useRef<string>('')
+
+  const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
+    try {
+      if (!v.paused) return
+      const prevMuted = v.muted
+      v.muted = true
+      const p = v.play()
+      if (p && typeof (p as any).then === 'function') {
+        await p.catch(() => {})
+      }
+      await new Promise((r) => window.setTimeout(r, 80))
+      try { v.pause() } catch {}
+      v.muted = prevMuted
+    } catch {
+      try { v.pause() } catch {}
+    }
+  }, [])
 
   const totalSeconds = useMemo(() => sumDur(timeline.clips), [timeline.clips])
   const clipStarts = useMemo(() => computeClipStartsCached(timeline.clips), [timeline.clips])
@@ -505,6 +523,11 @@ export default function CreateVideo() {
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
           try { v.currentTime = Math.max(0, sourceTime) } catch {}
+          const srcKey = String(v.currentSrc || v.src || '')
+          if (!opts?.autoPlay && srcKey && primedFrameSrcRef.current !== srcKey) {
+            primedFrameSrcRef.current = srcKey
+            void primePausedFrame(v)
+          }
           if (opts?.autoPlay) {
             try { void v.play() } catch {}
           }
