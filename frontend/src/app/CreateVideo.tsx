@@ -946,7 +946,7 @@ export default function CreateVideo() {
                   left: '50%',
                   top: 0,
                   bottom: 0,
-                  width: 2,
+                  width: 1,
                   background: '#ff3b30',
                   transform: 'translateX(-50%)',
                   zIndex: 50,
