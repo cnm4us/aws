@@ -1,6 +1,7 @@
 node_modules/
 videos/
 dist/
+keys/
 .env
 .mc-endpoint.json
 .DS_Store

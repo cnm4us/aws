@@ -106,6 +106,16 @@ export const STATUS_POLL_MS = Number(process.env.STATUS_POLL_MS || 30000);
 // CDN
 export const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || '';
 
+// Uploads CDN (private CloudFront distribution; signed URLs/cookies required)
+export const UPLOADS_CDN_DOMAIN = process.env.UPLOADS_CDN_DOMAIN || ''
+export const UPLOADS_CLOUDFRONT_KEY_PAIR_ID = process.env.UPLOADS_CLOUDFRONT_KEY_PAIR_ID || ''
+export const UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 = process.env.UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 || ''
+export const UPLOADS_CDN_SIGNED_URL_TTL_SECONDS = (() => {
+  const n = Number(process.env.UPLOADS_CDN_SIGNED_URL_TTL_SECONDS || 3600)
+  if (!Number.isFinite(n)) return 3600
+  return Math.max(60, Math.min(86400, Math.round(n)))
+})()
+
 // Request logs
 import path from 'path';
 export const REQUEST_LOGS_DIR = process.env.REQUEST_LOGS_DIR || path.join(process.cwd(), 'logs', 'request');

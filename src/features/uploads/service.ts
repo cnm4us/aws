@@ -22,6 +22,8 @@ import * as audioTagsRepo from '../audio-tags/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 import { buildUploadTimelineManifestKey, buildUploadTimelineSpriteKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
+import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
+import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
@@ -261,6 +263,158 @@ export async function getUploadEditProxyStream(
 
     throw new NotFoundError('not_found')
   }
+}
+
+async function ensureEditProxyEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
+  try {
+    if (!MEDIA_JOBS_ENABLED) return
+    const uploadId = Number(uploadRow?.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
+    if (sourceDeletedAt) return
+
+    const kind = String(uploadRow?.kind || 'video').toLowerCase()
+    const isSystem = Number(uploadRow?.is_system || 0) === 1
+    if (isSystem || kind !== 'video') return
+
+    const ownerId = uploadRow?.user_id != null ? Number(uploadRow.user_id) : null
+    const userIdForJob =
+      ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
+    if (!userIdForJob) return
+
+    let alreadyQueued = false
+    try {
+      const db = getPool()
+      const [rows] = await db.query(
+        `SELECT id
+           FROM media_jobs
+          WHERE type = 'upload_edit_proxy_v1'
+            AND status IN ('pending','processing')
+            AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+          ORDER BY id DESC
+          LIMIT 1`,
+        [String(uploadId)]
+      )
+      alreadyQueued = (rows as any[]).length > 0
+    } catch {}
+    if (alreadyQueued) return
+
+    await enqueueJob('upload_edit_proxy_v1', {
+      uploadId,
+      userId: userIdForJob,
+      video: { bucket: String(uploadRow.s3_bucket), key: String(uploadRow.s3_key) },
+      outputBucket: String(UPLOAD_BUCKET),
+      outputKey: buildUploadEditProxyKey(uploadId),
+      longEdgePx: 540,
+      fps: 30,
+      gop: 8,
+    })
+  } catch {
+    // best-effort
+  }
+}
+
+function uploadsCdnConfigured(): boolean {
+  return Boolean(
+    String(UPLOADS_CDN_DOMAIN || '').trim() &&
+      String(UPLOADS_CLOUDFRONT_KEY_PAIR_ID || '').trim() &&
+      String(UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 || '').trim()
+  )
+}
+
+function encodeS3KeyForUrl(key: string): string {
+  const raw = String(key || '').replace(/^\/+/, '')
+  return raw
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/')
+}
+
+function signUploadsCdnUrl(key: string): { url: string; expiresAt: number } {
+  if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
+  const expiresAt = Math.floor(Date.now() / 1000) + UPLOADS_CDN_SIGNED_URL_TTL_SECONDS
+  const privateKeyPem = Buffer.from(String(UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64), 'base64').toString('utf8')
+  const url = `https://${String(UPLOADS_CDN_DOMAIN).trim()}/${encodeS3KeyForUrl(key)}`
+  return {
+    url: buildCloudFrontSignedUrl({
+      url,
+      keyPairId: String(UPLOADS_CLOUDFRONT_KEY_PAIR_ID).trim(),
+      privateKeyPem,
+      expiresEpochSeconds: expiresAt,
+    }),
+    expiresAt,
+  }
+}
+
+export async function getUploadSignedCdnUrl(
+  uploadId: number,
+  params: { kind: 'file' | 'thumb' | 'edit_proxy' | 'timeline_manifest' | 'timeline_sprite'; startSecond?: number } | undefined,
+  ctx: ServiceContext
+): Promise<{ url: string; expiresAt: number }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  if (!uploadsCdnConfigured()) throw new DomainError('cdn_not_configured')
+  const kind = params?.kind
+  if (!kind) throw new DomainError('bad_request')
+
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const rowKind = String(row.kind || 'video').toLowerCase()
+  const isSystem = Number((row as any).is_system || 0) === 1
+
+  // Permission checks (mirror the stream endpoints).
+  if (!(isSystem && rowKind === 'audio')) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
+
+  let key = ''
+  if (kind === 'file') {
+    key = String(row.s3_key || '')
+    if (!key) throw new NotFoundError('not_found')
+  } else if (kind === 'edit_proxy') {
+    if (rowKind !== 'video') throw new NotFoundError('not_found')
+    key = buildUploadEditProxyKey(uploadId)
+    // Ensure exists or enqueue.
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: key }))
+    } catch (e: any) {
+      const status = Number(e?.$metadata?.httpStatusCode || 0)
+      const name = String(e?.name || e?.Code || '')
+      const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+      if (!isMissing) throw e
+      await ensureEditProxyEnqueued(row, ctx)
+      throw new NotFoundError('not_found')
+    }
+  } else if (kind === 'thumb') {
+    if (rowKind !== 'video') throw new NotFoundError('not_found')
+    key = buildUploadThumbKey(uploadId)
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: key }))
+    } catch (e: any) {
+      const status = Number(e?.$metadata?.httpStatusCode || 0)
+      const name = String(e?.name || e?.Code || '')
+      const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+      if (!isMissing) throw e
+      await ensureThumbEnqueued(row, ctx)
+      throw new NotFoundError('not_found')
+    }
+  } else if (kind === 'timeline_manifest') {
+    if (rowKind !== 'video') throw new NotFoundError('not_found')
+    key = buildUploadTimelineManifestKey(uploadId)
+  } else if (kind === 'timeline_sprite') {
+    if (rowKind !== 'video') throw new NotFoundError('not_found')
+    const start = params?.startSecond != null ? Number(params.startSecond) : 0
+    if (!Number.isFinite(start) || start < 0) throw new DomainError('bad_request')
+    key = buildUploadTimelineSpriteKey(uploadId, Math.floor(start))
+  } else {
+    throw new DomainError('bad_request')
+  }
+
+  return signUploadsCdnUrl(key)
 }
 
 async function readBodyText(body: any): Promise<string> {
