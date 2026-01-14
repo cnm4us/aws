@@ -548,6 +548,14 @@ export default function CreateVideo() {
     [activeUploadId, timeline.clips, totalSeconds]
   )
 
+  // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
+  // Without this, `playhead` may not change during hydration, so the normal playhead-driven sync won't run.
+  useEffect(() => {
+    if (!timeline.clips.length) return
+    if (activeUploadId != null) return
+    void seek(playhead)
+  }, [activeUploadId, playhead, seek, timeline.clips.length])
+
   // Keep a stable poster image for iOS Safari (initial paused frame often won’t paint reliably).
   useEffect(() => {
     let alive = true
