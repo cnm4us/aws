@@ -184,6 +184,11 @@ export default function CreateVideo() {
   const ignoreScrollRef = useRef(false)
   const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
   const primedFrameSrcRef = useRef<string>('')
+  const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
+  const activePoster = useMemo(() => {
+    if (!activeUploadId) return null
+    return posterByUploadId[activeUploadId] || null
+  }, [activeUploadId, posterByUploadId])
 
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
@@ -543,6 +548,22 @@ export default function CreateVideo() {
     [activeUploadId, timeline.clips, totalSeconds]
   )
 
+  // Keep a stable poster image for iOS Safari (initial paused frame often won’t paint reliably).
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      if (!activeUploadId) return
+      if (posterByUploadId[activeUploadId]) return
+      const cdn = await getUploadCdnUrl(activeUploadId, { kind: 'thumb' })
+      const url = cdn || `/api/uploads/${encodeURIComponent(String(activeUploadId))}/thumb`
+      if (!alive) return
+      setPosterByUploadId((prev) => (prev[activeUploadId] ? prev : { ...prev, [activeUploadId]: url }))
+    })()
+    return () => {
+      alive = false
+    }
+  }, [activeUploadId, posterByUploadId])
+
   // Keep video position synced when playhead changes by UI
   useEffect(() => {
     if (!timeline.clips.length) return
@@ -895,7 +916,13 @@ export default function CreateVideo() {
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
           <div style={{ width: '100%', aspectRatio: '9 / 16', background: '#000' }}>
-            <video ref={videoRef} playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <video
+              ref={videoRef}
+              playsInline
+              preload="metadata"
+              poster={activePoster || undefined}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
           </div>
         </div>
 
