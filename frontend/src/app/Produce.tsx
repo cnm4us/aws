@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CompactAudioPlayer from '../components/CompactAudioPlayer'
+import { getUploadCdnUrl } from '../ui/uploadsCdn'
 
 type MeResponse = {
   userId: number | null
@@ -731,6 +732,7 @@ export default function ProducePage() {
   const draftLastSavedRef = useRef<string>('')
   const draftSeededFromUrlRef = useRef(false)
   const [editProxyPreviewOk, setEditProxyPreviewOk] = useState(true)
+  const [editProxyCdnUrl, setEditProxyCdnUrl] = useState<string | null>(null)
   const editProxyVideoRef = useRef<HTMLVideoElement | null>(null)
   const editProxyInitialSeekDoneRef = useRef(false)
   const [editProxyPlaying, setEditProxyPlaying] = useState(false)
@@ -743,6 +745,19 @@ export default function ProducePage() {
   const [screenTitlePreviewError, setScreenTitlePreviewError] = useState<string | null>(null)
   const screenTitlePreviewAutoDoneRef = useRef(false)
   const [fromHere, setFromHere] = useState(() => encodeURIComponent(window.location.pathname + window.location.search))
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      if (!uploadId) return
+      const cdn = await getUploadCdnUrl(uploadId, { kind: 'edit-proxy' })
+      if (!alive) return
+      setEditProxyCdnUrl(cdn)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [uploadId])
 
   const stripStateParamsFromUrl = () => {
     const params = new URLSearchParams(window.location.search)
@@ -2151,7 +2166,7 @@ export default function ProducePage() {
 		  const poster = pickPoster(upload)
 		  const uploadThumbSrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb?b=${uploadThumbRetryNonce}` : null
 		  const uploadPreviewSrc = uploadPreviewMode === 'thumb' ? uploadThumbSrc : uploadPreviewMode === 'poster' ? poster : null
-	    const editProxySrc = uploadId ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy` : null
+	    const editProxySrc = uploadId ? (editProxyCdnUrl || `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy`) : null
 	    const useEditProxyPreview = editProxyPreviewOk && !!editProxySrc
 	    const editProxyPreviewSrc =
 	      useEditProxyPreview && previewPlayerSeekSeconds > 0 ? `${editProxySrc}#t=${encodeURIComponent(String(previewPlayerSeekSeconds))}` : editProxySrc

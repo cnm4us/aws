@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { getUploadCdnUrl } from '../ui/uploadsCdn'
 
 type MeResponse = {
   userId: number | null
@@ -498,7 +499,8 @@ export default function CreateVideo() {
 
       if (activeUploadId !== nextUploadId) {
         setActiveUploadId(nextUploadId)
-        v.src = `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy#t=0.1`
+        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
+        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
         v.load()
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
