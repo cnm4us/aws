@@ -276,72 +276,36 @@ async function runOne(job: any, attempt: any, workerId: string) {
       })
       await mediaJobsRepo.completeJob(jobId, result)
 
-      // Best-effort: enqueue timeline sprites once the edit proxy exists.
+      // Best-effort: enqueue audio envelope once the edit proxy exists.
       try {
         const uploadId = Number(input.uploadId)
         const userId = Number(input.userId)
         if (Number.isFinite(uploadId) && uploadId > 0 && Number.isFinite(userId) && userId > 0) {
-          let alreadyQueued = false
+          let alreadyQueuedEnv = false
           try {
             const db = getPool()
             const [rows] = await db.query(
               `SELECT id
                  FROM media_jobs
-                WHERE type = 'upload_timeline_sprites_v1'
+                WHERE type = 'upload_audio_envelope_v1'
                   AND status IN ('pending','processing')
                   AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
                 ORDER BY id DESC
                 LIMIT 1`,
               [String(uploadId)]
             )
-            alreadyQueued = (rows as any[]).length > 0
+            alreadyQueuedEnv = (rows as any[]).length > 0
           } catch {}
-
-          if (!alreadyQueued) {
-            await mediaJobs.enqueueJob('upload_timeline_sprites_v1', {
+          if (!alreadyQueuedEnv) {
+            await mediaJobs.enqueueJob('upload_audio_envelope_v1', {
               uploadId,
               userId,
               proxy: { bucket: String(UPLOAD_BUCKET), key: buildUploadEditProxyKey(uploadId) },
               outputBucket: String(UPLOAD_BUCKET),
-              manifestKey: buildUploadTimelineManifestKey(uploadId),
-              spritePrefix: buildUploadTimelineSpritePrefix(uploadId),
-              intervalSeconds: 1,
-              tileW: 96,
-              tileH: 54,
-              cols: 10,
-              rows: 6,
-              perSprite: 60,
+              outputKey: buildUploadAudioEnvelopeKey(uploadId),
+              intervalSeconds: 0.1,
             })
           }
-
-          // Best-effort: enqueue audio envelope once the edit proxy exists.
-          try {
-            let alreadyQueuedEnv = false
-            try {
-              const db = getPool()
-              const [rows] = await db.query(
-                `SELECT id
-                   FROM media_jobs
-                  WHERE type = 'upload_audio_envelope_v1'
-                    AND status IN ('pending','processing')
-                    AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
-                  ORDER BY id DESC
-                  LIMIT 1`,
-                [String(uploadId)]
-              )
-              alreadyQueuedEnv = (rows as any[]).length > 0
-            } catch {}
-            if (!alreadyQueuedEnv) {
-              await mediaJobs.enqueueJob('upload_audio_envelope_v1', {
-                uploadId,
-                userId,
-                proxy: { bucket: String(UPLOAD_BUCKET), key: buildUploadEditProxyKey(uploadId) },
-                outputBucket: String(UPLOAD_BUCKET),
-                outputKey: buildUploadAudioEnvelopeKey(uploadId),
-                intervalSeconds: 0.1,
-              })
-            }
-          } catch {}
         }
       } catch {}
       return

@@ -426,66 +426,6 @@ async function readBodyText(body: any): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-async function ensureTimelineSpritesEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
-  try {
-    if (!MEDIA_JOBS_ENABLED) return
-    const uploadId = Number(uploadRow?.id)
-    if (!Number.isFinite(uploadId) || uploadId <= 0) return
-    const ownerId = uploadRow?.user_id != null ? Number(uploadRow.user_id) : null
-    const sourceDeletedAt = uploadRow?.source_deleted_at != null ? String(uploadRow.source_deleted_at) : null
-    if (sourceDeletedAt) return
-
-    // Only video uploads have edit proxies/timelines.
-    const kind = String(uploadRow?.kind || 'video').toLowerCase()
-    if (kind !== 'video') return
-
-    // Require the edit proxy to exist before enqueuing.
-    const proxyKey = buildUploadEditProxyKey(uploadId)
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
-    } catch {
-      return
-    }
-
-    let alreadyQueued = false
-    try {
-      const db = getPool()
-      const [rows] = await db.query(
-        `SELECT id
-           FROM media_jobs
-          WHERE type = 'upload_timeline_sprites_v1'
-            AND status IN ('pending','processing')
-            AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
-          ORDER BY id DESC
-          LIMIT 1`,
-        [String(uploadId)]
-      )
-      alreadyQueued = (rows as any[]).length > 0
-    } catch {}
-    if (alreadyQueued) return
-
-    const userIdForJob = ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
-    if (!userIdForJob) return
-
-    await enqueueJob('upload_timeline_sprites_v1', {
-      uploadId,
-      userId: userIdForJob,
-      proxy: { bucket: String(UPLOAD_BUCKET), key: proxyKey },
-      outputBucket: String(UPLOAD_BUCKET),
-      manifestKey: buildUploadTimelineManifestKey(uploadId),
-      spritePrefix: buildUploadTimelineSpritePrefix(uploadId),
-      intervalSeconds: 1,
-      tileW: 96,
-      tileH: 54,
-      cols: 10,
-      rows: 6,
-      perSprite: 60,
-    })
-  } catch {
-    // best-effort
-  }
-}
-
 async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext): Promise<void> {
   try {
     if (!MEDIA_JOBS_ENABLED) return
@@ -569,7 +509,6 @@ export async function getUploadTimelineManifest(
     const name = String(e?.name || e?.Code || '')
     const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
     if (!isMissing) throw e
-    await ensureTimelineSpritesEnqueued(row, ctx)
     throw new NotFoundError('not_found')
   }
 }
@@ -691,7 +630,6 @@ export async function getUploadTimelineSpriteStream(
     const name = String(e?.name || e?.Code || '')
     const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
     if (!isMissing) throw e
-    await ensureTimelineSpritesEnqueued(row, ctx)
     throw new NotFoundError('not_found')
   }
 }
