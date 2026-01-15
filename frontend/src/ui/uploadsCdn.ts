@@ -2,28 +2,26 @@ type CdnUrlResponse = { url?: string; expiresAt?: number }
 
 const cache = new Map<string, { url: string; expiresAt: number }>()
 
-function cacheKey(uploadId: number, kind: string, start?: number): string {
-  return `${uploadId}:${kind}:${start != null ? String(start) : ''}`
+function cacheKey(uploadId: number, kind: string): string {
+  return `${uploadId}:${kind}`
 }
 
 export async function getUploadCdnUrl(
   uploadId: number,
-  opts: { kind: 'file' | 'thumb' | 'edit-proxy' | 'timeline-manifest' | 'timeline-sprite'; start?: number }
+  opts: { kind: 'file' | 'thumb' | 'edit-proxy' }
 ): Promise<string | null> {
   const id = Number(uploadId)
   if (!Number.isFinite(id) || id <= 0) return null
   const kind = String(opts.kind || '').trim()
   if (!kind) return null
 
-  const start = opts.start != null ? Number(opts.start) : undefined
-  const k = cacheKey(id, kind, start)
+  const k = cacheKey(id, kind)
   const now = Math.floor(Date.now() / 1000)
   const existing = cache.get(k)
   if (existing && existing.expiresAt - now > 30) return existing.url
 
   const qs = new URLSearchParams()
   qs.set('kind', kind)
-  if (start != null && Number.isFinite(start) && start >= 0) qs.set('start', String(start))
 
   try {
     const res = await fetch(`/api/uploads/${encodeURIComponent(String(id))}/cdn-url?${qs.toString()}`, {
@@ -40,4 +38,3 @@ export async function getUploadCdnUrl(
     return null
   }
 }
-

@@ -20,7 +20,6 @@ import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
-import { buildUploadTimelineManifestKey, buildUploadTimelineSpriteKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
 import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
@@ -348,7 +347,7 @@ function signUploadsCdnUrl(key: string): { url: string; expiresAt: number } {
 
 export async function getUploadSignedCdnUrl(
   uploadId: number,
-  params: { kind: 'file' | 'thumb' | 'edit_proxy' | 'timeline_manifest' | 'timeline_sprite'; startSecond?: number } | undefined,
+  params: { kind: 'file' | 'thumb' | 'edit_proxy' } | undefined,
   ctx: ServiceContext
 ): Promise<{ url: string; expiresAt: number }> {
   if (!ctx.userId) throw new ForbiddenError()
@@ -402,14 +401,6 @@ export async function getUploadSignedCdnUrl(
       await ensureThumbEnqueued(row, ctx)
       throw new NotFoundError('not_found')
     }
-  } else if (kind === 'timeline_manifest') {
-    if (rowKind !== 'video') throw new NotFoundError('not_found')
-    key = buildUploadTimelineManifestKey(uploadId)
-  } else if (kind === 'timeline_sprite') {
-    if (rowKind !== 'video') throw new NotFoundError('not_found')
-    const start = params?.startSecond != null ? Number(params.startSecond) : 0
-    if (!Number.isFinite(start) || start < 0) throw new DomainError('bad_request')
-    key = buildUploadTimelineSpriteKey(uploadId, Math.floor(start))
   } else {
     throw new DomainError('bad_request')
   }
@@ -476,40 +467,6 @@ async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext):
     })
   } catch {
     // best-effort
-  }
-}
-
-export async function getUploadTimelineManifest(
-  uploadId: number,
-  ctx: ServiceContext
-): Promise<any> {
-  if (!ctx.userId) throw new ForbiddenError()
-  const row = await repo.getById(uploadId)
-  if (!row) throw new NotFoundError('not_found')
-
-  const kind = String(row.kind || 'video').toLowerCase()
-  if (kind !== 'video') throw new NotFoundError('not_found')
-
-  const ownerId = row.user_id != null ? Number(row.user_id) : null
-  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
-  const checker = await resolveChecker(Number(ctx.userId))
-  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
-  if (!isOwner && !isAdmin) throw new ForbiddenError()
-
-  const bucket = String(UPLOAD_BUCKET || '')
-  const key = buildUploadTimelineManifestKey(uploadId)
-  if (!bucket || !key) throw new NotFoundError('not_found')
-
-  try {
-    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
-    const txt = await readBodyText(resp.Body as any)
-    return JSON.parse(txt || '{}')
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-    if (!isMissing) throw e
-    throw new NotFoundError('not_found')
   }
 }
 
@@ -593,44 +550,6 @@ export async function getUploadAudioEnvelope(
     if (!isMissing) throw e
     await ensureAudioEnvelopeEnqueued(row, ctx)
     return { status: 'pending' }
-  }
-}
-
-export async function getUploadTimelineSpriteStream(
-  uploadId: number,
-  startSecond: number,
-  ctx: ServiceContext
-): Promise<{ contentType: string | null; body: any; contentLength?: number | null }> {
-  if (!ctx.userId) throw new ForbiddenError()
-  const row = await repo.getById(uploadId)
-  if (!row) throw new NotFoundError('not_found')
-
-  const kind = String(row.kind || 'video').toLowerCase()
-  if (kind !== 'video') throw new NotFoundError('not_found')
-
-  const ownerId = row.user_id != null ? Number(row.user_id) : null
-  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
-  const checker = await resolveChecker(Number(ctx.userId))
-  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
-  if (!isOwner && !isAdmin) throw new ForbiddenError()
-
-  const bucket = String(UPLOAD_BUCKET || '')
-  const key = buildUploadTimelineSpriteKey(uploadId, startSecond)
-  if (!bucket || !key) throw new NotFoundError('not_found')
-
-  try {
-    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
-    return {
-      contentType: resp.ContentType ? String(resp.ContentType) : 'image/jpeg',
-      body: resp.Body,
-      contentLength: resp.ContentLength != null ? Number(resp.ContentLength) : null,
-    }
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
-    if (!isMissing) throw e
-    throw new NotFoundError('not_found')
   }
 }
 

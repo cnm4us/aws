@@ -188,66 +188,6 @@ uploadsRouter.get('/api/uploads/:id/edit-proxy', requireAuth, async (req, res) =
   }
 })
 
-uploadsRouter.get('/api/uploads/:id/timeline/manifest', requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id)
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
-    const data = await uploadsSvc.getUploadTimelineManifest(
-      id,
-      { userId: Number(req.user!.id) }
-    )
-    res.set('Cache-Control', 'no-store')
-    return res.json(data)
-  } catch (err: any) {
-    const status = err?.status || 500
-    if (status === 403) return res.status(403).send('forbidden')
-    if (status === 404) return res.status(404).send('not_found')
-    console.error('upload timeline manifest fetch failed', err)
-    return res.status(status).send('failed')
-  }
-})
-
-uploadsRouter.get('/api/uploads/:id/timeline/sprite', requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id)
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
-    const startRaw = (req.query as any)?.start
-    const start = startRaw != null && startRaw !== '' ? Number(startRaw) : 0
-    if (!Number.isFinite(start) || start < 0) return res.status(400).send('bad_start')
-
-    // Prefer redirect to signed CloudFront URL when configured (keeps Node out of the data path).
-    try {
-      const signed = await uploadsSvc.getUploadSignedCdnUrl(
-        id,
-        { kind: 'timeline_sprite', startSecond: start },
-        { userId: Number(req.user!.id) }
-      )
-      res.set('Cache-Control', 'no-store')
-      res.status(302).set('Location', signed.url)
-      return res.end()
-    } catch (e: any) {
-      const code = String(e?.code || e?.message || '')
-      if (code !== 'cdn_not_configured') throw e
-    }
-
-    const { contentType, body, contentLength } = await uploadsSvc.getUploadTimelineSpriteStream(
-      id,
-      Math.floor(start),
-      { userId: Number(req.user!.id) }
-    )
-    res.set('Cache-Control', 'no-store')
-    if (contentType) res.set('Content-Type', contentType)
-    if (contentLength != null && Number.isFinite(contentLength)) res.set('Content-Length', String(contentLength))
-    return (body as any).pipe(res)
-  } catch (err: any) {
-    const status = err?.status || 500
-    if (status === 403) return res.status(403).send('forbidden')
-    if (status === 404) return res.status(404).send('not_found')
-    console.error('upload timeline sprite fetch failed', err)
-    return res.status(status).send('failed')
-  }
-})
-
 uploadsRouter.get('/api/uploads/:id/audio-envelope', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
@@ -324,8 +264,6 @@ uploadsRouter.get('/api/uploads/:id/cdn-url', requireAuth, async (req, res) => {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
     const kindRaw = String((req.query as any)?.kind || '').trim().toLowerCase()
-    const startRaw = (req.query as any)?.start
-    const start = startRaw != null && startRaw !== '' ? Number(startRaw) : undefined
     const kind =
       kindRaw === 'edit-proxy' || kindRaw === 'edit_proxy'
         ? 'edit_proxy'
@@ -333,15 +271,11 @@ uploadsRouter.get('/api/uploads/:id/cdn-url', requireAuth, async (req, res) => {
           ? 'thumb'
           : kindRaw === 'file'
             ? 'file'
-            : kindRaw === 'timeline-manifest' || kindRaw === 'timeline_manifest'
-              ? 'timeline_manifest'
-              : kindRaw === 'timeline-sprite' || kindRaw === 'timeline_sprite'
-                ? 'timeline_sprite'
-                : null
+            : null
     if (!kind) return res.status(400).json({ error: 'bad_kind' })
     const signed = await uploadsSvc.getUploadSignedCdnUrl(
       id,
-      { kind: kind as any, ...(start != null ? { startSecond: start } : {}) },
+      { kind: kind as any },
       { userId: Number(req.user!.id) }
     )
     res.set('Cache-Control', 'no-store')

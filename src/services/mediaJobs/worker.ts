@@ -10,14 +10,12 @@ import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
 import { runAssemblyAiTranscriptV1Job } from '../../media/jobs/assemblyAiTranscriptV1'
 import { runUploadAudioEnvelopeV1Job } from '../../media/jobs/uploadAudioEnvelopeV1'
 import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
-import { runUploadTimelineSpritesV1Job } from '../../media/jobs/uploadTimelineSpritesV1'
 import { runUploadThumbV1Job } from '../../media/jobs/uploadThumbV1'
 import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { runCreateVideoExportV1Job } from '../../media/jobs/createVideoExportV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
-import { buildUploadTimelineManifestKey, buildUploadTimelineSpritePrefix } from '../../utils/uploadTimelineSprites'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadThumbKey } from '../../utils/uploadThumb'
 
@@ -314,21 +312,6 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'upload_audio_envelope_v1') {
       const input = job.input_json as any
       const result = await runUploadAudioEnvelopeV1Job(input, { stdoutPath, stderrPath })
-      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
-      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
-
-      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
-        exitCode: 0,
-        stdout: stdoutPtr || undefined,
-        stderr: stderrPtr || undefined,
-      })
-      await mediaJobsRepo.completeJob(jobId, result)
-      return
-    }
-
-    if (String(job.type) === 'upload_timeline_sprites_v1') {
-      const input = job.input_json as any
-      const result = await runUploadTimelineSpritesV1Job(input, { stdoutPath, stderrPath })
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
 

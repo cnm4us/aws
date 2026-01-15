@@ -31,7 +31,6 @@ The canonical metadata source-of-truth is MariaDB (`uploads`, `productions`, `me
 - `thumbs/` — upload thumbnails (first-frame JPEG), key format: `thumbs/uploads/<uploadId>/thumb.jpg`
 - `proxies/` — edit UI artifacts:
   - edit proxy MP4: `proxies/uploads/<uploadId>/edit_proxy.mp4`
-  - timeline sprites + manifest: `proxies/uploads/<uploadId>/timeline/manifest.json`, `sprite_<n>.jpg`
   - audio envelope JSON (for waveform): `proxies/uploads/<uploadId>/audio/audio_envelope_v3.json`
 
 ### Captions (production-level; persisted outputs)
@@ -64,7 +63,6 @@ These prefixes hold MP4 stage outputs that are then used as inputs to the next s
 - Upload processing (media jobs worker):
   - `upload_thumb_v1` → `thumbs/uploads/<id>/thumb.jpg`
   - `upload_edit_proxy_v1` → `proxies/uploads/<id>/edit_proxy.mp4`
-  - `upload_timeline_sprites_v1` → `proxies/uploads/<id>/timeline/*`
   - `upload_audio_envelope_v*` → `proxies/uploads/<id>/audio/audio_envelope_v3.json`
 - Production mastering (media jobs worker):
   - video trim/splice → `video-trim/*`
@@ -94,4 +92,3 @@ When implementing automated cleanup, prefer:
 - **DB-driven deletion lists**: use `media_jobs.result_json` and/or an explicit outputs table to enumerate keys to delete.
 - **Safety first**: dry-run output; delete by prefix; protect raw `uploads.s3_key` objects.
 - **Lifecycle rules**: once prefixes are stable, S3 lifecycle policies are a good fit for `intro-*`, `music-*`, etc.
-
