@@ -4365,6 +4365,41 @@ async function deleteS3Objects(bucket: string, keys: string[]): Promise<{ delete
   return { deleted, errors }
 }
 
+async function purgeAndDeleteMediaJob(db: any, jobId: number): Promise<void> {
+  const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE job_id = ?`, [jobId])
+  const attempts = rows as any[]
+
+  const toDelete: Array<{ bucket: string; key: string }> = []
+  for (const a of attempts) {
+    if (a.stdout_s3_bucket && a.stdout_s3_key) toDelete.push({ bucket: String(a.stdout_s3_bucket), key: String(a.stdout_s3_key) })
+    if (a.stderr_s3_bucket && a.stderr_s3_key) toDelete.push({ bucket: String(a.stderr_s3_bucket), key: String(a.stderr_s3_key) })
+  }
+
+  const grouped = new Map<string, string[]>()
+  for (const obj of toDelete) {
+    const arr = grouped.get(obj.bucket) || []
+    arr.push(obj.key)
+    grouped.set(obj.bucket, arr)
+  }
+  for (const [bucket, keys] of grouped.entries()) {
+    await deleteS3Objects(bucket, keys)
+  }
+
+  for (const a of attempts) {
+    if (a.artifacts_s3_bucket && a.artifacts_s3_prefix) {
+      await deleteS3Prefix(String(a.artifacts_s3_bucket), String(a.artifacts_s3_prefix))
+    }
+  }
+
+  // Detach any soft references (best-effort).
+  try {
+    await db.query(`UPDATE create_video_projects SET last_export_job_id = NULL WHERE last_export_job_id = ?`, [jobId])
+  } catch {}
+
+  await db.query(`DELETE FROM media_job_attempts WHERE job_id = ?`, [jobId])
+  await db.query(`DELETE FROM media_jobs WHERE id = ?`, [jobId])
+}
+
 pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
   try {
     const db = getPool()
@@ -4422,19 +4457,19 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
         body += `<td>${escapeHtml(attempts)}</td>`
         body += `<td>${escapeHtml(created)}</td>`
         body += `<td>${escapeHtml(updated)}</td>`
-        body += `<td style="white-space:nowrap">
-          <a class="btn" href="/admin/media-jobs/${id}" style="padding:6px 10px; font-size:12px">View</a>
-          <form method="post" action="/admin/media-jobs/${id}/retry" style="display:inline" onsubmit="return confirm('Retry media job #${id}?');">
-            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
-            <button type="submit" class="btn" style="padding:6px 10px; font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Retry</button>
-          </form>
-          <form method="post" action="/admin/media-jobs/${id}/purge" style="display:inline" onsubmit="return confirm('Purge logs/artifacts for media job #${id}?');">
-            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
-            <button type="submit" class="btn danger" style="padding:6px 10px; font-size:12px">Purge logs</button>
-          </form>
-        </td>`
-        body += `</tr>`
-      }
+	        body += `<td style="white-space:nowrap">
+	          <a class="btn" href="/admin/media-jobs/${id}" style="padding:6px 10px; font-size:12px">View</a>
+	          <form method="post" action="/admin/media-jobs/${id}/retry" style="display:inline" onsubmit="return confirm('Retry media job #${id}?');">
+	            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+	            <button type="submit" class="btn" style="padding:6px 10px; font-size:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18)">Retry</button>
+	          </form>
+	          <form method="post" action="/admin/media-jobs/${id}/purge" style="display:inline">
+	            ${csrfToken ? `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}" />` : ''}
+	            <button type="submit" class="btn danger" style="padding:6px 10px; font-size:12px">Purge logs</button>
+	          </form>
+	        </td>`
+	        body += `</tr>`
+	      }
       body += '</tbody></table>'
     }
     body += '</div>'
@@ -4598,37 +4633,8 @@ pagesRouter.post('/admin/media-jobs/:id/purge', async (req: any, res: any) => {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).send('Bad id')
     const db = getPool()
-    const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE job_id = ?`, [id])
-    const attempts = rows as any[]
-    const toDelete: Array<{ bucket: string; key: string }> = []
-    for (const a of attempts) {
-      if (a.stdout_s3_bucket && a.stdout_s3_key) toDelete.push({ bucket: String(a.stdout_s3_bucket), key: String(a.stdout_s3_key) })
-      if (a.stderr_s3_bucket && a.stderr_s3_key) toDelete.push({ bucket: String(a.stderr_s3_bucket), key: String(a.stderr_s3_key) })
-    }
-    const grouped = new Map<string, string[]>()
-    for (const obj of toDelete) {
-      const arr = grouped.get(obj.bucket) || []
-      arr.push(obj.key)
-      grouped.set(obj.bucket, arr)
-    }
-    for (const [bucket, keys] of grouped.entries()) {
-      await deleteS3Objects(bucket, keys)
-    }
-    // artifacts prefix best-effort
-    for (const a of attempts) {
-      if (a.artifacts_s3_bucket && a.artifacts_s3_prefix) {
-        await deleteS3Prefix(String(a.artifacts_s3_bucket), String(a.artifacts_s3_prefix))
-      }
-    }
-    await db.query(
-      `UPDATE media_job_attempts
-          SET stdout_s3_bucket = NULL, stdout_s3_key = NULL,
-              stderr_s3_bucket = NULL, stderr_s3_key = NULL,
-              artifacts_s3_bucket = NULL, artifacts_s3_prefix = NULL
-        WHERE job_id = ?`,
-      [id]
-    )
-    res.redirect(`/admin/media-jobs/${id}`)
+    await purgeAndDeleteMediaJob(db, id)
+    res.redirect('/admin/media-jobs')
   } catch (err) {
     console.error('admin media-job purge failed', err)
     res.status(500).send('Failed to purge media job logs')
@@ -4650,35 +4656,7 @@ pagesRouter.post('/admin/media-jobs/purge', async (req: any, res: any) => {
     )
     const ids = (jobRows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)
     for (const id of ids) {
-      const [rows] = await db.query(`SELECT * FROM media_job_attempts WHERE job_id = ?`, [id])
-      const attempts = rows as any[]
-      const toDelete: Array<{ bucket: string; key: string }> = []
-      for (const a of attempts) {
-        if (a.stdout_s3_bucket && a.stdout_s3_key) toDelete.push({ bucket: String(a.stdout_s3_bucket), key: String(a.stdout_s3_key) })
-        if (a.stderr_s3_bucket && a.stderr_s3_key) toDelete.push({ bucket: String(a.stderr_s3_bucket), key: String(a.stderr_s3_key) })
-      }
-      const grouped = new Map<string, string[]>()
-      for (const obj of toDelete) {
-        const arr = grouped.get(obj.bucket) || []
-        arr.push(obj.key)
-        grouped.set(obj.bucket, arr)
-      }
-      for (const [bucket, keys] of grouped.entries()) {
-        await deleteS3Objects(bucket, keys)
-      }
-      for (const a of attempts) {
-        if (a.artifacts_s3_bucket && a.artifacts_s3_prefix) {
-          await deleteS3Prefix(String(a.artifacts_s3_bucket), String(a.artifacts_s3_prefix))
-        }
-      }
-      await db.query(
-        `UPDATE media_job_attempts
-            SET stdout_s3_bucket = NULL, stdout_s3_key = NULL,
-                stderr_s3_bucket = NULL, stderr_s3_key = NULL,
-                artifacts_s3_bucket = NULL, artifacts_s3_prefix = NULL
-          WHERE job_id = ?`,
-        [id]
-      )
+      await purgeAndDeleteMediaJob(db, id)
     }
     res.redirect('/admin/media-jobs')
   } catch (err) {
