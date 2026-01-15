@@ -21,7 +21,7 @@ type UploadListItem = {
   created_at: string
 }
 
-type UploadSummary = { id: number; original_filename: string; modified_filename: string | null }
+type UploadSummary = { id: number; original_filename: string; modified_filename: string | null; duration_seconds?: number | null }
 
 type Clip = {
   id: string
@@ -158,6 +158,7 @@ export default function CreateVideo() {
   const [timeline, setTimeline] = useState<Timeline>({ version: 'create_video_v1', playheadSeconds: 0, clips: [] })
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
+  const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [pickOpen, setPickOpen] = useState(false)
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
@@ -190,6 +191,17 @@ export default function CreateVideo() {
     return posterByUploadId[activeUploadId] || null
   }, [activeUploadId, posterByUploadId])
 
+  const clipDragRef = useRef<{
+    clipId: string
+    edge: 'start' | 'end'
+    pointerId: number
+    startClientX: number
+    startStartSeconds: number
+    startEndSeconds: number
+    maxDurationSeconds: number
+  } | null>(null)
+  const [clipDragging, setClipDragging] = useState(false)
+
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
       if (!v.paused) return
@@ -212,6 +224,11 @@ export default function CreateVideo() {
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(totalSeconds * pxPerSecond)), [totalSeconds])
+  const RULER_H = 16
+  const TRACK_H = 48
+  const PILL_Y = RULER_H + 6
+  const PILL_H = Math.max(18, TRACK_H - 12)
+  const HANDLE_HIT_PX = 12
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
@@ -290,8 +307,8 @@ export default function CreateVideo() {
     const sc = timelineScrollRef.current
     if (!canvas || !sc) return
     const wCss = Math.max(0, Math.round(sc.clientWidth || 0))
-    const rulerH = 16
-    const trackH = 48
+    const rulerH = RULER_H
+    const trackH = TRACK_H
     const hCss = rulerH + trackH
     const dpr = Math.max(1, Math.round((window.devicePixelRatio || 1) * 100) / 100)
     canvas.width = Math.max(1, Math.floor(wCss * dpr))
@@ -351,8 +368,8 @@ export default function CreateVideo() {
     }
 
     // Clip pills
-    const pillY = rulerH + 6
-    const pillH = Math.max(18, trackH - 12)
+    const pillY = PILL_Y
+    const pillH = PILL_H
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
     ctx.textBaseline = 'middle'
     for (let i = 0; i < timeline.clips.length; i++) {
@@ -382,6 +399,15 @@ export default function CreateVideo() {
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
         ctx.fillText(clipped, x + pad, pillY + pillH / 2)
+      }
+
+      if (isSelected && w >= 20) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'
+        const hw = 3
+        const hh = pillH - 10
+        const hy = pillY + 5
+        ctx.fillRect(x + 6, hy, hw, hh)
+        ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
       }
     }
   }, [clipStarts, namesByUploadId, pxPerSecond, selectedClipId, timeline.clips, timelinePadPx, timelineScrollLeftPx, totalSeconds])
@@ -487,7 +513,7 @@ export default function CreateVideo() {
   useEffect(() => {
     const ids = Array.from(new Set(timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)))
     if (!ids.length) return
-    const missing = ids.filter((id) => !namesByUploadId[id])
+    const missing = ids.filter((id) => !namesByUploadId[id] || !durationsByUploadId[id])
     if (!missing.length) return
     let alive = true
     const qs = encodeURIComponent(missing.slice(0, 50).join(','))
@@ -507,12 +533,23 @@ export default function CreateVideo() {
           }
           return next
         })
+        setDurationsByUploadId((prev) => {
+          const next = { ...prev }
+          for (const it of items as any[]) {
+            const id = Number((it as any).id)
+            const dur = (it as any).duration_seconds
+            if (!Number.isFinite(id) || id <= 0) continue
+            const d = dur == null ? null : Number(dur)
+            if (d != null && Number.isFinite(d) && d > 0) next[id] = d
+          }
+          return next
+        })
       })
       .catch(() => {})
     return () => {
       alive = false
     }
-  }, [namesByUploadId, timeline.clips])
+  }, [durationsByUploadId, namesByUploadId, timeline.clips])
 
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
@@ -685,6 +722,7 @@ export default function CreateVideo() {
         setPickerError('That video is missing duration metadata. Please try a different video.')
         return
       }
+      setDurationsByUploadId((prev) => (prev[Number(upload.id)] ? prev : { ...prev, [Number(upload.id)]: Number(dur) }))
       const id = `clip_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const newClip: Clip = {
         id,
@@ -768,12 +806,21 @@ export default function CreateVideo() {
       setClipEditorError('End must be after start.')
       return
     }
+    const clip = timeline.clips.find((c) => c.id === clipEditor.id) || null
+    const maxDur = clip ? (durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds) : null
+    if (maxDur != null && Number.isFinite(maxDur) && end > maxDur + 1e-6) {
+      setClipEditorError(`End exceeds source duration (${Number(maxDur).toFixed(1)}s).`)
+      return
+    }
     snapshotUndo()
     setTimeline((prev) => {
       const idx = prev.clips.findIndex((c) => c.id === clipEditor.id)
       if (idx < 0) return prev
       const clip = prev.clips[idx]
-      const updated: Clip = { ...clip, sourceStartSeconds: Math.max(0, start), sourceEndSeconds: Math.max(0, end) }
+      const maxEnd = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
+      const safeStart = Math.max(0, start)
+      const safeEnd = Math.min(maxEnd, Math.max(safeStart + 0.2, end))
+      const updated: Clip = { ...clip, sourceStartSeconds: safeStart, sourceEndSeconds: safeEnd }
       const next = prev.clips.slice()
       next[idx] = updated
       const nextTotal = sumDur(next)
@@ -781,7 +828,57 @@ export default function CreateVideo() {
       return { ...prev, clips: next, playheadSeconds: nextPlayhead }
     })
     setClipEditor(null)
-  }, [clipEditor, snapshotUndo])
+  }, [clipEditor, durationsByUploadId, snapshotUndo, timeline.clips])
+
+  useEffect(() => {
+    if (!clipDragging) return
+    const onMove = (e: PointerEvent) => {
+      const drag = clipDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      e.preventDefault()
+      const dx = e.clientX - drag.startClientX
+      const deltaSeconds = dx / pxPerSecond
+      const minLen = 0.2
+      setTimeline((prev) => {
+        const idx = prev.clips.findIndex((c) => c.id === drag.clipId)
+        if (idx < 0) return prev
+        const c = prev.clips[idx]
+        let startS = c.sourceStartSeconds
+        let endS = c.sourceEndSeconds
+        if (drag.edge === 'start') {
+          startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), 0, Math.max(0, drag.startEndSeconds - minLen))
+        } else {
+          endS = clamp(
+            roundToTenth(drag.startEndSeconds + deltaSeconds),
+            Math.max(0, drag.startStartSeconds + minLen),
+            drag.maxDurationSeconds
+          )
+        }
+        const next = prev.clips.slice()
+        next[idx] = { ...c, sourceStartSeconds: startS, sourceEndSeconds: endS }
+        const nextTotal = sumDur(next)
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+        return { ...prev, clips: next, playheadSeconds: nextPlayhead }
+      })
+    }
+    const onUp = (e: PointerEvent) => {
+      const drag = clipDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      clipDragRef.current = null
+      setClipDragging(false)
+      try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [clipDragging, pxPerSecond])
 
   const archiveAndRestart = useCallback(async () => {
     if (!project?.id) return
@@ -982,12 +1079,53 @@ export default function CreateVideo() {
                   const sc = timelineScrollRef.current
                   if (!sc) return
                   if (ignoreScrollRef.current) return
+                  if (clipDragRef.current) return
                   const nextScrollLeft = Math.max(0, sc.scrollLeft)
                   setTimelineScrollLeftPx(nextScrollLeft)
                   const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
                   if (Math.abs(t - playhead) < 0.05) return
                   playheadFromScrollRef.current = true
                   setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
+                }}
+                onPointerDown={(e) => {
+                  const sc = timelineScrollRef.current
+                  if (!sc) return
+                  if (!timeline.clips.length) return
+                  const rect = sc.getBoundingClientRect()
+                  const y = e.clientY - rect.top
+                  if (!(y >= PILL_Y && y <= PILL_Y + PILL_H)) return
+
+                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
+                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
+                  const x = clickXInScroll - padPx
+                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+                  const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
+                  const clip = timeline.clips[idx]
+                  if (!clip) return
+
+                  const start = (clipStarts[idx] || 0)
+                  const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
+                  const leftX = padPx + start * pxPerSecond
+                  const rightX = padPx + (start + len) * pxPerSecond
+                  const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+                  const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+                  if (!nearLeft && !nearRight) return
+
+                  e.preventDefault()
+                  snapshotUndo()
+                  setSelectedClipId(clip.id)
+                  const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
+                  clipDragRef.current = {
+                    clipId: clip.id,
+                    edge: nearLeft ? 'start' : 'end',
+                    pointerId: e.pointerId,
+                    startClientX: e.clientX,
+                    startStartSeconds: clip.sourceStartSeconds,
+                    startEndSeconds: clip.sourceEndSeconds,
+                    maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
+                  }
+                  setClipDragging(true)
+                  try { sc.setPointerCapture(e.pointerId) } catch {}
                 }}
                 onClick={(e) => {
                   const sc = timelineScrollRef.current
@@ -1011,6 +1149,7 @@ export default function CreateVideo() {
                   background: 'rgba(0,0,0,0.60)',
                   height: 64,
                   position: 'relative',
+                  touchAction: clipDragging ? 'none' : 'pan-x',
                 }}
               >
                 <div style={{ width: timelinePadPx + stripContentW + timelinePadPx, height: 64, position: 'relative' }}>
@@ -1108,7 +1247,7 @@ export default function CreateVideo() {
                   flex: '0 0 auto',
                 }}
               >
-                Trim
+                Video
               </button>
               <button
                 type="button"
@@ -1221,7 +1360,7 @@ export default function CreateVideo() {
             style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(212,175,55,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>Trim Clip</div>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Video Properties</div>
               <button type="button" onClick={() => { setClipEditor(null); setClipEditorError(null) }} style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>
                 Close
               </button>

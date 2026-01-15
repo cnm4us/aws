@@ -809,7 +809,7 @@ export async function listSystemAudio(
 export async function listSummariesByIds(
   input: { ids: number[] },
   ctx: ServiceContext
-): Promise<{ items: Array<{ id: number; original_filename: string; modified_filename: string | null }> }> {
+): Promise<{ items: Array<{ id: number; original_filename: string; modified_filename: string | null; duration_seconds: number | null }> }> {
   if (!ctx.userId) throw new ForbiddenError()
   const ids = Array.isArray(input.ids) ? input.ids : []
   const cleaned = ids.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
@@ -818,7 +818,7 @@ export async function listSummariesByIds(
 
   const db = getPool()
   const [rows] = await db.query(
-    `SELECT id, original_filename, modified_filename
+    `SELECT id, original_filename, modified_filename, duration_seconds
        FROM uploads
       WHERE id IN (?)
         AND (user_id = ? OR user_id IS NULL)
@@ -829,6 +829,10 @@ export async function listSummariesByIds(
     id: Number(r.id),
     original_filename: String(r.original_filename || ''),
     modified_filename: r.modified_filename == null ? null : String(r.modified_filename),
+    duration_seconds:
+      r.duration_seconds == null || r.duration_seconds === ''
+        ? null
+        : (Number.isFinite(Number(r.duration_seconds)) ? Number(r.duration_seconds) : null),
   }))
   return { items }
 }
