@@ -670,6 +670,28 @@ export default function CreateVideo() {
     void seek(playhead)
   }, [playhead]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When the timeline becomes empty, clear the preview video so we don't leave stale frames on screen.
+  useEffect(() => {
+    if (timeline.clips.length) return
+    const v = videoRef.current
+    try { v?.pause?.() } catch {}
+    setPlaying(false)
+    setActiveUploadId(null)
+    setSelectedClipId(null)
+    setClipEditor(null)
+    setClipEditorError(null)
+    activeClipIndexRef.current = 0
+    playheadFromVideoRef.current = false
+    playheadFromScrollRef.current = false
+    primedFrameSrcRef.current = ''
+    if (v) {
+      try {
+        v.removeAttribute('src')
+        v.load()
+      } catch {}
+    }
+  }, [timeline.clips.length])
+
   const togglePlay = useCallback(() => {
     const v = videoRef.current
     if (!v) return
@@ -679,8 +701,7 @@ export default function CreateVideo() {
         v.muted = false
         v.volume = 1
       } catch {}
-      void seek(playhead)
-      v.play().catch(() => {})
+      void seek(playhead, { autoPlay: true })
     } else {
       try { v.pause() } catch {}
     }
@@ -801,6 +822,8 @@ export default function CreateVideo() {
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...prev, clips: next, playheadSeconds: nextPlayhead }
     })
+    // If we deleted the currently-loaded upload, force re-seek when a new clip is added/selected.
+    setActiveUploadId((prev) => (prev === Number(target.uploadId) ? null : prev))
     // Keep selection stable by selecting the next clip (or previous if we deleted the last).
     setSelectedClipId((prevSel) => {
       const wasSelected = prevSel === target.id
