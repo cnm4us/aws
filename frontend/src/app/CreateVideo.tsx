@@ -730,18 +730,29 @@ export default function CreateVideo() {
   }, [playhead, selectedClip, snapshotUndo, timeline.clips])
 
   const deleteSelected = useCallback(() => {
-    if (!selectedClip) return
+    if (!timeline.clips.length) return
+    const fallbackIdx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    const fallback = timeline.clips[fallbackIdx] || null
+    const target = selectedClip || fallback
+    if (!target) return
     snapshotUndo()
     setTimeline((prev) => {
-      const idx = prev.clips.findIndex((c) => c.id === selectedClip.id)
+      const idx = prev.clips.findIndex((c) => c.id === target.id)
       if (idx < 0) return prev
-      const next = prev.clips.filter((c) => c.id !== selectedClip.id)
+      const next = prev.clips.filter((c) => c.id !== target.id)
       const nextTotal = sumDur(next)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...prev, clips: next, playheadSeconds: nextPlayhead }
     })
-    setSelectedClipId(null)
-  }, [selectedClip, snapshotUndo])
+    // Keep selection stable by selecting the next clip (or previous if we deleted the last).
+    setSelectedClipId((prevSel) => {
+      const wasSelected = prevSel === target.id
+      if (!wasSelected && prevSel) return prevSel
+      const nextIdx = Math.min(fallbackIdx, Math.max(0, timeline.clips.length - 2))
+      const nextClip = timeline.clips.filter((c) => c.id !== target.id)[nextIdx] || null
+      return nextClip ? nextClip.id : null
+    })
+  }, [clipStarts, playhead, selectedClip, snapshotUndo, timeline.clips])
 
   const openClipEditor = useCallback(() => {
     if (!selectedClip) return
