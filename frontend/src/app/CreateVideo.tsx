@@ -195,6 +195,24 @@ export default function CreateVideo() {
 
   const canUndo = undoDepth > 0
 
+  const boundaries = useMemo(() => {
+    const out: number[] = []
+    out.push(0)
+    for (let i = 0; i < timeline.clips.length; i++) {
+      const start = roundToTenth(clipStarts[i] || 0)
+      const len = Math.max(0, Number(timeline.clips[i].sourceEndSeconds) - Number(timeline.clips[i].sourceStartSeconds))
+      const end = roundToTenth(start + len)
+      out.push(start, end)
+    }
+    out.push(roundToTenth(totalSeconds))
+    const uniq = new Map<string, number>()
+    for (const t of out) {
+      const tt = roundToTenth(Number(t) || 0)
+      uniq.set(tt.toFixed(1), tt)
+    }
+    return Array.from(uniq.values()).sort((a, b) => a - b)
+  }, [clipStarts, timeline.clips, totalSeconds])
+
   const nudgePlayhead = useCallback((deltaSeconds: number) => {
     setTimeline((prev) => {
       const total = sumDur(prev.clips)
@@ -202,6 +220,23 @@ export default function CreateVideo() {
       return { ...prev, playheadSeconds: next }
     })
   }, [])
+
+  const jumpPrevBoundary = useCallback(() => {
+    const eps = 0.05
+    const target = [...boundaries].reverse().find((t) => t < playhead - eps)
+    if (target == null) return
+    nudgePlayhead(target - playhead)
+  }, [boundaries, nudgePlayhead, playhead])
+
+  const jumpNextBoundary = useCallback(() => {
+    const eps = 0.05
+    const target = boundaries.find((t) => t > playhead + eps)
+    if (target == null) return
+    nudgePlayhead(target - playhead)
+  }, [boundaries, nudgePlayhead, playhead])
+
+  const canJumpPrev = useMemo(() => boundaries.some((t) => t < playhead - 0.05), [boundaries, playhead])
+  const canJumpNext = useMemo(() => boundaries.some((t) => t > playhead + 0.05), [boundaries, playhead])
 
   const stopNudgeRepeat = useCallback(() => {
     const t = nudgeRepeatRef.current
@@ -1246,7 +1281,99 @@ export default function CreateVideo() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(212,175,55,0.65)',
+                    background: 'rgba(212,175,55,0.12)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={split}
+                  disabled={!selectedClipId}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: selectedClipId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: selectedClipId ? 'pointer' : 'default',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  Split
+                </button>
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: canUndo ? 'pointer' : 'default',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  Undo
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={deleteSelected}
+                disabled={!selectedClipId}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: selectedClipId ? '#300' : 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: selectedClipId ? 'pointer' : 'default',
+                  flex: '0 0 auto',
+                }}
+              >
+                Delete
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={jumpPrevBoundary}
+                disabled={!timeline.clips.length || !canJumpPrev}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: !timeline.clips.length || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: !timeline.clips.length || !canJumpPrev ? 'default' : 'pointer',
+                  flex: '0 0 auto',
+                }}
+                title="Jump to previous boundary"
+                aria-label="Jump to previous boundary"
+              >
+                «
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1279,8 +1406,30 @@ export default function CreateVideo() {
                   WebkitUserSelect: 'none',
                   WebkitTouchCallout: 'none',
                 }}
+                title="Nudge backward 0.1s"
+                aria-label="Nudge backward 0.1 seconds"
               >
                 ‹
+              </button>
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={!timeline.clips.length}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(10,132,255,0.55)',
+                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: !timeline.clips.length ? 'default' : 'pointer',
+                  flex: '0 0 auto',
+                  minWidth: 96,
+                }}
+                title="Play/Pause"
+                aria-label={playing ? 'Pause' : 'Play'}
+              >
+                {playing ? 'Pause' : 'Play'}
               </button>
               <button
                 type="button"
@@ -1314,79 +1463,32 @@ export default function CreateVideo() {
                   WebkitUserSelect: 'none',
                   WebkitTouchCallout: 'none',
                 }}
+                title="Nudge forward 0.1s"
+                aria-label="Nudge forward 0.1 seconds"
               >
                 ›
               </button>
               <button
                 type="button"
-                onClick={togglePlay}
-                disabled={!timeline.clips.length}
-                style={{
-                  marginLeft: 'auto',
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(10,132,255,0.55)',
-                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: !timeline.clips.length ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                }}
-              >
-                {playing ? 'Pause' : 'Play'}
-              </button>
-              <button
-                type="button"
-                onClick={undo}
-                disabled={!canUndo}
+                onClick={jumpNextBoundary}
+                disabled={!timeline.clips.length || !canJumpNext}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
-                  background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                  background: !timeline.clips.length || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: canUndo ? 'pointer' : 'default',
+                  cursor: !timeline.clips.length || !canJumpNext ? 'default' : 'pointer',
                   flex: '0 0 auto',
                 }}
+                title="Jump to next boundary"
+                aria-label="Jump to next boundary"
               >
-                Undo
-              </button>
-              <button
-                type="button"
-                onClick={split}
-                disabled={!selectedClip}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: selectedClip ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: selectedClip ? 'pointer' : 'default',
-                  flex: '0 0 auto',
-                }}
-              >
-                Split
-              </button>
-              <button
-                type="button"
-                onClick={deleteSelected}
-                disabled={!selectedClip}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: selectedClip ? '#300' : 'rgba(255,255,255,0.06)',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: selectedClip ? 'pointer' : 'default',
-                  flex: '0 0 auto',
-                }}
-              >
-                Delete
+                »
               </button>
             </div>
+          </div>
         </div>
 
         {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
