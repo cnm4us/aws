@@ -1601,36 +1601,127 @@ export default function CreateVideo() {
               </button>
             </div>
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-                <input type="number" step={0.1} min={0} value={String(clipEditor.start)} onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }} style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }} />
-              </label>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClipEditorError(null)
-                    setClipEditor((p) => (p ? { ...p, start: Math.max(0, roundToTenth(Number(p.start) - 1.0)) } : p))
-                  }}
-                  style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                >
-                  Extend start -1.0s
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClipEditorError(null)
-                    setClipEditor((p) => (p ? { ...p, start: Math.max(0, roundToTenth(Number(p.start) - 0.1)) } : p))
-                  }}
-                  style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                >
-                  Extend start -0.1s
-                </button>
-              </div>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-                <input type="number" step={0.1} min={0} value={String(clipEditor.end)} onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }} style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }} />
-              </label>
+              {(() => {
+                const clip = timeline.clips.find((c) => c.id === clipEditor.id) || null
+                const maxDur = clip ? (durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds) : null
+                const start = Number(clipEditor.start)
+                const end = Number(clipEditor.end)
+                const safeMax = maxDur != null && Number.isFinite(Number(maxDur)) ? Number(maxDur) : null
+                const minLen = 0.2
+
+                const adjustStart = (delta: number) => {
+                  setClipEditorError(null)
+                  setClipEditor((p) => {
+                    if (!p) return p
+                    const next = roundToTenth(Number(p.start) + delta)
+                    const maxStart = Math.max(0, (Number(p.end) - minLen))
+                    return { ...p, start: clamp(next, 0, maxStart) }
+                  })
+                }
+
+                const adjustEnd = (delta: number) => {
+                  setClipEditorError(null)
+                  setClipEditor((p) => {
+                    if (!p) return p
+                    const maxEnd = safeMax ?? Number.POSITIVE_INFINITY
+                    const next = roundToTenth(Number(p.end) + delta)
+                    const minEnd = Math.max(0, (Number(p.start) + minLen))
+                    return { ...p, end: clamp(next, minEnd, maxEnd) }
+                  })
+                }
+
+                const canStartDec1 = Number.isFinite(start) && start > 0 + 1e-9
+                const canStartDec10 = Number.isFinite(start) && start > 10 + 1e-9
+                const canStartInc1 = Number.isFinite(start) && Number.isFinite(end) && start + 1 <= end - minLen + 1e-9
+                const canStartInc10 = Number.isFinite(start) && Number.isFinite(end) && start + 10 <= end - minLen + 1e-9
+
+                const canEndDec1 = Number.isFinite(start) && Number.isFinite(end) && end - 1 >= start + minLen - 1e-9
+                const canEndDec10 = Number.isFinite(start) && Number.isFinite(end) && end - 10 >= start + minLen - 1e-9
+                const canEndInc1 = safeMax == null ? Number.isFinite(end) : (Number.isFinite(end) && end + 1 <= safeMax + 1e-9)
+                const canEndInc10 = safeMax == null ? Number.isFinite(end) : (Number.isFinite(end) && end + 10 <= safeMax + 1e-9)
+
+                const statBox: React.CSSProperties = {
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  background: 'rgba(255,255,255,0.04)',
+                  padding: 10,
+                  minWidth: 0,
+                }
+
+                const adjustBtn = (enabled: boolean): React.CSSProperties => ({
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'}`,
+                  background: enabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                  color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
+                  fontWeight: 900,
+                  cursor: enabled ? 'pointer' : 'not-allowed',
+                })
+
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <div style={statBox}>
+                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
+                      </div>
+                      <div style={statBox}>
+                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Total</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{safeMax != null ? `${safeMax.toFixed(1)}s` : '—'}</div>
+                      </div>
+                      <div style={statBox}>
+                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
+                      </div>
+                    </div>
+
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                      <input
+                        type="number"
+                        step={0.1}
+                        min={0}
+                        value={String(clipEditor.start)}
+                        onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
+                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                      />
+                    </label>
+
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <button type="button" disabled={!canStartDec10} onClick={() => adjustStart(-10)} style={adjustBtn(canStartDec10)}>-10s</button>
+                        <button type="button" disabled={!canStartDec1} onClick={() => adjustStart(-1)} style={adjustBtn(canStartDec1)}>-1s</button>
+                        <button type="button" disabled={!canStartInc1} onClick={() => adjustStart(1)} style={adjustBtn(canStartInc1)}>+1s</button>
+                        <button type="button" disabled={!canStartInc10} onClick={() => adjustStart(10)} style={adjustBtn(canStartInc10)}>+10s</button>
+                      </div>
+                    </div>
+
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                      <input
+                        type="number"
+                        step={0.1}
+                        min={0}
+                        value={String(clipEditor.end)}
+                        onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
+                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                      />
+                    </label>
+
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <button type="button" disabled={!canEndDec10} onClick={() => adjustEnd(-10)} style={adjustBtn(canEndDec10)}>-10s</button>
+                        <button type="button" disabled={!canEndDec1} onClick={() => adjustEnd(-1)} style={adjustBtn(canEndDec1)}>-1s</button>
+                        <button type="button" disabled={!canEndInc1} onClick={() => adjustEnd(1)} style={adjustBtn(canEndInc1)}>+1s</button>
+                        <button type="button" disabled={!canEndInc10} onClick={() => adjustEnd(10)} style={adjustBtn(canEndInc10)}>+10s</button>
+                      </div>
+                      {safeMax != null ? <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {safeMax.toFixed(1)}s</div> : null}
+                    </div>
+                  </>
+                )
+              })()}
               {clipEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{clipEditorError}</div> : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
                 <button type="button" onClick={() => { setClipEditor(null); setClipEditorError(null) }} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
