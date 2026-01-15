@@ -191,6 +191,9 @@ export default function CreateVideo() {
     return posterByUploadId[activeUploadId] || null
   }, [activeUploadId, posterByUploadId])
 
+  const nudgeRepeatRef = useRef<{ timeout: number | null; interval: number | null; deltaSeconds: number; fired: boolean } | null>(null)
+  const suppressNextNudgeClickRef = useRef(false)
+
   const clipDragRef = useRef<{
     clipId: string
     edge: 'start' | 'end'
@@ -201,6 +204,12 @@ export default function CreateVideo() {
     maxDurationSeconds: number
   } | null>(null)
   const [clipDragging, setClipDragging] = useState(false)
+  const clipDragLockScrollLeftRef = useRef<number | null>(null)
+  const clipDragScrollRestoreRef = useRef<{
+    overflowX: string
+    webkitOverflowScrolling: string
+    overscrollBehaviorX: string
+  } | null>(null)
 
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
@@ -223,7 +232,18 @@ export default function CreateVideo() {
   const clipStarts = useMemo(() => computeClipStartsCached(timeline.clips), [timeline.clips])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
-  const stripContentW = useMemo(() => Math.max(0, Math.ceil(totalSeconds * pxPerSecond)), [totalSeconds])
+  const dragNoRipple = useMemo(() => {
+    const drag = clipDragRef.current
+    if (!clipDragging || !drag || drag.edge !== 'start') return { idx: -1, deltaSeconds: 0 }
+    const idx = timeline.clips.findIndex((c) => c.id === drag.clipId)
+    if (idx < 0) return { idx: -1, deltaSeconds: 0 }
+    const clip = timeline.clips[idx]
+    const deltaSeconds = clamp(roundToTenth(Number(clip.sourceStartSeconds) - Number(drag.startStartSeconds)), -36000, 36000)
+    if (Math.abs(deltaSeconds) < 0.05) return { idx: -1, deltaSeconds: 0 }
+    return { idx, deltaSeconds }
+  }, [clipDragging, timeline.clips])
+  const visualTotalSeconds = useMemo(() => Math.max(0, totalSeconds + dragNoRipple.deltaSeconds), [dragNoRipple.deltaSeconds, totalSeconds])
+  const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
   const RULER_H = 16
   const TRACK_H = 48
   const PILL_Y = RULER_H + 6
@@ -235,7 +255,64 @@ export default function CreateVideo() {
     return timeline.clips.find((c) => c.id === selectedClipId) || null
   }, [selectedClipId, timeline.clips])
 
+  const timelinePanLocked = Boolean(selectedClipId) && !playing && !clipDragging
+
   const canUndo = undoDepth > 0
+
+  const nudgePlayhead = useCallback((deltaSeconds: number) => {
+    setTimeline((prev) => {
+      const total = sumDur(prev.clips)
+      const next = clamp(roundToTenth(Number(prev.playheadSeconds || 0) + deltaSeconds), 0, Math.max(0, total))
+      return { ...prev, playheadSeconds: next }
+    })
+  }, [])
+
+  const stopNudgeRepeat = useCallback(() => {
+    const t = nudgeRepeatRef.current
+    if (!t) return
+    if (t.timeout != null) window.clearTimeout(t.timeout)
+    if (t.interval != null) window.clearInterval(t.interval)
+    nudgeRepeatRef.current = null
+  }, [])
+
+  const startNudgeRepeat = useCallback((deltaSeconds: number) => {
+    stopNudgeRepeat()
+    const HOLD_MS = 420
+    const timeout = window.setTimeout(() => {
+      const cur = nudgeRepeatRef.current
+      if (!cur) return
+      cur.fired = true
+      // Start repeating nudges after the hold threshold.
+      nudgePlayhead(deltaSeconds)
+      const interval = window.setInterval(() => {
+        nudgePlayhead(deltaSeconds)
+      }, 55)
+      nudgeRepeatRef.current = { timeout: null, interval, deltaSeconds, fired: true }
+    }, HOLD_MS)
+    nudgeRepeatRef.current = { timeout, interval: null, deltaSeconds, fired: false }
+  }, [nudgePlayhead, stopNudgeRepeat])
+
+  const finishNudgePress = useCallback((deltaSeconds: number) => {
+    const cur = nudgeRepeatRef.current
+    // If the hold timer never fired, treat as a normal single nudge.
+    if (cur && cur.deltaSeconds === deltaSeconds && !cur.fired) {
+      nudgePlayhead(deltaSeconds)
+    }
+    suppressNextNudgeClickRef.current = true
+    stopNudgeRepeat()
+  }, [nudgePlayhead, stopNudgeRepeat])
+
+  useEffect(() => {
+    const onUp = () => stopNudgeRepeat()
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('blur', onUp)
+    return () => {
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('blur', onUp)
+    }
+  }, [stopNudgeRepeat])
 
   const snapshotUndo = useCallback(() => {
     const stack = undoStackRef.current
@@ -330,8 +407,9 @@ export default function CreateVideo() {
     // Ticks (0.1s minor, 1.0s major, 5.0s extra-major)
     const scrollLeft = Math.max(0, Number(timelineScrollLeftPx) || 0)
     const padPx = timelinePadPx || Math.floor(wCss / 2)
-    const startT = clamp((scrollLeft - padPx) / pxPerSecond, 0, Math.max(0, totalSeconds))
-    const endT = clamp((scrollLeft - padPx + wCss) / pxPerSecond, 0, Math.max(0, totalSeconds))
+    const totalForTicks = Math.max(0, Number(visualTotalSeconds) || 0)
+    const startT = clamp((scrollLeft - padPx) / pxPerSecond, 0, totalForTicks)
+    const endT = clamp((scrollLeft - padPx + wCss) / pxPerSecond, 0, totalForTicks)
     const eps = 1e-6
     const firstTenth = Math.max(0, Math.floor(startT * 10) / 10)
     const lastTenth = Math.ceil(endT * 10) / 10
@@ -374,7 +452,7 @@ export default function CreateVideo() {
     ctx.textBaseline = 'middle'
     for (let i = 0; i < timeline.clips.length; i++) {
       const clip = timeline.clips[i]
-      const start = clipStarts[i] || 0
+      const start = (clipStarts[i] || 0) + (dragNoRipple.idx >= 0 && i >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
       const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
       const x = padPx + start * pxPerSecond - scrollLeft
       const w = Math.max(8, len * pxPerSecond)
@@ -382,7 +460,7 @@ export default function CreateVideo() {
       const isSelected = clip.id === selectedClipId
 
       // pill background
-      ctx.fillStyle = isSelected ? 'rgba(212,175,55,0.28)' : 'rgba(212,175,55,0.14)'
+      ctx.fillStyle = 'rgba(212,175,55,0.28)'
       roundRect(ctx, x, pillY, w, pillH, 10)
       ctx.fill()
 
@@ -394,11 +472,12 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[clip.uploadId] || `Video ${clip.uploadId}`
       ctx.fillStyle = '#fff'
-      const pad = 10
-      const maxTextW = Math.max(0, w - pad * 2)
+      const padLeft = isSelected ? 18 : 12
+      const padRight = 12
+      const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
-        ctx.fillText(clipped, x + pad, pillY + pillH / 2)
+        ctx.fillText(clipped, x + padLeft, pillY + pillH / 2)
       }
 
       if (isSelected && w >= 20) {
@@ -410,7 +489,7 @@ export default function CreateVideo() {
         ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
       }
     }
-  }, [clipStarts, namesByUploadId, pxPerSecond, selectedClipId, timeline.clips, timelinePadPx, timelineScrollLeftPx, totalSeconds])
+  }, [clipStarts, dragNoRipple.deltaSeconds, dragNoRipple.idx, namesByUploadId, pxPerSecond, selectedClipId, timeline.clips, timelinePadPx, timelineScrollLeftPx, visualTotalSeconds])
 
   useEffect(() => {
     drawTimeline()
@@ -837,6 +916,13 @@ export default function CreateVideo() {
       if (!drag) return
       if (e.pointerId !== drag.pointerId) return
       e.preventDefault()
+      const sc = timelineScrollRef.current
+      const lockedScrollLeft = clipDragLockScrollLeftRef.current
+      if (sc && lockedScrollLeft != null && sc.scrollLeft !== lockedScrollLeft) {
+        ignoreScrollRef.current = true
+        sc.scrollLeft = lockedScrollLeft
+        ignoreScrollRef.current = false
+      }
       const dx = e.clientX - drag.startClientX
       const deltaSeconds = dx / pxPerSecond
       const minLen = 0.2
@@ -879,6 +965,65 @@ export default function CreateVideo() {
       window.removeEventListener('pointercancel', onUp as any)
     }
   }, [clipDragging, pxPerSecond])
+
+  // While dragging clip trim handles, hard-lock the timeline scroll position so the drag gesture
+  // doesn't get interpreted as horizontal panning (especially on iOS).
+  useEffect(() => {
+    const sc = timelineScrollRef.current
+    if (!sc) return
+    if (!clipDragging) return
+
+    const locked = clipDragLockScrollLeftRef.current ?? sc.scrollLeft
+    clipDragLockScrollLeftRef.current = locked
+
+    clipDragScrollRestoreRef.current = {
+      overflowX: sc.style.overflowX || '',
+      webkitOverflowScrolling: (sc.style as any).WebkitOverflowScrolling || '',
+      overscrollBehaviorX: (sc.style as any).overscrollBehaviorX || '',
+    }
+
+    ignoreScrollRef.current = true
+    sc.scrollLeft = locked
+    ignoreScrollRef.current = false
+
+    sc.style.overflowX = 'hidden'
+    ;(sc.style as any).WebkitOverflowScrolling = 'auto'
+    ;(sc.style as any).overscrollBehaviorX = 'none'
+
+    const preventScroll = (e: Event) => {
+      e.preventDefault()
+    }
+    const enforceScrollLeft = () => {
+      const want = clipDragLockScrollLeftRef.current
+      if (want == null) return
+      if (sc.scrollLeft === want) return
+      ignoreScrollRef.current = true
+      sc.scrollLeft = want
+      ignoreScrollRef.current = false
+    }
+
+    sc.addEventListener('wheel', preventScroll as any, { passive: false })
+    sc.addEventListener('touchmove', preventScroll as any, { passive: false })
+    sc.addEventListener('scroll', enforceScrollLeft, { passive: true })
+
+    return () => {
+      sc.removeEventListener('wheel', preventScroll as any)
+      sc.removeEventListener('touchmove', preventScroll as any)
+      sc.removeEventListener('scroll', enforceScrollLeft as any)
+      const prev = clipDragScrollRestoreRef.current
+      if (prev) {
+        sc.style.overflowX = prev.overflowX
+        ;(sc.style as any).WebkitOverflowScrolling = prev.webkitOverflowScrolling
+        ;(sc.style as any).overscrollBehaviorX = prev.overscrollBehaviorX
+      } else {
+        sc.style.overflowX = ''
+        ;(sc.style as any).WebkitOverflowScrolling = ''
+        ;(sc.style as any).overscrollBehaviorX = ''
+      }
+      clipDragScrollRestoreRef.current = null
+      clipDragLockScrollLeftRef.current = null
+    }
+  }, [clipDragging])
 
   const archiveAndRestart = useCallback(async () => {
     if (!project?.id) return
@@ -1114,6 +1259,7 @@ export default function CreateVideo() {
                   e.preventDefault()
                   snapshotUndo()
                   setSelectedClipId(clip.id)
+                  clipDragLockScrollLeftRef.current = sc.scrollLeft
                   const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
                   clipDragRef.current = {
                     clipId: clip.id,
@@ -1130,26 +1276,54 @@ export default function CreateVideo() {
                 onClick={(e) => {
                   const sc = timelineScrollRef.current
                   if (!sc) return
+                  if (clipDragging) return
                   const rect = sc.getBoundingClientRect()
+                  const y = e.clientY - rect.top
                   const clickX = e.clientX - rect.left
                   const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
-                  const x = clickX + sc.scrollLeft - padPx
+                  const clickXInScroll = clickX + sc.scrollLeft
+                  const x = clickXInScroll - padPx
                   const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+                  const withinTrack = y >= PILL_Y && y <= PILL_Y + PILL_H
+                  if (!withinTrack) {
+                    setSelectedClipId(null)
+                    return
+                  }
                   const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
                   const clip = timeline.clips[idx]
-                  if (clip) setSelectedClipId(clip.id)
+                  if (!clip) {
+                    setSelectedClipId(null)
+                    return
+                  }
+
+                  // If user taps the same selected clip again (not on a handle), open properties.
+                  const start = (clipStarts[idx] || 0)
+                  const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
+                  const leftX = padPx + start * pxPerSecond
+                  const rightX = padPx + (start + len) * pxPerSecond
+                  const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+                  const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+                  if (nearLeft || nearRight) return
+
+                  if (selectedClipId === clip.id) {
+                    setClipEditor({ id: clip.id, start: clip.sourceStartSeconds, end: clip.sourceEndSeconds })
+                    setClipEditorError(null)
+                    return
+                  }
+
+                  setSelectedClipId(clip.id)
                 }}
                 style={{
                   width: '100%',
-                  overflowX: 'auto',
+                  overflowX: clipDragging || timelinePanLocked ? 'hidden' : 'auto',
                   overflowY: 'hidden',
-                  WebkitOverflowScrolling: 'touch',
+                  WebkitOverflowScrolling: clipDragging || timelinePanLocked ? 'auto' : 'touch',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.28)',
                   background: 'rgba(0,0,0,0.60)',
                   height: 64,
                   position: 'relative',
-                  touchAction: clipDragging ? 'none' : 'pan-x',
+                  touchAction: clipDragging || timelinePanLocked ? 'none' : 'pan-x',
                 }}
               >
                 <div style={{ width: timelinePadPx + stripContentW + timelinePadPx, height: 64, position: 'relative' }}>
@@ -1165,8 +1339,23 @@ export default function CreateVideo() {
           <div style={{ display: 'flex', justifyContent: 'flex-start', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
               <button
                 type="button"
-                onClick={() => setTimeline((prev) => ({ ...prev, playheadSeconds: clamp(playhead - 0.1, 0, Math.max(0, totalSeconds)) }))}
+                onClick={() => {
+                  if (suppressNextNudgeClickRef.current) {
+                    suppressNextNudgeClickRef.current = false
+                    return
+                  }
+                  nudgePlayhead(-0.1)
+                }}
+                onContextMenu={(e) => e.preventDefault()}
                 disabled={totalSeconds <= 0}
+                onPointerDown={(e) => {
+                  if (e.button != null && e.button !== 0) return
+                  if (totalSeconds <= 0) return
+                  try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+                  startNudgeRepeat(-0.1)
+                }}
+                onPointerUp={() => finishNudgePress(-0.1)}
+                onPointerLeave={() => finishNudgePress(-0.1)}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
@@ -1176,14 +1365,32 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
                 }}
               >
                 ‹
               </button>
               <button
                 type="button"
-                onClick={() => setTimeline((prev) => ({ ...prev, playheadSeconds: clamp(playhead + 0.1, 0, Math.max(0, totalSeconds)) }))}
+                onClick={() => {
+                  if (suppressNextNudgeClickRef.current) {
+                    suppressNextNudgeClickRef.current = false
+                    return
+                  }
+                  nudgePlayhead(0.1)
+                }}
+                onContextMenu={(e) => e.preventDefault()}
                 disabled={totalSeconds <= 0}
+                onPointerDown={(e) => {
+                  if (e.button != null && e.button !== 0) return
+                  if (totalSeconds <= 0) return
+                  try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+                  startNudgeRepeat(0.1)
+                }}
+                onPointerUp={() => finishNudgePress(0.1)}
+                onPointerLeave={() => finishNudgePress(0.1)}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
@@ -1193,6 +1400,9 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
                 }}
               >
                 ›
@@ -1231,23 +1441,6 @@ export default function CreateVideo() {
                 }}
               >
                 Undo
-              </button>
-              <button
-                type="button"
-                onClick={openClipEditor}
-                disabled={!selectedClip}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: selectedClip ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: selectedClip ? 'pointer' : 'default',
-                  flex: '0 0 auto',
-                }}
-              >
-                Video
               </button>
               <button
                 type="button"
@@ -1352,7 +1545,7 @@ export default function CreateVideo() {
         <div
           role="dialog"
           aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '24px 16px 80px' }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
           onClick={() => { setClipEditor(null); setClipEditorError(null) }}
         >
           <div
@@ -1370,6 +1563,28 @@ export default function CreateVideo() {
                 <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
                 <input type="number" step={0.1} min={0} value={String(clipEditor.start)} onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }} style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }} />
               </label>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClipEditorError(null)
+                    setClipEditor((p) => (p ? { ...p, start: Math.max(0, roundToTenth(Number(p.start) - 1.0)) } : p))
+                  }}
+                  style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Extend start -1.0s
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClipEditorError(null)
+                    setClipEditor((p) => (p ? { ...p, start: Math.max(0, roundToTenth(Number(p.start) - 0.1)) } : p))
+                  }}
+                  style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Extend start -0.1s
+                </button>
+              </div>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
                 <input type="number" step={0.1} min={0} value={String(clipEditor.end)} onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }} style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }} />
