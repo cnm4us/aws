@@ -10,11 +10,12 @@ import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../service
 import { probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 
 type Clip = { id: string; uploadId: number; sourceStartSeconds: number; sourceEndSeconds: number }
+type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
   userId: number
-  timeline: { version: 'create_video_v1'; clips: Clip[] }
+  timeline: { version: 'create_video_v1'; clips: Clip[]; graphics?: Graphic[] }
 }
 
 function roundToTenth(n: number): number {
@@ -67,6 +68,112 @@ function computeTargetDims(firstW: number, firstH: number): { w: number; h: numb
   const longEdge = Math.max(firstW, firstH)
   const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1
   return { w: even(firstW * scale), h: even(firstH * scale) }
+}
+
+async function renderBlackBaseMp4(opts: {
+  outPath: string
+  durationSeconds: number
+  targetW: number
+  targetH: number
+  fps: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}) {
+  const dur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
+  if (!(dur > 0)) throw new Error('invalid_duration')
+  const fps = Math.max(15, Math.min(60, Math.round(Number(opts.fps || 30))))
+  await runFfmpeg(
+    [
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=black:s=${opts.targetW}x${opts.targetH}:d=${dur}:r=${fps}`,
+      '-f',
+      'lavfi',
+      '-i',
+      `anullsrc=r=48000:cl=stereo`,
+      '-shortest',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-ar',
+      '48000',
+      '-ac',
+      '2',
+      '-movflags',
+      '+faststart',
+      opts.outPath,
+    ],
+    opts.logPaths
+  )
+}
+
+async function overlayFullFrameGraphics(opts: {
+  baseMp4Path: string
+  outPath: string
+  graphics: Array<{ startSeconds: number; endSeconds: number; imagePath: string }>
+  targetW: number
+  targetH: number
+  durationSeconds: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}) {
+  const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
+  if (!opts.graphics.length) throw new Error('no_graphics')
+
+  const args: string[] = ['-i', opts.baseMp4Path]
+  for (const g of opts.graphics) {
+    args.push('-loop', '1', '-t', String(baseDur), '-i', g.imagePath)
+  }
+
+  const filters: string[] = []
+  for (let i = 0; i < opts.graphics.length; i++) {
+    const inIdx = i + 1
+    filters.push(
+      `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba[img${i}]`
+    )
+  }
+
+  let current = '[0:v]'
+  for (let i = 0; i < opts.graphics.length; i++) {
+    const g = opts.graphics[i]
+    const s = roundToTenth(Number(g.startSeconds))
+    const e = roundToTenth(Number(g.endSeconds))
+    const next = `[v${i + 1}]`
+    filters.push(`${current}[img${i}]overlay=0:0:enable='between(t,${s},${e})'${next}`)
+    current = next
+  }
+
+  args.push(
+    '-filter_complex',
+    filters.join(';'),
+    '-map',
+    current,
+    '-map',
+    '0:a',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'copy',
+    '-movflags',
+    '+faststart',
+    opts.outPath
+  )
+
+  await runFfmpeg(args, opts.logPaths)
 }
 
 async function renderSegmentMp4(opts: {
@@ -153,110 +260,167 @@ export async function runCreateVideoExportV1Job(
 ): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string } }> {
   const userId = Number(input.userId)
   const clips = Array.isArray(input.timeline?.clips) ? input.timeline.clips : []
-  if (!clips.length) throw new Error('empty_timeline')
+  const graphics = Array.isArray((input.timeline as any)?.graphics) ? ((input.timeline as any).graphics as Graphic[]) : []
+  if (!clips.length && !graphics.length) throw new Error('empty_timeline')
 
   const db = getPool()
-  const ids = Array.from(new Set(clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)))
+  const ids = Array.from(
+    new Set(
+      [...clips.map((c) => Number(c.uploadId)), ...graphics.map((g) => Number(g.uploadId))].filter((n) => Number.isFinite(n) && n > 0)
+    )
+  )
   const [rows] = await db.query(`SELECT id, user_id, kind, status, s3_bucket, s3_key FROM uploads WHERE id IN (?)`, [ids])
   const byId = new Map<number, any>()
   for (const r of rows as any[]) byId.set(Number(r.id), r)
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-create-video-export-'))
   try {
-    // Prepare first clip to choose output dimensions.
-    const first = clips[0]
-    const firstRow = byId.get(Number(first.uploadId))
-    if (!firstRow) throw new Error('upload_not_found')
-    if (String(firstRow.kind || 'video').toLowerCase() !== 'video') throw new Error('invalid_upload_kind')
-    const ownerId = firstRow.user_id != null ? Number(firstRow.user_id) : null
-    if (!(ownerId === userId || ownerId == null)) throw new Error('forbidden')
-
-    const firstIn = path.join(tmpDir, `src_${Number(first.uploadId)}.mp4`)
-    await downloadS3ObjectToFile(String(firstRow.s3_bucket), String(firstRow.s3_key), firstIn)
-    const dims = await probeVideoDisplayDimensions(firstIn)
-    const target = computeTargetDims(dims.width, dims.height)
-
     const fps = 30
     const segPaths: string[] = []
     const seenDownloads = new Map<number, string>()
-    seenDownloads.set(Number(first.uploadId), firstIn)
 
-    for (let i = 0; i < clips.length; i++) {
-      const c = clips[i]
-      const uploadId = Number(c.uploadId)
-      const row = byId.get(uploadId)
-      if (!row) throw new Error('upload_not_found')
-      if (String(row.kind || 'video').toLowerCase() !== 'video') throw new Error('invalid_upload_kind')
-      const oid = row.user_id != null ? Number(row.user_id) : null
-      if (!(oid === userId || oid == null)) throw new Error('forbidden')
+    let target = { w: 1080, h: 1920 }
+    let baseDurationSeconds = 0
+    let baseOut = path.join(tmpDir, 'out.mp4')
 
-      const inPath = seenDownloads.get(uploadId) || path.join(tmpDir, `src_${uploadId}.mp4`)
-      if (!seenDownloads.has(uploadId)) {
-        await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
-        seenDownloads.set(uploadId, inPath)
+    if (clips.length) {
+      // Prepare first clip to choose output dimensions.
+      const first = clips[0]
+      const firstRow = byId.get(Number(first.uploadId))
+      if (!firstRow) throw new Error('upload_not_found')
+      if (String(firstRow.kind || 'video').toLowerCase() !== 'video') throw new Error('invalid_upload_kind')
+      const ownerId = firstRow.user_id != null ? Number(firstRow.user_id) : null
+      if (!(ownerId === userId || ownerId == null)) throw new Error('forbidden')
+
+      const firstIn = path.join(tmpDir, `src_${Number(first.uploadId)}.mp4`)
+      await downloadS3ObjectToFile(String(firstRow.s3_bucket), String(firstRow.s3_key), firstIn)
+      const dims = await probeVideoDisplayDimensions(firstIn)
+      const computed = computeTargetDims(dims.width, dims.height)
+      target = { w: computed.w, h: computed.h }
+      seenDownloads.set(Number(first.uploadId), firstIn)
+
+      for (let i = 0; i < clips.length; i++) {
+        const c = clips[i]
+        const uploadId = Number(c.uploadId)
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || 'video').toLowerCase() !== 'video') throw new Error('invalid_upload_kind')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+
+        const inPath = seenDownloads.get(uploadId) || path.join(tmpDir, `src_${uploadId}.mp4`)
+        if (!seenDownloads.has(uploadId)) {
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
+          seenDownloads.set(uploadId, inPath)
+        }
+
+        const outPath = path.join(tmpDir, `seg_${String(i).padStart(3, '0')}.mp4`)
+        await renderSegmentMp4({
+          inPath,
+          outPath,
+          startSeconds: Number(c.sourceStartSeconds || 0),
+          endSeconds: Number(c.sourceEndSeconds || 0),
+          targetW: target.w,
+          targetH: target.h,
+          fps,
+          logPaths,
+        })
+        segPaths.push(outPath)
+        baseDurationSeconds += Math.max(0, roundToTenth(Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)))
       }
 
-      const outPath = path.join(tmpDir, `seg_${String(i).padStart(3, '0')}.mp4`)
-      await renderSegmentMp4({
-        inPath,
-        outPath,
-        startSeconds: Number(c.sourceStartSeconds || 0),
-        endSeconds: Number(c.sourceEndSeconds || 0),
+      // Concat segments.
+      const listPath = path.join(tmpDir, 'list.txt')
+      fs.writeFileSync(listPath, segPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n')
+      try {
+        await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', baseOut], logPaths)
+      } catch {
+        await runFfmpeg(
+          [
+            '-f',
+            'concat',
+            '-safe',
+            '0',
+            '-i',
+            listPath,
+            '-c:v',
+            'libx264',
+            '-preset',
+            'veryfast',
+            '-crf',
+            '20',
+            '-pix_fmt',
+            'yuv420p',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            '-ar',
+            '48000',
+            '-ac',
+            '2',
+            '-movflags',
+            '+faststart',
+            baseOut,
+          ],
+          logPaths
+        )
+      }
+    } else {
+      const sorted = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
+      baseDurationSeconds = roundToTenth(Number(sorted[sorted.length - 1]?.endSeconds || 0))
+      if (!(baseDurationSeconds > 0)) throw new Error('invalid_duration')
+      await renderBlackBaseMp4({
+        outPath: baseOut,
+        durationSeconds: baseDurationSeconds,
         targetW: target.w,
         targetH: target.h,
         fps,
         logPaths,
       })
-      segPaths.push(outPath)
     }
 
-    // Concat segments.
-    const listPath = path.join(tmpDir, 'list.txt')
-    fs.writeFileSync(listPath, segPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n')
-    const concatOut = path.join(tmpDir, 'out.mp4')
-    try {
-      await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', concatOut], logPaths)
-    } catch {
-      await runFfmpeg(
-        [
-          '-f',
-          'concat',
-          '-safe',
-          '0',
-          '-i',
-          listPath,
-          '-c:v',
-          'libx264',
-          '-preset',
-          'veryfast',
-          '-crf',
-          '20',
-          '-pix_fmt',
-          'yuv420p',
-          '-c:a',
-          'aac',
-          '-b:a',
-          '128k',
-          '-ar',
-          '48000',
-          '-ac',
-          '2',
-          '-movflags',
-          '+faststart',
-          concatOut,
-        ],
-        logPaths
-      )
+    let finalOut = baseOut
+    if (graphics.length) {
+      const imageDownloads = new Map<number, string>()
+      const sorted = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
+      const overlays: Array<{ startSeconds: number; endSeconds: number; imagePath: string }> = []
+      for (let i = 0; i < sorted.length; i++) {
+        const g = sorted[i]
+        const uploadId = Number(g.uploadId)
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_${String(i).padStart(3, '0')}`)
+        if (!imageDownloads.has(uploadId)) {
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
+          imageDownloads.set(uploadId, inPath)
+        }
+        overlays.push({ startSeconds: Number(g.startSeconds), endSeconds: Number(g.endSeconds), imagePath: inPath })
+      }
+      const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
+      await overlayFullFrameGraphics({
+        baseMp4Path: baseOut,
+        outPath: overlayOut,
+        graphics: overlays,
+        targetW: target.w,
+        targetH: target.h,
+        durationSeconds: baseDurationSeconds,
+        logPaths,
+      })
+      finalOut = overlayOut
     }
 
-    const stat = fs.statSync(concatOut)
-    const durationSeconds = await probeDurationSeconds(concatOut)
+    const stat = fs.statSync(finalOut)
+    const durationSeconds = await probeDurationSeconds(finalOut)
     const { ymd, folder } = nowDateYmd()
     const assetUuid = randomUUID()
     const key = buildUploadKey(String(UPLOAD_PREFIX || ''), folder, assetUuid, '.mp4', 'video')
     const bucket = String(UPLOAD_BUCKET || '')
     if (!bucket) throw new Error('missing_upload_bucket')
-    await uploadFileToS3(bucket, key, concatOut, 'video/mp4')
+    await uploadFileToS3(bucket, key, finalOut, 'video/mp4')
 
     const uploadId = await insertGeneratedUpload({
       userId,
@@ -275,4 +439,3 @@ export async function runCreateVideoExportV1Job(
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }
 }
-

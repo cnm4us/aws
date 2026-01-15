@@ -15,7 +15,7 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
     timeline = {}
   }
   if (timeline.version !== 'create_video_v1') {
-    timeline = { version: 'create_video_v1', playheadSeconds: 0, clips: [] }
+    timeline = { version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [] }
   }
   return {
     id: Number(row.id),
@@ -48,7 +48,7 @@ export async function createOrGetActiveProjectForUser(userId: number): Promise<{
   try {
     const created = await repo.create({
       userId: Number(userId),
-      timelineJson: JSON.stringify({ version: 'create_video_v1', playheadSeconds: 0, clips: [] }),
+      timelineJson: JSON.stringify({ version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [] }),
     })
     return { created: true, project: mapRow(created) }
   } catch (err: any) {
@@ -105,7 +105,8 @@ export async function exportActiveProjectForUser(userId: number): Promise<{ jobI
     }
   }
   const normalized = await validateAndNormalizeCreateVideoTimeline(timelineRaw, { userId: Number(userId) })
-  if (!normalized.clips.length) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+  const graphics = Array.isArray((normalized as any).graphics) ? ((normalized as any).graphics as any[]) : []
+  if (!normalized.clips.length && !graphics.length) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
   const job = await enqueueJob('create_video_export_v1', {
     projectId: Number(row.id),

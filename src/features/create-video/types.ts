@@ -7,10 +7,18 @@ export type CreateVideoClipV1 = {
   sourceEndSeconds: number
 }
 
+export type CreateVideoGraphicV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+}
+
 export type CreateVideoTimelineV1 = {
   version: 'create_video_v1'
   playheadSeconds?: number
   clips: CreateVideoClipV1[]
+  graphics?: CreateVideoGraphicV1[]
 }
 
 export type CreateVideoProjectRow = {
@@ -35,4 +43,3 @@ export type CreateVideoProjectDto = {
   updatedAt: string
   archivedAt: string | null
 }
-

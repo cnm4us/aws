@@ -5,10 +5,18 @@ export type Clip = {
   sourceEndSeconds: number
 }
 
+export type Graphic = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+}
+
 export type Timeline = {
   version: 'create_video_v1'
   playheadSeconds: number
   clips: Clip[]
+  graphics: Graphic[]
 }
 
 export type TimelineSnapshot = { timeline: Timeline; selectedClipId: string | null }
@@ -23,6 +31,13 @@ export function cloneTimeline(timeline: Timeline): Timeline {
       sourceStartSeconds: Number(c.sourceStartSeconds),
       sourceEndSeconds: Number(c.sourceEndSeconds),
     })),
+    graphics: Array.isArray((timeline as any).graphics)
+      ? (timeline as any).graphics.map((g: any) => ({
+          id: String(g.id),
+          uploadId: Number(g.uploadId),
+          startSeconds: Number(g.startSeconds),
+          endSeconds: Number(g.endSeconds),
+        }))
+      : [],
   }
 }
-
