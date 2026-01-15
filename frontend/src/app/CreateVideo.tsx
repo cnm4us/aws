@@ -102,6 +102,7 @@ export default function CreateVideo() {
   const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [previewObjectFit, setPreviewObjectFit] = useState<'cover' | 'contain'>('cover')
   const [playing, setPlaying] = useState(false)
   const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
   const activeClipIndexRef = useRef(0)
@@ -610,6 +611,11 @@ export default function CreateVideo() {
         v.load()
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
+          try {
+            const w = Number(v.videoWidth || 0)
+            const h = Number(v.videoHeight || 0)
+            if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
+          } catch {}
           try { v.currentTime = Math.max(0, sourceTime) } catch {}
           const srcKey = String(v.currentSrc || v.src || '')
           if (!opts?.autoPlay && srcKey && primedFrameSrcRef.current !== srcKey) {
@@ -680,6 +686,7 @@ export default function CreateVideo() {
     setSelectedClipId(null)
     setClipEditor(null)
     setClipEditorError(null)
+    setPreviewObjectFit('cover')
     activeClipIndexRef.current = 0
     playheadFromVideoRef.current = false
     playheadFromScrollRef.current = false
@@ -1153,7 +1160,7 @@ export default function CreateVideo() {
               playsInline
               preload="metadata"
               poster={activePoster || undefined}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              style={{ width: '100%', height: '100%', objectFit: previewObjectFit, display: 'block' }}
             />
           </div>
         </div>
