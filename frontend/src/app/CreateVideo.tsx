@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getUploadCdnUrl } from '../ui/uploadsCdn'
+import type { Clip, Timeline } from './createVideo/timelineTypes'
+import { cloneTimeline } from './createVideo/timelineTypes'
+import { clamp, computeClipStarts, findClipIndexAtTime, locate, roundToTenth, sumDur } from './createVideo/timelineMath'
+import { insertClipAtPlayhead, splitClipAtPlayhead } from './createVideo/timelineOps'
 
 type MeResponse = {
   userId: number | null
@@ -23,80 +27,12 @@ type UploadListItem = {
 
 type UploadSummary = { id: number; original_filename: string; modified_filename: string | null; duration_seconds?: number | null }
 
-type Clip = {
-  id: string
-  uploadId: number
-  sourceStartSeconds: number
-  sourceEndSeconds: number
-}
-
-type Timeline = {
-  version: 'create_video_v1'
-  playheadSeconds: number
-  clips: Clip[]
-}
-
-function computeClipStartsCached(clips: Clip[]): number[] {
-  const out: number[] = []
-  let acc = 0
-  for (const c of clips) {
-    out.push(acc)
-    acc += Math.max(0, c.sourceEndSeconds - c.sourceStartSeconds)
-  }
-  return out
-}
-
-function findClipIndexAtTime(t: number, clips: Clip[], clipStarts: number[]): number {
-  const tt = Number(t)
-  if (!Number.isFinite(tt) || tt < 0) return 0
-  for (let i = 0; i < clips.length; i++) {
-    const len = Math.max(0, clips[i].sourceEndSeconds - clips[i].sourceStartSeconds)
-    const a = clipStarts[i] || 0
-    const b = a + len
-    if (tt >= a && tt < b) return i
-  }
-  return Math.max(0, clips.length - 1)
-}
-
 type Project = {
   id: number
   status: string
   timeline: Timeline
   lastExportJobId?: number | null
   lastExportUploadId?: number | null
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(Math.max(n, min), max)
-}
-
-function roundToTenth(n: number): number {
-  return Math.round(n * 10) / 10
-}
-
-function sumDur(clips: Clip[]): number {
-  return clips.reduce((acc, c) => acc + Math.max(0, c.sourceEndSeconds - c.sourceStartSeconds), 0)
-}
-
-function computeClipStarts(clips: Clip[]): number[] {
-  const out: number[] = []
-  let acc = 0
-  for (const c of clips) {
-    out.push(acc)
-    acc += Math.max(0, c.sourceEndSeconds - c.sourceStartSeconds)
-  }
-  return out
-}
-
-function locate(t: number, clips: Clip[]): { clipIndex: number; within: number } {
-  const starts = computeClipStarts(clips)
-  for (let i = 0; i < clips.length; i++) {
-    const len = Math.max(0, clips[i].sourceEndSeconds - clips[i].sourceStartSeconds)
-    const a = starts[i]
-    const b = a + len
-    if (t >= a && t < b) return { clipIndex: i, within: t - a }
-  }
-  return { clipIndex: Math.max(0, clips.length - 1), within: 0 }
 }
 
 async function ensureLoggedIn(): Promise<MeResponse | null> {
@@ -229,7 +165,7 @@ export default function CreateVideo() {
   }, [])
 
   const totalSeconds = useMemo(() => sumDur(timeline.clips), [timeline.clips])
-  const clipStarts = useMemo(() => computeClipStartsCached(timeline.clips), [timeline.clips])
+  const clipStarts = useMemo(() => computeClipStarts(timeline.clips), [timeline.clips])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
   const dragNoRipple = useMemo(() => {
@@ -316,19 +252,7 @@ export default function CreateVideo() {
 
   const snapshotUndo = useCallback(() => {
     const stack = undoStackRef.current
-    const snapshot = {
-      timeline: {
-        version: 'create_video_v1',
-        playheadSeconds: Number(timeline.playheadSeconds || 0),
-        clips: timeline.clips.map((c) => ({
-          id: String(c.id),
-          uploadId: Number(c.uploadId),
-          sourceStartSeconds: Number(c.sourceStartSeconds),
-          sourceEndSeconds: Number(c.sourceEndSeconds),
-        })),
-      },
-      selectedClipId,
-    }
+    const snapshot = { timeline: cloneTimeline(timeline), selectedClipId }
     stack.push(snapshot)
     // Cap memory and keep behavior predictable.
     if (stack.length > 50) stack.splice(0, stack.length - 50)
@@ -810,15 +734,7 @@ export default function CreateVideo() {
         sourceEndSeconds: roundToTenth(dur),
       }
       snapshotUndo()
-      setTimeline((prev) => {
-        const t = clamp(roundToTenth(prev.playheadSeconds || 0), 0, Math.max(0, sumDur(prev.clips)))
-        if (!prev.clips.length) return { ...prev, clips: [newClip], playheadSeconds: 0 }
-        const { clipIndex, within } = locate(t, prev.clips)
-        const starts = computeClipStarts(prev.clips)
-        const insertIdx = within <= 0.05 ? clipIndex : within >= (prev.clips[clipIndex].sourceEndSeconds - prev.clips[clipIndex].sourceStartSeconds) - 0.05 ? clipIndex + 1 : clipIndex + 1
-        const nextClips = [...prev.clips.slice(0, insertIdx), newClip, ...prev.clips.slice(insertIdx)]
-        return { ...prev, clips: nextClips }
-      })
+      setTimeline((prev) => insertClipAtPlayhead(prev, newClip))
       setSelectedClipId(id)
       setPickOpen(false)
     },
@@ -826,25 +742,14 @@ export default function CreateVideo() {
   )
 
   const split = useCallback(() => {
-    if (!selectedClip) return
-    const t = playhead
-    const { clipIndex, within } = locate(t, timeline.clips)
-    const clip = timeline.clips[clipIndex]
-    if (!clip || clip.id !== selectedClip.id) return
-    const cut = roundToTenth(clip.sourceStartSeconds + within)
-    const minLen = 0.2
-    if (cut <= clip.sourceStartSeconds + minLen || cut >= clip.sourceEndSeconds - minLen) return
+    if (!selectedClipId) return
+    const res = splitClipAtPlayhead(timeline, selectedClipId)
+    if (res.timeline === timeline && res.selectedClipId === selectedClipId) return
+    if (res.timeline.clips === timeline.clips) return
     snapshotUndo()
-    const left: Clip = { ...clip, id: `${clip.id}_a`, sourceEndSeconds: cut }
-    const right: Clip = { ...clip, id: `${clip.id}_b`, sourceStartSeconds: cut }
-    setTimeline((prev) => {
-      const idx = prev.clips.findIndex((c) => c.id === clip.id)
-      if (idx < 0) return prev
-      const next = [...prev.clips.slice(0, idx), left, right, ...prev.clips.slice(idx + 1)]
-      return { ...prev, clips: next }
-    })
-    setSelectedClipId(right.id)
-  }, [playhead, selectedClip, snapshotUndo, timeline.clips])
+    setTimeline(res.timeline)
+    setSelectedClipId(res.selectedClipId)
+  }, [selectedClipId, snapshotUndo, timeline])
 
   const deleteSelected = useCallback(() => {
     if (!timeline.clips.length) return
@@ -1301,6 +1206,11 @@ export default function CreateVideo() {
                   const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
                   const leftX = padPx + start * pxPerSecond
                   const rightX = padPx + (start + len) * pxPerSecond
+                  // Clicking the track outside any pill should deselect.
+                  if (clickXInScroll < leftX || clickXInScroll > rightX) {
+                    setSelectedClipId(null)
+                    return
+                  }
                   const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
                   const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
                   if (nearLeft || nearRight) return
