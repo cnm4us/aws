@@ -172,8 +172,8 @@ export default function CreateVideo() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
-  const undoRef = useRef<{ timeline: Timeline; selectedClipId: string | null } | null>(null)
-  const [undoAvailable, setUndoAvailable] = useState(false)
+  const undoStackRef = useRef<Array<{ timeline: Timeline; selectedClipId: string | null }>>([])
+  const [undoDepth, setUndoDepth] = useState(0)
   const lastSavedRef = useRef<string>('')
   const hydratingRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
@@ -218,8 +218,11 @@ export default function CreateVideo() {
     return timeline.clips.find((c) => c.id === selectedClipId) || null
   }, [selectedClipId, timeline.clips])
 
+  const canUndo = undoDepth > 0
+
   const snapshotUndo = useCallback(() => {
-    undoRef.current = {
+    const stack = undoStackRef.current
+    const snapshot = {
       timeline: {
         version: 'create_video_v1',
         playheadSeconds: Number(timeline.playheadSeconds || 0),
@@ -232,14 +235,17 @@ export default function CreateVideo() {
       },
       selectedClipId,
     }
-    setUndoAvailable(true)
+    stack.push(snapshot)
+    // Cap memory and keep behavior predictable.
+    if (stack.length > 50) stack.splice(0, stack.length - 50)
+    setUndoDepth(stack.length)
   }, [selectedClipId, timeline.clips, timeline.playheadSeconds])
 
   const undo = useCallback(() => {
-    const snap = undoRef.current
+    const stack = undoStackRef.current
+    const snap = stack.pop()
     if (!snap) return
-    undoRef.current = null
-    setUndoAvailable(false)
+    setUndoDepth(stack.length)
     hydratingRef.current = true
     try {
       setTimeline(snap.timeline)
@@ -432,6 +438,8 @@ export default function CreateVideo() {
           setProject(pj)
           setTimeline(tl)
           lastSavedRef.current = JSON.stringify(tl)
+          undoStackRef.current = []
+          setUndoDepth(0)
         } finally {
           hydratingRef.current = false
         }
@@ -774,8 +782,8 @@ export default function CreateVideo() {
       if (csrf) headers['x-csrf-token'] = csrf
       await fetch('/api/create-video/project/archive', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
     } catch {}
-    undoRef.current = null
-    setUndoAvailable(false)
+    undoStackRef.current = []
+    setUndoDepth(0)
     window.location.reload()
   }, [project?.id])
 
@@ -1060,15 +1068,15 @@ export default function CreateVideo() {
               <button
                 type="button"
                 onClick={undo}
-                disabled={!undoAvailable}
+                disabled={!canUndo}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
-                  background: undoAvailable ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                  background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: undoAvailable ? 'pointer' : 'default',
+                  cursor: canUndo ? 'pointer' : 'default',
                   flex: '0 0 auto',
                 }}
               >
