@@ -8,6 +8,7 @@ Start Here
 - docs/Configuration.md — env vars and defaults
 - docs/Architecture.md — modules, flows, diagrams
 - docs/API.md — endpoints and examples
+- docs/s3_architecture.md — S3 prefix taxonomy + retention policy
 
 Build & Run (local development)
 - `npm run build` — compile the Node.js/TypeScript service.
