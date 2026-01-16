@@ -181,23 +181,25 @@ export default function CreateVideo() {
     | {
         kind: 'graphic'
         graphicId: string
-        edge: 'start' | 'end'
+        edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
         startStartSeconds: number
         startEndSeconds: number
         minStartSeconds: number
         maxEndSeconds: number
+        maxStartSeconds?: number
       }
     | {
         kind: 'audio'
-        edge: 'start' | 'end'
+        edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
         startStartSeconds: number
         startEndSeconds: number
         minStartSeconds: number
         maxEndSeconds: number
+        maxStartSeconds?: number
       }
     | null
   >(null)
@@ -1752,18 +1754,24 @@ export default function CreateVideo() {
           if (!at || typeof at !== 'object') return prev
           let startS = Number((at as any).startSeconds || 0)
           let endS = Number((at as any).endSeconds || 0)
+          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
           if (drag.edge === 'start') {
             startS = clamp(
               roundToTenth(drag.startStartSeconds + deltaSeconds),
               drag.minStartSeconds,
               Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
             )
-          } else {
+          } else if (drag.edge === 'end') {
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
               drag.maxEndSeconds
             )
+          } else {
+            const maxStart =
+              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+            endS = roundToTenth(startS + dur)
           }
           const nextAt = { ...(at as any), startSeconds: startS, endSeconds: endS }
           return { ...prev, audioTrack: nextAt }
@@ -1775,18 +1783,24 @@ export default function CreateVideo() {
         const g = prevGraphics[idx] as any
         let startS = Number(g.startSeconds || 0)
         let endS = Number(g.endSeconds || 0)
+        const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
         if (drag.edge === 'start') {
           startS = clamp(
             roundToTenth(drag.startStartSeconds + deltaSeconds),
             drag.minStartSeconds,
             Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
           )
-        } else {
+        } else if (drag.edge === 'end') {
           endS = clamp(
             roundToTenth(drag.startEndSeconds + deltaSeconds),
             Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
             drag.maxEndSeconds
           )
+        } else {
+          const maxStart =
+            drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+          startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+          endS = roundToTenth(startS + dur)
         }
 
         const nextGraphics = prevGraphics.slice()
@@ -2144,7 +2158,45 @@ export default function CreateVideo() {
                     const rightX = padPx + e2 * pxPerSecond
                     const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
                     const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    if (!nearLeft && !nearRight) return
+                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                    if (!inside) return
+
+                    // Slide (body drag) only when already selected.
+                    if (!nearLeft && !nearRight) {
+                      if (selectedGraphicId !== g.id) return
+                      e.preventDefault()
+                      snapshotUndo()
+                      setSelectedGraphicId(g.id)
+                      setSelectedClipId(null)
+                      setSelectedAudio(false)
+
+                      trimDragLockScrollLeftRef.current = sc.scrollLeft
+                      const sorted = graphics.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+                      const pos = sorted.findIndex((gg: any) => String(gg?.id) === String(g.id))
+                      const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+                      const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
+                      const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+                      const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+                      const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+
+                      trimDragRef.current = {
+                        kind: 'graphic',
+                        graphicId: g.id,
+                        edge: 'move',
+                        pointerId: e.pointerId,
+                        startClientX: e.clientX,
+                        startStartSeconds: s,
+                        startEndSeconds: e2,
+                        minStartSeconds,
+                        maxEndSeconds,
+                        maxStartSeconds,
+                      }
+                      setTrimDragging(true)
+                      try { sc.setPointerCapture(e.pointerId) } catch {}
+                      return
+                    }
 
                     e.preventDefault()
                     snapshotUndo()
@@ -2185,7 +2237,38 @@ export default function CreateVideo() {
                     const rightX = padPx + e2 * pxPerSecond
                     const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
                     const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    if (!nearLeft && !nearRight) return
+                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                    if (!inside) return
+
+                    // Slide (body drag) only when already selected.
+                    if (!nearLeft && !nearRight) {
+                      if (!selectedAudio) return
+                      e.preventDefault()
+                      snapshotUndo()
+                      setSelectedAudio(true)
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxEndSeconds = Math.max(0, totalSeconds)
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), 0, maxEndSeconds)
+
+                      trimDragLockScrollLeftRef.current = sc.scrollLeft
+                      trimDragRef.current = {
+                        kind: 'audio',
+                        edge: 'move',
+                        pointerId: e.pointerId,
+                        startClientX: e.clientX,
+                        startStartSeconds: s,
+                        startEndSeconds: e2,
+                        minStartSeconds: 0,
+                        maxEndSeconds,
+                        maxStartSeconds,
+                      }
+                      setTrimDragging(true)
+                      try { sc.setPointerCapture(e.pointerId) } catch {}
+                      return
+                    }
 
                     e.preventDefault()
                     snapshotUndo()
