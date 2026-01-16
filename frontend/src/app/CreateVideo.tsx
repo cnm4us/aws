@@ -1221,7 +1221,9 @@ export default function CreateVideo() {
   useEffect(() => {
     const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
     const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-    const ids = Array.from(new Set([...clipIds, ...graphicIds]))
+    const audioUploadId = Number((timeline as any).audioTrack?.uploadId)
+    const audioIds = Number.isFinite(audioUploadId) && audioUploadId > 0 ? [audioUploadId] : []
+    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...audioIds]))
     if (!ids.length) return
     const clipSet = new Set<number>(clipIds)
     const missing = ids.filter((id) => !namesByUploadId[id] || (clipSet.has(id) && !durationsByUploadId[id]))
