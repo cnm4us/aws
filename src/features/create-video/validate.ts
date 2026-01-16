@@ -17,6 +17,16 @@ function normalizeSeconds(n: any): number {
   return roundToTenth(Math.max(0, v))
 }
 
+function isAllowedFreezeSeconds(v: number): boolean {
+  const n = roundToTenth(Number(v))
+  if (!(Number.isFinite(n) && n >= 0)) return false
+  if (Math.abs(n) < 1e-9) return true
+  if (n > 5 + 1e-6) return false
+  // Allow 0.1..1.0 in 0.1s steps, and whole seconds 2..5.
+  if (n <= 1 + 1e-6) return true
+  return Math.abs(n - Math.round(n)) < 1e-6 && n >= 2 - 1e-6 && n <= 5 + 1e-6
+}
+
 function normalizeId(raw: any): string {
   const s = String(raw || '').trim()
   if (!s) throw new ValidationError('invalid_clip_id')
@@ -134,6 +144,13 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const sourceEndSeconds = normalizeSeconds((c as any).sourceEndSeconds)
     if (!(sourceEndSeconds > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
 
+    const freezeStartSecondsRaw = (c as any).freezeStartSeconds
+    const freezeEndSecondsRaw = (c as any).freezeEndSeconds
+    const freezeStartSeconds = freezeStartSecondsRaw != null ? normalizeSeconds(freezeStartSecondsRaw) : 0
+    const freezeEndSeconds = freezeEndSecondsRaw != null ? normalizeSeconds(freezeEndSecondsRaw) : 0
+    if (!isAllowedFreezeSeconds(freezeStartSeconds)) throw new ValidationError('invalid_freeze_seconds')
+    if (!isAllowedFreezeSeconds(freezeEndSeconds)) throw new ValidationError('invalid_freeze_seconds')
+
     const meta = await loadUploadMetaForUser(uploadId, ctx.userId)
     let end = sourceEndSeconds
     if (meta.durationSeconds != null) {
@@ -141,13 +158,13 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (!(end > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
     }
 
-    const len = Math.max(0, end - sourceStartSeconds)
+    const len = Math.max(0, end - sourceStartSeconds) + freezeStartSeconds + freezeEndSeconds
     const clipEnd = roundToTenth(startSeconds + len)
     videoEndSeconds = Math.max(videoEndSeconds, clipEnd)
     sequentialCursorSeconds = Math.max(sequentialCursorSeconds, clipEnd)
     if (videoEndSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
-    clips.push({ id, uploadId: meta.id, startSeconds, sourceStartSeconds, sourceEndSeconds: end })
+    clips.push({ id, uploadId: meta.id, startSeconds, sourceStartSeconds, sourceEndSeconds: end, freezeStartSeconds, freezeEndSeconds })
   }
 
   // Sort by time for deterministic playback/export and overlap validation.
@@ -155,12 +172,18 @@ export async function validateAndNormalizeCreateVideoTimeline(
   for (let i = 0; i < clips.length; i++) {
     const c = clips[i] as any
     const start = Number(c.startSeconds || 0)
-    const dur = Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
+    const dur =
+      Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)) +
+      Math.max(0, Number((c as any).freezeStartSeconds || 0)) +
+      Math.max(0, Number((c as any).freezeEndSeconds || 0))
     const end = start + dur
     if (i > 0) {
       const prev = clips[i - 1] as any
       const prevStart = Number(prev.startSeconds || 0)
-      const prevDur = Math.max(0, Number(prev.sourceEndSeconds) - Number(prev.sourceStartSeconds))
+      const prevDur =
+        Math.max(0, Number(prev.sourceEndSeconds) - Number(prev.sourceStartSeconds)) +
+        Math.max(0, Number((prev as any).freezeStartSeconds || 0)) +
+        Math.max(0, Number((prev as any).freezeEndSeconds || 0))
       const prevEnd = prevStart + prevDur
       if (start < prevEnd - 1e-6) throw new DomainError('clip_overlap', 'clip_overlap', 400)
     }

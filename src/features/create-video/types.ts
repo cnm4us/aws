@@ -7,6 +7,8 @@ export type CreateVideoClipV1 = {
   startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
+  freezeStartSeconds?: number
+  freezeEndSeconds?: number
 }
 
 export type CreateVideoGraphicV1 = {

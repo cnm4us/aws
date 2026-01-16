@@ -9,11 +9,25 @@ export function roundToTenth(n: number): number {
 }
 
 export function sumDur(clips: Clip[]): number {
-  return clips.reduce((acc, c) => acc + Math.max(0, c.sourceEndSeconds - c.sourceStartSeconds), 0)
+  return clips.reduce((acc, c) => acc + clipDurationSeconds(c), 0)
+}
+
+export function clipSourceDurationSeconds(c: Clip): number {
+  return Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
+}
+
+export function clipFreezeStartSeconds(c: Clip): number {
+  const v = Number((c as any).freezeStartSeconds || 0)
+  return Number.isFinite(v) ? Math.max(0, v) : 0
+}
+
+export function clipFreezeEndSeconds(c: Clip): number {
+  const v = Number((c as any).freezeEndSeconds || 0)
+  return Number.isFinite(v) ? Math.max(0, v) : 0
 }
 
 export function clipDurationSeconds(c: Clip): number {
-  return Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
+  return roundToTenth(clipSourceDurationSeconds(c) + clipFreezeStartSeconds(c) + clipFreezeEndSeconds(c))
 }
 
 export function computeClipStarts(clips: Clip[]): number[] {

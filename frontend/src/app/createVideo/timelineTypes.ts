@@ -4,6 +4,8 @@ export type Clip = {
   startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
+  freezeStartSeconds?: number
+  freezeEndSeconds?: number
 }
 
 export type Graphic = {

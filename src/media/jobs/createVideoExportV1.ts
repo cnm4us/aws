@@ -10,7 +10,15 @@ import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../service
 import { probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 import * as audioConfigsSvc from '../../features/audio-configs/service'
 
-type Clip = { id: string; uploadId: number; startSeconds?: number; sourceStartSeconds: number; sourceEndSeconds: number }
+type Clip = {
+  id: string
+  uploadId: number
+  startSeconds?: number
+  sourceStartSeconds: number
+  sourceEndSeconds: number
+  freezeStartSeconds?: number
+  freezeEndSeconds?: number
+}
 type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
 
@@ -368,6 +376,8 @@ async function renderSegmentMp4(opts: {
   outPath: string
   startSeconds: number
   endSeconds: number
+  freezeStartSeconds?: number
+  freezeEndSeconds?: number
   targetW: number
   targetH: number
   fps: number
@@ -376,15 +386,24 @@ async function renderSegmentMp4(opts: {
   const start = roundToTenth(Math.max(0, Number(opts.startSeconds)))
   const end = roundToTenth(Math.max(0, Number(opts.endSeconds)))
   if (!(end > start)) throw new Error('invalid_segment_range')
+  const freezeStart = roundToTenth(Math.max(0, Number(opts.freezeStartSeconds || 0)))
+  const freezeEnd = roundToTenth(Math.max(0, Number(opts.freezeEndSeconds || 0)))
   const dur = roundToTenth(end - start)
+  const totalDur = roundToTenth(dur + freezeStart + freezeEnd)
   const fps = Math.max(15, Math.min(60, Math.round(Number(opts.fps || 30))))
   const hasAudio = await hasAudioStream(opts.inPath)
 
   const scalePad = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2`
-  const v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p`
+  const tpad = freezeStart > 0.01 || freezeEnd > 0.01
+    ? `,tpad=start_mode=clone:start_duration=${freezeStart.toFixed(3)}:stop_mode=clone:stop_duration=${freezeEnd.toFixed(3)}`
+    : ''
+  const v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p${tpad}`
+
+  const delayMs = Math.max(0, Math.round(freezeStart * 1000))
+  const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
   const a = hasAudio
-    ? `atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS`
-    : `anullsrc=r=48000:cl=stereo,atrim=0:${dur},asetpts=PTS-STARTPTS`
+    ? `atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS${delay},apad,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB`
+    : `anullsrc=r=48000:cl=stereo,atrim=0:${totalDur.toFixed(3)},asetpts=PTS-STARTPTS`
 
   await runFfmpeg(
     [
@@ -550,13 +569,18 @@ export async function runCreateVideoExportV1Job(
           outPath,
           startSeconds: Number(c.sourceStartSeconds || 0),
           endSeconds: Number(c.sourceEndSeconds || 0),
+          freezeStartSeconds: Number((c as any).freezeStartSeconds || 0),
+          freezeEndSeconds: Number((c as any).freezeEndSeconds || 0),
           targetW: target.w,
           targetH: target.h,
           fps,
           logPaths,
         })
         segPaths.push(outPath)
-        const segLen = Math.max(0, roundToTenth(Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)))
+        const segLen =
+          Math.max(0, roundToTenth(Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))) +
+          Math.max(0, roundToTenth(Number((c as any).freezeStartSeconds || 0))) +
+          Math.max(0, roundToTenth(Number((c as any).freezeEndSeconds || 0)))
         cursorSeconds = roundToTenth(startSeconds + segLen)
       }
 
