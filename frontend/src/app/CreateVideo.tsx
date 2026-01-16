@@ -323,7 +323,7 @@ export default function CreateVideo() {
   const VIDEO_Y = TRACKS_TOP + TRACK_H + 6
   const AUDIO_Y = TRACKS_TOP + TRACK_H * 2 + 6
   const PILL_H = Math.max(18, TRACK_H - 12)
-  const HANDLE_HIT_PX = 12
+  const HANDLE_HIT_PX = 18
   const TIMELINE_H = TRACKS_TOP + TRACK_H * 3
 
   const selectedClip = useMemo(() => {
@@ -899,20 +899,21 @@ export default function CreateVideo() {
       const isDragging =
         Boolean(activeDrag) && (activeDrag as any).kind === 'graphic' && String((activeDrag as any).graphicId) === String((g as any).id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
 
       ctx.fillStyle = 'rgba(10,132,255,0.18)'
       roundRect(ctx, x, graphicsY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? 'rgba(255,255,255,0.92)' : 'rgba(10,132,255,0.55)'
+      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(10,132,255,0.55)'
       ctx.lineWidth = 1
       roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
-      if (isDragging && activeEdge && activeEdge !== 'move') {
+      if (isResizing) {
         ctx.save()
         ctx.setLineDash([6, 4])
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+        ctx.strokeStyle = 'rgba(212,175,55,0.92)'
         ctx.lineWidth = 2
         roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
         ctx.stroke()
@@ -929,17 +930,20 @@ export default function CreateVideo() {
         ctx.fillText(clipped, x + padLeft, graphicsY + pillH / 2)
       }
 
-      if ((isSelected || isDragging) && w >= 20) {
+      if ((isSelected || isDragging) && w >= 28) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
-        const hw = 3
-        const hh = pillH - 10
-        const hy = graphicsY + 5
-        ctx.fillRect(x + 6, hy, hw, hh)
-        ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+        const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
+        const hy = graphicsY + Math.floor((pillH - hs) / 2)
+        const hxL = x + 6
+        const hxR = x + w - 6 - hs
+        roundRect(ctx, hxL, hy, hs, hs, 4)
+        ctx.fill()
+        roundRect(ctx, hxR, hy, hs, hs, 4)
+        ctx.fill()
       }
 
-      if (isDragging && activeEdge && activeEdge !== 'move') {
-        ctx.fillStyle = 'rgba(10,132,255,0.95)'
+      if (isResizing) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
         const barW = 5
         const by = graphicsY + 3
         const bh = pillH - 6
@@ -957,6 +961,7 @@ export default function CreateVideo() {
       const isSelected = clip.id === selectedClipId
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'clip' && String((activeDrag as any).clipId) === String(clip.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
 
       // pill background
       ctx.fillStyle = 'rgba(212,175,55,0.28)'
@@ -964,15 +969,15 @@ export default function CreateVideo() {
       ctx.fill()
 
       // pill border
-      ctx.strokeStyle = isSelected ? 'rgba(255,255,255,0.92)' : 'rgba(212,175,55,0.65)'
+      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(212,175,55,0.65)'
       ctx.lineWidth = 1
       roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
-      if (isDragging && activeEdge && activeEdge !== 'move') {
+      if (isResizing) {
         ctx.save()
         ctx.setLineDash([6, 4])
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+        ctx.strokeStyle = 'rgba(212,175,55,0.92)'
         ctx.lineWidth = 2
         roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
         ctx.stroke()
@@ -989,16 +994,19 @@ export default function CreateVideo() {
         ctx.fillText(clipped, x + padLeft, videoY + pillH / 2)
       }
 
-      if ((isSelected || isDragging) && w >= 20) {
+      if ((isSelected || isDragging) && w >= 28) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
-        const hw = 3
-        const hh = pillH - 10
-        const hy = videoY + 5
-        ctx.fillRect(x + 6, hy, hw, hh)
-        ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+        const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
+        const hy = videoY + Math.floor((pillH - hs) / 2)
+        const hxL = x + 6
+        const hxR = x + w - 6 - hs
+        roundRect(ctx, hxL, hy, hs, hs, 4)
+        ctx.fill()
+        roundRect(ctx, hxR, hy, hs, hs, 4)
+        ctx.fill()
       }
 
-      if (isDragging && activeEdge) {
+      if (isResizing) {
         ctx.fillStyle = 'rgba(212,175,55,0.95)'
         const barW = 5
         const by = videoY + 3
@@ -1019,19 +1027,20 @@ export default function CreateVideo() {
           const isSelected = Boolean(selectedAudio)
           const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'audio'
           const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+          const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
           ctx.fillStyle = 'rgba(48,209,88,0.18)'
           roundRect(ctx, x, audioY, w, pillH, 10)
           ctx.fill()
 
-          ctx.strokeStyle = isSelected ? 'rgba(255,255,255,0.92)' : 'rgba(48,209,88,0.55)'
+          ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(48,209,88,0.55)'
           ctx.lineWidth = 1
           roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
           ctx.stroke()
 
-          if (isDragging && activeEdge && activeEdge !== 'move') {
+          if (isResizing) {
             ctx.save()
             ctx.setLineDash([6, 4])
-            ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+            ctx.strokeStyle = 'rgba(212,175,55,0.92)'
             ctx.lineWidth = 2
             roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
             ctx.stroke()
@@ -1050,17 +1059,20 @@ export default function CreateVideo() {
             ctx.fillText(clipped, x + padLeft, audioY + pillH / 2)
           }
 
-          if ((isSelected || isDragging) && w >= 20) {
+          if ((isSelected || isDragging) && w >= 28) {
             ctx.fillStyle = 'rgba(255,255,255,0.85)'
-            const hw = 3
-            const hh = pillH - 10
-            const hy = audioY + 5
-            ctx.fillRect(x + 6, hy, hw, hh)
-            ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+            const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
+            const hy = audioY + Math.floor((pillH - hs) / 2)
+            const hxL = x + 6
+            const hxR = x + w - 6 - hs
+            roundRect(ctx, hxL, hy, hs, hs, 4)
+            ctx.fill()
+            roundRect(ctx, hxR, hy, hs, hs, 4)
+            ctx.fill()
           }
 
-          if (isDragging && activeEdge && activeEdge !== 'move') {
-            ctx.fillStyle = 'rgba(48,209,88,0.95)'
+          if (isResizing) {
+            ctx.fillStyle = 'rgba(212,175,55,0.95)'
             const barW = 5
             const by = audioY + 3
             const bh = pillH - 6
