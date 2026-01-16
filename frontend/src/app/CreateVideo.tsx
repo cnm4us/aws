@@ -1575,6 +1575,9 @@ export default function CreateVideo() {
     const onTime = () => {
       if (!playing) return
       if (!timeline.clips.length) return
+      // `timeupdate` can fire during seeks/pauses; while paused we drive the playhead via
+      // gap playback (black) or freeze playback (held frame), not via currentTime mapping.
+      if (v.paused) return
       const clipIndex = Math.max(0, Math.min(activeClipIndexRef.current, timeline.clips.length - 1))
       const clip = timeline.clips[clipIndex]
       if (!clip) return
