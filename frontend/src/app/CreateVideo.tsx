@@ -220,6 +220,57 @@ export default function CreateVideo() {
   const panDragRef = useRef<{ pointerId: number; startClientX: number; startScrollLeft: number } | null>(null)
   const [panDragging, setPanDragging] = useState(false)
 
+  const debugEnabled = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return false
+      const qp = new URLSearchParams(window.location.search)
+      if (qp.get('cvDebug') === '1') return true
+      return window.localStorage?.getItem('CV_DEBUG') === '1'
+    } catch {
+      return false
+    }
+  }, [])
+
+  const dbg = useCallback(
+    (label: string, data?: any) => {
+      if (!debugEnabled) return
+      try {
+        const sc = timelineScrollRef.current
+        // eslint-disable-next-line no-console
+        console.log(`[cv] ${label}`, {
+          selectedClipId,
+          selectedGraphicId,
+          selectedAudio,
+          trimDragging,
+          panDragging,
+          hasTrimDrag: Boolean(trimDragRef.current),
+          scrollLeft: sc ? sc.scrollLeft : null,
+          overflowX: sc ? sc.style.overflowX : null,
+          webkitOverflowScrolling: sc ? (sc.style as any).WebkitOverflowScrolling : null,
+          ...(data || {}),
+        })
+      } catch {}
+    },
+    [debugEnabled, panDragging, selectedAudio, selectedClipId, selectedGraphicId, trimDragging]
+  )
+
+  const stopTrimDrag = useCallback(
+    (reason: string) => {
+      const drag = trimDragRef.current
+      const sc = timelineScrollRef.current
+      if (drag && sc) {
+        try {
+          sc.releasePointerCapture?.(drag.pointerId)
+        } catch {}
+      }
+      trimDragRef.current = null
+      trimDragLockScrollLeftRef.current = null
+      setTrimDragging(false)
+      dbg('stopTrimDrag', { reason })
+    },
+    [dbg]
+  )
+
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
       if (!v.paused) return
@@ -1834,22 +1885,37 @@ export default function CreateVideo() {
         return { ...prev, graphics: nextGraphics, playheadSeconds: nextPlayhead }
       })
     }
-    const onUp = (e: PointerEvent) => {
-      const drag = trimDragRef.current
-      if (!drag) return
-      trimDragRef.current = null
-      setTrimDragging(false)
-      try { timelineScrollRef.current?.releasePointerCapture?.(drag.pointerId) } catch {}
+    const onUp = () => {
+      if (!trimDragging && !trimDragRef.current) return
+      stopTrimDrag('pointerup')
+    }
+    const onCancel = () => {
+      if (!trimDragging && !trimDragRef.current) return
+      stopTrimDrag('pointercancel')
+    }
+    const onBlur = () => {
+      if (!trimDragging && !trimDragRef.current) return
+      stopTrimDrag('window_blur')
     }
     window.addEventListener('pointermove', onMove, { passive: false })
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('pointermove', onMove as any)
       window.removeEventListener('pointerup', onUp as any)
-      window.removeEventListener('pointercancel', onUp as any)
+      window.removeEventListener('pointercancel', onCancel as any)
+      window.removeEventListener('blur', onBlur as any)
     }
-  }, [pxPerSecond])
+  }, [pxPerSecond, stopTrimDrag, trimDragging])
+
+  useEffect(() => {
+    dbg('state', {
+      trimDragging,
+      panDragging,
+      hasTrimDrag: Boolean(trimDragRef.current),
+    })
+  }, [dbg, panDragging, trimDragging])
 
   // Desktop UX: allow click+drag panning (mobile already pans naturally).
   useEffect(() => {
@@ -1890,46 +1956,6 @@ export default function CreateVideo() {
       window.removeEventListener('pointercancel', onUp as any)
     }
   }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
-
-  // While dragging trim handles, hard-lock the timeline scroll position so the drag gesture
-  // doesn't get interpreted as horizontal panning (especially on iOS).
-  useEffect(() => {
-    const sc = timelineScrollEl || timelineScrollRef.current
-    if (!sc) return
-    if (!trimDragging) return
-
-    const locked = trimDragLockScrollLeftRef.current ?? sc.scrollLeft
-    trimDragLockScrollLeftRef.current = locked
-
-    trimDragScrollRestoreRef.current = {
-      overflowX: sc.style.overflowX || '',
-      webkitOverflowScrolling: (sc.style as any).WebkitOverflowScrolling || '',
-      overscrollBehaviorX: (sc.style as any).overscrollBehaviorX || '',
-    }
-
-    ignoreScrollRef.current = true
-    sc.scrollLeft = locked
-    ignoreScrollRef.current = false
-
-    sc.style.overflowX = 'hidden'
-    ;(sc.style as any).WebkitOverflowScrolling = 'auto'
-    ;(sc.style as any).overscrollBehaviorX = 'none'
-
-    return () => {
-      const prev = trimDragScrollRestoreRef.current
-      if (prev) {
-        sc.style.overflowX = prev.overflowX
-        ;(sc.style as any).WebkitOverflowScrolling = prev.webkitOverflowScrolling
-        ;(sc.style as any).overscrollBehaviorX = prev.overscrollBehaviorX
-      } else {
-        sc.style.overflowX = ''
-        ;(sc.style as any).WebkitOverflowScrolling = ''
-        ;(sc.style as any).overscrollBehaviorX = ''
-      }
-      trimDragScrollRestoreRef.current = null
-      trimDragLockScrollLeftRef.current = null
-    }
-  }, [timelineScrollEl, trimDragging])
 
   const archiveAndRestart = useCallback(async () => {
     if (!project?.id) return
@@ -2135,6 +2161,7 @@ export default function CreateVideo() {
                   if (!sc) return
                   if (ignoreScrollRef.current) return
                   if (trimDragging) return
+                  dbg('scroll', { scrollLeft: sc.scrollLeft })
                   const nextScrollLeft = Math.max(0, sc.scrollLeft)
                   setTimelineScrollLeftPx(nextScrollLeft)
                   const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
@@ -2158,6 +2185,13 @@ export default function CreateVideo() {
                   const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
                   const x = clickXInScroll - padPx
                   const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+                  dbg('pointerdown', {
+                    pointerType: (e as any).pointerType,
+                    withinGraphics,
+                    withinVideo,
+                    withinAudio,
+                    t,
+                  })
 
                   if (withinGraphics) {
                     const g = findGraphicAtTime(t)
@@ -2236,6 +2270,7 @@ export default function CreateVideo() {
                     }
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('startTrimDrag', { kind: 'graphic', edge: nearLeft ? 'start' : 'end', id: g.id })
                     return
                   }
 
@@ -2277,6 +2312,7 @@ export default function CreateVideo() {
                       }
                       setTrimDragging(true)
                       try { sc.setPointerCapture(e.pointerId) } catch {}
+                      dbg('startTrimDrag', { kind: 'audio', edge: 'move' })
                       return
                     }
 
@@ -2299,6 +2335,7 @@ export default function CreateVideo() {
                     }
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('startTrimDrag', { kind: 'audio', edge: nearLeft ? 'start' : 'end' })
                     return
                   }
 
@@ -2334,6 +2371,7 @@ export default function CreateVideo() {
                   }
                   setTrimDragging(true)
                   try { sc.setPointerCapture(e.pointerId) } catch {}
+                  dbg('startTrimDrag', { kind: 'clip', edge: nearLeft ? 'start' : 'end', id: clip.id })
                   return
                 }}
                 onPointerDownCapture={(e) => {
@@ -2343,6 +2381,7 @@ export default function CreateVideo() {
                   if ((e as any).pointerType !== 'mouse') return
                   if (e.button != null && e.button !== 0) return
                   if (trimDragging) return
+                  dbg('pointerdownCapture', { pointerType: (e as any).pointerType })
                   // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
                   const rect = sc.getBoundingClientRect()
                   const y = e.clientY - rect.top
