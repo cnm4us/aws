@@ -399,6 +399,60 @@ export default function CreateVideo() {
     return Array.from(uniq.values()).sort((a, b) => a - b)
   }, [audioTrack, clipStarts, graphics, timeline.clips, totalSeconds])
 
+  const dragHud = useMemo(() => {
+    if (!trimDragging) return null
+    const drag = trimDragRef.current
+    if (!drag) return null
+
+    const actionLabel =
+      drag.edge === 'move' ? 'Move' : drag.edge === 'start' ? 'Resize start' : drag.edge === 'end' ? 'Resize end' : String(drag.edge)
+
+    if (drag.kind === 'clip') {
+      const idx = timeline.clips.findIndex((c) => c.id === drag.clipId)
+      if (idx < 0) return null
+      const clip = timeline.clips[idx]
+      const name = namesByUploadId[Number(clip.uploadId)] || `Video ${clip.uploadId}`
+      const start =
+        roundToTenth(clipStarts[idx] || 0) + (dragNoRipple.idx >= 0 && idx >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
+      const len = Math.max(0, roundToTenth(Number(clip.sourceEndSeconds) - Number(clip.sourceStartSeconds)))
+      const end = roundToTenth(start + len)
+      return { kindLabel: 'Video', actionLabel, name, start, end, len }
+    }
+
+    if (drag.kind === 'graphic') {
+      const g = graphics.find((gg) => String((gg as any).id) === String(drag.graphicId)) as any
+      if (!g) return null
+      const name = namesByUploadId[Number(g.uploadId)] || `Image ${g.uploadId}`
+      const start = roundToTenth(Number(g.startSeconds || 0))
+      const end = roundToTenth(Number(g.endSeconds || 0))
+      const len = Math.max(0, roundToTenth(end - start))
+      return { kindLabel: 'Graphic', actionLabel, name, start, end, len }
+    }
+
+    if (drag.kind === 'audio') {
+      if (!audioTrack) return null
+      const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
+      const cfgName = audioConfigNameById[Number(audioTrack.audioConfigId)] || `Config ${audioTrack.audioConfigId}`
+      const name = `${audioName} • ${cfgName}`
+      const start = roundToTenth(Number(audioTrack.startSeconds || 0))
+      const end = roundToTenth(Number(audioTrack.endSeconds || 0))
+      const len = Math.max(0, roundToTenth(end - start))
+      return { kindLabel: 'Audio', actionLabel, name, start, end, len }
+    }
+
+    return null
+  }, [
+    audioConfigNameById,
+    audioTrack,
+    clipStarts,
+    dragNoRipple.deltaSeconds,
+    dragNoRipple.idx,
+    graphics,
+    namesByUploadId,
+    timeline.clips,
+    trimDragging,
+  ])
+
   const nudgePlayhead = useCallback((deltaSeconds: number) => {
     setTimeline((prev) => {
       const total = prev.clips.length
@@ -830,6 +884,7 @@ export default function CreateVideo() {
     const pillH = PILL_H
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
     ctx.textBaseline = 'middle'
+    const activeDrag = trimDragging ? trimDragRef.current : null
 
     for (let i = 0; i < graphics.length; i++) {
       const g = graphics[i]
@@ -841,6 +896,9 @@ export default function CreateVideo() {
       const w = Math.max(8, len * pxPerSecond)
       if (x > wCss + 4 || x + w < -4) continue
       const isSelected = g.id === selectedGraphicId
+      const isDragging =
+        Boolean(activeDrag) && (activeDrag as any).kind === 'graphic' && String((activeDrag as any).graphicId) === String((g as any).id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
 
       ctx.fillStyle = 'rgba(10,132,255,0.18)'
       roundRect(ctx, x, graphicsY, w, pillH, 10)
@@ -850,6 +908,17 @@ export default function CreateVideo() {
       ctx.lineWidth = 1
       roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
+
+      if (isDragging) {
+        ctx.save()
+        ctx.shadowColor = 'rgba(10,132,255,0.75)'
+        ctx.shadowBlur = 10
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+        ctx.lineWidth = 2
+        roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+        ctx.restore()
+      }
 
       const name = namesByUploadId[g.uploadId] || `Image ${g.uploadId}`
       ctx.fillStyle = '#fff'
@@ -861,13 +930,22 @@ export default function CreateVideo() {
         ctx.fillText(clipped, x + padLeft, graphicsY + pillH / 2)
       }
 
-      if (isSelected && w >= 20) {
+      if ((isSelected || isDragging) && w >= 20) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
         const hw = 3
         const hh = pillH - 10
         const hy = graphicsY + 5
         ctx.fillRect(x + 6, hy, hw, hh)
         ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+      }
+
+      if (isDragging && activeEdge && activeEdge !== 'move') {
+        ctx.fillStyle = 'rgba(10,132,255,0.95)'
+        const barW = 5
+        const by = graphicsY + 3
+        const bh = pillH - 6
+        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
       }
     }
     for (let i = 0; i < timeline.clips.length; i++) {
@@ -878,6 +956,8 @@ export default function CreateVideo() {
       const w = Math.max(8, len * pxPerSecond)
       if (x > wCss + 4 || x + w < -4) continue
       const isSelected = clip.id === selectedClipId
+      const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'clip' && String((activeDrag as any).clipId) === String(clip.id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
 
       // pill background
       ctx.fillStyle = 'rgba(212,175,55,0.28)'
@@ -890,6 +970,17 @@ export default function CreateVideo() {
       roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
+      if (isDragging) {
+        ctx.save()
+        ctx.shadowColor = 'rgba(212,175,55,0.75)'
+        ctx.shadowBlur = 10
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+        ctx.lineWidth = 2
+        roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+        ctx.restore()
+      }
+
       const name = namesByUploadId[clip.uploadId] || `Video ${clip.uploadId}`
       ctx.fillStyle = '#fff'
       const padLeft = isSelected ? 18 : 12
@@ -900,13 +991,22 @@ export default function CreateVideo() {
         ctx.fillText(clipped, x + padLeft, videoY + pillH / 2)
       }
 
-      if (isSelected && w >= 20) {
+      if ((isSelected || isDragging) && w >= 20) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
         const hw = 3
         const hh = pillH - 10
         const hy = videoY + 5
         ctx.fillRect(x + 6, hy, hw, hh)
         ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+      }
+
+      if (isDragging && activeEdge) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const barW = 5
+        const by = videoY + 3
+        const bh = pillH - 6
+        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
       }
     }
 
@@ -919,6 +1019,8 @@ export default function CreateVideo() {
         const w = Math.max(8, len * pxPerSecond)
         if (!(x > wCss + 4 || x + w < -4)) {
           const isSelected = Boolean(selectedAudio)
+          const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'audio'
+          const activeEdge = isDragging ? String((activeDrag as any).edge) : null
           ctx.fillStyle = 'rgba(48,209,88,0.18)'
           roundRect(ctx, x, audioY, w, pillH, 10)
           ctx.fill()
@@ -927,6 +1029,17 @@ export default function CreateVideo() {
           ctx.lineWidth = 1
           roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
           ctx.stroke()
+
+          if (isDragging) {
+            ctx.save()
+            ctx.shadowColor = 'rgba(48,209,88,0.75)'
+            ctx.shadowBlur = 10
+            ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+            ctx.lineWidth = 2
+            roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
+            ctx.stroke()
+            ctx.restore()
+          }
 
           const audioName = namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`
           const cfgName = audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`
@@ -940,13 +1053,22 @@ export default function CreateVideo() {
             ctx.fillText(clipped, x + padLeft, audioY + pillH / 2)
           }
 
-          if (isSelected && w >= 20) {
+          if ((isSelected || isDragging) && w >= 20) {
             ctx.fillStyle = 'rgba(255,255,255,0.85)'
             const hw = 3
             const hh = pillH - 10
             const hy = audioY + 5
             ctx.fillRect(x + 6, hy, hw, hh)
             ctx.fillRect(x + w - 6 - hw, hy, hw, hh)
+          }
+
+          if (isDragging && activeEdge && activeEdge !== 'move') {
+            ctx.fillStyle = 'rgba(48,209,88,0.95)'
+            const barW = 5
+            const by = audioY + 3
+            const bh = pillH - 6
+            if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+            if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
           }
         }
       }
@@ -966,6 +1088,7 @@ export default function CreateVideo() {
     selectedClipId,
     selectedClipIndex,
     selectedGraphicId,
+    trimDragging,
     timeline.clips,
     timelinePadPx,
     timelineScrollLeftPx,
@@ -2144,10 +2267,44 @@ export default function CreateVideo() {
         </div>
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.35)', padding: 12 }}>
-          <div style={{ position: 'relative', paddingTop: 14 }}>
+          <div style={{ position: 'relative', paddingTop: dragHud ? 62 : 14 }}>
             <div style={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', color: '#bbb', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
               {playhead.toFixed(1)}s
             </div>
+            {dragHud ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: 18,
+                  transform: 'translateX(-50%)',
+                  maxWidth: '92%',
+                  textAlign: 'center',
+                  pointerEvents: 'none',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                <div style={{ color: '#fff', fontSize: 12, fontWeight: 800 }}>
+                  {dragHud.kindLabel} • {dragHud.actionLabel} • Len {dragHud.len.toFixed(1)}s
+                </div>
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: '#bbb',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {dragHud.name}
+                </div>
+                <div style={{ marginTop: 2, color: '#bbb', fontSize: 12, fontWeight: 600 }}>
+                  Start {dragHud.start.toFixed(1)} • End {dragHud.end.toFixed(1)}
+                </div>
+              </div>
+            ) : null}
             <div style={{ position: 'relative' }}>
               <div
                 style={{
