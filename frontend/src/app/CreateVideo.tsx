@@ -217,8 +217,9 @@ export default function CreateVideo() {
     overscrollBehaviorX: string
   } | null>(null)
 
-  const panDragRef = useRef<{ pointerId: number; startClientX: number; startScrollLeft: number } | null>(null)
+  const panDragRef = useRef<{ pointerId: number; startClientX: number; startScrollLeft: number; moved: boolean } | null>(null)
   const [panDragging, setPanDragging] = useState(false)
+  const suppressNextTimelineClickRef = useRef(false)
 
   const debugEnabled = useMemo(() => {
     try {
@@ -1928,6 +1929,7 @@ export default function CreateVideo() {
       const sc = timelineScrollRef.current
       if (!sc) return
       const dx = e.clientX - drag.startClientX
+      if (Math.abs(dx) > 4) drag.moved = true
       const nextScrollLeft = clamp(Math.round(drag.startScrollLeft - dx), 0, Math.max(0, stripContentW))
       ignoreScrollRef.current = true
       sc.scrollLeft = nextScrollLeft
@@ -1943,6 +1945,7 @@ export default function CreateVideo() {
       const drag = panDragRef.current
       if (!drag) return
       if (e.pointerId !== drag.pointerId) return
+      if (drag.moved) suppressNextTimelineClickRef.current = true
       panDragRef.current = null
       setPanDragging(false)
       try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
@@ -2173,6 +2176,8 @@ export default function CreateVideo() {
                   const sc = timelineScrollRef.current
                   if (!sc) return
                   if (trimDragging) return
+                  // If a pan gesture started in capture phase for this pointer, don't run selection logic.
+                  if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) return
                   // Only do mouse drag-panning on desktop. Touch already pans the scroll container.
                   const isMouse = (e as any).pointerType === 'mouse'
                   if (isMouse && e.button != null && e.button !== 0) return
@@ -2375,11 +2380,11 @@ export default function CreateVideo() {
                   return
                 }}
                 onPointerDownCapture={(e) => {
-                  // If we didn't start a handle drag, allow mouse click+drag panning on empty areas.
+                  // If we didn't start a handle drag, allow click+drag panning on empty areas.
                   const sc = timelineScrollRef.current
                   if (!sc) return
-                  if ((e as any).pointerType !== 'mouse') return
-                  if (e.button != null && e.button !== 0) return
+                  const isMouse = (e as any).pointerType === 'mouse'
+                  if (isMouse && e.button != null && e.button !== 0) return
                   if (trimDragging) return
                   dbg('pointerdownCapture', { pointerType: (e as any).pointerType })
                   // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
@@ -2418,12 +2423,16 @@ export default function CreateVideo() {
                     }
                   }
 
-                  panDragRef.current = { pointerId: e.pointerId, startClientX: e.clientX, startScrollLeft: sc.scrollLeft }
+                  panDragRef.current = { pointerId: e.pointerId, startClientX: e.clientX, startScrollLeft: sc.scrollLeft, moved: false }
                   setPanDragging(true)
                   try { sc.setPointerCapture(e.pointerId) } catch {}
                   e.preventDefault()
                 }}
                 onClick={(e) => {
+                  if (suppressNextTimelineClickRef.current) {
+                    suppressNextTimelineClickRef.current = false
+                    return
+                  }
                   const sc = timelineScrollRef.current
                   if (!sc) return
                   if (trimDragging) return
@@ -2549,7 +2558,8 @@ export default function CreateVideo() {
                   background: 'rgba(0,0,0,0.60)',
                   height: TIMELINE_H,
                   position: 'relative',
-                  touchAction: trimDragging ? 'none' : 'pan-x',
+                  // Disable native touch panning so trim/slide drags don't get cancelled by scroll gestures.
+                  touchAction: 'none',
                 }}
               >
                 <div style={{ width: timelinePadPx + stripContentW + timelinePadPx, height: TIMELINE_H, position: 'relative' }}>
