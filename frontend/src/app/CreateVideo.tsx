@@ -2134,7 +2134,7 @@ export default function CreateVideo() {
                   const sc = timelineScrollRef.current
                   if (!sc) return
                   if (ignoreScrollRef.current) return
-                  if (trimDragRef.current) return
+                  if (trimDragging) return
                   const nextScrollLeft = Math.max(0, sc.scrollLeft)
                   setTimelineScrollLeftPx(nextScrollLeft)
                   const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
@@ -2342,7 +2342,7 @@ export default function CreateVideo() {
                   if (!sc) return
                   if ((e as any).pointerType !== 'mouse') return
                   if (e.button != null && e.button !== 0) return
-                  if (trimDragging || trimDragRef.current) return
+                  if (trimDragging) return
                   // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
                   const rect = sc.getBoundingClientRect()
                   const y = e.clientY - rect.top
