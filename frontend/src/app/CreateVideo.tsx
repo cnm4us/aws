@@ -3,7 +3,7 @@ import { getUploadCdnUrl } from '../ui/uploadsCdn'
 import type { AudioTrack, Clip, Graphic, Timeline } from './createVideo/timelineTypes'
 import { cloneTimeline } from './createVideo/timelineTypes'
 import { clamp, computeClipStarts, findClipIndexAtTime, locate, roundToTenth, sumDur } from './createVideo/timelineMath'
-import { insertClipAtPlayhead, splitClipAtPlayhead } from './createVideo/timelineOps'
+import { insertClipAtPlayhead, splitClipAtPlayhead, splitGraphicAtPlayhead } from './createVideo/timelineOps'
 
 type MeResponse = {
   userId: number | null
@@ -1767,16 +1767,30 @@ export default function CreateVideo() {
   }, [audioEditor, snapshotUndo, totalSeconds])
 
   const split = useCallback(() => {
-    if (!selectedClipId) return
-    const res = splitClipAtPlayhead(timeline, selectedClipId)
-    if (res.timeline === timeline && res.selectedClipId === selectedClipId) return
-    if (res.timeline.clips === timeline.clips) return
-    snapshotUndo()
-    setTimeline(res.timeline)
-    setSelectedClipId(res.selectedClipId)
-    setSelectedGraphicId(null)
-    setSelectedAudio(false)
-  }, [selectedClipId, snapshotUndo, timeline])
+    if (selectedClipId) {
+      const res = splitClipAtPlayhead(timeline, selectedClipId)
+      if (res.timeline === timeline && res.selectedClipId === selectedClipId) return
+      if (res.timeline.clips === timeline.clips) return
+      snapshotUndo()
+      setTimeline(res.timeline)
+      setSelectedClipId(res.selectedClipId)
+      setSelectedGraphicId(null)
+      setSelectedAudio(false)
+      return
+    }
+    if (selectedGraphicId) {
+      const res = splitGraphicAtPlayhead(timeline, selectedGraphicId)
+      const prevGraphics = Array.isArray((timeline as any).graphics) ? (timeline as any).graphics : []
+      const nextGraphics = Array.isArray((res.timeline as any).graphics) ? (res.timeline as any).graphics : []
+      if (res.timeline === timeline && res.selectedGraphicId === selectedGraphicId) return
+      if (nextGraphics === prevGraphics) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      setSelectedClipId(null)
+      setSelectedGraphicId(res.selectedGraphicId)
+      setSelectedAudio(false)
+    }
+  }, [selectedClipId, selectedGraphicId, snapshotUndo, timeline])
 
   const deleteSelected = useCallback(() => {
     if (selectedAudio) {
@@ -2783,15 +2797,15 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={split}
-                  disabled={!selectedClipId}
+                  disabled={!selectedClipId && !selectedGraphicId}
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(255,255,255,0.18)',
-                    background: selectedClipId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                    background: selectedClipId || selectedGraphicId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
                     color: '#fff',
                     fontWeight: 900,
-                    cursor: selectedClipId ? 'pointer' : 'default',
+                    cursor: selectedClipId || selectedGraphicId ? 'pointer' : 'default',
                     flex: '0 0 auto',
                   }}
                 >

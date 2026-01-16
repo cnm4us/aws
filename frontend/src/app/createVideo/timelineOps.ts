@@ -1,4 +1,4 @@
-import type { Clip, Timeline } from './timelineTypes'
+import type { Clip, Graphic, Timeline } from './timelineTypes'
 import { clamp, locate, roundToTenth, sumDur } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -30,3 +30,27 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   return { timeline: { ...timeline, clips: next }, selectedClipId: right.id }
 }
 
+export function splitGraphicAtPlayhead(
+  timeline: Timeline,
+  selectedGraphicId: string | null
+): { timeline: Timeline; selectedGraphicId: string | null } {
+  if (!selectedGraphicId) return { timeline, selectedGraphicId }
+  const graphics: Graphic[] = Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as any) : []
+  const idx = graphics.findIndex((g: any) => String(g?.id) === String(selectedGraphicId))
+  if (idx < 0) return { timeline, selectedGraphicId }
+  const g: any = graphics[idx]
+  const start = roundToTenth(Number(g?.startSeconds || 0))
+  const end = roundToTenth(Number(g?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedGraphicId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedGraphicId }
+
+  const left: Graphic = { ...g, id: `${String(g.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: Graphic = { ...g, id: `${String(g.id)}_b`, startSeconds: cut, endSeconds: end }
+  const nextGraphics = [...graphics.slice(0, idx), left, right, ...graphics.slice(idx + 1)]
+  nextGraphics.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+  return { timeline: { ...(timeline as any), graphics: nextGraphics } as any, selectedGraphicId: right.id }
+}
