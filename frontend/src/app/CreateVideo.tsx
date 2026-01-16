@@ -1915,26 +1915,7 @@ export default function CreateVideo() {
     ;(sc.style as any).WebkitOverflowScrolling = 'auto'
     ;(sc.style as any).overscrollBehaviorX = 'none'
 
-    const preventScroll = (e: Event) => {
-      e.preventDefault()
-    }
-    const enforceScrollLeft = () => {
-      const want = trimDragLockScrollLeftRef.current
-      if (want == null) return
-      if (sc.scrollLeft === want) return
-      ignoreScrollRef.current = true
-      sc.scrollLeft = want
-      ignoreScrollRef.current = false
-    }
-
-    sc.addEventListener('wheel', preventScroll as any, { passive: false })
-    sc.addEventListener('touchmove', preventScroll as any, { passive: false })
-    sc.addEventListener('scroll', enforceScrollLeft, { passive: true })
-
     return () => {
-      sc.removeEventListener('wheel', preventScroll as any)
-      sc.removeEventListener('touchmove', preventScroll as any)
-      sc.removeEventListener('scroll', enforceScrollLeft as any)
       const prev = trimDragScrollRestoreRef.current
       if (prev) {
         sc.style.overflowX = prev.overflowX
