@@ -211,6 +211,9 @@ export default function CreateVideo() {
     overscrollBehaviorX: string
   } | null>(null)
 
+  const panDragRef = useRef<{ pointerId: number; startClientX: number; startScrollLeft: number } | null>(null)
+  const [panDragging, setPanDragging] = useState(false)
+
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
       if (!v.paused) return
@@ -1831,6 +1834,46 @@ export default function CreateVideo() {
     }
   }, [pxPerSecond, trimDragging])
 
+  // Desktop UX: allow click+drag panning when nothing is selected (mobile already pans naturally).
+  useEffect(() => {
+    if (!panDragging) return
+    const onMove = (e: PointerEvent) => {
+      const drag = panDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      e.preventDefault()
+      const sc = timelineScrollRef.current
+      if (!sc) return
+      const dx = e.clientX - drag.startClientX
+      const nextScrollLeft = clamp(Math.round(drag.startScrollLeft - dx), 0, Math.max(0, stripContentW))
+      ignoreScrollRef.current = true
+      sc.scrollLeft = nextScrollLeft
+      setTimelineScrollLeftPx(nextScrollLeft)
+      const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
+      playheadFromScrollRef.current = true
+      setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
+      window.requestAnimationFrame(() => {
+        ignoreScrollRef.current = false
+      })
+    }
+    const onUp = (e: PointerEvent) => {
+      const drag = panDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      panDragRef.current = null
+      setPanDragging(false)
+      try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
+
   // While dragging trim handles, hard-lock the timeline scroll position so the drag gesture
   // doesn't get interpreted as horizontal panning (especially on iOS).
   useEffect(() => {
@@ -2137,13 +2180,15 @@ export default function CreateVideo() {
                 onPointerDown={(e) => {
                   const sc = timelineScrollRef.current
                   if (!sc) return
+                  if (trimDragging) return
+                  // Only do mouse drag-panning on desktop. Touch already pans the scroll container.
+                  const isMouse = (e as any).pointerType === 'mouse'
+                  if (isMouse && e.button != null && e.button !== 0) return
                   const rect = sc.getBoundingClientRect()
                   const y = e.clientY - rect.top
                   const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
                   const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
                   const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
-                  if (!withinGraphics && !withinVideo && !withinAudio) return
-
                   const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
                   const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
                   const x = clickXInScroll - padPx
@@ -2324,6 +2369,56 @@ export default function CreateVideo() {
                   }
                   setTrimDragging(true)
                   try { sc.setPointerCapture(e.pointerId) } catch {}
+                  return
+                }}
+                onPointerDownCapture={(e) => {
+                  // If we didn't start a handle drag, allow mouse click+drag panning on empty areas.
+                  const sc = timelineScrollRef.current
+                  if (!sc) return
+                  if ((e as any).pointerType !== 'mouse') return
+                  if (e.button != null && e.button !== 0) return
+                  if (trimDragging || trimDragRef.current) return
+                  if (timelinePanLocked) return
+                  // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
+                  const rect = sc.getBoundingClientRect()
+                  const y = e.clientY - rect.top
+                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
+                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
+                  const x = clickXInScroll - padPx
+                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+
+                  if (withinGraphics) {
+                    const g = findGraphicAtTime(t)
+                    if (g) return
+                  }
+                  if (withinAudio) {
+                    if (audioTrack) {
+                      const s = Number(audioTrack.startSeconds || 0)
+                      const e2 = Number(audioTrack.endSeconds || 0)
+                      if (t >= s && t <= e2) return
+                    }
+                  }
+                  if (withinVideo) {
+                    if (timeline.clips.length) {
+                      const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
+                      const clip = timeline.clips[idx]
+                      if (clip) {
+                        const start = (clipStarts[idx] || 0)
+                        const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
+                        const leftX = padPx + start * pxPerSecond
+                        const rightX = padPx + (start + len) * pxPerSecond
+                        if (clickXInScroll >= leftX && clickXInScroll <= rightX) return
+                      }
+                    }
+                  }
+
+                  panDragRef.current = { pointerId: e.pointerId, startClientX: e.clientX, startScrollLeft: sc.scrollLeft }
+                  setPanDragging(true)
+                  try { sc.setPointerCapture(e.pointerId) } catch {}
+                  e.preventDefault()
                 }}
                 onClick={(e) => {
                   const sc = timelineScrollRef.current
