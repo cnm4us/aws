@@ -3541,6 +3541,33 @@ export default function CreateVideo() {
           </div>
         </div>
 
+        {audioTrack ? (
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ color: '#fff', fontWeight: 900 }}>
+              {(namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`) +
+                ' * ' +
+                (audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`)}
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleAudioPreview(audioTrack.uploadId)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(48,209,88,0.65)',
+                background: audioPreviewPlayingId === audioTrack.uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+                flex: '0 0 auto',
+              }}
+              aria-label={audioPreviewPlayingId === audioTrack.uploadId ? 'Pause audio preview' : 'Play audio preview'}
+            >
+              {audioPreviewPlayingId === audioTrack.uploadId ? 'Pause' : 'Play'}
+            </button>
+          </div>
+        ) : null}
+
         {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
       </div>
@@ -3995,6 +4022,31 @@ export default function CreateVideo() {
                 Close
               </button>
             </div>
+
+            {audioTrack ? (
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ color: '#fff', fontWeight: 900 }}>
+                  {(namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`) +
+                    ' * ' +
+                    (audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleAudioPreview(audioTrack.uploadId)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(48,209,88,0.65)',
+                    background: audioPreviewPlayingId === audioTrack.uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {audioPreviewPlayingId === audioTrack.uploadId ? 'Pause' : 'Play'}
+                </button>
+              </div>
+            ) : null}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
