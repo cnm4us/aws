@@ -900,6 +900,8 @@ export default function CreateVideo() {
         Boolean(activeDrag) && (activeDrag as any).kind === 'graphic' && String((activeDrag as any).graphicId) === String((g as any).id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
+      const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
 
       ctx.fillStyle = 'rgba(10,132,255,0.18)'
       roundRect(ctx, x, graphicsY, w, pillH, 10)
@@ -922,18 +924,18 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[g.uploadId] || `Image ${g.uploadId}`
       ctx.fillStyle = '#fff'
-      const padLeft = 12
-      const padRight = 12
+      const padLeft = showHandles ? 6 + handleSize + 10 : 12
+      const padRight = showHandles ? 6 + handleSize + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
         ctx.fillText(clipped, x + padLeft, graphicsY + pillH / 2)
       }
 
-      if ((isSelected || isDragging) && w >= 28) {
+      if (showHandles) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
-        const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
-        const hy = graphicsY + Math.floor((pillH - hs) / 2)
+        const hs = handleSize
+        const hy = graphicsY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
         roundRect(ctx, hxL, hy, hs, hs, 4)
@@ -962,6 +964,8 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'clip' && String((activeDrag as any).clipId) === String(clip.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
+      const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
 
       // pill background
       ctx.fillStyle = 'rgba(212,175,55,0.28)'
@@ -986,18 +990,18 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[clip.uploadId] || `Video ${clip.uploadId}`
       ctx.fillStyle = '#fff'
-      const padLeft = isSelected ? 18 : 12
-      const padRight = 12
+      const padLeft = showHandles ? 6 + handleSize + 10 : isSelected ? 18 : 12
+      const padRight = showHandles ? 6 + handleSize + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
         ctx.fillText(clipped, x + padLeft, videoY + pillH / 2)
       }
 
-      if ((isSelected || isDragging) && w >= 28) {
+      if (showHandles) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'
-        const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
-        const hy = videoY + Math.floor((pillH - hs) / 2)
+        const hs = handleSize
+        const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
         roundRect(ctx, hxL, hy, hs, hs, 4)
@@ -1028,6 +1032,8 @@ export default function CreateVideo() {
           const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'audio'
           const activeEdge = isDragging ? String((activeDrag as any).edge) : null
           const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+          const showHandles = (isSelected || isDragging) && w >= 28
+          const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
           ctx.fillStyle = 'rgba(48,209,88,0.18)'
           roundRect(ctx, x, audioY, w, pillH, 10)
           ctx.fill()
@@ -1051,18 +1057,18 @@ export default function CreateVideo() {
           const cfgName = audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`
           const label = `${audioName} • ${cfgName}`
           ctx.fillStyle = '#fff'
-          const padLeft = 12
-          const padRight = 12
+          const padLeft = showHandles ? 6 + handleSize + 10 : 12
+          const padRight = showHandles ? 6 + handleSize + 10 : 12
           const maxTextW = Math.max(0, w - padLeft - padRight)
           if (maxTextW >= 20) {
             const clipped = ellipsizeText(ctx, label, maxTextW)
             ctx.fillText(clipped, x + padLeft, audioY + pillH / 2)
           }
 
-          if ((isSelected || isDragging) && w >= 28) {
+          if (showHandles) {
             ctx.fillStyle = 'rgba(255,255,255,0.85)'
-            const hs = Math.max(10, Math.min(18, Math.floor(pillH - 10)))
-            const hy = audioY + Math.floor((pillH - hs) / 2)
+            const hs = handleSize
+            const hy = audioY + Math.floor((pillH - handleSize) / 2)
             const hxL = x + 6
             const hxR = x + w - 6 - hs
             roundRect(ctx, hxL, hy, hs, hs, 4)
@@ -2739,7 +2745,11 @@ export default function CreateVideo() {
                   position: 'relative',
                   // Disable native touch panning so trim/slide drags don't get cancelled by scroll gestures.
                   touchAction: 'none',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
                 }}
+                onContextMenu={(e) => e.preventDefault()}
               >
                 <div style={{ width: timelinePadPx + stripContentW + timelinePadPx, height: TIMELINE_H, position: 'relative' }}>
                   <canvas
