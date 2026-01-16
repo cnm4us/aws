@@ -46,6 +46,8 @@ type AudioConfigItem = {
   duckingMode?: string
 }
 
+type AddStep = 'type' | 'video' | 'graphic' | 'audio'
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -109,18 +111,17 @@ export default function CreateVideo() {
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [pickOpen, setPickOpen] = useState(false)
+  const [addStep, setAddStep] = useState<AddStep>('type')
   const [pickerLoading, setPickerLoading] = useState(false)
   const [pickerError, setPickerError] = useState<string | null>(null)
   const [pickerItems, setPickerItems] = useState<UploadListItem[]>([])
   const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
-  const [graphicPickOpen, setGraphicPickOpen] = useState(false)
   const [graphicPickerLoading, setGraphicPickerLoading] = useState(false)
   const [graphicPickerError, setGraphicPickerError] = useState<string | null>(null)
   const [graphicPickerItems, setGraphicPickerItems] = useState<UploadListItem[]>([])
   const [graphicEditor, setGraphicEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
-  const [audioPickOpen, setAudioPickOpen] = useState(false)
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
@@ -1307,7 +1308,6 @@ export default function CreateVideo() {
 
   const openPicker = useCallback(async () => {
     if (!me?.userId) return
-    setPickOpen(true)
     setPickerLoading(true)
     setPickerError(null)
     try {
@@ -1331,7 +1331,6 @@ export default function CreateVideo() {
 
   const openGraphicPicker = useCallback(async () => {
     if (!me?.userId) return
-    setGraphicPickOpen(true)
     setGraphicPickerLoading(true)
     setGraphicPickerError(null)
     try {
@@ -1374,7 +1373,6 @@ export default function CreateVideo() {
 
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
-    setAudioPickOpen(true)
     setAudioPickerLoading(true)
     setAudioPickerError(null)
     try {
@@ -1392,7 +1390,7 @@ export default function CreateVideo() {
   }, [ensureAudioConfigs, me?.userId])
 
   useEffect(() => {
-    if (audioPickOpen) return
+    if (pickOpen && addStep === 'audio') return
     const a = audioPreviewRef.current
     if (!a) return
     try {
@@ -1401,7 +1399,7 @@ export default function CreateVideo() {
       a.load()
     } catch {}
     setAudioPreviewPlayingId(null)
-  }, [audioPickOpen])
+  }, [addStep, pickOpen])
 
   const addClipFromUpload = useCallback(
     (upload: UploadListItem) => {
@@ -1424,6 +1422,7 @@ export default function CreateVideo() {
       setSelectedGraphicId(null)
       setSelectedAudio(false)
       setPickOpen(false)
+      setAddStep('type')
     },
     [setTimeline, snapshotUndo]
   )
@@ -1472,7 +1471,8 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(id)
       setSelectedAudio(false)
-      setGraphicPickOpen(false)
+      setPickOpen(false)
+      setAddStep('type')
     },
     [graphics, playhead, snapshotUndo, timeline.clips.length, totalSecondsVideo]
   )
@@ -1512,7 +1512,8 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedAudio(true)
-      setAudioPickOpen(false)
+      setPickOpen(false)
+      setAddStep('type')
       try {
         const a = audioPreviewRef.current
         if (a) {
@@ -1711,6 +1712,15 @@ export default function CreateVideo() {
     setGraphicEditor(null)
     setGraphicEditorError(null)
   }, [graphicEditor, graphics, snapshotUndo, timeline.clips.length, totalSecondsVideo])
+
+  const openAdd = useCallback(() => {
+    setPickOpen(true)
+    setAddStep('type')
+    setPickerError(null)
+    setGraphicPickerError(null)
+    setAudioPickerError(null)
+    setAudioConfigsError(null)
+  }, [])
 
   useEffect(() => {
     if (!trimDragging) return
@@ -2054,7 +2064,7 @@ export default function CreateVideo() {
             </button>
             <button
               type="button"
-              onClick={openPicker}
+              onClick={openAdd}
               style={{
                 padding: '10px 12px',
                 borderRadius: 10,
@@ -2065,37 +2075,7 @@ export default function CreateVideo() {
                 cursor: 'pointer',
               }}
             >
-              Add Video
-            </button>
-            <button
-              type="button"
-              onClick={openGraphicPicker}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(10,132,255,0.65)',
-                background: 'rgba(10,132,255,0.12)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-            >
-              Add Graphic
-            </button>
-            <button
-              type="button"
-              onClick={openAudioPicker}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(48,209,88,0.65)',
-                background: 'rgba(48,209,88,0.12)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-            >
-              Add Audio
+              Add
             </button>
             <button
               type="button"
@@ -2564,7 +2544,7 @@ export default function CreateVideo() {
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  onClick={openPicker}
+                  onClick={openAdd}
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
@@ -2577,38 +2557,6 @@ export default function CreateVideo() {
                   }}
                 >
                   Add
-                </button>
-                <button
-                  type="button"
-                  onClick={openGraphicPicker}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(10,132,255,0.65)',
-                    background: 'rgba(10,132,255,0.12)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    flex: '0 0 auto',
-                  }}
-                >
-                  Add Graphic
-                </button>
-                <button
-                  type="button"
-                  onClick={openAudioPicker}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(48,209,88,0.65)',
-                    background: 'rgba(48,209,88,0.12)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    flex: '0 0 auto',
-                  }}
-                >
-                  Add Audio
                 </button>
                 <button
                   type="button"
@@ -2810,35 +2758,48 @@ export default function CreateVideo() {
           role="dialog"
           aria-modal="true"
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1000, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
-          onClick={() => setPickOpen(false)}
+          onClick={() => { setPickOpen(false); setAddStep('type') }}
         >
           <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setPickOpen(false)} style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}>
-                ← Back
-              </button>
-              <div style={{ color: '#bbb', fontSize: 13 }}>Videos: {pickerItems.length}</div>
+              {addStep === 'type' ? (
+                <button
+                  type="button"
+                  onClick={() => { setPickOpen(false); setAddStep('type') }}
+                  style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                >
+                  ← Back
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddStep('type')}
+                  style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                >
+                  ← Types
+                </button>
+              )}
+              <div style={{ color: '#bbb', fontSize: 13 }}>
+                {addStep === 'video'
+                  ? `Videos: ${pickerItems.length}`
+                  : addStep === 'graphic'
+                    ? `Images: ${graphicPickerItems.length}`
+                    : addStep === 'audio'
+                      ? `Tracks: ${audioPickerItems.length}`
+                      : 'Choose a type'}
+              </div>
             </div>
-            <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Video</h1>
-            {pickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-            {pickerError ? <div style={{ color: '#ff9b9b' }}>{pickerError}</div> : null}
-            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              {pickerItems.map((it) => {
-                const id = Number(it.id)
-                if (!Number.isFinite(id) || id <= 0) return null
-                const name = String(it.modified_filename || it.original_filename || `Upload ${id}`)
-                const thumb = `/api/uploads/${encodeURIComponent(String(id))}/thumb`
-                const dur = it.duration_seconds != null ? Number(it.duration_seconds) : null
-                return (
+            {addStep === 'type' ? (
+              <>
+                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Add Asset</h1>
+                <div style={{ display: 'grid', gap: 12 }}>
                   <button
-                    key={`pick-${id}`}
                     type="button"
-                    onClick={() => addClipFromUpload(it)}
+                    onClick={() => {
+                      setAddStep('video')
+                      openPicker().catch(() => {})
+                    }}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: '96px 1fr',
-                      gap: 12,
-                      alignItems: 'center',
                       padding: 12,
                       borderRadius: 12,
                       border: '1px solid rgba(212,175,55,0.55)',
@@ -2848,58 +2809,16 @@ export default function CreateVideo() {
                       textAlign: 'left',
                     }}
                   >
-                    <img src={thumb} alt="" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                      <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
-                        {dur != null && Number.isFinite(dur) ? `${dur}s` : 'Duration unknown'}
-                      </div>
-                    </div>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>Video</div>
+                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Add and trim video clips</div>
                   </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {graphicPickOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1050, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
-          onClick={() => setGraphicPickOpen(false)}
-        >
-          <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => setGraphicPickOpen(false)}
-                style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-              >
-                ← Back
-              </button>
-              <div style={{ color: '#bbb', fontSize: 13 }}>Images: {graphicPickerItems.length}</div>
-            </div>
-            <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Graphic</h1>
-            {graphicPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-            {graphicPickerError ? <div style={{ color: '#ff9b9b' }}>{graphicPickerError}</div> : null}
-            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              {graphicPickerItems.map((it) => {
-                const id = Number(it.id)
-                if (!Number.isFinite(id) || id <= 0) return null
-                const name = String(it.modified_filename || it.original_filename || `Upload ${id}`)
-                const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
-                return (
                   <button
-                    key={`pick-gfx-${id}`}
                     type="button"
-                    onClick={() => addGraphicFromUpload(it)}
+                    onClick={() => {
+                      setAddStep('graphic')
+                      openGraphicPicker().catch(() => {})
+                    }}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: '96px 1fr',
-                      gap: 12,
-                      alignItems: 'center',
                       padding: 12,
                       borderRadius: 12,
                       border: '1px solid rgba(10,132,255,0.55)',
@@ -2909,103 +2828,183 @@ export default function CreateVideo() {
                       textAlign: 'left',
                     }}
                   >
-                    <img src={src} alt="" loading="lazy" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                      <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>Full-frame graphic • No overlaps</div>
-                    </div>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>Graphic</div>
+                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Full-frame overlays (no overlaps)</div>
                   </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {audioPickOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1050, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
-          onClick={() => setAudioPickOpen(false)}
-        >
-          <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => setAudioPickOpen(false)}
-                style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-              >
-                ← Back
-              </button>
-              <div style={{ color: '#bbb', fontSize: 13 }}>Tracks: {audioPickerItems.length}</div>
-            </div>
-            <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Audio</h1>
-            {audioPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-            {audioPickerError ? <div style={{ color: '#ff9b9b' }}>{audioPickerError}</div> : null}
-            {audioConfigsError ? <div style={{ color: '#ff9b9b' }}>{audioConfigsError}</div> : null}
-            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              {audioPickerItems.map((it) => {
-                const id = Number(it.id)
-                if (!Number.isFinite(id) || id <= 0) return null
-                const name = String(it.modified_filename || it.original_filename || `Audio ${id}`)
-                const artist = (it as any).artist != null ? String((it as any).artist || '').trim() : ''
-                const isPlaying = audioPreviewPlayingId === id
-                return (
-                  <div
-                    key={`pick-audio-${id}`}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddStep('audio')
+                      openAudioPicker().catch(() => {})
+                    }}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'auto 1fr auto',
-                      gap: 12,
-                      alignItems: 'center',
                       padding: 12,
                       borderRadius: 12,
                       border: '1px solid rgba(48,209,88,0.55)',
                       background: 'rgba(0,0,0,0.35)',
                       color: '#fff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleAudioPreview(id)}
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 12,
-                        border: '1px solid rgba(255,255,255,0.20)',
-                        background: 'rgba(255,255,255,0.06)',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                      }}
-                      aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-                    >
-                      {isPlaying ? '❚❚' : '▶'}
-                    </button>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                      <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{artist ? `Artist: ${artist}` : 'System audio'}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => addAudioFromUpload(it)}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Select
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>Audio</div>
+                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Background music (system audio)</div>
+                  </button>
+                </div>
+              </>
+            ) : addStep === 'video' ? (
+              <>
+                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Video</h1>
+                {pickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+                {pickerError ? <div style={{ color: '#ff9b9b' }}>{pickerError}</div> : null}
+                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                  {pickerItems.map((it) => {
+                    const id = Number(it.id)
+                    if (!Number.isFinite(id) || id <= 0) return null
+                    const name = String(it.modified_filename || it.original_filename || `Upload ${id}`)
+                    const thumb = `/api/uploads/${encodeURIComponent(String(id))}/thumb`
+                    const dur = it.duration_seconds != null ? Number(it.duration_seconds) : null
+                    return (
+                      <button
+                        key={`pick-${id}`}
+                        type="button"
+                        onClick={() => addClipFromUpload(it)}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '96px 1fr',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: '1px solid rgba(212,175,55,0.55)',
+                          background: 'rgba(0,0,0,0.35)',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <img src={thumb} alt="" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+                            {dur != null && Number.isFinite(dur) ? `${dur}s` : 'Duration unknown'}
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            ) : addStep === 'graphic' ? (
+              <>
+                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Graphic</h1>
+                {graphicPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+                {graphicPickerError ? <div style={{ color: '#ff9b9b' }}>{graphicPickerError}</div> : null}
+                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                  {graphicPickerItems.map((it) => {
+                    const id = Number(it.id)
+                    if (!Number.isFinite(id) || id <= 0) return null
+                    const name = String(it.modified_filename || it.original_filename || `Upload ${id}`)
+                    const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
+                    return (
+                      <button
+                        key={`pick-gfx-${id}`}
+                        type="button"
+                        onClick={() => addGraphicFromUpload(it)}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '96px 1fr',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: '1px solid rgba(10,132,255,0.55)',
+                          background: 'rgba(0,0,0,0.35)',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <img src={src} alt="" loading="lazy" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>Full-frame graphic • No overlaps</div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Audio</h1>
+                {audioPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+                {audioPickerError ? <div style={{ color: '#ff9b9b' }}>{audioPickerError}</div> : null}
+                {audioConfigsError ? <div style={{ color: '#ff9b9b' }}>{audioConfigsError}</div> : null}
+                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                  {audioPickerItems.map((it) => {
+                    const id = Number(it.id)
+                    if (!Number.isFinite(id) || id <= 0) return null
+                    const name = String(it.modified_filename || it.original_filename || `Audio ${id}`)
+                    const artist = (it as any).artist != null ? String((it as any).artist || '').trim() : ''
+                    const isPlaying = audioPreviewPlayingId === id
+                    return (
+                      <div
+                        key={`pick-audio-${id}`}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'auto 1fr auto',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: '1px solid rgba(48,209,88,0.55)',
+                          background: 'rgba(0,0,0,0.35)',
+                          color: '#fff',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleAudioPreview(id)}
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.20)',
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                          }}
+                          aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
+                        >
+                          {isPlaying ? '❚❚' : '▶'}
+                        </button>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{artist ? `Artist: ${artist}` : 'System audio'}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addAudioFromUpload(it)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Select
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
