@@ -1696,6 +1696,14 @@ export default function CreateVideo() {
     }
   }, [audioConfigs, audioConfigsLoaded])
 
+  // If a timeline already has an audio track (hydrated from a saved draft), prefetch audio configs
+  // so labels render as "{audio_name} * {audioConfig_name}" without requiring opening the editor.
+  useEffect(() => {
+    if (!audioTrack) return
+    if (audioConfigsLoaded) return
+    void ensureAudioConfigs()
+  }, [audioConfigsLoaded, audioTrack, ensureAudioConfigs])
+
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
     setAudioPickerLoading(true)
