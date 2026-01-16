@@ -1722,6 +1722,11 @@ export default function CreateVideo() {
     setAudioConfigsError(null)
   }, [])
 
+  const closeAdd = useCallback(() => {
+    setPickOpen(false)
+    setAddStep('type')
+  }, [])
+
   useEffect(() => {
     if (!trimDragging) return
     const onMove = (e: PointerEvent) => {
@@ -2758,27 +2763,36 @@ export default function CreateVideo() {
           role="dialog"
           aria-modal="true"
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1000, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
-          onClick={() => { setPickOpen(false); setAddStep('type') }}
+          onClick={closeAdd}
         >
           <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              {addStep === 'type' ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                {addStep === 'type' ? (
+                  <button
+                    type="button"
+                    onClick={closeAdd}
+                    style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                  >
+                    ← Cancel
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setAddStep('type')}
+                    style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                  >
+                    ← Types
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => { setPickOpen(false); setAddStep('type') }}
-                  style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                  onClick={closeAdd}
+                  style={{ color: '#bbb', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
                 >
-                  ← Back
+                  Close
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setAddStep('type')}
-                  style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-                >
-                  ← Types
-                </button>
-              )}
+              </div>
               <div style={{ color: '#bbb', fontSize: 13 }}>
                 {addStep === 'video'
                   ? `Videos: ${pickerItems.length}`
