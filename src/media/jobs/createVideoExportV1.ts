@@ -4,22 +4,30 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
 import { getPool } from '../../db'
-import { UPLOAD_BUCKET, UPLOAD_PREFIX } from '../../config'
+import { MEDIA_CONVERT_NORMALIZE_AUDIO, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../../config'
 import { buildUploadKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
+import * as audioConfigsSvc from '../../features/audio-configs/service'
 
 type Clip = { id: string; uploadId: number; sourceStartSeconds: number; sourceEndSeconds: number }
 type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
+type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
   userId: number
-  timeline: { version: 'create_video_v1'; clips: Clip[]; graphics?: Graphic[] }
+  timeline: { version: 'create_video_v1'; clips: Clip[]; graphics?: Graphic[]; audioTrack?: AudioTrack | null }
 }
 
 function roundToTenth(n: number): number {
   return Math.round(n * 10) / 10
+}
+
+function clamp(n: number, min: number, max: number): number {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return min
+  return Math.max(min, Math.min(max, v))
 }
 
 async function hasAudioStream(filePath: string): Promise<boolean> {
@@ -56,6 +64,185 @@ async function probeDurationSeconds(filePath: string): Promise<number | null> {
     })
     p.on('error', () => resolve(null))
   })
+}
+
+async function detectInitialNonSilenceSeconds(
+  filePath: string,
+  gate: 'sensitive' | 'normal' | 'strict',
+  opts?: { maxAnalyzeSeconds?: number }
+): Promise<number | null> {
+  if (!(await hasAudioStream(filePath))) return null
+
+  const noiseDb = gate === 'sensitive' ? '-50dB' : (gate === 'strict' ? '-38dB' : '-44dB')
+  const minNonSilenceSeconds = 0.12
+  const maxAnalyzeSecondsRaw = opts?.maxAnalyzeSeconds != null ? Number(opts.maxAnalyzeSeconds) : null
+  const maxAnalyzeSeconds =
+    maxAnalyzeSecondsRaw != null && Number.isFinite(maxAnalyzeSecondsRaw)
+      ? Math.max(3, Math.min(180, maxAnalyzeSecondsRaw))
+      : 30
+
+  return await new Promise<number | null>((resolve) => {
+    const args = [
+      '-hide_banner',
+      '-t',
+      String(maxAnalyzeSeconds),
+      '-i',
+      filePath,
+      '-vn',
+      '-af',
+      `silencedetect=n=${noiseDb}:d=${minNonSilenceSeconds.toFixed(2)}`,
+      '-f',
+      'null',
+      '-',
+    ]
+    const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    p.stderr.on('data', (d) => { stderr += String(d) })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve(0)
+      const hasSilenceStart = /silence_start:\s*([0-9.]+)/.test(stderr)
+      const m = stderr.match(/silence_end:\s*([0-9.]+)/)
+      if (!m) return resolve(hasSilenceStart ? null : 0)
+      const v = Number(m[1])
+      if (!Number.isFinite(v) || v < 0) return resolve(0)
+      resolve(v)
+    })
+    p.on('error', () => resolve(0))
+  })
+}
+
+function thresholdForGate(gate: string): number {
+  if (gate === 'sensitive') return 0.06
+  if (gate === 'strict') return 0.10
+  return 0.08 // normal
+}
+
+async function applyAudioTrackToMp4(opts: {
+  inMp4Path: string
+  outMp4Path: string
+  audioPath: string
+  audioConfig: any
+  trackStartSeconds: number
+  trackEndSeconds: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}) {
+  const cfg = opts.audioConfig || {}
+  const mode = String(cfg.mode || 'mix').toLowerCase() === 'replace' ? 'replace' : 'mix'
+  const vDb = Math.round(Number.isFinite(Number(cfg.videoGainDb)) ? Number(cfg.videoGainDb) : 0)
+  const mDb = Math.round(Number.isFinite(Number(cfg.musicGainDb)) ? Number(cfg.musicGainDb) : -18)
+  const vVol = `${vDb}dB`
+  const mVol = `${mDb}dB`
+  const duckingMode = String(cfg.duckingMode || 'none').toLowerCase()
+  const duckingGate = String(cfg.duckingGate || 'normal').toLowerCase()
+  const duckingEnabled = Boolean(cfg.duckingEnabled) && mode === 'mix' && duckingMode !== 'none'
+  const duckingAmountDb = Math.max(0, Math.min(24, Math.round(Number.isFinite(Number(cfg.duckingAmountDb)) ? Number(cfg.duckingAmountDb) : 12)))
+
+  const videoDurRaw = await probeDurationSeconds(opts.inMp4Path)
+  const videoDur = videoDurRaw != null && Number.isFinite(videoDurRaw) && videoDurRaw > 0 ? videoDurRaw : null
+  const startSeconds = roundToTenth(Math.max(0, Number(opts.trackStartSeconds || 0)))
+  const endSeconds = roundToTenth(Math.max(0, Number(opts.trackEndSeconds || 0)))
+  if (!(endSeconds > startSeconds)) throw new Error('invalid_audio_track_range')
+  const spanLen = Math.max(0, endSeconds - startSeconds)
+
+  const durCapRaw = cfg.audioDurationSeconds != null ? Number(cfg.audioDurationSeconds) : null
+  const durCap = durCapRaw != null && Number.isFinite(durCapRaw) && durCapRaw > 0 ? durCapRaw : null
+  const clipLen = roundToTenth(durCap != null ? Math.min(spanLen, durCap) : spanLen)
+  if (!(clipLen > 0.05)) throw new Error('invalid_audio_track_duration')
+
+  const fadeEnabled = cfg.audioFadeEnabled !== false
+  const fadeBase = 0.35
+  const fadeDur = fadeEnabled ? Math.max(0.05, Math.min(fadeBase, clipLen / 2)) : 0
+  const fadeOutStart = Math.max(0, clipLen - fadeDur)
+  const fadeFilters = fadeDur > 0
+    ? `,afade=t=in:st=0:d=${fadeDur.toFixed(2)},afade=t=out:st=${fadeOutStart.toFixed(2)}:d=${fadeDur.toFixed(2)}`
+    : ''
+
+  const delayMs = Math.max(0, Math.round(startSeconds * 1000))
+  const delayFilter = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
+
+  const normalizeEnabled = Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO)
+  const targetLkfs = -16
+  const useDurTrim = normalizeEnabled && videoDur != null
+  const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
+  const normSuffix = normalizeEnabled ? `,loudnorm=I=${targetLkfs}:TP=-1.5:LRA=11` : ''
+
+  const args: string[] = ['-i', opts.inMp4Path, '-stream_loop', '-1', '-i', opts.audioPath]
+
+  const musicChain = `[1:a]volume=${mVol},atrim=0:${clipLen.toFixed(3)},asetpts=N/SR/TB${fadeFilters}${delayFilter},apad[musicfull]`
+
+  let outLabel = '[out]'
+
+  if (mode === 'replace') {
+    const filter = `${musicChain};[musicfull]alimiter=limit=0.98${normSuffix}${durTrim}${outLabel}`
+    args.push('-filter_complex', filter, '-map', '0:v:0', '-map', outLabel)
+  } else {
+    const origChain = `[0:a]volume=${vVol},apad[orig]`
+    let musicProcessed = '[music]'
+
+    let musicProcessChain = ''
+    if (duckingEnabled && duckingMode === 'rolling') {
+      const threshold = thresholdForGate(duckingGate)
+      const ratio = Math.max(2, Math.min(20, 1 + Math.round(duckingAmountDb / 2)))
+      const attack = 20
+      const release = 250
+      musicProcessChain = `${musicChain};[musicfull][0:a]sidechaincompress=threshold=${threshold}:ratio=${ratio}:attack=${attack}:release=${release}:makeup=1[mduck];[mduck]volume=${mVol}[music]`
+    } else if (duckingEnabled && duckingMode === 'abrupt') {
+      const analyzeWindow = durCap != null ? Math.max(5, Math.min(60, durCap + 10)) : 30
+      const cutAt = await detectInitialNonSilenceSeconds(opts.inMp4Path, (duckingGate as any) || 'normal', { maxAnalyzeSeconds: analyzeWindow })
+      const beforeRaw = cfg.openerCutFadeBeforeSeconds != null ? Number(cfg.openerCutFadeBeforeSeconds) : null
+      const afterRaw = cfg.openerCutFadeAfterSeconds != null ? Number(cfg.openerCutFadeAfterSeconds) : null
+      const before = beforeRaw != null && Number.isFinite(beforeRaw) ? Math.max(0, Math.min(3, beforeRaw)) : null
+      const after = afterRaw != null && Number.isFinite(afterRaw) ? Math.max(0, Math.min(3, afterRaw)) : null
+      const beforeSec = before == null && after == null ? 0.5 : (before ?? 0)
+      const afterSec = after ?? 0
+
+      const relativeCutRaw = cutAt == null ? null : cutAt - startSeconds
+      const relativeCut = relativeCutRaw != null ? Math.max(0, relativeCutRaw) : null
+
+      if (relativeCut != null && relativeCut <= 0.05) {
+        musicProcessChain = `${musicChain};[musicfull]volume=0[music]`
+      } else if (relativeCut != null) {
+        const endRaw = relativeCut + afterSec
+        const endCut = Math.min(clipLen, Math.max(0, endRaw))
+        const fadeStart = Math.max(0, relativeCut - beforeSec)
+        const fadeEnd = Math.min(endCut, relativeCut + afterSec)
+        const fadeDuration = Math.max(0, Math.min(beforeSec + afterSec, Math.max(0, fadeEnd - fadeStart)))
+        const cutFade = fadeDuration > 0 ? `,afade=t=out:st=${fadeStart.toFixed(2)}:d=${fadeDuration.toFixed(2)}` : ''
+        const clippedDelayMs = delayMs
+        const clippedDelay = clippedDelayMs > 0 ? `,adelay=${clippedDelayMs}:all=1` : ''
+
+        // Rebuild music stream with truncation around cutoff, then pad to full length.
+        const m = `[1:a]volume=${mVol},atrim=0:${endCut.toFixed(3)},asetpts=N/SR/TB${cutFade}${clippedDelay},apad[music]`
+        musicProcessChain = m
+        musicProcessed = '[music]'
+      } else {
+        musicProcessChain = `${musicChain};[musicfull]volume=${mVol}[music]`
+      }
+    } else {
+      musicProcessChain = `${musicChain};[musicfull]volume=${mVol}[music]`
+    }
+
+    const mix = `${origChain};${musicProcessChain};[orig]${musicProcessed}amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98${normSuffix}${durTrim}${outLabel}`
+    args.push('-filter_complex', mix, '-map', '0:v:0', '-map', outLabel)
+  }
+
+  args.push(
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '128k',
+    '-ar',
+    '48000',
+    '-ac',
+    '2',
+    '-movflags',
+    '+faststart',
+    opts.outMp4Path
+  )
+  if (!useDurTrim) args.splice(args.length - 1, 0, '-shortest')
+  await runFfmpeg(args, opts.logPaths)
 }
 
 function even(n: number): number {
@@ -261,15 +448,32 @@ export async function runCreateVideoExportV1Job(
   const userId = Number(input.userId)
   const clips = Array.isArray(input.timeline?.clips) ? input.timeline.clips : []
   const graphics = Array.isArray((input.timeline as any)?.graphics) ? ((input.timeline as any).graphics as Graphic[]) : []
+  const audioTrackRaw = (input.timeline as any)?.audioTrack
+  const audioTrack: AudioTrack | null =
+    audioTrackRaw && typeof audioTrackRaw === 'object'
+      ? {
+          uploadId: Number((audioTrackRaw as any).uploadId),
+          audioConfigId: Number((audioTrackRaw as any).audioConfigId),
+          startSeconds: Number((audioTrackRaw as any).startSeconds),
+          endSeconds: Number((audioTrackRaw as any).endSeconds),
+        }
+      : null
   if (!clips.length && !graphics.length) throw new Error('empty_timeline')
 
   const db = getPool()
   const ids = Array.from(
     new Set(
-      [...clips.map((c) => Number(c.uploadId)), ...graphics.map((g) => Number(g.uploadId))].filter((n) => Number.isFinite(n) && n > 0)
+      [
+        ...clips.map((c) => Number(c.uploadId)),
+        ...graphics.map((g) => Number(g.uploadId)),
+        ...(audioTrack ? [Number(audioTrack.uploadId)] : []),
+      ].filter((n) => Number.isFinite(n) && n > 0)
     )
   )
-  const [rows] = await db.query(`SELECT id, user_id, kind, status, s3_bucket, s3_key FROM uploads WHERE id IN (?)`, [ids])
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, status, s3_bucket, s3_key, is_system, source_deleted_at FROM uploads WHERE id IN (?)`,
+    [ids]
+  )
   const byId = new Map<number, any>()
   for (const r of rows as any[]) byId.set(Number(r.id), r)
 
@@ -411,6 +615,37 @@ export async function runCreateVideoExportV1Job(
         logPaths,
       })
       finalOut = overlayOut
+    }
+
+    if (audioTrack && Number.isFinite(audioTrack.uploadId) && audioTrack.uploadId > 0) {
+      const row = byId.get(Number(audioTrack.uploadId))
+      if (!row) throw new Error('upload_not_found')
+      if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
+      if (!Number(row.is_system || 0)) throw new Error('forbidden')
+      if (row.source_deleted_at) throw new Error('source_deleted')
+      const st = String(row.status || '').toLowerCase()
+      if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+
+      const cfg = await audioConfigsSvc.getActiveForUser(Number(audioTrack.audioConfigId), userId)
+      const audioPath = path.join(tmpDir, `audio_${Number(audioTrack.uploadId)}`)
+      await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
+
+      const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
+      const start = clamp(roundToTenth(Number(audioTrack.startSeconds || 0)), 0, Math.max(0, videoDur))
+      const end = clamp(roundToTenth(Number(audioTrack.endSeconds || 0)), 0, Math.max(0, videoDur))
+      if (end > start + 0.05) {
+        const outWithAudio = path.join(tmpDir, 'out_audio.mp4')
+        await applyAudioTrackToMp4({
+          inMp4Path: finalOut,
+          outMp4Path: outWithAudio,
+          audioPath,
+          audioConfig: cfg,
+          trackStartSeconds: start,
+          trackEndSeconds: end,
+          logPaths,
+        })
+        finalOut = outWithAudio
+      }
     }
 
     const stat = fs.statSync(finalOut)

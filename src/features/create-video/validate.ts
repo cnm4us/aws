@@ -1,6 +1,7 @@
 import { DomainError, ForbiddenError, ValidationError } from '../../core/errors'
 import { getPool } from '../../db'
 import type { CreateVideoTimelineV1 } from './types'
+import * as audioConfigsSvc from '../audio-configs/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
@@ -71,6 +72,27 @@ async function loadOverlayImageMetaForUser(uploadId: number, userId: number): Pr
   const isOwner = ownerId != null && ownerId === Number(userId)
   const isSystem = ownerId == null
   if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, kind, status, is_system, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'audio') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (Number(row.is_system || 0) !== 1) throw new DomainError('not_system_audio', 'not_system_audio', 403)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
 
   return { id: Number(row.id) }
 }
@@ -162,10 +184,38 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
+  const audioTrackRaw = (raw as any).audioTrack
+  let audioTrack: any = null
+  if (audioTrackRaw != null) {
+    if (audioTrackRaw === null) {
+      audioTrack = null
+    } else if (typeof audioTrackRaw !== 'object' || Array.isArray(audioTrackRaw)) {
+      throw new ValidationError('invalid_audio_track')
+    } else {
+      if (!(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+      const uploadId = Number((audioTrackRaw as any).uploadId)
+      const audioConfigId = Number((audioTrackRaw as any).audioConfigId)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+      if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
+      const meta = await loadSystemAudioMeta(uploadId)
+      // Validate audio config exists and is not archived.
+      await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
+
+      const startSeconds = normalizeSeconds((audioTrackRaw as any).startSeconds ?? 0)
+      const endSecondsRaw = (audioTrackRaw as any).endSeconds
+      const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
+      const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
+      const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
+      if (!(end > start)) throw new ValidationError('invalid_seconds')
+      audioTrack = { uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end }
+    }
+  }
+
   return {
     version: 'create_video_v1',
     playheadSeconds: safePlayheadSeconds,
     clips,
     graphics,
+    audioTrack,
   }
 }

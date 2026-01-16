@@ -14,11 +14,19 @@ export type CreateVideoGraphicV1 = {
   endSeconds: number
 }
 
+export type CreateVideoAudioTrackV1 = {
+  uploadId: number
+  audioConfigId: number
+  startSeconds: number
+  endSeconds: number
+}
+
 export type CreateVideoTimelineV1 = {
   version: 'create_video_v1'
   playheadSeconds?: number
   clips: CreateVideoClipV1[]
   graphics?: CreateVideoGraphicV1[]
+  audioTrack?: CreateVideoAudioTrackV1 | null
 }
 
 export type CreateVideoProjectRow = {

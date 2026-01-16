@@ -12,11 +12,19 @@ export type Graphic = {
   endSeconds: number
 }
 
+export type AudioTrack = {
+  uploadId: number
+  audioConfigId: number
+  startSeconds: number
+  endSeconds: number
+}
+
 export type Timeline = {
   version: 'create_video_v1'
   playheadSeconds: number
   clips: Clip[]
   graphics: Graphic[]
+  audioTrack?: AudioTrack | null
 }
 
 export type TimelineSnapshot = { timeline: Timeline; selectedClipId: string | null }
@@ -39,5 +47,14 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           endSeconds: Number(g.endSeconds),
         }))
       : [],
+    audioTrack:
+      (timeline as any).audioTrack && typeof (timeline as any).audioTrack === 'object'
+        ? {
+            uploadId: Number((timeline as any).audioTrack.uploadId),
+            audioConfigId: Number((timeline as any).audioTrack.audioConfigId),
+            startSeconds: Number((timeline as any).audioTrack.startSeconds),
+            endSeconds: Number((timeline as any).audioTrack.endSeconds),
+          }
+        : null,
   }
 }

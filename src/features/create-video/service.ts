@@ -15,7 +15,7 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
     timeline = {}
   }
   if (timeline.version !== 'create_video_v1') {
-    timeline = { version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [] }
+    timeline = { version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [], audioTrack: null }
   }
   return {
     id: Number(row.id),
@@ -48,7 +48,7 @@ export async function createOrGetActiveProjectForUser(userId: number): Promise<{
   try {
     const created = await repo.create({
       userId: Number(userId),
-      timelineJson: JSON.stringify({ version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [] }),
+      timelineJson: JSON.stringify({ version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [], audioTrack: null }),
     })
     return { created: true, project: mapRow(created) }
   } catch (err: any) {
