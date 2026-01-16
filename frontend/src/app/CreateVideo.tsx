@@ -2,7 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getUploadCdnUrl } from '../ui/uploadsCdn'
 import type { AudioTrack, Clip, Graphic, Timeline } from './createVideo/timelineTypes'
 import { cloneTimeline } from './createVideo/timelineTypes'
-import { clamp, computeClipStarts, findClipIndexAtTime, locate, roundToTenth, sumDur } from './createVideo/timelineMath'
+import {
+  clamp,
+  clipDurationSeconds,
+  computeClipStarts,
+  computeTimelineEndSecondsFromClips,
+  findClipIndexAtTime,
+  locate,
+  roundToTenth,
+} from './createVideo/timelineMath'
 import { insertClipAtPlayhead, splitClipAtPlayhead, splitGraphicAtPlayhead } from './createVideo/timelineOps'
 
 type MeResponse = {
@@ -139,6 +147,8 @@ export default function CreateVideo() {
   const playheadRef = useRef(0)
   const activeClipIndexRef = useRef(0)
   const playheadFromVideoRef = useRef(false)
+  const suppressNextVideoPauseRef = useRef(false)
+  const gapPlaybackRef = useRef<{ raf: number; target: number; nextClipIndex: number | null } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
@@ -177,12 +187,18 @@ export default function CreateVideo() {
     | {
         kind: 'clip'
         clipId: string
-        edge: 'start' | 'end'
+        edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
         startStartSeconds: number
         startEndSeconds: number
         maxDurationSeconds: number
+        // For move (timeline placement)
+        minStartSeconds?: number
+        maxEndSeconds?: number
+        maxStartSeconds?: number
+        // For trim (prevent overlapping the next clip on the timeline)
+        maxTimelineDurationSeconds?: number
       }
     | {
         kind: 'graphic'
@@ -289,7 +305,8 @@ export default function CreateVideo() {
     }
   }, [])
 
-  const totalSecondsVideo = useMemo(() => sumDur(timeline.clips), [timeline.clips])
+  const clipStarts = useMemo(() => computeClipStarts(timeline.clips), [timeline.clips])
+  const totalSecondsVideo = useMemo(() => computeTimelineEndSecondsFromClips(timeline.clips, clipStarts), [clipStarts, timeline.clips])
   const totalSecondsGraphics = useMemo(() => {
     const gs = Array.isArray((timeline as any).graphics) ? (timeline as any).graphics as Graphic[] : []
     let m = 0
@@ -299,21 +316,25 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(m))
   }, [timeline])
-  const totalSeconds = useMemo(() => (timeline.clips.length ? totalSecondsVideo : totalSecondsGraphics), [timeline.clips.length, totalSecondsGraphics, totalSecondsVideo])
-  const clipStarts = useMemo(() => computeClipStarts(timeline.clips), [timeline.clips])
+  const totalSeconds = useMemo(() => Math.max(0, roundToTenth(Math.max(totalSecondsVideo, totalSecondsGraphics))), [totalSecondsGraphics, totalSecondsVideo])
+
+  const computeTotalSecondsForTimeline = useCallback((tl: Timeline): number => {
+    const clips = Array.isArray(tl.clips) ? tl.clips : []
+    const starts = computeClipStarts(clips)
+    const videoEnd = computeTimelineEndSecondsFromClips(clips, starts)
+    const gs: any[] = Array.isArray((tl as any).graphics) ? (tl as any).graphics : []
+    let gEnd = 0
+    for (const g of gs) {
+      const e = Number((g as any).endSeconds)
+      if (Number.isFinite(e) && e > gEnd) gEnd = e
+    }
+    const at = (tl as any).audioTrack
+    const aEnd = at && typeof at === 'object' ? Number((at as any).endSeconds || 0) : 0
+    return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, aEnd)))
+  }, [])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
-  const dragNoRipple = useMemo(() => {
-    const drag = trimDragRef.current
-    if (!trimDragging || !drag || drag.kind !== 'clip' || drag.edge !== 'start') return { idx: -1, deltaSeconds: 0 }
-    const idx = timeline.clips.findIndex((c) => c.id === drag.clipId)
-    if (idx < 0) return { idx: -1, deltaSeconds: 0 }
-    const clip = timeline.clips[idx]
-    const deltaSeconds = clamp(roundToTenth(Number(clip.sourceStartSeconds) - Number(drag.startStartSeconds)), -36000, 36000)
-    if (Math.abs(deltaSeconds) < 0.05) return { idx: -1, deltaSeconds: 0 }
-    return { idx, deltaSeconds }
-  }, [trimDragging, timeline.clips])
-  const visualTotalSeconds = useMemo(() => Math.max(0, totalSeconds + dragNoRipple.deltaSeconds), [dragNoRipple.deltaSeconds, totalSeconds])
+  const visualTotalSeconds = useMemo(() => Math.max(0, totalSeconds), [totalSeconds])
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
   const RULER_H = 16
   const WAVEFORM_H = 34
@@ -412,8 +433,7 @@ export default function CreateVideo() {
       if (idx < 0) return null
       const clip = timeline.clips[idx]
       const name = namesByUploadId[Number(clip.uploadId)] || `Video ${clip.uploadId}`
-      const start =
-        roundToTenth(clipStarts[idx] || 0) + (dragNoRipple.idx >= 0 && idx >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
+      const start = roundToTenth(clipStarts[idx] || 0)
       const len = Math.max(0, roundToTenth(Number(clip.sourceEndSeconds) - Number(clip.sourceStartSeconds)))
       const end = roundToTenth(start + len)
       return { kindLabel: 'Video', actionLabel, name, start, end, len }
@@ -445,8 +465,6 @@ export default function CreateVideo() {
     audioConfigNameById,
     audioTrack,
     clipStarts,
-    dragNoRipple.deltaSeconds,
-    dragNoRipple.idx,
     graphics,
     namesByUploadId,
     timeline.clips,
@@ -455,21 +473,11 @@ export default function CreateVideo() {
 
   const nudgePlayhead = useCallback((deltaSeconds: number) => {
     setTimeline((prev) => {
-      const total = prev.clips.length
-        ? sumDur(prev.clips)
-        : Math.max(
-            0,
-            roundToTenth(
-              (Array.isArray((prev as any).graphics) ? (prev as any).graphics : []).reduce((m: number, gg: any) => {
-                const e = Number(gg?.endSeconds)
-                return Number.isFinite(e) && e > m ? e : m
-              }, 0)
-            )
-          )
+      const total = computeTotalSecondsForTimeline(prev as any)
       const next = clamp(roundToTenth(Number(prev.playheadSeconds || 0) + deltaSeconds), 0, Math.max(0, total))
       return { ...prev, playheadSeconds: next }
     })
-  }, [])
+  }, [computeTotalSecondsForTimeline])
 
   const jumpPrevBoundary = useCallback(() => {
     const eps = 0.05
@@ -828,7 +836,7 @@ export default function CreateVideo() {
       const uploadId = Number(clip.uploadId)
       const env = uploadId > 0 ? audioEnvelopeByUploadId[uploadId] : null
       const envStatus = uploadId > 0 ? (audioEnvelopeStatusByUploadId[uploadId] || 'idle') : 'idle'
-      const clipStartT = roundToTenth(clipStarts[clipIdx] || 0) + (dragNoRipple.idx >= 0 && clipIdx >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
+      const clipStartT = roundToTenth(clipStarts[clipIdx] || 0)
       const sourceStart = Number(clip.sourceStartSeconds || 0)
       const sourceEnd = Number(clip.sourceEndSeconds || 0)
       const hasAudio = env && typeof env === 'object' ? Boolean((env as any).hasAudio) : false
@@ -955,7 +963,7 @@ export default function CreateVideo() {
     }
     for (let i = 0; i < timeline.clips.length; i++) {
       const clip = timeline.clips[i]
-      const start = (clipStarts[i] || 0) + (dragNoRipple.idx >= 0 && i >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
+      const start = (clipStarts[i] || 0)
       const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
       const x = padPx + start * pxPerSecond - scrollLeft
       const w = Math.max(8, len * pxPerSecond)
@@ -1094,8 +1102,6 @@ export default function CreateVideo() {
     audioConfigNameById,
     audioTrack,
     clipStarts,
-    dragNoRipple.deltaSeconds,
-    dragNoRipple.idx,
     graphics,
     namesByUploadId,
     pxPerSecond,
@@ -1262,10 +1268,18 @@ export default function CreateVideo() {
       if (!v) return
       const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
       if (!timeline.clips.length) return
-      const { clipIndex, within } = locate(tClamped, timeline.clips)
-      activeClipIndexRef.current = clipIndex
-      const clip = timeline.clips[clipIndex]
+      const idx = findClipIndexAtTime(tClamped, timeline.clips, clipStarts)
+      if (idx < 0) {
+        activeClipIndexRef.current = Math.max(0, clipStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
+        try { v.pause() } catch {}
+        setActiveUploadId(null)
+        return
+      }
+      activeClipIndexRef.current = idx
+      const clip = timeline.clips[idx]
       if (!clip) return
+      const startTimeline = Number(clipStarts[idx] || 0)
+      const within = Math.max(0, tClamped - startTimeline)
       const sourceTime = clip.sourceStartSeconds + within
       const nextUploadId = Number(clip.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
@@ -1300,7 +1314,7 @@ export default function CreateVideo() {
         }
       }
     },
-    [activeUploadId, timeline.clips, totalSeconds]
+    [activeUploadId, clipStarts, timeline.clips, totalSeconds]
   )
 
   // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
@@ -1413,7 +1427,25 @@ export default function CreateVideo() {
       return
     }
 
+    if (playing) {
+      setPlaying(false)
+      const curGap = gapPlaybackRef.current
+      if (curGap) {
+        window.cancelAnimationFrame(curGap.raf)
+        gapPlaybackRef.current = null
+      }
+      try { v?.pause?.() } catch {}
+      return
+    }
+
     if (!v) return
+    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    if (idx < 0) {
+      // Start gap playback (or trailing playback) even when no clip is active at the playhead.
+      setPlaying(true)
+      return
+    }
+
     if (v.paused) {
       try {
         v.muted = false
@@ -1423,7 +1455,7 @@ export default function CreateVideo() {
     } else {
       try { v.pause() } catch {}
     }
-  }, [playhead, playing, seek, timeline.clips.length, totalSeconds])
+  }, [clipStarts, playhead, playing, seek, timeline.clips, totalSeconds])
 
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
@@ -1461,7 +1493,13 @@ export default function CreateVideo() {
     const v = videoRef.current
     if (!v) return
     const onPlay = () => setPlaying(true)
-    const onPause = () => setPlaying(false)
+    const onPause = () => {
+      if (suppressNextVideoPauseRef.current) {
+        suppressNextVideoPauseRef.current = false
+        return
+      }
+      setPlaying(false)
+    }
     const onTime = () => {
       if (!playing) return
       if (!timeline.clips.length) return
@@ -1477,14 +1515,33 @@ export default function CreateVideo() {
         setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
       }
       // If we reached the end of this clip, advance to next.
-      const clipLen = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
+      const clipLen = clipDurationSeconds(clip)
+      const endTimeline = roundToTenth(startTimeline + clipLen)
       if (withinNow >= clipLen - 0.12 && clipIndex < timeline.clips.length - 1) {
-        const nextStart = clipStarts[clipIndex + 1] || 0
+        const nextStart = roundToTenth(Number(clipStarts[clipIndex + 1] || 0))
+        if (nextStart > endTimeline + 0.05) {
+          // Enter a black-gap segment; the gap playback loop will advance to nextStart.
+          suppressNextVideoPauseRef.current = true
+          try { v.pause() } catch {}
+          setActiveUploadId(null)
+          playheadFromVideoRef.current = true
+          setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
+          return
+        }
         activeClipIndexRef.current = clipIndex + 1
         playheadFromVideoRef.current = true
         setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
         void seek(nextStart, { autoPlay: true })
       } else if (withinNow >= clipLen - 0.05 && clipIndex === timeline.clips.length - 1) {
+        if (totalSeconds > endTimeline + 0.05) {
+          // Allow trailing black/graphics to play out to totalSeconds.
+          suppressNextVideoPauseRef.current = true
+          try { v.pause() } catch {}
+          setActiveUploadId(null)
+          playheadFromVideoRef.current = true
+          setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
+          return
+        }
         try { v.pause() } catch {}
         setPlaying(false)
       }
@@ -1498,6 +1555,79 @@ export default function CreateVideo() {
       v.removeEventListener('timeupdate', onTime)
     }
   }, [clipStarts, playhead, playing, seek, timeline.clips, totalSeconds])
+
+  // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
+  useEffect(() => {
+    if (!timeline.clips.length) return
+    if (!playing) {
+      const cur = gapPlaybackRef.current
+      if (cur) {
+        window.cancelAnimationFrame(cur.raf)
+        gapPlaybackRef.current = null
+      }
+      return
+    }
+
+    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    if (idx >= 0) {
+      const cur = gapPlaybackRef.current
+      if (cur) {
+        window.cancelAnimationFrame(cur.raf)
+        gapPlaybackRef.current = null
+      }
+      return
+    }
+
+    const eps = 0.05
+    let nextClipIndex: number | null = null
+    for (let i = 0; i < clipStarts.length; i++) {
+      const s = Number(clipStarts[i] || 0)
+      if (s > playhead + eps) {
+        nextClipIndex = i
+        break
+      }
+    }
+    const target = nextClipIndex != null ? roundToTenth(Number(clipStarts[nextClipIndex] || 0)) : roundToTenth(totalSeconds)
+    if (!(target > playhead + 0.01)) {
+      setPlaying(false)
+      return
+    }
+
+    const existing = gapPlaybackRef.current
+    if (existing && Math.abs(existing.target - target) < 0.05) return
+    if (existing) {
+      window.cancelAnimationFrame(existing.raf)
+      gapPlaybackRef.current = null
+    }
+
+    let last = performance.now()
+    const tick = (now: number) => {
+      const curState = gapPlaybackRef.current
+      if (!curState) return
+      const dt = Math.max(0, (now - last) / 1000)
+      last = now
+      const cur = Number(playheadRef.current || 0)
+      let next = cur + dt
+      if (next >= target - 0.001) next = target
+      playheadFromVideoRef.current = true
+      playheadRef.current = next
+      setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(next) }))
+      if (next >= target - 0.001) {
+        gapPlaybackRef.current = null
+        if (nextClipIndex != null) {
+          activeClipIndexRef.current = nextClipIndex
+          void seek(target, { autoPlay: true })
+        } else {
+          setPlaying(false)
+        }
+        return
+      }
+      const raf = window.requestAnimationFrame(tick)
+      gapPlaybackRef.current = { raf, target, nextClipIndex }
+    }
+    const raf = window.requestAnimationFrame(tick)
+    gapPlaybackRef.current = { raf, target, nextClipIndex }
+  }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds])
 
   const openPicker = useCallback(async () => {
     if (!me?.userId) return
@@ -1815,7 +1945,7 @@ export default function CreateVideo() {
 
     if (!timeline.clips.length) return
     const fallbackIdx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
-    const fallback = timeline.clips[fallbackIdx] || null
+    const fallback = fallbackIdx >= 0 ? (timeline.clips[fallbackIdx] || null) : null
     const target = selectedClip || fallback
     if (!target) return
     snapshotUndo()
@@ -1823,9 +1953,10 @@ export default function CreateVideo() {
       const idx = prev.clips.findIndex((c) => c.id === target.id)
       if (idx < 0) return prev
       const next = prev.clips.filter((c) => c.id !== target.id)
-      const nextTotal = sumDur(next)
+      const nextTimeline: any = { ...prev, clips: next }
+      const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-      return { ...prev, clips: next, playheadSeconds: nextPlayhead }
+      return { ...nextTimeline, playheadSeconds: nextPlayhead }
     })
     // If we deleted the currently-loaded upload, force re-seek when a new clip is added/selected.
     setActiveUploadId((prev) => (prev === Number(target.uploadId) ? null : prev))
@@ -1866,9 +1997,10 @@ export default function CreateVideo() {
       const updated: Clip = { ...clip, sourceStartSeconds: safeStart, sourceEndSeconds: safeEnd }
       const next = prev.clips.slice()
       next[idx] = updated
-      const nextTotal = sumDur(next)
+      const nextTimeline: any = { ...prev, clips: next }
+      const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-      return { ...prev, clips: next, playheadSeconds: nextPlayhead }
+      return { ...nextTimeline, playheadSeconds: nextPlayhead }
     })
     setClipEditor(null)
   }, [clipEditor, durationsByUploadId, snapshotUndo, timeline.clips])
@@ -1910,9 +2042,7 @@ export default function CreateVideo() {
       const nextGraphics = prevGraphics.slice()
       nextGraphics[idx] = updated
       nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
-      const nextTotal = prev.clips.length
-        ? sumDur(prev.clips)
-        : Math.max(0, roundToTenth(nextGraphics.reduce((m, gg: any) => Math.max(m, Number(gg?.endSeconds) || 0), 0)))
+      const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), graphics: nextGraphics } as any)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...prev, graphics: nextGraphics, playheadSeconds: nextPlayhead }
     })
@@ -1956,22 +2086,43 @@ export default function CreateVideo() {
           const idx = prev.clips.findIndex((c) => c.id === drag.clipId)
           if (idx < 0) return prev
           const c = prev.clips[idx]
-          let startS = c.sourceStartSeconds
-          let endS = c.sourceEndSeconds
-          if (drag.edge === 'start') {
-            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), 0, Math.max(0, drag.startEndSeconds - minLen))
-          } else {
-            endS = clamp(
-              roundToTenth(drag.startEndSeconds + deltaSeconds),
-              Math.max(0, drag.startStartSeconds + minLen),
-              drag.maxDurationSeconds
-            )
-          }
           const next = prev.clips.slice()
-          next[idx] = { ...c, sourceStartSeconds: startS, sourceEndSeconds: endS }
-          const nextTotal = sumDur(next)
+
+          if (drag.edge === 'move') {
+            const dur = Math.max(0.2, roundToTenth(clipDurationSeconds(c)))
+            const minStartSeconds = drag.minStartSeconds != null ? Number(drag.minStartSeconds) : 0
+            const maxEndSeconds = drag.maxEndSeconds != null ? Number(drag.maxEndSeconds) : 20 * 60
+            const maxStartSeconds =
+              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur))
+            const startTimeline = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), minStartSeconds, maxStartSeconds)
+            next[idx] = { ...c, startSeconds: startTimeline }
+            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+          } else {
+            let startS = c.sourceStartSeconds
+            let endS = c.sourceEndSeconds
+            const maxTimelineDur = drag.maxTimelineDurationSeconds != null ? Number(drag.maxTimelineDurationSeconds) : Number.POSITIVE_INFINITY
+            if (drag.edge === 'start') {
+              startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), 0, Math.max(0, drag.startEndSeconds - minLen))
+              if (Number.isFinite(maxTimelineDur) && maxTimelineDur > 0) {
+                startS = Math.max(startS, roundToTenth(drag.startEndSeconds - maxTimelineDur))
+              }
+            } else {
+              endS = clamp(
+                roundToTenth(drag.startEndSeconds + deltaSeconds),
+                Math.max(0, drag.startStartSeconds + minLen),
+                drag.maxDurationSeconds
+              )
+              if (Number.isFinite(maxTimelineDur) && maxTimelineDur > 0) {
+                endS = Math.min(endS, roundToTenth(drag.startStartSeconds + maxTimelineDur))
+              }
+              endS = Math.max(endS, startS + minLen)
+            }
+            next[idx] = { ...c, sourceStartSeconds: startS, sourceEndSeconds: endS }
+          }
+          const nextTimeline: any = { ...prev, clips: next }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
           const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-          return { ...prev, clips: next, playheadSeconds: nextPlayhead }
+          return { ...nextTimeline, playheadSeconds: nextPlayhead }
         }
 
         if (drag.kind === 'audio') {
@@ -2031,9 +2182,7 @@ export default function CreateVideo() {
         const nextGraphics = prevGraphics.slice()
         nextGraphics[idx] = { ...g, startSeconds: startS, endSeconds: endS }
         nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
-        const nextTotal = prev.clips.length
-          ? sumDur(prev.clips)
-          : Math.max(0, roundToTenth(nextGraphics.reduce((m, gg: any) => Math.max(m, Number(gg?.endSeconds) || 0), 0)))
+        const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), graphics: nextGraphics } as any)
         const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
         return { ...prev, graphics: nextGraphics, playheadSeconds: nextPlayhead }
       })
@@ -2283,7 +2432,7 @@ export default function CreateVideo() {
               playsInline
               preload="metadata"
               poster={activePoster || undefined}
-              style={{ width: '100%', height: '100%', objectFit: previewObjectFit, display: timeline.clips.length ? 'block' : 'none' }}
+              style={{ width: '100%', height: '100%', objectFit: previewObjectFit, display: activeUploadId != null ? 'block' : 'none' }}
             />
             {activeGraphicUrl ? (
               <img
@@ -2545,16 +2694,62 @@ export default function CreateVideo() {
 
                   if (!timeline.clips.length) return
                   const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
-                  const clip = timeline.clips[idx]
+                  const clip = idx >= 0 ? timeline.clips[idx] : null
                   if (!clip) return
 
                   const start = (clipStarts[idx] || 0)
-                  const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
+                  const len = clipDurationSeconds(clip)
                   const leftX = padPx + start * pxPerSecond
                   const rightX = padPx + (start + len) * pxPerSecond
                   const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
                   const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                  if (!nearLeft && !nearRight) return
+                  const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                  if (!inside) return
+
+                  // Slide (body drag) only when already selected.
+                  if (!nearLeft && !nearRight) {
+                    if (selectedClipId !== clip.id) return
+                    e.preventDefault()
+                    snapshotUndo()
+                    setSelectedClipId(clip.id)
+                    setSelectedGraphicId(null)
+                    setSelectedAudio(false)
+
+                    const capEnd = 20 * 60
+                    const ranges = timeline.clips
+                      .map((c, i) => ({
+                        id: c.id,
+                        start: roundToTenth(Number(clipStarts[i] || 0)),
+                        end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
+                      }))
+                      .sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
+                    const pos = ranges.findIndex((r) => r.id === clip.id)
+                    const prevEnd = pos > 0 ? Number(ranges[pos - 1].end || 0) : 0
+                    const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
+                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, capEnd)
+                    const maxEndSeconds = capEnd
+                    const maxStartSeconds = clamp(roundToTenth(nextStart - len), minStartSeconds, maxEndSeconds)
+
+                    trimDragLockScrollLeftRef.current = sc.scrollLeft
+                    const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
+                    trimDragRef.current = {
+                      kind: 'clip',
+                      clipId: clip.id,
+                      edge: 'move',
+                      pointerId: e.pointerId,
+                      startClientX: e.clientX,
+                      startStartSeconds: start,
+                      startEndSeconds: start + len,
+                      maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
+                      minStartSeconds,
+                      maxEndSeconds,
+                      maxStartSeconds,
+                    }
+                    setTrimDragging(true)
+                    try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('startTrimDrag', { kind: 'clip', edge: 'move', id: clip.id })
+                    return
+                  }
 
                   e.preventDefault()
                   snapshotUndo()
@@ -2563,6 +2758,17 @@ export default function CreateVideo() {
                   setSelectedAudio(false)
                   trimDragLockScrollLeftRef.current = sc.scrollLeft
                   const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
+                  const capEnd = 20 * 60
+                  const ranges = timeline.clips
+                    .map((c, i) => ({
+                      id: c.id,
+                      start: roundToTenth(Number(clipStarts[i] || 0)),
+                      end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
+                    }))
+                    .sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
+                  const pos = ranges.findIndex((r) => r.id === clip.id)
+                  const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
+                  const maxTimelineDurationSeconds = clamp(roundToTenth(nextStart - start), 0.2, capEnd)
                   trimDragRef.current = {
                     kind: 'clip',
                     clipId: clip.id,
@@ -2572,6 +2778,7 @@ export default function CreateVideo() {
                     startStartSeconds: clip.sourceStartSeconds,
                     startEndSeconds: clip.sourceEndSeconds,
                     maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
+                    maxTimelineDurationSeconds,
                   }
                   setTrimDragging(true)
                   try { sc.setPointerCapture(e.pointerId) } catch {}
@@ -2611,7 +2818,7 @@ export default function CreateVideo() {
                   if (withinVideo) {
                     if (timeline.clips.length) {
                       const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
-                      const clip = timeline.clips[idx]
+                      const clip = idx >= 0 ? timeline.clips[idx] : null
                       if (clip) {
                         const start = (clipStarts[idx] || 0)
                         const len = Math.max(0, clip.sourceEndSeconds - clip.sourceStartSeconds)
@@ -2713,7 +2920,7 @@ export default function CreateVideo() {
                   }
 
                   const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
-                  const clip = timeline.clips[idx]
+                  const clip = idx >= 0 ? timeline.clips[idx] : null
                   if (!clip) {
                     setSelectedClipId(null)
                     setSelectedGraphicId(null)

@@ -3,6 +3,8 @@ export type CreateVideoProjectStatus = 'active' | 'archived'
 export type CreateVideoClipV1 = {
   id: string
   uploadId: number
+  // Absolute placement on the timeline; when omitted, defaults to sequential placement after the previous clip.
+  startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
 }

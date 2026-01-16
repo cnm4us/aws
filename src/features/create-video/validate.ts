@@ -115,7 +115,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const clips: CreateVideoTimelineV1['clips'] = []
   const seen = new Set<string>()
-  let totalSeconds = 0
+  let sequentialCursorSeconds = 0
+  let videoEndSeconds = 0
 
   for (const c of clipsRaw) {
     if (!c || typeof c !== 'object') continue
@@ -125,6 +126,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const uploadId = Number((c as any).uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+
+    const startSecondsRaw = (c as any).startSeconds
+    const startSeconds = startSecondsRaw != null ? normalizeSeconds(startSecondsRaw) : roundToTenth(Math.max(0, sequentialCursorSeconds))
 
     const sourceStartSeconds = normalizeSeconds((c as any).sourceStartSeconds ?? 0)
     const sourceEndSeconds = normalizeSeconds((c as any).sourceEndSeconds)
@@ -138,13 +142,32 @@ export async function validateAndNormalizeCreateVideoTimeline(
     }
 
     const len = Math.max(0, end - sourceStartSeconds)
-    totalSeconds += len
-    if (totalSeconds > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    const clipEnd = roundToTenth(startSeconds + len)
+    videoEndSeconds = Math.max(videoEndSeconds, clipEnd)
+    sequentialCursorSeconds = Math.max(sequentialCursorSeconds, clipEnd)
+    if (videoEndSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
-    clips.push({ id, uploadId: meta.id, sourceStartSeconds, sourceEndSeconds: end })
+    clips.push({ id, uploadId: meta.id, startSeconds, sourceStartSeconds, sourceEndSeconds: end })
   }
 
-  const videoTotalSeconds = totalSeconds
+  // Sort by time for deterministic playback/export and overlap validation.
+  clips.sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i] as any
+    const start = Number(c.startSeconds || 0)
+    const dur = Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
+    const end = start + dur
+    if (i > 0) {
+      const prev = clips[i - 1] as any
+      const prevStart = Number(prev.startSeconds || 0)
+      const prevDur = Math.max(0, Number(prev.sourceEndSeconds) - Number(prev.sourceStartSeconds))
+      const prevEnd = prevStart + prevDur
+      if (start < prevEnd - 1e-6) throw new DomainError('clip_overlap', 'clip_overlap', 400)
+    }
+    videoEndSeconds = Math.max(videoEndSeconds, roundToTenth(end))
+  }
+
+  const videoTotalSeconds = roundToTenth(videoEndSeconds)
 
   const graphicsRaw = Array.isArray((raw as any).graphics) ? ((raw as any).graphics as any[]) : []
   if (graphicsRaw.length > MAX_GRAPHICS) throw new DomainError('too_many_graphics', 'too_many_graphics', 400)
@@ -169,9 +192,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
   graphics.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < graphics.length; i++) {
     const g = graphics[i]
-    if (videoTotalSeconds > 0) {
-      if (g.endSeconds > videoTotalSeconds + 1e-6) throw new DomainError('graphic_out_of_bounds', 'graphic_out_of_bounds', 400)
-    }
+    if (g.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = graphics[i - 1]
       if (g.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('graphic_overlap', 'graphic_overlap', 400)
@@ -179,7 +200,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
 
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
-  const totalForPlayhead = videoTotalSeconds > 0 ? videoTotalSeconds : graphicsTotalSeconds
+  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds))
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)

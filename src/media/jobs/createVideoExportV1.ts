@@ -10,7 +10,7 @@ import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../service
 import { probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 import * as audioConfigsSvc from '../../features/audio-configs/service'
 
-type Clip = { id: string; uploadId: number; sourceStartSeconds: number; sourceEndSeconds: number }
+type Clip = { id: string; uploadId: number; startSeconds?: number; sourceStartSeconds: number; sourceEndSeconds: number }
 type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
 
@@ -489,7 +489,15 @@ export async function runCreateVideoExportV1Job(
 
     if (clips.length) {
       // Prepare first clip to choose output dimensions.
-      const first = clips[0]
+      const sortedClips: Clip[] = clips
+        .map((c) => {
+          const startRaw = (c as any).startSeconds
+          const startSeconds = startRaw != null && Number.isFinite(Number(startRaw)) ? roundToTenth(Math.max(0, Number(startRaw))) : undefined
+          return { ...c, startSeconds }
+        })
+        .sort((a, b) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+
+      const first = sortedClips[0]
       const firstRow = byId.get(Number(first.uploadId))
       if (!firstRow) throw new Error('upload_not_found')
       if (String(firstRow.kind || 'video').toLowerCase() !== 'video') throw new Error('invalid_upload_kind')
@@ -503,8 +511,10 @@ export async function runCreateVideoExportV1Job(
       target = { w: computed.w, h: computed.h }
       seenDownloads.set(Number(first.uploadId), firstIn)
 
-      for (let i = 0; i < clips.length; i++) {
-        const c = clips[i]
+      // Render segments (including black gaps) then concat.
+      let cursorSeconds = 0
+      for (let i = 0; i < sortedClips.length; i++) {
+        const c = sortedClips[i]
         const uploadId = Number(c.uploadId)
         const row = byId.get(uploadId)
         if (!row) throw new Error('upload_not_found')
@@ -516,6 +526,22 @@ export async function runCreateVideoExportV1Job(
         if (!seenDownloads.has(uploadId)) {
           await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
           seenDownloads.set(uploadId, inPath)
+        }
+
+        const startSeconds = c.startSeconds != null ? roundToTenth(Math.max(0, Number(c.startSeconds))) : roundToTenth(Math.max(0, cursorSeconds))
+        if (startSeconds > cursorSeconds + 0.05) {
+          const gapDur = roundToTenth(startSeconds - cursorSeconds)
+          const gapPath = path.join(tmpDir, `gap_${String(i).padStart(3, '0')}.mp4`)
+          await renderBlackBaseMp4({
+            outPath: gapPath,
+            durationSeconds: gapDur,
+            targetW: target.w,
+            targetH: target.h,
+            fps,
+            logPaths,
+          })
+          segPaths.push(gapPath)
+          cursorSeconds = startSeconds
         }
 
         const outPath = path.join(tmpDir, `seg_${String(i).padStart(3, '0')}.mp4`)
@@ -530,8 +556,28 @@ export async function runCreateVideoExportV1Job(
           logPaths,
         })
         segPaths.push(outPath)
-        baseDurationSeconds += Math.max(0, roundToTenth(Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)))
+        const segLen = Math.max(0, roundToTenth(Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)))
+        cursorSeconds = roundToTenth(startSeconds + segLen)
       }
+
+      const graphicsEnd = graphics.length ? Number(graphics.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[graphics.length - 1].endSeconds) : 0
+      const audioEnd = audioTrack ? Number(audioTrack.endSeconds || 0) : 0
+      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, audioEnd))
+      if (targetEnd > cursorSeconds + 0.05) {
+        const gapDur = roundToTenth(targetEnd - cursorSeconds)
+        const gapPath = path.join(tmpDir, `tail_gap.mp4`)
+        await renderBlackBaseMp4({
+          outPath: gapPath,
+          durationSeconds: gapDur,
+          targetW: target.w,
+          targetH: target.h,
+          fps,
+          logPaths,
+        })
+        segPaths.push(gapPath)
+        cursorSeconds = targetEnd
+      }
+      baseDurationSeconds = roundToTenth(Math.max(0, cursorSeconds))
 
       // Concat segments.
       const listPath = path.join(tmpDir, 'list.txt')

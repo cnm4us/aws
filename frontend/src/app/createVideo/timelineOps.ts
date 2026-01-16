@@ -1,20 +1,44 @@
 import type { Clip, Graphic, Timeline } from './timelineTypes'
-import { clamp, locate, roundToTenth, sumDur } from './timelineMath'
+import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
-  const t = clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, sumDur(timeline.clips)))
-  if (!timeline.clips.length) return { ...timeline, clips: [clip], playheadSeconds: 0 }
+  const starts = computeClipStarts(timeline.clips)
+  const endSeconds = computeTimelineEndSecondsFromClips(timeline.clips, starts)
+  const t = clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, endSeconds))
+  const dur = clipDurationSeconds(clip)
 
-  const { clipIndex, within } = locate(t, timeline.clips)
-  const insertIdx = within <= 0.05 ? clipIndex : clipIndex + 1
-  const nextClips = [...timeline.clips.slice(0, insertIdx), clip, ...timeline.clips.slice(insertIdx)]
+  // Normalize existing clips to explicit startSeconds (so the UI can move them later).
+  const normalizedExisting: Clip[] = timeline.clips.map((c, i) => ({
+    ...c,
+    startSeconds: roundToTenth(starts[i] || 0),
+  }))
+
+  const existingRanges = normalizedExisting
+    .map((c) => {
+      const s = Number((c as any).startSeconds || 0)
+      const e = roundToTenth(s + clipDurationSeconds(c))
+      return { id: c.id, start: s, end: e }
+    })
+    .sort((a, b) => a.start - b.start)
+
+  let startSeconds = roundToTenth(t)
+  // Slide forward until it doesn't overlap any existing clip.
+  for (const r of existingRanges) {
+    const overlaps = startSeconds < r.end - 1e-6 && (startSeconds + dur) > r.start + 1e-6
+    if (overlaps) startSeconds = roundToTenth(r.end)
+  }
+
+  const placed: Clip = { ...clip, startSeconds }
+  const nextClips = [...normalizedExisting, placed].sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0))
   return { ...timeline, clips: nextClips }
 }
 
 export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string | null): { timeline: Timeline; selectedClipId: string | null } {
   if (!selectedClipId) return { timeline, selectedClipId }
-  const t = clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, sumDur(timeline.clips)))
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const starts = computeClipStarts(timeline.clips)
   const { clipIndex, within } = locate(t, timeline.clips)
+  if (clipIndex < 0) return { timeline, selectedClipId }
   const clip = timeline.clips[clipIndex]
   if (!clip || clip.id !== selectedClipId) return { timeline, selectedClipId }
 
@@ -22,11 +46,17 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   const minLen = 0.2
   if (cut <= clip.sourceStartSeconds + minLen || cut >= clip.sourceEndSeconds - minLen) return { timeline, selectedClipId }
 
-  const left: Clip = { ...clip, id: `${clip.id}_a`, sourceEndSeconds: cut }
-  const right: Clip = { ...clip, id: `${clip.id}_b`, sourceStartSeconds: cut }
+  const startSeconds = roundToTenth(starts[clipIndex] || 0)
+  const left: Clip = { ...clip, id: `${clip.id}_a`, startSeconds, sourceEndSeconds: cut }
+  const right: Clip = { ...clip, id: `${clip.id}_b`, startSeconds: roundToTenth(startSeconds + (cut - clip.sourceStartSeconds)), sourceStartSeconds: cut }
   const idx = timeline.clips.findIndex((c) => c.id === clip.id)
   if (idx < 0) return { timeline, selectedClipId }
-  const next = [...timeline.clips.slice(0, idx), left, right, ...timeline.clips.slice(idx + 1)]
+  const normalizedExisting: Clip[] = timeline.clips.map((c, i) => ({
+    ...c,
+    startSeconds: roundToTenth(starts[i] || 0),
+  }))
+  const next = [...normalizedExisting.slice(0, idx), left, right, ...normalizedExisting.slice(idx + 1)]
+  next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0))
   return { timeline: { ...timeline, clips: next }, selectedClipId: right.id }
 }
 

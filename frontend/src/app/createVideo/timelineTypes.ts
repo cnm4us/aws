@@ -1,6 +1,7 @@
 export type Clip = {
   id: string
   uploadId: number
+  startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
 }
@@ -36,6 +37,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
     clips: timeline.clips.map((c) => ({
       id: String(c.id),
       uploadId: Number(c.uploadId),
+      startSeconds: (c as any).startSeconds != null ? Number((c as any).startSeconds) : undefined,
       sourceStartSeconds: Number(c.sourceStartSeconds),
       sourceEndSeconds: Number(c.sourceEndSeconds),
     })),
