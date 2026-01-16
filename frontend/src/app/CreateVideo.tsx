@@ -312,8 +312,6 @@ export default function CreateVideo() {
     return map
   }, [audioConfigs])
 
-  const timelinePanLocked = (Boolean(selectedClipId) || Boolean(selectedGraphicId) || selectedAudio) && !playing && !trimDragging
-
   const canUndo = undoDepth > 0
 
   const boundaries = useMemo(() => {
@@ -1849,7 +1847,7 @@ export default function CreateVideo() {
     }
   }, [pxPerSecond, trimDragging])
 
-  // Desktop UX: allow click+drag panning when nothing is selected (mobile already pans naturally).
+  // Desktop UX: allow click+drag panning (mobile already pans naturally).
   useEffect(() => {
     if (!panDragging) return
     const onMove = (e: PointerEvent) => {
@@ -2363,7 +2361,6 @@ export default function CreateVideo() {
                   if ((e as any).pointerType !== 'mouse') return
                   if (e.button != null && e.button !== 0) return
                   if (trimDragging || trimDragRef.current) return
-                  if (timelinePanLocked) return
                   // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
                   const rect = sc.getBoundingClientRect()
                   const y = e.clientY - rect.top
@@ -2523,15 +2520,15 @@ export default function CreateVideo() {
                 }}
                 style={{
                   width: '100%',
-                  overflowX: trimDragging || timelinePanLocked ? 'hidden' : 'auto',
+                  overflowX: trimDragging ? 'hidden' : 'auto',
                   overflowY: 'hidden',
-                  WebkitOverflowScrolling: trimDragging || timelinePanLocked ? 'auto' : 'touch',
+                  WebkitOverflowScrolling: trimDragging ? 'auto' : 'touch',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.28)',
                   background: 'rgba(0,0,0,0.60)',
                   height: TIMELINE_H,
                   position: 'relative',
-                  touchAction: trimDragging || timelinePanLocked ? 'none' : 'pan-x',
+                  touchAction: trimDragging ? 'none' : 'pan-x',
                 }}
               >
                 <div style={{ width: timelinePadPx + stripContentW + timelinePadPx, height: TIMELINE_H, position: 'relative' }}>
