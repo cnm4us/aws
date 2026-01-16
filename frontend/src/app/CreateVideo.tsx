@@ -331,6 +331,35 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement): Promise<boolean> => {
+    const tryPlay = async (): Promise<boolean> => {
+      try {
+        const p = v.play()
+        if (p && typeof (p as any).then === 'function') await p.catch(() => {})
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    // First attempt: play with current mute state.
+    if (await tryPlay()) return true
+
+    // Fallback: autoplay policies (esp iOS Safari) may block non-gesture play with audio.
+    // Try muted autoplay, then unmute once playback starts.
+    try { v.muted = true } catch {}
+    if (await tryPlay()) {
+      window.setTimeout(() => {
+        try {
+          v.muted = false
+          v.volume = 1
+        } catch {}
+      }, 0)
+      return true
+    }
+    return false
+  }, [])
+
   const clipStarts = useMemo(() => computeClipStarts(timeline.clips), [timeline.clips])
   const totalSecondsVideo = useMemo(() => computeTimelineEndSecondsFromClips(timeline.clips, clipStarts), [clipStarts, timeline.clips])
   const totalSecondsGraphics = useMemo(() => {
@@ -1364,7 +1393,10 @@ export default function CreateVideo() {
             void primePausedFrame(v)
           }
           if (opts?.autoPlay) {
-            try { void v.play() } catch {}
+            void (async () => {
+              const ok = await playWithAutoplayFallback(v)
+              if (!ok) setPlaying(false)
+            })()
           }
         }
         v.addEventListener('loadedmetadata', onMeta)
@@ -1377,11 +1409,14 @@ export default function CreateVideo() {
           return
         }
         if (opts?.autoPlay) {
-          try { void v.play() } catch {}
+          void (async () => {
+            const ok = await playWithAutoplayFallback(v)
+            if (!ok) setPlaying(false)
+          })()
         }
       }
     },
-    [activeUploadId, clipStarts, timeline.clips, totalSeconds]
+    [activeUploadId, clipStarts, playWithAutoplayFallback, timeline.clips, totalSeconds]
   )
 
   // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
