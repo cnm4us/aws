@@ -1725,8 +1725,8 @@ export default function CreateVideo() {
     setAddStep('type')
   }, [])
 
+  // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
   useEffect(() => {
-    if (!trimDragging) return
     const onMove = (e: PointerEvent) => {
       const drag = trimDragRef.current
       if (!drag) return
@@ -1831,8 +1831,7 @@ export default function CreateVideo() {
     }
     const onUp = (e: PointerEvent) => {
       const drag = trimDragRef.current
-      if (!drag) return
-      if (e.pointerId !== drag.pointerId) return
+      if (drag && e.pointerId !== drag.pointerId) return
       trimDragRef.current = null
       setTrimDragging(false)
       try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
@@ -1845,7 +1844,7 @@ export default function CreateVideo() {
       window.removeEventListener('pointerup', onUp as any)
       window.removeEventListener('pointercancel', onUp as any)
     }
-  }, [pxPerSecond, trimDragging])
+  }, [pxPerSecond])
 
   // Desktop UX: allow click+drag panning (mobile already pans naturally).
   useEffect(() => {
