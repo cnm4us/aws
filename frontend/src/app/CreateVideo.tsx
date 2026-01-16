@@ -1553,6 +1553,32 @@ export default function CreateVideo() {
       return
     }
 
+    const clip = timeline.clips[idx]
+    if (clip) {
+      const clipStart = Number(clipStarts[idx] || 0)
+      const within = roundToTenth(Math.max(0, playhead - clipStart))
+      const fs = clipFreezeStartSeconds(clip)
+      const fe = clipFreezeEndSeconds(clip)
+      const srcDur = clipSourceDurationSeconds(clip)
+      const totalDur = roundToTenth(fs + srcDur + fe)
+      const inFreezeStart = fs > 0.05 && within < fs - 1e-6
+      const inFreezeEnd = fe > 0.05 && within >= fs + srcDur - 1e-6 && within < totalDur - 1e-6
+      if (inFreezeStart || inFreezeEnd) {
+        // iOS Safari can require a user-gesture “media activation” before later programmatic play().
+        // Since the freeze segment plays while paused, prime the element *within* the user gesture,
+        // then let the freeze playback loop advance and transition into the moving portion.
+        void (async () => {
+          try {
+            await seek(playhead)
+            const vv = videoRef.current
+            if (vv) await primePausedFrame(vv)
+          } catch {}
+          setPlaying(true)
+        })()
+        return
+      }
+    }
+
     if (v.paused) {
       try {
         v.muted = false
