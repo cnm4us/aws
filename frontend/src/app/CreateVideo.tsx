@@ -155,6 +155,10 @@ export default function CreateVideo() {
   const primedFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
   const [graphicFileUrlByUploadId, setGraphicFileUrlByUploadId] = useState<Record<number, string>>({})
+  const [audioEnvelopeByUploadId, setAudioEnvelopeByUploadId] = useState<Record<number, any>>({})
+  const [audioEnvelopeStatusByUploadId, setAudioEnvelopeStatusByUploadId] = useState<Record<number, 'idle' | 'pending' | 'ready' | 'error'>>({})
+  const [audioEnvelopeErrorByUploadId, setAudioEnvelopeErrorByUploadId] = useState<Record<number, string>>({})
+  const audioEnvelopePollTimerRef = useRef<Record<number, number>>({})
   const activePoster = useMemo(() => {
     if (!activeUploadId) return null
     return posterByUploadId[activeUploadId] || null
@@ -249,17 +253,23 @@ export default function CreateVideo() {
   const visualTotalSeconds = useMemo(() => Math.max(0, totalSeconds + dragNoRipple.deltaSeconds), [dragNoRipple.deltaSeconds, totalSeconds])
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
   const RULER_H = 16
+  const WAVEFORM_H = 34
   const TRACK_H = 48
-  const GRAPHICS_Y = RULER_H + 6
-  const VIDEO_Y = RULER_H + TRACK_H + 6
-  const AUDIO_Y = RULER_H + TRACK_H * 2 + 6
+  const TRACKS_TOP = RULER_H + WAVEFORM_H
+  const GRAPHICS_Y = TRACKS_TOP + 6
+  const VIDEO_Y = TRACKS_TOP + TRACK_H + 6
+  const AUDIO_Y = TRACKS_TOP + TRACK_H * 2 + 6
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 12
-  const TIMELINE_H = RULER_H + TRACK_H * 3
+  const TIMELINE_H = TRACKS_TOP + TRACK_H * 3
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
     return timeline.clips.find((c) => c.id === selectedClipId) || null
+  }, [selectedClipId, timeline.clips])
+  const selectedClipIndex = useMemo(() => {
+    if (!selectedClipId) return -1
+    return timeline.clips.findIndex((c) => c.id === selectedClipId)
   }, [selectedClipId, timeline.clips])
 
   const graphics = useMemo(() => (Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as Graphic[]) : []), [timeline])
@@ -422,6 +432,56 @@ export default function CreateVideo() {
     return graphicFileUrlByUploadId[activeGraphicUploadId] || `/api/uploads/${encodeURIComponent(String(activeGraphicUploadId))}/file`
   }, [activeGraphicUploadId, graphicFileUrlByUploadId])
 
+  const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
+    const id = Number(uploadId)
+    if (!Number.isFinite(id) || id <= 0) return
+    if (audioEnvelopeByUploadId[id]) return
+    const status = audioEnvelopeStatusByUploadId[id]
+    if (status === 'pending') return
+
+    setAudioEnvelopeStatusByUploadId((prev) => ({ ...prev, [id]: 'pending' }))
+    setAudioEnvelopeErrorByUploadId((prev) => ({ ...prev, [id]: '' }))
+    try {
+      const res = await fetch(`/api/uploads/${encodeURIComponent(String(id))}/audio-envelope`, { credentials: 'same-origin' })
+      if (res.status === 202) {
+        const t = window.setTimeout(() => {
+          delete audioEnvelopePollTimerRef.current[id]
+          ensureAudioEnvelope(id).catch(() => {})
+        }, 2000)
+        audioEnvelopePollTimerRef.current[id] = t
+        return
+      }
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      setAudioEnvelopeByUploadId((prev) => ({ ...prev, [id]: json }))
+      setAudioEnvelopeStatusByUploadId((prev) => ({ ...prev, [id]: 'ready' }))
+    } catch (e: any) {
+      setAudioEnvelopeStatusByUploadId((prev) => ({ ...prev, [id]: 'error' }))
+      setAudioEnvelopeErrorByUploadId((prev) => ({ ...prev, [id]: e?.message || 'failed_to_load' }))
+    }
+  }, [audioEnvelopeByUploadId, audioEnvelopeStatusByUploadId])
+
+  useEffect(() => {
+    if (selectedClipIndex < 0) return
+    const clip = timeline.clips[selectedClipIndex]
+    if (!clip) return
+    const uploadId = Number(clip.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    ensureAudioEnvelope(uploadId).catch(() => {})
+  }, [ensureAudioEnvelope, selectedClipIndex, timeline.clips])
+
+  useEffect(() => {
+    return () => {
+      const timers = audioEnvelopePollTimerRef.current
+      for (const k of Object.keys(timers)) {
+        const id = Number(k)
+        const t = timers[id]
+        if (t != null) window.clearTimeout(t)
+      }
+      audioEnvelopePollTimerRef.current = {}
+    }
+  }, [])
+
   const toggleAudioPreview = useCallback(
     async (uploadId: number) => {
       const id = Number(uploadId)
@@ -564,8 +624,9 @@ export default function CreateVideo() {
     if (!canvas || !sc) return
     const wCss = Math.max(0, Math.round(sc.clientWidth || 0))
     const rulerH = RULER_H
+    const waveformH = WAVEFORM_H
     const trackH = TRACK_H
-    const hCss = rulerH + trackH * 3
+    const hCss = TIMELINE_H
     const dpr = Math.max(1, Math.round((window.devicePixelRatio || 1) * 100) / 100)
     canvas.width = Math.max(1, Math.floor(wCss * dpr))
     canvas.height = Math.max(1, Math.floor(hCss * dpr))
@@ -581,11 +642,13 @@ export default function CreateVideo() {
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.fillRect(0, 0, wCss, rulerH)
     ctx.fillStyle = 'rgba(0,0,0,0.55)'
-    ctx.fillRect(0, rulerH, wCss, trackH)
+    ctx.fillRect(0, rulerH, wCss, waveformH)
     ctx.fillStyle = 'rgba(0,0,0,0.55)'
-    ctx.fillRect(0, rulerH + trackH, wCss, trackH)
+    ctx.fillRect(0, rulerH + waveformH, wCss, trackH)
     ctx.fillStyle = 'rgba(0,0,0,0.55)'
-    ctx.fillRect(0, rulerH + trackH * 2, wCss, trackH)
+    ctx.fillRect(0, rulerH + waveformH + trackH, wCss, trackH)
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillRect(0, rulerH + waveformH + trackH * 2, wCss, trackH)
 
     // Ticks (0.1s minor, 1.0s major, 5.0s extra-major)
     const scrollLeft = Math.max(0, Number(timelineScrollLeftPx) || 0)
@@ -625,6 +688,77 @@ export default function CreateVideo() {
         ctx.moveTo(x + 0.5, rulerH)
         ctx.lineTo(x + 0.5, hCss)
         ctx.stroke()
+      }
+    }
+
+    // Waveform (selected clip only)
+    const waveformTop = rulerH + 2
+    const waveformBottom = rulerH + waveformH - 2
+    const waveformHeight = Math.max(4, waveformBottom - waveformTop)
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, waveformBottom + 0.5)
+    ctx.lineTo(wCss, waveformBottom + 0.5)
+    ctx.stroke()
+
+    const clipIdx = selectedClipIndex
+    const clip = clipIdx >= 0 ? timeline.clips[clipIdx] : null
+    if (!clip) {
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'
+      ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('Select a clip to see waveform', 10, rulerH + waveformH / 2)
+    } else {
+      const uploadId = Number(clip.uploadId)
+      const env = uploadId > 0 ? audioEnvelopeByUploadId[uploadId] : null
+      const envStatus = uploadId > 0 ? (audioEnvelopeStatusByUploadId[uploadId] || 'idle') : 'idle'
+      const clipStartT = roundToTenth(clipStarts[clipIdx] || 0) + (dragNoRipple.idx >= 0 && clipIdx >= dragNoRipple.idx ? dragNoRipple.deltaSeconds : 0)
+      const sourceStart = Number(clip.sourceStartSeconds || 0)
+      const sourceEnd = Number(clip.sourceEndSeconds || 0)
+      const hasAudio = env && typeof env === 'object' ? Boolean((env as any).hasAudio) : false
+      const points = env && typeof env === 'object' && Array.isArray((env as any).points) ? ((env as any).points as any[]) : []
+
+      if (envStatus === 'pending' || envStatus === 'idle') {
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'
+        ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('Waveform loading…', 10, rulerH + waveformH / 2)
+      } else if (envStatus === 'error') {
+        ctx.fillStyle = 'rgba(255,155,155,0.92)'
+        ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('Waveform unavailable', 10, rulerH + waveformH / 2)
+      } else if (!hasAudio || !points.length) {
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'
+        ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('No audio', 10, rulerH + waveformH / 2)
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.82)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        let started = false
+        for (const p of points) {
+          const tSrc = Number((p as any).t)
+          const vRaw = Number((p as any).v)
+          if (!Number.isFinite(tSrc) || !Number.isFinite(vRaw)) continue
+          if (tSrc < sourceStart - 1e-6) continue
+          if (tSrc > sourceEnd + 1e-6) break
+          const rel = tSrc - sourceStart
+          const tComp = clipStartT + rel
+          const x = padPx + tComp * pxPerSecond - scrollLeft
+          if (x < -4 || x > wCss + 4) continue
+          const v = clamp(vRaw, 0, 1)
+          const y = waveformBottom - v * (waveformHeight - 2)
+          if (!started) {
+            ctx.moveTo(x, y)
+            started = true
+          } else {
+            ctx.lineTo(x, y)
+          }
+        }
+        if (started) ctx.stroke()
       }
     }
 
@@ -757,6 +891,8 @@ export default function CreateVideo() {
       }
     }
   }, [
+    audioEnvelopeByUploadId,
+    audioEnvelopeStatusByUploadId,
     audioConfigNameById,
     audioTrack,
     clipStarts,
@@ -767,6 +903,7 @@ export default function CreateVideo() {
     pxPerSecond,
     selectedAudio,
     selectedClipId,
+    selectedClipIndex,
     selectedGraphicId,
     timeline.clips,
     timelinePadPx,
