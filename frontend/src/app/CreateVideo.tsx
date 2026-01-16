@@ -331,6 +331,25 @@ export default function CreateVideo() {
     }
   }, [])
 
+  // Synchronous "autoplay unlock" attempt for iOS Safari: must be called directly from a user gesture.
+  // This does not await anything (so we preserve gesture context); it just starts muted playback briefly.
+  const primeAutoplayUnlock = useCallback((v: HTMLVideoElement) => {
+    try {
+      const prevMuted = v.muted
+      v.muted = true
+      const p = v.play()
+      // Don't await; schedule pause/restore.
+      window.setTimeout(() => {
+        try { v.pause() } catch {}
+        try { v.muted = prevMuted } catch {}
+      }, 60)
+      // Silence unhandled promise rejections.
+      if (p && typeof (p as any).catch === 'function') {
+        ;(p as any).catch(() => {})
+      }
+    } catch {}
+  }, [])
+
   const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement): Promise<boolean> => {
     const tryPlay = async (): Promise<boolean> => {
       try {
@@ -1565,16 +1584,9 @@ export default function CreateVideo() {
       const inFreezeEnd = fe > 0.05 && within >= fs + srcDur - 1e-6 && within < totalDur - 1e-6
       if (inFreezeStart || inFreezeEnd) {
         // iOS Safari can require a user-gesture “media activation” before later programmatic play().
-        // Since the freeze segment plays while paused, prime the element *within* the user gesture,
-        // then let the freeze playback loop advance and transition into the moving portion.
-        void (async () => {
-          try {
-            await seek(playhead)
-            const vv = videoRef.current
-            if (vv) await primePausedFrame(vv)
-          } catch {}
-          setPlaying(true)
-        })()
+        // Prime the currently-loaded element synchronously within this click/tap.
+        if (v) primeAutoplayUnlock(v)
+        setPlaying(true)
         return
       }
     }
@@ -1588,7 +1600,7 @@ export default function CreateVideo() {
     } else {
       try { v.pause() } catch {}
     }
-  }, [clipStarts, playhead, playing, seek, timeline.clips, totalSeconds])
+  }, [clipStarts, playhead, playing, primeAutoplayUnlock, seek, timeline.clips, totalSeconds])
 
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
