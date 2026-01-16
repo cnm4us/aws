@@ -2762,45 +2762,56 @@ export default function CreateVideo() {
         <div
           role="dialog"
           aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 1000, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+          style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 5000, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
           onClick={closeAdd}
         >
           <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-                {addStep === 'type' ? (
-                  <button
-                    type="button"
-                    onClick={closeAdd}
-                    style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-                  >
-                    ← Cancel
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setAddStep('type')}
-                    style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-                  >
-                    ← Types
-                  </button>
-                )}
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#000', padding: '6px 0 10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                  {addStep === 'type' ? (
+                    <button
+                      type="button"
+                      onClick={closeAdd}
+                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                    >
+                      ← Cancel
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAddStep('type')}
+                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                    >
+                      ← Types
+                    </button>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={closeAdd}
-                  style={{ color: '#bbb', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                  style={{
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    fontWeight: 800,
+                  }}
                 >
                   Close
                 </button>
-              </div>
-              <div style={{ color: '#bbb', fontSize: 13 }}>
-                {addStep === 'video'
-                  ? `Videos: ${pickerItems.length}`
-                  : addStep === 'graphic'
-                    ? `Images: ${graphicPickerItems.length}`
-                    : addStep === 'audio'
-                      ? `Tracks: ${audioPickerItems.length}`
-                      : 'Choose a type'}
+                <div style={{ color: '#bbb', fontSize: 13 }}>
+                  {addStep === 'video'
+                    ? `Videos: ${pickerItems.length}`
+                    : addStep === 'graphic'
+                      ? `Images: ${graphicPickerItems.length}`
+                      : addStep === 'audio'
+                        ? `Tracks: ${audioPickerItems.length}`
+                        : 'Choose a type'}
+                </div>
               </div>
             </div>
             {addStep === 'type' ? (
