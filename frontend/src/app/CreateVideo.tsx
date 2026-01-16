@@ -168,6 +168,11 @@ export default function CreateVideo() {
   const nudgeRepeatRef = useRef<{ timeout: number | null; interval: number | null; deltaSeconds: number; fired: boolean } | null>(null)
   const suppressNextNudgeClickRef = useRef(false)
 
+  const setTimelineScrollContainerRef = useCallback((el: HTMLDivElement | null) => {
+    timelineScrollRef.current = el
+    setTimelineScrollEl(el)
+  }, [])
+
   const trimDragRef = useRef<
     | {
         kind: 'clip'
@@ -1889,7 +1894,7 @@ export default function CreateVideo() {
   // While dragging trim handles, hard-lock the timeline scroll position so the drag gesture
   // doesn't get interpreted as horizontal panning (especially on iOS).
   useEffect(() => {
-    const sc = timelineScrollRef.current
+    const sc = timelineScrollEl || timelineScrollRef.current
     if (!sc) return
     if (!trimDragging) return
 
@@ -1943,7 +1948,7 @@ export default function CreateVideo() {
       trimDragScrollRestoreRef.current = null
       trimDragLockScrollLeftRef.current = null
     }
-  }, [trimDragging])
+  }, [timelineScrollEl, trimDragging])
 
   const archiveAndRestart = useCallback(async () => {
     if (!project?.id) return
@@ -2143,10 +2148,7 @@ export default function CreateVideo() {
                 }}
               />
               <div
-                ref={(el) => {
-                  timelineScrollRef.current = el
-                  setTimelineScrollEl(el)
-                }}
+                ref={setTimelineScrollContainerRef}
                 onScroll={() => {
                   const sc = timelineScrollRef.current
                   if (!sc) return
