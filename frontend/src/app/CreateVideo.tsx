@@ -909,11 +909,10 @@ export default function CreateVideo() {
       roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
-      if (isDragging) {
+      if (isDragging && activeEdge && activeEdge !== 'move') {
         ctx.save()
-        ctx.shadowColor = 'rgba(10,132,255,0.75)'
-        ctx.shadowBlur = 10
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
         ctx.lineWidth = 2
         roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
         ctx.stroke()
@@ -970,11 +969,10 @@ export default function CreateVideo() {
       roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
-      if (isDragging) {
+      if (isDragging && activeEdge && activeEdge !== 'move') {
         ctx.save()
-        ctx.shadowColor = 'rgba(212,175,55,0.75)'
-        ctx.shadowBlur = 10
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
         ctx.lineWidth = 2
         roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
         ctx.stroke()
@@ -1030,11 +1028,10 @@ export default function CreateVideo() {
           roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
           ctx.stroke()
 
-          if (isDragging) {
+          if (isDragging && activeEdge && activeEdge !== 'move') {
             ctx.save()
-            ctx.shadowColor = 'rgba(48,209,88,0.75)'
-            ctx.shadowBlur = 10
-            ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+            ctx.setLineDash([6, 4])
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)'
             ctx.lineWidth = 2
             roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
             ctx.stroke()
@@ -2267,7 +2264,7 @@ export default function CreateVideo() {
         </div>
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.35)', padding: 12 }}>
-          <div style={{ position: 'relative', paddingTop: dragHud ? 62 : 14 }}>
+          <div style={{ position: 'relative', paddingTop: 14 }}>
             <div style={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', color: '#bbb', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
               {playhead.toFixed(1)}s
             </div>
@@ -2282,26 +2279,33 @@ export default function CreateVideo() {
                   textAlign: 'center',
                   pointerEvents: 'none',
                   fontVariantNumeric: 'tabular-nums',
+                  zIndex: 60,
                 }}
               >
-                <div style={{ color: '#fff', fontSize: 12, fontWeight: 800 }}>
-                  {dragHud.kindLabel} • {dragHud.actionLabel} • Len {dragHud.len.toFixed(1)}s
-                </div>
                 <div
                   style={{
-                    marginTop: 2,
-                    color: '#bbb',
+                    display: 'inline-flex',
+                    gap: 10,
+                    alignItems: 'center',
+                    padding: '6px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(0,0,0,0.55)',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    color: '#fff',
                     fontSize: 12,
-                    fontWeight: 700,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    fontWeight: 800,
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {dragHud.name}
-                </div>
-                <div style={{ marginTop: 2, color: '#bbb', fontSize: 12, fontWeight: 600 }}>
-                  Start {dragHud.start.toFixed(1)} • End {dragHud.end.toFixed(1)}
+                  {dragHud.actionLabel === 'Move' ? (
+                    <>
+                      <span>Start: {dragHud.start.toFixed(1)}</span>
+                      <span>|</span>
+                      <span>End: {dragHud.end.toFixed(1)}</span>
+                    </>
+                  ) : (
+                    <span>Length: {dragHud.len.toFixed(1)}</span>
+                  )}
                 </div>
               </div>
             ) : null}
