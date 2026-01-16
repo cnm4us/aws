@@ -1831,10 +1831,10 @@ export default function CreateVideo() {
     }
     const onUp = (e: PointerEvent) => {
       const drag = trimDragRef.current
-      if (drag && e.pointerId !== drag.pointerId) return
+      if (!drag) return
       trimDragRef.current = null
       setTrimDragging(false)
-      try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
+      try { timelineScrollRef.current?.releasePointerCapture?.(drag.pointerId) } catch {}
     }
     window.addEventListener('pointermove', onMove, { passive: false })
     window.addEventListener('pointerup', onUp)
