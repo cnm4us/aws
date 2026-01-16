@@ -933,7 +933,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'
+        ctx.fillStyle = isResizing ? 'rgba(212,175,55,0.95)' : 'rgba(255,255,255,0.85)'
         const hs = handleSize
         const hy = graphicsY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -999,7 +999,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'
+        ctx.fillStyle = isResizing ? 'rgba(212,175,55,0.95)' : 'rgba(255,255,255,0.85)'
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -1066,7 +1066,7 @@ export default function CreateVideo() {
           }
 
           if (showHandles) {
-            ctx.fillStyle = 'rgba(255,255,255,0.85)'
+            ctx.fillStyle = isResizing ? 'rgba(212,175,55,0.95)' : 'rgba(255,255,255,0.85)'
             const hs = handleSize
             const hy = audioY + Math.floor((pillH - handleSize) / 2)
             const hxL = x + 6
