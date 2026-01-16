@@ -1945,7 +1945,13 @@ export default function CreateVideo() {
       const drag = panDragRef.current
       if (!drag) return
       if (e.pointerId !== drag.pointerId) return
-      if (drag.moved) suppressNextTimelineClickRef.current = true
+      if (drag.moved) {
+        suppressNextTimelineClickRef.current = true
+        // Only suppress the synthetic click that can be emitted immediately after a drag ends.
+        window.setTimeout(() => {
+          suppressNextTimelineClickRef.current = false
+        }, 0)
+      }
       panDragRef.current = null
       setPanDragging(false)
       try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
