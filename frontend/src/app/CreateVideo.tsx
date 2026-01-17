@@ -5153,15 +5153,15 @@ export default function CreateVideo() {
 	                <button
 	                  type="button"
 	                  onClick={split}
-	                  disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId}
+	                  disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId}
 	                  style={{
 	                    padding: '10px 12px',
 	                    borderRadius: 10,
 	                    border: '1px solid rgba(255,255,255,0.18)',
-	                    background: selectedClipId || selectedGraphicId || selectedLogoId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+	                    background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
 	                    color: '#fff',
 	                    fontWeight: 900,
-	                    cursor: selectedClipId || selectedGraphicId || selectedLogoId ? 'pointer' : 'default',
+	                    cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId ? 'pointer' : 'default',
 	                    flex: '0 0 auto',
 	                  }}
 	                >
@@ -5188,15 +5188,15 @@ export default function CreateVideo() {
               <button
                 type="button"
                 onClick={deleteSelected}
-                disabled={!selectedClipId && !selectedGraphicId && !selectedAudio}
+                disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId && !selectedStillId && !selectedAudio}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
-                  background: selectedClipId || selectedGraphicId || selectedAudio ? '#300' : 'rgba(255,255,255,0.06)',
+                  background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedStillId || selectedAudio ? '#300' : 'rgba(255,255,255,0.06)',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: selectedClipId || selectedGraphicId || selectedAudio ? 'pointer' : 'default',
+                  cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedStillId || selectedAudio ? 'pointer' : 'default',
                   flex: '0 0 auto',
                 }}
               >
