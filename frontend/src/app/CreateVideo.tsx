@@ -2594,12 +2594,16 @@ export default function CreateVideo() {
       const dx = e.clientX - drag.startClientX
       const deltaSeconds = dx / pxPerSecond
       const minLen = 0.2
-      setTimeline((prev) => {
+        setTimeline((prev) => {
           if (drag.kind === 'clip') {
-            const idx = prev.clips.findIndex((c) => c.id === drag.clipId)
+            // Normalize to explicit startSeconds so collision math is stable even if older timelines omitted startSeconds.
+            const prevStarts = computeClipStarts(prev.clips)
+            const normalizedClips: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(prevStarts[i] || 0) }))
+            const idx = normalizedClips.findIndex((c) => c.id === drag.clipId)
             if (idx < 0) return prev
-            const c = prev.clips[idx]
-            const next = prev.clips.slice()
+            const c = normalizedClips[idx]
+            const next = normalizedClips.slice()
+            const prevStills: any[] = Array.isArray((prev as any).stills) ? (prev as any).stills : []
 
           if (drag.edge === 'move') {
             const dur = Math.max(0.2, roundToTenth(clipDurationSeconds(c)))
@@ -2607,7 +2611,33 @@ export default function CreateVideo() {
             const maxEndSeconds = drag.maxEndSeconds != null ? Number(drag.maxEndSeconds) : 20 * 60
             const maxStartSeconds =
               drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur))
-            const startTimeline = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), minStartSeconds, maxStartSeconds)
+            let startTimeline = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), minStartSeconds, maxStartSeconds)
+
+            // Safety valve: never allow moving a clip into a freeze-frame still segment (or any other base-track segment).
+            // We mostly rely on pointerdown-time constraints, but dynamic enforcement keeps behavior correct if neighbors change.
+            const otherBaseRanges: Array<{ start: number; end: number }> = []
+            for (let i = 0; i < next.length; i++) {
+              if (i === idx) continue
+              const s = roundToTenth(Number((next[i] as any).startSeconds || 0))
+              const e = roundToTenth(s + clipDurationSeconds(next[i]))
+              if (e > s) otherBaseRanges.push({ start: s, end: e })
+            }
+            for (const st of prevStills) {
+              const s = roundToTenth(Number((st as any).startSeconds || 0))
+              const e = roundToTenth(Number((st as any).endSeconds || 0))
+              if (e > s) otherBaseRanges.push({ start: s, end: e })
+            }
+            otherBaseRanges.sort((a, b) => a.start - b.start || a.end - b.end)
+            const movingRight = deltaSeconds >= 0
+            for (let guard = 0; guard < 6; guard++) {
+              const endTimeline = roundToTenth(startTimeline + dur)
+              const hit = otherBaseRanges.find((r) => startTimeline < r.end - 1e-6 && endTimeline > r.start + 1e-6)
+              if (!hit) break
+              if (movingRight) startTimeline = roundToTenth(Math.max(minStartSeconds, hit.start - dur))
+              else startTimeline = roundToTenth(Math.min(maxStartSeconds, hit.end))
+              startTimeline = clamp(startTimeline, minStartSeconds, maxStartSeconds)
+            }
+
             next[idx] = { ...c, startSeconds: startTimeline }
             next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
           } else {
@@ -2632,6 +2662,24 @@ export default function CreateVideo() {
               }
               endS = Math.max(endS, startS + minLen)
             }
+
+            // Safety valve: trimming that extends duration must never overlap the next base-track segment (including freeze stills).
+            const clipStartTimeline = roundToTenth(Number((c as any).startSeconds || 0))
+            if (Number.isFinite(clipStartTimeline) && prevStills.length) {
+              const nextStillStart = prevStills
+                .map((st: any) => roundToTenth(Number(st?.startSeconds || 0)))
+                .filter((s: number) => Number.isFinite(s) && s > clipStartTimeline + 1e-6)
+                .reduce((min: number, v: number) => (v < min ? v : min), Number.POSITIVE_INFINITY)
+              if (Number.isFinite(nextStillStart) && nextStillStart < Number.POSITIVE_INFINITY) {
+                const maxDurFromStill = roundToTenth(Math.max(minLen, nextStillStart - clipStartTimeline))
+                if (drag.edge === 'start') {
+                  startS = Math.max(startS, roundToTenth(endS - maxDurFromStill))
+                } else {
+                  endS = Math.min(endS, roundToTenth(startS + maxDurFromStill))
+                }
+              }
+            }
+
             next[idx] = { ...c, sourceStartSeconds: startS, sourceEndSeconds: endS }
           }
           const nextTimeline: any = { ...prev, clips: next }
