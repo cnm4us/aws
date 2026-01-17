@@ -22,12 +22,13 @@ type Clip = {
 type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
 type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
+type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
   userId: number
-  timeline: { version: 'create_video_v1'; clips: Clip[]; stills?: Still[]; graphics?: Graphic[]; logos?: Logo[]; audioTrack?: AudioTrack | null }
+  timeline: { version: 'create_video_v1'; clips: Clip[]; stills?: Still[]; graphics?: Graphic[]; logos?: Logo[]; lowerThirds?: LowerThird[]; audioTrack?: AudioTrack | null }
 }
 
 function roundToTenth(n: number): number {
@@ -529,6 +530,7 @@ export async function runCreateVideoExportV1Job(
   const stills = Array.isArray((input.timeline as any)?.stills) ? ((input.timeline as any).stills as Still[]) : []
   const graphics = Array.isArray((input.timeline as any)?.graphics) ? ((input.timeline as any).graphics as Graphic[]) : []
   const logos = Array.isArray((input.timeline as any)?.logos) ? ((input.timeline as any).logos as Logo[]) : []
+  const lowerThirds = Array.isArray((input.timeline as any)?.lowerThirds) ? ((input.timeline as any).lowerThirds as LowerThird[]) : []
   const audioTrackRaw = (input.timeline as any)?.audioTrack
   const audioTrack: AudioTrack | null =
     audioTrackRaw && typeof audioTrackRaw === 'object'
@@ -549,6 +551,7 @@ export async function runCreateVideoExportV1Job(
         ...stills.map((s) => Number((s as any).uploadId)),
         ...graphics.map((g) => Number(g.uploadId)),
         ...logos.map((l) => Number((l as any).uploadId)),
+        ...lowerThirds.map((lt) => Number((lt as any).uploadId)),
         ...(audioTrack ? [Number(audioTrack.uploadId)] : []),
       ].filter((n) => Number.isFinite(n) && n > 0)
     )
@@ -615,6 +618,9 @@ export async function runCreateVideoExportV1Job(
     const graphicsEnd = graphics.length ? Number(graphics.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[graphics.length - 1].endSeconds) : 0
     const audioEnd = audioTrack ? Number(audioTrack.endSeconds || 0) : 0
     const logosEnd = logos.length ? Number(logos.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[logos.length - 1].endSeconds) : 0
+    const lowerThirdsEnd = lowerThirds.length
+      ? Number(lowerThirds.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[lowerThirds.length - 1].endSeconds)
+      : 0
 
     if (segments.length) {
       // If we have video clips, use the first clip to choose output dimensions (max long edge 1080).
@@ -720,7 +726,7 @@ export async function runCreateVideoExportV1Job(
         cursorSeconds = endSeconds
       }
 
-      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, audioEnd, logosEnd))
+      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, audioEnd, logosEnd, lowerThirdsEnd))
       if (targetEnd > cursorSeconds + 0.05) {
         const gapDur = roundToTenth(targetEnd - cursorSeconds)
         const gapPath = path.join(tmpDir, `tail_gap.mp4`)
@@ -776,7 +782,7 @@ export async function runCreateVideoExportV1Job(
         )
       }
     } else {
-      baseDurationSeconds = roundToTenth(Math.max(0, graphicsEnd, audioEnd, logosEnd))
+      baseDurationSeconds = roundToTenth(Math.max(0, graphicsEnd, audioEnd, logosEnd, lowerThirdsEnd))
       if (!(baseDurationSeconds > 0)) throw new Error('invalid_duration')
       await renderBlackBaseMp4({
         outPath: baseOut,
@@ -819,6 +825,105 @@ export async function runCreateVideoExportV1Job(
         logPaths,
       })
       finalOut = overlayOut
+    }
+
+    if (lowerThirds.length) {
+      const downloads = new Map<number, { path: string; w: number; h: number }>()
+      const sorted = lowerThirds
+        .slice()
+        .map((lt) => ({
+          ...lt,
+          startSeconds: roundToTenth(Math.max(0, Number((lt as any).startSeconds || 0))),
+          endSeconds: roundToTenth(Math.max(0, Number((lt as any).endSeconds || 0))),
+        }))
+        .filter((lt) => Number.isFinite(Number((lt as any).startSeconds)) && Number.isFinite(Number((lt as any).endSeconds)) && Number((lt as any).endSeconds) > Number((lt as any).startSeconds))
+        .sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String((a as any).id).localeCompare(String((b as any).id)))
+
+      const overlays: Array<{ pngPath: string; imgW: number; imgH: number; cfg: any; startSeconds: number; endSeconds: number }> = []
+      for (let i = 0; i < sorted.length; i++) {
+        const lt: any = sorted[i] as any
+        const uploadId = Number(lt.uploadId)
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
+        if (String(row.image_role || '').toLowerCase() !== 'lower_third') throw new Error('invalid_image_role')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+        const st = String(row.status || '').toLowerCase()
+        if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+        if (row.source_deleted_at) throw new Error('source_deleted')
+
+        let entry = downloads.get(uploadId)
+        if (!entry) {
+          const p = path.join(tmpDir, `lower_third_${uploadId}_${String(i).padStart(3, '0')}.png`)
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), p)
+          let w = row.width != null ? Number(row.width) : NaN
+          let h = row.height != null ? Number(row.height) : NaN
+          if (!(Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0)) {
+            const dims = await probeVideoDisplayDimensions(p)
+            w = dims.width
+            h = dims.height
+          }
+          entry = { path: p, w: Math.max(1, Math.round(w)), h: Math.max(1, Math.round(h)) }
+          downloads.set(uploadId, entry)
+        }
+
+        const segStart = clamp(roundToTenth(Number(lt.startSeconds)), 0, Math.max(0, baseDurationSeconds))
+        const segEnd = clamp(roundToTenth(Number(lt.endSeconds)), 0, Math.max(0, baseDurationSeconds))
+        if (!(segEnd > segStart + 0.01)) continue
+        const segDur = roundToTenth(segEnd - segStart)
+
+        const cfgRaw = lt.configSnapshot && typeof lt.configSnapshot === 'object' ? lt.configSnapshot : {}
+        const cfg: any = { ...cfgRaw }
+
+        // Support match-image sizing by converting to sizePctWidth at the configured baseline width.
+        const sizeMode = String(cfg.sizeMode || 'pct').toLowerCase()
+        if (sizeMode === 'match_image') {
+          const baseline = Number(cfg.baselineWidth) === 1920 ? 1920 : 1080
+          const pct = Math.round((entry.w / baseline) * 100)
+          cfg.sizePctWidth = clamp(pct, 1, 100)
+        }
+
+        const rule = String(cfgRaw.timingRule || 'first_only').toLowerCase()
+        const secsRaw = cfgRaw.timingSeconds == null ? null : Number(cfgRaw.timingSeconds)
+        const secs = secsRaw != null && Number.isFinite(secsRaw) ? Math.max(0, Math.min(3600, secsRaw)) : null
+
+        let startRel = 0
+        let endRel = segDur
+        if (rule === 'first_only') endRel = Math.max(0, Math.min(segDur, secs ?? segDur))
+
+        const effStart = roundToTenth(segStart + startRel)
+        const effEnd = roundToTenth(segStart + endRel)
+        if (!(effEnd > effStart + 0.01)) continue
+
+        overlays.push({
+          pngPath: entry.path,
+          imgW: entry.w,
+          imgH: entry.h,
+          cfg,
+          startSeconds: effStart,
+          endSeconds: effEnd,
+        })
+      }
+
+      if (overlays.length) {
+        const outLt = path.join(tmpDir, 'out_lower_third.mp4')
+        await burnPngOverlaysIntoMp4({
+          inPath: finalOut,
+          outPath: outLt,
+          videoDurationSeconds: baseDurationSeconds,
+          overlays: overlays.map((o) => ({
+            pngPath: o.pngPath,
+            imgW: o.imgW,
+            imgH: o.imgH,
+            cfg: o.cfg,
+            startSeconds: o.startSeconds,
+            endSeconds: o.endSeconds,
+          })),
+          logPaths,
+        })
+        finalOut = outLt
+      }
     }
 
     if (logos.length) {

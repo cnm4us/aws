@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getUploadCdnUrl } from '../ui/uploadsCdn'
-import type { AudioTrack, Clip, Graphic, Logo, LogoConfigSnapshot, Still, Timeline } from './createVideo/timelineTypes'
+import type { AudioTrack, Clip, Graphic, Logo, LogoConfigSnapshot, LowerThird, LowerThirdConfigSnapshot, Still, Timeline } from './createVideo/timelineTypes'
 import { cloneTimeline } from './createVideo/timelineTypes'
 import {
   clamp,
@@ -12,7 +12,7 @@ import {
   locate,
   roundToTenth,
 } from './createVideo/timelineMath'
-import { insertClipAtPlayhead, splitClipAtPlayhead, splitGraphicAtPlayhead, splitLogoAtPlayhead } from './createVideo/timelineOps'
+import { insertClipAtPlayhead, splitClipAtPlayhead, splitGraphicAtPlayhead, splitLogoAtPlayhead, splitLowerThirdAtPlayhead } from './createVideo/timelineOps'
 
 type MeResponse = {
   userId: number | null
@@ -56,8 +56,9 @@ type AudioConfigItem = {
 }
 
 type LogoConfigItem = LogoConfigSnapshot
+type LowerThirdConfigItem = LowerThirdConfigSnapshot
 
-type AddStep = 'type' | 'video' | 'graphic' | 'audio' | 'logo' | 'logoConfig'
+type AddStep = 'type' | 'video' | 'graphic' | 'audio' | 'logo' | 'logoConfig' | 'lowerThird' | 'lowerThirdConfig'
 
 const FREEZE_OPTIONS_SECONDS = [
   0,
@@ -228,14 +229,25 @@ export default function CreateVideo() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
-  const [timeline, setTimeline] = useState<Timeline>({ version: 'create_video_v1', playheadSeconds: 0, clips: [], graphics: [], audioTrack: null })
+  const [timeline, setTimeline] = useState<Timeline>({
+    version: 'create_video_v1',
+    playheadSeconds: 0,
+    clips: [],
+    stills: [],
+    graphics: [],
+    logos: [],
+    lowerThirds: [],
+    audioTrack: null,
+  })
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [selectedGraphicId, setSelectedGraphicId] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null)
+  const [selectedLowerThirdId, setSelectedLowerThirdId] = useState<string | null>(null)
   const [selectedStillId, setSelectedStillId] = useState<string | null>(null)
   const [selectedAudio, setSelectedAudio] = useState(false)
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
+  const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
   const [pickOpen, setPickOpen] = useState(false)
   const [addStep, setAddStep] = useState<AddStep>('type')
   const [pickerLoading, setPickerLoading] = useState(false)
@@ -256,10 +268,19 @@ export default function CreateVideo() {
   const [logoConfigsLoaded, setLogoConfigsLoaded] = useState(false)
   const [logoConfigsError, setLogoConfigsError] = useState<string | null>(null)
   const [pendingLogoUploadId, setPendingLogoUploadId] = useState<number | null>(null)
+  const [lowerThirdPickerLoading, setLowerThirdPickerLoading] = useState(false)
+  const [lowerThirdPickerError, setLowerThirdPickerError] = useState<string | null>(null)
+  const [lowerThirdPickerItems, setLowerThirdPickerItems] = useState<UploadListItem[]>([])
+  const [lowerThirdConfigs, setLowerThirdConfigs] = useState<LowerThirdConfigItem[]>([])
+  const [lowerThirdConfigsLoaded, setLowerThirdConfigsLoaded] = useState(false)
+  const [lowerThirdConfigsError, setLowerThirdConfigsError] = useState<string | null>(null)
+  const [pendingLowerThirdUploadId, setPendingLowerThirdUploadId] = useState<number | null>(null)
   const [graphicEditor, setGraphicEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [logoEditor, setLogoEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
   const [logoEditorError, setLogoEditorError] = useState<string | null>(null)
+  const [lowerThirdEditor, setLowerThirdEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
+  const [lowerThirdEditorError, setLowerThirdEditorError] = useState<string | null>(null)
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
@@ -284,7 +305,17 @@ export default function CreateVideo() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
-  const undoStackRef = useRef<Array<{ timeline: Timeline; selectedClipId: string | null; selectedGraphicId: string | null; selectedLogoId: string | null; selectedStillId: string | null; selectedAudio: boolean }>>([])
+  const undoStackRef = useRef<
+    Array<{
+      timeline: Timeline
+      selectedClipId: string | null
+      selectedGraphicId: string | null
+      selectedLogoId: string | null
+      selectedLowerThirdId: string | null
+      selectedStillId: string | null
+      selectedAudio: boolean
+    }>
+  >([])
   const [undoDepth, setUndoDepth] = useState(0)
   const lastSavedRef = useRef<string>('')
   const hydratingRef = useRef(false)
@@ -362,11 +393,31 @@ export default function CreateVideo() {
         edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
+        startClientY?: number
         startStartSeconds: number
         startEndSeconds: number
         minStartSeconds: number
         maxEndSeconds: number
         maxStartSeconds?: number
+        // For armed body-drag (so a click can still open the properties modal)
+        armed?: boolean
+        moved?: boolean
+      }
+    | {
+        kind: 'lowerThird'
+        lowerThirdId: string
+        edge: 'start' | 'end' | 'move'
+        pointerId: number
+        startClientX: number
+        startClientY?: number
+        startStartSeconds: number
+        startEndSeconds: number
+        minStartSeconds: number
+        maxEndSeconds: number
+        maxStartSeconds?: number
+        // For armed body-drag (so a click can still open the properties modal)
+        armed?: boolean
+        moved?: boolean
       }
     | {
         kind: 'audio'
@@ -414,6 +465,7 @@ export default function CreateVideo() {
           selectedClipId,
           selectedGraphicId,
           selectedLogoId,
+          selectedLowerThirdId,
           selectedAudio,
           trimDragging,
           panDragging,
@@ -425,7 +477,7 @@ export default function CreateVideo() {
         })
       } catch {}
     },
-    [debugEnabled, panDragging, selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, trimDragging]
+    [debugEnabled, panDragging, selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, trimDragging]
   )
 
   const stopTrimDrag = useCallback(
@@ -557,9 +609,15 @@ export default function CreateVideo() {
       const e = Number((l as any).endSeconds)
       if (Number.isFinite(e) && e > lEnd) lEnd = e
     }
+    const lts: any[] = Array.isArray((tl as any).lowerThirds) ? (tl as any).lowerThirds : []
+    let ltEnd = 0
+    for (const lt of lts) {
+      const e = Number((lt as any).endSeconds)
+      if (Number.isFinite(e) && e > ltEnd) ltEnd = e
+    }
     const at = (tl as any).audioTrack
     const aEnd = at && typeof at === 'object' ? Number((at as any).endSeconds || 0) : 0
-    return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, sEnd, lEnd, aEnd)))
+    return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, sEnd, lEnd, ltEnd, aEnd)))
   }, [])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
@@ -570,12 +628,13 @@ export default function CreateVideo() {
   const TRACK_H = 48
   const TRACKS_TOP = RULER_H + WAVEFORM_H
   const LOGO_Y = TRACKS_TOP + 6
-  const GRAPHICS_Y = TRACKS_TOP + TRACK_H + 6
-  const VIDEO_Y = TRACKS_TOP + TRACK_H * 2 + 6
-  const AUDIO_Y = TRACKS_TOP + TRACK_H * 3 + 6
+  const LOWER_THIRD_Y = TRACKS_TOP + TRACK_H + 6
+  const GRAPHICS_Y = TRACKS_TOP + TRACK_H * 2 + 6
+  const VIDEO_Y = TRACKS_TOP + TRACK_H * 3 + 6
+  const AUDIO_Y = TRACKS_TOP + TRACK_H * 4 + 6
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 18
-  const TIMELINE_H = TRACKS_TOP + TRACK_H * 4
+  const TIMELINE_H = TRACKS_TOP + TRACK_H * 5
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
@@ -597,6 +656,12 @@ export default function CreateVideo() {
     if (!selectedLogoId) return null
     return logos.find((l) => String(l.id) === String(selectedLogoId)) || null
   }, [logos, selectedLogoId])
+
+  const lowerThirds = useMemo(() => (Array.isArray((timeline as any).lowerThirds) ? ((timeline as any).lowerThirds as LowerThird[]) : []), [timeline])
+  const selectedLowerThird = useMemo(() => {
+    if (!selectedLowerThirdId) return null
+    return lowerThirds.find((lt) => String((lt as any).id) === String(selectedLowerThirdId)) || null
+  }, [lowerThirds, selectedLowerThirdId])
 
   const stills = useMemo(() => (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as Still[]) : []), [timeline])
   const selectedStill = useMemo(() => {
@@ -658,6 +723,11 @@ export default function CreateVideo() {
       const e = roundToTenth(Number((l as any).endSeconds || 0))
       if (e > s) out.push(s, e)
     }
+    for (const lt of lowerThirds) {
+      const s = roundToTenth(Number((lt as any).startSeconds || 0))
+      const e = roundToTenth(Number((lt as any).endSeconds || 0))
+      if (e > s) out.push(s, e)
+    }
     if (audioTrack) {
       const s = roundToTenth(Number(audioTrack.startSeconds || 0))
       const e = roundToTenth(Number(audioTrack.endSeconds || 0))
@@ -670,7 +740,7 @@ export default function CreateVideo() {
       uniq.set(tt.toFixed(1), tt)
     }
     return Array.from(uniq.values()).sort((a, b) => a - b)
-  }, [audioTrack, clipStarts, graphics, logos, stills, timeline.clips, totalSeconds])
+  }, [audioTrack, clipStarts, graphics, logos, lowerThirds, stills, timeline.clips, totalSeconds])
 
   const dragHud = useMemo(() => {
     if (!trimDragging) return null
@@ -713,6 +783,18 @@ export default function CreateVideo() {
       return { kindLabel: 'Logo', actionLabel, name, start, end, len }
     }
 
+    if (drag.kind === 'lowerThird') {
+      const lt = lowerThirds.find((x: any) => String((x as any).id) === String((drag as any).lowerThirdId)) as any
+      if (!lt) return null
+      const imgName = namesByUploadId[Number(lt.uploadId)] || `Lower third ${lt.uploadId}`
+      const cfgName = String(lt?.configSnapshot?.name || '') || `Config ${lt.configId}`
+      const name = `${imgName} • ${cfgName}`
+      const start = roundToTenth(Number(lt.startSeconds || 0))
+      const end = roundToTenth(Number(lt.endSeconds || 0))
+      const len = Math.max(0, roundToTenth(end - start))
+      return { kindLabel: 'Lower third', actionLabel, name, start, end, len }
+    }
+
     if (drag.kind === 'audio') {
       if (!audioTrack) return null
       const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
@@ -741,6 +823,7 @@ export default function CreateVideo() {
     clipStarts,
     graphics,
     logos,
+    lowerThirds,
     stills,
     namesByUploadId,
     timeline.clips,
@@ -831,6 +914,18 @@ export default function CreateVideo() {
     return null
   }, [logos])
 
+  const findLowerThirdAtTime = useCallback((t: number): LowerThird | null => {
+    const tt = Number(t)
+    if (!Number.isFinite(tt) || tt < 0) return null
+    for (const lt of lowerThirds) {
+      const s = Number((lt as any).startSeconds)
+      const e = Number((lt as any).endSeconds)
+      if (!Number.isFinite(s) || !Number.isFinite(e)) continue
+      if (tt >= s && tt < e) return lt
+    }
+    return null
+  }, [lowerThirds])
+
   const findStillAtTime = useCallback((t: number): Still | null => {
     const tt = Number(t)
     if (!Number.isFinite(tt) || tt < 0) return null
@@ -845,6 +940,7 @@ export default function CreateVideo() {
 
   const activeGraphicAtPlayhead = useMemo(() => findGraphicAtTime(playhead), [findGraphicAtTime, playhead])
   const activeLogoAtPlayhead = useMemo(() => findLogoAtTime(playhead), [findLogoAtTime, playhead])
+  const activeLowerThirdAtPlayhead = useMemo(() => findLowerThirdAtTime(playhead), [findLowerThirdAtTime, playhead])
   const activeStillAtPlayhead = useMemo(() => findStillAtTime(playhead), [findStillAtTime, playhead])
   const activeGraphicUploadId = useMemo(() => {
     const g = activeGraphicAtPlayhead
@@ -866,6 +962,13 @@ export default function CreateVideo() {
     const id = Number((l as any).uploadId)
     return Number.isFinite(id) && id > 0 ? id : null
   }, [activeLogoAtPlayhead])
+
+  const activeLowerThirdUploadId = useMemo(() => {
+    const lt = activeLowerThirdAtPlayhead
+    if (!lt) return null
+    const id = Number((lt as any).uploadId)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }, [activeLowerThirdAtPlayhead])
   const activeGraphicUrl = useMemo(() => {
     if (!activeGraphicUploadId) return null
     return graphicFileUrlByUploadId[activeGraphicUploadId] || `/api/uploads/${encodeURIComponent(String(activeGraphicUploadId))}/file`
@@ -880,6 +983,11 @@ export default function CreateVideo() {
     if (!activeLogoUploadId) return null
     return graphicFileUrlByUploadId[activeLogoUploadId] || `/api/uploads/${encodeURIComponent(String(activeLogoUploadId))}/file`
   }, [activeLogoUploadId, graphicFileUrlByUploadId])
+
+  const activeLowerThirdUrl = useMemo(() => {
+    if (!activeLowerThirdUploadId) return null
+    return graphicFileUrlByUploadId[activeLowerThirdUploadId] || `/api/uploads/${encodeURIComponent(String(activeLowerThirdUploadId))}/file`
+  }, [activeLowerThirdUploadId, graphicFileUrlByUploadId])
 
   const activeLogoPreview = useMemo(() => {
     const seg: any = activeLogoAtPlayhead as any
@@ -906,6 +1014,44 @@ export default function CreateVideo() {
     style.zIndex = 50
     return { url, style }
   }, [activeLogoAtPlayhead, activeLogoUrl, playhead])
+
+  const activeLowerThirdPreview = useMemo(() => {
+    const seg: any = activeLowerThirdAtPlayhead as any
+    const url = activeLowerThirdUrl
+    if (!seg || !url) return null
+    const segStart = Number(seg.startSeconds || 0)
+    const segEnd = Number(seg.endSeconds || 0)
+    if (!(Number.isFinite(segStart) && Number.isFinite(segEnd) && segEnd > segStart)) return null
+    const segDur = Math.max(0, segEnd - segStart)
+    const cfg: any = seg.configSnapshot && typeof seg.configSnapshot === 'object' ? seg.configSnapshot : {}
+    const { startRelS, endRelS } = computeSegmentTimingWindow(cfg, segDur)
+    if (!(endRelS > startRelS)) return null
+    const tRel = Number(playhead) - segStart
+    if (!(Number.isFinite(tRel) && tRel >= startRelS - 1e-6 && tRel <= endRelS + 1e-6)) return null
+
+    const baseOpacityPct = cfg.opacityPct != null ? Number(cfg.opacityPct) : 100
+    const baseOpacity = Math.min(1, Math.max(0, (Number.isFinite(baseOpacityPct) ? baseOpacityPct : 100) / 100))
+    const fadeAlpha = computeFadeAlpha(cfg, tRel, startRelS, endRelS)
+    const alpha = baseOpacity * fadeAlpha
+    if (!(alpha > 0.001)) return null
+
+    // Lower thirds can use match_image sizing; convert to a % width when we have the image pixel width.
+    const cfgForCss: any = { ...(cfg as any) }
+    try {
+      if (String(cfgForCss.sizeMode || '').toLowerCase() === 'match_image') {
+        const base = Number(cfgForCss.baselineWidth) === 1920 ? 1920 : 1080
+        const w = dimsByUploadId[Number(seg.uploadId)]?.width
+        if (w != null && Number.isFinite(Number(w)) && Number(w) > 0) {
+          cfgForCss.sizePctWidth = clamp((Number(w) / base) * 100, 1, 100)
+        }
+      }
+    } catch {}
+
+    const style: any = computeOverlayCssNoOpacity(cfgForCss)
+    style.opacity = alpha
+    style.zIndex = 40
+    return { url, style }
+  }, [activeLowerThirdAtPlayhead, activeLowerThirdUrl, dimsByUploadId, playhead])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -1102,12 +1248,12 @@ export default function CreateVideo() {
 
   const snapshotUndo = useCallback(() => {
     const stack = undoStackRef.current
-    const snapshot = { timeline: cloneTimeline(timeline), selectedClipId, selectedGraphicId, selectedLogoId, selectedStillId, selectedAudio }
+    const snapshot = { timeline: cloneTimeline(timeline), selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedStillId, selectedAudio }
     stack.push(snapshot)
     // Cap memory and keep behavior predictable.
     if (stack.length > 50) stack.splice(0, stack.length - 50)
     setUndoDepth(stack.length)
-  }, [selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedStillId, timeline])
+  }, [selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedStillId, timeline])
 
   const snapshotUndoRef = useRef(snapshotUndo)
   useEffect(() => {
@@ -1125,6 +1271,7 @@ export default function CreateVideo() {
       setSelectedClipId(snap.selectedClipId)
       setSelectedGraphicId(snap.selectedGraphicId)
       setSelectedLogoId(snap.selectedLogoId)
+      setSelectedLowerThirdId((snap as any).selectedLowerThirdId || null)
       setSelectedStillId(snap.selectedStillId)
       setSelectedAudio(Boolean(snap.selectedAudio))
     } finally {
@@ -1195,6 +1342,8 @@ export default function CreateVideo() {
     ctx.fillRect(0, rulerH + waveformH + trackH * 2, wCss, trackH)
     ctx.fillStyle = 'rgba(0,0,0,0.55)'
     ctx.fillRect(0, rulerH + waveformH + trackH * 3, wCss, trackH)
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillRect(0, rulerH + waveformH + trackH * 4, wCss, trackH)
 
     // Ticks (0.1s minor, 1.0s major, 5.0s extra-major)
     const scrollLeft = Math.max(0, Number(timelineScrollLeftPx) || 0)
@@ -1311,6 +1460,7 @@ export default function CreateVideo() {
 
     // Logo + graphics + clip pills
     const logoY = LOGO_Y
+    const lowerThirdY = LOWER_THIRD_Y
     const graphicsY = GRAPHICS_Y
     const videoY = VIDEO_Y
     const audioY = AUDIO_Y
@@ -1383,6 +1533,76 @@ export default function CreateVideo() {
         ctx.fillStyle = 'rgba(212,175,55,0.95)'
         const barW = 5
         const by = logoY + 3
+        const bh = pillH - 6
+        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+      }
+    }
+
+    // Lower-third segments (below logos; no overlaps)
+    for (let i = 0; i < lowerThirds.length; i++) {
+      const lt: any = lowerThirds[i]
+      const start = Math.max(0, Number(lt?.startSeconds || 0))
+      const end = Math.max(0, Number(lt?.endSeconds || 0))
+      const len = Math.max(0, end - start)
+      if (len <= 0) continue
+      const x = padPx + start * pxPerSecond - scrollLeft
+      const w = Math.max(8, len * pxPerSecond)
+      if (x > wCss + 4 || x + w < -4) continue
+      const isSelected = String(lt?.id) === String(selectedLowerThirdId || '')
+      const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'lowerThird' && String((activeDrag as any).lowerThirdId) === String(lt?.id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
+      const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+
+      ctx.fillStyle = 'rgba(94,92,230,0.18)'
+      roundRect(ctx, x, lowerThirdY, w, pillH, 10)
+      ctx.fill()
+
+      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(94,92,230,0.55)'
+      ctx.lineWidth = 1
+      roundRect(ctx, x + 0.5, lowerThirdY + 0.5, w - 1, pillH - 1, 10)
+      ctx.stroke()
+
+      if (isResizing) {
+        ctx.save()
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = 'rgba(212,175,55,0.92)'
+        ctx.lineWidth = 2
+        roundRect(ctx, x + 0.5, lowerThirdY + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      const imgName = namesByUploadId[Number(lt.uploadId)] || `Lower third ${lt.uploadId}`
+      const cfgName = String(lt?.configSnapshot?.name || '') || `Config ${lt.configId}`
+      const name = `${imgName} • ${cfgName}`
+      ctx.fillStyle = '#fff'
+      const padLeft = showHandles ? 6 + handleSize + 10 : 12
+      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const maxTextW = Math.max(0, w - padLeft - padRight)
+      if (maxTextW >= 20) {
+        const clipped = ellipsizeText(ctx, name, maxTextW)
+        ctx.fillText(clipped, x + padLeft, lowerThirdY + pillH / 2)
+      }
+
+      if (showHandles) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const hs = handleSize
+        const hy = lowerThirdY + Math.floor((pillH - handleSize) / 2)
+        const hxL = x + 6
+        const hxR = x + w - 6 - hs
+        roundRect(ctx, hxL, hy, hs, hs, 4)
+        ctx.fill()
+        roundRect(ctx, hxR, hy, hs, hs, 4)
+        ctx.fill()
+      }
+
+      if (isResizing) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const barW = 5
+        const by = lowerThirdY + 3
         const bh = pillH - 6
         if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
         if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
@@ -1731,6 +1951,7 @@ export default function CreateVideo() {
           stills: Array.isArray(tlRaw?.stills) ? (tlRaw.stills as any) : [],
           graphics: Array.isArray(tlRaw?.graphics) ? (tlRaw.graphics as any) : [],
           logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
+          lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
           audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
         }
         hydratingRef.current = true
@@ -1789,12 +2010,13 @@ export default function CreateVideo() {
     const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
     const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
     const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+    const lowerThirdIds = lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
     const stillIds = (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as any[]) : [])
       .map((s) => Number(s?.uploadId))
       .filter((n) => Number.isFinite(n) && n > 0)
     const audioUploadId = Number((timeline as any).audioTrack?.uploadId)
     const audioIds = Number.isFinite(audioUploadId) && audioUploadId > 0 ? [audioUploadId] : []
-    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...stillIds, ...audioIds]))
+    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...stillIds, ...audioIds]))
     if (!ids.length) return
     const clipSet = new Set<number>(clipIds)
     const missing = ids.filter((id) => !namesByUploadId[id] || (clipSet.has(id) && !durationsByUploadId[id]))
@@ -1833,7 +2055,7 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-  }, [durationsByUploadId, graphics, logos, namesByUploadId, timeline.clips])
+  }, [durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, timeline.clips])
 
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
@@ -2318,6 +2540,48 @@ export default function CreateVideo() {
     }
   }, [logoConfigs, logoConfigsLoaded])
 
+  const openLowerThirdPicker = useCallback(async () => {
+    if (!me?.userId) return
+    setLowerThirdPickerLoading(true)
+    setLowerThirdPickerError(null)
+    try {
+      const params = new URLSearchParams({
+        kind: 'image',
+        image_role: 'lower_third',
+        status: 'uploaded,completed',
+        user_id: String(me.userId),
+        limit: '200',
+      })
+      const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+      setLowerThirdPickerItems(items)
+    } catch (e: any) {
+      setLowerThirdPickerError(e?.message || 'Failed to load lower third images')
+    } finally {
+      setLowerThirdPickerLoading(false)
+    }
+  }, [me?.userId])
+
+  const ensureLowerThirdConfigs = useCallback(async (): Promise<LowerThirdConfigItem[]> => {
+    if (lowerThirdConfigsLoaded) return lowerThirdConfigs
+    setLowerThirdConfigsError(null)
+    try {
+      const res = await fetch(`/api/lower-third-configs?limit=200`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: LowerThirdConfigItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+      setLowerThirdConfigs(items)
+      setLowerThirdConfigsLoaded(true)
+      return items
+    } catch (e: any) {
+      setLowerThirdConfigsError(e?.message || 'Failed to load lower third configs')
+      setLowerThirdConfigsLoaded(true)
+      return []
+    }
+  }, [lowerThirdConfigs, lowerThirdConfigsLoaded])
+
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
     setAudioConfigsError(null)
@@ -2351,6 +2615,14 @@ export default function CreateVideo() {
     if (logoConfigsLoaded) return
     void ensureLogoConfigs()
   }, [ensureLogoConfigs, logoConfigsLoaded, logos.length])
+
+  // If a timeline already has lower-third segments (hydrated from a saved draft), prefetch lower-third configs so
+  // the properties editor can show the config list immediately.
+  useEffect(() => {
+    if (!lowerThirds.length) return
+    if (lowerThirdConfigsLoaded) return
+    void ensureLowerThirdConfigs()
+  }, [ensureLowerThirdConfigs, lowerThirdConfigsLoaded, lowerThirds.length])
 
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
@@ -2401,6 +2673,9 @@ export default function CreateVideo() {
       setTimeline((prev) => insertClipAtPlayhead(prev, newClip))
       setSelectedClipId(id)
       setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedStillId(null)
       setSelectedAudio(false)
       setPickOpen(false)
       setAddStep('type')
@@ -2451,6 +2726,9 @@ export default function CreateVideo() {
       })
       setSelectedClipId(null)
       setSelectedGraphicId(id)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedStillId(null)
       setSelectedAudio(false)
       setPickOpen(false)
       setAddStep('type')
@@ -2538,11 +2816,105 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudio(false)
       setSelectedLogoId(id)
+      setSelectedLowerThirdId(null)
       setPickOpen(false)
       setAddStep('type')
       setPendingLogoUploadId(null)
     },
     [logoConfigs, logos, pendingLogoUploadId, playhead, snapshotUndo, totalSeconds]
+  )
+
+  const chooseLowerThirdUpload = useCallback(
+    async (upload: UploadListItem) => {
+      const id = Number(upload.id)
+      if (!Number.isFinite(id) || id <= 0) return
+      setPendingLowerThirdUploadId(id)
+      const name = String(upload.modified_filename || upload.original_filename || `Lower third ${upload.id}`)
+      setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
+      const w = upload.width != null ? Number(upload.width) : null
+      const h = upload.height != null ? Number(upload.height) : null
+      if (w != null && h != null && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+        setDimsByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: { width: Math.round(w), height: Math.round(h) } }))
+      }
+      await ensureLowerThirdConfigs()
+      setAddStep('lowerThirdConfig')
+    },
+    [ensureLowerThirdConfigs]
+  )
+
+  const addLowerThirdFromPending = useCallback(
+    (configIdRaw: number) => {
+      const uploadId = pendingLowerThirdUploadId
+      if (!uploadId) return
+      const cfgId = Number(configIdRaw)
+      if (!Number.isFinite(cfgId) || cfgId <= 0) {
+        setLowerThirdPickerError('Pick a lower third configuration.')
+        return
+      }
+      const cfg = lowerThirdConfigs.find((c: any) => Number((c as any).id) === cfgId) || null
+      if (!cfg) {
+        setLowerThirdPickerError('Lower third configuration not found.')
+        return
+      }
+      if (!(totalSeconds > 0)) {
+        setLowerThirdPickerError('Add a video or graphic first.')
+        return
+      }
+
+      const dur = 10.0
+      const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      let start = start0
+      let end = roundToTenth(start + dur)
+      if (end > totalSeconds + 1e-6) {
+        setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
+        return
+      }
+
+      // Disallow overlaps: slide forward to the next available slot.
+      const existing = lowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      for (let i = 0; i < existing.length; i++) {
+        const lt = existing[i] as any
+        const ls = Number(lt.startSeconds)
+        const le = Number(lt.endSeconds)
+        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
+        const overlaps = start < le - 1e-6 && end > ls + 1e-6
+        if (overlaps) {
+          start = roundToTenth(le)
+          end = roundToTenth(start + dur)
+          i = -1
+          if (end > totalSeconds + 1e-6) {
+            setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
+            return
+          }
+        }
+      }
+
+      const seg: LowerThird = {
+        id,
+        uploadId: Number(uploadId),
+        startSeconds: start,
+        endSeconds: end,
+        configId: cfgId,
+        configSnapshot: cfg as any,
+      }
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
+        const next = [...prevLts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { ...prev, lowerThirds: next }
+      })
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedStillId(null)
+      setSelectedAudio(false)
+      setSelectedLowerThirdId(id)
+      setPickOpen(false)
+      setAddStep('type')
+      setPendingLowerThirdUploadId(null)
+    },
+    [lowerThirdConfigs, lowerThirds, pendingLowerThirdUploadId, playhead, snapshotUndo, totalSeconds]
   )
 
   const addAudioFromUpload = useCallback(
@@ -2579,6 +2951,9 @@ export default function CreateVideo() {
       setTimeline((prev) => ({ ...prev, audioTrack: { uploadId: id, audioConfigId, startSeconds: 0, endSeconds: end } }))
       setSelectedClipId(null)
       setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedStillId(null)
       setSelectedAudio(true)
       setPickOpen(false)
       setAddStep('type')
@@ -2651,6 +3026,7 @@ export default function CreateVideo() {
       setSelectedClipId(res.selectedClipId)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
       setSelectedAudio(false)
       return
     }
@@ -2665,6 +3041,22 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(res.selectedLogoId)
+      setSelectedLowerThirdId(null)
+      setSelectedAudio(false)
+      return
+    }
+    if (selectedLowerThirdId) {
+      const res = splitLowerThirdAtPlayhead(timeline as any, selectedLowerThirdId)
+      const prevLts = Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : []
+      const nextLts = Array.isArray((res.timeline as any).lowerThirds) ? (res.timeline as any).lowerThirds : []
+      if (res.timeline === (timeline as any) && res.selectedLowerThirdId === selectedLowerThirdId) return
+      if (nextLts === prevLts) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(res.selectedLowerThirdId)
       setSelectedAudio(false)
       return
     }
@@ -2679,9 +3071,10 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(res.selectedGraphicId)
       setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
       setSelectedAudio(false)
     }
-  }, [clipStarts, playhead, selectedClipId, selectedGraphicId, selectedLogoId, snapshotUndo, timeline])
+  }, [clipStarts, playhead, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, snapshotUndo, timeline])
 
   const deleteSelected = useCallback(() => {
     if (selectedAudio) {
@@ -2727,6 +3120,19 @@ export default function CreateVideo() {
         return { ...(prev as any), logos: nextLogos } as any
       })
       setSelectedLogoId(null)
+      return
+    }
+
+    if (selectedLowerThirdId) {
+      const target = selectedLowerThird
+      if (!target) return
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevLts: any[] = Array.isArray((prev as any).lowerThirds) ? (prev as any).lowerThirds : []
+        const nextLts = prevLts.filter((lt: any) => String(lt.id) !== String((target as any).id))
+        return { ...(prev as any), lowerThirds: nextLts } as any
+      })
+      setSelectedLowerThirdId(null)
       return
     }
 
@@ -3075,22 +3481,88 @@ export default function CreateVideo() {
     setLogoEditorError(null)
   }, [computeTotalSecondsForTimeline, logoConfigs, logoEditor, logos, snapshotUndo])
 
+  const saveLowerThirdEditor = useCallback(() => {
+    if (!lowerThirdEditor) return
+    const start = roundToTenth(Number(lowerThirdEditor.start))
+    const end = roundToTenth(Number(lowerThirdEditor.end))
+    const configId = Number(lowerThirdEditor.configId)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+      setLowerThirdEditorError('End must be after start.')
+      return
+    }
+    if (!Number.isFinite(configId) || configId <= 0) {
+      setLowerThirdEditorError('Pick a lower third configuration.')
+      return
+    }
+
+    const cap = 20 * 60
+    if (end > cap + 1e-6) {
+      setLowerThirdEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
+      return
+    }
+
+    const cfg = lowerThirdConfigs.find((c: any) => Number((c as any).id) === configId) as any
+    if (!cfg) {
+      setLowerThirdEditorError('Lower third configuration not found.')
+      return
+    }
+
+    // Disallow overlaps with other lower thirds.
+    for (const lt of lowerThirds) {
+      if (String((lt as any).id) === String(lowerThirdEditor.id)) continue
+      const ls = Number((lt as any).startSeconds || 0)
+      const le = Number((lt as any).endSeconds || 0)
+      if (!(Number.isFinite(ls) && Number.isFinite(le) && le > ls)) continue
+      const overlaps = start < le - 1e-6 && end > ls + 1e-6
+      if (overlaps) {
+        setLowerThirdEditorError('Lower thirds cannot overlap in time.')
+        return
+      }
+    }
+
+    snapshotUndo()
+    setTimeline((prev) => {
+      const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
+      const idx = prevLts.findIndex((lt) => String((lt as any).id) === String(lowerThirdEditor.id))
+      if (idx < 0) return prev
+      const updated: LowerThird = {
+        ...prevLts[idx],
+        startSeconds: Math.max(0, start),
+        endSeconds: Math.max(0, end),
+        configId,
+        configSnapshot: cfg as any,
+      }
+      const nextLts = prevLts.slice()
+      nextLts[idx] = updated
+      nextLts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), lowerThirds: nextLts } as any)
+      const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+      return { ...prev, lowerThirds: nextLts, playheadSeconds: nextPlayhead }
+    })
+    setLowerThirdEditor(null)
+    setLowerThirdEditorError(null)
+  }, [computeTotalSecondsForTimeline, lowerThirdConfigs, lowerThirdEditor, lowerThirds, snapshotUndo])
+
   const openAdd = useCallback(() => {
     setPickOpen(true)
     setAddStep('type')
     setPickerError(null)
     setGraphicPickerError(null)
     setLogoPickerError(null)
+    setLowerThirdPickerError(null)
     setAudioPickerError(null)
     setAudioConfigsError(null)
     setLogoConfigsError(null)
+    setLowerThirdConfigsError(null)
     setPendingLogoUploadId(null)
+    setPendingLowerThirdUploadId(null)
   }, [])
 
   const closeAdd = useCallback(() => {
     setPickOpen(false)
     setAddStep('type')
     setPendingLogoUploadId(null)
+    setPendingLowerThirdUploadId(null)
   }, [])
 
   // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
@@ -3100,9 +3572,9 @@ export default function CreateVideo() {
 	      if (!drag) return
 	      if (e.pointerId !== drag.pointerId) return
 
-	      // Special case: "armed" logo moves (body-drag). Don't start dragging until the pointer has moved a bit,
-	      // otherwise a simple click on the selected logo pill can't open the properties modal.
-	      if (drag.kind === 'logo' && drag.edge === 'move' && (drag as any).armed) {
+	      // Special case: "armed" moves (body-drag). Don't start dragging until the pointer has moved a bit,
+	      // otherwise a simple click on the selected pill can't open the properties modal.
+	      if ((drag.kind === 'logo' || drag.kind === 'lowerThird') && drag.edge === 'move' && (drag as any).armed) {
 	        const dx0 = e.clientX - drag.startClientX
 	        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
 	        const moved = Boolean((drag as any).moved)
@@ -3114,7 +3586,7 @@ export default function CreateVideo() {
 	          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
 	          try { snapshotUndoRef.current?.() } catch {}
 	          setTrimDragging(true)
-	          dbg('startTrimDrag', { kind: 'logo', edge: 'move', id: String((drag as any).logoId || '') })
+	          dbg('startTrimDrag', { kind: drag.kind, edge: 'move', id: String((drag as any).logoId || (drag as any).lowerThirdId || '') })
 	        }
 	      }
 
@@ -3344,6 +3816,41 @@ export default function CreateVideo() {
           nextLogos[idx] = { ...l0, startSeconds: startS, endSeconds: endS }
           nextLogos.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
           const nextTimeline: any = { ...(prev as any), logos: nextLogos }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+        }
+
+        if (drag.kind === 'lowerThird') {
+          const prevLts: any[] = Array.isArray((prev as any).lowerThirds) ? (prev as any).lowerThirds : []
+          const idx = prevLts.findIndex((lt: any) => String(lt?.id) === String((drag as any).lowerThirdId))
+          if (idx < 0) return prev
+          const lt0 = prevLts[idx] as any
+          const nextLts = prevLts.slice()
+          let startS = Number(lt0.startSeconds || 0)
+          let endS = Number(lt0.endSeconds || 0)
+          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          if (drag.edge === 'start') {
+            startS = clamp(
+              roundToTenth(drag.startStartSeconds + deltaSeconds),
+              drag.minStartSeconds,
+              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
+            )
+          } else if (drag.edge === 'end') {
+            endS = clamp(
+              roundToTenth(drag.startEndSeconds + deltaSeconds),
+              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
+              drag.maxEndSeconds
+            )
+          } else {
+            const maxStart =
+              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+            endS = roundToTenth(startS + dur)
+          }
+          nextLts[idx] = { ...lt0, startSeconds: startS, endSeconds: endS }
+          nextLts.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+          const nextTimeline: any = { ...(prev as any), lowerThirds: nextLts }
           const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
           const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
           return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
@@ -3644,6 +4151,13 @@ export default function CreateVideo() {
 	                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
 	              />
 	            ) : null}
+	            {activeLowerThirdPreview ? (
+	              <img
+	                src={activeLowerThirdPreview.url}
+	                alt=""
+	                style={activeLowerThirdPreview.style}
+	              />
+	            ) : null}
 	            {activeLogoPreview ? (
 	              <img
 	                src={activeLogoPreview.url}
@@ -3742,6 +4256,7 @@ export default function CreateVideo() {
                   const rect = sc.getBoundingClientRect()
                   const y = e.clientY - rect.top
                   const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
+                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
                   const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
                   const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
                   const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
@@ -3752,6 +4267,7 @@ export default function CreateVideo() {
                   dbg('pointerdown', {
                     pointerType: (e as any).pointerType,
                     withinLogo,
+                    withinLowerThird,
                     withinGraphics,
                     withinVideo,
                     withinAudio,
@@ -3828,6 +4344,81 @@ export default function CreateVideo() {
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
                     dbg('startTrimDrag', { kind: 'logo', edge: nearLeft ? 'start' : 'end', id: String((l as any).id) })
+                    return
+                  }
+
+                  if (withinLowerThird) {
+                    const lt = findLowerThirdAtTime(t)
+                    if (!lt) return
+                    const s = Number((lt as any).startSeconds || 0)
+                    const e2 = Number((lt as any).endSeconds || 0)
+                    const leftX = padPx + s * pxPerSecond
+                    const rightX = padPx + e2 * pxPerSecond
+                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                    if (!inside) return
+
+                    const capEnd = Math.max(0, totalSeconds)
+                    const sorted = lowerThirds
+                      .slice()
+                      .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+                    const pos = sorted.findIndex((x: any) => String(x?.id) === String((lt as any).id))
+                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+
+                    // Slide (body drag) only when already selected.
+                    if (!nearLeft && !nearRight) {
+                      if (selectedLowerThirdId !== String((lt as any).id)) return
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+                      // Arm the drag; we only enter "dragging" state once pointer movement crosses a threshold.
+                      trimDragRef.current = {
+                        kind: 'lowerThird',
+                        lowerThirdId: String((lt as any).id),
+                        edge: 'move',
+                        pointerId: e.pointerId,
+                        startClientX: e.clientX,
+                        startClientY: e.clientY,
+                        startStartSeconds: s,
+                        startEndSeconds: e2,
+                        minStartSeconds,
+                        maxEndSeconds,
+                        maxStartSeconds,
+                        armed: true,
+                        moved: false,
+                      }
+                      try { sc.setPointerCapture(e.pointerId) } catch {}
+                      dbg('armTrimDrag', { kind: 'lowerThird', edge: 'move', id: String((lt as any).id) })
+                      return
+                    }
+
+                    e.preventDefault()
+                    snapshotUndo()
+                    setSelectedLowerThirdId(String((lt as any).id))
+                    setSelectedClipId(null)
+                    setSelectedGraphicId(null)
+                    setSelectedLogoId(null)
+                    setSelectedStillId(null)
+                    setSelectedAudio(false)
+
+                    trimDragLockScrollLeftRef.current = sc.scrollLeft
+                    trimDragRef.current = {
+                      kind: 'lowerThird',
+                      lowerThirdId: String((lt as any).id),
+                      edge: nearLeft ? 'start' : 'end',
+                      pointerId: e.pointerId,
+                      startClientX: e.clientX,
+                      startStartSeconds: s,
+                      startEndSeconds: e2,
+                      minStartSeconds,
+                      maxEndSeconds,
+                    }
+                    setTrimDragging(true)
+                    try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('startTrimDrag', { kind: 'lowerThird', edge: nearLeft ? 'start' : 'end', id: String((lt as any).id) })
                     return
                   }
 
@@ -4189,6 +4780,7 @@ export default function CreateVideo() {
 	                  const x = clickXInScroll - padPx
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 	                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
+	                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
 	                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 	                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 	                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
@@ -4196,6 +4788,10 @@ export default function CreateVideo() {
 	                  if (withinLogo) {
 	                    const l = findLogoAtTime(t)
 	                    if (l) return
+	                  }
+	                  if (withinLowerThird) {
+	                    const lt = findLowerThirdAtTime(t)
+	                    if (lt) return
 	                  }
 	                  if (withinGraphics) {
 	                    const g = findGraphicAtTime(t)
@@ -4251,13 +4847,15 @@ export default function CreateVideo() {
 	                  const x = clickXInScroll - padPx
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 	                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
+	                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
 	                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 	                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 	                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
-	                  if (!withinLogo && !withinGraphics && !withinVideo && !withinAudio) {
+	                  if (!withinLogo && !withinLowerThird && !withinGraphics && !withinVideo && !withinAudio) {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4293,6 +4891,50 @@ export default function CreateVideo() {
 	                    setSelectedLogoId(String((l as any).id))
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedStillId(null)
+	                    setSelectedAudio(false)
+	                    return
+	                  }
+
+	                  if (withinLowerThird) {
+	                    const lt = findLowerThirdAtTime(t)
+	                    if (!lt) {
+	                      setSelectedClipId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudio(false)
+	                      return
+	                    }
+	                    const s = Number((lt as any).startSeconds || 0)
+	                    const e2 = Number((lt as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
+	                      setSelectedClipId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudio(false)
+	                      return
+	                    }
+	                    if (selectedLowerThirdId === String((lt as any).id)) {
+	                      setLowerThirdEditor({
+	                        id: String((lt as any).id),
+	                        start: s,
+	                        end: e2,
+	                        configId: Number((lt as any).configId || 0),
+	                      })
+	                      setLowerThirdEditorError(null)
+	                      return
+	                    }
+	                    setSelectedLowerThirdId(String((lt as any).id))
+	                    setSelectedClipId(null)
+	                    setSelectedGraphicId(null)
+	                    setSelectedLogoId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4304,6 +4946,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedClipId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4316,6 +4959,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedClipId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4328,6 +4972,7 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(g.id)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4733,6 +5378,7 @@ export default function CreateVideo() {
 	                      type="button"
 	                      onClick={() => {
 	                        if (addStep === 'logoConfig') setAddStep('logo')
+	                        else if (addStep === 'lowerThirdConfig') setAddStep('lowerThird')
 	                        else setAddStep('type')
 	                      }}
 	                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
@@ -4766,6 +5412,10 @@ export default function CreateVideo() {
 	                          ? `Logos: ${logoPickerItems.length}`
 	                          : addStep === 'logoConfig'
 	                              ? `Configs: ${logoConfigs.length}`
+	                              : addStep === 'lowerThird'
+	                                ? `Lower thirds: ${lowerThirdPickerItems.length}`
+	                                : addStep === 'lowerThirdConfig'
+	                                  ? `Configs: ${lowerThirdConfigs.length}`
 	                              : addStep === 'audio'
 	                                ? `Tracks: ${audioPickerItems.length}`
 	                                : 'Choose a type'}
@@ -4833,6 +5483,25 @@ export default function CreateVideo() {
 	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Logo</div>
 	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Watermark segments (no overlaps)</div>
 	                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddStep('lowerThird')
+                      openLowerThirdPicker().catch(() => {})
+                    }}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      border: '1px solid rgba(175,82,222,0.55)',
+                      background: 'rgba(0,0,0,0.35)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>Lower Third</div>
+                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Lower-third segments (no overlaps)</div>
+                  </button>
 	                  <button
 	                    type="button"
 	                    onClick={() => {
@@ -5025,6 +5694,101 @@ export default function CreateVideo() {
 	                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
 	                              {(pos ? `Position: ${pos}` : 'Position') +
 	                                (size != null && Number.isFinite(size) ? ` • Size: ${size}%` : '') +
+	                                (opacity != null && Number.isFinite(opacity) ? ` • Opacity: ${opacity}%` : '')}
+	                            </div>
+	                          </div>
+	                          <div style={{ fontWeight: 900, color: '#fff' }}>Select</div>
+	                        </button>
+	                      )
+	                    })}
+	                </div>
+	              </>
+	            ) : addStep === 'lowerThird' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Lower Third</h1>
+	                {lowerThirdPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+	                {lowerThirdPickerError ? <div style={{ color: '#ff9b9b' }}>{lowerThirdPickerError}</div> : null}
+	                {lowerThirdConfigsError ? <div style={{ color: '#ff9b9b' }}>{lowerThirdConfigsError}</div> : null}
+	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+	                  {lowerThirdPickerItems.map((it) => {
+	                    const id = Number(it.id)
+	                    if (!Number.isFinite(id) || id <= 0) return null
+	                    const name = String(it.modified_filename || it.original_filename || `Lower third ${id}`)
+	                    const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
+	                    return (
+	                      <button
+	                        key={`pick-lt-${id}`}
+	                        type="button"
+	                        onClick={() => chooseLowerThirdUpload(it)}
+	                        style={{
+	                          display: 'grid',
+	                          gridTemplateColumns: '96px 1fr',
+	                          gap: 12,
+	                          alignItems: 'center',
+	                          padding: 12,
+	                          borderRadius: 12,
+	                          border: '1px solid rgba(175,82,222,0.55)',
+	                          background: 'rgba(0,0,0,0.35)',
+	                          color: '#fff',
+	                          cursor: 'pointer',
+	                          textAlign: 'left',
+	                        }}
+	                      >
+	                        <img
+	                          src={src}
+	                          alt=""
+	                          loading="lazy"
+	                          style={{ width: 96, height: 54, objectFit: 'contain', borderRadius: 8, background: '#000' }}
+	                        />
+	                        <div style={{ minWidth: 0 }}>
+	                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+	                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>Pick an image, then pick a lower third config</div>
+	                        </div>
+	                      </button>
+	                    )
+	                  })}
+	                </div>
+	              </>
+	            ) : addStep === 'lowerThirdConfig' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Lower Third Config</h1>
+	                {lowerThirdConfigsError ? <div style={{ color: '#ff9b9b' }}>{lowerThirdConfigsError}</div> : null}
+	                {lowerThirdPickerError ? <div style={{ color: '#ff9b9b' }}>{lowerThirdPickerError}</div> : null}
+	                {!pendingLowerThirdUploadId ? <div style={{ color: '#bbb', marginTop: 12 }}>Pick a lower third image first.</div> : null}
+	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+	                  {lowerThirdConfigs
+	                    .filter((c: any) => !(c && typeof c === 'object' && c.archived_at))
+	                    .map((cfg: any) => {
+	                      const cfgId = Number(cfg.id)
+	                      if (!Number.isFinite(cfgId) || cfgId <= 0) return null
+	                      const name = String(cfg.name || `Config ${cfgId}`)
+	                      const mode = String((cfg as any).sizeMode || 'pct')
+	                      const pct = cfg.sizePctWidth != null ? Number(cfg.sizePctWidth) : null
+	                      const opacity = cfg.opacityPct != null ? Number(cfg.opacityPct) : null
+	                      return (
+	                        <button
+	                          key={`pick-lt-cfg-${cfgId}`}
+	                          type="button"
+	                          onClick={() => addLowerThirdFromPending(cfgId)}
+	                          style={{
+	                            display: 'grid',
+	                            gridTemplateColumns: '1fr auto',
+	                            gap: 12,
+	                            alignItems: 'center',
+	                            padding: 12,
+	                            borderRadius: 12,
+	                            border: '1px solid rgba(175,82,222,0.55)',
+	                            background: 'rgba(0,0,0,0.35)',
+	                            color: '#fff',
+	                            cursor: 'pointer',
+	                            textAlign: 'left',
+	                          }}
+	                        >
+	                          <div style={{ minWidth: 0 }}>
+	                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+	                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+	                              {(mode === 'match_image' ? 'Size: match image' : 'Size: percent') +
+	                                (pct != null && Number.isFinite(pct) ? ` • Width: ${pct}%` : '') +
 	                                (opacity != null && Number.isFinite(opacity) ? ` • Opacity: ${opacity}%` : '')}
 	                            </div>
 	                          </div>
@@ -5463,6 +6227,100 @@ export default function CreateVideo() {
                   type="button"
                   onClick={saveLogoEditor}
                   style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,159,10,0.65)', background: 'rgba(255,159,10,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {lowerThirdEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+          onClick={() => { setLowerThirdEditor(null); setLowerThirdEditorError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(175,82,222,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Lower Third Properties</div>
+              <button
+                type="button"
+                onClick={() => { setLowerThirdEditor(null); setLowerThirdEditorError(null) }}
+                style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}
+              >
+                Close
+              </button>
+            </div>
+
+            {(() => {
+              const seg = lowerThirds.find((lt) => String((lt as any).id) === String(lowerThirdEditor.id)) as any
+              const uploadId = Number(seg?.uploadId)
+              const name = (Number.isFinite(uploadId) && uploadId > 0 ? (namesByUploadId[uploadId] || `Lower third ${uploadId}`) : 'Lower third')
+              const cfgName = seg?.configSnapshot?.name || (seg?.configId ? `Config ${seg.configId}` : 'Config')
+              return <div style={{ marginTop: 10, color: '#bbb', fontSize: 13 }}>{name} • {cfgName}</div>
+            })()}
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Lower Third Config</div>
+                <select
+                  value={String(lowerThirdEditor.configId)}
+                  onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, configId: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                >
+                  {lowerThirdConfigs
+                    .filter((c: any) => !(c && typeof c === 'object' && c.archived_at))
+                    .map((c: any) => (
+                      <option key={`ltcfg-${c.id}`} value={String(c.id)}>{String(c.name || `Config ${c.id}`)}</option>
+                    ))}
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(lowerThirdEditor.start)}
+                    onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(lowerThirdEditor.end)}
+                    onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+              </div>
+
+              {lowerThirdEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{lowerThirdEditorError}</div> : null}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => { setLowerThirdEditor(null); setLowerThirdEditorError(null) }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveLowerThirdEditor}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(175,82,222,0.65)', background: 'rgba(175,82,222,0.16)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>

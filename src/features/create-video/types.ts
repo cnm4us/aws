@@ -44,6 +44,31 @@ export type CreateVideoLogoV1 = {
   configSnapshot: CreateVideoLogoConfigSnapshotV1
 }
 
+export type CreateVideoLowerThirdConfigSnapshotV1 = {
+  id: number
+  name: string
+  description?: string | null
+  sizeMode: 'pct' | 'match_image'
+  baselineWidth: 1080 | 1920
+  position: string
+  sizePctWidth: number
+  opacityPct: number
+  timingRule: 'first_only' | 'entire'
+  timingSeconds: number | null
+  fade: string
+  insetXPreset?: string | null
+  insetYPreset?: string | null
+}
+
+export type CreateVideoLowerThirdV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  configId: number
+  configSnapshot: CreateVideoLowerThirdConfigSnapshotV1
+}
+
 export type CreateVideoStillV1 = {
   id: string
   uploadId: number
@@ -67,6 +92,7 @@ export type CreateVideoTimelineV1 = {
   stills?: CreateVideoStillV1[]
   graphics?: CreateVideoGraphicV1[]
   logos?: CreateVideoLogoV1[]
+  lowerThirds?: CreateVideoLowerThirdV1[]
   audioTrack?: CreateVideoAudioTrackV1 | null
 }
 

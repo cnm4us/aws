@@ -1,4 +1,4 @@
-import type { Clip, Graphic, Logo, Timeline } from './timelineTypes'
+import type { Clip, Graphic, Logo, LowerThird, Timeline } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -109,4 +109,29 @@ export function splitLogoAtPlayhead(
   const nextLogos = [...logos.slice(0, idx), left, right, ...logos.slice(idx + 1)]
   nextLogos.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), logos: nextLogos } as any, selectedLogoId: right.id }
+}
+
+export function splitLowerThirdAtPlayhead(
+  timeline: Timeline,
+  selectedLowerThirdId: string | null
+): { timeline: Timeline; selectedLowerThirdId: string | null } {
+  if (!selectedLowerThirdId) return { timeline, selectedLowerThirdId }
+  const lowerThirds: LowerThird[] = Array.isArray((timeline as any).lowerThirds) ? ((timeline as any).lowerThirds as any) : []
+  const idx = lowerThirds.findIndex((lt: any) => String(lt?.id) === String(selectedLowerThirdId))
+  if (idx < 0) return { timeline, selectedLowerThirdId }
+  const lt: any = lowerThirds[idx]
+  const start = roundToTenth(Number(lt?.startSeconds || 0))
+  const end = roundToTenth(Number(lt?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedLowerThirdId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedLowerThirdId }
+
+  const left: LowerThird = { ...lt, id: `${String(lt.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: LowerThird = { ...lt, id: `${String(lt.id)}_b`, startSeconds: cut, endSeconds: end }
+  const nextLts = [...lowerThirds.slice(0, idx), left, right, ...lowerThirds.slice(idx + 1)]
+  nextLts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), lowerThirds: nextLts } as any, selectedLowerThirdId: right.id }
 }

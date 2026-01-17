@@ -3,11 +3,13 @@ import { getPool } from '../../db'
 import type { CreateVideoTimelineV1 } from './types'
 import * as audioConfigsSvc from '../audio-configs/service'
 import * as logoConfigsSvc from '../logo-configs/service'
+import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
 const MAX_STILLS = 200
 const MAX_LOGOS = 200
+const MAX_LOWER_THIRDS = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -76,6 +78,32 @@ async function loadOverlayImageMetaForUser(uploadId: number, userId: number): Pr
   if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
   if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
   if (String(row.image_role || '').toLowerCase() !== 'overlay') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  const isSystem = ownerId == null
+  if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+async function loadLowerThirdImageMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, image_role, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (String(row.image_role || '').toLowerCase() !== 'lower_third') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
   if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
 
   const status = String(row.status || '').toLowerCase()
@@ -172,6 +200,57 @@ function normalizeLogoConfigSnapshot(raw: any, configId: number) {
     sizePctWidth: Math.round(sizePctWidth),
     opacityPct: Math.round(opacityPct),
     timingRule,
+    timingSeconds,
+    fade,
+    insetXPreset,
+    insetYPreset,
+  }
+}
+
+function normalizeLowerThirdConfigSnapshot(raw: any, configId: number) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const id = Number((raw as any).id)
+  if (!Number.isFinite(id) || id <= 0 || id !== Number(configId)) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const name = String((raw as any).name || '').trim()
+  if (!name || name.length > 200) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const descriptionRaw = (raw as any).description
+  const description = descriptionRaw == null ? null : String(descriptionRaw).trim() || null
+  if (description != null && description.length > 2000) throw new ValidationError('invalid_lower_third_config_snapshot')
+
+  const sizeMode = String((raw as any).sizeMode || 'pct').trim().toLowerCase()
+  if (sizeMode !== 'pct' && sizeMode !== 'match_image') throw new ValidationError('invalid_lower_third_config_snapshot')
+  const baselineWidthRaw = Number((raw as any).baselineWidth)
+  const baselineWidth = baselineWidthRaw === 1920 ? 1920 : 1080
+
+  const position = String((raw as any).position || '').trim()
+  if (!position || position.length > 40) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const sizePctWidth = Number((raw as any).sizePctWidth)
+  const opacityPct = Number((raw as any).opacityPct)
+  if (!Number.isFinite(sizePctWidth) || sizePctWidth < 1 || sizePctWidth > 100) throw new ValidationError('invalid_lower_third_config_snapshot')
+  if (!Number.isFinite(opacityPct) || opacityPct < 0 || opacityPct > 100) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const timingRule = String((raw as any).timingRule || '').trim().toLowerCase()
+  if (!(timingRule === 'first_only' || timingRule === 'entire')) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const timingSecondsRaw = (raw as any).timingSeconds
+  const timingSeconds = timingSecondsRaw == null ? null : Number(timingSecondsRaw)
+  if (timingSeconds != null && (!Number.isFinite(timingSeconds) || timingSeconds < 0 || timingSeconds > 3600)) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const fade = String((raw as any).fade || '').trim()
+  if (!fade || fade.length > 40) throw new ValidationError('invalid_lower_third_config_snapshot')
+  const insetXPresetRaw = (raw as any).insetXPreset
+  const insetYPresetRaw = (raw as any).insetYPreset
+  const insetXPreset = insetXPresetRaw == null ? null : String(insetXPresetRaw || '').trim() || null
+  const insetYPreset = insetYPresetRaw == null ? null : String(insetYPresetRaw || '').trim() || null
+  if (insetXPreset != null && insetXPreset.length > 20) throw new ValidationError('invalid_lower_third_config_snapshot')
+  if (insetYPreset != null && insetYPreset.length > 20) throw new ValidationError('invalid_lower_third_config_snapshot')
+  return {
+    id,
+    name,
+    description,
+    sizeMode: sizeMode as any,
+    baselineWidth: baselineWidth as any,
+    position,
+    sizePctWidth: Math.round(sizePctWidth),
+    opacityPct: Math.round(opacityPct),
+    timingRule: timingRule as any,
     timingSeconds,
     fade,
     insetXPreset,
@@ -380,7 +459,45 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const logosTotalSeconds = logos.length ? Number(logos[logos.length - 1].endSeconds) : 0
 
-  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds))
+  const lowerThirdsRaw = Array.isArray((raw as any).lowerThirds) ? ((raw as any).lowerThirds as any[]) : []
+  if (lowerThirdsRaw.length > MAX_LOWER_THIRDS) throw new DomainError('too_many_lower_thirds', 'too_many_lower_thirds', 400)
+  const lowerThirds: any[] = []
+  for (const lt of lowerThirdsRaw) {
+    if (!lt || typeof lt !== 'object') continue
+    const id = normalizeId((lt as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((lt as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+    const configId = Number((lt as any).configId)
+    if (!Number.isFinite(configId) || configId <= 0) throw new ValidationError('invalid_lower_third_config_id')
+
+    const startSeconds = normalizeSeconds((lt as any).startSeconds)
+    const endSeconds = normalizeSeconds((lt as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+
+    const meta = await loadLowerThirdImageMetaForUser(uploadId, ctx.userId)
+    await lowerThirdConfigsSvc.getActiveForUser(configId, Number(ctx.userId))
+    const configSnapshot = normalizeLowerThirdConfigSnapshot((lt as any).configSnapshot, configId)
+
+    lowerThirds.push({ id, uploadId: meta.id, startSeconds, endSeconds, configId, configSnapshot })
+  }
+
+  lowerThirds.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < lowerThirds.length; i++) {
+    const lt = lowerThirds[i]
+    if (lt.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    if (i > 0) {
+      const prev = lowerThirds[i - 1]
+      if (lt.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('lower_third_overlap', 'lower_third_overlap', 400)
+    }
+  }
+  const lowerThirdsTotalSeconds = lowerThirds.length ? Number(lowerThirds[lowerThirds.length - 1].endSeconds) : 0
+
+  const totalForPlayhead = roundToTenth(
+    Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds, lowerThirdsTotalSeconds)
+  )
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
@@ -419,6 +536,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     stills,
     graphics,
     logos,
+    lowerThirds,
     audioTrack,
   }
 }

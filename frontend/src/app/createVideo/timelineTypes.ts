@@ -45,6 +45,31 @@ export type Logo = {
   configSnapshot: LogoConfigSnapshot
 }
 
+export type LowerThirdConfigSnapshot = {
+  id: number
+  name: string
+  description?: string | null
+  sizeMode: 'pct' | 'match_image'
+  baselineWidth: 1080 | 1920
+  position: string
+  sizePctWidth: number
+  opacityPct: number
+  timingRule: 'first_only' | 'entire'
+  timingSeconds: number | null
+  fade: string
+  insetXPreset?: string | null
+  insetYPreset?: string | null
+}
+
+export type LowerThird = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  configId: number
+  configSnapshot: LowerThirdConfigSnapshot
+}
+
 export type AudioTrack = {
   uploadId: number
   audioConfigId: number
@@ -59,6 +84,7 @@ export type Timeline = {
   stills?: Still[]
   graphics: Graphic[]
   logos?: Logo[]
+  lowerThirds?: LowerThird[]
   audioTrack?: AudioTrack | null
 }
 
@@ -115,6 +141,33 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 insetYPreset: l.configSnapshot.insetYPreset == null ? null : String(l.configSnapshot.insetYPreset),
               }
             : ({ id: 0, name: '', position: 'bottom_right', sizePctWidth: 15, opacityPct: 35, timingRule: 'entire', timingSeconds: null, fade: 'none', insetXPreset: null, insetYPreset: null } as any),
+        }))
+      : [],
+    lowerThirds: Array.isArray((timeline as any).lowerThirds)
+      ? (timeline as any).lowerThirds.map((lt: any) => ({
+          id: String(lt.id),
+          uploadId: Number(lt.uploadId),
+          startSeconds: Number(lt.startSeconds),
+          endSeconds: Number(lt.endSeconds),
+          configId: Number(lt.configId),
+          configSnapshot:
+            lt.configSnapshot && typeof lt.configSnapshot === 'object'
+              ? {
+                  id: Number(lt.configSnapshot.id),
+                  name: String(lt.configSnapshot.name || ''),
+                  description: lt.configSnapshot.description == null ? null : String(lt.configSnapshot.description),
+                  sizeMode: (String(lt.configSnapshot.sizeMode || 'pct').toLowerCase() === 'match_image' ? 'match_image' : 'pct') as any,
+                  baselineWidth: Number(lt.configSnapshot.baselineWidth) === 1920 ? 1920 : 1080,
+                  position: String(lt.configSnapshot.position || 'bottom_center'),
+                  sizePctWidth: Number(lt.configSnapshot.sizePctWidth),
+                  opacityPct: Number(lt.configSnapshot.opacityPct),
+                  timingRule: (String(lt.configSnapshot.timingRule || 'first_only').toLowerCase() === 'entire' ? 'entire' : 'first_only') as any,
+                  timingSeconds: lt.configSnapshot.timingSeconds == null ? null : Number(lt.configSnapshot.timingSeconds),
+                  fade: String(lt.configSnapshot.fade || ''),
+                  insetXPreset: lt.configSnapshot.insetXPreset == null ? null : String(lt.configSnapshot.insetXPreset),
+                  insetYPreset: lt.configSnapshot.insetYPreset == null ? null : String(lt.configSnapshot.insetYPreset),
+                }
+              : ({ id: 0, name: '', description: null, sizeMode: 'pct', baselineWidth: 1080, position: 'bottom_center', sizePctWidth: 82, opacityPct: 100, timingRule: 'first_only', timingSeconds: 10, fade: 'none', insetXPreset: null, insetYPreset: null } as any),
         }))
       : [],
     audioTrack:
