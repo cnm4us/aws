@@ -1730,6 +1730,7 @@ export default function CreateVideo() {
           clips: Array.isArray(tlRaw?.clips) ? (tlRaw.clips as any) : [],
           stills: Array.isArray(tlRaw?.stills) ? (tlRaw.stills as any) : [],
           graphics: Array.isArray(tlRaw?.graphics) ? (tlRaw.graphics as any) : [],
+          logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
           audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
         }
         hydratingRef.current = true
@@ -2342,6 +2343,14 @@ export default function CreateVideo() {
     if (audioConfigsLoaded) return
     void ensureAudioConfigs()
   }, [audioConfigsLoaded, audioTrack, ensureAudioConfigs])
+
+  // If a timeline already has logo segments (hydrated from a saved draft), prefetch logo configs so
+  // the Logo Properties editor can show the config list immediately.
+  useEffect(() => {
+    if (!logos.length) return
+    if (logoConfigsLoaded) return
+    void ensureLogoConfigs()
+  }, [ensureLogoConfigs, logoConfigsLoaded, logos.length])
 
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
@@ -3003,6 +3012,68 @@ export default function CreateVideo() {
     setGraphicEditor(null)
     setGraphicEditorError(null)
   }, [graphicEditor, graphics, snapshotUndo, timeline.clips.length, totalSecondsVideo])
+
+  const saveLogoEditor = useCallback(() => {
+    if (!logoEditor) return
+    const start = roundToTenth(Number(logoEditor.start))
+    const end = roundToTenth(Number(logoEditor.end))
+    const configId = Number(logoEditor.configId)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+      setLogoEditorError('End must be after start.')
+      return
+    }
+    if (!Number.isFinite(configId) || configId <= 0) {
+      setLogoEditorError('Pick a logo configuration.')
+      return
+    }
+
+    const cap = 20 * 60
+    if (end > cap + 1e-6) {
+      setLogoEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
+      return
+    }
+
+    const cfg = logoConfigs.find((c: any) => Number((c as any).id) === configId) as any
+    if (!cfg) {
+      setLogoEditorError('Logo configuration not found.')
+      return
+    }
+
+    // Disallow overlaps with other logo segments.
+    for (const l of logos) {
+      if (String((l as any).id) === String(logoEditor.id)) continue
+      const ls = Number((l as any).startSeconds || 0)
+      const le = Number((l as any).endSeconds || 0)
+      if (!(Number.isFinite(ls) && Number.isFinite(le) && le > ls)) continue
+      const overlaps = start < le - 1e-6 && end > ls + 1e-6
+      if (overlaps) {
+        setLogoEditorError('Logos cannot overlap in time.')
+        return
+      }
+    }
+
+    snapshotUndo()
+    setTimeline((prev) => {
+      const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
+      const idx = prevLogos.findIndex((l) => String((l as any).id) === String(logoEditor.id))
+      if (idx < 0) return prev
+      const updated: Logo = {
+        ...prevLogos[idx],
+        startSeconds: Math.max(0, start),
+        endSeconds: Math.max(0, end),
+        configId,
+        configSnapshot: cfg as any,
+      }
+      const nextLogos = prevLogos.slice()
+      nextLogos[idx] = updated
+      nextLogos.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), logos: nextLogos } as any)
+      const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+      return { ...prev, logos: nextLogos, playheadSeconds: nextPlayhead }
+    })
+    setLogoEditor(null)
+    setLogoEditorError(null)
+  }, [computeTotalSecondsForTimeline, logoConfigs, logoEditor, logos, snapshotUndo])
 
   const openAdd = useCallback(() => {
     setPickOpen(true)
@@ -5290,6 +5361,108 @@ export default function CreateVideo() {
                   type="button"
                   onClick={saveAudioEditor}
                   style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(48,209,88,0.65)', background: 'rgba(48,209,88,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {logoEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+          onClick={() => { setLogoEditor(null); setLogoEditorError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,159,10,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Logo Properties</div>
+              <button
+                type="button"
+                onClick={() => { setLogoEditor(null); setLogoEditorError(null) }}
+                style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}
+              >
+                Close
+              </button>
+            </div>
+
+            {(() => {
+              const seg = logos.find((l) => String((l as any).id) === String(logoEditor.id)) as any
+              const uploadId = Number(seg?.uploadId)
+              const name = (Number.isFinite(uploadId) && uploadId > 0 ? (namesByUploadId[uploadId] || `Logo ${uploadId}`) : 'Logo')
+              const cfgName = seg?.configSnapshot?.name || (seg?.configId ? `Config ${seg.configId}` : 'Config')
+              return (
+                <div style={{ marginTop: 10, color: '#fff', fontWeight: 900 }}>
+                  {name} * {cfgName}
+                </div>
+              )
+            })()}
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Logo Config</div>
+                <select
+                  value={String(logoEditor.configId)}
+                  onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, configId: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                >
+                  <option value="0" disabled>
+                    Select…
+                  </option>
+                  {logoConfigs.map((c: any) => (
+                    <option key={`logo_cfg_${String(c.id)}`} value={String(c.id)}>
+                      {String(c.name || `Config ${c.id}`)}
+                    </option>
+                  ))}
+                </select>
+                {logoConfigsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{logoConfigsError}</div> : null}
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(logoEditor.start)}
+                    onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(logoEditor.end)}
+                    onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+              </div>
+
+              {logoEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{logoEditorError}</div> : null}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => { setLogoEditor(null); setLogoEditorError(null) }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveLogoEditor}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,159,10,0.65)', background: 'rgba(255,159,10,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
