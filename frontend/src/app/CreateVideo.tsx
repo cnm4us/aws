@@ -2338,6 +2338,10 @@ export default function CreateVideo() {
         const s = Number(clipStarts[i] || 0)
         if (s > startTimeline + 1e-6 && s < nextStart) nextStart = s
       }
+      for (const st of stills as any[]) {
+        const s = Number((st as any)?.startSeconds || 0)
+        if (s > startTimeline + 1e-6 && s < nextStart) nextStart = s
+      }
       if (Number.isFinite(nextStart) && nextStart < Number.POSITIVE_INFINITY) {
         const maxDurTimeline = roundToTenth(Math.max(0, nextStart - startTimeline))
         if (durTimeline > maxDurTimeline + 1e-6) {
@@ -2370,7 +2374,7 @@ export default function CreateVideo() {
       return { ...nextTimeline, playheadSeconds: nextPlayhead }
     })
     setClipEditor(null)
-  }, [clipEditor, clipStarts, durationsByUploadId, snapshotUndo, timeline.clips, computeTotalSecondsForTimeline])
+  }, [clipEditor, clipStarts, durationsByUploadId, snapshotUndo, timeline.clips, computeTotalSecondsForTimeline, stills])
 
   const rippleInsert = useCallback(
     (tl: Timeline, atSeconds: number, insertSeconds: number): Timeline => {
@@ -3372,14 +3376,18 @@ export default function CreateVideo() {
                     setSelectedAudio(false)
 
                     const capEnd = 20 * 60
-                    const ranges = timeline.clips
-                      .map((c, i) => ({
-                        id: c.id,
-                        start: roundToTenth(Number(clipStarts[i] || 0)),
-                        end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
-                      }))
-                      .sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
-                    const pos = ranges.findIndex((r) => r.id === clip.id)
+                    const clipRanges = timeline.clips.map((c, i) => ({
+                      id: `clip:${String(c.id)}`,
+                      start: roundToTenth(Number(clipStarts[i] || 0)),
+                      end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
+                    }))
+                    const stillRanges = stills.map((s: any) => ({
+                      id: `still:${String(s?.id)}`,
+                      start: roundToTenth(Number((s as any).startSeconds || 0)),
+                      end: roundToTenth(Number((s as any).endSeconds || 0)),
+                    }))
+                    const ranges = [...clipRanges, ...stillRanges].sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
+                    const pos = ranges.findIndex((r) => r.id === `clip:${String(clip.id)}`)
                     const prevEnd = pos > 0 ? Number(ranges[pos - 1].end || 0) : 0
                     const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
                     const minStartSeconds = clamp(roundToTenth(prevEnd), 0, capEnd)
@@ -3415,14 +3423,18 @@ export default function CreateVideo() {
                   trimDragLockScrollLeftRef.current = sc.scrollLeft
                   const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
                   const capEnd = 20 * 60
-                  const ranges = timeline.clips
-                    .map((c, i) => ({
-                      id: c.id,
-                      start: roundToTenth(Number(clipStarts[i] || 0)),
-                      end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
-                    }))
-                    .sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
-                  const pos = ranges.findIndex((r) => r.id === clip.id)
+                  const clipRanges = timeline.clips.map((c, i) => ({
+                    id: `clip:${String(c.id)}`,
+                    start: roundToTenth(Number(clipStarts[i] || 0)),
+                    end: roundToTenth(Number(clipStarts[i] || 0) + clipDurationSeconds(c)),
+                  }))
+                  const stillRanges = stills.map((s: any) => ({
+                    id: `still:${String(s?.id)}`,
+                    start: roundToTenth(Number((s as any).startSeconds || 0)),
+                    end: roundToTenth(Number((s as any).endSeconds || 0)),
+                  }))
+                  const ranges = [...clipRanges, ...stillRanges].sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
+                  const pos = ranges.findIndex((r) => r.id === `clip:${String(clip.id)}`)
                   const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
                   const maxTimelineDurationSeconds = clamp(roundToTenth(nextStart - start), 0.2, capEnd)
                   trimDragRef.current = {
