@@ -905,25 +905,39 @@ export default function CreateVideo() {
   const findLogoAtTime = useCallback((t: number): Logo | null => {
     const tt = Number(t)
     if (!Number.isFinite(tt) || tt < 0) return null
+    const candidates: Array<{ s: number; e: number; l: Logo }> = []
     for (const l of logos) {
       const s = Number((l as any).startSeconds)
       const e = Number((l as any).endSeconds)
       if (!Number.isFinite(s) || !Number.isFinite(e)) continue
-      if (tt >= s && tt < e) return l
+      if (tt >= s && tt <= e) candidates.push({ s, e, l })
     }
+    if (!candidates.length) return null
+    // If we're exactly on a boundary, prefer the segment whose start matches.
+    for (const c of candidates) {
+      if (roundToTenth(c.s) === roundToTenth(tt)) return c.l
+    }
+    candidates.sort((a, b) => a.s - b.s || a.e - b.e)
+    return candidates[0].l
     return null
   }, [logos])
 
   const findLowerThirdAtTime = useCallback((t: number): LowerThird | null => {
     const tt = Number(t)
     if (!Number.isFinite(tt) || tt < 0) return null
+    const candidates: Array<{ s: number; e: number; lt: LowerThird }> = []
     for (const lt of lowerThirds) {
       const s = Number((lt as any).startSeconds)
       const e = Number((lt as any).endSeconds)
       if (!Number.isFinite(s) || !Number.isFinite(e)) continue
-      if (tt >= s && tt < e) return lt
+      if (tt >= s && tt <= e) candidates.push({ s, e, lt })
     }
-    return null
+    if (!candidates.length) return null
+    for (const c of candidates) {
+      if (roundToTenth(c.s) === roundToTenth(tt)) return c.lt
+    }
+    candidates.sort((a, b) => a.s - b.s || a.e - b.e)
+    return candidates[0].lt
   }, [lowerThirds])
 
   const findStillAtTime = useCallback((t: number): Still | null => {
@@ -4867,6 +4881,7 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4879,6 +4894,7 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
