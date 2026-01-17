@@ -7,6 +7,7 @@ export type MediaJobType =
   | 'upload_thumb_v1'
   | 'upload_edit_proxy_v1'
   | 'upload_audio_envelope_v1'
+  | 'upload_freeze_frame_v1'
   | 'assemblyai_transcript_v1'
 
 export type MediaJobRow = {
@@ -214,6 +215,17 @@ export type UploadAudioEnvelopeV1Input = {
   intervalSeconds: number
 }
 
+export type UploadFreezeFrameV1Input = {
+  freezeUploadId: number
+  uploadId: number
+  userId: number
+  proxy: S3Pointer
+  atSeconds: number
+  outputBucket: string
+  outputKey: string
+  longEdgePx: number
+}
+
 export type AssemblyAiTranscriptV1Input = {
   productionId: number
 }
@@ -224,5 +236,6 @@ export type MediaJobInputByType = {
   upload_thumb_v1: UploadThumbV1Input
   upload_edit_proxy_v1: UploadEditProxyV1Input
   upload_audio_envelope_v1: UploadAudioEnvelopeV1Input
+  upload_freeze_frame_v1: UploadFreezeFrameV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
 }

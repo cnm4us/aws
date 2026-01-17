@@ -21,6 +21,7 @@ import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
+import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
 import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
 import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
 
@@ -624,6 +625,123 @@ export async function getUploadThumbFallbackUrl(uploadId: number, ctx: ServiceCo
     enhanced.poster_s3 ||
     null
   return url ? String(url) : null
+}
+
+export async function requestFreezeFrameUpload(
+  uploadId: number,
+  input: { atSeconds: number; longEdgePx?: number },
+  ctx: ServiceContext
+): Promise<{ status: 'completed' | 'pending'; freezeUploadId: number; key: string; bucket: string }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  if (!isOwner && !isAdmin) throw new ForbiddenError()
+
+  const sourceDeletedAt = (row as any).source_deleted_at != null ? String((row as any).source_deleted_at) : null
+  if (sourceDeletedAt) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const bucket = String(UPLOAD_BUCKET || '')
+  const proxyKey = buildUploadEditProxyKey(Number(uploadId))
+  if (!bucket || !proxyKey) throw new NotFoundError('not_found')
+
+  // Ensure the edit proxy exists; if missing, enqueue generation and return pending.
+  let proxyExists = false
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: proxyKey }))
+    proxyExists = true
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+    await ensureEditProxyEnqueued(row, ctx)
+  }
+  if (!proxyExists) {
+    return { status: 'pending', freezeUploadId: 0, key: '', bucket: '' }
+  }
+
+  const atSecondsRaw = Number(input?.atSeconds ?? 0)
+  const atSeconds = Number.isFinite(atSecondsRaw) ? Math.max(0, atSecondsRaw) : 0
+  const longEdgePxRaw = input?.longEdgePx != null ? Number(input.longEdgePx) : 1080
+  const longEdgePx = Number.isFinite(longEdgePxRaw) ? Math.max(64, Math.min(2160, Math.round(longEdgePxRaw))) : 1080
+
+  const outKey = buildUploadFreezeFrameKey({ uploadId: Number(uploadId), atSeconds, longEdgePx })
+
+  const db = getPool()
+  // Create (or reuse) a derived upload row for the freeze-frame image.
+  const [res] = await db.query(
+    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, kind, image_role, status, user_id, created_at)
+     VALUES (?, ?, 'freeze_frame.png', NULL, 'image/png', 'image', 'freeze_frame', 'queued', ?, CURRENT_TIMESTAMP)
+     ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
+    [bucket, outKey, ownerId]
+  )
+  const freezeUploadId = Number((res as any).insertId)
+
+  // If the image already exists in S3, mark completed and return.
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: outKey }))
+    try {
+      await db.query(
+        `UPDATE uploads
+            SET status='completed', uploaded_at=COALESCE(uploaded_at, CURRENT_TIMESTAMP)
+          WHERE id = ?`,
+        [freezeUploadId]
+      )
+    } catch {}
+    return { status: 'completed', freezeUploadId, key: outKey, bucket }
+  } catch (e: any) {
+    const status = Number(e?.$metadata?.httpStatusCode || 0)
+    const name = String(e?.name || e?.Code || '')
+    const isMissing = status === 404 || name === 'NotFound' || name === 'NoSuchKey'
+    if (!isMissing) throw e
+  }
+
+  // Best-effort: avoid duplicate in-flight jobs for this derived upload.
+  try {
+    const [rows] = await db.query(
+      `SELECT id
+         FROM media_jobs
+        WHERE type = 'upload_freeze_frame_v1'
+          AND status IN ('pending','processing')
+          AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.freezeUploadId')) = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+      [String(freezeUploadId)]
+    )
+    if ((rows as any[]).length === 0) {
+      await enqueueJob('upload_freeze_frame_v1', {
+        freezeUploadId,
+        uploadId: Number(uploadId),
+        userId: ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : Number(ctx.userId),
+        proxy: { bucket, key: proxyKey },
+        atSeconds,
+        outputBucket: bucket,
+        outputKey: outKey,
+        longEdgePx,
+      })
+    }
+  } catch {
+    await enqueueJob('upload_freeze_frame_v1', {
+      freezeUploadId,
+      uploadId: Number(uploadId),
+      userId: ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : Number(ctx.userId),
+      proxy: { bucket, key: proxyKey },
+      atSeconds,
+      outputBucket: bucket,
+      outputKey: outKey,
+      longEdgePx,
+    })
+  }
+
+  return { status: 'pending', freezeUploadId, key: outKey, bucket }
 }
 
 export async function listSystemAudio(

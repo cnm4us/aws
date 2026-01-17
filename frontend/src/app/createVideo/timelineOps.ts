@@ -1,5 +1,5 @@
 import type { Clip, Graphic, Timeline } from './timelineTypes'
-import { clamp, clipDurationSeconds, clipFreezeEndSeconds, clipFreezeStartSeconds, clipSourceDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
+import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
   const starts = computeClipStarts(timeline.clips)
@@ -42,24 +42,14 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   const clip = timeline.clips[clipIndex]
   if (!clip || clip.id !== selectedClipId) return { timeline, selectedClipId }
 
-  const freezeStart = clipFreezeStartSeconds(clip)
-  const freezeEnd = clipFreezeEndSeconds(clip)
-  const srcDur = clipSourceDurationSeconds(clip)
-  const movingStart = freezeStart
-  const movingEnd = freezeStart + srcDur
-  // Disallow split inside freeze regions; UI can surface a message.
-  if (within < movingStart + 1e-6 || within > movingEnd - 1e-6) return { timeline, selectedClipId }
-
-  const cutWithinMoving = roundToTenth(within - freezeStart)
-  const cut = roundToTenth(clip.sourceStartSeconds + cutWithinMoving)
+  const cut = roundToTenth(clip.sourceStartSeconds + within)
   const minLen = 0.2
   if (cut <= clip.sourceStartSeconds + minLen || cut >= clip.sourceEndSeconds - minLen) return { timeline, selectedClipId }
 
   const startSeconds = roundToTenth(starts[clipIndex] || 0)
-  // Keep freeze-start on the left piece; keep freeze-end on the right piece.
-  const left: Clip = { ...clip, id: `${clip.id}_a`, startSeconds, sourceEndSeconds: cut, freezeEndSeconds: 0 }
-  const leftDur = roundToTenth((cut - clip.sourceStartSeconds) + freezeStart)
-  const right: Clip = { ...clip, id: `${clip.id}_b`, startSeconds: roundToTenth(startSeconds + leftDur), sourceStartSeconds: cut, freezeStartSeconds: 0 }
+  const left: Clip = { ...clip, id: `${clip.id}_a`, startSeconds, sourceEndSeconds: cut }
+  const leftDur = roundToTenth(cut - clip.sourceStartSeconds)
+  const right: Clip = { ...clip, id: `${clip.id}_b`, startSeconds: roundToTenth(startSeconds + leftDur), sourceStartSeconds: cut }
   const idx = timeline.clips.findIndex((c) => c.id === clip.id)
   if (idx < 0) return { timeline, selectedClipId }
   const normalizedExisting: Clip[] = timeline.clips.map((c, i) => ({

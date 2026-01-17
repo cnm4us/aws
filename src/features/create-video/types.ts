@@ -7,7 +7,11 @@ export type CreateVideoClipV1 = {
   startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
+  // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
+  // Kept temporarily for backward compatibility with existing projects.
   freezeStartSeconds?: number
+  // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
+  // Kept temporarily for backward compatibility with existing projects.
   freezeEndSeconds?: number
 }
 
@@ -16,6 +20,15 @@ export type CreateVideoGraphicV1 = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+}
+
+export type CreateVideoStillV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  // Optional linkage for debugging/UX (e.g. which clip generated this).
+  sourceClipId?: string
 }
 
 export type CreateVideoAudioTrackV1 = {
@@ -29,6 +42,7 @@ export type CreateVideoTimelineV1 = {
   version: 'create_video_v1'
   playheadSeconds?: number
   clips: CreateVideoClipV1[]
+  stills?: CreateVideoStillV1[]
   graphics?: CreateVideoGraphicV1[]
   audioTrack?: CreateVideoAudioTrackV1 | null
 }

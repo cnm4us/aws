@@ -352,3 +352,25 @@ uploadsRouter.post('/api/uploads/:id/delete-source', requireAuth, async (req, re
     res.status(status).json({ error: code, detail: err?.detail ?? String(err?.message || err) })
   }
 })
+
+uploadsRouter.post('/api/uploads/:id/freeze-frame', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const body = (req.body || {}) as any
+    const atSeconds = body?.atSeconds != null ? Number(body.atSeconds) : 0
+    const longEdgePx = body?.longEdgePx != null ? Number(body.longEdgePx) : undefined
+    const result = await uploadsSvc.requestFreezeFrameUpload(
+      id,
+      { atSeconds, longEdgePx },
+      { userId: Number(req.user!.id) }
+    )
+    if (result.status === 'pending') return res.status(202).json(result)
+    return res.json(result)
+  } catch (err: any) {
+    console.error('request freeze frame error', err)
+    const status = err?.status || 500
+    const code = err?.code || err?.message || 'failed'
+    return res.status(status).json({ error: String(code), detail: err?.detail ?? String(err?.message || err) })
+  }
+})

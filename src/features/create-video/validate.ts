@@ -5,6 +5,7 @@ import * as audioConfigsSvc from '../audio-configs/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
+const MAX_STILLS = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -73,6 +74,32 @@ async function loadOverlayImageMetaForUser(uploadId: number, userId: number): Pr
   if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
   if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
   if (String(row.image_role || '').toLowerCase() !== 'overlay') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  const isSystem = ownerId == null
+  if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+async function loadFreezeFrameImageMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, image_role, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (String(row.image_role || '').toLowerCase() !== 'freeze_frame') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
   if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
 
   const status = String(row.status || '').toLowerCase()
@@ -169,6 +196,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   // Sort by time for deterministic playback/export and overlap validation.
   clips.sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+  const baseTrackWindows: Array<{ start: number; end: number }> = []
   for (let i = 0; i < clips.length; i++) {
     const c = clips[i] as any
     const start = Number(c.startSeconds || 0)
@@ -177,20 +205,45 @@ export async function validateAndNormalizeCreateVideoTimeline(
       Math.max(0, Number((c as any).freezeStartSeconds || 0)) +
       Math.max(0, Number((c as any).freezeEndSeconds || 0))
     const end = start + dur
-    if (i > 0) {
-      const prev = clips[i - 1] as any
-      const prevStart = Number(prev.startSeconds || 0)
-      const prevDur =
-        Math.max(0, Number(prev.sourceEndSeconds) - Number(prev.sourceStartSeconds)) +
-        Math.max(0, Number((prev as any).freezeStartSeconds || 0)) +
-        Math.max(0, Number((prev as any).freezeEndSeconds || 0))
-      const prevEnd = prevStart + prevDur
-      if (start < prevEnd - 1e-6) throw new DomainError('clip_overlap', 'clip_overlap', 400)
-    }
+    baseTrackWindows.push({ start: roundToTenth(start), end: roundToTenth(end) })
     videoEndSeconds = Math.max(videoEndSeconds, roundToTenth(end))
   }
 
   const videoTotalSeconds = roundToTenth(videoEndSeconds)
+
+  const stillsRaw = Array.isArray((raw as any).stills) ? ((raw as any).stills as any[]) : []
+  if (stillsRaw.length > MAX_STILLS) throw new DomainError('too_many_stills', 'too_many_stills', 400)
+  const stills: any[] = []
+  for (const s of stillsRaw) {
+    if (!s || typeof s !== 'object') continue
+    const id = normalizeId((s as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((s as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+    const startSeconds = normalizeSeconds((s as any).startSeconds)
+    const endSeconds = normalizeSeconds((s as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+
+    const meta = await loadFreezeFrameImageMetaForUser(uploadId, ctx.userId)
+    const sourceClipIdRaw = (s as any).sourceClipId
+    const sourceClipId = sourceClipIdRaw != null ? String(sourceClipIdRaw).trim() : undefined
+    stills.push({ id, uploadId: meta.id, startSeconds, endSeconds, sourceClipId: sourceClipId || undefined })
+  }
+
+  stills.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (const st of stills) {
+    baseTrackWindows.push({ start: Number(st.startSeconds), end: Number(st.endSeconds) })
+    videoEndSeconds = Math.max(videoEndSeconds, roundToTenth(Number(st.endSeconds)))
+  }
+
+  baseTrackWindows.sort((a, b) => Number(a.start) - Number(b.start) || Number(a.end) - Number(b.end))
+  for (let i = 1; i < baseTrackWindows.length; i++) {
+    const prev = baseTrackWindows[i - 1]
+    const cur = baseTrackWindows[i]
+    if (cur.start < prev.end - 1e-6) throw new DomainError('base_track_overlap', 'base_track_overlap', 400)
+  }
 
   const graphicsRaw = Array.isArray((raw as any).graphics) ? ((raw as any).graphics as any[]) : []
   if (graphicsRaw.length > MAX_GRAPHICS) throw new DomainError('too_many_graphics', 'too_many_graphics', 400)
@@ -223,7 +276,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
 
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
-  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds))
+  const stillsTotalSeconds = stills.length ? Number(stills[stills.length - 1].endSeconds) : 0
+  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds))
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
@@ -259,6 +313,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     version: 'create_video_v1',
     playheadSeconds: safePlayheadSeconds,
     clips,
+    stills,
     graphics,
     audioTrack,
   }

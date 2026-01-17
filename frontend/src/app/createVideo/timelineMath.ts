@@ -16,18 +16,8 @@ export function clipSourceDurationSeconds(c: Clip): number {
   return Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
 }
 
-export function clipFreezeStartSeconds(c: Clip): number {
-  const v = Number((c as any).freezeStartSeconds || 0)
-  return Number.isFinite(v) ? Math.max(0, v) : 0
-}
-
-export function clipFreezeEndSeconds(c: Clip): number {
-  const v = Number((c as any).freezeEndSeconds || 0)
-  return Number.isFinite(v) ? Math.max(0, v) : 0
-}
-
 export function clipDurationSeconds(c: Clip): number {
-  return roundToTenth(clipSourceDurationSeconds(c) + clipFreezeStartSeconds(c) + clipFreezeEndSeconds(c))
+  return roundToTenth(clipSourceDurationSeconds(c))
 }
 
 export function computeClipStarts(clips: Clip[]): number[] {
