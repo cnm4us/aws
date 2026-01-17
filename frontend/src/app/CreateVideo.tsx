@@ -1109,6 +1109,11 @@ export default function CreateVideo() {
     setUndoDepth(stack.length)
   }, [selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedStillId, timeline])
 
+  const snapshotUndoRef = useRef(snapshotUndo)
+  useEffect(() => {
+    snapshotUndoRef.current = snapshotUndo
+  }, [snapshotUndo])
+
   const undo = useCallback(() => {
     const stack = undoStackRef.current
     const snap = stack.pop()
@@ -3019,18 +3024,37 @@ export default function CreateVideo() {
 
   // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
   useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const drag = trimDragRef.current
-      if (!drag) return
-      if (e.pointerId !== drag.pointerId) return
-      e.preventDefault()
-      const sc = timelineScrollRef.current
-      const lockedScrollLeft = trimDragLockScrollLeftRef.current
-      if (sc && lockedScrollLeft != null && sc.scrollLeft !== lockedScrollLeft) {
-        ignoreScrollRef.current = true
-        sc.scrollLeft = lockedScrollLeft
-        ignoreScrollRef.current = false
-      }
+	    const onMove = (e: PointerEvent) => {
+	      const drag = trimDragRef.current
+	      if (!drag) return
+	      if (e.pointerId !== drag.pointerId) return
+
+	      // Special case: "armed" logo moves (body-drag). Don't start dragging until the pointer has moved a bit,
+	      // otherwise a simple click on the selected logo pill can't open the properties modal.
+	      if (drag.kind === 'logo' && drag.edge === 'move' && (drag as any).armed) {
+	        const dx0 = e.clientX - drag.startClientX
+	        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
+	        const moved = Boolean((drag as any).moved)
+	        if (!moved) {
+	          const thresholdPx = 6
+	          if (Math.abs(dx0) < thresholdPx && Math.abs(dy0) < thresholdPx) return
+	          ;(drag as any).moved = true
+	          ;(drag as any).armed = false
+	          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
+	          try { snapshotUndoRef.current?.() } catch {}
+	          setTrimDragging(true)
+	          dbg('startTrimDrag', { kind: 'logo', edge: 'move', id: String((drag as any).logoId || '') })
+	        }
+	      }
+
+	      e.preventDefault()
+	      const sc = timelineScrollRef.current
+	      const lockedScrollLeft = trimDragLockScrollLeftRef.current
+	      if (sc && lockedScrollLeft != null && sc.scrollLeft !== lockedScrollLeft) {
+	        ignoreScrollRef.current = true
+	        sc.scrollLeft = lockedScrollLeft
+	        ignoreScrollRef.current = false
+	      }
       const dx = e.clientX - drag.startClientX
       const deltaSeconds = dx / pxPerSecond
       const minLen = 0.2
@@ -3663,9 +3687,9 @@ export default function CreateVideo() {
                     t,
                   })
 
-                  if (withinLogo) {
-                    const l = findLogoAtTime(t)
-                    if (!l) return
+	                  if (withinLogo) {
+	                    const l = findLogoAtTime(t)
+	                    if (!l) return
                     const s = Number((l as any).startSeconds || 0)
                     const e2 = Number((l as any).endSeconds || 0)
                     const leftX = padPx + s * pxPerSecond
@@ -3683,37 +3707,32 @@ export default function CreateVideo() {
                     const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
                     const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-                    // Slide (body drag) only when already selected.
-                    if (!nearLeft && !nearRight) {
-                      if (selectedLogoId !== String((l as any).id)) return
-                      e.preventDefault()
-                      snapshotUndo()
-                      setSelectedLogoId(String((l as any).id))
-                      setSelectedClipId(null)
-                      setSelectedGraphicId(null)
-                      setSelectedStillId(null)
-                      setSelectedAudio(false)
-
-                      trimDragLockScrollLeftRef.current = sc.scrollLeft
-                      const dur = Math.max(0.2, roundToTenth(e2 - s))
-                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
-                      trimDragRef.current = {
-                        kind: 'logo',
-                        logoId: String((l as any).id),
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                      }
-                      setTrimDragging(true)
-                      try { sc.setPointerCapture(e.pointerId) } catch {}
-                      dbg('startTrimDrag', { kind: 'logo', edge: 'move', id: String((l as any).id) })
-                      return
-                    }
+	                    // Slide (body drag) only when already selected.
+	                    if (!nearLeft && !nearRight) {
+	                      if (selectedLogoId !== String((l as any).id)) return
+	                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+	                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+	                      // Arm the drag; we only enter "dragging" state once pointer movement crosses a threshold.
+	                      // This keeps a normal click on a selected logo pill available for opening the properties modal.
+	                      trimDragRef.current = {
+	                        kind: 'logo',
+	                        logoId: String((l as any).id),
+	                        edge: 'move',
+	                        pointerId: e.pointerId,
+	                        startClientX: e.clientX,
+	                        startClientY: e.clientY,
+	                        startStartSeconds: s,
+	                        startEndSeconds: e2,
+	                        minStartSeconds,
+	                        maxEndSeconds,
+	                        maxStartSeconds,
+	                        armed: true,
+	                        moved: false,
+	                      }
+	                      try { sc.setPointerCapture(e.pointerId) } catch {}
+	                      dbg('armTrimDrag', { kind: 'logo', edge: 'move', id: String((l as any).id) })
+	                      return
+	                    }
 
                     e.preventDefault()
                     snapshotUndo()
