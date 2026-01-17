@@ -23,12 +23,22 @@ type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds:
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
 type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
+type ScreenTitle = { id: string; startSeconds: number; endSeconds: number; presetId: number | null; presetSnapshot: any | null; text?: string; renderUploadId: number | null }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
   userId: number
-  timeline: { version: 'create_video_v1'; clips: Clip[]; stills?: Still[]; graphics?: Graphic[]; logos?: Logo[]; lowerThirds?: LowerThird[]; audioTrack?: AudioTrack | null }
+  timeline: {
+    version: 'create_video_v1'
+    clips: Clip[]
+    stills?: Still[]
+    graphics?: Graphic[]
+    logos?: Logo[]
+    lowerThirds?: LowerThird[]
+    screenTitles?: ScreenTitle[]
+    audioTrack?: AudioTrack | null
+  }
 }
 
 function roundToTenth(n: number): number {
@@ -374,6 +384,81 @@ async function overlayFullFrameGraphics(opts: {
   await runFfmpeg(args, opts.logPaths)
 }
 
+async function overlayFullFrameScreenTitles(opts: {
+  baseMp4Path: string
+  outPath: string
+  screenTitles: Array<{ startSeconds: number; endSeconds: number; imagePath: string; fade: 'none' | 'in' | 'out' | 'in_out' }>
+  targetW: number
+  targetH: number
+  durationSeconds: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}) {
+  const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
+  if (!opts.screenTitles.length) throw new Error('no_screen_titles')
+
+  const args: string[] = ['-i', opts.baseMp4Path]
+  for (const st of opts.screenTitles) {
+    args.push('-loop', '1', '-t', String(baseDur), '-i', st.imagePath)
+  }
+
+  const filters: string[] = []
+  for (let i = 0; i < opts.screenTitles.length; i++) {
+    const inIdx = i + 1
+    const seg = opts.screenTitles[i]
+    const s = roundToTenth(Number(seg.startSeconds))
+    const e = roundToTenth(Number(seg.endSeconds))
+    const segDur = Math.max(0, e - s)
+    const fadeBase = 0.35
+    const fadeDur = Math.max(0.05, Math.min(fadeBase, segDur / 2))
+    const fadeIn = seg.fade === 'in' || seg.fade === 'in_out'
+    const fadeOut = seg.fade === 'out' || seg.fade === 'in_out'
+    const fadeFilters: string[] = []
+    if (fadeIn && segDur > 0.05) fadeFilters.push(`fade=t=in:st=${s.toFixed(3)}:d=${fadeDur.toFixed(3)}:alpha=1`)
+    if (fadeOut && segDur > 0.05) {
+      const outStart = Math.max(0, e - fadeDur)
+      fadeFilters.push(`fade=t=out:st=${outStart.toFixed(3)}:d=${fadeDur.toFixed(3)}:alpha=1`)
+    }
+    const fadeSuffix = fadeFilters.length ? `,${fadeFilters.join(',')}` : ''
+    filters.push(
+      `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba${fadeSuffix}[stimg${i}]`
+    )
+  }
+
+  let current = '[0:v]'
+  for (let i = 0; i < opts.screenTitles.length; i++) {
+    const seg = opts.screenTitles[i]
+    const s = roundToTenth(Number(seg.startSeconds))
+    const e = roundToTenth(Number(seg.endSeconds))
+    const next = `[vst${i + 1}]`
+    filters.push(`${current}[stimg${i}]overlay=0:0:enable='between(t,${s.toFixed(3)},${e.toFixed(3)})'${next}`)
+    current = next
+  }
+
+  args.push(
+    '-filter_complex',
+    filters.join(';'),
+    '-map',
+    current,
+    '-map',
+    '0:a',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'copy',
+    '-movflags',
+    '+faststart',
+    opts.outPath
+  )
+
+  await runFfmpeg(args, opts.logPaths)
+}
+
 async function renderSegmentMp4(opts: {
   inPath: string
   outPath: string
@@ -531,6 +616,7 @@ export async function runCreateVideoExportV1Job(
   const graphics = Array.isArray((input.timeline as any)?.graphics) ? ((input.timeline as any).graphics as Graphic[]) : []
   const logos = Array.isArray((input.timeline as any)?.logos) ? ((input.timeline as any).logos as Logo[]) : []
   const lowerThirds = Array.isArray((input.timeline as any)?.lowerThirds) ? ((input.timeline as any).lowerThirds as LowerThird[]) : []
+  const screenTitles = Array.isArray((input.timeline as any)?.screenTitles) ? ((input.timeline as any).screenTitles as ScreenTitle[]) : []
   const audioTrackRaw = (input.timeline as any)?.audioTrack
   const audioTrack: AudioTrack | null =
     audioTrackRaw && typeof audioTrackRaw === 'object'
@@ -552,6 +638,7 @@ export async function runCreateVideoExportV1Job(
         ...graphics.map((g) => Number(g.uploadId)),
         ...logos.map((l) => Number((l as any).uploadId)),
         ...lowerThirds.map((lt) => Number((lt as any).uploadId)),
+        ...screenTitles.map((st) => Number((st as any).renderUploadId)),
         ...(audioTrack ? [Number(audioTrack.uploadId)] : []),
       ].filter((n) => Number.isFinite(n) && n > 0)
     )
@@ -616,6 +703,9 @@ export async function runCreateVideoExportV1Job(
     segments.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
 
     const graphicsEnd = graphics.length ? Number(graphics.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[graphics.length - 1].endSeconds) : 0
+    const screenTitlesEnd = screenTitles.length
+      ? Number(screenTitles.slice().sort((a, b) => Number((a as any).endSeconds) - Number((b as any).endSeconds))[screenTitles.length - 1].endSeconds)
+      : 0
     const audioEnd = audioTrack ? Number(audioTrack.endSeconds || 0) : 0
     const logosEnd = logos.length ? Number(logos.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[logos.length - 1].endSeconds) : 0
     const lowerThirdsEnd = lowerThirds.length
@@ -726,7 +816,7 @@ export async function runCreateVideoExportV1Job(
         cursorSeconds = endSeconds
       }
 
-      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, audioEnd, logosEnd, lowerThirdsEnd))
+      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, screenTitlesEnd, audioEnd, logosEnd, lowerThirdsEnd))
       if (targetEnd > cursorSeconds + 0.05) {
         const gapDur = roundToTenth(targetEnd - cursorSeconds)
         const gapPath = path.join(tmpDir, `tail_gap.mp4`)
@@ -782,7 +872,7 @@ export async function runCreateVideoExportV1Job(
         )
       }
     } else {
-      baseDurationSeconds = roundToTenth(Math.max(0, graphicsEnd, audioEnd, logosEnd, lowerThirdsEnd))
+      baseDurationSeconds = roundToTenth(Math.max(0, graphicsEnd, screenTitlesEnd, audioEnd, logosEnd, lowerThirdsEnd))
       if (!(baseDurationSeconds > 0)) throw new Error('invalid_duration')
       await renderBlackBaseMp4({
         outPath: baseOut,
@@ -825,6 +915,65 @@ export async function runCreateVideoExportV1Job(
         logPaths,
       })
       finalOut = overlayOut
+    }
+
+    if (screenTitles.length) {
+      const imageDownloads = new Map<number, string>()
+      const sorted = screenTitles
+        .slice()
+        .map((st) => ({
+          ...st,
+          startSeconds: roundToTenth(Math.max(0, Number((st as any).startSeconds || 0))),
+          endSeconds: roundToTenth(Math.max(0, Number((st as any).endSeconds || 0))),
+        }))
+        .filter((st) => Number.isFinite(Number((st as any).startSeconds)) && Number.isFinite(Number((st as any).endSeconds)) && Number((st as any).endSeconds) > Number((st as any).startSeconds))
+        .sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String((a as any).id).localeCompare(String((b as any).id)))
+
+      const overlays: Array<{ startSeconds: number; endSeconds: number; imagePath: string; fade: 'none' | 'in' | 'out' | 'in_out' }> = []
+      for (let i = 0; i < sorted.length; i++) {
+        const st: any = sorted[i] as any
+        const uploadId = st.renderUploadId == null ? 0 : Number(st.renderUploadId)
+        if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
+        if (String(row.image_role || '').toLowerCase() !== 'screen_title') throw new Error('invalid_image_role')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+        const stStatus = String(row.status || '').toLowerCase()
+        if (!(stStatus === 'uploaded' || stStatus === 'completed')) throw new Error('invalid_upload_status')
+        if (row.source_deleted_at) throw new Error('source_deleted')
+
+        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `screen_title_${uploadId}_${String(i).padStart(3, '0')}.png`)
+        if (!imageDownloads.has(uploadId)) {
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
+          imageDownloads.set(uploadId, inPath)
+        }
+
+        const segStart = clamp(roundToTenth(Number(st.startSeconds)), 0, Math.max(0, baseDurationSeconds))
+        const segEnd = clamp(roundToTenth(Number(st.endSeconds)), 0, Math.max(0, baseDurationSeconds))
+        if (!(segEnd > segStart + 0.01)) continue
+
+        const preset: any = st.presetSnapshot && typeof st.presetSnapshot === 'object' ? st.presetSnapshot : {}
+        const fadeRaw = String(preset.fade || 'none').toLowerCase()
+        const fade = (fadeRaw === 'in_out' ? 'in_out' : fadeRaw === 'in' ? 'in' : fadeRaw === 'out' ? 'out' : 'none') as any
+
+        overlays.push({ startSeconds: segStart, endSeconds: segEnd, imagePath: inPath, fade })
+      }
+
+      if (overlays.length) {
+        const overlayOut = path.join(tmpDir, 'out_screen_titles.mp4')
+        await overlayFullFrameScreenTitles({
+          baseMp4Path: finalOut,
+          outPath: overlayOut,
+          screenTitles: overlays,
+          targetW: target.w,
+          targetH: target.h,
+          durationSeconds: baseDurationSeconds,
+          logPaths,
+        })
+        finalOut = overlayOut
+      }
     }
 
     if (lowerThirds.length) {

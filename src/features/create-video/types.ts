@@ -69,6 +69,33 @@ export type CreateVideoLowerThirdV1 = {
   configSnapshot: CreateVideoLowerThirdConfigSnapshotV1
 }
 
+export type CreateVideoScreenTitlePresetSnapshotV1 = {
+  id: number
+  name: string
+  style: 'pill' | 'outline' | 'strip'
+  fontKey: string
+  fontSizePct: number
+  trackingPct: number
+  fontColor: string
+  pillBgColor: string
+  pillBgOpacityPct: number
+  position: 'top' | 'middle' | 'bottom'
+  maxWidthPct: number
+  insetXPreset: 'small' | 'medium' | 'large' | null
+  insetYPreset: 'small' | 'medium' | 'large' | null
+  fade: 'none' | 'in' | 'out' | 'in_out'
+}
+
+export type CreateVideoScreenTitleV1 = {
+  id: string
+  startSeconds: number
+  endSeconds: number
+  presetId: number | null
+  presetSnapshot: CreateVideoScreenTitlePresetSnapshotV1 | null
+  text: string
+  renderUploadId: number | null
+}
+
 export type CreateVideoStillV1 = {
   id: string
   uploadId: number
@@ -93,6 +120,7 @@ export type CreateVideoTimelineV1 = {
   graphics?: CreateVideoGraphicV1[]
   logos?: CreateVideoLogoV1[]
   lowerThirds?: CreateVideoLowerThirdV1[]
+  screenTitles?: CreateVideoScreenTitleV1[]
   audioTrack?: CreateVideoAudioTrackV1 | null
 }
 

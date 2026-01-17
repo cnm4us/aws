@@ -77,6 +77,33 @@ export type AudioTrack = {
   endSeconds: number
 }
 
+export type ScreenTitlePresetSnapshot = {
+  id: number
+  name: string
+  style: 'pill' | 'outline' | 'strip'
+  fontKey: string
+  fontSizePct: number
+  trackingPct: number
+  fontColor: string
+  pillBgColor: string
+  pillBgOpacityPct: number
+  position: 'top' | 'middle' | 'bottom'
+  maxWidthPct: number
+  insetXPreset: 'small' | 'medium' | 'large' | null
+  insetYPreset: 'small' | 'medium' | 'large' | null
+  fade: 'none' | 'in' | 'out' | 'in_out'
+}
+
+export type ScreenTitle = {
+  id: string
+  startSeconds: number
+  endSeconds: number
+  presetId: number | null
+  presetSnapshot: ScreenTitlePresetSnapshot | null
+  text: string
+  renderUploadId: number | null
+}
+
 export type Timeline = {
   version: 'create_video_v1'
   playheadSeconds: number
@@ -85,6 +112,7 @@ export type Timeline = {
   graphics: Graphic[]
   logos?: Logo[]
   lowerThirds?: LowerThird[]
+  screenTitles?: ScreenTitle[]
   audioTrack?: AudioTrack | null
 }
 
@@ -118,6 +146,49 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(g.uploadId),
           startSeconds: Number(g.startSeconds),
           endSeconds: Number(g.endSeconds),
+        }))
+      : [],
+    screenTitles: Array.isArray((timeline as any).screenTitles)
+      ? (timeline as any).screenTitles.map((st: any) => ({
+          id: String(st.id),
+          startSeconds: Number(st.startSeconds),
+          endSeconds: Number(st.endSeconds),
+          presetId: st.presetId == null ? null : Number(st.presetId),
+          presetSnapshot:
+            st.presetSnapshot && typeof st.presetSnapshot === 'object'
+              ? {
+                  id: Number(st.presetSnapshot.id),
+                  name: String(st.presetSnapshot.name || ''),
+                  style: (String(st.presetSnapshot.style || 'outline').toLowerCase() === 'pill'
+                    ? 'pill'
+                    : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'strip'
+                      ? 'strip'
+                      : 'outline') as any,
+                  fontKey: String(st.presetSnapshot.fontKey || 'dejavu_sans_bold'),
+                  fontSizePct: Number(st.presetSnapshot.fontSizePct),
+                  trackingPct: Number(st.presetSnapshot.trackingPct),
+                  fontColor: String(st.presetSnapshot.fontColor || '#ffffff'),
+                  pillBgColor: String(st.presetSnapshot.pillBgColor || '#000000'),
+                  pillBgOpacityPct: Number(st.presetSnapshot.pillBgOpacityPct),
+                  position: (String(st.presetSnapshot.position || 'top').toLowerCase() === 'bottom'
+                    ? 'bottom'
+                    : String(st.presetSnapshot.position || 'top').toLowerCase() === 'middle'
+                      ? 'middle'
+                      : 'top') as any,
+                  maxWidthPct: Number(st.presetSnapshot.maxWidthPct),
+                  insetXPreset: st.presetSnapshot.insetXPreset == null ? null : (String(st.presetSnapshot.insetXPreset || '').trim() as any),
+                  insetYPreset: st.presetSnapshot.insetYPreset == null ? null : (String(st.presetSnapshot.insetYPreset || '').trim() as any),
+                  fade: (String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in_out'
+                    ? 'in_out'
+                    : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in'
+                      ? 'in'
+                      : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'out'
+                        ? 'out'
+                        : 'none') as any,
+                }
+              : null,
+          text: st.text == null ? '' : String(st.text),
+          renderUploadId: st.renderUploadId == null ? null : Number(st.renderUploadId),
         }))
       : [],
     logos: Array.isArray((timeline as any).logos)

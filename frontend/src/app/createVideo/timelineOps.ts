@@ -1,4 +1,4 @@
-import type { Clip, Graphic, Logo, LowerThird, Timeline } from './timelineTypes'
+import type { Clip, Graphic, Logo, LowerThird, ScreenTitle, Timeline } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -134,4 +134,29 @@ export function splitLowerThirdAtPlayhead(
   const nextLts = [...lowerThirds.slice(0, idx), left, right, ...lowerThirds.slice(idx + 1)]
   nextLts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), lowerThirds: nextLts } as any, selectedLowerThirdId: right.id }
+}
+
+export function splitScreenTitleAtPlayhead(
+  timeline: Timeline,
+  selectedScreenTitleId: string | null
+): { timeline: Timeline; selectedScreenTitleId: string | null } {
+  if (!selectedScreenTitleId) return { timeline, selectedScreenTitleId }
+  const sts: ScreenTitle[] = Array.isArray((timeline as any).screenTitles) ? ((timeline as any).screenTitles as any) : []
+  const idx = sts.findIndex((st: any) => String(st?.id) === String(selectedScreenTitleId))
+  if (idx < 0) return { timeline, selectedScreenTitleId }
+  const st: any = sts[idx]
+  const start = roundToTenth(Number(st?.startSeconds || 0))
+  const end = roundToTenth(Number(st?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedScreenTitleId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedScreenTitleId }
+
+  const left: ScreenTitle = { ...st, id: `${String(st.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: ScreenTitle = { ...st, id: `${String(st.id)}_b`, startSeconds: cut, endSeconds: end }
+  const nextSts = [...sts.slice(0, idx), left, right, ...sts.slice(idx + 1)]
+  nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), screenTitles: nextSts } as any, selectedScreenTitleId: right.id }
 }

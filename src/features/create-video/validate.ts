@@ -4,12 +4,14 @@ import type { CreateVideoTimelineV1 } from './types'
 import * as audioConfigsSvc from '../audio-configs/service'
 import * as logoConfigsSvc from '../logo-configs/service'
 import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
+import * as screenTitlePresetsSvc from '../screen-title-presets/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
 const MAX_STILLS = 200
 const MAX_LOGOS = 200
 const MAX_LOWER_THIRDS = 200
+const MAX_SCREEN_TITLES = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -78,6 +80,32 @@ async function loadOverlayImageMetaForUser(uploadId: number, userId: number): Pr
   if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
   if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
   if (String(row.image_role || '').toLowerCase() !== 'overlay') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  const isSystem = ownerId == null
+  if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+async function loadScreenTitleImageMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, image_role, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (String(row.image_role || '').toLowerCase() !== 'screen_title') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
   if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
 
   const status = String(row.status || '').toLowerCase()
@@ -277,6 +305,62 @@ async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
   if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
 
   return { id: Number(row.id) }
+}
+
+function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const id = Number((raw as any).id)
+  if (!Number.isFinite(id) || id <= 0 || id !== Number(presetId)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const name = String((raw as any).name || '').trim()
+  if (!name || name.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const styleRaw = String((raw as any).style || 'outline').trim().toLowerCase()
+  const style = (styleRaw === 'pill' ? 'pill' : styleRaw === 'strip' ? 'strip' : 'outline') as 'pill' | 'outline' | 'strip'
+  const fontKey = String((raw as any).fontKey || '').trim()
+  if (!fontKey || fontKey.length > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const fontSizePct = Number((raw as any).fontSizePct)
+  const trackingPct = Number((raw as any).trackingPct)
+  if (!Number.isFinite(fontSizePct) || fontSizePct < 1 || fontSizePct > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  if (!Number.isFinite(trackingPct) || trackingPct < -40 || trackingPct > 40) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const fontColor = String((raw as any).fontColor || '').trim()
+  const pillBgColor = String((raw as any).pillBgColor || '').trim()
+  if (!fontColor || fontColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  if (!pillBgColor || pillBgColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const pillBgOpacityPct = Number((raw as any).pillBgOpacityPct)
+  if (!Number.isFinite(pillBgOpacityPct) || pillBgOpacityPct < 0 || pillBgOpacityPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const positionRaw = String((raw as any).position || 'top').trim().toLowerCase()
+  const position = (positionRaw === 'bottom' ? 'bottom' : positionRaw === 'middle' ? 'middle' : 'top') as 'top' | 'middle' | 'bottom'
+  const maxWidthPct = Number((raw as any).maxWidthPct)
+  if (!Number.isFinite(maxWidthPct) || maxWidthPct < 10 || maxWidthPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const insetXPresetRaw = (raw as any).insetXPreset
+  const insetYPresetRaw = (raw as any).insetYPreset
+  const insetXPreset = insetXPresetRaw == null ? null : String(insetXPresetRaw || '').trim() || null
+  const insetYPreset = insetYPresetRaw == null ? null : String(insetYPresetRaw || '').trim() || null
+  const isInset = (v: any) => v === null || v === 'small' || v === 'medium' || v === 'large'
+  if (!isInset(insetXPreset)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  if (!isInset(insetYPreset)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const fadeRaw = String((raw as any).fade || 'none').trim().toLowerCase()
+  const fade = (fadeRaw === 'in_out' ? 'in_out' : fadeRaw === 'in' ? 'in' : fadeRaw === 'out' ? 'out' : 'none') as
+    | 'none'
+    | 'in'
+    | 'out'
+    | 'in_out'
+
+  return {
+    id,
+    name,
+    style,
+    fontKey,
+    fontSizePct: roundToTenth(fontSizePct),
+    trackingPct: Math.round(trackingPct),
+    fontColor,
+    pillBgColor,
+    pillBgOpacityPct: Math.round(pillBgOpacityPct),
+    position,
+    maxWidthPct: Math.round(maxWidthPct),
+    insetXPreset: insetXPreset as any,
+    insetYPreset: insetYPreset as any,
+    fade,
+  }
 }
 
 export async function validateAndNormalizeCreateVideoTimeline(
@@ -495,8 +579,69 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const lowerThirdsTotalSeconds = lowerThirds.length ? Number(lowerThirds[lowerThirds.length - 1].endSeconds) : 0
 
+  const screenTitlesRaw = Array.isArray((raw as any).screenTitles) ? ((raw as any).screenTitles as any[]) : []
+  if (screenTitlesRaw.length > MAX_SCREEN_TITLES) throw new DomainError('too_many_screen_titles', 'too_many_screen_titles', 400)
+  const screenTitles: any[] = []
+  for (const st of screenTitlesRaw) {
+    if (!st || typeof st !== 'object') continue
+    const id = normalizeId((st as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const startSeconds = normalizeSeconds((st as any).startSeconds)
+    const endSeconds = normalizeSeconds((st as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+
+    const presetIdRaw = (st as any).presetId
+    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
+    if (presetId != null && (!Number.isFinite(presetId) || presetId <= 0)) throw new ValidationError('invalid_screen_title_preset_id')
+    const presetSnapshotRaw = (st as any).presetSnapshot
+    const presetSnapshot = presetId != null ? normalizeScreenTitlePresetSnapshot(presetSnapshotRaw, presetId) : null
+    if (presetId == null && presetSnapshotRaw != null) throw new ValidationError('invalid_screen_title_preset_snapshot')
+
+    const textRaw = (st as any).text
+    const text = textRaw == null ? '' : String(textRaw)
+    if (text.length > 140) throw new ValidationError('invalid_screen_title_text')
+    const lines = text.split(/\r?\n/)
+    if (lines.length > 3) throw new ValidationError('invalid_screen_title_text')
+
+    const renderUploadIdRaw = (st as any).renderUploadId
+    const renderUploadId = renderUploadIdRaw == null ? null : Number(renderUploadIdRaw)
+    let renderUploadMetaId: number | null = null
+    if (renderUploadId != null) {
+      if (!Number.isFinite(renderUploadId) || renderUploadId <= 0) throw new ValidationError('invalid_upload_id')
+      const meta = await loadScreenTitleImageMetaForUser(renderUploadId, ctx.userId)
+      renderUploadMetaId = meta.id
+    }
+
+    if (presetId != null) {
+      await screenTitlePresetsSvc.getActiveForUser(presetId, Number(ctx.userId))
+    }
+
+    screenTitles.push({
+      id,
+      startSeconds,
+      endSeconds,
+      presetId,
+      presetSnapshot,
+      text,
+      renderUploadId: renderUploadMetaId,
+    })
+  }
+
+  screenTitles.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < screenTitles.length; i++) {
+    const st = screenTitles[i]
+    if (st.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    if (i > 0) {
+      const prev = screenTitles[i - 1]
+      if (st.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('screen_title_overlap', 'screen_title_overlap', 400)
+    }
+  }
+  const screenTitlesTotalSeconds = screenTitles.length ? Number(screenTitles[screenTitles.length - 1].endSeconds) : 0
+
   const totalForPlayhead = roundToTenth(
-    Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds, lowerThirdsTotalSeconds)
+    Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds, lowerThirdsTotalSeconds, screenTitlesTotalSeconds)
   )
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
@@ -537,6 +682,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     graphics,
     logos,
     lowerThirds,
+    screenTitles,
     audioTrack,
   }
 }

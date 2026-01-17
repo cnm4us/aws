@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getUploadCdnUrl } from '../ui/uploadsCdn'
-import type { AudioTrack, Clip, Graphic, Logo, LogoConfigSnapshot, LowerThird, LowerThirdConfigSnapshot, Still, Timeline } from './createVideo/timelineTypes'
+import type { AudioTrack, Clip, Graphic, Logo, LogoConfigSnapshot, LowerThird, LowerThirdConfigSnapshot, ScreenTitle, Still, Timeline } from './createVideo/timelineTypes'
 import { cloneTimeline } from './createVideo/timelineTypes'
 import {
   clamp,
@@ -12,7 +12,14 @@ import {
   locate,
   roundToTenth,
 } from './createVideo/timelineMath'
-import { insertClipAtPlayhead, splitClipAtPlayhead, splitGraphicAtPlayhead, splitLogoAtPlayhead, splitLowerThirdAtPlayhead } from './createVideo/timelineOps'
+import {
+  insertClipAtPlayhead,
+  splitClipAtPlayhead,
+  splitGraphicAtPlayhead,
+  splitLogoAtPlayhead,
+  splitLowerThirdAtPlayhead,
+  splitScreenTitleAtPlayhead,
+} from './createVideo/timelineOps'
 
 type MeResponse = {
   userId: number | null
@@ -58,7 +65,25 @@ type AudioConfigItem = {
 type LogoConfigItem = LogoConfigSnapshot
 type LowerThirdConfigItem = LowerThirdConfigSnapshot
 
-type AddStep = 'type' | 'video' | 'graphic' | 'audio' | 'logo' | 'logoConfig' | 'lowerThird' | 'lowerThirdConfig'
+type ScreenTitlePresetItem = {
+  id: number
+  name: string
+  style: string
+  fontKey: string
+  fontSizePct: number
+  trackingPct: number
+  fontColor: string
+  pillBgColor: string
+  pillBgOpacityPct: number
+  position: string
+  maxWidthPct: number
+  insetXPreset: string | null
+  insetYPreset: string | null
+  fade: string
+  archivedAt?: string | null
+}
+
+type AddStep = 'type' | 'video' | 'graphic' | 'audio' | 'logo' | 'logoConfig' | 'lowerThird' | 'lowerThirdConfig' | 'screenTitle'
 
 const FREEZE_OPTIONS_SECONDS = [
   0,
@@ -237,12 +262,14 @@ export default function CreateVideo() {
     graphics: [],
     logos: [],
     lowerThirds: [],
+    screenTitles: [],
     audioTrack: null,
   })
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const [selectedGraphicId, setSelectedGraphicId] = useState<string | null>(null)
   const [selectedLogoId, setSelectedLogoId] = useState<string | null>(null)
   const [selectedLowerThirdId, setSelectedLowerThirdId] = useState<string | null>(null)
+  const [selectedScreenTitleId, setSelectedScreenTitleId] = useState<string | null>(null)
   const [selectedStillId, setSelectedStillId] = useState<string | null>(null)
   const [selectedAudio, setSelectedAudio] = useState(false)
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
@@ -281,6 +308,12 @@ export default function CreateVideo() {
   const [logoEditorError, setLogoEditorError] = useState<string | null>(null)
   const [lowerThirdEditor, setLowerThirdEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
   const [lowerThirdEditorError, setLowerThirdEditorError] = useState<string | null>(null)
+  const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePresetItem[]>([])
+  const [screenTitlePresetsLoaded, setScreenTitlePresetsLoaded] = useState(false)
+  const [screenTitlePresetsError, setScreenTitlePresetsError] = useState<string | null>(null)
+  const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number; presetId: number | null; text: string } | null>(null)
+  const [screenTitleEditorError, setScreenTitleEditorError] = useState<string | null>(null)
+  const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
@@ -420,6 +453,18 @@ export default function CreateVideo() {
         moved?: boolean
       }
     | {
+        kind: 'screenTitle'
+        screenTitleId: string
+        edge: 'start' | 'end' | 'move'
+        pointerId: number
+        startClientX: number
+        startStartSeconds: number
+        startEndSeconds: number
+        minStartSeconds: number
+        maxEndSeconds: number
+        maxStartSeconds?: number
+      }
+    | {
         kind: 'audio'
         edge: 'start' | 'end' | 'move'
         pointerId: number
@@ -466,6 +511,7 @@ export default function CreateVideo() {
           selectedGraphicId,
           selectedLogoId,
           selectedLowerThirdId,
+          selectedScreenTitleId,
           selectedAudio,
           trimDragging,
           panDragging,
@@ -477,7 +523,7 @@ export default function CreateVideo() {
         })
       } catch {}
     },
-    [debugEnabled, panDragging, selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, trimDragging]
+    [debugEnabled, panDragging, selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedScreenTitleId, trimDragging]
   )
 
   const stopTrimDrag = useCallback(
@@ -587,6 +633,36 @@ export default function CreateVideo() {
     [totalSecondsGraphics, totalSecondsStills, totalSecondsVideo]
   )
 
+  const outputFrame = useMemo(() => {
+    const even = (n: number) => {
+      const v = Math.max(2, Math.round(n))
+      return v % 2 === 0 ? v : v - 1
+    }
+    const computeTarget = (w: number, h: number) => {
+      const maxLongEdge = 1080
+      const longEdge = Math.max(w, h)
+      const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1
+      return { width: even(w * scale), height: even(h * scale) }
+    }
+    if (timeline.clips.length) {
+      let firstIdx = 0
+      let minStart = Number.POSITIVE_INFINITY
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const s = Number(clipStarts[i] || 0)
+        if (Number.isFinite(s) && s < minStart) {
+          minStart = s
+          firstIdx = i
+        }
+      }
+      const clip = timeline.clips[firstIdx]
+      const dims = clip ? dimsByUploadId[Number(clip.uploadId)] : null
+      if (dims && Number.isFinite(Number(dims.width)) && Number.isFinite(Number(dims.height)) && dims.width > 0 && dims.height > 0) {
+        return computeTarget(Number(dims.width), Number(dims.height))
+      }
+    }
+    return { width: 1080, height: 1920 }
+  }, [clipStarts, dimsByUploadId, timeline.clips])
+
   const computeTotalSecondsForTimeline = useCallback((tl: Timeline): number => {
     const clips = Array.isArray(tl.clips) ? tl.clips : []
     const starts = computeClipStarts(clips)
@@ -615,9 +691,15 @@ export default function CreateVideo() {
       const e = Number((lt as any).endSeconds)
       if (Number.isFinite(e) && e > ltEnd) ltEnd = e
     }
+    const sts: any[] = Array.isArray((tl as any).screenTitles) ? (tl as any).screenTitles : []
+    let stEnd = 0
+    for (const st of sts) {
+      const e = Number((st as any).endSeconds)
+      if (Number.isFinite(e) && e > stEnd) stEnd = e
+    }
     const at = (tl as any).audioTrack
     const aEnd = at && typeof at === 'object' ? Number((at as any).endSeconds || 0) : 0
-    return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, sEnd, lEnd, ltEnd, aEnd)))
+    return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, aEnd)))
   }, [])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
@@ -629,12 +711,13 @@ export default function CreateVideo() {
   const TRACKS_TOP = RULER_H + WAVEFORM_H
   const LOGO_Y = TRACKS_TOP + 6
   const LOWER_THIRD_Y = TRACKS_TOP + TRACK_H + 6
-  const GRAPHICS_Y = TRACKS_TOP + TRACK_H * 2 + 6
-  const VIDEO_Y = TRACKS_TOP + TRACK_H * 3 + 6
-  const AUDIO_Y = TRACKS_TOP + TRACK_H * 4 + 6
+  const SCREEN_TITLE_Y = TRACKS_TOP + TRACK_H * 2 + 6
+  const GRAPHICS_Y = TRACKS_TOP + TRACK_H * 3 + 6
+  const VIDEO_Y = TRACKS_TOP + TRACK_H * 4 + 6
+  const AUDIO_Y = TRACKS_TOP + TRACK_H * 5 + 6
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 18
-  const TIMELINE_H = TRACKS_TOP + TRACK_H * 5
+  const TIMELINE_H = TRACKS_TOP + TRACK_H * 6
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
@@ -662,6 +745,12 @@ export default function CreateVideo() {
     if (!selectedLowerThirdId) return null
     return lowerThirds.find((lt) => String((lt as any).id) === String(selectedLowerThirdId)) || null
   }, [lowerThirds, selectedLowerThirdId])
+
+  const screenTitles = useMemo(() => (Array.isArray((timeline as any).screenTitles) ? ((timeline as any).screenTitles as ScreenTitle[]) : []), [timeline])
+  const selectedScreenTitle = useMemo(() => {
+    if (!selectedScreenTitleId) return null
+    return screenTitles.find((st) => String((st as any).id) === String(selectedScreenTitleId)) || null
+  }, [screenTitles, selectedScreenTitleId])
 
   const stills = useMemo(() => (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as Still[]) : []), [timeline])
   const selectedStill = useMemo(() => {
@@ -728,6 +817,11 @@ export default function CreateVideo() {
       const e = roundToTenth(Number((lt as any).endSeconds || 0))
       if (e > s) out.push(s, e)
     }
+    for (const st of screenTitles) {
+      const s = roundToTenth(Number((st as any).startSeconds || 0))
+      const e = roundToTenth(Number((st as any).endSeconds || 0))
+      if (e > s) out.push(s, e)
+    }
     if (audioTrack) {
       const s = roundToTenth(Number(audioTrack.startSeconds || 0))
       const e = roundToTenth(Number(audioTrack.endSeconds || 0))
@@ -740,7 +834,7 @@ export default function CreateVideo() {
       uniq.set(tt.toFixed(1), tt)
     }
     return Array.from(uniq.values()).sort((a, b) => a - b)
-  }, [audioTrack, clipStarts, graphics, logos, lowerThirds, stills, timeline.clips, totalSeconds])
+  }, [audioTrack, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
 
   const dragHud = useMemo(() => {
     if (!trimDragging) return null
@@ -795,6 +889,18 @@ export default function CreateVideo() {
       return { kindLabel: 'Lower third', actionLabel, name, start, end, len }
     }
 
+    if (drag.kind === 'screenTitle') {
+      const st = screenTitles.find((x: any) => String((x as any).id) === String((drag as any).screenTitleId)) as any
+      if (!st) return null
+      const presetName = String(st?.presetSnapshot?.name || '').trim() || 'Unconfigured'
+      const text = String(st?.text || '').replace(/\s+/g, ' ').trim()
+      const name = text ? `${presetName} • ${text}` : presetName
+      const start = roundToTenth(Number(st.startSeconds || 0))
+      const end = roundToTenth(Number(st.endSeconds || 0))
+      const len = Math.max(0, roundToTenth(end - start))
+      return { kindLabel: 'Screen title', actionLabel, name, start, end, len }
+    }
+
     if (drag.kind === 'audio') {
       if (!audioTrack) return null
       const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
@@ -824,6 +930,7 @@ export default function CreateVideo() {
     graphics,
     logos,
     lowerThirds,
+    screenTitles,
     stills,
     namesByUploadId,
     timeline.clips,
@@ -940,6 +1047,24 @@ export default function CreateVideo() {
     return candidates[0].lt
   }, [lowerThirds])
 
+  const findScreenTitleAtTime = useCallback((t: number): ScreenTitle | null => {
+    const tt = Number(t)
+    if (!Number.isFinite(tt) || tt < 0) return null
+    const candidates: Array<{ s: number; e: number; st: ScreenTitle }> = []
+    for (const st of screenTitles) {
+      const s = Number((st as any).startSeconds)
+      const e = Number((st as any).endSeconds)
+      if (!Number.isFinite(s) || !Number.isFinite(e)) continue
+      if (tt >= s && tt <= e) candidates.push({ s, e, st })
+    }
+    if (!candidates.length) return null
+    for (const c of candidates) {
+      if (roundToTenth(c.s) === roundToTenth(tt)) return c.st
+    }
+    candidates.sort((a, b) => a.s - b.s || a.e - b.e)
+    return candidates[0].st
+  }, [screenTitles])
+
   const findStillAtTime = useCallback((t: number): Still | null => {
     const tt = Number(t)
     if (!Number.isFinite(tt) || tt < 0) return null
@@ -955,6 +1080,7 @@ export default function CreateVideo() {
   const activeGraphicAtPlayhead = useMemo(() => findGraphicAtTime(playhead), [findGraphicAtTime, playhead])
   const activeLogoAtPlayhead = useMemo(() => findLogoAtTime(playhead), [findLogoAtTime, playhead])
   const activeLowerThirdAtPlayhead = useMemo(() => findLowerThirdAtTime(playhead), [findLowerThirdAtTime, playhead])
+  const activeScreenTitleAtPlayhead = useMemo(() => findScreenTitleAtTime(playhead), [findScreenTitleAtTime, playhead])
   const activeStillAtPlayhead = useMemo(() => findStillAtTime(playhead), [findStillAtTime, playhead])
   const activeGraphicUploadId = useMemo(() => {
     const g = activeGraphicAtPlayhead
@@ -983,6 +1109,13 @@ export default function CreateVideo() {
     const id = Number((lt as any).uploadId)
     return Number.isFinite(id) && id > 0 ? id : null
   }, [activeLowerThirdAtPlayhead])
+
+  const activeScreenTitleRenderUploadId = useMemo(() => {
+    const st: any = activeScreenTitleAtPlayhead as any
+    if (!st) return null
+    const id = Number((st as any).renderUploadId)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }, [activeScreenTitleAtPlayhead])
   const activeGraphicUrl = useMemo(() => {
     if (!activeGraphicUploadId) return null
     return graphicFileUrlByUploadId[activeGraphicUploadId] || `/api/uploads/${encodeURIComponent(String(activeGraphicUploadId))}/file`
@@ -1002,6 +1135,14 @@ export default function CreateVideo() {
     if (!activeLowerThirdUploadId) return null
     return graphicFileUrlByUploadId[activeLowerThirdUploadId] || `/api/uploads/${encodeURIComponent(String(activeLowerThirdUploadId))}/file`
   }, [activeLowerThirdUploadId, graphicFileUrlByUploadId])
+
+  const activeScreenTitleUrl = useMemo(() => {
+    if (!activeScreenTitleRenderUploadId) return null
+    return (
+      graphicFileUrlByUploadId[activeScreenTitleRenderUploadId] ||
+      `/api/uploads/${encodeURIComponent(String(activeScreenTitleRenderUploadId))}/file`
+    )
+  }, [activeScreenTitleRenderUploadId, graphicFileUrlByUploadId])
 
   const activeLogoPreview = useMemo(() => {
     const seg: any = activeLogoAtPlayhead as any
@@ -1066,6 +1207,33 @@ export default function CreateVideo() {
     style.zIndex = 40
     return { url, style }
   }, [activeLowerThirdAtPlayhead, activeLowerThirdUrl, dimsByUploadId, playhead])
+
+  const activeScreenTitlePreview = useMemo(() => {
+    const seg: any = activeScreenTitleAtPlayhead as any
+    const url = activeScreenTitleUrl
+    if (!seg || !url) return null
+    const segStart = Number(seg.startSeconds || 0)
+    const segEnd = Number(seg.endSeconds || 0)
+    if (!(Number.isFinite(segStart) && Number.isFinite(segEnd) && segEnd > segStart)) return null
+    const segDur = Math.max(0, segEnd - segStart)
+    const preset: any = seg.presetSnapshot && typeof seg.presetSnapshot === 'object' ? seg.presetSnapshot : null
+    if (!preset) return null
+    const tRel = Number(playhead) - segStart
+    if (!(Number.isFinite(tRel) && tRel >= -1e-6 && tRel <= segDur + 1e-6)) return null
+    const alpha = computeFadeAlpha({ fade: preset.fade }, tRel, 0, segDur)
+    if (!(alpha > 0.001)) return null
+    const style: any = {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: previewObjectFit,
+      pointerEvents: 'none',
+      opacity: alpha,
+      zIndex: 35,
+    }
+    return { url, style }
+  }, [activeScreenTitleAtPlayhead, activeScreenTitleUrl, playhead, previewObjectFit])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -1475,6 +1643,7 @@ export default function CreateVideo() {
     // Logo + graphics + clip pills
     const logoY = LOGO_Y
     const lowerThirdY = LOWER_THIRD_Y
+    const screenTitleY = SCREEN_TITLE_Y
     const graphicsY = GRAPHICS_Y
     const videoY = VIDEO_Y
     const audioY = AUDIO_Y
@@ -1617,6 +1786,78 @@ export default function CreateVideo() {
         ctx.fillStyle = 'rgba(212,175,55,0.95)'
         const barW = 5
         const by = lowerThirdY + 3
+        const bh = pillH - 6
+        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+      }
+    }
+
+    // Screen-title segments (below lower thirds; no overlaps)
+    for (let i = 0; i < screenTitles.length; i++) {
+      const st: any = screenTitles[i]
+      const start = Math.max(0, Number(st?.startSeconds || 0))
+      const end = Math.max(0, Number(st?.endSeconds || 0))
+      const len = Math.max(0, end - start)
+      if (len <= 0) continue
+      const x = padPx + start * pxPerSecond - scrollLeft
+      const w = Math.max(8, len * pxPerSecond)
+      if (x > wCss + 4 || x + w < -4) continue
+      const isSelected = String(st?.id) === String(selectedScreenTitleId || '')
+      const isDragging =
+        Boolean(activeDrag) && (activeDrag as any).kind === 'screenTitle' && String((activeDrag as any).screenTitleId) === String(st?.id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
+      const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+
+      ctx.fillStyle = 'rgba(255,214,10,0.16)'
+      roundRect(ctx, x, screenTitleY, w, pillH, 10)
+      ctx.fill()
+
+      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(255,214,10,0.55)'
+      ctx.lineWidth = 1
+      roundRect(ctx, x + 0.5, screenTitleY + 0.5, w - 1, pillH - 1, 10)
+      ctx.stroke()
+
+      if (isResizing) {
+        ctx.save()
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = 'rgba(212,175,55,0.92)'
+        ctx.lineWidth = 2
+        roundRect(ctx, x + 0.5, screenTitleY + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      const presetName = String(st?.presetSnapshot?.name || '').trim()
+      const snippetRaw = String(st?.text || '').replace(/\s+/g, ' ').trim()
+      const snippet = snippetRaw ? snippetRaw : 'Unconfigured'
+      const label = presetName ? `${presetName} • ${snippet}` : snippet
+      ctx.fillStyle = '#fff'
+      const padLeft = showHandles ? 6 + handleSize + 10 : 12
+      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const maxTextW = Math.max(0, w - padLeft - padRight)
+      if (maxTextW >= 20) {
+        const clipped = ellipsizeText(ctx, label, maxTextW)
+        ctx.fillText(clipped, x + padLeft, screenTitleY + pillH / 2)
+      }
+
+      if (showHandles) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const hs = handleSize
+        const hy = screenTitleY + Math.floor((pillH - handleSize) / 2)
+        const hxL = x + 6
+        const hxR = x + w - 6 - hs
+        roundRect(ctx, hxL, hy, hs, hs, 4)
+        ctx.fill()
+        roundRect(ctx, hxR, hy, hs, hs, 4)
+        ctx.fill()
+      }
+
+      if (isResizing) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const barW = 5
+        const by = screenTitleY + 3
         const bh = pillH - 6
         if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
         if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
@@ -1970,6 +2211,7 @@ export default function CreateVideo() {
           graphics: Array.isArray(tlRaw?.graphics) ? (tlRaw.graphics as any) : [],
           logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
           lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
+          screenTitles: Array.isArray(tlRaw?.screenTitles) ? (tlRaw.screenTitles as any) : [],
           audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
         }
         hydratingRef.current = true
@@ -2175,6 +2417,8 @@ export default function CreateVideo() {
         [
           ...graphics.map((g) => Number(g.uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
+          ...lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
+          ...screenTitles.map((st: any) => Number((st as any).renderUploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...stills.map((s) => Number((s as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
         ]
       )
@@ -2203,7 +2447,7 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-  }, [graphicFileUrlByUploadId, graphics, logos, stills])
+  }, [graphicFileUrlByUploadId, graphics, logos, lowerThirds, screenTitles, stills])
 
   // Keep video position synced when playhead changes by UI
   useEffect(() => {
@@ -2230,6 +2474,9 @@ export default function CreateVideo() {
     setSelectedClipId(null)
     setSelectedGraphicId(null)
     setSelectedStillId(null)
+    setSelectedLogoId(null)
+    setSelectedLowerThirdId(null)
+    setSelectedScreenTitleId(null)
     setSelectedAudio(false)
     setClipEditor(null)
     setClipEditorError(null)
@@ -2600,6 +2847,24 @@ export default function CreateVideo() {
     }
   }, [lowerThirdConfigs, lowerThirdConfigsLoaded])
 
+  const ensureScreenTitlePresets = useCallback(async (): Promise<ScreenTitlePresetItem[]> => {
+    if (screenTitlePresetsLoaded) return screenTitlePresets
+    setScreenTitlePresetsError(null)
+    try {
+      const res = await fetch(`/api/screen-title-presets?limit=200`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: ScreenTitlePresetItem[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+      setScreenTitlePresets(items)
+      setScreenTitlePresetsLoaded(true)
+      return items
+    } catch (e: any) {
+      setScreenTitlePresetsError(e?.message || 'Failed to load screen title presets')
+      setScreenTitlePresetsLoaded(true)
+      return []
+    }
+  }, [screenTitlePresets, screenTitlePresetsLoaded])
+
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
     setAudioConfigsError(null)
@@ -2642,6 +2907,14 @@ export default function CreateVideo() {
     void ensureLowerThirdConfigs()
   }, [ensureLowerThirdConfigs, lowerThirdConfigsLoaded, lowerThirds.length])
 
+  // If a timeline already has screen-title segments (hydrated from a saved draft), prefetch presets so
+  // labels and editors can show presets immediately.
+  useEffect(() => {
+    if (!screenTitles.length) return
+    if (screenTitlePresetsLoaded) return
+    void ensureScreenTitlePresets()
+  }, [ensureScreenTitlePresets, screenTitlePresetsLoaded, screenTitles.length])
+
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
     setAudioPickerLoading(true)
@@ -2680,6 +2953,14 @@ export default function CreateVideo() {
         return
       }
       setDurationsByUploadId((prev) => (prev[Number(upload.id)] ? prev : { ...prev, [Number(upload.id)]: Number(dur) }))
+      try {
+        const w = upload.width != null ? Number(upload.width) : null
+        const h = upload.height != null ? Number(upload.height) : null
+        if (w != null && h != null && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+          const id = Number(upload.id)
+          setDimsByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: { width: Math.round(w), height: Math.round(h) } }))
+        }
+      } catch {}
       const id = `clip_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const newClip: Clip = {
         id,
@@ -2935,6 +3216,105 @@ export default function CreateVideo() {
     [lowerThirdConfigs, lowerThirds, pendingLowerThirdUploadId, playhead, snapshotUndo, totalSeconds]
   )
 
+  const addScreenTitleFromPreset = useCallback(
+    (preset: ScreenTitlePresetItem) => {
+      const presetId = Number((preset as any).id)
+      if (!Number.isFinite(presetId) || presetId <= 0) return
+      if (!(totalSeconds > 0)) {
+        setPickerError('Add a video or graphic first.')
+        return
+      }
+
+      const dur = 5.0
+      const id = `st_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      let start = start0
+      let end = roundToTenth(start + dur)
+      if (end > totalSeconds + 1e-6) {
+        setPickerError('Not enough room to add a 5s screen title segment within the timeline.')
+        return
+      }
+
+      const existing = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      for (let i = 0; i < existing.length; i++) {
+        const st: any = existing[i]
+        const ss = Number(st.startSeconds)
+        const se = Number(st.endSeconds)
+        if (!(Number.isFinite(ss) && Number.isFinite(se))) continue
+        const overlaps = start < se - 1e-6 && end > ss + 1e-6
+        if (overlaps) {
+          start = roundToTenth(se)
+          end = roundToTenth(start + dur)
+          i = -1
+          if (end > totalSeconds + 1e-6) {
+            setPickerError('No available slot for a 5s screen title segment without overlapping.')
+            return
+          }
+        }
+      }
+
+      const snapshot: any = {
+        id: presetId,
+        name: String((preset as any).name || ''),
+        style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+          ? 'pill'
+          : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+            ? 'strip'
+            : 'outline') as any,
+        fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
+        fontSizePct: Number((preset as any).fontSizePct),
+        trackingPct: Number((preset as any).trackingPct),
+        fontColor: String((preset as any).fontColor || '#ffffff'),
+        pillBgColor: String((preset as any).pillBgColor || '#000000'),
+        pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
+        position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
+          ? 'bottom'
+          : String((preset as any).position || 'top').toLowerCase() === 'middle'
+            ? 'middle'
+            : 'top') as any,
+        maxWidthPct: Number((preset as any).maxWidthPct),
+        insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
+        insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
+        fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
+          ? 'in_out'
+          : String((preset as any).fade || 'none').toLowerCase() === 'in'
+            ? 'in'
+            : String((preset as any).fade || 'none').toLowerCase() === 'out'
+              ? 'out'
+              : 'none') as any,
+      }
+
+      const seg: ScreenTitle = {
+        id,
+        startSeconds: start,
+        endSeconds: end,
+        presetId,
+        presetSnapshot: snapshot,
+        text: '',
+        renderUploadId: null,
+      }
+
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+        const next = [...prevSts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { ...prev, screenTitles: next }
+      })
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedStillId(null)
+      setSelectedAudio(false)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(id)
+      setScreenTitleEditor({ id, start, end, presetId, text: '' })
+      setScreenTitleEditorError(null)
+      setPickOpen(false)
+      setAddStep('type')
+    },
+    [playhead, screenTitles, snapshotUndo, totalSeconds]
+  )
+
   const addAudioFromUpload = useCallback(
     (upload: SystemAudioItem) => {
       if (!(totalSeconds > 0)) {
@@ -3075,6 +3455,23 @@ export default function CreateVideo() {
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(res.selectedLowerThirdId)
+      setSelectedScreenTitleId(null)
+      setSelectedAudio(false)
+      return
+    }
+    if (selectedScreenTitleId) {
+      const res = splitScreenTitleAtPlayhead(timeline as any, selectedScreenTitleId)
+      const prevSts = Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : []
+      const nextSts = Array.isArray((res.timeline as any).screenTitles) ? (res.timeline as any).screenTitles : []
+      if (res.timeline === (timeline as any) && res.selectedScreenTitleId === selectedScreenTitleId) return
+      if (nextSts === prevSts) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(res.selectedScreenTitleId)
       setSelectedAudio(false)
       return
     }
@@ -3090,9 +3487,10 @@ export default function CreateVideo() {
       setSelectedGraphicId(res.selectedGraphicId)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
       setSelectedAudio(false)
     }
-  }, [clipStarts, playhead, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, snapshotUndo, timeline])
+  }, [clipStarts, playhead, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedScreenTitleId, snapshotUndo, timeline])
 
   const deleteSelected = useCallback(() => {
     if (selectedAudio) {
@@ -3154,6 +3552,19 @@ export default function CreateVideo() {
       return
     }
 
+    if (selectedScreenTitleId) {
+      const target = selectedScreenTitle
+      if (!target) return
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevSts: any[] = Array.isArray((prev as any).screenTitles) ? (prev as any).screenTitles : []
+        const nextSts = prevSts.filter((st: any) => String(st.id) !== String((target as any).id))
+        return { ...(prev as any), screenTitles: nextSts } as any
+      })
+      setSelectedScreenTitleId(null)
+      return
+    }
+
     if (!timeline.clips.length) return
     const fallbackIdx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
     const fallback = fallbackIdx >= 0 ? (timeline.clips[fallbackIdx] || null) : null
@@ -3183,7 +3594,23 @@ export default function CreateVideo() {
       const nextClip = timeline.clips.filter((c) => c.id !== target.id)[nextIdx] || null
       return nextClip ? nextClip.id : null
     })
-  }, [audioTrack, clipStarts, playhead, selectedAudio, selectedClip, selectedGraphic, selectedGraphicId, selectedStill, selectedStillId, snapshotUndo, timeline.clips])
+  }, [
+    audioTrack,
+    clipStarts,
+    playhead,
+    selectedAudio,
+    selectedClip,
+    selectedGraphic,
+    selectedGraphicId,
+    selectedLowerThird,
+    selectedLogo,
+    selectedScreenTitle,
+    selectedScreenTitleId,
+    selectedStill,
+    selectedStillId,
+    snapshotUndo,
+    timeline.clips,
+  ])
 
   const saveClipEditor = useCallback(() => {
     if (!clipEditor) return
@@ -3561,6 +3988,225 @@ export default function CreateVideo() {
     setLowerThirdEditorError(null)
   }, [computeTotalSecondsForTimeline, lowerThirdConfigs, lowerThirdEditor, lowerThirds, snapshotUndo])
 
+  const saveScreenTitleEditor = useCallback(() => {
+    if (!screenTitleEditor) return
+    const start = roundToTenth(Number(screenTitleEditor.start))
+    const end = roundToTenth(Number(screenTitleEditor.end))
+    const presetIdRaw = screenTitleEditor.presetId
+    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
+    const text = String(screenTitleEditor.text || '').replace(/\r\n/g, '\n')
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+      setScreenTitleEditorError('End must be after start.')
+      return
+    }
+    if (presetId == null || !Number.isFinite(presetId) || presetId <= 0) {
+      setScreenTitleEditorError('Pick a screen title style.')
+      return
+    }
+    if (text.length > 140) {
+      setScreenTitleEditorError('Max 140 characters.')
+      return
+    }
+    if (text.split('\n').length > 3) {
+      setScreenTitleEditorError('Max 3 lines.')
+      return
+    }
+
+    const cap = 20 * 60
+    if (end > cap + 1e-6) {
+      setScreenTitleEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
+      return
+    }
+
+    const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+    if (!preset) {
+      setScreenTitleEditorError('Screen title style not found.')
+      return
+    }
+
+    const snapshot: any = {
+      id: presetId,
+      name: String((preset as any).name || `Preset ${presetId}`),
+      style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+        ? 'pill'
+        : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+          ? 'strip'
+          : 'outline') as any,
+      fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
+      fontSizePct: Number((preset as any).fontSizePct),
+      trackingPct: Number((preset as any).trackingPct),
+      fontColor: String((preset as any).fontColor || '#ffffff'),
+      pillBgColor: String((preset as any).pillBgColor || '#000000'),
+      pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
+      position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
+        ? 'bottom'
+        : String((preset as any).position || 'top').toLowerCase() === 'middle'
+          ? 'middle'
+          : 'top') as any,
+      maxWidthPct: Number((preset as any).maxWidthPct),
+      insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
+      insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
+      fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
+        ? 'in_out'
+        : String((preset as any).fade || 'none').toLowerCase() === 'in'
+          ? 'in'
+          : String((preset as any).fade || 'none').toLowerCase() === 'out'
+            ? 'out'
+            : 'none') as any,
+    }
+
+    // Disallow overlaps with other screen-title segments.
+    for (const st of screenTitles) {
+      if (String((st as any).id) === String(screenTitleEditor.id)) continue
+      const ls = Number((st as any).startSeconds || 0)
+      const le = Number((st as any).endSeconds || 0)
+      if (!(Number.isFinite(ls) && Number.isFinite(le) && le > ls)) continue
+      const overlaps = start < le - 1e-6 && end > ls + 1e-6
+      if (overlaps) {
+        setScreenTitleEditorError('Screen titles cannot overlap in time.')
+        return
+      }
+    }
+
+    snapshotUndo()
+    setTimeline((prev) => {
+      const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+      const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleEditor.id))
+      if (idx < 0) return prev
+      const prevSeg: any = prevSts[idx] as any
+      const invalidateRender =
+        Number(prevSeg?.presetId) !== presetId ||
+        String(prevSeg?.text || '') !== text
+      const updated: any = {
+        ...prevSeg,
+        startSeconds: Math.max(0, start),
+        endSeconds: Math.max(0, end),
+        presetId,
+        presetSnapshot: snapshot,
+        text,
+        renderUploadId: invalidateRender ? null : (prevSeg?.renderUploadId ?? null),
+      }
+      const nextSts = prevSts.slice()
+      nextSts[idx] = updated
+      nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), screenTitles: nextSts } as any)
+      const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+      return { ...prev, screenTitles: nextSts, playheadSeconds: nextPlayhead }
+    })
+    setScreenTitleEditor(null)
+    setScreenTitleEditorError(null)
+  }, [computeTotalSecondsForTimeline, screenTitleEditor, screenTitlePresets, screenTitles, snapshotUndo])
+
+  const generateScreenTitle = useCallback(async () => {
+    if (!screenTitleEditor) return
+    const presetIdRaw = screenTitleEditor.presetId
+    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
+    const text = String(screenTitleEditor.text || '').replace(/\r\n/g, '\n').trim()
+    if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+      setScreenTitleEditorError('Pick a screen title style.')
+      return
+    }
+    if (!text) {
+      setScreenTitleEditorError('Enter text.')
+      return
+    }
+    if (text.length > 140) {
+      setScreenTitleEditorError('Max 140 characters.')
+      return
+    }
+    if (text.split('\n').length > 3) {
+      setScreenTitleEditorError('Max 3 lines.')
+      return
+    }
+
+    setScreenTitleRenderBusy(true)
+    setScreenTitleEditorError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/screen-titles/render`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height }),
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || json?.message || 'internal_error'))
+      const uploadId = Number(json?.uploadId || 0)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('bad_upload_id')
+
+      // Persist preset/text (and clear renderUploadId if needed), then set the new render upload id.
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+        const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleEditor.id))
+        if (idx < 0) return prev
+        const prevSeg: any = prevSts[idx] as any
+        const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+        const snapshot: any = preset
+          ? {
+              id: presetId,
+              name: String((preset as any).name || `Preset ${presetId}`),
+              style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+                ? 'pill'
+                : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+                  ? 'strip'
+                  : 'outline') as any,
+              fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
+              fontSizePct: Number((preset as any).fontSizePct),
+              trackingPct: Number((preset as any).trackingPct),
+              fontColor: String((preset as any).fontColor || '#ffffff'),
+              pillBgColor: String((preset as any).pillBgColor || '#000000'),
+              pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
+              position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
+                ? 'bottom'
+                : String((preset as any).position || 'top').toLowerCase() === 'middle'
+                  ? 'middle'
+                  : 'top') as any,
+              maxWidthPct: Number((preset as any).maxWidthPct),
+              insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
+              insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
+              fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
+                ? 'in_out'
+                : String((preset as any).fade || 'none').toLowerCase() === 'in'
+                  ? 'in'
+                  : String((preset as any).fade || 'none').toLowerCase() === 'out'
+                    ? 'out'
+                    : 'none') as any,
+            }
+          : (prevSeg?.presetSnapshot ?? null)
+
+        const updated: any = {
+          ...prevSeg,
+          presetId,
+          presetSnapshot: snapshot,
+          text,
+          renderUploadId: uploadId,
+        }
+        const nextSts = prevSts.slice()
+        nextSts[idx] = updated
+        nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { ...prev, screenTitles: nextSts }
+      })
+
+      try {
+        const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
+        if (url) {
+          setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
+        }
+      } catch {}
+
+      setScreenTitleEditor(null)
+      setScreenTitleEditorError(null)
+    } catch (e: any) {
+      setScreenTitleEditorError(e?.message || 'internal_error')
+    } finally {
+      setScreenTitleRenderBusy(false)
+    }
+  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitleEditor, screenTitlePresets, snapshotUndo])
+
   const openAdd = useCallback(() => {
     setPickOpen(true)
     setAddStep('type')
@@ -3874,6 +4520,43 @@ export default function CreateVideo() {
           return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
         }
 
+        if (drag.kind === 'screenTitle') {
+          const prevSts: any[] = Array.isArray((prev as any).screenTitles) ? (prev as any).screenTitles : []
+          const idx = prevSts.findIndex((st: any) => String(st?.id) === String((drag as any).screenTitleId))
+          if (idx < 0) return prev
+          const st0 = prevSts[idx] as any
+          const nextSts = prevSts.slice()
+          let startS = Number(st0.startSeconds || 0)
+          let endS = Number(st0.endSeconds || 0)
+          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          if (drag.edge === 'start') {
+            startS = clamp(
+              roundToTenth(drag.startStartSeconds + deltaSeconds),
+              drag.minStartSeconds,
+              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
+            )
+          } else if (drag.edge === 'end') {
+            endS = clamp(
+              roundToTenth(drag.startEndSeconds + deltaSeconds),
+              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
+              drag.maxEndSeconds
+            )
+          } else {
+            const maxStart =
+              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+            endS = roundToTenth(startS + dur)
+          }
+          nextSts[idx] = { ...st0, startSeconds: startS, endSeconds: endS }
+          nextSts.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+          const nextTimeline: any = { ...(prev as any), screenTitles: nextSts }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+        }
+
+        if (drag.kind !== 'graphic') return prev
+
         const prevGraphics: Graphic[] = Array.isArray((prev as any).graphics) ? ((prev as any).graphics as any) : []
         const idx = prevGraphics.findIndex((g: any) => String(g?.id) === String(drag.graphicId))
         if (idx < 0) return prev
@@ -4169,6 +4852,13 @@ export default function CreateVideo() {
 	                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
 	              />
 	            ) : null}
+              {activeScreenTitlePreview ? (
+                <img
+                  src={activeScreenTitlePreview.url}
+                  alt=""
+                  style={activeScreenTitlePreview.style}
+                />
+              ) : null}
 	            {activeLowerThirdPreview ? (
 	              <img
 	                src={activeLowerThirdPreview.url}
@@ -4275,6 +4965,7 @@ export default function CreateVideo() {
                   const y = e.clientY - rect.top
                   const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
                   const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
                   const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
                   const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
                   const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
@@ -4286,6 +4977,7 @@ export default function CreateVideo() {
                     pointerType: (e as any).pointerType,
                     withinLogo,
                     withinLowerThird,
+                    withinScreenTitle,
                     withinGraphics,
                     withinVideo,
                     withinAudio,
@@ -4437,6 +5129,88 @@ export default function CreateVideo() {
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
                     dbg('startTrimDrag', { kind: 'lowerThird', edge: nearLeft ? 'start' : 'end', id: String((lt as any).id) })
+                    return
+                  }
+
+                  if (withinScreenTitle) {
+                    const st = findScreenTitleAtTime(t)
+                    if (!st) return
+                    const s = Number((st as any).startSeconds || 0)
+                    const e2 = Number((st as any).endSeconds || 0)
+                    const leftX = padPx + s * pxPerSecond
+                    const rightX = padPx + e2 * pxPerSecond
+                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                    if (!inside) return
+
+                    const capEnd = Math.max(0, totalSeconds)
+                    const sorted = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+                    const pos = sorted.findIndex((x: any) => String(x?.id) === String((st as any).id))
+                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+
+                    // Slide (body drag) only when already selected.
+                    if (!nearLeft && !nearRight) {
+                      if (selectedScreenTitleId !== String((st as any).id)) return
+                      e.preventDefault()
+                      snapshotUndo()
+                      setSelectedScreenTitleId(String((st as any).id))
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudio(false)
+
+                      trimDragLockScrollLeftRef.current = sc.scrollLeft
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+                      trimDragRef.current = {
+                        kind: 'screenTitle',
+                        screenTitleId: String((st as any).id),
+                        edge: 'move',
+                        pointerId: e.pointerId,
+                        startClientX: e.clientX,
+                        startStartSeconds: s,
+                        startEndSeconds: e2,
+                        minStartSeconds,
+                        maxEndSeconds,
+                        maxStartSeconds,
+                      }
+                      setTrimDragging(true)
+                      try { sc.setPointerCapture(e.pointerId) } catch {}
+                      dbg('startTrimDrag', { kind: 'screenTitle', edge: 'move', id: String((st as any).id) })
+                      return
+                    }
+
+                    e.preventDefault()
+                    snapshotUndo()
+                    setSelectedScreenTitleId(String((st as any).id))
+                    setSelectedClipId(null)
+                    setSelectedGraphicId(null)
+                    setSelectedLogoId(null)
+                    setSelectedLowerThirdId(null)
+                    setSelectedStillId(null)
+                    setSelectedAudio(false)
+
+                    trimDragLockScrollLeftRef.current = sc.scrollLeft
+                    trimDragRef.current = {
+                      kind: 'screenTitle',
+                      screenTitleId: String((st as any).id),
+                      edge: nearLeft ? 'start' : 'end',
+                      pointerId: e.pointerId,
+                      startClientX: e.clientX,
+                      startStartSeconds: s,
+                      startEndSeconds: e2,
+                      minStartSeconds,
+                      maxEndSeconds,
+                    }
+                    setTrimDragging(true)
+                    try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('startTrimDrag', { kind: 'screenTitle', edge: nearLeft ? 'start' : 'end', id: String((st as any).id) })
                     return
                   }
 
@@ -4799,6 +5573,7 @@ export default function CreateVideo() {
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 	                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
 	                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+	                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
 	                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 	                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 	                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
@@ -4810,6 +5585,10 @@ export default function CreateVideo() {
 	                  if (withinLowerThird) {
 	                    const lt = findLowerThirdAtTime(t)
 	                    if (lt) return
+	                  }
+	                  if (withinScreenTitle) {
+	                    const st = findScreenTitleAtTime(t)
+	                    if (st) return
 	                  }
 	                  if (withinGraphics) {
 	                    const g = findGraphicAtTime(t)
@@ -4866,14 +5645,16 @@ export default function CreateVideo() {
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 	                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
 	                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+	                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
 	                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 	                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 	                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
-	                  if (!withinLogo && !withinLowerThird && !withinGraphics && !withinVideo && !withinAudio) {
+	                  if (!withinLogo && !withinLowerThird && !withinScreenTitle && !withinGraphics && !withinVideo && !withinAudio) {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
 	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4886,6 +5667,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4899,6 +5681,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4912,6 +5695,7 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4924,6 +5708,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4937,6 +5722,7 @@ export default function CreateVideo() {
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4955,6 +5741,54 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedScreenTitleId(null)
+	                    setSelectedStillId(null)
+	                    setSelectedAudio(false)
+	                    return
+	                  }
+
+	                  if (withinScreenTitle) {
+	                    const st = findScreenTitleAtTime(t)
+	                    if (!st) {
+	                      setSelectedClipId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudio(false)
+	                      return
+	                    }
+	                    const s = Number((st as any).startSeconds || 0)
+	                    const e2 = Number((st as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
+	                      setSelectedClipId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudio(false)
+	                      return
+	                    }
+	                    if (selectedScreenTitleId === String((st as any).id)) {
+	                      setScreenTitleEditor({
+	                        id: String((st as any).id),
+	                        start: s,
+	                        end: e2,
+	                        presetId: (st as any).presetId == null ? null : Number((st as any).presetId),
+	                        text: String((st as any).text || ''),
+	                      })
+	                      setScreenTitleEditorError(null)
+	                      return
+	                    }
+	                    setSelectedScreenTitleId(String((st as any).id))
+	                    setSelectedClipId(null)
+	                    setSelectedGraphicId(null)
+	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -4967,6 +5801,7 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4980,6 +5815,7 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedLogoId(null)
 	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -4993,6 +5829,7 @@ export default function CreateVideo() {
 	                    setSelectedGraphicId(g.id)
 	                    setSelectedLogoId(null)
 	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -5004,6 +5841,8 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      return
 	                    }
@@ -5016,6 +5855,8 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      return
 	                    }
@@ -5031,6 +5872,8 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    return
 	                  }
@@ -5045,6 +5888,8 @@ export default function CreateVideo() {
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudio(false)
 	                      return
@@ -5053,6 +5898,8 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedAudio(false)
 	                    return
 	                  }
@@ -5063,6 +5910,8 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -5078,6 +5927,8 @@ export default function CreateVideo() {
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(null)
 	                    setSelectedLogoId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
 	                    setSelectedAudio(false)
 	                    return
@@ -5100,6 +5951,8 @@ export default function CreateVideo() {
 	                  setSelectedClipId(clip.id)
 	                  setSelectedGraphicId(null)
 	                  setSelectedLogoId(null)
+	                  setSelectedLowerThirdId(null)
+	                  setSelectedScreenTitleId(null)
 	                  setSelectedStillId(null)
 	                  setSelectedAudio(false)
 	                }}
@@ -5153,15 +6006,15 @@ export default function CreateVideo() {
 	                <button
 	                  type="button"
 	                  onClick={split}
-	                  disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId}
+	                  disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId && !selectedScreenTitleId}
 	                  style={{
 	                    padding: '10px 12px',
 	                    borderRadius: 10,
 	                    border: '1px solid rgba(255,255,255,0.18)',
-	                    background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+	                    background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
 	                    color: '#fff',
 	                    fontWeight: 900,
-	                    cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId ? 'pointer' : 'default',
+	                    cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId ? 'pointer' : 'default',
 	                    flex: '0 0 auto',
 	                  }}
 	                >
@@ -5188,15 +6041,15 @@ export default function CreateVideo() {
               <button
                 type="button"
                 onClick={deleteSelected}
-                disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId && !selectedStillId && !selectedAudio}
+                disabled={!selectedClipId && !selectedGraphicId && !selectedLogoId && !selectedLowerThirdId && !selectedScreenTitleId && !selectedStillId && !selectedAudio}
                 style={{
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
-                  background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedStillId || selectedAudio ? '#300' : 'rgba(255,255,255,0.06)',
+                  background: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId || selectedStillId || selectedAudio ? '#300' : 'rgba(255,255,255,0.06)',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedStillId || selectedAudio ? 'pointer' : 'default',
+                  cursor: selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId || selectedStillId || selectedAudio ? 'pointer' : 'default',
                   flex: '0 0 auto',
                 }}
               >
@@ -5436,6 +6289,8 @@ export default function CreateVideo() {
 	                                ? `Lower thirds: ${lowerThirdPickerItems.length}`
 	                                : addStep === 'lowerThirdConfig'
 	                                  ? `Configs: ${lowerThirdConfigs.length}`
+	                                  : addStep === 'screenTitle'
+	                                    ? `Styles: ${screenTitlePresets.length}`
 	                              : addStep === 'audio'
 	                                ? `Tracks: ${audioPickerItems.length}`
 	                                : 'Choose a type'}
@@ -5521,6 +6376,25 @@ export default function CreateVideo() {
                   >
                     <div style={{ fontWeight: 900, fontSize: 16 }}>Lower Third</div>
                     <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Lower-third segments (no overlaps)</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddStep('screenTitle')
+                      ensureScreenTitlePresets().catch(() => {})
+                    }}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,214,10,0.55)',
+                      background: 'rgba(0,0,0,0.35)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>Screen Title</div>
+                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Text overlays (no overlaps)</div>
                   </button>
 	                  <button
 	                    type="button"
@@ -5813,6 +6687,52 @@ export default function CreateVideo() {
 	                            </div>
 	                          </div>
 	                          <div style={{ fontWeight: 900, color: '#fff' }}>Select</div>
+	                        </button>
+	                      )
+	                    })}
+	                </div>
+	              </>
+	            ) : addStep === 'screenTitle' ? (
+	              <>
+	                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Screen Title Style</h1>
+	                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
+	                </div>
+	                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
+	                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+	                  {screenTitlePresets
+	                    .filter((p: any) => !(p && typeof p === 'object' && (p.archived_at || p.archivedAt)))
+	                    .map((p: any) => {
+	                      const id = Number(p.id)
+	                      if (!Number.isFinite(id) || id <= 0) return null
+	                      const name = String(p.name || `Preset ${id}`)
+	                      const style = String(p.style || '').toLowerCase()
+	                      const fade = String(p.fade || '').toLowerCase()
+	                      return (
+	                        <button
+	                          key={`pick-st-${id}`}
+	                          type="button"
+	                          onClick={() => addScreenTitleFromPreset(p)}
+	                          style={{
+	                            display: 'grid',
+	                            gridTemplateColumns: '1fr auto',
+	                            gap: 12,
+	                            alignItems: 'center',
+	                            padding: 12,
+	                            borderRadius: 12,
+	                            border: '1px solid rgba(255,214,10,0.55)',
+	                            background: 'rgba(0,0,0,0.35)',
+	                            color: '#fff',
+	                            cursor: 'pointer',
+	                            textAlign: 'left',
+	                          }}
+	                        >
+	                          <div style={{ minWidth: 0 }}>
+	                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+	                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{`Style: ${style || 'outline'} • Fade: ${fade || 'none'}`}</div>
+	                          </div>
+	                          <div style={{ fontWeight: 900, color: '#fff' }}>Add</div>
 	                        </button>
 	                      )
 	                    })}
@@ -6344,6 +7264,116 @@ export default function CreateVideo() {
                 >
                   Save
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {screenTitleEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+          onClick={() => { setScreenTitleEditor(null); setScreenTitleEditorError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,204,0,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Screen Title</div>
+              <button
+                type="button"
+                onClick={() => { setScreenTitleEditor(null); setScreenTitleEditorError(null) }}
+                style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
+              <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
+            </div>
+
+            <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
+              <select
+                value={String(screenTitleEditor.presetId ?? '')}
+                onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, presetId: e.target.value ? Number(e.target.value) : null }) : p) }}
+                style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+              >
+                <option value="" disabled>
+                  Select…
+                </option>
+                {screenTitlePresets
+                  .filter((p: any) => !(p && typeof p === 'object' && (p as any).archived_at))
+                  .map((p: any) => (
+                    <option key={`stp-${String(p.id)}`} value={String(p.id)}>{String(p.name || `Preset ${p.id}`)}</option>
+                  ))}
+              </select>
+              {screenTitlePresetsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitlePresetsError}</div> : null}
+
+              <div style={{ display: 'grid', gap: 6 }}>
+                <textarea
+                  value={String(screenTitleEditor.text || '')}
+                  placeholder="Type your screen title here"
+                  rows={3}
+                  onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, resize: 'vertical' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
+                  <div>Max 140 chars • max 3 lines</div>
+                  <div>{String(screenTitleEditor.text || '').length}</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(screenTitleEditor.start)}
+                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    value={String(screenTitleEditor.end)}
+                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  />
+                </label>
+              </div>
+
+              {screenTitleEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleEditorError}</div> : null}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={saveScreenTitleEditor}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  disabled={screenTitleRenderBusy}
+                  onClick={generateScreenTitle}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(10,132,255,0.65)', background: 'rgba(10,132,255,0.14)', color: '#fff', fontWeight: 900, cursor: screenTitleRenderBusy ? 'not-allowed' : 'pointer', opacity: screenTitleRenderBusy ? 0.65 : 1 }}
+                >
+                  {screenTitleRenderBusy ? 'Generating…' : 'Generate'}
+                </button>
+              </div>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                Generate renders a transparent PNG using the selected style and applies it to the selected time range.
               </div>
             </div>
           </div>
