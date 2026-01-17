@@ -22,6 +22,28 @@ export type CreateVideoGraphicV1 = {
   endSeconds: number
 }
 
+export type CreateVideoLogoConfigSnapshotV1 = {
+  id: number
+  name: string
+  position: string
+  sizePctWidth: number
+  opacityPct: number
+  timingRule: string
+  timingSeconds: number | null
+  fade: string
+  insetXPreset?: string | null
+  insetYPreset?: string | null
+}
+
+export type CreateVideoLogoV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  configId: number
+  configSnapshot: CreateVideoLogoConfigSnapshotV1
+}
+
 export type CreateVideoStillV1 = {
   id: string
   uploadId: number
@@ -44,6 +66,7 @@ export type CreateVideoTimelineV1 = {
   clips: CreateVideoClipV1[]
   stills?: CreateVideoStillV1[]
   graphics?: CreateVideoGraphicV1[]
+  logos?: CreateVideoLogoV1[]
   audioTrack?: CreateVideoAudioTrackV1 | null
 }
 

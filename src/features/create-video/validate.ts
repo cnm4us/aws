@@ -2,10 +2,12 @@ import { DomainError, ForbiddenError, ValidationError } from '../../core/errors'
 import { getPool } from '../../db'
 import type { CreateVideoTimelineV1 } from './types'
 import * as audioConfigsSvc from '../audio-configs/service'
+import * as logoConfigsSvc from '../logo-configs/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
 const MAX_STILLS = 200
+const MAX_LOGOS = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -111,6 +113,70 @@ async function loadFreezeFrameImageMetaForUser(uploadId: number, userId: number)
   if (!isOwner && !isSystem) throw new ForbiddenError()
 
   return { id: Number(row.id) }
+}
+
+async function loadLogoMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'logo') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  const isSystem = ownerId == null
+  if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+function normalizeLogoConfigSnapshot(raw: any, configId: number) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) throw new ValidationError('invalid_logo_config_snapshot')
+  const id = Number((raw as any).id)
+  if (!Number.isFinite(id) || id <= 0 || id !== Number(configId)) throw new ValidationError('invalid_logo_config_snapshot')
+  const name = String((raw as any).name || '').trim()
+  if (!name || name.length > 200) throw new ValidationError('invalid_logo_config_snapshot')
+  const position = String((raw as any).position || '').trim()
+  if (!position || position.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
+  const sizePctWidth = Number((raw as any).sizePctWidth)
+  const opacityPct = Number((raw as any).opacityPct)
+  if (!Number.isFinite(sizePctWidth) || sizePctWidth < 1 || sizePctWidth > 100) throw new ValidationError('invalid_logo_config_snapshot')
+  if (!Number.isFinite(opacityPct) || opacityPct < 0 || opacityPct > 100) throw new ValidationError('invalid_logo_config_snapshot')
+  const timingRule = String((raw as any).timingRule || '').trim()
+  if (!timingRule || timingRule.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
+  const timingSecondsRaw = (raw as any).timingSeconds
+  const timingSeconds = timingSecondsRaw == null ? null : Number(timingSecondsRaw)
+  if (timingSeconds != null && (!Number.isFinite(timingSeconds) || timingSeconds < 0 || timingSeconds > 3600)) throw new ValidationError('invalid_logo_config_snapshot')
+  const fade = String((raw as any).fade || '').trim()
+  if (!fade || fade.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
+  const insetXPresetRaw = (raw as any).insetXPreset
+  const insetYPresetRaw = (raw as any).insetYPreset
+  const insetXPreset = insetXPresetRaw == null ? null : String(insetXPresetRaw || '').trim() || null
+  const insetYPreset = insetYPresetRaw == null ? null : String(insetYPresetRaw || '').trim() || null
+  if (insetXPreset != null && insetXPreset.length > 20) throw new ValidationError('invalid_logo_config_snapshot')
+  if (insetYPreset != null && insetYPreset.length > 20) throw new ValidationError('invalid_logo_config_snapshot')
+  return {
+    id,
+    name,
+    position,
+    sizePctWidth: Math.round(sizePctWidth),
+    opacityPct: Math.round(opacityPct),
+    timingRule,
+    timingSeconds,
+    fade,
+    insetXPreset,
+    insetYPreset,
+  }
 }
 
 async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
@@ -277,7 +343,44 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
   const stillsTotalSeconds = stills.length ? Number(stills[stills.length - 1].endSeconds) : 0
-  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds))
+  const logosRaw = Array.isArray((raw as any).logos) ? ((raw as any).logos as any[]) : []
+  if (logosRaw.length > MAX_LOGOS) throw new DomainError('too_many_logos', 'too_many_logos', 400)
+  const logos: any[] = []
+  for (const l of logosRaw) {
+    if (!l || typeof l !== 'object') continue
+    const id = normalizeId((l as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((l as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+    const configId = Number((l as any).configId)
+    if (!Number.isFinite(configId) || configId <= 0) throw new ValidationError('invalid_logo_config_id')
+
+    const startSeconds = normalizeSeconds((l as any).startSeconds)
+    const endSeconds = normalizeSeconds((l as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+
+    const meta = await loadLogoMetaForUser(uploadId, ctx.userId)
+    // Validate config exists and is accessible (and not archived).
+    await logoConfigsSvc.getForUser(configId, Number(ctx.userId))
+    const configSnapshot = normalizeLogoConfigSnapshot((l as any).configSnapshot, configId)
+
+    logos.push({ id, uploadId: meta.id, startSeconds, endSeconds, configId, configSnapshot })
+  }
+
+  logos.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < logos.length; i++) {
+    const l = logos[i]
+    if (l.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    if (i > 0) {
+      const prev = logos[i - 1]
+      if (l.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('logo_overlap', 'logo_overlap', 400)
+    }
+  }
+  const logosTotalSeconds = logos.length ? Number(logos[logos.length - 1].endSeconds) : 0
+
+  const totalForPlayhead = roundToTenth(Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds))
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
@@ -315,6 +418,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     clips,
     stills,
     graphics,
+    logos,
     audioTrack,
   }
 }

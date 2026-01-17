@@ -1,4 +1,4 @@
-import type { Clip, Graphic, Timeline } from './timelineTypes'
+import type { Clip, Graphic, Logo, Timeline } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -84,4 +84,29 @@ export function splitGraphicAtPlayhead(
   const nextGraphics = [...graphics.slice(0, idx), left, right, ...graphics.slice(idx + 1)]
   nextGraphics.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
   return { timeline: { ...(timeline as any), graphics: nextGraphics } as any, selectedGraphicId: right.id }
+}
+
+export function splitLogoAtPlayhead(
+  timeline: Timeline,
+  selectedLogoId: string | null
+): { timeline: Timeline; selectedLogoId: string | null } {
+  if (!selectedLogoId) return { timeline, selectedLogoId }
+  const logos: Logo[] = Array.isArray((timeline as any).logos) ? ((timeline as any).logos as any) : []
+  const idx = logos.findIndex((l: any) => String(l?.id) === String(selectedLogoId))
+  if (idx < 0) return { timeline, selectedLogoId }
+  const l: any = logos[idx]
+  const start = roundToTenth(Number(l?.startSeconds || 0))
+  const end = roundToTenth(Number(l?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedLogoId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedLogoId }
+
+  const left: Logo = { ...l, id: `${String(l.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: Logo = { ...l, id: `${String(l.id)}_b`, startSeconds: cut, endSeconds: end }
+  const nextLogos = [...logos.slice(0, idx), left, right, ...logos.slice(idx + 1)]
+  nextLogos.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), logos: nextLogos } as any, selectedLogoId: right.id }
 }
