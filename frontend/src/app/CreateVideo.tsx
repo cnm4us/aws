@@ -1023,11 +1023,51 @@ export default function CreateVideo() {
 	        start,
 	        end,
 	        len,
-	        clipTrim: {
+	        trimOffsets: {
 	          startWithOffsetSeconds,
+	          startNoOffsetSeconds: 0,
 	          endWithOffsetSeconds,
 	          durationWithOffsetsSeconds,
 	          durationNoOffsetsSeconds: totalNoOffsetSeconds,
+	          endNoOffsetSeconds: totalNoOffsetSeconds,
+	        },
+	        edge: drag.edge,
+	      }
+	    }
+
+	    if (drag.kind === 'narration') {
+	      const ns: any[] = Array.isArray((timeline as any).narration) ? (timeline as any).narration : []
+	      const n = ns.find((x: any) => String(x?.id) === String((drag as any).narrationId)) as any
+	      if (!n) return null
+	      const name = namesByUploadId[Number(n.uploadId)] || `Voice ${n.uploadId}`
+	      const start = roundToTenth(Number(n.startSeconds || 0))
+	      const end = roundToTenth(Number(n.endSeconds || 0))
+	      const len = Math.max(0, roundToTenth(end - start))
+
+	      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(n.uploadId)] ?? 0
+	      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+	      const startWithOffsetSeconds = roundToTenth(
+	        n.sourceStartSeconds != null && Number.isFinite(Number(n.sourceStartSeconds)) ? Number(n.sourceStartSeconds) : 0
+	      )
+	      const durationWithOffsetsSeconds = len
+	      const endWithOffsetSeconds = roundToTenth(
+	        totalNoOffsetSeconds > 0 ? clamp(startWithOffsetSeconds + durationWithOffsetsSeconds, 0, totalNoOffsetSeconds) : startWithOffsetSeconds + durationWithOffsetsSeconds
+	      )
+
+	      return {
+	        kindLabel: 'Voice',
+	        actionLabel,
+	        name,
+	        start,
+	        end,
+	        len,
+	        trimOffsets: {
+	          startWithOffsetSeconds,
+	          startNoOffsetSeconds: 0,
+	          endWithOffsetSeconds,
+	          durationWithOffsetsSeconds,
+	          durationNoOffsetsSeconds: totalNoOffsetSeconds,
+	          endNoOffsetSeconds: totalNoOffsetSeconds,
 	        },
 	        edge: drag.edge,
 	      }
@@ -1079,16 +1119,43 @@ export default function CreateVideo() {
       return { kindLabel: 'Screen title', actionLabel, name, start, end, len }
     }
 
-    if (drag.kind === 'audio') {
-      if (!audioTrack) return null
-      const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
-      const cfgName = audioConfigNameById[Number(audioTrack.audioConfigId)] || `Config ${audioTrack.audioConfigId}`
-      const name = `${audioName} • ${cfgName}`
-      const start = roundToTenth(Number(audioTrack.startSeconds || 0))
-      const end = roundToTenth(Number(audioTrack.endSeconds || 0))
-      const len = Math.max(0, roundToTenth(end - start))
-      return { kindLabel: 'Audio', actionLabel, name, start, end, len }
-    }
+	    if (drag.kind === 'audio') {
+	      if (!audioTrack) return null
+	      const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
+	      const cfgName = audioConfigNameById[Number(audioTrack.audioConfigId)] || `Config ${audioTrack.audioConfigId}`
+	      const name = `${audioName} • ${cfgName}`
+	      const start = roundToTenth(Number(audioTrack.startSeconds || 0))
+	      const end = roundToTenth(Number(audioTrack.endSeconds || 0))
+	      const len = Math.max(0, roundToTenth(end - start))
+
+	      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(audioTrack.uploadId)] ?? 0
+	      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+	      const startWithOffsetSeconds = 0
+	      const durationWithOffsetsSeconds = len
+	      const endWithOffsetSeconds = roundToTenth(
+	        totalNoOffsetSeconds > 0
+	          ? (startWithOffsetSeconds + durationWithOffsetsSeconds) % totalNoOffsetSeconds
+	          : startWithOffsetSeconds + durationWithOffsetsSeconds
+	      )
+
+	      return {
+	        kindLabel: 'Audio',
+	        actionLabel,
+	        name,
+	        start,
+	        end,
+	        len,
+	        trimOffsets: {
+	          startWithOffsetSeconds,
+	          startNoOffsetSeconds: 0,
+	          endWithOffsetSeconds,
+	          durationWithOffsetsSeconds,
+	          durationNoOffsetsSeconds: totalNoOffsetSeconds,
+	          endNoOffsetSeconds: totalNoOffsetSeconds,
+	        },
+	        edge: drag.edge,
+	      }
+	    }
 
     if (drag.kind === 'still') {
       const s = stills.find((ss: any) => String(ss?.id) === String((drag as any).stillId)) as any
@@ -5623,23 +5690,25 @@ export default function CreateVideo() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-	                  {'clipTrim' in dragHud ? (
+	                  {'trimOffsets' in dragHud ? (
 	                    (() => {
 	                      const edge = (dragHud as any).edge as any
 	                      const gold = '#d4af37'
 	                      const startStyle = edge === 'start' ? { color: gold } : undefined
 	                      const endStyle = edge === 'end' ? { color: gold } : undefined
-	                      const trim = (dragHud as any).clipTrim as any
+	                      const trim = (dragHud as any).trimOffsets as any
 	                      return (
 	                        <>
-	                          <span style={startStyle}>{trim.startWithOffsetSeconds.toFixed(1)}/0.0</span>
+	                          <span style={startStyle}>
+	                            {trim.startWithOffsetSeconds.toFixed(1)}/{Number(trim.startNoOffsetSeconds || 0).toFixed(1)}
+	                          </span>
 	                          <span>|</span>
 	                          <span>
 	                            {trim.durationWithOffsetsSeconds.toFixed(1)}/{trim.durationNoOffsetsSeconds.toFixed(1)}
 	                          </span>
 	                          <span>|</span>
 	                          <span style={endStyle}>
-	                            {trim.endWithOffsetSeconds.toFixed(1)}/{trim.durationNoOffsetsSeconds.toFixed(1)}
+	                            {trim.endWithOffsetSeconds.toFixed(1)}/{trim.endNoOffsetSeconds.toFixed(1)}
 	                          </span>
 	                        </>
 	                      )
