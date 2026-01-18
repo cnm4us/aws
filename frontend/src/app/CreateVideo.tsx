@@ -6692,17 +6692,17 @@ export default function CreateVideo() {
 	                  }
 
 		                  if (withinAudio) {
-	                    if (!audioTrack) {
-	                      setSelectedAudio(false)
-	                      setSelectedClipId(null)
-	                      setSelectedGraphicId(null)
-	                      setSelectedLogoId(null)
-	                      setSelectedLowerThirdId(null)
-	                      setSelectedScreenTitleId(null)
-	                      setSelectedNarrationId(null)
-	                      setSelectedStillId(null)
-	                      return
-	                    }
+		                    if (!audioTrack) {
+		                      setSelectedAudio(false)
+		                      setSelectedClipId(null)
+		                      setSelectedGraphicId(null)
+		                      setSelectedLogoId(null)
+		                      setSelectedLowerThirdId(null)
+		                      setSelectedScreenTitleId(null)
+		                      setSelectedNarrationId(null)
+		                      setSelectedStillId(null)
+		                      return
+		                    }
                     const s = Number(audioTrack.startSeconds || 0)
                     const e2 = Number(audioTrack.endSeconds || 0)
                     const leftX = padPx + s * pxPerSecond
@@ -6722,45 +6722,48 @@ export default function CreateVideo() {
                     const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
                     if (nearLeft || nearRight) return
 
-                    if (selectedAudio) {
-                      openAudioEditor()
-                      return
-                    }
-	                    setSelectedAudio(true)
-	                    setSelectedClipId(null)
-	                    setSelectedGraphicId(null)
-	                    setSelectedLogoId(null)
-	                    setSelectedLowerThirdId(null)
-	                    setSelectedScreenTitleId(null)
-	                    setSelectedStillId(null)
-	                    return
-	                  }
+		                    if (selectedAudio) {
+		                      openAudioEditor()
+		                      return
+		                    }
+		                    setSelectedAudio(true)
+		                    setSelectedClipId(null)
+		                    setSelectedGraphicId(null)
+		                    setSelectedLogoId(null)
+		                    setSelectedLowerThirdId(null)
+		                    setSelectedScreenTitleId(null)
+		                    setSelectedNarrationId(null)
+		                    setSelectedStillId(null)
+		                    return
+		                  }
 
-	                  const still = findStillAtTime(t)
-	                  if (still) {
+		                  const still = findStillAtTime(t)
+		                  if (still) {
                     const s = Number((still as any).startSeconds || 0)
                     const e2 = Number((still as any).endSeconds || 0)
                     const leftX = padPx + s * pxPerSecond
                     const rightX = padPx + e2 * pxPerSecond
-	                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
-	                      setSelectedClipId(null)
-	                      setSelectedGraphicId(null)
-	                      setSelectedLogoId(null)
-	                      setSelectedLowerThirdId(null)
-	                      setSelectedScreenTitleId(null)
-	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
-	                      return
-	                    }
-	                    setSelectedStillId(String((still as any).id))
-	                    setSelectedClipId(null)
-	                    setSelectedGraphicId(null)
-	                    setSelectedLogoId(null)
-	                    setSelectedLowerThirdId(null)
-	                    setSelectedScreenTitleId(null)
-	                    setSelectedAudio(false)
-	                    return
-	                  }
+		                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
+		                      setSelectedClipId(null)
+		                      setSelectedGraphicId(null)
+		                      setSelectedLogoId(null)
+		                      setSelectedLowerThirdId(null)
+		                      setSelectedScreenTitleId(null)
+		                      setSelectedNarrationId(null)
+		                      setSelectedStillId(null)
+		                      setSelectedAudio(false)
+		                      return
+		                    }
+		                    setSelectedStillId(String((still as any).id))
+		                    setSelectedClipId(null)
+		                    setSelectedGraphicId(null)
+		                    setSelectedLogoId(null)
+		                    setSelectedLowerThirdId(null)
+		                    setSelectedScreenTitleId(null)
+		                    setSelectedNarrationId(null)
+		                    setSelectedAudio(false)
+		                    return
+		                  }
 
                   const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
                   const clip = idx >= 0 ? timeline.clips[idx] : null
