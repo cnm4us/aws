@@ -22,6 +22,7 @@
     "admin:own-uploads": "ts-node scripts/admin-own-uploads.ts",
     "admin:backfill-rule-drafts": "ts-node scripts/backfill-rule-drafts.ts",
     "admin:backfill-spaces-ulid": "ts-node scripts/backfill-spaces-ulid.ts",
+    "admin:backfill-audio-durations": "ts-node scripts/backfill-audio-durations.ts",
     "e2e": "playwright test --config=e2e/playwright.config.ts",
     "e2e:headed": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "cross-env HEADLESS=false playwright test --config=e2e/playwright.config.ts --ui",

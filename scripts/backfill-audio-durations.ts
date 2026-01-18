@@ -35,6 +35,18 @@ async function probeDurationSeconds(filePath: string): Promise<number> {
 }
 
 async function main() {
+  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h')
+  if (wantsHelp) {
+    console.log('Usage:')
+    console.log('  ts-node scripts/backfill-audio-durations.ts --dry 1 --limit 50 [--cursor <id>]')
+    console.log('  ts-node scripts/backfill-audio-durations.ts --limit 50 [--cursor <id>]')
+    console.log('')
+    console.log('Notes:')
+    console.log('- Updates uploads.duration_seconds for kind=audio where duration_seconds IS NULL.')
+    console.log('- Script prints nextCursor; rerun with --cursor to continue.')
+    return
+  }
+
   const limit = Number(parseArg('--limit') || '25')
   const cursor = Number(parseArg('--cursor') || '0')
   const dryRun = String(parseArg('--dry') || '').trim() === '1'
@@ -104,4 +116,3 @@ main().catch((e) => {
   console.error(e)
   process.exit(1)
 })
-
