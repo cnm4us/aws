@@ -418,7 +418,16 @@ export default function CreateVideo() {
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
   const narrationPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [narrationPreviewPlaying, setNarrationPreviewPlaying] = useState(false)
-  const narrationPreviewSegRef = useRef<{ segId: string; uploadId: number; segStart: number; segEnd: number } | null>(null)
+  const narrationPreviewSegRef = useRef<
+    | {
+        segId: string
+        uploadId: number
+        segStart: number
+        segEnd: number
+        sourceStartSeconds: number
+      }
+    | null
+  >(null)
   const narrationPreviewRafRef = useRef<number | null>(null)
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
@@ -1788,7 +1797,7 @@ export default function CreateVideo() {
         : 0
     try { a.currentTime = Math.max(0, srcStart0 + startInSeg) } catch {}
 
-    narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd }
+    narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd, sourceStartSeconds: srcStart0 }
 
     try {
       const p = a.play()
@@ -1806,18 +1815,52 @@ export default function CreateVideo() {
       if (!narrationPreviewSegRef.current) return
       const cur = narrationPreviewRef.current
       const seg = narrationPreviewSegRef.current
-      const srcStart1 =
-        (segAt as any).sourceStartSeconds != null && Number.isFinite(Number((segAt as any).sourceStartSeconds))
-          ? Number((segAt as any).sourceStartSeconds)
-          : 0
+      const srcStart1 = Number(seg.sourceStartSeconds || 0)
       const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
       playheadFromVideoRef.current = true
       playheadRef.current = nextPlayhead
       setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
 
-      if (nextPlayhead >= stopAtTimeline - 0.02) {
+      // When we hit the end of the current segment, auto-advance only if the next segment is
+      // contiguous on the timeline AND uses the same source uploadId. This avoids requiring an
+      // extra Play tap when playback can stay on the same <audio> element.
+      if (nextPlayhead >= seg.segEnd - 0.02) {
+        const eps2 = 0.05
+        const at = roundToTenth(Number(seg.segEnd || 0))
+        const next = sortedNarration.find(
+          (n: any) =>
+            Number((n as any).uploadId) === Number(seg.uploadId) &&
+            String((n as any).id) !== String(seg.segId) &&
+            Math.abs(roundToTenth(Number((n as any).startSeconds || 0)) - at) < eps2
+        ) as any
+
+        if (next) {
+          const nextStart = roundToTenth(Number(next.startSeconds || 0))
+          const nextEnd = roundToTenth(Number(next.endSeconds || 0))
+          const nextUploadId = Number(next.uploadId)
+          const nextSrcStart =
+            next.sourceStartSeconds != null && Number.isFinite(Number(next.sourceStartSeconds)) ? Number(next.sourceStartSeconds) : 0
+
+          const overshoot = roundToTenth(Math.max(0, nextPlayhead - at))
+          narrationPreviewSegRef.current = {
+            segId: String(next.id),
+            uploadId: nextUploadId,
+            segStart: nextStart,
+            segEnd: nextEnd,
+            sourceStartSeconds: nextSrcStart,
+          }
+          try { cur.currentTime = Math.max(0, nextSrcStart + overshoot) } catch {}
+          const ph = clamp(roundToTenth(nextStart + overshoot), 0, Math.max(0, totalSeconds))
+          playheadFromVideoRef.current = true
+          playheadRef.current = ph
+          setTimeline((prev) => ({ ...prev, playheadSeconds: ph }))
+          narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
+          return
+        }
+
+        const stopAt = roundToTenth(Number(seg.segEnd || 0))
         stopNarrationPreview()
-        setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(stopAtTimeline) }))
+        setTimeline((prev) => ({ ...prev, playheadSeconds: stopAt }))
         return
       }
       narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
