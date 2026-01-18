@@ -1362,6 +1362,28 @@ export default function CreateVideo() {
   const activeLowerThirdAtPlayhead = useMemo(() => findLowerThirdAtTime(playhead), [findLowerThirdAtTime, playhead])
   const activeScreenTitleAtPlayhead = useMemo(() => findScreenTitleAtTime(playhead), [findScreenTitleAtTime, playhead])
   const activeStillAtPlayhead = useMemo(() => findStillAtTime(playhead), [findStillAtTime, playhead])
+
+  // Safety: when a freeze-frame still finishes during playback, ensure we leave "playing" state.
+  // (Some browsers can leave us in a "playing" UI state even though no video can autoplay-start.)
+  useEffect(() => {
+    if (!playing) return
+    if (activeUploadId != null) return
+    if (activeStillAtPlayhead) return
+    const t = roundToTenth(Number(playhead) || 0)
+    const endedStill = stills.find((s: any) => {
+      const a = roundToTenth(Number((s as any).startSeconds || 0))
+      const b = roundToTenth(Number((s as any).endSeconds || 0))
+      if (!(b > a)) return false
+      return Math.abs(b - t) < 0.05
+    })
+    if (!endedStill) return
+    const cur = gapPlaybackRef.current
+    if (cur) {
+      window.cancelAnimationFrame(cur.raf)
+      gapPlaybackRef.current = null
+    }
+    setPlaying(false)
+  }, [activeStillAtPlayhead, activeUploadId, playhead, playing, stills])
   const activeGraphicUploadId = useMemo(() => {
     const g = activeGraphicAtPlayhead
     if (!g) return null
