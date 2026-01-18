@@ -400,15 +400,33 @@ export async function validateAndNormalizeCreateVideoTimeline(
   if (version !== 'create_video_v1') throw new ValidationError('invalid_timeline_version')
 
   const playheadSecondsRaw = (raw as any).playheadSeconds
-  const playheadSeconds = playheadSecondsRaw != null ? normalizeSeconds(playheadSecondsRaw) : 0
+  let playheadSeconds = playheadSecondsRaw != null ? normalizeSeconds(playheadSecondsRaw) : 0
 
   const clipsRaw = Array.isArray((raw as any).clips) ? ((raw as any).clips as any[]) : []
   if (clipsRaw.length > MAX_CLIPS) throw new DomainError('too_many_clips', 'too_many_clips', 400)
 
-  const clips: CreateVideoTimelineV1['clips'] = []
+  // Legacy support: earlier iterations stored "freeze" durations on clips.
+  // Create Video now represents freeze holds as explicit base-track still segments, so clip.freeze*
+  // is deprecated. Some timelines may still include non-zero values, which effectively become
+  // phantom time (breaks playback/editing and can prevent persistence due to overlap validation).
+  //
+  // We normalize by removing that phantom time:
+  // - Set clip.freezeStartSeconds/freezeEndSeconds = 0
+  // - Time-shift any segment occurring at/after the old (freeze-inflated) clip end.
+  const clipsPre: Array<{
+    id: string
+    uploadId: number
+    startSeconds: number
+    sourceStartSeconds: number
+    sourceEndSeconds: number
+    metaId: number
+    legacyFreezeSeconds: number
+    legacyEndSeconds: number
+  }> = []
+  const legacyRemovalEvents: Array<{ t: number; delta: number }> = []
   const seen = new Set<string>()
   let sequentialCursorSeconds = 0
-  let videoEndSeconds = 0
+  let legacyVideoEndSeconds = 0
 
   for (const c of clipsRaw) {
     if (!c || typeof c !== 'object') continue
@@ -426,12 +444,13 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const sourceEndSeconds = normalizeSeconds((c as any).sourceEndSeconds)
     if (!(sourceEndSeconds > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
 
-    const freezeStartSecondsRaw = (c as any).freezeStartSeconds
-    const freezeEndSecondsRaw = (c as any).freezeEndSeconds
-    const freezeStartSeconds = freezeStartSecondsRaw != null ? normalizeSeconds(freezeStartSecondsRaw) : 0
-    const freezeEndSeconds = freezeEndSecondsRaw != null ? normalizeSeconds(freezeEndSecondsRaw) : 0
-    if (!isAllowedFreezeSeconds(freezeStartSeconds)) throw new ValidationError('invalid_freeze_seconds')
-    if (!isAllowedFreezeSeconds(freezeEndSeconds)) throw new ValidationError('invalid_freeze_seconds')
+    // Legacy clip freeze: accept but treat as deprecated. Clamp to 0..5 for safety.
+    const freezeStartRaw = (c as any).freezeStartSeconds
+    const freezeEndRaw = (c as any).freezeEndSeconds
+    const freezeStart =
+      freezeStartRaw != null && Number.isFinite(Number(freezeStartRaw)) ? roundToTenth(Math.max(0, Number(freezeStartRaw))) : 0
+    const freezeEnd = freezeEndRaw != null && Number.isFinite(Number(freezeEndRaw)) ? roundToTenth(Math.max(0, Number(freezeEndRaw))) : 0
+    const legacyFreezeSeconds = roundToTenth(Math.min(5, freezeStart) + Math.min(5, freezeEnd))
 
     const meta = await loadUploadMetaForUser(uploadId, ctx.userId)
     let end = sourceEndSeconds
@@ -440,25 +459,78 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (!(end > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
     }
 
-    const len = Math.max(0, end - sourceStartSeconds) + freezeStartSeconds + freezeEndSeconds
-    const clipEnd = roundToTenth(startSeconds + len)
-    videoEndSeconds = Math.max(videoEndSeconds, clipEnd)
-    sequentialCursorSeconds = Math.max(sequentialCursorSeconds, clipEnd)
-    if (videoEndSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    const baseLen = Math.max(0, end - sourceStartSeconds)
+    const legacyEndSeconds = roundToTenth(startSeconds + baseLen + legacyFreezeSeconds)
+    legacyVideoEndSeconds = Math.max(legacyVideoEndSeconds, legacyEndSeconds)
+    sequentialCursorSeconds = Math.max(sequentialCursorSeconds, legacyEndSeconds)
+    if (legacyVideoEndSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
-    clips.push({ id, uploadId: meta.id, startSeconds, sourceStartSeconds, sourceEndSeconds: end, freezeStartSeconds, freezeEndSeconds })
+    if (legacyFreezeSeconds > 1e-6) legacyRemovalEvents.push({ t: legacyEndSeconds, delta: legacyFreezeSeconds })
+
+    clipsPre.push({
+      id,
+      uploadId,
+      startSeconds,
+      sourceStartSeconds,
+      sourceEndSeconds: end,
+      metaId: meta.id,
+      legacyFreezeSeconds,
+      legacyEndSeconds,
+    })
   }
+
+  legacyRemovalEvents.sort((a, b) => Number(a.t) - Number(b.t) || Number(a.delta) - Number(b.delta))
+  const legacyCumulative: Array<{ t: number; sum: number }> = []
+  if (legacyRemovalEvents.length) {
+    let sum = 0
+    for (const e of legacyRemovalEvents) {
+      sum = roundToTenth(sum + roundToTenth(Number(e.delta) || 0))
+      legacyCumulative.push({ t: roundToTenth(Number(e.t) || 0), sum })
+    }
+  }
+  const legacyShiftAt = (t: number): number => {
+    const tt = roundToTenth(Math.max(0, Number(t || 0)))
+    let sum = 0
+    for (const e of legacyCumulative) {
+      if (tt + 1e-6 >= e.t) sum = e.sum
+      else break
+    }
+    return sum
+  }
+  const legacyMapTime = (t: number): number => {
+    const tt = roundToTenth(Math.max(0, Number(t || 0)))
+    return roundToTenth(Math.max(0, tt - legacyShiftAt(tt)))
+  }
+  const legacyMapMaybe = (v: any): any => {
+    if (!legacyCumulative.length) return v
+    const n = Number(v)
+    if (!Number.isFinite(n)) return v
+    return legacyMapTime(n)
+  }
+
+  if (legacyCumulative.length) {
+    playheadSeconds = legacyMapTime(playheadSeconds)
+  }
+
+  const clips: CreateVideoTimelineV1['clips'] = clipsPre.map((c) => ({
+    id: c.id,
+    uploadId: c.metaId,
+    // Apply legacy time shift to startSeconds so clips remain aligned after removing phantom freeze time.
+    startSeconds: legacyCumulative.length ? legacyMapTime(c.startSeconds) : c.startSeconds,
+    sourceStartSeconds: c.sourceStartSeconds,
+    sourceEndSeconds: c.sourceEndSeconds,
+    freezeStartSeconds: 0,
+    freezeEndSeconds: 0,
+  }))
 
   // Sort by time for deterministic playback/export and overlap validation.
   clips.sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
   const baseTrackWindows: Array<{ start: number; end: number }> = []
+  let videoEndSeconds = 0
   for (let i = 0; i < clips.length; i++) {
     const c = clips[i] as any
     const start = Number(c.startSeconds || 0)
-    const dur =
-      Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds)) +
-      Math.max(0, Number((c as any).freezeStartSeconds || 0)) +
-      Math.max(0, Number((c as any).freezeEndSeconds || 0))
+    const dur = Math.max(0, Number(c.sourceEndSeconds) - Number(c.sourceStartSeconds))
     const end = start + dur
     baseTrackWindows.push({ start: roundToTenth(start), end: roundToTenth(end) })
     videoEndSeconds = Math.max(videoEndSeconds, roundToTenth(end))
@@ -466,7 +538,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const videoTotalSeconds = roundToTenth(videoEndSeconds)
 
-  const stillsRaw = Array.isArray((raw as any).stills) ? ((raw as any).stills as any[]) : []
+  const stillsRaw0 = Array.isArray((raw as any).stills) ? ((raw as any).stills as any[]) : []
+  const stillsRaw = legacyCumulative.length
+    ? stillsRaw0.map((s) => ({
+        ...(s as any),
+        startSeconds: legacyMapMaybe((s as any).startSeconds),
+        endSeconds: legacyMapMaybe((s as any).endSeconds),
+      }))
+    : stillsRaw0
   if (stillsRaw.length > MAX_STILLS) throw new DomainError('too_many_stills', 'too_many_stills', 400)
   const stills: any[] = []
   for (const s of stillsRaw) {
@@ -500,7 +579,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
     if (cur.start < prev.end - 1e-6) throw new DomainError('base_track_overlap', 'base_track_overlap', 400)
   }
 
-  const graphicsRaw = Array.isArray((raw as any).graphics) ? ((raw as any).graphics as any[]) : []
+  const graphicsRaw0 = Array.isArray((raw as any).graphics) ? ((raw as any).graphics as any[]) : []
+  const graphicsRaw = legacyCumulative.length
+    ? graphicsRaw0.map((g) => ({
+        ...(g as any),
+        startSeconds: legacyMapMaybe((g as any).startSeconds),
+        endSeconds: legacyMapMaybe((g as any).endSeconds),
+      }))
+    : graphicsRaw0
   if (graphicsRaw.length > MAX_GRAPHICS) throw new DomainError('too_many_graphics', 'too_many_graphics', 400)
   const graphics: any[] = []
   for (const g of graphicsRaw) {
@@ -532,7 +618,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
   const stillsTotalSeconds = stills.length ? Number(stills[stills.length - 1].endSeconds) : 0
-  const logosRaw = Array.isArray((raw as any).logos) ? ((raw as any).logos as any[]) : []
+  const logosRaw0 = Array.isArray((raw as any).logos) ? ((raw as any).logos as any[]) : []
+  const logosRaw = legacyCumulative.length
+    ? logosRaw0.map((l) => ({
+        ...(l as any),
+        startSeconds: legacyMapMaybe((l as any).startSeconds),
+        endSeconds: legacyMapMaybe((l as any).endSeconds),
+      }))
+    : logosRaw0
   if (logosRaw.length > MAX_LOGOS) throw new DomainError('too_many_logos', 'too_many_logos', 400)
   const logos: any[] = []
   for (const l of logosRaw) {
@@ -569,7 +662,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const logosTotalSeconds = logos.length ? Number(logos[logos.length - 1].endSeconds) : 0
 
-  const lowerThirdsRaw = Array.isArray((raw as any).lowerThirds) ? ((raw as any).lowerThirds as any[]) : []
+  const lowerThirdsRaw0 = Array.isArray((raw as any).lowerThirds) ? ((raw as any).lowerThirds as any[]) : []
+  const lowerThirdsRaw = legacyCumulative.length
+    ? lowerThirdsRaw0.map((lt) => ({
+        ...(lt as any),
+        startSeconds: legacyMapMaybe((lt as any).startSeconds),
+        endSeconds: legacyMapMaybe((lt as any).endSeconds),
+      }))
+    : lowerThirdsRaw0
   if (lowerThirdsRaw.length > MAX_LOWER_THIRDS) throw new DomainError('too_many_lower_thirds', 'too_many_lower_thirds', 400)
   const lowerThirds: any[] = []
   for (const lt of lowerThirdsRaw) {
@@ -605,7 +705,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const lowerThirdsTotalSeconds = lowerThirds.length ? Number(lowerThirds[lowerThirds.length - 1].endSeconds) : 0
 
-  const screenTitlesRaw = Array.isArray((raw as any).screenTitles) ? ((raw as any).screenTitles as any[]) : []
+  const screenTitlesRaw0 = Array.isArray((raw as any).screenTitles) ? ((raw as any).screenTitles as any[]) : []
+  const screenTitlesRaw = legacyCumulative.length
+    ? screenTitlesRaw0.map((st) => ({
+        ...(st as any),
+        startSeconds: legacyMapMaybe((st as any).startSeconds),
+        endSeconds: legacyMapMaybe((st as any).endSeconds),
+      }))
+    : screenTitlesRaw0
   if (screenTitlesRaw.length > MAX_SCREEN_TITLES) throw new DomainError('too_many_screen_titles', 'too_many_screen_titles', 400)
   const screenTitles: any[] = []
   for (const st of screenTitlesRaw) {
@@ -666,7 +773,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const screenTitlesTotalSeconds = screenTitles.length ? Number(screenTitles[screenTitles.length - 1].endSeconds) : 0
 
-  const narrationRaw = Array.isArray((raw as any).narration) ? ((raw as any).narration as any[]) : []
+  const narrationRaw0 = Array.isArray((raw as any).narration) ? ((raw as any).narration as any[]) : []
+  const narrationRaw = legacyCumulative.length
+    ? narrationRaw0.map((seg) => ({
+        ...(seg as any),
+        startSeconds: legacyMapMaybe((seg as any).startSeconds),
+        endSeconds: legacyMapMaybe((seg as any).endSeconds),
+      }))
+    : narrationRaw0
   if (narrationRaw.length > MAX_NARRATION) throw new DomainError('too_many_narration', 'too_many_narration', 400)
   const narration: any[] = []
   for (const seg of narrationRaw) {
@@ -715,7 +829,15 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
-  const audioTrackRaw = (raw as any).audioTrack
+  const audioTrackRaw0 = (raw as any).audioTrack
+  const audioTrackRaw =
+    audioTrackRaw0 && typeof audioTrackRaw0 === 'object' && !Array.isArray(audioTrackRaw0) && legacyCumulative.length
+      ? {
+          ...(audioTrackRaw0 as any),
+          startSeconds: legacyMapMaybe((audioTrackRaw0 as any).startSeconds),
+          endSeconds: legacyMapMaybe((audioTrackRaw0 as any).endSeconds),
+        }
+      : audioTrackRaw0
   let audioTrack: any = null
   if (audioTrackRaw != null) {
     if (audioTrackRaw === null) {

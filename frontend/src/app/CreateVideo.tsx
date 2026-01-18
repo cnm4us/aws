@@ -272,6 +272,76 @@ function computeFadeAlpha(cfg: { fade?: any }, tRelS: number, windowStartRelS: n
   return a
 }
 
+function migrateLegacyClipFreezeTimeline(tl: Timeline): { timeline: Timeline; changed: boolean } {
+  const clips: any[] = Array.isArray((tl as any).clips) ? (((tl as any).clips as any) as any[]) : []
+  if (!clips.length) return { timeline: tl, changed: false }
+
+  const starts = computeClipStarts(clips as any)
+  const events: Array<{ t: number; delta: number }> = []
+  for (let i = 0; i < clips.length; i++) {
+    const c: any = clips[i]
+    const fs = c?.freezeStartSeconds == null ? 0 : Number(c.freezeStartSeconds)
+    const fe = c?.freezeEndSeconds == null ? 0 : Number(c.freezeEndSeconds)
+    const delta = roundToTenth(Math.max(0, Number.isFinite(fs) ? fs : 0) + Math.max(0, Number.isFinite(fe) ? fe : 0))
+    if (!(delta > 1e-6)) continue
+    const startRaw = c?.startSeconds
+    const start = startRaw != null && Number.isFinite(Number(startRaw)) ? roundToTenth(Math.max(0, Number(startRaw))) : roundToTenth(Number(starts[i] || 0))
+    const srcStart = Number(c?.sourceStartSeconds || 0)
+    const srcEnd = Number(c?.sourceEndSeconds || 0)
+    const baseLen = roundToTenth(Math.max(0, srcEnd - srcStart))
+    const legacyEnd = roundToTenth(start + baseLen + delta)
+    events.push({ t: legacyEnd, delta })
+  }
+  if (!events.length) return { timeline: tl, changed: false }
+  events.sort((a, b) => a.t - b.t || a.delta - b.delta)
+  const cumulative: Array<{ t: number; sum: number }> = []
+  let sum = 0
+  for (const e of events) {
+    sum = roundToTenth(sum + e.delta)
+    cumulative.push({ t: e.t, sum })
+  }
+  const shiftAt = (t: number): number => {
+    const tt = roundToTenth(Math.max(0, Number(t || 0)))
+    let s = 0
+    for (const e of cumulative) {
+      if (tt + 1e-6 >= e.t) s = e.sum
+      else break
+    }
+    return s
+  }
+  const mapTime = (t: any): any => {
+    const n = Number(t)
+    if (!Number.isFinite(n)) return t
+    const tt = roundToTenth(Math.max(0, n))
+    return roundToTenth(Math.max(0, tt - shiftAt(tt)))
+  }
+
+  const mapRange = (x: any) => ({
+    ...x,
+    startSeconds: mapTime(x?.startSeconds),
+    endSeconds: mapTime(x?.endSeconds),
+  })
+
+  const next: any = cloneTimeline(tl as any)
+  next.playheadSeconds = mapTime((tl as any).playheadSeconds || 0)
+  next.clips = clips.map((c: any, i: number) => ({
+    ...c,
+    startSeconds: mapTime(c?.startSeconds == null ? starts[i] : c.startSeconds),
+    freezeStartSeconds: 0,
+    freezeEndSeconds: 0,
+  }))
+  next.stills = Array.isArray((tl as any).stills) ? ((tl as any).stills as any[]).map(mapRange) : []
+  next.graphics = Array.isArray((tl as any).graphics) ? ((tl as any).graphics as any[]).map(mapRange) : []
+  next.logos = Array.isArray((tl as any).logos) ? ((tl as any).logos as any[]).map(mapRange) : []
+  next.lowerThirds = Array.isArray((tl as any).lowerThirds) ? ((tl as any).lowerThirds as any[]).map(mapRange) : []
+  next.screenTitles = Array.isArray((tl as any).screenTitles) ? ((tl as any).screenTitles as any[]).map(mapRange) : []
+  next.narration = Array.isArray((tl as any).narration) ? ((tl as any).narration as any[]).map(mapRange) : []
+  if ((tl as any).audioTrack && typeof (tl as any).audioTrack === 'object') {
+    next.audioTrack = { ...(tl as any).audioTrack, startSeconds: mapTime((tl as any).audioTrack.startSeconds), endSeconds: mapTime((tl as any).audioTrack.endSeconds) }
+  }
+  return { timeline: next as Timeline, changed: true }
+}
+
 export default function CreateVideo() {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -2749,11 +2819,15 @@ export default function CreateVideo() {
 	            : [],
 	          audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
 	        }
+        const migrated = migrateLegacyClipFreezeTimeline(tl)
+        const tlFinal = migrated.timeline
         hydratingRef.current = true
         try {
           setProject(pj)
-          setTimeline(tl)
-          lastSavedRef.current = JSON.stringify(tl)
+          setTimeline(tlFinal)
+          // If we migrated a legacy timeline, leave lastSavedRef pointing at the pre-migration JSON so
+          // the debounced autosave will persist the normalized form.
+          lastSavedRef.current = JSON.stringify(migrated.changed ? tl : tlFinal)
           undoStackRef.current = []
           setUndoDepth(0)
           setSelectedAudio(false)
@@ -2799,6 +2873,30 @@ export default function CreateVideo() {
     }, 400)
     return () => window.clearTimeout(timer)
   }, [playhead, project?.id, timeline])
+
+  const saveTimelineNow = useCallback(
+    async (nextTimeline: Timeline) => {
+      if (!project?.id) return
+      if (hydratingRef.current) return
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch('/api/create-video/project', {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ timeline: nextTimeline }),
+        })
+        const data: any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
+        lastSavedRef.current = JSON.stringify(nextTimeline)
+      } catch {
+        // ignore; user can still export later
+      }
+    },
+    [project?.id]
+  )
 
   // Fetch upload names for clip pills
 		  useEffect(() => {
@@ -4137,6 +4235,7 @@ export default function CreateVideo() {
       if (nextNs === prevNs) return
       snapshotUndo()
       setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedNarrationId(res.selectedNarrationId)
       setSelectedClipId(null)
       setSelectedGraphicId(null)
@@ -4153,6 +4252,7 @@ export default function CreateVideo() {
       if (res.timeline.clips === timeline.clips) return
       snapshotUndo()
       setTimeline(res.timeline)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedClipId(res.selectedClipId)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
@@ -4168,6 +4268,7 @@ export default function CreateVideo() {
       if (nextLogos === prevLogos) return
       snapshotUndo()
       setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(res.selectedLogoId)
@@ -4183,6 +4284,7 @@ export default function CreateVideo() {
       if (nextLts === prevLts) return
       snapshotUndo()
       setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
@@ -4199,6 +4301,7 @@ export default function CreateVideo() {
       if (nextSts === prevSts) return
       snapshotUndo()
       setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
@@ -4215,6 +4318,7 @@ export default function CreateVideo() {
       if (nextGraphics === prevGraphics) return
       snapshotUndo()
       setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
       setSelectedClipId(null)
       setSelectedGraphicId(res.selectedGraphicId)
       setSelectedLogoId(null)
@@ -4231,6 +4335,7 @@ export default function CreateVideo() {
     selectedLowerThirdId,
     selectedNarrationId,
     selectedScreenTitleId,
+    saveTimelineNow,
     snapshotUndo,
     timeline,
   ])
