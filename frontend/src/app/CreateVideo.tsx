@@ -297,6 +297,8 @@ export default function CreateVideo() {
   const [selectedNarrationId, setSelectedNarrationId] = useState<string | null>(null)
   const [selectedStillId, setSelectedStillId] = useState<string | null>(null)
   const [selectedAudio, setSelectedAudio] = useState(false)
+
+  const playPauseGlyph = (isPlaying: boolean) => (isPlaying ? '||' : '▶')
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
@@ -7018,46 +7020,52 @@ export default function CreateVideo() {
               >
                 ‹
               </button>
-              <button
-                type="button"
-                onClick={togglePlay}
-                disabled={totalSeconds <= 0}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(10,132,255,0.55)',
-                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                  minWidth: 96,
-                }}
-                title="Play/Pause"
-                aria-label={playing ? 'Pause' : 'Play'}
-              >
-                {playing ? 'Pause' : 'Play'}
-              </button>
-              <button
-                type="button"
-                onClick={toggleNarrationPlay}
-                disabled={!sortedNarration.length}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(175,82,222,0.65)',
-                  background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
-                  color: '#fff',
-                  fontWeight: 900,
-                  cursor: sortedNarration.length ? 'pointer' : 'default',
-                  flex: '0 0 auto',
-                  minWidth: 96,
-                }}
-                title="Play narration (voice memo)"
-                aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
-              >
-                {narrationPreviewPlaying ? 'Voice Pause' : 'Voice Play'}
-              </button>
+	              <button
+	                type="button"
+	                onClick={togglePlay}
+	                disabled={totalSeconds <= 0}
+	                style={{
+	                  padding: '10px 12px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(10,132,255,0.55)',
+	                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+	                  color: '#fff',
+	                  fontWeight: 900,
+	                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+	                  flex: '0 0 auto',
+	                  minWidth: 44,
+	                  lineHeight: 1,
+	                }}
+	                title="Play/Pause"
+	                aria-label={playing ? 'Pause' : 'Play'}
+	              >
+	                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                  {playPauseGlyph(playing)}
+	                </span>
+	              </button>
+	              <button
+	                type="button"
+	                onClick={toggleNarrationPlay}
+	                disabled={!sortedNarration.length}
+	                style={{
+	                  padding: '10px 12px',
+	                  borderRadius: 10,
+	                  border: '1px solid rgba(175,82,222,0.65)',
+	                  background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+	                  color: '#fff',
+	                  fontWeight: 900,
+	                  cursor: sortedNarration.length ? 'pointer' : 'default',
+	                  flex: '0 0 auto',
+	                  minWidth: 44,
+	                  lineHeight: 1,
+	                }}
+	                title="Play narration (voice memo)"
+	                aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+	              >
+	                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                  {playPauseGlyph(narrationPreviewPlaying)}
+	                </span>
+	              </button>
               <button
                 type="button"
                 onClick={() => {
