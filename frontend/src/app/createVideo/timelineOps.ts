@@ -1,4 +1,4 @@
-import type { Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Timeline } from './timelineTypes'
+import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Timeline } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -192,4 +192,37 @@ export function splitNarrationAtPlayhead(
   const next = [...ns.slice(0, idx), left, right, ...ns.slice(idx + 1)]
   next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), narration: next } as any, selectedNarrationId: right.id }
+}
+
+export function splitAudioSegmentAtPlayhead(
+  timeline: Timeline,
+  selectedAudioId: string | null
+): { timeline: Timeline; selectedAudioId: string | null } {
+  if (!selectedAudioId) return { timeline, selectedAudioId }
+  const segs: AudioSegment[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any) : []
+  const idx = segs.findIndex((s: any) => String(s?.id) === String(selectedAudioId))
+  if (idx < 0) return { timeline, selectedAudioId }
+  const seg: any = segs[idx]
+  const start = roundToTenth(Number(seg?.startSeconds || 0))
+  const end = roundToTenth(Number(seg?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedAudioId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedAudioId }
+
+  const baseSourceStart = seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds)) ? Number(seg.sourceStartSeconds) : 0
+  const offsetInto = Math.max(0, roundToTenth(cut - start))
+  const left: AudioSegment = { ...(seg as any), id: `${String(seg.id)}_a`, startSeconds: start, endSeconds: cut, sourceStartSeconds: baseSourceStart }
+  const right: AudioSegment = {
+    ...(seg as any),
+    id: `${String(seg.id)}_b`,
+    startSeconds: cut,
+    endSeconds: end,
+    sourceStartSeconds: roundToTenth(baseSourceStart + offsetInto),
+  }
+  const next = [...segs.slice(0, idx), left, right, ...segs.slice(idx + 1)]
+  next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), audioSegments: next, audioTrack: null } as any, selectedAudioId: right.id }
 }

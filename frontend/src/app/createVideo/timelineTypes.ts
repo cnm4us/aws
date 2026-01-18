@@ -77,6 +77,17 @@ export type AudioTrack = {
   endSeconds: number
 }
 
+export type AudioSegment = {
+  id: string
+  uploadId: number
+  audioConfigId: number
+  startSeconds: number
+  endSeconds: number
+  // Offset into the audio file for where this segment begins (in seconds).
+  // This enables split/trim to play the continuation instead of restarting at 0.
+  sourceStartSeconds?: number
+}
+
 export type Narration = {
   id: string
   uploadId: number
@@ -125,6 +136,8 @@ export type Timeline = {
   lowerThirds?: LowerThird[]
   screenTitles?: ScreenTitle[]
   narration?: Narration[]
+  audioSegments?: AudioSegment[]
+  // Deprecated: retained for backward compatibility with existing projects.
   audioTrack?: AudioTrack | null
 }
 
@@ -168,6 +181,16 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           endSeconds: Number(n.endSeconds),
           sourceStartSeconds: n.sourceStartSeconds == null ? 0 : Number(n.sourceStartSeconds),
           gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
+        }))
+      : [],
+    audioSegments: Array.isArray((timeline as any).audioSegments)
+      ? (timeline as any).audioSegments.map((s: any) => ({
+          id: String(s.id),
+          uploadId: Number(s.uploadId),
+          audioConfigId: Number(s.audioConfigId),
+          startSeconds: Number(s.startSeconds),
+          endSeconds: Number(s.endSeconds),
+          sourceStartSeconds: s.sourceStartSeconds == null ? 0 : Number(s.sourceStartSeconds),
         }))
       : [],
     screenTitles: Array.isArray((timeline as any).screenTitles)

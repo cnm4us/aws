@@ -112,6 +112,17 @@ export type CreateVideoAudioTrackV1 = {
   endSeconds: number
 }
 
+export type CreateVideoAudioSegmentV1 = {
+  id: string
+  uploadId: number
+  audioConfigId: number
+  startSeconds: number
+  endSeconds: number
+  // Offset into the audio file for where this segment begins (in seconds).
+  // This enables split/trim to play the continuation instead of restarting at 0.
+  sourceStartSeconds?: number
+}
+
 export type CreateVideoNarrationSegmentV1 = {
   id: string
   uploadId: number
@@ -131,6 +142,8 @@ export type CreateVideoTimelineV1 = {
   lowerThirds?: CreateVideoLowerThirdV1[]
   screenTitles?: CreateVideoScreenTitleV1[]
   narration?: CreateVideoNarrationSegmentV1[]
+  audioSegments?: CreateVideoAudioSegmentV1[]
+  // Deprecated: retained for backward compatibility with existing projects.
   audioTrack?: CreateVideoAudioTrackV1 | null
 }
 

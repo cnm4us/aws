@@ -829,29 +829,73 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
-  const audioTrackRaw0 = (raw as any).audioTrack
-  const audioTrackRaw =
-    audioTrackRaw0 && typeof audioTrackRaw0 === 'object' && !Array.isArray(audioTrackRaw0) && legacyCumulative.length
-      ? {
-          ...(audioTrackRaw0 as any),
-          startSeconds: legacyMapMaybe((audioTrackRaw0 as any).startSeconds),
-          endSeconds: legacyMapMaybe((audioTrackRaw0 as any).endSeconds),
-        }
-      : audioTrackRaw0
-  let audioTrack: any = null
-  if (audioTrackRaw != null) {
-    if (audioTrackRaw === null) {
-      audioTrack = null
-    } else if (typeof audioTrackRaw !== 'object' || Array.isArray(audioTrackRaw)) {
-      throw new ValidationError('invalid_audio_track')
+  const MAX_AUDIO_SEGMENTS = 200
+  const audioSegments: any[] = []
+  const audioSegmentsRaw = (raw as any).audioSegments
+  if (audioSegmentsRaw != null) {
+    if (audioSegmentsRaw === null) {
+      // ok
+    } else if (!Array.isArray(audioSegmentsRaw)) {
+      throw new ValidationError('invalid_audio_segments')
     } else {
+      if (audioSegmentsRaw.length > MAX_AUDIO_SEGMENTS) throw new DomainError('too_many_audio_segments', 'too_many_audio_segments', 400)
+      if (!(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+
+      let commonUploadId: number | null = null
+      let commonAudioConfigId: number | null = null
+      for (let i = 0; i < audioSegmentsRaw.length; i++) {
+        const seg = audioSegmentsRaw[i]
+        if (!seg || typeof seg !== 'object') continue
+        const id = normalizeId((seg as any).id || `aud_${i + 1}`)
+        if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+        seen.add(id)
+
+        const uploadId = Number((seg as any).uploadId)
+        const audioConfigId = Number((seg as any).audioConfigId)
+        if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+        if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
+
+        if (commonUploadId == null) commonUploadId = uploadId
+        if (commonAudioConfigId == null) commonAudioConfigId = audioConfigId
+        if (commonUploadId != null && uploadId !== commonUploadId) throw new DomainError('multiple_audio_tracks_not_supported', 'multiple_audio_tracks_not_supported', 400)
+        if (commonAudioConfigId != null && audioConfigId !== commonAudioConfigId) throw new DomainError('multiple_audio_configs_not_supported', 'multiple_audio_configs_not_supported', 400)
+
+        const meta = await loadSystemAudioMeta(uploadId)
+        // Validate audio config exists and is not archived.
+        await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
+
+        const startSeconds = normalizeSeconds((seg as any).startSeconds ?? 0)
+        const endSecondsRaw = (seg as any).endSeconds
+        const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
+        const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
+        const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
+        if (!(end > start)) throw new ValidationError('invalid_seconds')
+        const sourceStartRaw = (seg as any).sourceStartSeconds
+        const sourceStartSeconds = sourceStartRaw == null ? 0 : normalizeSeconds(sourceStartRaw)
+        audioSegments.push({ id, uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end, sourceStartSeconds })
+      }
+    }
+  }
+
+  // Back-compat: audioTrack -> audioSegments (single segment).
+  if (!audioSegments.length) {
+    const audioTrackRaw0 = (raw as any).audioTrack
+    const audioTrackRaw =
+      audioTrackRaw0 && typeof audioTrackRaw0 === 'object' && !Array.isArray(audioTrackRaw0) && legacyCumulative.length
+        ? {
+            ...(audioTrackRaw0 as any),
+            startSeconds: legacyMapMaybe((audioTrackRaw0 as any).startSeconds),
+            endSeconds: legacyMapMaybe((audioTrackRaw0 as any).endSeconds),
+          }
+        : audioTrackRaw0
+    if (audioTrackRaw != null && audioTrackRaw !== null) {
+      if (typeof audioTrackRaw !== 'object' || Array.isArray(audioTrackRaw)) throw new ValidationError('invalid_audio_track')
       if (!(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
       const uploadId = Number((audioTrackRaw as any).uploadId)
       const audioConfigId = Number((audioTrackRaw as any).audioConfigId)
       if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
       if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
       const meta = await loadSystemAudioMeta(uploadId)
-      // Validate audio config exists and is not archived.
       await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
 
       const startSeconds = normalizeSeconds((audioTrackRaw as any).startSeconds ?? 0)
@@ -859,8 +903,16 @@ export async function validateAndNormalizeCreateVideoTimeline(
       const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
       const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
       const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
-      if (!(end > start)) throw new ValidationError('invalid_seconds')
-      audioTrack = { uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end }
+      if (end > start) audioSegments.push({ id: 'audio_track_legacy', uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0 })
+    }
+  }
+
+  audioSegments.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < audioSegments.length; i++) {
+    const seg = audioSegments[i]
+    if (i > 0) {
+      const prev = audioSegments[i - 1]
+      if (seg.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('audio_overlap', 'audio_overlap', 400)
     }
   }
 
@@ -874,6 +926,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     lowerThirds,
     screenTitles,
     narration,
-    audioTrack,
+    audioSegments,
+    audioTrack: null,
   }
 }

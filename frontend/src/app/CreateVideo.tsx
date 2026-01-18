@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getUploadCdnUrl } from '../ui/uploadsCdn'
 import type {
+  AudioSegment,
   AudioTrack,
   Clip,
   Graphic,
@@ -26,6 +27,7 @@ import {
 } from './createVideo/timelineMath'
 import {
   insertClipAtPlayhead,
+  splitAudioSegmentAtPlayhead,
   splitClipAtPlayhead,
   splitGraphicAtPlayhead,
   splitLogoAtPlayhead,
@@ -336,10 +338,70 @@ function migrateLegacyClipFreezeTimeline(tl: Timeline): { timeline: Timeline; ch
   next.lowerThirds = Array.isArray((tl as any).lowerThirds) ? ((tl as any).lowerThirds as any[]).map(mapRange) : []
   next.screenTitles = Array.isArray((tl as any).screenTitles) ? ((tl as any).screenTitles as any[]).map(mapRange) : []
   next.narration = Array.isArray((tl as any).narration) ? ((tl as any).narration as any[]).map(mapRange) : []
-  if ((tl as any).audioTrack && typeof (tl as any).audioTrack === 'object') {
-    next.audioTrack = { ...(tl as any).audioTrack, startSeconds: mapTime((tl as any).audioTrack.startSeconds), endSeconds: mapTime((tl as any).audioTrack.endSeconds) }
+  next.audioSegments = Array.isArray((tl as any).audioSegments) ? ((tl as any).audioSegments as any[]).map(mapRange) : []
+  // Migrate legacy single-track audio into audioSegments.
+  if (!next.audioSegments.length && (tl as any).audioTrack && typeof (tl as any).audioTrack === 'object') {
+    const at: any = (tl as any).audioTrack
+    next.audioSegments = [
+      {
+        id: 'audio_track_legacy',
+        uploadId: Number(at.uploadId),
+        audioConfigId: Number(at.audioConfigId),
+        startSeconds: mapTime(at.startSeconds),
+        endSeconds: mapTime(at.endSeconds),
+        sourceStartSeconds: 0,
+      },
+    ]
   }
+  next.audioTrack = null
   return { timeline: next as Timeline, changed: true }
+}
+
+function migrateLegacyAudioTrackToSegments(tl: Timeline): { timeline: Timeline; changed: boolean } {
+  const rawSegments = (tl as any).audioSegments
+  const hasSegments = Array.isArray(rawSegments) && rawSegments.length
+  const hasTrack = (tl as any).audioTrack && typeof (tl as any).audioTrack === 'object'
+  if (!hasSegments && !hasTrack) return { timeline: tl, changed: false }
+
+  const next: any = cloneTimeline(tl as any)
+  let changed = false
+
+  if (!Array.isArray((next as any).audioSegments)) (next as any).audioSegments = []
+
+  if (!(next as any).audioSegments.length && hasTrack) {
+    const at: any = (tl as any).audioTrack
+    ;(next as any).audioSegments = [
+      {
+        id: 'audio_track_legacy',
+        uploadId: Number(at.uploadId),
+        audioConfigId: Number(at.audioConfigId),
+        startSeconds: roundToTenth(Math.max(0, Number(at.startSeconds || 0))),
+        endSeconds: roundToTenth(Math.max(0, Number(at.endSeconds || 0))),
+        sourceStartSeconds: 0,
+      },
+    ]
+    changed = true
+  }
+
+  // Normalize segment fields.
+  ;(next as any).audioSegments = ((next as any).audioSegments as any[]).map((s: any, i: number) => {
+    const id = String(s?.id || '') || `aud_legacy_${i + 1}`
+    if (id !== String(s?.id || '')) changed = true
+    const out = {
+      ...s,
+      id,
+      uploadId: Number(s?.uploadId),
+      audioConfigId: Number(s?.audioConfigId),
+      startSeconds: roundToTenth(Math.max(0, Number(s?.startSeconds || 0))),
+      endSeconds: roundToTenth(Math.max(0, Number(s?.endSeconds || 0))),
+      sourceStartSeconds: s?.sourceStartSeconds == null ? 0 : roundToTenth(Math.max(0, Number(s?.sourceStartSeconds || 0))),
+    }
+    return out
+  })
+
+  if ((tl as any).audioTrack != null) changed = true
+  next.audioTrack = null
+  return { timeline: changed ? (next as Timeline) : tl, changed }
 }
 
 export default function CreateVideo() {
@@ -357,6 +419,7 @@ export default function CreateVideo() {
     lowerThirds: [],
     screenTitles: [],
     narration: [],
+    audioSegments: [],
     audioTrack: null,
   })
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
@@ -366,7 +429,7 @@ export default function CreateVideo() {
   const [selectedScreenTitleId, setSelectedScreenTitleId] = useState<string | null>(null)
   const [selectedNarrationId, setSelectedNarrationId] = useState<string | null>(null)
   const [selectedStillId, setSelectedStillId] = useState<string | null>(null)
-  const [selectedAudio, setSelectedAudio] = useState(false)
+  const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null)
 
   const playPauseGlyph = (isPlaying: boolean) => (isPlaying ? '||' : '▶')
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
@@ -432,7 +495,7 @@ export default function CreateVideo() {
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
   const [audioConfigsError, setAudioConfigsError] = useState<string | null>(null)
-  const [audioEditor, setAudioEditor] = useState<{ start: number; end: number; audioConfigId: number } | null>(null)
+  const [audioEditor, setAudioEditor] = useState<{ id: string; start: number; end: number; audioConfigId: number } | null>(null)
   const [audioEditorError, setAudioEditorError] = useState<string | null>(null)
   const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; gainDb: number } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
@@ -460,8 +523,10 @@ export default function CreateVideo() {
       selectedGraphicId: string | null
       selectedLogoId: string | null
       selectedLowerThirdId: string | null
+      selectedScreenTitleId: string | null
+      selectedNarrationId: string | null
       selectedStillId: string | null
-      selectedAudio: boolean
+      selectedAudioId: string | null
     }>
   >([])
   const [undoDepth, setUndoDepth] = useState(0)
@@ -580,7 +645,8 @@ export default function CreateVideo() {
         maxStartSeconds?: number
       }
     | {
-        kind: 'audio'
+        kind: 'audioSegment'
+        audioSegmentId: string
         edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
@@ -628,7 +694,7 @@ export default function CreateVideo() {
           selectedLowerThirdId,
           selectedScreenTitleId,
           selectedNarrationId,
-          selectedAudio,
+          selectedAudioId,
           trimDragging,
           panDragging,
           hasTrimDrag: Boolean(trimDragRef.current),
@@ -642,7 +708,7 @@ export default function CreateVideo() {
     [
       debugEnabled,
       panDragging,
-      selectedAudio,
+      selectedAudioId,
       selectedClipId,
       selectedGraphicId,
       selectedLogoId,
@@ -781,9 +847,11 @@ export default function CreateVideo() {
       const e = Number((n as any).endSeconds)
       if (Number.isFinite(e) && e > m) m = e
     }
-    const at: any = (timeline as any).audioTrack
-    const aEnd = at && typeof at === 'object' ? Number(at.endSeconds || 0) : 0
-    if (Number.isFinite(aEnd) && aEnd > m) m = aEnd
+    const segs: any[] = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
+    for (const seg of segs) {
+      const e = Number((seg as any).endSeconds)
+      if (Number.isFinite(e) && e > m) m = e
+    }
     return Math.max(0, roundToTenth(m))
   }, [timeline, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo])
 
@@ -857,8 +925,12 @@ export default function CreateVideo() {
       const e = Number((n as any).endSeconds)
       if (Number.isFinite(e) && e > nEnd) nEnd = e
     }
-    const at = (tl as any).audioTrack
-    const aEnd = at && typeof at === 'object' ? Number((at as any).endSeconds || 0) : 0
+    const segs: any[] = Array.isArray((tl as any).audioSegments) ? (tl as any).audioSegments : []
+    let aEnd = 0
+    for (const seg of segs) {
+      const e = Number((seg as any).endSeconds)
+      if (Number.isFinite(e) && e > aEnd) aEnd = e
+    }
     return Math.max(0, roundToTenth(Math.max(videoEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd, aEnd)))
   }, [])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
@@ -942,6 +1014,39 @@ export default function CreateVideo() {
       endSeconds: roundToTenth(Math.max(0, endSeconds)),
     }
   }, [timeline])
+
+  const audioSegments = useMemo(() => {
+    const raw = (timeline as any).audioSegments
+    if (Array.isArray(raw)) {
+      return (raw as any[]).map((s: any) => ({
+        id: String(s?.id || ''),
+        uploadId: Number(s?.uploadId),
+        audioConfigId: Number(s?.audioConfigId),
+        startSeconds: roundToTenth(Math.max(0, Number(s?.startSeconds || 0))),
+        endSeconds: roundToTenth(Math.max(0, Number(s?.endSeconds || 0))),
+        sourceStartSeconds: s?.sourceStartSeconds == null ? 0 : roundToTenth(Math.max(0, Number(s?.sourceStartSeconds || 0))),
+      }))
+    }
+    if (audioTrack) {
+      return [
+        {
+          id: 'audio_track_legacy',
+          uploadId: audioTrack.uploadId,
+          audioConfigId: audioTrack.audioConfigId,
+          startSeconds: audioTrack.startSeconds,
+          endSeconds: audioTrack.endSeconds,
+          sourceStartSeconds: 0,
+        },
+      ]
+    }
+    return []
+  }, [audioTrack, timeline])
+
+  const selectedAudio = Boolean(selectedAudioId)
+  const selectedAudioSegment = useMemo(() => {
+    if (!selectedAudioId) return null
+    return audioSegments.find((s: any) => String(s.id) === String(selectedAudioId)) || null
+  }, [audioSegments, selectedAudioId])
 
   const audioConfigNameById = useMemo(() => {
     const map: Record<number, string> = {}
@@ -1061,9 +1166,9 @@ export default function CreateVideo() {
       const e = roundToTenth(Number((st as any).endSeconds || 0))
       if (e > s) out.push(s, e)
     }
-    if (audioTrack) {
-      const s = roundToTenth(Number(audioTrack.startSeconds || 0))
-      const e = roundToTenth(Number(audioTrack.endSeconds || 0))
+    for (const a of audioSegments) {
+      const s = roundToTenth(Number((a as any).startSeconds || 0))
+      const e = roundToTenth(Number((a as any).endSeconds || 0))
       if (e > s) out.push(s, e)
     }
     out.push(roundToTenth(totalSeconds))
@@ -1073,7 +1178,7 @@ export default function CreateVideo() {
       uniq.set(tt.toFixed(1), tt)
     }
     return Array.from(uniq.values()).sort((a, b) => a - b)
-  }, [audioTrack, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
+  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
 
 	  const dragHud = useMemo(() => {
 	    if (!trimDragging) return null
@@ -1202,18 +1307,19 @@ export default function CreateVideo() {
       return { kindLabel: 'Screen title', actionLabel, name, start, end, len }
     }
 
-	    if (drag.kind === 'audio') {
-	      if (!audioTrack) return null
-	      const audioName = namesByUploadId[Number(audioTrack.uploadId)] || `Audio ${audioTrack.uploadId}`
-	      const cfgName = audioConfigNameById[Number(audioTrack.audioConfigId)] || `Config ${audioTrack.audioConfigId}`
+	    if (drag.kind === 'audioSegment') {
+	      const seg = audioSegments.find((s: any) => String(s?.id) === String((drag as any).audioSegmentId)) as any
+	      if (!seg) return null
+	      const audioName = namesByUploadId[Number(seg.uploadId)] || `Audio ${seg.uploadId}`
+	      const cfgName = audioConfigNameById[Number(seg.audioConfigId)] || `Config ${seg.audioConfigId}`
 	      const name = `${audioName} • ${cfgName}`
-	      const start = roundToTenth(Number(audioTrack.startSeconds || 0))
-	      const end = roundToTenth(Number(audioTrack.endSeconds || 0))
+	      const start = roundToTenth(Number(seg.startSeconds || 0))
+	      const end = roundToTenth(Number(seg.endSeconds || 0))
 	      const len = Math.max(0, roundToTenth(end - start))
 
-	      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(audioTrack.uploadId)] ?? 0
+	      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(seg.uploadId)] ?? 0
 	      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
-	      const startWithOffsetSeconds = 0
+	      const startWithOffsetSeconds = roundToTenth(Math.max(0, Number(seg.sourceStartSeconds || 0)))
 	      const durationWithOffsetsSeconds = len
 	      const endWithOffsetSeconds = roundToTenth(
 	        totalNoOffsetSeconds > 0
@@ -1253,7 +1359,7 @@ export default function CreateVideo() {
 	    return null
 	  }, [
 	    audioConfigNameById,
-	    audioTrack,
+	    audioSegments,
 	    clipStarts,
 	    graphics,
 	    logos,
@@ -1936,22 +2042,36 @@ export default function CreateVideo() {
   useEffect(() => {
     const prevTotal = Number(prevTotalSecondsRef.current || 0)
     prevTotalSecondsRef.current = totalSeconds
-    if (!audioTrack) return
+    if (!audioSegments.length) return
     const nextTotal = Math.max(0, roundToTenth(totalSeconds))
     if (!(nextTotal > 0)) return
 
-    const curStart = roundToTenth(Number(audioTrack.startSeconds || 0))
-    const curEnd = roundToTenth(Number(audioTrack.endSeconds || 0))
+    const sorted = audioSegments
+      .slice()
+      .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+    const last = sorted[sorted.length - 1]
+    if (!last) return
+    const curStart = roundToTenth(Number(last.startSeconds || 0))
+    const curEnd = roundToTenth(Number(last.endSeconds || 0))
     const shouldExtendToEnd = prevTotal > 0 && curEnd >= prevTotal - 0.2 && nextTotal > prevTotal + 1e-6
     const nextEnd = shouldExtendToEnd ? nextTotal : Math.min(curEnd, nextTotal)
     const nextStart = Math.min(curStart, nextEnd - 0.2)
     if (Math.abs(nextStart - curStart) < 0.05 && Math.abs(nextEnd - curEnd) < 0.05) return
     setTimeline((prev) => {
-      const at = (prev as any).audioTrack
-      if (!at || typeof at !== 'object') return prev
-      return { ...prev, audioTrack: { ...(at as any), startSeconds: nextStart, endSeconds: nextEnd } }
+      const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
+      if (!prevSegs.length) return prev
+      const prevSorted = prevSegs
+        .slice()
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const lastSeg: any = prevSorted[prevSorted.length - 1]
+      if (!lastSeg) return prev
+      const nextSegs = prevSegs.map((s: any) => {
+        if (String(s.id) !== String(lastSeg.id)) return s
+        return { ...s, startSeconds: nextStart, endSeconds: nextEnd }
+      })
+      return { ...(prev as any), audioSegments: nextSegs } as any
     })
-  }, [audioTrack, totalSeconds])
+  }, [audioSegments, totalSeconds])
 
   useEffect(() => {
     const onUp = () => stopNudgeRepeat()
@@ -1967,12 +2087,32 @@ export default function CreateVideo() {
 
   const snapshotUndo = useCallback(() => {
     const stack = undoStackRef.current
-    const snapshot = { timeline: cloneTimeline(timeline), selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedStillId, selectedAudio }
+    const snapshot = {
+      timeline: cloneTimeline(timeline),
+      selectedClipId,
+      selectedGraphicId,
+      selectedLogoId,
+      selectedLowerThirdId,
+      selectedScreenTitleId,
+      selectedNarrationId,
+      selectedStillId,
+      selectedAudioId,
+    }
     stack.push(snapshot)
     // Cap memory and keep behavior predictable.
     if (stack.length > 50) stack.splice(0, stack.length - 50)
     setUndoDepth(stack.length)
-  }, [selectedAudio, selectedClipId, selectedGraphicId, selectedLogoId, selectedLowerThirdId, selectedStillId, timeline])
+  }, [
+    selectedAudioId,
+    selectedClipId,
+    selectedGraphicId,
+    selectedLogoId,
+    selectedLowerThirdId,
+    selectedNarrationId,
+    selectedScreenTitleId,
+    selectedStillId,
+    timeline,
+  ])
 
   const snapshotUndoRef = useRef(snapshotUndo)
   useEffect(() => {
@@ -1991,8 +2131,10 @@ export default function CreateVideo() {
       setSelectedGraphicId(snap.selectedGraphicId)
       setSelectedLogoId(snap.selectedLogoId)
       setSelectedLowerThirdId((snap as any).selectedLowerThirdId || null)
+      setSelectedScreenTitleId((snap as any).selectedScreenTitleId || null)
+      setSelectedNarrationId((snap as any).selectedNarrationId || null)
       setSelectedStillId(snap.selectedStillId)
-      setSelectedAudio(Boolean(snap.selectedAudio))
+      setSelectedAudioId((snap as any).selectedAudioId || null)
     } finally {
       hydratingRef.current = false
     }
@@ -2699,79 +2841,80 @@ export default function CreateVideo() {
       }
     }
 
-    if (audioTrack) {
-      const start = clamp(Number(audioTrack.startSeconds || 0), 0, Math.max(0, totalSeconds))
-      const end = clamp(Number(audioTrack.endSeconds || 0), 0, Math.max(0, totalSeconds))
+    for (let i = 0; i < audioSegments.length; i++) {
+      const seg: any = audioSegments[i]
+      const start = clamp(Number(seg.startSeconds || 0), 0, Math.max(0, totalSeconds))
+      const end = clamp(Number(seg.endSeconds || 0), 0, Math.max(0, totalSeconds))
       const len = Math.max(0, end - start)
-      if (len > 0.01) {
-        const x = padPx + start * pxPerSecond - scrollLeft
-        const w = Math.max(8, len * pxPerSecond)
-        if (!(x > wCss + 4 || x + w < -4)) {
-          const isSelected = Boolean(selectedAudio)
-          const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'audio'
-          const activeEdge = isDragging ? String((activeDrag as any).edge) : null
-          const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
-          const showHandles = (isSelected || isDragging) && w >= 28
-          const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
-          ctx.fillStyle = 'rgba(48,209,88,0.18)'
-          roundRect(ctx, x, audioY, w, pillH, 10)
-          ctx.fill()
+      if (len <= 0.01) continue
+      const x = padPx + start * pxPerSecond - scrollLeft
+      const w = Math.max(8, len * pxPerSecond)
+      if (x > wCss + 4 || x + w < -4) continue
 
-          ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(48,209,88,0.55)'
-          ctx.lineWidth = 1
-          roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
-          ctx.stroke()
+      const isSelected = String(seg.id) === String(selectedAudioId || '')
+      const isDragging =
+        Boolean(activeDrag) && (activeDrag as any).kind === 'audioSegment' && String((activeDrag as any).audioSegmentId) === String(seg.id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
+      const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      ctx.fillStyle = 'rgba(48,209,88,0.18)'
+      roundRect(ctx, x, audioY, w, pillH, 10)
+      ctx.fill()
 
-          if (isResizing) {
-            ctx.save()
-            ctx.setLineDash([6, 4])
-            ctx.strokeStyle = 'rgba(212,175,55,0.92)'
-            ctx.lineWidth = 2
-            roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
-            ctx.stroke()
-            ctx.restore()
-          }
+      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(48,209,88,0.55)'
+      ctx.lineWidth = 1
+      roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
+      ctx.stroke()
 
-          const audioName = namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`
-          const cfgName = audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`
-          const label = `${audioName} • ${cfgName}`
-          ctx.fillStyle = '#fff'
-          const padLeft = showHandles ? 6 + handleSize + 10 : 12
-          const padRight = showHandles ? 6 + handleSize + 10 : 12
-          const maxTextW = Math.max(0, w - padLeft - padRight)
-          if (maxTextW >= 20) {
-            const clipped = ellipsizeText(ctx, label, maxTextW)
-            ctx.fillText(clipped, x + padLeft, audioY + pillH / 2)
-          }
+      if (isResizing) {
+        ctx.save()
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = 'rgba(212,175,55,0.92)'
+        ctx.lineWidth = 2
+        roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+        ctx.restore()
+      }
 
-          if (showHandles) {
-            ctx.fillStyle = 'rgba(212,175,55,0.95)'
-            const hs = handleSize
-            const hy = audioY + Math.floor((pillH - handleSize) / 2)
-            const hxL = x + 6
-            const hxR = x + w - 6 - hs
-            roundRect(ctx, hxL, hy, hs, hs, 4)
-            ctx.fill()
-            roundRect(ctx, hxR, hy, hs, hs, 4)
-            ctx.fill()
-          }
+      const audioName = namesByUploadId[Number(seg.uploadId)] || `Audio ${seg.uploadId}`
+      const cfgName = audioConfigNameById[Number(seg.audioConfigId)] || `Config ${seg.audioConfigId}`
+      const label = `${audioName} • ${cfgName}`
+      ctx.fillStyle = '#fff'
+      const padLeft = showHandles ? 6 + handleSize + 10 : 12
+      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const maxTextW = Math.max(0, w - padLeft - padRight)
+      if (maxTextW >= 20) {
+        const clipped = ellipsizeText(ctx, label, maxTextW)
+        ctx.fillText(clipped, x + padLeft, audioY + pillH / 2)
+      }
 
-          if (isResizing) {
-            ctx.fillStyle = 'rgba(212,175,55,0.95)'
-            const barW = 5
-            const by = audioY + 3
-            const bh = pillH - 6
-            if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-            if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
-          }
-        }
+      if (showHandles) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const hs = handleSize
+        const hy = audioY + Math.floor((pillH - handleSize) / 2)
+        const hxL = x + 6
+        const hxR = x + w - 6 - hs
+        roundRect(ctx, hxL, hy, hs, hs, 4)
+        ctx.fill()
+        roundRect(ctx, hxR, hy, hs, hs, 4)
+        ctx.fill()
+      }
+
+      if (isResizing) {
+        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const barW = 5
+        const by = audioY + 3
+        const bh = pillH - 6
+        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
       }
     }
   }, [
     audioEnvelopeByUploadId,
     audioEnvelopeStatusByUploadId,
     audioConfigNameById,
-    audioTrack,
+    audioSegments,
     clipStarts,
     graphics,
     logos,
@@ -2781,7 +2924,7 @@ export default function CreateVideo() {
     stills,
     namesByUploadId,
     pxPerSecond,
-    selectedAudio,
+    selectedAudioId,
     selectedClipId,
     selectedClipIndex,
     selectedGraphicId,
@@ -2860,20 +3003,32 @@ export default function CreateVideo() {
 	                gainDb: n?.gainDb == null ? 0 : Number(n?.gainDb),
 	              }))
 	            : [],
+	          audioSegments: Array.isArray((tlRaw as any)?.audioSegments)
+	            ? ((tlRaw as any).audioSegments as any[]).map((s: any, i: number) => ({
+	                ...s,
+	                id: String(s?.id || '') || `aud_legacy_${i + 1}`,
+	                uploadId: Number(s?.uploadId),
+	                audioConfigId: Number(s?.audioConfigId),
+	                startSeconds: roundToTenth(Number(s?.startSeconds || 0)),
+	                endSeconds: roundToTenth(Number(s?.endSeconds || 0)),
+	                sourceStartSeconds: s?.sourceStartSeconds == null ? 0 : roundToTenth(Number(s?.sourceStartSeconds || 0)),
+	              }))
+	            : [],
 	          audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
 	        }
-        const migrated = migrateLegacyClipFreezeTimeline(tl)
-        const tlFinal = migrated.timeline
+        const migratedFreeze = migrateLegacyClipFreezeTimeline(tl)
+        const migratedAudio = migrateLegacyAudioTrackToSegments(migratedFreeze.timeline)
+        const tlFinal = migratedAudio.timeline
         hydratingRef.current = true
         try {
           setProject(pj)
           setTimeline(tlFinal)
           // If we migrated a legacy timeline, leave lastSavedRef pointing at the pre-migration JSON so
           // the debounced autosave will persist the normalized form.
-          lastSavedRef.current = JSON.stringify(migrated.changed ? tl : tlFinal)
+          lastSavedRef.current = JSON.stringify(migratedFreeze.changed || migratedAudio.changed ? tl : tlFinal)
           undoStackRef.current = []
           setUndoDepth(0)
-          setSelectedAudio(false)
+          setSelectedAudioId(null)
         } finally {
           hydratingRef.current = false
         }
@@ -2951,8 +3106,7 @@ export default function CreateVideo() {
 		    const stillIds = (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as any[]) : [])
 		      .map((s) => Number(s?.uploadId))
 		      .filter((n) => Number.isFinite(n) && n > 0)
-		    const audioUploadId = Number((timeline as any).audioTrack?.uploadId)
-		    const audioIds = Number.isFinite(audioUploadId) && audioUploadId > 0 ? [audioUploadId] : []
+		    const audioIds = audioSegments.map((a: any) => Number((a as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
 		    if (!ids.length) return
 		    const durationNeeded = new Set<number>([...clipIds, ...narrationIds, ...audioIds])
@@ -2992,7 +3146,7 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-	  }, [durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, narration, timeline.audioTrack, timeline.clips, timeline.stills])
+	  }, [audioSegments, durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, narration, timeline.clips, timeline.stills])
 
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
@@ -3154,7 +3308,7 @@ export default function CreateVideo() {
     setSelectedLogoId(null)
     setSelectedLowerThirdId(null)
     setSelectedScreenTitleId(null)
-    setSelectedAudio(false)
+    setSelectedAudioId(null)
     setClipEditor(null)
     setClipEditorError(null)
     setPreviewObjectFit('cover')
@@ -3605,10 +3759,10 @@ export default function CreateVideo() {
   // If a timeline already has an audio track (hydrated from a saved draft), prefetch audio configs
   // so labels render as "{audio_name} * {audioConfig_name}" without requiring opening the editor.
   useEffect(() => {
-    if (!audioTrack) return
+    if (!audioSegments.length) return
     if (audioConfigsLoaded) return
     void ensureAudioConfigs()
-  }, [audioConfigsLoaded, audioTrack, ensureAudioConfigs])
+  }, [audioConfigsLoaded, audioSegments.length, ensureAudioConfigs])
 
   // If a timeline already has logo segments (hydrated from a saved draft), prefetch logo configs so
   // the Logo Properties editor can show the config list immediately.
@@ -3694,7 +3848,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       setPickOpen(false)
       setAddStep('type')
     },
@@ -3747,7 +3901,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       setPickOpen(false)
       setAddStep('type')
     },
@@ -3832,7 +3986,7 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       setSelectedLogoId(id)
       setSelectedLowerThirdId(null)
       setPickOpen(false)
@@ -3926,7 +4080,7 @@ export default function CreateVideo() {
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       setSelectedLowerThirdId(id)
       setPickOpen(false)
       setAddStep('type')
@@ -4022,7 +4176,7 @@ export default function CreateVideo() {
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(id)
@@ -4050,7 +4204,7 @@ export default function CreateVideo() {
 
       const cfgs = Array.isArray(audioConfigs) ? audioConfigs : []
       const pickDefault = (): number | null => {
-        const existing = audioTrack?.audioConfigId
+        const existing = audioSegments.length ? Number((audioSegments[0] as any).audioConfigId) : null
         if (existing && cfgs.some((c) => Number((c as any).id) === Number(existing))) return Number(existing)
         const preferred = cfgs.find((c) => String((c as any).name || '').trim().toLowerCase() === 'mix (medium)')
         const first = preferred || cfgs[0] || null
@@ -4065,13 +4219,27 @@ export default function CreateVideo() {
 
       const end = roundToTenth(Math.max(0, totalSeconds))
       snapshotUndo()
-      setTimeline((prev) => ({ ...prev, audioTrack: { uploadId: id, audioConfigId, startSeconds: 0, endSeconds: end } }))
+      const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      setTimeline((prev) => ({
+        ...(prev as any),
+        audioTrack: null,
+        audioSegments: [
+          {
+            id: segId,
+            uploadId: id,
+            audioConfigId,
+            startSeconds: 0,
+            endSeconds: end,
+            sourceStartSeconds: 0,
+          },
+        ],
+      }))
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
-      setSelectedAudio(true)
+      setSelectedAudioId(segId)
       setPickOpen(false)
       setAddStep('type')
       try {
@@ -4084,7 +4252,7 @@ export default function CreateVideo() {
       } catch {}
       setAudioPreviewPlayingId(null)
     },
-    [audioConfigs, audioTrack?.audioConfigId, snapshotUndo, totalSeconds]
+    [audioConfigs, audioSegments, snapshotUndo, totalSeconds]
   )
 
   const addNarrationFromFile = useCallback(
@@ -4141,7 +4309,7 @@ export default function CreateVideo() {
         setSelectedLowerThirdId(null)
         setSelectedScreenTitleId(null)
         setSelectedStillId(null)
-        setSelectedAudio(false)
+        setSelectedAudioId(null)
 
         setPickOpen(false)
         setAddStep('type')
@@ -4158,17 +4326,18 @@ export default function CreateVideo() {
   )
 
   const openAudioEditor = useCallback(async () => {
-    if (!audioTrack) return
+    if (!selectedAudioSegment) return
     setAudioEditorError(null)
     try {
       await ensureAudioConfigs()
     } catch {}
     setAudioEditor({
-      start: Number(audioTrack.startSeconds),
-      end: Number(audioTrack.endSeconds),
-      audioConfigId: Number(audioTrack.audioConfigId),
+      id: String(selectedAudioSegment.id),
+      start: Number(selectedAudioSegment.startSeconds),
+      end: Number(selectedAudioSegment.endSeconds),
+      audioConfigId: Number(selectedAudioSegment.audioConfigId),
     })
-  }, [audioTrack, ensureAudioConfigs])
+  }, [ensureAudioConfigs, selectedAudioSegment])
 
   const saveAudioEditor = useCallback(() => {
     if (!audioEditor) return
@@ -4191,17 +4360,30 @@ export default function CreateVideo() {
       setAudioEditorError(`End exceeds timeline (${totalSeconds.toFixed(1)}s).`)
       return
     }
+    for (const other of audioSegments) {
+      if (String((other as any).id) === String(audioEditor.id)) continue
+      const os = roundToTenth(Number((other as any).startSeconds || 0))
+      const oe = roundToTenth(Number((other as any).endSeconds || 0))
+      if (start < oe - 1e-6 && end > os + 1e-6) {
+        setAudioEditorError('Audio cannot overlap in time.')
+        return
+      }
+    }
     snapshotUndo()
     setTimeline((prev) => {
-      const at = (prev as any).audioTrack
-      if (!at || typeof at !== 'object') return prev
+      const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
+      const idx = prevSegs.findIndex((s: any) => String(s?.id) === String(audioEditor.id))
+      if (idx < 0) return prev
       const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
       const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, totalSeconds))
-      return { ...prev, audioTrack: { ...(at as any), startSeconds: safeStart, endSeconds: safeEnd, audioConfigId } }
+      const nextSegs = prevSegs.slice()
+      nextSegs[idx] = { ...(prevSegs[idx] as any), startSeconds: safeStart, endSeconds: safeEnd, audioConfigId }
+      nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
     })
     setAudioEditor(null)
     setAudioEditorError(null)
-  }, [audioEditor, snapshotUndo, totalSeconds])
+  }, [audioEditor, audioSegments, snapshotUndo, totalSeconds])
 
 	  const saveNarrationEditor = useCallback(() => {
 	    if (!narrationEditor) return
@@ -4286,7 +4468,26 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(null)
       setSelectedStillId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
+      return
+    }
+    if (selectedAudioId) {
+      const res = splitAudioSegmentAtPlayhead(timeline as any, selectedAudioId)
+      const prevSegs = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
+      const nextSegs = Array.isArray((res.timeline as any).audioSegments) ? (res.timeline as any).audioSegments : []
+      if (res.timeline === (timeline as any) && res.selectedAudioId === selectedAudioId) return
+      if (nextSegs === prevSegs) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedAudioId(res.selectedAudioId)
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
       return
     }
     if (selectedClipId) {
@@ -4300,7 +4501,7 @@ export default function CreateVideo() {
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       return
     }
     if (selectedLogoId) {
@@ -4316,7 +4517,7 @@ export default function CreateVideo() {
       setSelectedGraphicId(null)
       setSelectedLogoId(res.selectedLogoId)
       setSelectedLowerThirdId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       return
     }
     if (selectedLowerThirdId) {
@@ -4333,7 +4534,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(res.selectedLowerThirdId)
       setSelectedScreenTitleId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       return
     }
     if (selectedScreenTitleId) {
@@ -4350,7 +4551,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(res.selectedScreenTitleId)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
       return
     }
     if (selectedGraphicId) {
@@ -4367,7 +4568,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(null)
-      setSelectedAudio(false)
+      setSelectedAudioId(null)
     }
   }, [
     clipStarts,
@@ -4384,11 +4585,14 @@ export default function CreateVideo() {
   ])
 
   const deleteSelected = useCallback(() => {
-    if (selectedAudio) {
-      if (!audioTrack) return
+    if (selectedAudioId) {
       snapshotUndo()
-      setTimeline((prev) => ({ ...prev, audioTrack: null }))
-      setSelectedAudio(false)
+      setTimeline((prev) => {
+        const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
+        const nextSegs = prevSegs.filter((s: any) => String(s?.id) !== String(selectedAudioId))
+        return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
+      })
+      setSelectedAudioId(null)
       return
     }
 
@@ -4489,7 +4693,7 @@ export default function CreateVideo() {
     setSelectedGraphicId(null)
     setSelectedLogoId(null)
     setSelectedStillId(null)
-    setSelectedAudio(false)
+    setSelectedAudioId(null)
     // Keep selection stable by selecting the next clip (or previous if we deleted the last).
     setSelectedClipId((prevSel) => {
       const wasSelected = prevSel === target.id
@@ -4499,7 +4703,6 @@ export default function CreateVideo() {
       return nextClip ? nextClip.id : null
     })
   }, [
-    audioTrack,
     clipStarts,
     playhead,
     selectedAudio,
@@ -4623,17 +4826,14 @@ export default function CreateVideo() {
         return g
       })
 
-      const prevAudio = (tl as any).audioTrack && typeof (tl as any).audioTrack === 'object' ? ((tl as any).audioTrack as any) : null
-      const nextAudio =
-        prevAudio && typeof prevAudio === 'object'
-          ? (() => {
-              const a = roundToTenth(Number(prevAudio.startSeconds || 0))
-              const b = roundToTenth(Number(prevAudio.endSeconds || 0))
-              if (a + 1e-6 >= at) return { ...prevAudio, startSeconds: roundToTenth(a + delta), endSeconds: roundToTenth(b + delta) }
-              if (b > at + 1e-6) return { ...prevAudio, endSeconds: roundToTenth(b + delta) }
-              return prevAudio
-            })()
-          : prevAudio
+      const prevAudioSegs: any[] = Array.isArray((tl as any).audioSegments) ? (tl as any).audioSegments : []
+      const nextAudioSegments: any[] = prevAudioSegs.map((seg: any) => {
+        const a = roundToTenth(Number(seg?.startSeconds || 0))
+        const b = roundToTenth(Number(seg?.endSeconds || 0))
+        if (a + 1e-6 >= at) return { ...(seg as any), startSeconds: roundToTenth(a + delta), endSeconds: roundToTenth(b + delta) }
+        if (b > at + 1e-6) return { ...(seg as any), endSeconds: roundToTenth(b + delta) }
+        return seg
+      })
 
       const nextPlayhead = roundToTenth(Number(tl.playheadSeconds || 0) + (Number(tl.playheadSeconds || 0) + 1e-6 >= at ? delta : 0))
 
@@ -4642,7 +4842,10 @@ export default function CreateVideo() {
         clips: nextClips.slice().sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
         stills: nextStills.slice().sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
         graphics: nextGraphics.slice().sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
-        audioTrack: nextAudio,
+        audioSegments: nextAudioSegments
+          .slice()
+          .sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
+        audioTrack: null,
         playheadSeconds: nextPlayhead,
       }
       const nextTotal = computeTotalSecondsForTimeline(out as any)
@@ -4704,7 +4907,7 @@ export default function CreateVideo() {
         setSelectedStillId(stillId)
         setSelectedClipId(null)
         setSelectedGraphicId(null)
-        setSelectedAudio(false)
+        setSelectedAudioId(null)
         setClipEditor(null)
       } catch (e: any) {
         const msg = String(e?.message || 'failed')
@@ -5387,11 +5590,13 @@ export default function CreateVideo() {
           return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
         }
 
-        if (drag.kind === 'audio') {
-          const at = (prev as any).audioTrack
-          if (!at || typeof at !== 'object') return prev
-          let startS = Number((at as any).startSeconds || 0)
-          let endS = Number((at as any).endSeconds || 0)
+        if (drag.kind === 'audioSegment') {
+          const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
+          const idx = prevSegs.findIndex((s: any) => String(s?.id) === String((drag as any).audioSegmentId))
+          if (idx < 0) return prev
+          const s0: any = prevSegs[idx]
+          let startS = roundToTenth(Number(s0.startSeconds || 0))
+          let endS = roundToTenth(Number(s0.endSeconds || 0))
           const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
           if (drag.edge === 'start') {
             startS = clamp(
@@ -5399,20 +5604,25 @@ export default function CreateVideo() {
               drag.minStartSeconds,
               Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
             )
+            endS = roundToTenth(Number(drag.startEndSeconds))
           } else if (drag.edge === 'end') {
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
               drag.maxEndSeconds
             )
+            startS = roundToTenth(Number(drag.startStartSeconds))
           } else {
             const maxStart =
               drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
           }
-          const nextAt = { ...(at as any), startSeconds: startS, endSeconds: endS }
-          return { ...prev, audioTrack: nextAt }
+          if (!(endS > startS)) endS = roundToTenth(startS + minLen)
+          const nextSegs = prevSegs.slice()
+          nextSegs[idx] = { ...(s0 as any), startSeconds: startS, endSeconds: endS }
+          nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+          return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
         }
 
         if (drag.kind === 'logo') {
@@ -6087,7 +6297,7 @@ export default function CreateVideo() {
                     setSelectedScreenTitleId(null)
                     setSelectedNarrationId(null)
                     setSelectedStillId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
                     trimDragRef.current = {
@@ -6164,7 +6374,7 @@ export default function CreateVideo() {
                     setSelectedScreenTitleId(null)
                     setSelectedNarrationId(null)
                     setSelectedStillId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
                     trimDragRef.current = {
@@ -6215,7 +6425,7 @@ export default function CreateVideo() {
                       setSelectedLogoId(null)
                       setSelectedLowerThirdId(null)
                       setSelectedStillId(null)
-                      setSelectedAudio(false)
+                      setSelectedAudioId(null)
 
                       trimDragLockScrollLeftRef.current = sc.scrollLeft
                       const dur = Math.max(0.2, roundToTenth(e2 - s))
@@ -6247,7 +6457,7 @@ export default function CreateVideo() {
                     setSelectedLowerThirdId(null)
                     setSelectedNarrationId(null)
                     setSelectedStillId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
                     trimDragRef.current = {
@@ -6288,7 +6498,7 @@ export default function CreateVideo() {
                       setSelectedClipId(null)
                       setSelectedLogoId(null)
                       setSelectedStillId(null)
-                      setSelectedAudio(false)
+                      setSelectedAudioId(null)
 
                       trimDragLockScrollLeftRef.current = sc.scrollLeft
                       const sorted = graphics.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
@@ -6323,7 +6533,7 @@ export default function CreateVideo() {
                     setSelectedGraphicId(g.id)
                     setSelectedClipId(null)
                     setSelectedLogoId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
                     const sorted = graphics.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
@@ -6394,7 +6604,7 @@ export default function CreateVideo() {
                       setSelectedLowerThirdId(null)
                       setSelectedScreenTitleId(null)
                       setSelectedStillId(null)
-                      setSelectedAudio(false)
+                      setSelectedAudioId(null)
 
                       const dur = Math.max(0.2, roundToTenth(e2 - s))
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
@@ -6429,7 +6639,7 @@ export default function CreateVideo() {
                     setSelectedLowerThirdId(null)
                     setSelectedScreenTitleId(null)
                     setSelectedStillId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
 	                    trimDragRef.current = {
@@ -6452,9 +6662,14 @@ export default function CreateVideo() {
                   }
 
                   if (withinAudio) {
-                    if (!audioTrack) return
-                    const s = Number(audioTrack.startSeconds || 0)
-                    const e2 = Number(audioTrack.endSeconds || 0)
+                    const seg = audioSegments.find((a: any) => {
+                      const ss = Number(a?.startSeconds || 0)
+                      const ee = Number(a?.endSeconds || 0)
+                      return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
+                    }) as any
+                    if (!seg) return
+                    const s = Number(seg.startSeconds || 0)
+                    const e2 = Number(seg.endSeconds || 0)
                     const leftX = padPx + s * pxPerSecond
                     const rightX = padPx + e2 * pxPerSecond
                     const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
@@ -6462,61 +6677,78 @@ export default function CreateVideo() {
                     const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
                     if (!inside) return
 
+                    const capEnd = Math.max(0, totalSeconds)
+                    const sorted = audioSegments
+                      .slice()
+                      .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+                    const pos = sorted.findIndex((x: any) => String(x?.id) === String(seg.id))
+                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+
                     // Slide (body drag) only when already selected.
                     if (!nearLeft && !nearRight) {
-                      if (!selectedAudio) return
+                      if (String(selectedAudioId || '') !== String(seg.id)) return
                       e.preventDefault()
                       snapshotUndo()
-                      setSelectedAudio(true)
+                      setSelectedAudioId(String(seg.id))
                       setSelectedClipId(null)
                       setSelectedGraphicId(null)
                       setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
                       setSelectedStillId(null)
 
                       const dur = Math.max(0.2, roundToTenth(e2 - s))
-                      const maxEndSeconds = Math.max(0, totalSeconds)
-                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), 0, maxEndSeconds)
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
                       trimDragLockScrollLeftRef.current = sc.scrollLeft
                       trimDragRef.current = {
-                        kind: 'audio',
+                        kind: 'audioSegment',
+                        audioSegmentId: String(seg.id),
                         edge: 'move',
                         pointerId: e.pointerId,
                         startClientX: e.clientX,
                         startStartSeconds: s,
                         startEndSeconds: e2,
-                        minStartSeconds: 0,
+                        minStartSeconds,
                         maxEndSeconds,
                         maxStartSeconds,
                       }
                       setTrimDragging(true)
                       try { sc.setPointerCapture(e.pointerId) } catch {}
-                      dbg('startTrimDrag', { kind: 'audio', edge: 'move' })
+                      dbg('startTrimDrag', { kind: 'audioSegment', edge: 'move', id: String(seg.id) })
                       return
                     }
 
                     e.preventDefault()
                     snapshotUndo()
-                    setSelectedAudio(true)
+                    setSelectedAudioId(String(seg.id))
                     setSelectedClipId(null)
                     setSelectedGraphicId(null)
                     setSelectedLogoId(null)
+                    setSelectedLowerThirdId(null)
+                    setSelectedScreenTitleId(null)
+                    setSelectedNarrationId(null)
                     setSelectedStillId(null)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
                     trimDragRef.current = {
-                      kind: 'audio',
+                      kind: 'audioSegment',
+                      audioSegmentId: String(seg.id),
                       edge: nearLeft ? 'start' : 'end',
                       pointerId: e.pointerId,
                       startClientX: e.clientX,
                       startStartSeconds: s,
                       startEndSeconds: e2,
-                      minStartSeconds: 0,
-                      maxEndSeconds: Math.max(0, totalSeconds),
+                      minStartSeconds,
+                      maxEndSeconds,
                     }
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('startTrimDrag', { kind: 'audio', edge: nearLeft ? 'start' : 'end' })
+                    dbg('startTrimDrag', { kind: 'audioSegment', edge: nearLeft ? 'start' : 'end', id: String(seg.id) })
                     return
                   }
 
@@ -6560,7 +6792,7 @@ export default function CreateVideo() {
                         setSelectedStillId(String((still as any).id))
                         setSelectedClipId(null)
                         setSelectedGraphicId(null)
-                        setSelectedAudio(false)
+                        setSelectedAudioId(null)
 
                         trimDragLockScrollLeftRef.current = sc.scrollLeft
                         trimDragRef.current = {
@@ -6586,7 +6818,7 @@ export default function CreateVideo() {
                       setSelectedStillId(String((still as any).id))
                       setSelectedClipId(null)
                       setSelectedGraphicId(null)
-                      setSelectedAudio(false)
+                      setSelectedAudioId(null)
 
                       trimDragLockScrollLeftRef.current = sc.scrollLeft
                       trimDragRef.current = {
@@ -6629,7 +6861,7 @@ export default function CreateVideo() {
                     setSelectedClipId(clip.id)
                     setSelectedGraphicId(null)
                     setSelectedStillId(null)
-                    setSelectedAudio(false)
+                    setSelectedAudioId(null)
 
                     const capEnd = 20 * 60
                     const clipRanges = timeline.clips.map((c, i) => ({
@@ -6675,7 +6907,7 @@ export default function CreateVideo() {
                   snapshotUndo()
                   setSelectedClipId(clip.id)
                   setSelectedGraphicId(null)
-                  setSelectedAudio(false)
+                  setSelectedAudioId(null)
                   trimDragLockScrollLeftRef.current = sc.scrollLeft
                   const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
                   const capEnd = 20 * 60
@@ -6753,10 +6985,10 @@ export default function CreateVideo() {
 	                    if (g) return
 	                  }
                   if (withinAudio) {
-                    if (audioTrack) {
-                      const s = Number(audioTrack.startSeconds || 0)
-                      const e2 = Number(audioTrack.endSeconds || 0)
-                      if (t >= s && t <= e2) return
+                    for (const a of audioSegments) {
+                      const s = Number((a as any).startSeconds || 0)
+                      const e2 = Number((a as any).endSeconds || 0)
+                      if (Number.isFinite(s) && Number.isFinite(e2) && e2 > s && t + 1e-6 >= s && t <= e2 - 1e-6) return
                     }
                   }
                   if (withinVideo) {
@@ -6816,7 +7048,7 @@ export default function CreateVideo() {
 		                    setSelectedScreenTitleId(null)
 		                    setSelectedNarrationId(null)
 		                    setSelectedStillId(null)
-		                    setSelectedAudio(false)
+		                    setSelectedAudioId(null)
 		                    return
 		                  }
 
@@ -6830,7 +7062,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    const s = Number((l as any).startSeconds || 0)
@@ -6845,7 +7077,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    if (selectedLogoId === String((l as any).id)) {
@@ -6860,7 +7092,7 @@ export default function CreateVideo() {
 	                    setSelectedScreenTitleId(null)
 	                    setSelectedNarrationId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
 
@@ -6874,7 +7106,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    const s = Number((lt as any).startSeconds || 0)
@@ -6889,7 +7121,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    if (selectedLowerThirdId === String((lt as any).id)) {
@@ -6909,7 +7141,7 @@ export default function CreateVideo() {
 	                    setSelectedScreenTitleId(null)
 	                    setSelectedNarrationId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
 
@@ -6923,7 +7155,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    const s = Number((st as any).startSeconds || 0)
@@ -6938,7 +7170,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
 	                    if (selectedScreenTitleId === String((st as any).id)) {
@@ -6959,7 +7191,7 @@ export default function CreateVideo() {
 	                    setSelectedLowerThirdId(null)
 	                    setSelectedNarrationId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
 
@@ -6973,7 +7205,7 @@ export default function CreateVideo() {
 		                      setSelectedScreenTitleId(null)
 		                      setSelectedNarrationId(null)
 		                      setSelectedStillId(null)
-		                      setSelectedAudio(false)
+		                      setSelectedAudioId(null)
 		                      return
 		                    }
 		                    const s = Number((n as any).startSeconds || 0)
@@ -6988,7 +7220,7 @@ export default function CreateVideo() {
 		                      setSelectedScreenTitleId(null)
 		                      setSelectedNarrationId(null)
 		                      setSelectedStillId(null)
-		                      setSelectedAudio(false)
+		                      setSelectedAudioId(null)
 		                      return
 		                    }
 		                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
@@ -7013,7 +7245,7 @@ export default function CreateVideo() {
 		                    setSelectedLowerThirdId(null)
 		                    setSelectedScreenTitleId(null)
 		                    setSelectedStillId(null)
-		                    setSelectedAudio(false)
+		                    setSelectedAudioId(null)
 		                    return
 		                  }
 
@@ -7027,7 +7259,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
                     const s = Number((g as any).startSeconds || 0)
@@ -7042,7 +7274,7 @@ export default function CreateVideo() {
 	                      setSelectedScreenTitleId(null)
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      return
 	                    }
                     if (selectedGraphicId === g.id) {
@@ -7057,13 +7289,18 @@ export default function CreateVideo() {
 	                    setSelectedScreenTitleId(null)
 	                    setSelectedNarrationId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
 
 		                  if (withinAudio) {
-		                    if (!audioTrack) {
-		                      setSelectedAudio(false)
+		                    const seg = audioSegments.find((a: any) => {
+		                      const ss = Number(a?.startSeconds || 0)
+		                      const ee = Number(a?.endSeconds || 0)
+		                      return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
+		                    }) as any
+		                    if (!seg) {
+		                      setSelectedAudioId(null)
 		                      setSelectedClipId(null)
 		                      setSelectedGraphicId(null)
 		                      setSelectedLogoId(null)
@@ -7073,12 +7310,12 @@ export default function CreateVideo() {
 		                      setSelectedStillId(null)
 		                      return
 		                    }
-                    const s = Number(audioTrack.startSeconds || 0)
-                    const e2 = Number(audioTrack.endSeconds || 0)
+                    const s = Number(seg.startSeconds || 0)
+                    const e2 = Number(seg.endSeconds || 0)
                     const leftX = padPx + s * pxPerSecond
                     const rightX = padPx + e2 * pxPerSecond
 	                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
-	                      setSelectedAudio(false)
+	                      setSelectedAudioId(null)
 	                      setSelectedClipId(null)
 	                      setSelectedGraphicId(null)
 	                      setSelectedLogoId(null)
@@ -7092,11 +7329,11 @@ export default function CreateVideo() {
                     const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
                     if (nearLeft || nearRight) return
 
-		                    if (selectedAudio) {
+		                    if (String(selectedAudioId || '') === String(seg.id)) {
 		                      openAudioEditor()
 		                      return
 		                    }
-		                    setSelectedAudio(true)
+		                    setSelectedAudioId(String(seg.id))
 		                    setSelectedClipId(null)
 		                    setSelectedGraphicId(null)
 		                    setSelectedLogoId(null)
@@ -7121,7 +7358,7 @@ export default function CreateVideo() {
 		                      setSelectedScreenTitleId(null)
 		                      setSelectedNarrationId(null)
 		                      setSelectedStillId(null)
-		                      setSelectedAudio(false)
+		                      setSelectedAudioId(null)
 		                      return
 		                    }
 		                    setSelectedStillId(String((still as any).id))
@@ -7131,7 +7368,7 @@ export default function CreateVideo() {
 		                    setSelectedLowerThirdId(null)
 		                    setSelectedScreenTitleId(null)
 		                    setSelectedNarrationId(null)
-		                    setSelectedAudio(false)
+		                    setSelectedAudioId(null)
 		                    return
 		                  }
 
@@ -7144,7 +7381,7 @@ export default function CreateVideo() {
 	                    setSelectedLowerThirdId(null)
 	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
 
@@ -7161,7 +7398,7 @@ export default function CreateVideo() {
 	                    setSelectedLowerThirdId(null)
 	                    setSelectedScreenTitleId(null)
 	                    setSelectedStillId(null)
-	                    setSelectedAudio(false)
+	                    setSelectedAudioId(null)
 	                    return
 	                  }
                   const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
@@ -7186,7 +7423,7 @@ export default function CreateVideo() {
 		                  setSelectedScreenTitleId(null)
 		                  setSelectedNarrationId(null)
 		                  setSelectedStillId(null)
-		                  setSelectedAudio(false)
+		                  setSelectedAudioId(null)
 		                }}
                 style={{
                   width: '100%',
@@ -7496,32 +7733,41 @@ export default function CreateVideo() {
           </div>
         </div>
 
-        {audioTrack ? (
-          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ color: '#fff', fontWeight: 900 }}>
-              {(namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`) +
-                ' * ' +
-                (audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`)}
-            </div>
-            <button
-              type="button"
-              onClick={() => toggleAudioPreview(audioTrack.uploadId)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(48,209,88,0.65)',
-                background: audioPreviewPlayingId === audioTrack.uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-                flex: '0 0 auto',
-              }}
-              aria-label={audioPreviewPlayingId === audioTrack.uploadId ? 'Pause audio preview' : 'Play audio preview'}
-            >
-              {audioPreviewPlayingId === audioTrack.uploadId ? 'Pause' : 'Play'}
-            </button>
-          </div>
-        ) : null}
+        {audioSegments.length
+          ? (() => {
+              const sorted = audioSegments
+                .slice()
+                .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+              const primary: any = sorted[0]
+              if (!primary) return null
+              const uploadId = Number(primary.uploadId)
+              const audioConfigId = Number(primary.audioConfigId)
+              return (
+                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ color: '#fff', fontWeight: 900 }}>
+                    {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleAudioPreview(uploadId)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(48,209,88,0.65)',
+                      background: audioPreviewPlayingId === uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      flex: '0 0 auto',
+                    }}
+                    aria-label={audioPreviewPlayingId === uploadId ? 'Pause audio preview' : 'Play audio preview'}
+                  >
+                    {audioPreviewPlayingId === uploadId ? 'Pause' : 'Play'}
+                  </button>
+                </div>
+              )
+            })()
+          : null}
 
         {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
@@ -8347,30 +8593,34 @@ export default function CreateVideo() {
               </button>
             </div>
 
-            {audioTrack ? (
-              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <div style={{ color: '#fff', fontWeight: 900 }}>
-                  {(namesByUploadId[audioTrack.uploadId] || `Audio ${audioTrack.uploadId}`) +
-                    ' * ' +
-                    (audioConfigNameById[audioTrack.audioConfigId] || `Config ${audioTrack.audioConfigId}`)}
+            {(() => {
+              const seg: any = audioSegments.find((s: any) => String(s?.id) === String(audioEditor.id))
+              if (!seg) return null
+              const uploadId = Number(seg.uploadId)
+              const audioConfigId = Number(seg.audioConfigId)
+              return (
+                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ color: '#fff', fontWeight: 900 }}>
+                    {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleAudioPreview(uploadId)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(48,209,88,0.65)',
+                      background: audioPreviewPlayingId === uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {audioPreviewPlayingId === uploadId ? 'Pause' : 'Play'}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => toggleAudioPreview(audioTrack.uploadId)}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(48,209,88,0.65)',
-                    background: audioPreviewPlayingId === audioTrack.uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {audioPreviewPlayingId === audioTrack.uploadId ? 'Pause' : 'Play'}
-                </button>
-              </div>
-            ) : null}
+              )
+            })()}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
