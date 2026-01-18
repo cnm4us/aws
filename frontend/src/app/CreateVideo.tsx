@@ -992,28 +992,50 @@ export default function CreateVideo() {
     return Array.from(uniq.values()).sort((a, b) => a - b)
   }, [audioTrack, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
 
-  const dragHud = useMemo(() => {
-    if (!trimDragging) return null
-    const drag = trimDragRef.current
-    if (!drag) return null
+	  const dragHud = useMemo(() => {
+	    if (!trimDragging) return null
+	    const drag = trimDragRef.current
+	    if (!drag) return null
 
-    const actionLabel =
-      drag.edge === 'move' ? 'Move' : drag.edge === 'start' ? 'Resize start' : drag.edge === 'end' ? 'Resize end' : String(drag.edge)
+	    const actionLabel =
+	      drag.edge === 'move' ? 'Move' : drag.edge === 'start' ? 'Resize start' : drag.edge === 'end' ? 'Resize end' : String(drag.edge)
 
-	          if (drag.kind === 'clip') {
-      const idx = timeline.clips.findIndex((c) => c.id === drag.clipId)
-      if (idx < 0) return null
-      const clip = timeline.clips[idx]
-      const name = namesByUploadId[Number(clip.uploadId)] || `Video ${clip.uploadId}`
-      const start = roundToTenth(clipStarts[idx] || 0)
-      const len = Math.max(0, roundToTenth(clipDurationSeconds(clip)))
-      const end = roundToTenth(start + len)
-      return { kindLabel: 'Video', actionLabel, name, start, end, len }
-    }
+	    if (drag.kind === 'clip') {
+	      const idx = timeline.clips.findIndex((c) => c.id === drag.clipId)
+	      if (idx < 0) return null
+	      const clip = timeline.clips[idx]
+	      const name = namesByUploadId[Number(clip.uploadId)] || `Video ${clip.uploadId}`
+	      const start = roundToTenth(clipStarts[idx] || 0)
+	      const len = Math.max(0, roundToTenth(clipDurationSeconds(clip)))
+	      const end = roundToTenth(start + len)
+	      const maxDurRaw =
+	        drag.maxDurationSeconds != null && Number.isFinite(Number(drag.maxDurationSeconds)) ? Number(drag.maxDurationSeconds) : undefined
+	      const totalNoOffsetSecondsRaw =
+	        maxDurRaw != null && maxDurRaw > 0 ? maxDurRaw : durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
+	      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+	      const startWithOffsetSeconds = roundToTenth(Number(clip.sourceStartSeconds || 0))
+	      const endWithOffsetSeconds = roundToTenth(Number(clip.sourceEndSeconds || 0))
+	      const durationWithOffsetsSeconds = roundToTenth(Math.max(0, endWithOffsetSeconds - startWithOffsetSeconds))
+	      return {
+	        kindLabel: 'Video',
+	        actionLabel,
+	        name,
+	        start,
+	        end,
+	        len,
+	        clipTrim: {
+	          startWithOffsetSeconds,
+	          endWithOffsetSeconds,
+	          durationWithOffsetsSeconds,
+	          durationNoOffsetsSeconds: totalNoOffsetSeconds,
+	        },
+	        edge: drag.edge,
+	      }
+	    }
 
-    if (drag.kind === 'graphic') {
-      const g = graphics.find((gg) => String((gg as any).id) === String(drag.graphicId)) as any
-      if (!g) return null
+	    if (drag.kind === 'graphic') {
+	      const g = graphics.find((gg) => String((gg as any).id) === String(drag.graphicId)) as any
+	      if (!g) return null
       const name = namesByUploadId[Number(g.uploadId)] || `Image ${g.uploadId}`
       const start = roundToTenth(Number(g.startSeconds || 0))
       const end = roundToTenth(Number(g.endSeconds || 0))
@@ -1078,20 +1100,21 @@ export default function CreateVideo() {
       return { kindLabel: 'Freeze', actionLabel, name, start, end, len }
     }
 
-    return null
-  }, [
-    audioConfigNameById,
-    audioTrack,
-    clipStarts,
-    graphics,
-    logos,
-    lowerThirds,
-    screenTitles,
-    stills,
-    namesByUploadId,
-    timeline.clips,
-    trimDragging,
-  ])
+	    return null
+	  }, [
+	    audioConfigNameById,
+	    audioTrack,
+	    clipStarts,
+	    graphics,
+	    logos,
+	    lowerThirds,
+	    screenTitles,
+	    stills,
+	    namesByUploadId,
+	    durationsByUploadId,
+	    timeline.clips,
+	    trimDragging,
+	  ])
 
   const nudgePlayhead = useCallback((deltaSeconds: number) => {
     setTimeline((prev) => {
@@ -5600,15 +5623,36 @@ export default function CreateVideo() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {dragHud.actionLabel === 'Move' ? (
-                    <>
-                      <span>Start: {dragHud.start.toFixed(1)}</span>
-                      <span>|</span>
-                      <span>End: {dragHud.end.toFixed(1)}</span>
-                    </>
-                  ) : (
-                    <span>Length: {dragHud.len.toFixed(1)}</span>
-                  )}
+	                  {'clipTrim' in dragHud ? (
+	                    (() => {
+	                      const edge = (dragHud as any).edge as any
+	                      const gold = '#d4af37'
+	                      const startStyle = edge === 'start' ? { color: gold } : undefined
+	                      const endStyle = edge === 'end' ? { color: gold } : undefined
+	                      const trim = (dragHud as any).clipTrim as any
+	                      return (
+	                        <>
+	                          <span style={startStyle}>{trim.startWithOffsetSeconds.toFixed(1)}/0.0</span>
+	                          <span>|</span>
+	                          <span>
+	                            {trim.durationWithOffsetsSeconds.toFixed(1)}/{trim.durationNoOffsetsSeconds.toFixed(1)}
+	                          </span>
+	                          <span>|</span>
+	                          <span style={endStyle}>
+	                            {trim.endWithOffsetSeconds.toFixed(1)}/{trim.durationNoOffsetsSeconds.toFixed(1)}
+	                          </span>
+	                        </>
+	                      )
+	                    })()
+	                  ) : dragHud.actionLabel === 'Move' ? (
+	                    <>
+	                      <span>Start: {dragHud.start.toFixed(1)}</span>
+	                      <span>|</span>
+	                      <span>End: {dragHud.end.toFixed(1)}</span>
+	                    </>
+	                  ) : (
+	                    <span>Length: {dragHud.len.toFixed(1)}</span>
+	                  )}
                 </div>
               </div>
             ) : null}
