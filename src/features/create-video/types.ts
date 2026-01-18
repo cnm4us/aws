@@ -117,6 +117,7 @@ export type CreateVideoNarrationSegmentV1 = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+  sourceStartSeconds?: number
   gainDb?: number
 }
 

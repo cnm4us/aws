@@ -25,7 +25,7 @@ type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: nu
 type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type ScreenTitle = { id: string; startSeconds: number; endSeconds: number; presetId: number | null; presetSnapshot: any | null; text?: string; renderUploadId: number | null }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
-type Narration = { id: string; uploadId: number; startSeconds: number; endSeconds: number; gainDb?: number }
+type Narration = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceStartSeconds?: number; gainDb?: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
@@ -272,7 +272,7 @@ async function applyAudioTrackToMp4(opts: {
 async function applyNarrationSegmentsToMp4(opts: {
   inMp4Path: string
   outMp4Path: string
-  segments: Array<{ audioPath: string; startSeconds: number; endSeconds: number; gainDb: number }>
+  segments: Array<{ audioPath: string; startSeconds: number; endSeconds: number; sourceStartSeconds: number; gainDb: number }>
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }) {
   const segs = Array.isArray(opts.segments) ? opts.segments : []
@@ -309,12 +309,14 @@ async function applyNarrationSegmentsToMp4(opts: {
     const endSeconds = clamp(roundToTenth(Number(s.endSeconds || 0)), 0, 20 * 60)
     const clipLen = roundToTenth(Math.max(0, endSeconds - startSeconds))
     if (!(clipLen > 0.05)) continue
+    const srcStart = clamp(roundToTenth(Number((s as any).sourceStartSeconds || 0)), 0, 20 * 60)
+    const srcEnd = roundToTenth(Math.max(0, srcStart + clipLen))
     const delayMs = Math.max(0, Math.round(startSeconds * 1000))
     const delayFilter = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
     const gainDb = Number.isFinite(Number(s.gainDb)) ? Number(s.gainDb) : 0
     const label = `nar${i}`
     segChains.push(
-      `[${inputIndex}:a]atrim=0:${clipLen.toFixed(3)},asetpts=N/SR/TB${delayFilter},volume=${gainDb}dB,apad[${label}]`
+      `[${inputIndex}:a]atrim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},asetpts=N/SR/TB${delayFilter},volume=${gainDb}dB,apad[${label}]`
     )
     segLabels.push(`[${label}]`)
   }
@@ -700,6 +702,7 @@ export async function runCreateVideoExportV1Job(
       uploadId: Number((n as any).uploadId),
       startSeconds: Number((n as any).startSeconds),
       endSeconds: Number((n as any).endSeconds),
+      sourceStartSeconds: (n as any).sourceStartSeconds == null ? undefined : Number((n as any).sourceStartSeconds),
       gainDb: (n as any).gainDb == null ? undefined : Number((n as any).gainDb),
     }))
     .filter((n) => n.id && Number.isFinite(n.uploadId) && n.uploadId > 0 && Number.isFinite(n.startSeconds) && Number.isFinite(n.endSeconds))
@@ -1304,13 +1307,14 @@ export async function runCreateVideoExportV1Job(
           ...n,
           startSeconds: roundToTenth(Math.max(0, Number((n as any).startSeconds || 0))),
           endSeconds: roundToTenth(Math.max(0, Number((n as any).endSeconds || 0))),
+          sourceStartSeconds: roundToTenth(Math.max(0, Number((n as any).sourceStartSeconds || 0))),
           gainDb: Number.isFinite(Number((n as any).gainDb)) ? Number((n as any).gainDb) : 0,
         }))
         .filter((n) => Number(n.endSeconds) > Number(n.startSeconds))
         .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
 
       const narrationDownloads = new Map<number, string>()
-      const segmentsForMix: Array<{ audioPath: string; startSeconds: number; endSeconds: number; gainDb: number }> = []
+      const segmentsForMix: Array<{ audioPath: string; startSeconds: number; endSeconds: number; sourceStartSeconds: number; gainDb: number }> = []
 
       const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
       for (const seg of sorted) {
@@ -1336,8 +1340,9 @@ export async function runCreateVideoExportV1Job(
         const startSeconds = clamp(roundToTenth(Number(seg.startSeconds || 0)), 0, Math.max(0, videoDur))
         const endSeconds = clamp(roundToTenth(Number(seg.endSeconds || 0)), 0, Math.max(0, videoDur))
         if (!(endSeconds > startSeconds + 0.05)) continue
+        const sourceStartSeconds = clamp(roundToTenth(Number((seg as any).sourceStartSeconds || 0)), 0, 20 * 60)
         const gainDb = clamp(Number(seg.gainDb || 0), -12, 12)
-        segmentsForMix.push({ audioPath, startSeconds, endSeconds, gainDb })
+        segmentsForMix.push({ audioPath, startSeconds, endSeconds, sourceStartSeconds, gainDb })
       }
 
       if (segmentsForMix.length) {

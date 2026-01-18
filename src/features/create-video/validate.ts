@@ -680,12 +680,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((seg as any).startSeconds)
     const endSeconds = normalizeSeconds((seg as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const sourceStartRaw = (seg as any).sourceStartSeconds
+    const sourceStartSeconds = sourceStartRaw == null ? 0 : normalizeSeconds(sourceStartRaw)
     const gainRaw = (seg as any).gainDb
     const gainDb = gainRaw == null ? 0 : Number(gainRaw)
     if (!Number.isFinite(gainDb) || gainDb < -12 || gainDb > 12) throw new ValidationError('invalid_narration_gain')
 
     const meta = await loadNarrationAudioMetaForUser(uploadId, ctx.userId)
-    narration.push({ id, uploadId: meta.id, startSeconds, endSeconds, gainDb })
+    narration.push({ id, uploadId: meta.id, startSeconds, endSeconds, sourceStartSeconds, gainDb })
   }
   narration.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < narration.length; i++) {

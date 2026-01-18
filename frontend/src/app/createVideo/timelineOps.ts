@@ -179,8 +179,16 @@ export function splitNarrationAtPlayhead(
   const minLen = 0.2
   if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedNarrationId }
 
-  const left: Narration = { ...n, id: `${String(n.id)}_a`, startSeconds: start, endSeconds: cut }
-  const right: Narration = { ...n, id: `${String(n.id)}_b`, startSeconds: cut, endSeconds: end }
+  const baseSourceStart = n.sourceStartSeconds != null && Number.isFinite(Number(n.sourceStartSeconds)) ? Number(n.sourceStartSeconds) : 0
+  const offsetInto = Math.max(0, roundToTenth(cut - start))
+  const left: Narration = { ...n, id: `${String(n.id)}_a`, startSeconds: start, endSeconds: cut, sourceStartSeconds: baseSourceStart }
+  const right: Narration = {
+    ...n,
+    id: `${String(n.id)}_b`,
+    startSeconds: cut,
+    endSeconds: end,
+    sourceStartSeconds: roundToTenth(baseSourceStart + offsetInto),
+  }
   const next = [...ns.slice(0, idx), left, right, ...ns.slice(idx + 1)]
   next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), narration: next } as any, selectedNarrationId: right.id }

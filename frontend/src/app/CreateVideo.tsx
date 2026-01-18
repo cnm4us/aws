@@ -1594,7 +1594,11 @@ export default function CreateVideo() {
       a.addEventListener('loadedmetadata', onMeta)
       try { a.load() } catch {}
     })
-    try { a.currentTime = Math.max(0, startInSeg) } catch {}
+    const srcStart0 =
+      (segAt as any).sourceStartSeconds != null && Number.isFinite(Number((segAt as any).sourceStartSeconds))
+        ? Number((segAt as any).sourceStartSeconds)
+        : 0
+    try { a.currentTime = Math.max(0, srcStart0 + startInSeg) } catch {}
 
     narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd }
 
@@ -1614,7 +1618,11 @@ export default function CreateVideo() {
       if (!narrationPreviewSegRef.current) return
       const cur = narrationPreviewRef.current
       const seg = narrationPreviewSegRef.current
-      const nextPlayhead = clamp(roundToTenth(seg.segStart + Number(cur.currentTime || 0)), 0, Math.max(0, totalSeconds))
+      const srcStart1 =
+        (segAt as any).sourceStartSeconds != null && Number.isFinite(Number((segAt as any).sourceStartSeconds))
+          ? Number((segAt as any).sourceStartSeconds)
+          : 0
+      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
       playheadFromVideoRef.current = true
       playheadRef.current = nextPlayhead
       setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
@@ -1897,8 +1905,11 @@ export default function CreateVideo() {
       if (kind === 'narration') {
         segStartT = roundToTenth(Number(selectedNarration.startSeconds || 0))
         segEndT = roundToTenth(Number(selectedNarration.endSeconds || 0))
-        sourceStart = 0
-        sourceEnd = Math.max(0, roundToTenth(segEndT - segStartT))
+        sourceStart =
+          selectedNarration.sourceStartSeconds != null && Number.isFinite(Number(selectedNarration.sourceStartSeconds))
+            ? Math.max(0, roundToTenth(Number(selectedNarration.sourceStartSeconds)))
+            : 0
+        sourceEnd = Math.max(0, roundToTenth(sourceStart + Math.max(0, segEndT - segStartT)))
       } else {
         segStartT = roundToTenth(clipStarts[clipIdx] || 0)
         segEndT = roundToTenth(segStartT + clipDurationSeconds(clip as any))
@@ -2607,7 +2618,17 @@ export default function CreateVideo() {
 	          logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
 	          lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
 	          screenTitles: Array.isArray(tlRaw?.screenTitles) ? (tlRaw.screenTitles as any) : [],
-	          narration: Array.isArray(tlRaw?.narration) ? (tlRaw.narration as any) : [],
+	          narration: Array.isArray(tlRaw?.narration)
+	            ? (tlRaw.narration as any[]).map((n: any) => ({
+	                ...n,
+	                id: String(n?.id || ''),
+	                uploadId: Number(n?.uploadId),
+	                startSeconds: roundToTenth(Number(n?.startSeconds || 0)),
+	                endSeconds: roundToTenth(Number(n?.endSeconds || 0)),
+	                sourceStartSeconds: n?.sourceStartSeconds == null ? 0 : roundToTenth(Number(n?.sourceStartSeconds || 0)),
+	                gainDb: n?.gainDb == null ? 0 : Number(n?.gainDb),
+	              }))
+	            : [],
 	          audioTrack: tlRaw?.audioTrack && typeof tlRaw.audioTrack === 'object' ? (tlRaw.audioTrack as any) : null,
 	        }
         hydratingRef.current = true
@@ -3801,7 +3822,7 @@ export default function CreateVideo() {
         }
 
         const id = `nar_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-        const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, gainDb: 0 }
+        const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, gainDb: 0 }
         snapshotUndo()
         setTimeline((prev) => {
           const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
@@ -5178,13 +5199,24 @@ export default function CreateVideo() {
 	          const nextNs = prevNs.slice()
 	          let startS = Number(n0.startSeconds || 0)
 	          let endS = Number(n0.endSeconds || 0)
+	          let sourceStartS =
+	            n0.sourceStartSeconds != null && Number.isFinite(Number(n0.sourceStartSeconds)) ? Number(n0.sourceStartSeconds) : 0
 	          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
 	          if (drag.edge === 'start') {
-	            startS = clamp(
+	            const nextStart = clamp(
 	              roundToTenth(drag.startStartSeconds + deltaSeconds),
 	              drag.minStartSeconds,
 	              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
 	            )
+	            const delta = roundToTenth(nextStart - Number(drag.startStartSeconds))
+	            // Keep the audio "content" anchored: trimming start forward advances sourceStartSeconds,
+	            // extending start backward reduces sourceStartSeconds (down to 0) when possible.
+	            if (delta > 0) {
+	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
+	            } else if (delta < 0) {
+	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
+	            }
+	            startS = nextStart
 	          } else if (drag.edge === 'end') {
 	            endS = clamp(
 	              roundToTenth(drag.startEndSeconds + deltaSeconds),
@@ -5197,7 +5229,7 @@ export default function CreateVideo() {
 	            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
 	            endS = roundToTenth(startS + dur)
 	          }
-	          nextNs[idx] = { ...n0, startSeconds: startS, endSeconds: endS }
+	          nextNs[idx] = { ...n0, startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
 	          nextNs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
 	          const nextTimeline: any = { ...(prev as any), narration: nextNs }
 	          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)

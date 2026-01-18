@@ -82,6 +82,9 @@ export type Narration = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+  // Offset into the audio file for where this segment begins (in seconds).
+  // This enables split/trim to play the continuation instead of restarting at 0.
+  sourceStartSeconds?: number
   gainDb?: number
 }
 
@@ -163,6 +166,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(n.uploadId),
           startSeconds: Number(n.startSeconds),
           endSeconds: Number(n.endSeconds),
+          sourceStartSeconds: n.sourceStartSeconds == null ? 0 : Number(n.sourceStartSeconds),
           gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
         }))
       : [],
