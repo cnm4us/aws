@@ -68,6 +68,29 @@ async function probeImage(file: File): Promise<{ width: number | null; height: n
   })
 }
 
+async function probeAudio(file: File): Promise<{ durationSeconds: number | null }> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file)
+      const audio = document.createElement('audio')
+      audio.preload = 'metadata'
+      audio.src = url
+      audio.onloadedmetadata = () => {
+        const dur = Number(audio.duration)
+        const meta = { durationSeconds: Number.isFinite(dur) && dur > 0 ? Math.round(dur) : null }
+        URL.revokeObjectURL(url)
+        resolve(meta)
+      }
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve({ durationSeconds: null })
+      }
+    } catch {
+      resolve({ durationSeconds: null })
+    }
+  })
+}
+
 function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : null
@@ -265,17 +288,19 @@ const UploadNewPage: React.FC = () => {
       setUploadMessage(null)
       setUploadProgress(0)
 
-      try {
-        const meta =
-          kind === 'video'
-            ? await probeVideo(file)
-            : kind === 'logo' || kind === 'image'
-              ? { ...(await probeImage(file)), durationSeconds: null }
-              : { width: null, height: null, durationSeconds: null }
-        const body = {
-          filename: file.name,
-          contentType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
+	      try {
+	        const meta =
+	          kind === 'video'
+	            ? await probeVideo(file)
+	            : kind === 'logo' || kind === 'image'
+	              ? { ...(await probeImage(file)), durationSeconds: null }
+	              : kind === 'audio'
+	                ? { width: null, height: null, ...(await probeAudio(file)) }
+	                : { width: null, height: null, durationSeconds: null }
+	        const body = {
+	          filename: file.name,
+	          contentType: file.type || 'application/octet-stream',
+	          sizeBytes: file.size,
           modifiedFilename: trimmedName,
           description: trimmedDescription || undefined,
           ...(termsAccepted ? { termsAccepted: true } : {}),
