@@ -2775,25 +2775,25 @@ export default function CreateVideo() {
   }, [playhead, project?.id, timeline])
 
   // Fetch upload names for clip pills
-	  useEffect(() => {
-	    const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-	    const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-	    const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-	    const lowerThirdIds = lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-	    const narrationIds = narration.map((n: any) => Number((n as any).uploadId)).filter((x) => Number.isFinite(x) && x > 0)
-	    const stillIds = (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as any[]) : [])
-	      .map((s) => Number(s?.uploadId))
-	      .filter((n) => Number.isFinite(n) && n > 0)
-	    const audioUploadId = Number((timeline as any).audioTrack?.uploadId)
-	    const audioIds = Number.isFinite(audioUploadId) && audioUploadId > 0 ? [audioUploadId] : []
-	    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
-	    if (!ids.length) return
-	    const clipSet = new Set<number>(clipIds)
-	    const missing = ids.filter((id) => !namesByUploadId[id] || (clipSet.has(id) && !durationsByUploadId[id]))
-    if (!missing.length) return
-    let alive = true
-    const qs = encodeURIComponent(missing.slice(0, 50).join(','))
-    fetch(`/api/uploads/summary?ids=${qs}`, { credentials: 'same-origin' })
+		  useEffect(() => {
+		    const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+		    const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+		    const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+		    const lowerThirdIds = lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+		    const narrationIds = narration.map((n: any) => Number((n as any).uploadId)).filter((x) => Number.isFinite(x) && x > 0)
+		    const stillIds = (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as any[]) : [])
+		      .map((s) => Number(s?.uploadId))
+		      .filter((n) => Number.isFinite(n) && n > 0)
+		    const audioUploadId = Number((timeline as any).audioTrack?.uploadId)
+		    const audioIds = Number.isFinite(audioUploadId) && audioUploadId > 0 ? [audioUploadId] : []
+		    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
+		    if (!ids.length) return
+		    const durationNeeded = new Set<number>([...clipIds, ...narrationIds, ...audioIds])
+		    const missing = ids.filter((id) => !namesByUploadId[id] || (durationNeeded.has(id) && !durationsByUploadId[id]))
+	    if (!missing.length) return
+	    let alive = true
+	    const qs = encodeURIComponent(missing.slice(0, 50).join(','))
+	    fetch(`/api/uploads/summary?ids=${qs}`, { credentials: 'same-origin' })
       .then(async (r) => {
         const json: any = await r.json().catch(() => null)
         if (!alive) return
