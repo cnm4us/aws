@@ -112,6 +112,14 @@ export type CreateVideoAudioTrackV1 = {
   endSeconds: number
 }
 
+export type CreateVideoNarrationSegmentV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  gainDb?: number
+}
+
 export type CreateVideoTimelineV1 = {
   version: 'create_video_v1'
   playheadSeconds?: number
@@ -121,6 +129,7 @@ export type CreateVideoTimelineV1 = {
   logos?: CreateVideoLogoV1[]
   lowerThirds?: CreateVideoLowerThirdV1[]
   screenTitles?: CreateVideoScreenTitleV1[]
+  narration?: CreateVideoNarrationSegmentV1[]
   audioTrack?: CreateVideoAudioTrackV1 | null
 }
 

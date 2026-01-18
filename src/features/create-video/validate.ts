@@ -12,6 +12,7 @@ const MAX_STILLS = 200
 const MAX_LOGOS = 200
 const MAX_LOWER_THIRDS = 200
 const MAX_SCREEN_TITLES = 200
+const MAX_NARRATION = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -303,6 +304,31 @@ async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
 
   const status = String(row.status || '').toLowerCase()
   if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  return { id: Number(row.id) }
+}
+
+async function loadNarrationAudioMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, is_system, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'audio') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
+  if (Number((row as any).is_system || 0) === 1) throw new ForbiddenError()
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  if (!isOwner) throw new ForbiddenError()
 
   return { id: Number(row.id) }
 }
@@ -640,8 +666,48 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const screenTitlesTotalSeconds = screenTitles.length ? Number(screenTitles[screenTitles.length - 1].endSeconds) : 0
 
+  const narrationRaw = Array.isArray((raw as any).narration) ? ((raw as any).narration as any[]) : []
+  if (narrationRaw.length > MAX_NARRATION) throw new DomainError('too_many_narration', 'too_many_narration', 400)
+  const narration: any[] = []
+  for (const seg of narrationRaw) {
+    if (!seg || typeof seg !== 'object') continue
+    const id = normalizeId((seg as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((seg as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+    const startSeconds = normalizeSeconds((seg as any).startSeconds)
+    const endSeconds = normalizeSeconds((seg as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const gainRaw = (seg as any).gainDb
+    const gainDb = gainRaw == null ? 0 : Number(gainRaw)
+    if (!Number.isFinite(gainDb) || gainDb < -12 || gainDb > 12) throw new ValidationError('invalid_narration_gain')
+
+    const meta = await loadNarrationAudioMetaForUser(uploadId, ctx.userId)
+    narration.push({ id, uploadId: meta.id, startSeconds, endSeconds, gainDb })
+  }
+  narration.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < narration.length; i++) {
+    const n = narration[i]
+    if (n.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    if (i > 0) {
+      const prev = narration[i - 1]
+      if (n.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('narration_overlap', 'narration_overlap', 400)
+    }
+  }
+  const narrationTotalSeconds = narration.length ? Number(narration[narration.length - 1].endSeconds) : 0
+
   const totalForPlayhead = roundToTenth(
-    Math.max(videoTotalSeconds, graphicsTotalSeconds, stillsTotalSeconds, logosTotalSeconds, lowerThirdsTotalSeconds, screenTitlesTotalSeconds)
+    Math.max(
+      videoTotalSeconds,
+      graphicsTotalSeconds,
+      stillsTotalSeconds,
+      logosTotalSeconds,
+      lowerThirdsTotalSeconds,
+      screenTitlesTotalSeconds,
+      narrationTotalSeconds
+    )
   )
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
@@ -683,6 +749,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     logos,
     lowerThirds,
     screenTitles,
+    narration,
     audioTrack,
   }
 }

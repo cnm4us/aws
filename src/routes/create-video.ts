@@ -9,9 +9,11 @@ import { DomainError } from '../core/errors'
 import * as screenTitlePresetsSvc from '../features/screen-title-presets/service'
 import { renderScreenTitlePngWithPango } from '../services/pango/screenTitlePng'
 import { uploadFileToS3 } from '../services/ffmpeg/audioPipeline'
-import { nowDateYmd } from '../utils/naming'
-import { UPLOAD_BUCKET } from '../config'
+import { nowDateYmd, sanitizeFilename } from '../utils/naming'
+import { MAX_UPLOAD_MB, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../config'
 import { randomUUID } from 'crypto'
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
+import { s3 } from '../services/s3'
 
 export const createVideoRouter = Router()
 
@@ -121,5 +123,103 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
     next(err)
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+})
+
+createVideoRouter.post('/api/create-video/narration/sign', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const body = (req.body || {}) as any
+    const filenameRaw = String(body.filename || '').trim()
+    const contentTypeRaw = String(body.contentType || '').trim() || 'application/octet-stream'
+    const sizeBytesRaw = body.sizeBytes == null ? null : Number(body.sizeBytes)
+    const durationSecondsRaw = body.durationSeconds == null ? null : Number(body.durationSeconds)
+    const modifiedFilenameRaw = body.modifiedFilename == null ? null : String(body.modifiedFilename || '').trim()
+
+    if (!filenameRaw) throw new DomainError('bad_filename', 'bad_filename', 400)
+    const safeName = sanitizeFilename(filenameRaw) || 'narration'
+    const lowerCt = contentTypeRaw.toLowerCase()
+    const extFromName = (safeName.match(/\.[^.]+$/) || [''])[0].toLowerCase()
+    const pickExt = (): string => {
+      if (extFromName) return extFromName
+      if (lowerCt.includes('webm')) return '.webm'
+      if (lowerCt.includes('wav')) return '.wav'
+      if (lowerCt.includes('mpeg') || lowerCt.includes('mp3')) return '.mp3'
+      if (lowerCt.includes('mp4') || lowerCt.includes('m4a') || lowerCt.includes('aac')) return '.m4a'
+      return '.m4a'
+    }
+    const ext = pickExt()
+    const allowedExt = ['.m4a', '.mp4', '.aac', '.mp3', '.wav', '.webm', '.ogg', '.opus']
+    if (!(lowerCt.startsWith('audio/') || lowerCt === 'video/mp4') && !allowedExt.includes(ext)) {
+      const err: any = new DomainError('invalid_file_type', 'invalid_file_type', 400)
+      err.detail = { contentType: contentTypeRaw, ext }
+      throw err
+    }
+    const leaf = `narration${ext}`
+
+    const sizeBytes = sizeBytesRaw != null && Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0 ? Math.round(sizeBytesRaw) : null
+    const maxBytes = MAX_UPLOAD_MB * 1024 * 1024
+    if (sizeBytes != null && sizeBytes > maxBytes) throw new DomainError('file_too_large', 'file_too_large', 413)
+
+    const durationSeconds =
+      durationSecondsRaw != null && Number.isFinite(durationSecondsRaw) && durationSecondsRaw > 0
+        ? Math.min(20 * 60, Math.round(durationSecondsRaw))
+        : null
+
+    const bucket = String(UPLOAD_BUCKET || '')
+    if (!bucket) throw new DomainError('missing_bucket', 'missing_bucket', 500)
+
+    const { ymd: dateYmd, folder } = nowDateYmd()
+    const uuid = randomUUID()
+    const basePrefix = UPLOAD_PREFIX ? (UPLOAD_PREFIX.endsWith('/') ? UPLOAD_PREFIX : UPLOAD_PREFIX + '/') : ''
+    const key = `${basePrefix}audio/narration/${folder}/${uuid}/${leaf}`
+
+    const db = getPool()
+    let insertId: number | null = null
+    try {
+      const [result] = await db.query(
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, size_bytes, duration_seconds, status, kind, user_id, asset_uuid, date_ymd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', 'audio', ?, ?, ?)`,
+        [bucket, key, safeName, modifiedFilenameRaw || null, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
+      )
+      insertId = Number((result as any).insertId)
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      if (msg.includes('Unknown column') && msg.includes('kind')) {
+        const [result] = await db.query(
+          `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, size_bytes, duration_seconds, status, user_id, asset_uuid, date_ymd)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?)`,
+          [bucket, key, safeName, modifiedFilenameRaw || null, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
+        )
+        insertId = Number((result as any).insertId)
+      } else {
+        throw e
+      }
+    }
+    const id = Number(insertId || 0)
+    if (!Number.isFinite(id) || id <= 0) throw new DomainError('failed_to_create_upload', 'failed_to_create_upload', 500)
+
+    const conditions: any[] = [
+      ['content-length-range', 1, maxBytes],
+      ['starts-with', '$key', `${basePrefix}audio/narration/`],
+    ]
+    const fields: Record<string, string> = {
+      key,
+      success_action_status: '201',
+      'x-amz-meta-original-filename': safeName,
+    }
+    if (contentTypeRaw) fields['Content-Type'] = contentTypeRaw
+
+    const presigned = await createPresignedPost(s3, {
+      Bucket: bucket,
+      Key: key,
+      Conditions: conditions,
+      Fields: fields,
+      Expires: 60 * 5,
+    })
+
+    res.json({ id, bucket, key, post: presigned })
+  } catch (err: any) {
+    next(err)
   }
 })

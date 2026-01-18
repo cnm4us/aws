@@ -1,4 +1,4 @@
-import type { Clip, Graphic, Logo, LowerThird, ScreenTitle, Timeline } from './timelineTypes'
+import type { Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Timeline } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -159,4 +159,29 @@ export function splitScreenTitleAtPlayhead(
   const nextSts = [...sts.slice(0, idx), left, right, ...sts.slice(idx + 1)]
   nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), screenTitles: nextSts } as any, selectedScreenTitleId: right.id }
+}
+
+export function splitNarrationAtPlayhead(
+  timeline: Timeline,
+  selectedNarrationId: string | null
+): { timeline: Timeline; selectedNarrationId: string | null } {
+  if (!selectedNarrationId) return { timeline, selectedNarrationId }
+  const ns: Narration[] = Array.isArray((timeline as any).narration) ? ((timeline as any).narration as any) : []
+  const idx = ns.findIndex((n: any) => String(n?.id) === String(selectedNarrationId))
+  if (idx < 0) return { timeline, selectedNarrationId }
+  const n: any = ns[idx]
+  const start = roundToTenth(Number(n?.startSeconds || 0))
+  const end = roundToTenth(Number(n?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedNarrationId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedNarrationId }
+
+  const left: Narration = { ...n, id: `${String(n.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: Narration = { ...n, id: `${String(n.id)}_b`, startSeconds: cut, endSeconds: end }
+  const next = [...ns.slice(0, idx), left, right, ...ns.slice(idx + 1)]
+  next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), narration: next } as any, selectedNarrationId: right.id }
 }

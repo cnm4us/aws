@@ -25,6 +25,7 @@ type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: nu
 type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type ScreenTitle = { id: string; startSeconds: number; endSeconds: number; presetId: number | null; presetSnapshot: any | null; text?: string; renderUploadId: number | null }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
+type Narration = { id: string; uploadId: number; startSeconds: number; endSeconds: number; gainDb?: number }
 
 export type CreateVideoExportV1Input = {
   projectId: number
@@ -37,6 +38,7 @@ export type CreateVideoExportV1Input = {
     logos?: Logo[]
     lowerThirds?: LowerThird[]
     screenTitles?: ScreenTitle[]
+    narration?: Narration[]
     audioTrack?: AudioTrack | null
   }
 }
@@ -145,6 +147,7 @@ async function applyAudioTrackToMp4(opts: {
   audioConfig: any
   trackStartSeconds: number
   trackEndSeconds: number
+  normalizeAudio?: boolean
   logPaths?: { stdoutPath?: string; stderrPath?: string }
 }) {
   const cfg = opts.audioConfig || {}
@@ -181,7 +184,7 @@ async function applyAudioTrackToMp4(opts: {
   const delayMs = Math.max(0, Math.round(startSeconds * 1000))
   const delayFilter = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
 
-  const normalizeEnabled = Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO)
+  const normalizeEnabled = opts.normalizeAudio == null ? Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO) : Boolean(opts.normalizeAudio)
   const targetLkfs = -16
   const useDurTrim = normalizeEnabled && videoDur != null
   const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
@@ -247,6 +250,79 @@ async function applyAudioTrackToMp4(opts: {
     args.push('-filter_complex', mix, '-map', '0:v:0', '-map', outLabel)
   }
 
+  args.push(
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '128k',
+    '-ar',
+    '48000',
+    '-ac',
+    '2',
+    '-movflags',
+    '+faststart',
+    opts.outMp4Path
+  )
+  if (!useDurTrim) args.splice(args.length - 1, 0, '-shortest')
+  await runFfmpeg(args, opts.logPaths)
+}
+
+async function applyNarrationSegmentsToMp4(opts: {
+  inMp4Path: string
+  outMp4Path: string
+  segments: Array<{ audioPath: string; startSeconds: number; endSeconds: number; gainDb: number }>
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
+}) {
+  const segs = Array.isArray(opts.segments) ? opts.segments : []
+  if (!segs.length) {
+    fs.copyFileSync(opts.inMp4Path, opts.outMp4Path)
+    return
+  }
+
+  const normalizeEnabled = Boolean(MEDIA_CONVERT_NORMALIZE_AUDIO)
+  const targetLkfs = -16
+  const videoDurRaw = await probeDurationSeconds(opts.inMp4Path)
+  const videoDur = videoDurRaw != null && Number.isFinite(videoDurRaw) && videoDurRaw > 0 ? videoDurRaw : null
+  const useDurTrim = normalizeEnabled && videoDur != null
+  const durTrim = useDurTrim ? `,atrim=0:${videoDur!.toFixed(6)},asetpts=N/SR/TB` : ''
+  const normSuffix = normalizeEnabled ? `,loudnorm=I=${targetLkfs}:TP=-1.5:LRA=11` : ''
+
+  const baseHasAudio = await hasAudioStream(opts.inMp4Path)
+  const args: string[] = ['-i', opts.inMp4Path]
+  let baseAudioInputIndex = 0
+  if (!baseHasAudio) {
+    args.push('-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo')
+    baseAudioInputIndex = 1
+  }
+  for (const s of segs) args.push('-i', s.audioPath)
+
+  const baseChain = `[${baseAudioInputIndex}:a]apad[base]`
+  const segChains: string[] = []
+  const segLabels: string[] = []
+  const segInputStart = baseHasAudio ? 1 : 2
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i]
+    const inputIndex = segInputStart + i
+    const startSeconds = clamp(roundToTenth(Number(s.startSeconds || 0)), 0, 20 * 60)
+    const endSeconds = clamp(roundToTenth(Number(s.endSeconds || 0)), 0, 20 * 60)
+    const clipLen = roundToTenth(Math.max(0, endSeconds - startSeconds))
+    if (!(clipLen > 0.05)) continue
+    const delayMs = Math.max(0, Math.round(startSeconds * 1000))
+    const delayFilter = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
+    const gainDb = Number.isFinite(Number(s.gainDb)) ? Number(s.gainDb) : 0
+    const label = `nar${i}`
+    segChains.push(
+      `[${inputIndex}:a]atrim=0:${clipLen.toFixed(3)},asetpts=N/SR/TB${delayFilter},volume=${gainDb}dB,apad[${label}]`
+    )
+    segLabels.push(`[${label}]`)
+  }
+
+  const mixInputs = ['[base]', ...segLabels].join('')
+  const mixCount = 1 + segLabels.length
+  const filter = `${baseChain};${segChains.join(';')};${mixInputs}amix=inputs=${mixCount}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.98${normSuffix}${durTrim}[out]`
+  args.push('-filter_complex', filter, '-map', '0:v:0', '-map', '[out]')
   args.push(
     '-c:v',
     'copy',
@@ -617,6 +693,16 @@ export async function runCreateVideoExportV1Job(
   const logos = Array.isArray((input.timeline as any)?.logos) ? ((input.timeline as any).logos as Logo[]) : []
   const lowerThirds = Array.isArray((input.timeline as any)?.lowerThirds) ? ((input.timeline as any).lowerThirds as LowerThird[]) : []
   const screenTitles = Array.isArray((input.timeline as any)?.screenTitles) ? ((input.timeline as any).screenTitles as ScreenTitle[]) : []
+  const narrationRaw = Array.isArray((input.timeline as any)?.narration) ? ((input.timeline as any).narration as any[]) : []
+  const narration: Narration[] = narrationRaw
+    .map((n) => ({
+      id: String((n as any).id || ''),
+      uploadId: Number((n as any).uploadId),
+      startSeconds: Number((n as any).startSeconds),
+      endSeconds: Number((n as any).endSeconds),
+      gainDb: (n as any).gainDb == null ? undefined : Number((n as any).gainDb),
+    }))
+    .filter((n) => n.id && Number.isFinite(n.uploadId) && n.uploadId > 0 && Number.isFinite(n.startSeconds) && Number.isFinite(n.endSeconds))
   const audioTrackRaw = (input.timeline as any)?.audioTrack
   const audioTrack: AudioTrack | null =
     audioTrackRaw && typeof audioTrackRaw === 'object'
@@ -639,6 +725,7 @@ export async function runCreateVideoExportV1Job(
         ...logos.map((l) => Number((l as any).uploadId)),
         ...lowerThirds.map((lt) => Number((lt as any).uploadId)),
         ...screenTitles.map((st) => Number((st as any).renderUploadId)),
+        ...narration.map((n) => Number((n as any).uploadId)),
         ...(audioTrack ? [Number(audioTrack.uploadId)] : []),
       ].filter((n) => Number.isFinite(n) && n > 0)
     )
@@ -705,6 +792,9 @@ export async function runCreateVideoExportV1Job(
     const graphicsEnd = graphics.length ? Number(graphics.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[graphics.length - 1].endSeconds) : 0
     const screenTitlesEnd = screenTitles.length
       ? Number(screenTitles.slice().sort((a, b) => Number((a as any).endSeconds) - Number((b as any).endSeconds))[screenTitles.length - 1].endSeconds)
+      : 0
+    const narrationEnd = narration.length
+      ? Number(narration.slice().sort((a, b) => Number((a as any).endSeconds) - Number((b as any).endSeconds))[narration.length - 1].endSeconds)
       : 0
     const audioEnd = audioTrack ? Number(audioTrack.endSeconds || 0) : 0
     const logosEnd = logos.length ? Number(logos.slice().sort((a, b) => Number(a.endSeconds) - Number(b.endSeconds))[logos.length - 1].endSeconds) : 0
@@ -816,7 +906,9 @@ export async function runCreateVideoExportV1Job(
         cursorSeconds = endSeconds
       }
 
-      const targetEnd = roundToTenth(Math.max(cursorSeconds, graphicsEnd, screenTitlesEnd, audioEnd, logosEnd, lowerThirdsEnd))
+      const targetEnd = roundToTenth(
+        Math.max(cursorSeconds, graphicsEnd, screenTitlesEnd, audioEnd, narrationEnd, logosEnd, lowerThirdsEnd)
+      )
       if (targetEnd > cursorSeconds + 0.05) {
         const gapDur = roundToTenth(targetEnd - cursorSeconds)
         const gapPath = path.join(tmpDir, `tail_gap.mp4`)
@@ -1198,9 +1290,65 @@ export async function runCreateVideoExportV1Job(
           audioConfig: cfg,
           trackStartSeconds: start,
           trackEndSeconds: end,
+          normalizeAudio: narration.length ? false : undefined,
           logPaths,
         })
         finalOut = outWithAudio
+      }
+    }
+
+    if (narration.length) {
+      const sorted = narration
+        .slice()
+        .map((n) => ({
+          ...n,
+          startSeconds: roundToTenth(Math.max(0, Number((n as any).startSeconds || 0))),
+          endSeconds: roundToTenth(Math.max(0, Number((n as any).endSeconds || 0))),
+          gainDb: Number.isFinite(Number((n as any).gainDb)) ? Number((n as any).gainDb) : 0,
+        }))
+        .filter((n) => Number(n.endSeconds) > Number(n.startSeconds))
+        .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+
+      const narrationDownloads = new Map<number, string>()
+      const segmentsForMix: Array<{ audioPath: string; startSeconds: number; endSeconds: number; gainDb: number }> = []
+
+      const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
+      for (const seg of sorted) {
+        const uploadId = Number(seg.uploadId)
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+        if (Number(row.is_system || 0)) throw new Error('forbidden')
+        if (row.source_deleted_at) throw new Error('source_deleted')
+        const st = String(row.status || '').toLowerCase()
+        if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+
+        let audioPath = narrationDownloads.get(uploadId)
+        if (!audioPath) {
+          const ext = path.extname(String(row.s3_key || '')) || '.m4a'
+          audioPath = path.join(tmpDir, `narr_${uploadId}${ext}`)
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
+          narrationDownloads.set(uploadId, audioPath)
+        }
+
+        const startSeconds = clamp(roundToTenth(Number(seg.startSeconds || 0)), 0, Math.max(0, videoDur))
+        const endSeconds = clamp(roundToTenth(Number(seg.endSeconds || 0)), 0, Math.max(0, videoDur))
+        if (!(endSeconds > startSeconds + 0.05)) continue
+        const gainDb = clamp(Number(seg.gainDb || 0), -12, 12)
+        segmentsForMix.push({ audioPath, startSeconds, endSeconds, gainDb })
+      }
+
+      if (segmentsForMix.length) {
+        const outWithNarration = path.join(tmpDir, 'out_narration.mp4')
+        await applyNarrationSegmentsToMp4({
+          inMp4Path: finalOut,
+          outMp4Path: outWithNarration,
+          segments: segmentsForMix,
+          logPaths,
+        })
+        finalOut = outWithNarration
       }
     }
 

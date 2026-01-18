@@ -77,6 +77,14 @@ export type AudioTrack = {
   endSeconds: number
 }
 
+export type Narration = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  gainDb?: number
+}
+
 export type ScreenTitlePresetSnapshot = {
   id: number
   name: string
@@ -113,6 +121,7 @@ export type Timeline = {
   logos?: Logo[]
   lowerThirds?: LowerThird[]
   screenTitles?: ScreenTitle[]
+  narration?: Narration[]
   audioTrack?: AudioTrack | null
 }
 
@@ -146,6 +155,15 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(g.uploadId),
           startSeconds: Number(g.startSeconds),
           endSeconds: Number(g.endSeconds),
+        }))
+      : [],
+    narration: Array.isArray((timeline as any).narration)
+      ? (timeline as any).narration.map((n: any) => ({
+          id: String(n.id),
+          uploadId: Number(n.uploadId),
+          startSeconds: Number(n.startSeconds),
+          endSeconds: Number(n.endSeconds),
+          gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
         }))
       : [],
     screenTitles: Array.isArray((timeline as any).screenTitles)
