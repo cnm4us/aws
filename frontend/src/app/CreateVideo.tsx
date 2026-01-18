@@ -344,6 +344,10 @@ export default function CreateVideo() {
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
+  const narrationPreviewRef = useRef<HTMLAudioElement | null>(null)
+  const [narrationPreviewPlaying, setNarrationPreviewPlaying] = useState(false)
+  const narrationPreviewSegRef = useRef<{ segId: string; uploadId: number; segStart: number; segEnd: number } | null>(null)
+  const narrationPreviewRafRef = useRef<number | null>(null)
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
   const [audioConfigsError, setAudioConfigsError] = useState<string | null>(null)
@@ -1233,6 +1237,18 @@ export default function CreateVideo() {
     return candidates[0].n
   }, [narration])
 
+  const sortedNarration = useMemo(() => {
+    return narration
+      .slice()
+      .map((n: any) => ({
+        ...n,
+        startSeconds: roundToTenth(Math.max(0, Number(n?.startSeconds || 0))),
+        endSeconds: roundToTenth(Math.max(0, Number(n?.endSeconds || 0))),
+      }))
+      .filter((n: any) => Number(n.endSeconds) > Number(n.startSeconds))
+      .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  }, [narration])
+
   const findStillAtTime = useCallback((t: number): Still | null => {
     const tt = Number(t)
     if (!Number.isFinite(tt) || tt < 0) return null
@@ -1500,6 +1516,120 @@ export default function CreateVideo() {
   }, [ensureAudioEnvelope, selectedClipIndex, timeline.clips])
 
   useEffect(() => {
+    if (!selectedNarrationId) return
+    const seg: any = narration.find((n: any) => String(n?.id) === String(selectedNarrationId))
+    if (!seg) return
+    const uploadId = Number(seg.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    ensureAudioEnvelope(uploadId).catch(() => {})
+  }, [ensureAudioEnvelope, narration, selectedNarrationId])
+
+  const stopNarrationPreview = useCallback(() => {
+    const a = narrationPreviewRef.current
+    try { a?.pause?.() } catch {}
+    if (narrationPreviewRafRef.current != null) {
+      try { window.cancelAnimationFrame(narrationPreviewRafRef.current) } catch {}
+    }
+    narrationPreviewRafRef.current = null
+    narrationPreviewSegRef.current = null
+    setNarrationPreviewPlaying(false)
+  }, [])
+
+  const toggleNarrationPlay = useCallback(async () => {
+    if (narrationPreviewPlaying) {
+      stopNarrationPreview()
+      return
+    }
+    if (!sortedNarration.length) {
+      setTimelineMessage('No narration segments')
+      return
+    }
+
+    // If playhead is not inside a narration segment, jump to the next segment start and stop.
+    const segAt = findNarrationAtTime(playhead)
+    const eps = 0.05
+    if (!segAt) {
+      const next = sortedNarration.find((n: any) => Number(n.startSeconds) > Number(playhead) + eps)
+      if (!next) {
+        setTimelineMessage('No next narration segment')
+        return
+      }
+      setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(Number(next.startSeconds || 0)) }))
+      setTimelineMessage(null)
+      return
+    }
+
+    // Pause main playback (video/graphics clock) so we don't fight over playhead updates.
+    try { videoRef.current?.pause?.() } catch {}
+    setPlaying(false)
+    const curGap = gapPlaybackRef.current
+    if (curGap) {
+      try { window.cancelAnimationFrame(curGap.raf) } catch {}
+      gapPlaybackRef.current = null
+    }
+
+    const segStart = roundToTenth(Number((segAt as any).startSeconds || 0))
+    const segEnd = roundToTenth(Number((segAt as any).endSeconds || 0))
+    if (!(segEnd > segStart + 0.05)) return
+    const uploadId = Number((segAt as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+
+    const a = narrationPreviewRef.current || new Audio()
+    narrationPreviewRef.current = a
+    try { a.pause() } catch {}
+    const url = (await getUploadCdnUrl(uploadId, { kind: 'file' })) || `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+    a.src = url
+    a.preload = 'auto'
+
+    const startTimeline = clamp(roundToTenth(Number(playhead)), segStart, segEnd)
+    const startInSeg = Math.max(0, startTimeline - segStart)
+    const stopAtTimeline = segEnd
+
+    await new Promise<void>((resolve) => {
+      if (a.readyState >= 1) return resolve()
+      const onMeta = () => {
+        a.removeEventListener('loadedmetadata', onMeta)
+        resolve()
+      }
+      a.addEventListener('loadedmetadata', onMeta)
+      try { a.load() } catch {}
+    })
+    try { a.currentTime = Math.max(0, startInSeg) } catch {}
+
+    narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd }
+
+    try {
+      const p = a.play()
+      if (p && typeof (p as any).catch === 'function') await (p as any).catch(() => {})
+    } catch {
+      stopNarrationPreview()
+      return
+    }
+
+    setNarrationPreviewPlaying(true)
+    setTimelineMessage(null)
+
+    const tick = () => {
+      if (!narrationPreviewRef.current) return
+      if (!narrationPreviewSegRef.current) return
+      const cur = narrationPreviewRef.current
+      const seg = narrationPreviewSegRef.current
+      const nextPlayhead = clamp(roundToTenth(seg.segStart + Number(cur.currentTime || 0)), 0, Math.max(0, totalSeconds))
+      playheadFromVideoRef.current = true
+      playheadRef.current = nextPlayhead
+      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
+
+      if (nextPlayhead >= stopAtTimeline - 0.02) {
+        stopNarrationPreview()
+        setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(stopAtTimeline) }))
+        return
+      }
+      narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
+    }
+    narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
+  }, [findNarrationAtTime, narrationPreviewPlaying, playhead, sortedNarration, stopNarrationPreview, totalSeconds])
+
+  useEffect(() => {
     return () => {
       const timers = audioEnvelopePollTimerRef.current
       for (const k of Object.keys(timers)) {
@@ -1731,7 +1861,7 @@ export default function CreateVideo() {
       }
     }
 
-    // Waveform (selected clip only)
+    // Waveform (selected clip or narration segment)
     const waveformTop = rulerH + 2
     const waveformBottom = rulerH + waveformH - 2
     const waveformHeight = Math.max(4, waveformBottom - waveformTop)
@@ -1742,23 +1872,47 @@ export default function CreateVideo() {
     ctx.lineTo(wCss, waveformBottom + 0.5)
     ctx.stroke()
 
+    const selectedNarration: any =
+      selectedNarrationId != null ? narration.find((n: any) => String(n?.id) === String(selectedNarrationId)) : null
     const clipIdx = selectedClipIndex
     const clip = clipIdx >= 0 ? timeline.clips[clipIdx] : null
-    if (!clip) {
+    const hasAnyTarget = Boolean(selectedNarration) || Boolean(clip)
+    if (!hasAnyTarget) {
       ctx.fillStyle = 'rgba(255,255,255,0.55)'
       ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
       ctx.textBaseline = 'middle'
-      ctx.fillText('Select a clip to see waveform', 10, rulerH + waveformH / 2)
+      ctx.fillText('Select a clip or narration segment to see waveform', 10, rulerH + waveformH / 2)
     } else {
-      const uploadId = Number(clip.uploadId)
+      const kind: 'narration' | 'clip' = selectedNarration ? 'narration' : 'clip'
+      const uploadId = kind === 'narration' ? Number(selectedNarration.uploadId) : Number((clip as any).uploadId)
       const env = uploadId > 0 ? audioEnvelopeByUploadId[uploadId] : null
       const envStatus = uploadId > 0 ? (audioEnvelopeStatusByUploadId[uploadId] || 'idle') : 'idle'
-      const clipStartT = roundToTenth(clipStarts[clipIdx] || 0)
-      const freezeStartT = 0
-      const sourceStart = Number(clip.sourceStartSeconds || 0)
-      const sourceEnd = Number(clip.sourceEndSeconds || 0)
       const hasAudio = env && typeof env === 'object' ? Boolean((env as any).hasAudio) : false
       const points = env && typeof env === 'object' && Array.isArray((env as any).points) ? ((env as any).points as any[]) : []
+
+      let segStartT = 0
+      let segEndT = 0
+      let sourceStart = 0
+      let sourceEnd = 0
+      if (kind === 'narration') {
+        segStartT = roundToTenth(Number(selectedNarration.startSeconds || 0))
+        segEndT = roundToTenth(Number(selectedNarration.endSeconds || 0))
+        sourceStart = 0
+        sourceEnd = Math.max(0, roundToTenth(segEndT - segStartT))
+      } else {
+        segStartT = roundToTenth(clipStarts[clipIdx] || 0)
+        segEndT = roundToTenth(segStartT + clipDurationSeconds(clip as any))
+        sourceStart = Number((clip as any).sourceStartSeconds || 0)
+        sourceEnd = Number((clip as any).sourceEndSeconds || 0)
+      }
+
+      // Highlight active window.
+      const hx1 = padPx + segStartT * pxPerSecond - scrollLeft
+      const hx2 = padPx + segEndT * pxPerSecond - scrollLeft
+      if (hx2 > hx1 + 1) {
+        ctx.fillStyle = 'rgba(10,132,255,0.08)'
+        ctx.fillRect(Math.max(0, hx1), waveformTop, Math.min(wCss, hx2) - Math.max(0, hx1), waveformHeight)
+      }
 
       if (envStatus === 'pending' || envStatus === 'idle') {
         ctx.fillStyle = 'rgba(255,255,255,0.55)'
@@ -1787,7 +1941,7 @@ export default function CreateVideo() {
           if (tSrc < sourceStart - 1e-6) continue
           if (tSrc > sourceEnd + 1e-6) break
           const rel = tSrc - sourceStart
-          const tComp = clipStartT + freezeStartT + rel
+          const tComp = segStartT + rel
           const x = padPx + tComp * pxPerSecond - scrollLeft
           if (x < -4 || x > wCss + 4) continue
           const v = clamp(vRaw, 0, 1)
@@ -2381,6 +2535,7 @@ export default function CreateVideo() {
     logos,
     lowerThirds,
     screenTitles,
+    narration,
     stills,
     namesByUploadId,
     pxPerSecond,
@@ -2391,6 +2546,7 @@ export default function CreateVideo() {
     selectedLogoId,
     selectedLowerThirdId,
     selectedScreenTitleId,
+    selectedNarrationId,
     selectedStillId,
     trimDragging,
     timeline.clips,
@@ -2737,6 +2893,7 @@ export default function CreateVideo() {
   const togglePlay = useCallback(() => {
     const v = videoRef.current
     if (!(totalSeconds > 0)) return
+    if (narrationPreviewPlaying) stopNarrationPreview()
 
     // Graphics-only playback uses a synthetic clock.
     if (!timeline.clips.length) {
@@ -2779,7 +2936,7 @@ export default function CreateVideo() {
     } else {
       try { v.pause() } catch {}
     }
-  }, [clipStarts, playhead, playing, primeAutoplayUnlock, seek, timeline.clips, totalSeconds])
+  }, [clipStarts, narrationPreviewPlaying, playhead, playing, primeAutoplayUnlock, seek, stopNarrationPreview, timeline.clips, totalSeconds])
 
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
@@ -6839,6 +6996,26 @@ export default function CreateVideo() {
                 aria-label={playing ? 'Pause' : 'Play'}
               >
                 {playing ? 'Pause' : 'Play'}
+              </button>
+              <button
+                type="button"
+                onClick={toggleNarrationPlay}
+                disabled={!sortedNarration.length}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(175,82,222,0.65)',
+                  background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: sortedNarration.length ? 'pointer' : 'default',
+                  flex: '0 0 auto',
+                  minWidth: 96,
+                }}
+                title="Play narration (voice memo)"
+                aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+              >
+                {narrationPreviewPlaying ? 'Voice Pause' : 'Voice Play'}
               </button>
               <button
                 type="button"

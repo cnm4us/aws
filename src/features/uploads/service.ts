@@ -428,17 +428,22 @@ async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext):
     if (sourceDeletedAt) return
 
     const kind = String(uploadRow?.kind || 'video').toLowerCase()
-    if (kind !== 'video') return
+    const isNarrationAudio = kind === 'audio' && String(uploadRow?.s3_key || '').includes('audio/narration/')
+    if (kind !== 'video' && !isNarrationAudio) return
 
     const userIdForJob = ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
     if (!userIdForJob) return
 
-    // Require the edit proxy to exist before enqueuing.
-    const proxyKey = buildUploadEditProxyKey(uploadId)
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
-    } catch {
-      return
+    const proxyBucket = isNarrationAudio ? String(uploadRow?.s3_bucket || '') : String(UPLOAD_BUCKET)
+    const proxyKey = isNarrationAudio ? String(uploadRow?.s3_key || '') : buildUploadEditProxyKey(uploadId)
+    if (!proxyBucket || !proxyKey) return
+    if (!isNarrationAudio) {
+      // Require the edit proxy to exist before enqueuing (video only).
+      try {
+        await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
+      } catch {
+        return
+      }
     }
 
     let alreadyQueued = false
@@ -461,7 +466,7 @@ async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext):
     await enqueueJob('upload_audio_envelope_v1', {
       uploadId,
       userId: userIdForJob,
-      proxy: { bucket: String(UPLOAD_BUCKET), key: proxyKey },
+      proxy: { bucket: proxyBucket, key: proxyKey },
       outputBucket: String(UPLOAD_BUCKET),
       outputKey: buildUploadAudioEnvelopeKey(uploadId),
       intervalSeconds: 0.1,
@@ -527,7 +532,8 @@ export async function getUploadAudioEnvelope(
   if (!row) throw new NotFoundError('not_found')
 
   const kind = String(row.kind || 'video').toLowerCase()
-  if (kind !== 'video') throw new NotFoundError('not_found')
+  const isNarrationAudio = kind === 'audio' && String((row as any).s3_key || '').includes('audio/narration/')
+  if (kind !== 'video' && !isNarrationAudio) throw new NotFoundError('not_found')
 
   const ownerId = row.user_id != null ? Number(row.user_id) : null
   const isOwner = ownerId != null && ownerId === Number(ctx.userId)
@@ -1474,6 +1480,24 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
 	        // Best-effort: proxy is optional; editor can show a "generating" state.
 	      }
 	    }
+
+    // Narration (voice memo) uploads: generate an audio envelope from the audio file itself.
+    try {
+      const key = String((prev as any).s3_key || '')
+      const isNarrationAudio = kind === 'audio' && key.includes('audio/narration/')
+      if (!isSystem && !sourceDeletedAt && isNarrationAudio && ownerUserId && prevStatus !== 'uploaded') {
+        await enqueueJob('upload_audio_envelope_v1', {
+          uploadId: Number(prev.id),
+          userId: ownerUserId,
+          proxy: { bucket: String((prev as any).s3_bucket || ''), key },
+          outputBucket: String(UPLOAD_BUCKET),
+          outputKey: buildUploadAudioEnvelopeKey(Number(prev.id)),
+          intervalSeconds: 0.1,
+        })
+      }
+    } catch {
+      // best-effort
+    }
 	  }
 
   return { ok: true }
