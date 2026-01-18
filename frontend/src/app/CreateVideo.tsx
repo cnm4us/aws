@@ -627,16 +627,20 @@ export default function CreateVideo() {
     } catch {}
   }, [])
 
-  const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement): Promise<boolean> => {
-    const tryPlay = async (): Promise<boolean> => {
-      try {
-        const p = v.play()
-        if (p && typeof (p as any).then === 'function') await p.catch(() => {})
-        return true
-      } catch {
-        return false
-      }
-    }
+	  const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement): Promise<boolean> => {
+	    const tryPlay = async (): Promise<boolean> => {
+	      try {
+	        const p = v.play()
+	        if (p && typeof (p as any).then === 'function') {
+	          let ok = true
+	          await p.catch(() => { ok = false })
+	          return ok
+	        }
+	        return true
+	      } catch {
+	        return false
+	      }
+	    }
 
     // First attempt: play with current mute state.
     if (await tryPlay()) return true
@@ -3156,31 +3160,72 @@ export default function CreateVideo() {
   }, [clipStarts, playhead, playing, seek, timeline.clips, totalSeconds])
 
   // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
-  useEffect(() => {
-    if (!timeline.clips.length) return
-    if (!playing) {
-      const cur = gapPlaybackRef.current
-      if (cur) {
-        window.cancelAnimationFrame(cur.raf)
-        gapPlaybackRef.current = null
-      }
-      return
-    }
+	  useEffect(() => {
+	    if (!timeline.clips.length) return
+	    if (!playing) {
+	      const cur = gapPlaybackRef.current
+	      if (cur) {
+	        window.cancelAnimationFrame(cur.raf)
+	        gapPlaybackRef.current = null
+	      }
+	      return
+	    }
 
-    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
-    if (idx >= 0) {
-      const cur = gapPlaybackRef.current
-      if (cur) {
-        window.cancelAnimationFrame(cur.raf)
-        gapPlaybackRef.current = null
-      }
-      return
-    }
+	    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+	    if (idx >= 0) {
+	      const cur = gapPlaybackRef.current
+	      if (cur) {
+	        window.cancelAnimationFrame(cur.raf)
+	        gapPlaybackRef.current = null
+	      }
+	      return
+	    }
 
-    const eps = 0.05
-    let nextClipIndex: number | null = null
-    for (let i = 0; i < clipStarts.length; i++) {
-      const s = Number(clipStarts[i] || 0)
+	    // If we're inside a freeze-frame still segment, playhead should advance to the end of the still
+	    // and then stop (user can hit Play again to continue). This also avoids iOS "non-gesture play"
+	    // issues since the next video `play()` call will be initiated by the next user tap.
+	    const curStill = findStillAtTime(playhead)
+	    if (curStill) {
+	      const target = roundToTenth(Number((curStill as any).endSeconds || 0))
+	      if (!(target > playhead + 0.01)) {
+	        setPlaying(false)
+	        return
+	      }
+	      const existing = gapPlaybackRef.current
+	      if (existing && Math.abs(existing.target - target) < 0.05) return
+	      if (existing) {
+	        window.cancelAnimationFrame(existing.raf)
+	        gapPlaybackRef.current = null
+	      }
+	      let last = performance.now()
+	      const tick = (now: number) => {
+	        const curState = gapPlaybackRef.current
+	        if (!curState) return
+	        const dt = Math.max(0, (now - last) / 1000)
+	        last = now
+	        const cur = Number(playheadRef.current || 0)
+	        let next = cur + dt
+	        if (next >= target - 0.001) next = target
+	        playheadFromVideoRef.current = true
+	        playheadRef.current = next
+	        setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(next) }))
+	        if (next >= target - 0.001) {
+	          gapPlaybackRef.current = null
+	          setPlaying(false)
+	          return
+	        }
+	        const raf = window.requestAnimationFrame(tick)
+	        gapPlaybackRef.current = { raf, target, nextClipIndex: null }
+	      }
+	      const raf = window.requestAnimationFrame(tick)
+	      gapPlaybackRef.current = { raf, target, nextClipIndex: null }
+	      return
+	    }
+
+	    const eps = 0.05
+	    let nextClipIndex: number | null = null
+	    for (let i = 0; i < clipStarts.length; i++) {
+	      const s = Number(clipStarts[i] || 0)
       if (s > playhead + eps) {
         nextClipIndex = i
         break
