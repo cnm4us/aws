@@ -3995,29 +3995,45 @@ export default function CreateVideo() {
     setAudioEditorError(null)
   }, [audioEditor, snapshotUndo, totalSeconds])
 
-  const saveNarrationEditor = useCallback(() => {
-    if (!narrationEditor) return
-    const start = roundToTenth(Number(narrationEditor.start))
-    const end = roundToTenth(Number(narrationEditor.end))
-    const gainDb = Number(narrationEditor.gainDb)
-    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
-      setNarrationEditorError('End must be after start.')
-      return
-    }
+	  const saveNarrationEditor = useCallback(() => {
+	    if (!narrationEditor) return
+	    const start = roundToTenth(Number(narrationEditor.start))
+	    const end = roundToTenth(Number(narrationEditor.end))
+	    const gainDb = Number(narrationEditor.gainDb)
+	    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+	      setNarrationEditorError('End must be after start.')
+	      return
+	    }
     if (!Number.isFinite(gainDb) || gainDb < -12 || gainDb > 12) {
       setNarrationEditorError('Gain must be between -12 and +12 dB.')
       return
     }
     const cap = 20 * 60
-    if (end > cap + 1e-6) {
-      setNarrationEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
-      return
-    }
+	    if (end > cap + 1e-6) {
+	      setNarrationEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
+	      return
+	    }
 
-    // Disallow overlaps.
-    for (const n of narration) {
-      if (String((n as any).id) === String(narrationEditor.id)) continue
-      const ns = Number((n as any).startSeconds || 0)
+	    const seg = narration.find((n: any) => String((n as any).id) === String(narrationEditor.id)) as any
+	    if (seg) {
+	      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(seg.uploadId)] ?? 0
+	      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+	      const sourceStartSeconds =
+	        seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds)) ? Number(seg.sourceStartSeconds) : 0
+	      if (totalNoOffsetSeconds > 0) {
+	        const maxLen = roundToTenth(Math.max(0, totalNoOffsetSeconds - sourceStartSeconds))
+	        const requestedLen = roundToTenth(Math.max(0, end - start))
+	        if (requestedLen > maxLen + 1e-6) {
+	          setNarrationEditorError(`Duration exceeds source audio (${maxLen.toFixed(1)}s max).`)
+	          return
+	        }
+	      }
+	    }
+
+	    // Disallow overlaps.
+	    for (const n of narration) {
+	      if (String((n as any).id) === String(narrationEditor.id)) continue
+	      const ns = Number((n as any).startSeconds || 0)
       const ne = Number((n as any).endSeconds || 0)
       if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
       const overlaps = start < ne - 1e-6 && end > ns + 1e-6
@@ -4040,10 +4056,10 @@ export default function CreateVideo() {
       const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
-    })
-    setNarrationEditor(null)
-    setNarrationEditorError(null)
-  }, [computeTotalSecondsForTimeline, narration, narrationEditor, snapshotUndo])
+	    })
+	    setNarrationEditor(null)
+	    setNarrationEditorError(null)
+	  }, [computeTotalSecondsForTimeline, durationsByUploadId, narration, narrationEditor, snapshotUndo])
 
   const split = useCallback(() => {
     if (selectedNarrationId) {
@@ -5289,44 +5305,55 @@ export default function CreateVideo() {
 	          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
 	        }
 
-	        if (drag.kind === 'narration') {
-	          const prevNs: any[] = Array.isArray((prev as any).narration) ? (prev as any).narration : []
-	          const idx = prevNs.findIndex((n: any) => String(n?.id) === String((drag as any).narrationId))
-	          if (idx < 0) return prev
-	          const n0 = prevNs[idx] as any
-	          const nextNs = prevNs.slice()
-	          let startS = Number(n0.startSeconds || 0)
-	          let endS = Number(n0.endSeconds || 0)
-	          let sourceStartS =
-	            n0.sourceStartSeconds != null && Number.isFinite(Number(n0.sourceStartSeconds)) ? Number(n0.sourceStartSeconds) : 0
-	          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
-	          if (drag.edge === 'start') {
-	            const nextStart = clamp(
-	              roundToTenth(drag.startStartSeconds + deltaSeconds),
-	              drag.minStartSeconds,
-	              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
-	            )
-	            const delta = roundToTenth(nextStart - Number(drag.startStartSeconds))
-	            // Keep the audio "content" anchored: trimming start forward advances sourceStartSeconds,
-	            // extending start backward reduces sourceStartSeconds (down to 0) when possible.
+		        if (drag.kind === 'narration') {
+		          const prevNs: any[] = Array.isArray((prev as any).narration) ? (prev as any).narration : []
+		          const idx = prevNs.findIndex((n: any) => String(n?.id) === String((drag as any).narrationId))
+		          if (idx < 0) return prev
+		          const n0 = prevNs[idx] as any
+		          const nextNs = prevNs.slice()
+		          let startS = Number(n0.startSeconds || 0)
+		          let endS = Number(n0.endSeconds || 0)
+		          let sourceStartS =
+		            n0.sourceStartSeconds != null && Number.isFinite(Number(n0.sourceStartSeconds)) ? Number(n0.sourceStartSeconds) : 0
+		          const rawDur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+		          const maxDurForFile =
+		            drag.maxDurationSeconds != null && Number.isFinite(Number(drag.maxDurationSeconds)) ? Number(drag.maxDurationSeconds) : Number.POSITIVE_INFINITY
+		          const dur = Number.isFinite(maxDurForFile) && maxDurForFile > 0 ? Math.min(rawDur, maxDurForFile) : rawDur
+		          if (drag.edge === 'start') {
+		            const minStartByAudio =
+		              drag.startSourceStartSeconds != null && Number.isFinite(Number(drag.startSourceStartSeconds))
+		                ? roundToTenth(Number(drag.startStartSeconds) - Number(drag.startSourceStartSeconds))
+		                : drag.minStartSeconds
+		            const nextStart = clamp(
+		              roundToTenth(drag.startStartSeconds + deltaSeconds),
+		              Math.max(drag.minStartSeconds, minStartByAudio),
+		              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
+		            )
+		            const delta = roundToTenth(nextStart - Number(drag.startStartSeconds))
+		            // Keep the audio "content" anchored: trimming start forward advances sourceStartSeconds,
+		            // extending start backward reduces sourceStartSeconds (down to 0) when possible.
 	            if (delta > 0) {
 	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
 	            } else if (delta < 0) {
 	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
 	            }
-	            startS = nextStart
-	          } else if (drag.edge === 'end') {
-	            endS = clamp(
-	              roundToTenth(drag.startEndSeconds + deltaSeconds),
-	              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-	              drag.maxEndSeconds
-	            )
-	          } else {
-	            const maxStart =
-	              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
-	            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
-	            endS = roundToTenth(startS + dur)
-	          }
+		            startS = nextStart
+		          } else if (drag.edge === 'end') {
+		            const maxEndByAudio =
+		              Number.isFinite(maxDurForFile) && maxDurForFile > 0
+		                ? Math.min(drag.maxEndSeconds, roundToTenth(Number(drag.startStartSeconds) + maxDurForFile))
+		                : drag.maxEndSeconds
+		            endS = clamp(
+		              roundToTenth(drag.startEndSeconds + deltaSeconds),
+		              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
+		              maxEndByAudio
+		            )
+		          } else {
+		            const maxStart =
+		              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+		            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+		            endS = roundToTenth(startS + dur)
+		          }
 	          nextNs[idx] = { ...n0, startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
 	          nextNs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
 	          const nextTimeline: any = { ...(prev as any), narration: nextNs }
@@ -6109,16 +6136,25 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinNarration) {
-                    const n = findNarrationAtTime(t)
-                    if (!n) return
-                    const s = Number((n as any).startSeconds || 0)
-                    const e2 = Number((n as any).endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                  if (withinNarration) {
+	                    const n = findNarrationAtTime(t)
+	                    if (!n) return
+	                    const s = Number((n as any).startSeconds || 0)
+	                    const e2 = Number((n as any).endSeconds || 0)
+	                    const nSourceStart =
+	                      (n as any).sourceStartSeconds != null && Number.isFinite(Number((n as any).sourceStartSeconds))
+	                        ? Number((n as any).sourceStartSeconds)
+	                        : 0
+	                    const nTotalSeconds = durationsByUploadId[Number((n as any).uploadId)]
+	                    const nMaxDurationSeconds =
+	                      nTotalSeconds != null && Number.isFinite(Number(nTotalSeconds)) && Number(nTotalSeconds) > 0
+	                        ? roundToTenth(Math.max(0, Number(nTotalSeconds) - nSourceStart))
+	                        : undefined
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
                     if (!inside) return
 
                     const capEnd = Math.max(0, totalSeconds)
@@ -6149,18 +6185,20 @@ export default function CreateVideo() {
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
                       trimDragLockScrollLeftRef.current = sc.scrollLeft
-                      trimDragRef.current = {
-                        kind: 'narration',
-                        narrationId: String((n as any).id),
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                      }
+	                      trimDragRef.current = {
+	                        kind: 'narration',
+	                        narrationId: String((n as any).id),
+	                        edge: 'move',
+	                        pointerId: e.pointerId,
+	                        startClientX: e.clientX,
+	                        startStartSeconds: s,
+	                        startEndSeconds: e2,
+	                        startSourceStartSeconds: nSourceStart,
+	                        maxDurationSeconds: nMaxDurationSeconds,
+	                        minStartSeconds,
+	                        maxEndSeconds,
+	                        maxStartSeconds,
+	                      }
                       setTrimDragging(true)
                       try { sc.setPointerCapture(e.pointerId) } catch {}
                       dbg('startTrimDrag', { kind: 'narration', edge: 'move', id: String((n as any).id) })
@@ -6179,17 +6217,19 @@ export default function CreateVideo() {
                     setSelectedAudio(false)
 
                     trimDragLockScrollLeftRef.current = sc.scrollLeft
-                    trimDragRef.current = {
-                      kind: 'narration',
-                      narrationId: String((n as any).id),
-                      edge: nearLeft ? 'start' : 'end',
-                      pointerId: e.pointerId,
-                      startClientX: e.clientX,
-                      startStartSeconds: s,
-                      startEndSeconds: e2,
-                      minStartSeconds,
-                      maxEndSeconds,
-                    }
+	                    trimDragRef.current = {
+	                      kind: 'narration',
+	                      narrationId: String((n as any).id),
+	                      edge: nearLeft ? 'start' : 'end',
+	                      pointerId: e.pointerId,
+	                      startClientX: e.clientX,
+	                      startStartSeconds: s,
+	                      startEndSeconds: e2,
+	                      startSourceStartSeconds: nSourceStart,
+	                      maxDurationSeconds: nMaxDurationSeconds,
+	                      minStartSeconds,
+	                      maxEndSeconds,
+	                    }
                     setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
                     dbg('startTrimDrag', { kind: 'narration', edge: nearLeft ? 'start' : 'end', id: String((n as any).id) })
