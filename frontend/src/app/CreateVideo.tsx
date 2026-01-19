@@ -536,7 +536,7 @@ export default function CreateVideo() {
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
-        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle' | 'clip'
+        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle' | 'clip' | 'narration'
         id: string
         x: number
         y: number
@@ -7614,38 +7614,57 @@ export default function CreateVideo() {
 
 	            const movingRight = deltaSeconds >= 0
 	            let startTimeline = desiredStart
-	            if (validStartIntervals.length > 0) {
-	              // Find a gap that can hold the clip and contains the desired start.
-	              const inGap = validStartIntervals.find((g) => desiredStart >= g.start - 1e-6 && desiredStart <= g.startMax + 1e-6)
-	              if (inGap) {
-	                startTimeline = clamp(desiredStart, inGap.start, inGap.startMax)
-	              } else {
-	                // If desiredStart is inside an occupied range (or outside all gaps), pick the nearest gap in the movement direction.
-	                // This keeps behavior stable when a clip is dragged "through" another base segment.
-	                const desiredEnd = roundToTenth(desiredStart + dur)
-	                const hit = merged.find((r) => desiredStart < r.end - 1e-6 && desiredEnd > r.start + 1e-6) || null
-	                if (hit) {
-	                  const before = validStartIntervals
-	                    .filter((g) => g.startMax <= hit.start + 1e-6)
-	                    .sort((a, b) => b.startMax - a.startMax)
-	                  const after = validStartIntervals
-	                    .filter((g) => g.start >= hit.end - 1e-6)
-	                    .sort((a, b) => a.start - b.start)
-	                  const pick = movingRight ? after[0] || before[0] : before[0] || after[0]
-	                  if (pick) startTimeline = clamp(desiredStart, pick.start, pick.startMax)
-	                  else startTimeline = clamp(desiredStart, minStartSeconds, maxStartSeconds)
-	                } else {
-	                  // No explicit overlap but desiredStart is outside any valid interval: clamp to nearest interval.
-	                  const first = validStartIntervals[0]
-	                  const last = validStartIntervals[validStartIntervals.length - 1]
-	                  if (desiredStart < first.start - 1e-6) startTimeline = first.start
-	                  else if (desiredStart > last.startMax + 1e-6) startTimeline = last.startMax
-	                  else startTimeline = clamp(desiredStart, minStartSeconds, maxStartSeconds)
-	                }
-	              }
-	            } else {
-	              // No gap can fit this clip duration; keep it at its original position.
-	              startTimeline = roundToTenth(Number(drag.startStartSeconds || 0))
+		            if (validStartIntervals.length > 0) {
+		              // Find a gap that can hold the clip and contains the desired start.
+		              const inGap = validStartIntervals.find((g) => desiredStart >= g.start - 1e-6 && desiredStart <= g.startMax + 1e-6)
+		              if (inGap) {
+		                startTimeline = clamp(desiredStart, inGap.start, inGap.startMax)
+		              } else {
+		                // If desiredStart is inside an occupied range (or outside all gaps), block on collision:
+		                // clamp to the nearest boundary rather than jumping to a different gap.
+		                const desiredEnd = roundToTenth(desiredStart + dur)
+		                const hit = merged.find((r) => desiredStart < r.end - 1e-6 && desiredEnd > r.start + 1e-6) || null
+		                if (hit) {
+		                  // Moving right: stop with our end aligned to hit.start (if there's a gap that can fit).
+		                  // Moving left: stop with our start aligned to hit.end (if there's a gap that can fit).
+		                  if (movingRight) {
+		                    const before = validStartIntervals
+		                      .filter((g) => g.startMax <= hit.start + 1e-6)
+		                      .sort((a, b) => b.startMax - a.startMax)[0]
+		                    if (before) startTimeline = clamp(before.startMax, minStartSeconds, maxStartSeconds)
+		                    else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
+		                  } else {
+		                    const after = validStartIntervals
+		                      .filter((g) => g.start >= hit.end - 1e-6)
+		                      .sort((a, b) => a.start - b.start)[0]
+		                    if (after) startTimeline = clamp(after.start, minStartSeconds, maxStartSeconds)
+		                    else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
+		                  }
+		                } else {
+		                  // No explicit overlap but desiredStart is outside any valid interval: clamp to nearest interval.
+		                  const first = validStartIntervals[0]
+		                  const last = validStartIntervals[validStartIntervals.length - 1]
+		                  if (desiredStart < first.start - 1e-6) startTimeline = first.start
+		                  else if (desiredStart > last.startMax + 1e-6) startTimeline = last.startMax
+		                  else {
+		                    // Between gaps: clamp to the closest boundary in the movement direction.
+		                    if (movingRight) {
+		                      const before = validStartIntervals
+		                        .filter((g) => g.startMax <= desiredStart + 1e-6)
+		                        .sort((a, b) => b.startMax - a.startMax)[0]
+		                      startTimeline = before ? before.startMax : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                    } else {
+		                      const after = validStartIntervals
+		                        .filter((g) => g.start >= desiredStart - 1e-6)
+		                        .sort((a, b) => a.start - b.start)[0]
+		                      startTimeline = after ? after.start : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                    }
+		                  }
+		                }
+		              }
+		            } else {
+		              // No gap can fit this clip duration; keep it at its original position.
+		              startTimeline = roundToTenth(Number(drag.startStartSeconds || 0))
 	            }
 	            startTimeline = clamp(roundToTenth(startTimeline), minStartSeconds, maxStartSeconds)
 
