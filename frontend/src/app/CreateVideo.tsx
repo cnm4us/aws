@@ -6453,14 +6453,15 @@ export default function CreateVideo() {
                   const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
                   const withinNarration = y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
                   const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
-                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
-                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
-                  const x = clickXInScroll - padPx
-                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
-                  dbg('pointerdown', {
-                    pointerType: (e as any).pointerType,
-                    withinLogo,
-                    withinLowerThird,
+	                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
+	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
+	                  const x = clickXInScroll - padPx
+	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+	                  const EDGE_HIT_PX = Math.max(24, Math.min(72, Math.round(pxPerSecond * 0.6)))
+	                  dbg('pointerdown', {
+	                    pointerType: (e as any).pointerType,
+	                    withinLogo,
+	                    withinLowerThird,
                     withinScreenTitle,
                     withinGraphics,
                     withinVideo,
@@ -6472,14 +6473,18 @@ export default function CreateVideo() {
 	                  if (withinLogo) {
 	                    const l = findLogoAtTime(t)
 	                    if (!l) return
-                    const s = Number((l as any).startSeconds || 0)
-                    const e2 = Number((l as any).endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+	                    const s = Number((l as any).startSeconds || 0)
+	                    const e2 = Number((l as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (selectedLogoId === String((l as any).id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = logos.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
@@ -6545,17 +6550,21 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinLowerThird) {
-                    const lt = findLowerThirdAtTime(t)
-                    if (!lt) return
-                    const s = Number((lt as any).startSeconds || 0)
-                    const e2 = Number((lt as any).endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+	                  if (withinLowerThird) {
+	                    const lt = findLowerThirdAtTime(t)
+	                    if (!lt) return
+	                    const s = Number((lt as any).startSeconds || 0)
+	                    const e2 = Number((lt as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (selectedLowerThirdId === String((lt as any).id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = lowerThirds
@@ -6622,17 +6631,21 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinScreenTitle) {
-                    const st = findScreenTitleAtTime(t)
-                    if (!st) return
-                    const s = Number((st as any).startSeconds || 0)
-                    const e2 = Number((st as any).endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+	                  if (withinScreenTitle) {
+	                    const st = findScreenTitleAtTime(t)
+	                    if (!st) return
+	                    const s = Number((st as any).startSeconds || 0)
+	                    const e2 = Number((st as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (selectedScreenTitleId === String((st as any).id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
@@ -6705,17 +6718,21 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinGraphics) {
-                    const g = findGraphicAtTime(t)
-                    if (!g) return
-                    const s = Number((g as any).startSeconds || 0)
-                    const e2 = Number((g as any).endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+	                  if (withinGraphics) {
+	                    const g = findGraphicAtTime(t)
+	                    if (!g) return
+	                    const s = Number((g as any).startSeconds || 0)
+	                    const e2 = Number((g as any).endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (selectedGraphicId === g.id) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     // Slide (body drag) only when already selected.
                     if (!nearLeft && !nearRight) {
@@ -6803,12 +6820,16 @@ export default function CreateVideo() {
 	                      nTotalSeconds != null && Number.isFinite(Number(nTotalSeconds)) && Number(nTotalSeconds) > 0
 	                        ? roundToTenth(Math.max(0, Number(nTotalSeconds) - nSourceStart))
 	                        : undefined
-	                    const leftX = padPx + s * pxPerSecond
-	                    const rightX = padPx + e2 * pxPerSecond
-	                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-	                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+		                    const leftX = padPx + s * pxPerSecond
+		                    const rightX = padPx + e2 * pxPerSecond
+		                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+		                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+		                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (selectedNarrationId === String((n as any).id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = narration
@@ -6896,14 +6917,18 @@ export default function CreateVideo() {
                       return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
                     }) as any
                     if (!seg) return
-                    const s = Number(seg.startSeconds || 0)
-                    const e2 = Number(seg.endSeconds || 0)
-                    const leftX = padPx + s * pxPerSecond
-                    const rightX = padPx + e2 * pxPerSecond
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                    if (!inside) return
+	                    const s = Number(seg.startSeconds || 0)
+	                    const e2 = Number(seg.endSeconds || 0)
+	                    const leftX = padPx + s * pxPerSecond
+	                    const rightX = padPx + e2 * pxPerSecond
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                    if (!inside) return
+	                    if (String(selectedAudioId || '') === String(seg.id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
 
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = audioSegments
@@ -6983,14 +7008,18 @@ export default function CreateVideo() {
                   if (withinVideo) {
                     const still = findStillAtTime(t)
                     if (still) {
-                      const s = roundToTenth(Number((still as any).startSeconds || 0))
-                      const e2 = roundToTenth(Number((still as any).endSeconds || 0))
-                      const leftX = padPx + s * pxPerSecond
-                      const rightX = padPx + e2 * pxPerSecond
-                      const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                      const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                      const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                      if (!inside) return
+	                      const s = roundToTenth(Number((still as any).startSeconds || 0))
+	                      const e2 = roundToTenth(Number((still as any).endSeconds || 0))
+	                      const leftX = padPx + s * pxPerSecond
+	                      const rightX = padPx + e2 * pxPerSecond
+	                      let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                      let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                      const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                      if (!inside) return
+	                      if (selectedStillId === String((still as any).id)) {
+	                        nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                        nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                      }
 
                       const capEnd = 20 * 60
                       const clipRanges = timeline.clips.map((c, i) => ({
@@ -7072,14 +7101,18 @@ export default function CreateVideo() {
                   const clip = idx >= 0 ? timeline.clips[idx] : null
                   if (!clip) return
 
-                  const start = (clipStarts[idx] || 0)
-                  const len = clipDurationSeconds(clip)
-                  const leftX = padPx + start * pxPerSecond
-                  const rightX = padPx + (start + len) * pxPerSecond
-                  const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                  const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                  const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-                  if (!inside) return
+	                  const start = (clipStarts[idx] || 0)
+	                  const len = clipDurationSeconds(clip)
+	                  const leftX = padPx + start * pxPerSecond
+	                  const rightX = padPx + (start + len) * pxPerSecond
+	                  let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                  let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                  const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+	                  if (!inside) return
+	                  if (selectedClipId === clip.id) {
+	                    nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                    nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                  }
 
                   // Slide (body drag) only when already selected.
                   if (!nearLeft && !nearRight) {
@@ -7258,12 +7291,13 @@ export default function CreateVideo() {
                   const y = e.clientY - rect.top
                   const clickX = e.clientX - rect.left
                   const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
-	                  const clickXInScroll = clickX + sc.scrollLeft
-	                  const x = clickXInScroll - padPx
-	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
-		                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
-		                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-		                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+		                  const clickXInScroll = clickX + sc.scrollLeft
+		                  const x = clickXInScroll - padPx
+		                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
+		                  const EDGE_HIT_PX = Math.max(24, Math.min(72, Math.round(pxPerSecond * 0.6)))
+			                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
+			                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+			                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
 		                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 		                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 		                  const withinNarration = y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
@@ -7437,9 +7471,9 @@ export default function CreateVideo() {
 		                      return
 		                    }
 		                    const s = Number((n as any).startSeconds || 0)
-		                    const e2 = Number((n as any).endSeconds || 0)
-		                    const leftX = padPx + s * pxPerSecond
-		                    const rightX = padPx + e2 * pxPerSecond
+			                    const e2 = Number((n as any).endSeconds || 0)
+			                    const leftX = padPx + s * pxPerSecond
+			                    const rightX = padPx + e2 * pxPerSecond
 		                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
 		                      setSelectedClipId(null)
 		                      setSelectedGraphicId(null)
@@ -7451,9 +7485,13 @@ export default function CreateVideo() {
 		                      setSelectedAudioId(null)
 		                      return
 		                    }
-		                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-		                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-		                    if (nearLeft || nearRight) return
+			                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+			                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+			                    if (selectedNarrationId === String((n as any).id)) {
+			                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+			                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+			                    }
+			                    if (nearLeft || nearRight) return
 
 		                    if (selectedNarrationId === String((n as any).id)) {
 		                      setNarrationEditor({
@@ -7553,9 +7591,13 @@ export default function CreateVideo() {
 	                      setSelectedStillId(null)
 	                      return
 	                    }
-                    const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                    const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                    if (nearLeft || nearRight) return
+	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                    if (String(selectedAudioId || '') === String(seg.id)) {
+	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                    }
+	                    if (nearLeft || nearRight) return
 
 		                    if (String(selectedAudioId || '') === String(seg.id)) {
 		                      openAudioEditor()
@@ -7629,9 +7671,13 @@ export default function CreateVideo() {
 	                    setSelectedAudioId(null)
 	                    return
 	                  }
-                  const nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-                  const nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-                  if (nearLeft || nearRight) return
+	                  let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+	                  let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+	                  if (selectedClipId === clip.id) {
+	                    nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+	                    nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+	                  }
+	                  if (nearLeft || nearRight) return
 
                   if (selectedClipId === clip.id) {
                     setClipEditor({
