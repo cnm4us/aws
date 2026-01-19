@@ -540,6 +540,8 @@ export default function CreateVideo() {
         id: string
         x: number
         y: number
+        view?: 'main' | 'guidelines'
+        edgeIntent?: 'move' | 'start' | 'end'
       }
   >(null)
   const timelineLongPressRef = useRef<
@@ -5270,6 +5272,183 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline]
   )
 
+  const applyGraphicGuidelineAction = useCallback(
+    (
+      id: string,
+      action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
+      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+    ) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevGraphics: any[] = Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as any[]) : []
+      const idx = prevGraphics.findIndex((g: any) => String(g?.id) === targetId)
+      if (idx < 0) return
+
+      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsSorted = Array.from(
+        new Map(
+          gsRaw
+            .map((x) => roundToTenth(Number(x)))
+            .filter((x) => Number.isFinite(x) && x >= 0)
+            .map((x) => [x.toFixed(1), x] as const)
+        ).values()
+      ).sort((a, b) => a - b)
+      if (!gsSorted.length) {
+        setTimelineMessage('No guidelines yet. Tap G to add one.')
+        return
+      }
+
+      const g0 = prevGraphics[idx] as any
+      const start0 = roundToTenth(Number(g0.startSeconds || 0))
+      const end0 = roundToTenth(Number(g0.endSeconds || 0))
+      const minLen = 0.2
+      const dur = roundToTenth(Math.max(minLen, end0 - start0))
+
+      // Disallow overlaps: constrain by neighbors.
+      const sorted = prevGraphics.slice().sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const pos = sorted.findIndex((gg: any) => String(gg?.id) === targetId)
+      const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
+      const prevEnd = pos > 0 ? roundToTenth(Number((sorted[pos - 1] as any).endSeconds || 0)) : 0
+      const nextStart =
+        pos >= 0 && pos < sorted.length - 1 ? roundToTenth(Number((sorted[pos + 1] as any).startSeconds || capEnd)) : roundToTenth(capEnd)
+      const minStartSeconds = clamp(prevEnd, 0, Math.max(0, capEnd))
+      const maxEndSeconds = clamp(nextStart, 0, Math.max(0, capEnd))
+
+      const eps = 0.05
+      const prevStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = gsSorted.length - 1; i >= 0; i--) {
+          const v = gsSorted[i]
+          if (v < tt - eps) return v
+        }
+        return null
+      }
+      const nextStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = 0; i < gsSorted.length; i++) {
+          const v = gsSorted[i]
+          if (v > tt + eps) return v
+        }
+        return null
+      }
+      const nearestInclusive = (t: number) => {
+        let best: number | null = null
+        let bestDist = Number.POSITIVE_INFINITY
+        for (const v of gsSorted) {
+          const d = Math.abs(v - t)
+          if (d < bestDist - 1e-9) {
+            bestDist = d
+            best = v
+          }
+        }
+        return best == null ? null : { v: best, dist: bestDist }
+      }
+
+      let startS = start0
+      let endS = end0
+
+      if (action === 'snap') {
+        const edgeIntent = opts?.edgeIntent || 'move'
+        const chooseEdge = () => {
+          if (edgeIntent === 'start') return 'start' as const
+          if (edgeIntent === 'end') return 'end' as const
+          const nS = nearestInclusive(start0)
+          const nE = nearestInclusive(end0)
+          if (!nS && !nE) return 'start' as const
+          if (!nS) return 'end' as const
+          if (!nE) return 'start' as const
+          return nS.dist <= nE.dist ? ('start' as const) : ('end' as const)
+        }
+        const snapEdge = chooseEdge()
+        const tEdge = snapEdge === 'start' ? start0 : end0
+        const nn = nearestInclusive(tEdge)
+        if (!nn) {
+          setTimelineMessage('No guidelines available.')
+          return
+        }
+        if (nn.dist <= eps) {
+          setTimelineMessage('Already aligned to guideline.')
+          return
+        }
+        if (snapEdge === 'start') {
+          startS = roundToTenth(nn.v)
+          endS = roundToTenth(startS + dur)
+        } else {
+          endS = roundToTenth(nn.v)
+          startS = roundToTenth(endS - dur)
+        }
+        if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+          setTimelineMessage('Cannot snap (would overlap another graphic).')
+          return
+        }
+      } else if (action === 'expand_start') {
+        const cand = prevStrict(start0)
+        if (cand == null) {
+          setTimelineMessage('No guideline before start.')
+          return
+        }
+        const nextStartS = roundToTenth(cand)
+        if (nextStartS < minStartSeconds - 1e-6 || nextStartS > end0 - minLen + 1e-6) {
+          setTimelineMessage('No room to expand start to that guideline.')
+          return
+        }
+        startS = nextStartS
+      } else if (action === 'contract_start') {
+        const cand = nextStrict(start0)
+        if (cand == null) {
+          setTimelineMessage('No guideline after start.')
+          return
+        }
+        const nextStartS = roundToTenth(cand)
+        if (nextStartS < minStartSeconds - 1e-6 || nextStartS > end0 - minLen + 1e-6) {
+          setTimelineMessage('No room to contract start to that guideline.')
+          return
+        }
+        startS = nextStartS
+      } else if (action === 'expand_end') {
+        const cand = nextStrict(end0)
+        if (cand == null) {
+          setTimelineMessage('No guideline after end.')
+          return
+        }
+        const nextEndS = roundToTenth(cand)
+        if (nextEndS > maxEndSeconds + 1e-6 || nextEndS < start0 + minLen - 1e-6) {
+          setTimelineMessage('No room to expand end to that guideline.')
+          return
+        }
+        endS = nextEndS
+      } else if (action === 'contract_end') {
+        const cand = prevStrict(end0)
+        if (cand == null) {
+          setTimelineMessage('No guideline before end.')
+          return
+        }
+        const nextEndS = roundToTenth(cand)
+        if (nextEndS > maxEndSeconds + 1e-6 || nextEndS < start0 + minLen - 1e-6) {
+          setTimelineMessage('No room to contract end to that guideline.')
+          return
+        }
+        endS = nextEndS
+      }
+
+      startS = roundToTenth(startS)
+      endS = roundToTenth(endS)
+      if (!(endS > startS + minLen - 1e-6)) {
+        setTimelineMessage('Resulting duration is too small.')
+        return
+      }
+
+      snapshotUndo()
+      const nextGraphics = prevGraphics.slice()
+      nextGraphics[idx] = { ...g0, startSeconds: startS, endSeconds: endS }
+      nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTimeline: any = { ...(timeline as any), graphics: nextGraphics }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline, totalSecondsVideo]
+  )
+
   const saveClipEditor = useCallback(() => {
     if (!clipEditor) return
     const start = roundToTenth(Number(clipEditor.start))
@@ -5896,23 +6075,38 @@ export default function CreateVideo() {
 	      if (!drag) return
 	      if (e.pointerId !== drag.pointerId) return
 
-	      // Special case: "armed" moves (body-drag). Don't start dragging until the pointer has moved a bit,
-	      // otherwise a simple click on the selected pill can't open the properties modal.
-	      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'graphic') && drag.edge === 'move' && (drag as any).armed) {
-	        const dx0 = e.clientX - drag.startClientX
-	        const dy0 = drag.kind === 'graphic' ? 0 : e.clientY - Number((drag as any).startClientY ?? e.clientY)
-	        const moved = Boolean((drag as any).moved)
-	        if (!moved) {
-	          const thresholdPx = 6
-	          if (Math.abs(dx0) < thresholdPx && Math.abs(dy0) < thresholdPx) return
-	          ;(drag as any).moved = true
-	          ;(drag as any).armed = false
-	          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
-	          try { snapshotUndoRef.current?.() } catch {}
-	          setTrimDragging(true)
-	          dbg('startTrimDrag', { kind: drag.kind, edge: 'move', id: String((drag as any).logoId || (drag as any).lowerThirdId || (drag as any).graphicId || '') })
-	        }
-	      }
+		      // Special case: "armed" drags. Don't start mutating the timeline until the pointer has moved a bit,
+		      // otherwise a simple tap on the selected pill can open a context menu / modal.
+		      if ((drag.kind === 'logo' || drag.kind === 'lowerThird') && drag.edge === 'move' && (drag as any).armed) {
+		        const dx0 = e.clientX - drag.startClientX
+		        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
+		        const moved = Boolean((drag as any).moved)
+		        if (!moved) {
+		          const thresholdPx = 6
+		          if (Math.abs(dx0) < thresholdPx && Math.abs(dy0) < thresholdPx) return
+		          ;(drag as any).moved = true
+		          ;(drag as any).armed = false
+		          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
+		          try { snapshotUndoRef.current?.() } catch {}
+		          setTrimDragging(true)
+		          dbg('startTrimDrag', { kind: drag.kind, edge: 'move', id: String((drag as any).logoId || (drag as any).lowerThirdId || '') })
+		        }
+		      }
+
+		      if (drag.kind === 'graphic' && (drag as any).armed) {
+		        const dx0 = e.clientX - drag.startClientX
+		        const moved = Boolean((drag as any).moved)
+		        if (!moved) {
+		          const thresholdPx = 6
+		          if (Math.abs(dx0) < thresholdPx) return
+		          ;(drag as any).moved = true
+		          ;(drag as any).armed = false
+		          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
+		          try { snapshotUndoRef.current?.() } catch {}
+		          setTrimDragging(true)
+		          dbg('startTrimDrag', { kind: 'graphic', edge: drag.edge, id: String((drag as any).graphicId || '') })
+		        }
+		      }
 
 	      e.preventDefault()
 	      const sc = timelineScrollRef.current
@@ -6373,8 +6567,8 @@ export default function CreateVideo() {
       if (!trimDragging && !drag) return
       if (drag && e.pointerId !== drag.pointerId) return
 
-      // For graphics: tap-release on a selected pill (armed move, not moved) opens the context menu immediately.
-      if (drag && drag.kind === 'graphic' && drag.edge === 'move' && (drag as any).armed && !Boolean((drag as any).moved)) {
+      // For graphics: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
+      if (drag && drag.kind === 'graphic' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
           const w = window.innerWidth || 0
           const h = window.innerHeight || 0
@@ -6383,8 +6577,17 @@ export default function CreateVideo() {
           const pad = 10
           const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
           const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+          const edgeIntent: any =
+            drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
           timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({ kind: 'graphic', id: String((drag as any).graphicId), x, y })
+          setTimelineCtxMenu({
+            kind: 'graphic',
+            id: String((drag as any).graphicId),
+            x,
+            y,
+            view: 'main',
+            edgeIntent,
+          })
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -6537,7 +6740,7 @@ export default function CreateVideo() {
     const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
     const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
     timelineCtxMenuOpenedAtRef.current = performance.now()
-    setTimelineCtxMenu({ kind: target.kind, id: target.id, x, y })
+    setTimelineCtxMenu({ kind: target.kind, id: target.id, x, y, view: 'main', edgeIntent: 'move' })
   }, [])
 
   const beginGraphicLongPress = useCallback(
@@ -7167,7 +7370,7 @@ export default function CreateVideo() {
 		                    }
 
 		                    // Tap selects. Tap+drag moves/resizes. Tap-release on an already-selected pill opens the context menu.
-		                    if (selectedGraphicId !== g.id && !nearLeft && !nearRight) {
+		                    if (selectedGraphicId !== g.id) {
 		                      e.preventDefault()
 		                      setSelectedGraphicId(g.id)
 		                      setSelectedClipId(null)
@@ -7192,7 +7395,6 @@ export default function CreateVideo() {
 		                    // Resize (start/end).
 		                    if (nearLeft || nearRight) {
 		                      e.preventDefault()
-		                      snapshotUndo()
 		                      setSelectedGraphicId(g.id)
 		                      setSelectedClipId(null)
 		                      setSelectedLogoId(null)
@@ -7213,6 +7415,8 @@ export default function CreateVideo() {
 		                        startEndSeconds: e2,
 		                        minStartSeconds,
 		                        maxEndSeconds,
+		                        armed: true,
+		                        moved: false,
 		                      }
 		                      setTrimDragging(true)
 		                      try { sc.setPointerCapture(e.pointerId) } catch {}
@@ -10104,127 +10308,273 @@ export default function CreateVideo() {
 		              boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
 		            }}
 		            onPointerDown={(e) => e.stopPropagation()}
-		          >
-		            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
-		              <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>Graphic</div>
-		              <button
-		                type="button"
-		                onClick={() => setTimelineCtxMenu(null)}
-		                style={{
-		                  width: 28,
-		                  height: 28,
-		                  borderRadius: 10,
-		                  border: '1px solid rgba(255,255,255,0.18)',
-		                  background: 'rgba(255,255,255,0.06)',
-		                  color: '#fff',
-		                  fontWeight: 900,
-		                  cursor: 'pointer',
-		                  lineHeight: '26px',
-		                  textAlign: 'center',
-		                }}
-		              >
-		                ×
-		              </button>
-		            </div>
-		            <button
-		              type="button"
-		              onClick={() => {
-		                if (timelineCtxMenu.kind === 'graphic') {
-		                  const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
-		                  if (g) {
-		                    const s = roundToTenth(Number((g as any).startSeconds || 0))
-		                    const e2 = roundToTenth(Number((g as any).endSeconds || 0))
-		                    setSelectedGraphicId(String((g as any).id))
-		                    setSelectedClipId(null)
-		                    setSelectedLogoId(null)
-		                    setSelectedLowerThirdId(null)
-		                    setSelectedScreenTitleId(null)
-		                    setSelectedNarrationId(null)
-		                    setSelectedStillId(null)
-		                    setSelectedAudioId(null)
-		                    setGraphicEditor({ id: String((g as any).id), start: s, end: e2 })
-		                    setGraphicEditorError(null)
-		                  }
-		                }
-		                setTimelineCtxMenu(null)
-		              }}
-		              style={{
-		                width: '100%',
-		                padding: '10px 12px',
-		                borderRadius: 10,
-		                border: '1px solid rgba(255,255,255,0.18)',
-		                background: 'rgba(255,255,255,0.06)',
-		                color: '#fff',
-		                fontWeight: 900,
-		                cursor: 'pointer',
-		                textAlign: 'left',
-		              }}
-		            >
-		              Properties
-		            </button>
-		            <button
-		              type="button"
-		              onClick={() => {
-		                if (timelineCtxMenu.kind === 'graphic') splitGraphicById(timelineCtxMenu.id)
-		                setTimelineCtxMenu(null)
-		              }}
-		              style={{
-		                width: '100%',
-		                padding: '10px 12px',
-		                borderRadius: 10,
-		                border: '1px solid rgba(255,255,255,0.18)',
-		                background: 'rgba(255,255,255,0.06)',
-		                color: '#fff',
-		                fontWeight: 900,
-		                cursor: 'pointer',
-		                textAlign: 'left',
-		              }}
-		            >
-		              Split
-		            </button>
-		            <button
-		              type="button"
-		              onClick={() => {
-		                if (timelineCtxMenu.kind === 'graphic') duplicateGraphicById(timelineCtxMenu.id)
-		                setTimelineCtxMenu(null)
-		              }}
-		              style={{
-		                width: '100%',
-		                padding: '10px 12px',
-		                borderRadius: 10,
-		                border: '1px solid rgba(255,255,255,0.18)',
-		                background: 'rgba(255,255,255,0.08)',
-		                color: '#fff',
-		                fontWeight: 900,
-		                cursor: 'pointer',
-		                textAlign: 'left',
-		              }}
-		            >
-		              Duplicate
-		            </button>
-		            <button
-		              type="button"
-		              onClick={() => {
-		                if (timelineCtxMenu.kind === 'graphic') deleteGraphicById(timelineCtxMenu.id)
-		                setTimelineCtxMenu(null)
-		              }}
-		              style={{
-		                width: '100%',
-		                padding: '10px 12px',
-		                borderRadius: 10,
-		                border: '1px solid rgba(255,155,155,0.40)',
-		                background: 'rgba(255,0,0,0.14)',
-		                color: '#fff',
-		                fontWeight: 900,
-		                cursor: 'pointer',
-		                textAlign: 'left',
-		              }}
-		            >
-		              Delete
-		            </button>
-		          </div>
-		        </div>
-		      ) : null}
+			          >
+			            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
+			              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+			                {(timelineCtxMenu.view || 'main') === 'guidelines' ? (
+			                  <button
+			                    type="button"
+			                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'main' } : prev))}
+			                    style={{
+			                      width: 28,
+			                      height: 28,
+			                      borderRadius: 10,
+			                      border: '1px solid rgba(255,255,255,0.18)',
+			                      background: 'rgba(255,255,255,0.06)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                      lineHeight: '26px',
+			                      textAlign: 'center',
+			                    }}
+			                    aria-label="Back"
+			                  >
+			                    ←
+			                  </button>
+			                ) : null}
+			                <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>
+			                  {(timelineCtxMenu.view || 'main') === 'guidelines' ? 'Guidelines' : 'Graphic'}
+			                </div>
+			              </div>
+			              <button
+			                type="button"
+			                onClick={() => setTimelineCtxMenu(null)}
+			                style={{
+			                  width: 28,
+			                  height: 28,
+			                  borderRadius: 10,
+			                  border: '1px solid rgba(255,255,255,0.18)',
+			                  background: 'rgba(255,255,255,0.06)',
+			                  color: '#fff',
+			                  fontWeight: 900,
+			                  cursor: 'pointer',
+			                  lineHeight: '26px',
+			                  textAlign: 'center',
+			                }}
+			              >
+			                ×
+			              </button>
+			            </div>
+
+			            {(timelineCtxMenu.view || 'main') === 'main' ? (
+			              <>
+			                <button
+			                  type="button"
+			                  onClick={() => {
+			                    if (timelineCtxMenu.kind === 'graphic') {
+			                      const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
+			                      if (g) {
+			                        const s = roundToTenth(Number((g as any).startSeconds || 0))
+			                        const e2 = roundToTenth(Number((g as any).endSeconds || 0))
+			                        setSelectedGraphicId(String((g as any).id))
+			                        setSelectedClipId(null)
+			                        setSelectedLogoId(null)
+			                        setSelectedLowerThirdId(null)
+			                        setSelectedScreenTitleId(null)
+			                        setSelectedNarrationId(null)
+			                        setSelectedStillId(null)
+			                        setSelectedAudioId(null)
+			                        setGraphicEditor({ id: String((g as any).id), start: s, end: e2 })
+			                        setGraphicEditorError(null)
+			                      }
+			                    }
+			                    setTimelineCtxMenu(null)
+			                  }}
+			                  style={{
+			                    width: '100%',
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(255,255,255,0.18)',
+			                    background: 'rgba(255,255,255,0.06)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: 'pointer',
+			                    textAlign: 'left',
+			                  }}
+			                >
+			                  Properties
+			                </button>
+			                <button
+			                  type="button"
+			                  onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
+			                  style={{
+			                    width: '100%',
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(255,255,255,0.18)',
+			                    background: 'rgba(255,255,255,0.06)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: 'pointer',
+			                    textAlign: 'left',
+			                  }}
+			                >
+			                  Guidelines…
+			                </button>
+			                <button
+			                  type="button"
+			                  onClick={() => {
+			                    if (timelineCtxMenu.kind === 'graphic') splitGraphicById(timelineCtxMenu.id)
+			                    setTimelineCtxMenu(null)
+			                  }}
+			                  style={{
+			                    width: '100%',
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(255,255,255,0.18)',
+			                    background: 'rgba(255,255,255,0.06)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: 'pointer',
+			                    textAlign: 'left',
+			                  }}
+			                >
+			                  Split
+			                </button>
+			                <button
+			                  type="button"
+			                  onClick={() => {
+			                    if (timelineCtxMenu.kind === 'graphic') duplicateGraphicById(timelineCtxMenu.id)
+			                    setTimelineCtxMenu(null)
+			                  }}
+			                  style={{
+			                    width: '100%',
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(255,255,255,0.18)',
+			                    background: 'rgba(255,255,255,0.08)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: 'pointer',
+			                    textAlign: 'left',
+			                  }}
+			                >
+			                  Duplicate
+			                </button>
+			                <button
+			                  type="button"
+			                  onClick={() => {
+			                    if (timelineCtxMenu.kind === 'graphic') deleteGraphicById(timelineCtxMenu.id)
+			                    setTimelineCtxMenu(null)
+			                  }}
+			                  style={{
+			                    width: '100%',
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(255,155,155,0.40)',
+			                    background: 'rgba(255,0,0,0.14)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: 'pointer',
+			                    textAlign: 'left',
+			                  }}
+			                >
+			                  Delete
+			                </button>
+			              </>
+			            ) : (
+			              <>
+			                {(() => {
+			                  const edgeIntent: any = timelineCtxMenu.edgeIntent || 'move'
+			                  if (edgeIntent === 'move') {
+			                    return (
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        Snap to nearest guideline
+			                      </button>
+			                    )
+			                  }
+			                  const expandAction = edgeIntent === 'start' ? 'expand_start' : 'expand_end'
+			                  const contractAction = edgeIntent === 'start' ? 'contract_start' : 'contract_end'
+			                  const expandLabel = edgeIntent === 'start' ? 'Expand start to guideline' : 'Expand end to guideline'
+			                  const contractLabel = edgeIntent === 'start' ? 'Contract start to guideline' : 'Contract end to guideline'
+			                  const snapLabel = edgeIntent === 'start' ? 'Snap start to guideline' : 'Snap end to guideline'
+			                  return (
+			                    <>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {expandLabel}
+			                      </button>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {contractLabel}
+			                      </button>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {snapLabel}
+			                      </button>
+			                    </>
+			                  )
+			                })()}
+			              </>
+			            )}
+			          </div>
+			        </div>
+			      ) : null}
 
 		      {guidelineMenuOpen ? (
 		        <div
