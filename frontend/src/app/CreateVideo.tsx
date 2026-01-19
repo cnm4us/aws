@@ -1888,6 +1888,17 @@ export default function CreateVideo() {
     setNarrationPreviewPlaying(false)
   }, [])
 
+  const stopMusicPreview = useCallback(() => {
+    const a = musicPreviewRef.current
+    try { a?.pause?.() } catch {}
+    if (musicPreviewRafRef.current != null) {
+      try { window.cancelAnimationFrame(musicPreviewRafRef.current) } catch {}
+    }
+    musicPreviewRafRef.current = null
+    musicPreviewSegRef.current = null
+    setMusicPreviewPlaying(false)
+  }, [])
+
   const toggleNarrationPlay = useCallback(async () => {
     if (narrationPreviewPlaying) {
       stopNarrationPreview()
@@ -2033,17 +2044,6 @@ export default function CreateVideo() {
     stopNarrationPreview,
     totalSeconds,
   ])
-
-  const stopMusicPreview = useCallback(() => {
-    const a = musicPreviewRef.current
-    try { a?.pause?.() } catch {}
-    if (musicPreviewRafRef.current != null) {
-      try { window.cancelAnimationFrame(musicPreviewRafRef.current) } catch {}
-    }
-    musicPreviewRafRef.current = null
-    musicPreviewSegRef.current = null
-    setMusicPreviewPlaying(false)
-  }, [])
 
   const toggleMusicPlay = useCallback(async () => {
     if (musicPreviewPlaying) {
