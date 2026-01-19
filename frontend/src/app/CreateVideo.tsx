@@ -529,6 +529,28 @@ export default function CreateVideo() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
+  const [timelineCtxMenu, setTimelineCtxMenu] = useState<
+    | null
+    | {
+        kind: 'graphic'
+        id: string
+        x: number
+        y: number
+      }
+  >(null)
+  const timelineLongPressRef = useRef<
+    | null
+    | {
+        timer: number
+        pointerId: number
+        startX: number
+        startY: number
+        kind: 'graphic'
+        id: string
+        x: number
+        y: number
+      }
+  >(null)
   const undoStackRef = useRef<
     Array<{
       timeline: Timeline
@@ -612,6 +634,9 @@ export default function CreateVideo() {
         minStartSeconds: number
         maxEndSeconds: number
         maxStartSeconds?: number
+        // For armed body-drag (so a tap can open the context menu)
+        armed?: boolean
+        moved?: boolean
       }
     | {
         kind: 'logo'
@@ -4990,6 +5015,100 @@ export default function CreateVideo() {
     timeline.clips,
   ])
 
+  const deleteGraphicById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevGraphics = Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as any[]) : []
+      if (!prevGraphics.some((g: any) => String(g?.id) === targetId)) return
+      snapshotUndo()
+      const nextGraphics = prevGraphics.filter((g: any) => String(g?.id) !== targetId)
+      const nextTimeline: any = { ...(timeline as any), graphics: nextGraphics }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (selectedGraphicId === targetId) setSelectedGraphicId(null)
+    },
+    [playhead, saveTimelineNow, selectedGraphicId, snapshotUndo, timeline]
+  )
+
+  const duplicateGraphicById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevGraphics: any[] = Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as any[]) : []
+      const g0 = prevGraphics.find((g: any) => String(g?.id) === targetId) as any
+      if (!g0) return
+      const start0 = roundToTenth(Number(g0.startSeconds || 0))
+      const end0 = roundToTenth(Number(g0.endSeconds || 0))
+      const dur = roundToTenth(Math.max(0.2, end0 - start0))
+
+      const cap = timeline.clips.length ? totalSecondsVideo : null
+      let start = roundToTenth(Math.max(0, end0))
+      let end = roundToTenth(start + dur)
+      if (cap != null && end > cap + 1e-6) {
+        setTimelineMessage('Not enough room to duplicate that graphic within the video duration.')
+        return
+      }
+
+      // Disallow overlaps: slide forward to the next available slot.
+      const sorted = prevGraphics
+        .filter((g: any) => String(g?.id) !== targetId)
+        .slice()
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      for (let guard = 0; guard < 200; guard++) {
+        let hit: any = null
+        for (const g of sorted) {
+          const gs = Number((g as any).startSeconds)
+          const ge = Number((g as any).endSeconds)
+          if (!(Number.isFinite(gs) && Number.isFinite(ge))) continue
+          const overlaps = start < ge - 1e-6 && end > gs + 1e-6
+          if (overlaps) {
+            hit = g
+            break
+          }
+        }
+        if (!hit) break
+        start = roundToTenth(Number((hit as any).endSeconds || start))
+        end = roundToTenth(start + dur)
+        if (cap != null && end > cap + 1e-6) {
+          setTimelineMessage('No available slot to duplicate without overlapping.')
+          return
+        }
+      }
+
+      const newId = `gfx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const newGraphic: any = { id: newId, uploadId: Number(g0.uploadId), startSeconds: start, endSeconds: end }
+      const nextGraphics = [...prevGraphics, newGraphic].slice().sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
+      snapshotUndo()
+      const nextTimeline: any = { ...(timeline as any), graphics: nextGraphics }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      setSelectedGraphicId(newId)
+      setSelectedClipId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+      setTimelineMessage(null)
+    },
+    [
+      playhead,
+      saveTimelineNow,
+      snapshotUndo,
+      timeline,
+      totalSecondsVideo,
+      setSelectedClipId,
+      setSelectedLogoId,
+      setSelectedLowerThirdId,
+      setSelectedScreenTitleId,
+      setSelectedNarrationId,
+      setSelectedStillId,
+      setSelectedAudioId,
+    ]
+  )
+
   const saveClipEditor = useCallback(() => {
     if (!clipEditor) return
     const start = roundToTenth(Number(clipEditor.start))
@@ -5618,9 +5737,9 @@ export default function CreateVideo() {
 
 	      // Special case: "armed" moves (body-drag). Don't start dragging until the pointer has moved a bit,
 	      // otherwise a simple click on the selected pill can't open the properties modal.
-	      if ((drag.kind === 'logo' || drag.kind === 'lowerThird') && drag.edge === 'move' && (drag as any).armed) {
+	      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'graphic') && drag.edge === 'move' && (drag as any).armed) {
 	        const dx0 = e.clientX - drag.startClientX
-	        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
+	        const dy0 = drag.kind === 'graphic' ? 0 : e.clientY - Number((drag as any).startClientY ?? e.clientY)
 	        const moved = Boolean((drag as any).moved)
 	        if (!moved) {
 	          const thresholdPx = 6
@@ -5630,7 +5749,7 @@ export default function CreateVideo() {
 	          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
 	          try { snapshotUndoRef.current?.() } catch {}
 	          setTrimDragging(true)
-	          dbg('startTrimDrag', { kind: drag.kind, edge: 'move', id: String((drag as any).logoId || (drag as any).lowerThirdId || '') })
+	          dbg('startTrimDrag', { kind: drag.kind, edge: 'move', id: String((drag as any).logoId || (drag as any).lowerThirdId || (drag as any).graphicId || '') })
 	        }
 	      }
 
@@ -6088,8 +6207,31 @@ export default function CreateVideo() {
         return { ...prev, graphics: nextGraphics, playheadSeconds: nextPlayhead }
       })
     }
-    const onUp = () => {
-      if (!trimDragging && !trimDragRef.current) return
+    const onUp = (e: PointerEvent) => {
+      const drag = trimDragRef.current
+      if (!trimDragging && !drag) return
+      if (drag && e.pointerId !== drag.pointerId) return
+
+      // For graphics: tap-release on a selected pill (armed move, not moved) opens the context menu immediately.
+      if (drag && drag.kind === 'graphic' && drag.edge === 'move' && (drag as any).armed && !Boolean((drag as any).moved)) {
+        try {
+          const w = window.innerWidth || 0
+          const h = window.innerHeight || 0
+          const menuW = 170
+          const menuH = 140
+          const pad = 10
+          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
+          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+          setTimelineCtxMenu({ kind: 'graphic', id: String((drag as any).graphicId), x, y })
+          suppressNextTimelineClickRef.current = true
+          window.setTimeout(() => {
+            suppressNextTimelineClickRef.current = false
+          }, 0)
+        } catch {}
+        stopTrimDrag('graphic_ctx_menu')
+        return
+      }
+
       stopTrimDrag('pointerup')
     }
     const onCancel = () => {
@@ -6182,6 +6324,93 @@ export default function CreateVideo() {
     setUndoDepth(0)
     window.location.reload()
   }, [project?.id])
+
+  const cancelTimelineLongPress = useCallback((reason: string) => {
+    const lp = timelineLongPressRef.current
+    if (!lp) return
+    try { window.clearTimeout(lp.timer) } catch {}
+    timelineLongPressRef.current = null
+    dbg('cancelLongPress', { reason })
+  }, [dbg])
+
+  useEffect(() => {
+    const lp = timelineLongPressRef.current
+    if (!lp) return
+    const onMove = (e: PointerEvent) => {
+      const cur = timelineLongPressRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      if (trimDragging || panDragging) {
+        cancelTimelineLongPress('dragging')
+        return
+      }
+      const dx = e.clientX - cur.startX
+      const dy = e.clientY - cur.startY
+      if (dx * dx + dy * dy > 9 * 9) cancelTimelineLongPress('moved')
+    }
+    const onUp = (e: PointerEvent) => {
+      const cur = timelineLongPressRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      cancelTimelineLongPress('pointerup')
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('blur', () => cancelTimelineLongPress('blur'))
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [cancelTimelineLongPress, panDragging, trimDragging])
+
+  const openTimelineCtxMenu = useCallback((target: { kind: 'graphic'; id: string }, clientX: number, clientY: number) => {
+    const w = window.innerWidth || 0
+    const h = window.innerHeight || 0
+    const menuW = 170
+    const menuH = 140
+    const pad = 10
+    // Always center the menu; mobile long-press is imprecise and we want a predictable location.
+    const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
+    const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+    setTimelineCtxMenu({ kind: target.kind, id: target.id, x, y })
+  }, [])
+
+  const beginGraphicLongPress = useCallback(
+    (e: React.PointerEvent, graphicId: string) => {
+      cancelTimelineLongPress('restart')
+      if (!graphicId) return
+      if (trimDragging || panDragging) return
+      if ((e as any).button != null && (e as any).button !== 0) return
+      const pointerId = e.pointerId
+      const startX = e.clientX
+      const startY = e.clientY
+      const x = e.clientX
+      const y = e.clientY
+      const timer = window.setTimeout(() => {
+        const cur = timelineLongPressRef.current
+        if (!cur) return
+        if (cur.pointerId !== pointerId) return
+        timelineLongPressRef.current = null
+        suppressNextTimelineClickRef.current = true
+        window.setTimeout(() => {
+          suppressNextTimelineClickRef.current = false
+        }, 0)
+        setSelectedGraphicId(graphicId)
+        setSelectedClipId(null)
+        setSelectedLogoId(null)
+        setSelectedLowerThirdId(null)
+        setSelectedScreenTitleId(null)
+        setSelectedNarrationId(null)
+        setSelectedStillId(null)
+        setSelectedAudioId(null)
+        openTimelineCtxMenu({ kind: 'graphic', id: graphicId }, x, y)
+      }, 900)
+      timelineLongPressRef.current = { timer, pointerId, startX, startY, kind: 'graphic', id: graphicId, x, y }
+    },
+    [cancelTimelineLongPress, openTimelineCtxMenu, panDragging, trimDragging]
+  )
 
   const exportNow = useCallback(async () => {
     if (!(totalSeconds > 0)) return
@@ -6508,6 +6737,7 @@ export default function CreateVideo() {
                   })
 
 	                  if (withinLogo) {
+	                    cancelTimelineLongPress('new_pointerdown')
 	                    const l = findLogoAtTime(t)
 	                    if (!l) return
 	                    const s = Number((l as any).startSeconds || 0)
@@ -6588,6 +6818,7 @@ export default function CreateVideo() {
                   }
 
 	                  if (withinLowerThird) {
+	                    cancelTimelineLongPress('new_pointerdown')
 	                    const lt = findLowerThirdAtTime(t)
 	                    if (!lt) return
 	                    const s = Number((lt as any).startSeconds || 0)
@@ -6669,6 +6900,7 @@ export default function CreateVideo() {
                   }
 
 	                  if (withinScreenTitle) {
+	                    cancelTimelineLongPress('new_pointerdown')
 	                    const st = findScreenTitleAtTime(t)
 	                    if (!st) return
 	                    const s = Number((st as any).startSeconds || 0)
@@ -6755,97 +6987,111 @@ export default function CreateVideo() {
                     return
                   }
 
-	                  if (withinGraphics) {
-	                    const g = findGraphicAtTime(t)
-	                    if (!g) return
-	                    const s = Number((g as any).startSeconds || 0)
-	                    const e2 = Number((g as any).endSeconds || 0)
-	                    const leftX = padPx + s * pxPerSecond
-	                    const rightX = padPx + e2 * pxPerSecond
-	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-	                    if (!inside) return
-	                    if (selectedGraphicId === g.id) {
-	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
-	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
-	                    }
+		                  if (withinGraphics) {
+		                    const g = findGraphicAtTime(t)
+		                    if (!g) return
+		                    const s = Number((g as any).startSeconds || 0)
+		                    const e2 = Number((g as any).endSeconds || 0)
+		                    const leftX = padPx + s * pxPerSecond
+		                    const rightX = padPx + e2 * pxPerSecond
+		                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+		                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+		                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+		                    if (!inside) return
+		                    if (selectedGraphicId === g.id) {
+		                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+		                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+		                    }
 
-                    // Slide (body drag) only when already selected.
-                    if (!nearLeft && !nearRight) {
-                      if (selectedGraphicId !== g.id) return
-                      e.preventDefault()
-                      snapshotUndo()
-                      setSelectedGraphicId(g.id)
-                      setSelectedClipId(null)
-                      setSelectedLogoId(null)
-                      setSelectedStillId(null)
-                      setSelectedAudioId(null)
+		                    // Tap selects. Tap+drag moves/resizes. Tap-release on an already-selected pill opens the context menu.
+		                    if (selectedGraphicId !== g.id && !nearLeft && !nearRight) {
+		                      e.preventDefault()
+		                      setSelectedGraphicId(g.id)
+		                      setSelectedClipId(null)
+		                      setSelectedLogoId(null)
+		                      setSelectedLowerThirdId(null)
+		                      setSelectedScreenTitleId(null)
+		                      setSelectedNarrationId(null)
+		                      setSelectedStillId(null)
+		                      setSelectedAudioId(null)
+		                      return
+		                    }
 
-                      trimDragLockScrollLeftRef.current = sc.scrollLeft
-                      const sorted = graphics.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-                      const pos = sorted.findIndex((gg: any) => String(gg?.id) === String(g.id))
-                      const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
-                      const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
-                      const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
-                      const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
-                      const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
-                      const dur = Math.max(0.2, roundToTenth(e2 - s))
-                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+		                    // Disallow overlaps: trim handles constrained by neighbors.
+		                    const sorted = graphics.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+		                    const pos = sorted.findIndex((gg: any) => String(gg?.id) === String(g.id))
+		                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+		                    const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
+		                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+		                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+		                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-                      trimDragRef.current = {
-                        kind: 'graphic',
-                        graphicId: g.id,
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                      }
-                      setTrimDragging(true)
-                      try { sc.setPointerCapture(e.pointerId) } catch {}
-                      return
-                    }
+		                    // Resize (start/end).
+		                    if (nearLeft || nearRight) {
+		                      e.preventDefault()
+		                      snapshotUndo()
+		                      setSelectedGraphicId(g.id)
+		                      setSelectedClipId(null)
+		                      setSelectedLogoId(null)
+		                      setSelectedLowerThirdId(null)
+		                      setSelectedScreenTitleId(null)
+		                      setSelectedNarrationId(null)
+		                      setSelectedStillId(null)
+		                      setSelectedAudioId(null)
 
-                    e.preventDefault()
-                    snapshotUndo()
-                    setSelectedGraphicId(g.id)
-                    setSelectedClipId(null)
-                    setSelectedLogoId(null)
-                    setSelectedAudioId(null)
+		                      trimDragLockScrollLeftRef.current = sc.scrollLeft
+		                      trimDragRef.current = {
+		                        kind: 'graphic',
+		                        graphicId: g.id,
+		                        edge: nearLeft ? 'start' : 'end',
+		                        pointerId: e.pointerId,
+		                        startClientX: e.clientX,
+		                        startStartSeconds: s,
+		                        startEndSeconds: e2,
+		                        minStartSeconds,
+		                        maxEndSeconds,
+		                      }
+		                      setTrimDragging(true)
+		                      try { sc.setPointerCapture(e.pointerId) } catch {}
+		                      dbg('startTrimDrag', { kind: 'graphic', edge: nearLeft ? 'start' : 'end', id: g.id })
+		                      return
+		                    }
 
-                    trimDragLockScrollLeftRef.current = sc.scrollLeft
-                    const sorted = graphics.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-                    const pos = sorted.findIndex((gg: any) => String(gg?.id) === String(g.id))
-                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
-                    const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
-                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
-                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
-                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+		                    // Move (body drag): arm so we can decide between opening the context menu (tap) and moving (drag).
+		                    e.preventDefault()
+		                    setSelectedGraphicId(g.id)
+		                    setSelectedClipId(null)
+		                    setSelectedLogoId(null)
+		                    setSelectedLowerThirdId(null)
+		                    setSelectedScreenTitleId(null)
+		                    setSelectedNarrationId(null)
+		                    setSelectedStillId(null)
+		                    setSelectedAudioId(null)
 
-                    trimDragRef.current = {
-                      kind: 'graphic',
-                      graphicId: g.id,
-                      edge: nearLeft ? 'start' : 'end',
-                      pointerId: e.pointerId,
-                      startClientX: e.clientX,
-                      startStartSeconds: s,
-                      startEndSeconds: e2,
-                      minStartSeconds,
-                      maxEndSeconds,
-                    }
-                    setTrimDragging(true)
-                    try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('startTrimDrag', { kind: 'graphic', edge: nearLeft ? 'start' : 'end', id: g.id })
-                    return
-                  }
+		                    const dur = Math.max(0.2, roundToTenth(e2 - s))
+		                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+		                    trimDragRef.current = {
+		                      kind: 'graphic',
+		                      graphicId: g.id,
+		                      edge: 'move',
+		                      pointerId: e.pointerId,
+		                      startClientX: e.clientX,
+		                      startStartSeconds: s,
+		                      startEndSeconds: e2,
+		                      minStartSeconds,
+		                      maxEndSeconds,
+		                      maxStartSeconds,
+		                      armed: true,
+		                      moved: false,
+		                    }
+		                    try { sc.setPointerCapture(e.pointerId) } catch {}
+		                    return
+		                  }
 
-	                  if (withinNarration) {
-	                    const n = findNarrationAtTime(t)
-	                    if (!n) return
+		                  if (withinNarration) {
+		                    cancelTimelineLongPress('new_pointerdown')
+		                    const n = findNarrationAtTime(t)
+		                    if (!n) return
 	                    const s = Number((n as any).startSeconds || 0)
 	                    const e2 = Number((n as any).endSeconds || 0)
 	                    const nSourceStart =
@@ -6947,8 +7193,9 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinAudio) {
-                    const seg = audioSegments.find((a: any) => {
+	                  if (withinAudio) {
+	                    cancelTimelineLongPress('new_pointerdown')
+	                    const seg = audioSegments.find((a: any) => {
                       const ss = Number(a?.startSeconds || 0)
                       const ee = Number(a?.endSeconds || 0)
                       return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
@@ -7042,8 +7289,9 @@ export default function CreateVideo() {
                     return
                   }
 
-                  if (withinVideo) {
-                    const still = findStillAtTime(t)
+	                  if (withinVideo) {
+	                    cancelTimelineLongPress('new_pointerdown')
+	                    const still = findStillAtTime(t)
                     if (still) {
 	                      const s = roundToTenth(Number((still as any).startSeconds || 0))
 	                      const e2 = roundToTenth(Number((still as any).endSeconds || 0))
@@ -7133,8 +7381,9 @@ export default function CreateVideo() {
                     }
                   }
 
-                  if (!timeline.clips.length) return
-                  const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
+	                  cancelTimelineLongPress('new_pointerdown')
+	                  if (!timeline.clips.length) return
+	                  const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
                   const clip = idx >= 0 ? timeline.clips[idx] : null
                   if (!clip) return
 
@@ -7580,11 +7829,8 @@ export default function CreateVideo() {
 	                      setSelectedAudioId(null)
 	                      return
 	                    }
-                    if (selectedGraphicId === g.id) {
-                      setGraphicEditor({ id: g.id, start: s, end: e2 })
-                      setGraphicEditorError(null)
-                      return
-                    }
+                    // Graphics properties are only opened via the long-press context menu (not by tapping).
+                    if (selectedGraphicId === g.id) return
 	                    setSelectedClipId(null)
 	                    setSelectedGraphicId(g.id)
 	                    setSelectedLogoId(null)
@@ -9527,13 +9773,13 @@ export default function CreateVideo() {
         </div>
 	      ) : null}
 
-	      {narrationEditor ? (
-	        <div
-	          role="dialog"
-	          aria-modal="true"
-	          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
-	          onClick={() => { setNarrationEditor(null); setNarrationEditorError(null) }}
-	        >
+		      {narrationEditor ? (
+		        <div
+		          role="dialog"
+		          aria-modal="true"
+		          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+		          onClick={() => { setNarrationEditor(null); setNarrationEditorError(null) }}
+		        >
 	          <div
 	            onClick={(e) => e.stopPropagation()}
 	            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(191,90,242,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
@@ -9627,8 +9873,132 @@ export default function CreateVideo() {
 	              </div>
 	            </div>
 	          </div>
-	        </div>
-	      ) : null}
-    </div>
-  )
+		        </div>
+		      ) : null}
+
+		      {timelineCtxMenu ? (
+		        <div
+		          role="dialog"
+		          aria-modal="true"
+		          style={{ position: 'fixed', inset: 0, zIndex: 1400 }}
+		          onPointerDown={() => setTimelineCtxMenu(null)}
+		        >
+		          <div
+		            style={{
+		              position: 'fixed',
+		              left: timelineCtxMenu.x,
+		              top: timelineCtxMenu.y,
+		              width: 170,
+		              background: 'rgba(0,0,0,0.92)',
+		              border: '1px solid rgba(255,255,255,0.18)',
+		              borderRadius: 12,
+		              padding: 8,
+		              display: 'grid',
+		              gap: 8,
+		              boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+		            }}
+		            onPointerDown={(e) => e.stopPropagation()}
+		          >
+		            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
+		              <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>Graphic</div>
+		              <button
+		                type="button"
+		                onClick={() => setTimelineCtxMenu(null)}
+		                style={{
+		                  width: 28,
+		                  height: 28,
+		                  borderRadius: 10,
+		                  border: '1px solid rgba(255,255,255,0.18)',
+		                  background: 'rgba(255,255,255,0.06)',
+		                  color: '#fff',
+		                  fontWeight: 900,
+		                  cursor: 'pointer',
+		                  lineHeight: '26px',
+		                  textAlign: 'center',
+		                }}
+		              >
+		                ×
+		              </button>
+		            </div>
+		            <button
+		              type="button"
+		              onClick={() => {
+		                if (timelineCtxMenu.kind === 'graphic') {
+		                  const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
+		                  if (g) {
+		                    const s = roundToTenth(Number((g as any).startSeconds || 0))
+		                    const e2 = roundToTenth(Number((g as any).endSeconds || 0))
+		                    setSelectedGraphicId(String((g as any).id))
+		                    setSelectedClipId(null)
+		                    setSelectedLogoId(null)
+		                    setSelectedLowerThirdId(null)
+		                    setSelectedScreenTitleId(null)
+		                    setSelectedNarrationId(null)
+		                    setSelectedStillId(null)
+		                    setSelectedAudioId(null)
+		                    setGraphicEditor({ id: String((g as any).id), start: s, end: e2 })
+		                    setGraphicEditorError(null)
+		                  }
+		                }
+		                setTimelineCtxMenu(null)
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,255,255,0.18)',
+		                background: 'rgba(255,255,255,0.06)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: 'pointer',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Properties
+		            </button>
+		            <button
+		              type="button"
+		              onClick={() => {
+		                if (timelineCtxMenu.kind === 'graphic') duplicateGraphicById(timelineCtxMenu.id)
+		                setTimelineCtxMenu(null)
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,255,255,0.18)',
+		                background: 'rgba(255,255,255,0.08)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: 'pointer',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Duplicate
+		            </button>
+		            <button
+		              type="button"
+		              onClick={() => {
+		                if (timelineCtxMenu.kind === 'graphic') deleteGraphicById(timelineCtxMenu.id)
+		                setTimelineCtxMenu(null)
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,155,155,0.40)',
+		                background: 'rgba(255,0,0,0.14)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: 'pointer',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Delete
+		            </button>
+		          </div>
+		        </div>
+		      ) : null}
+	    </div>
+	  )
 }
