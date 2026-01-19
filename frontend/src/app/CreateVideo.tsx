@@ -479,6 +479,19 @@ export default function CreateVideo() {
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
+  const musicPreviewRef = useRef<HTMLAudioElement | null>(null)
+  const [musicPreviewPlaying, setMusicPreviewPlaying] = useState(false)
+  const musicPreviewSegRef = useRef<
+    | {
+        segId: string
+        uploadId: number
+        segStart: number
+        segEnd: number
+        sourceStartSeconds: number
+      }
+    | null
+  >(null)
+  const musicPreviewRafRef = useRef<number | null>(null)
   const narrationPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [narrationPreviewPlaying, setNarrationPreviewPlaying] = useState(false)
   const narrationPreviewSegRef = useRef<
@@ -1518,6 +1531,43 @@ export default function CreateVideo() {
     return candidates[0].n
   }, [narration])
 
+  const findAudioSegmentAtTime = useCallback(
+    (t: number): any | null => {
+      const tt = Number(t)
+      if (!Number.isFinite(tt) || tt < 0) return null
+      const candidates: Array<{ s: number; e: number; seg: any }> = []
+      for (const seg of audioSegments) {
+        const s = Number((seg as any).startSeconds)
+        const e = Number((seg as any).endSeconds)
+        if (!Number.isFinite(s) || !Number.isFinite(e)) continue
+        if (tt >= s && tt <= e) candidates.push({ s, e, seg })
+      }
+      if (!candidates.length) return null
+      for (const c of candidates) {
+        if (roundToTenth(c.s) === roundToTenth(tt)) return c.seg
+      }
+      candidates.sort((a, b) => a.s - b.s || a.e - b.e)
+      return candidates[0].seg
+    },
+    [audioSegments]
+  )
+
+  const sortedAudioSegments = useMemo(() => {
+    return audioSegments
+      .slice()
+      .map((s: any) => ({
+        ...s,
+        startSeconds: roundToTenth(Math.max(0, Number(s?.startSeconds || 0))),
+        endSeconds: roundToTenth(Math.max(0, Number(s?.endSeconds || 0))),
+        sourceStartSeconds:
+          s?.sourceStartSeconds != null && Number.isFinite(Number(s.sourceStartSeconds))
+            ? roundToTenth(Math.max(0, Number(s.sourceStartSeconds)))
+            : 0,
+      }))
+      .filter((s: any) => Number(s.endSeconds) > Number(s.startSeconds))
+      .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  }, [audioSegments])
+
   const sortedNarration = useMemo(() => {
     return narration
       .slice()
@@ -1843,6 +1893,7 @@ export default function CreateVideo() {
       stopNarrationPreview()
       return
     }
+    if (musicPreviewPlaying) stopMusicPreview()
     if (!sortedNarration.length) {
       setTimelineMessage('No narration segments')
       return
@@ -1972,7 +2023,171 @@ export default function CreateVideo() {
       narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
     }
     narrationPreviewRafRef.current = window.requestAnimationFrame(tick)
-  }, [findNarrationAtTime, narrationPreviewPlaying, playhead, sortedNarration, stopNarrationPreview, totalSeconds])
+  }, [
+    findNarrationAtTime,
+    musicPreviewPlaying,
+    narrationPreviewPlaying,
+    playhead,
+    sortedNarration,
+    stopMusicPreview,
+    stopNarrationPreview,
+    totalSeconds,
+  ])
+
+  const stopMusicPreview = useCallback(() => {
+    const a = musicPreviewRef.current
+    try { a?.pause?.() } catch {}
+    if (musicPreviewRafRef.current != null) {
+      try { window.cancelAnimationFrame(musicPreviewRafRef.current) } catch {}
+    }
+    musicPreviewRafRef.current = null
+    musicPreviewSegRef.current = null
+    setMusicPreviewPlaying(false)
+  }, [])
+
+  const toggleMusicPlay = useCallback(async () => {
+    if (musicPreviewPlaying) {
+      stopMusicPreview()
+      return
+    }
+    if (narrationPreviewPlaying) stopNarrationPreview()
+    if (!sortedAudioSegments.length) {
+      setTimelineMessage('No music segments')
+      return
+    }
+
+    // If playhead is not inside a music segment, jump to the next segment start and stop.
+    const segAt = findAudioSegmentAtTime(playhead)
+    const eps = 0.05
+    if (!segAt) {
+      const next = sortedAudioSegments.find((s: any) => Number(s.startSeconds) > Number(playhead) + eps)
+      if (!next) {
+        setTimelineMessage('No next music segment')
+        return
+      }
+      setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(Number(next.startSeconds || 0)) }))
+      setTimelineMessage(null)
+      return
+    }
+
+    // Pause main playback (video/graphics clock) so we don't fight over playhead updates.
+    try { videoRef.current?.pause?.() } catch {}
+    setPlaying(false)
+    const curGap = gapPlaybackRef.current
+    if (curGap) {
+      try { window.cancelAnimationFrame(curGap.raf) } catch {}
+      gapPlaybackRef.current = null
+    }
+
+    const segStart = roundToTenth(Number((segAt as any).startSeconds || 0))
+    const segEnd = roundToTenth(Number((segAt as any).endSeconds || 0))
+    if (!(segEnd > segStart + 0.05)) return
+    const uploadId = Number((segAt as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+
+    const a = musicPreviewRef.current || new Audio()
+    musicPreviewRef.current = a
+    try { a.pause() } catch {}
+    const url = (await getUploadCdnUrl(uploadId, { kind: 'file' })) || `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+    a.src = url
+    a.preload = 'auto'
+
+    const startTimeline = clamp(roundToTenth(Number(playhead)), segStart, segEnd)
+    const startInSeg = Math.max(0, startTimeline - segStart)
+    await new Promise<void>((resolve) => {
+      if (a.readyState >= 1) return resolve()
+      const onMeta = () => {
+        a.removeEventListener('loadedmetadata', onMeta)
+        resolve()
+      }
+      a.addEventListener('loadedmetadata', onMeta)
+      try { a.load() } catch {}
+    })
+    const srcStart0 =
+      (segAt as any).sourceStartSeconds != null && Number.isFinite(Number((segAt as any).sourceStartSeconds))
+        ? Number((segAt as any).sourceStartSeconds)
+        : 0
+    try { a.currentTime = Math.max(0, srcStart0 + startInSeg) } catch {}
+
+    musicPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd, sourceStartSeconds: srcStart0 }
+    setSelectedAudioId(String((segAt as any).id))
+
+    try {
+      const p = a.play()
+      if (p && typeof (p as any).catch === 'function') await (p as any).catch(() => {})
+    } catch {
+      stopMusicPreview()
+      return
+    }
+
+    setMusicPreviewPlaying(true)
+    setTimelineMessage(null)
+
+    const tick = () => {
+      if (!musicPreviewRef.current) return
+      if (!musicPreviewSegRef.current) return
+      const cur = musicPreviewRef.current
+      const seg = musicPreviewSegRef.current
+      const srcStart1 = Number(seg.sourceStartSeconds || 0)
+      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
+      playheadFromVideoRef.current = true
+      playheadRef.current = nextPlayhead
+      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
+
+      // Auto-advance to the next contiguous segment when it uses the same source uploadId.
+      if (nextPlayhead >= seg.segEnd - 0.02) {
+        const eps2 = 0.05
+        const at = roundToTenth(Number(seg.segEnd || 0))
+        const next = sortedAudioSegments.find(
+          (s: any) =>
+            Number((s as any).uploadId) === Number(seg.uploadId) &&
+            String((s as any).id) !== String(seg.segId) &&
+            Math.abs(roundToTenth(Number((s as any).startSeconds || 0)) - at) < eps2
+        ) as any
+
+        if (next) {
+          const nextStart = roundToTenth(Number(next.startSeconds || 0))
+          const nextEnd = roundToTenth(Number(next.endSeconds || 0))
+          const nextUploadId = Number(next.uploadId)
+          const nextSrcStart =
+            next.sourceStartSeconds != null && Number.isFinite(Number(next.sourceStartSeconds)) ? Number(next.sourceStartSeconds) : 0
+
+          const overshoot = roundToTenth(Math.max(0, nextPlayhead - at))
+          musicPreviewSegRef.current = {
+            segId: String(next.id),
+            uploadId: nextUploadId,
+            segStart: nextStart,
+            segEnd: nextEnd,
+            sourceStartSeconds: nextSrcStart,
+          }
+          try { cur.currentTime = Math.max(0, nextSrcStart + overshoot) } catch {}
+          const ph = clamp(roundToTenth(nextStart + overshoot), 0, Math.max(0, totalSeconds))
+          playheadFromVideoRef.current = true
+          playheadRef.current = ph
+          setTimeline((prev) => ({ ...prev, playheadSeconds: ph }))
+          setSelectedAudioId(String(next.id))
+          musicPreviewRafRef.current = window.requestAnimationFrame(tick)
+          return
+        }
+
+        const stopAt = roundToTenth(Number(seg.segEnd || 0))
+        stopMusicPreview()
+        setTimeline((prev) => ({ ...prev, playheadSeconds: stopAt }))
+        return
+      }
+      musicPreviewRafRef.current = window.requestAnimationFrame(tick)
+    }
+    musicPreviewRafRef.current = window.requestAnimationFrame(tick)
+  }, [
+    findAudioSegmentAtTime,
+    musicPreviewPlaying,
+    narrationPreviewPlaying,
+    playhead,
+    sortedAudioSegments,
+    stopMusicPreview,
+    stopNarrationPreview,
+    totalSeconds,
+  ])
 
   useEffect(() => {
     return () => {
@@ -3328,6 +3543,7 @@ export default function CreateVideo() {
     const v = videoRef.current
     if (!(totalSeconds > 0)) return
     if (narrationPreviewPlaying) stopNarrationPreview()
+    if (musicPreviewPlaying) stopMusicPreview()
 
     // Graphics-only playback uses a synthetic clock.
     if (!timeline.clips.length) {
@@ -3370,7 +3586,19 @@ export default function CreateVideo() {
     } else {
       try { v.pause() } catch {}
     }
-  }, [clipStarts, narrationPreviewPlaying, playhead, playing, primeAutoplayUnlock, seek, stopNarrationPreview, timeline.clips, totalSeconds])
+  }, [
+    clipStarts,
+    musicPreviewPlaying,
+    narrationPreviewPlaying,
+    playhead,
+    playing,
+    primeAutoplayUnlock,
+    seek,
+    stopMusicPreview,
+    stopNarrationPreview,
+    timeline.clips,
+    totalSeconds,
+  ])
 
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
@@ -7472,36 +7700,49 @@ export default function CreateVideo() {
                 >
                   Add
                 </button>
-		                <button
-		                  type="button"
-		                  onClick={split}
-		                  disabled={
-		                    !selectedClipId &&
-		                    !selectedGraphicId &&
-		                    !selectedLogoId &&
-		                    !selectedLowerThirdId &&
-		                    !selectedScreenTitleId &&
-		                    !selectedNarrationId
-		                  }
-		                  style={{
-	                    padding: '10px 12px',
-	                    borderRadius: 10,
-	                    border: '1px solid rgba(255,255,255,0.18)',
-		                    background:
-		                      selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId || selectedNarrationId
-		                        ? '#0c0c0c'
-		                        : 'rgba(255,255,255,0.06)',
-		                    color: '#fff',
-		                    fontWeight: 900,
-		                    cursor:
-		                      selectedClipId || selectedGraphicId || selectedLogoId || selectedLowerThirdId || selectedScreenTitleId || selectedNarrationId
-		                        ? 'pointer'
-		                        : 'default',
-		                    flex: '0 0 auto',
-		                  }}
-		                >
-	                  Split
-	                </button>
+			                <button
+			                  type="button"
+			                  onClick={split}
+			                  disabled={
+			                    !selectedClipId &&
+			                    !selectedGraphicId &&
+			                    !selectedLogoId &&
+			                    !selectedLowerThirdId &&
+			                    !selectedScreenTitleId &&
+			                    !selectedNarrationId &&
+			                    !selectedAudioId
+			                  }
+			                  style={{
+		                    padding: '10px 12px',
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+			                    background:
+			                      selectedClipId ||
+			                      selectedGraphicId ||
+			                      selectedLogoId ||
+			                      selectedLowerThirdId ||
+			                      selectedScreenTitleId ||
+			                      selectedNarrationId ||
+			                      selectedAudioId
+			                        ? '#0c0c0c'
+			                        : 'rgba(255,255,255,0.06)',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor:
+			                      selectedClipId ||
+			                      selectedGraphicId ||
+			                      selectedLogoId ||
+			                      selectedLowerThirdId ||
+			                      selectedScreenTitleId ||
+			                      selectedNarrationId ||
+			                      selectedAudioId
+			                        ? 'pointer'
+			                        : 'default',
+			                    flex: '0 0 auto',
+			                  }}
+			                >
+		                  Split
+		                </button>
                 <button
                   type="button"
                   onClick={undo}
@@ -7747,25 +7988,25 @@ export default function CreateVideo() {
                   <div style={{ color: '#fff', fontWeight: 900 }}>
                     {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleAudioPreview(uploadId)}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(48,209,88,0.65)',
-                      background: audioPreviewPlayingId === uploadId ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
-                      color: '#fff',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      flex: '0 0 auto',
-                    }}
-                    aria-label={audioPreviewPlayingId === uploadId ? 'Pause audio preview' : 'Play audio preview'}
-                  >
-                    {audioPreviewPlayingId === uploadId ? 'Pause' : 'Play'}
-                  </button>
-                </div>
-              )
+	                  <button
+	                    type="button"
+	                    onClick={toggleMusicPlay}
+	                    style={{
+	                      padding: '8px 12px',
+	                      borderRadius: 10,
+	                      border: '1px solid rgba(48,209,88,0.65)',
+	                      background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+	                      color: '#fff',
+	                      fontWeight: 900,
+	                      cursor: 'pointer',
+	                      flex: '0 0 auto',
+	                    }}
+	                    aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+	                  >
+	                    {musicPreviewPlaying ? 'Pause' : 'Play'}
+	                  </button>
+	                </div>
+	              )
             })()
           : null}
 
