@@ -2624,10 +2624,10 @@ export default function CreateVideo() {
     const graphicsY = GRAPHICS_Y
     const videoY = VIDEO_Y
     const narrationY = NARRATION_Y
-    const audioY = AUDIO_Y
-    const pillH = PILL_H
-    const HANDLE_GOLD = 'rgba(212,175,55,0.95)'
-    const HANDLE_GREEN = 'rgba(48,209,88,0.95)'
+	    const audioY = AUDIO_Y
+	    const pillH = PILL_H
+	    const HANDLE_GOLD = 'rgba(212,175,55,0.95)'
+	    const HANDLE_GREEN = 'rgba(48,209,88,0.95)'
     const hasNoOffset = (value: unknown, eps = 0.05) => {
       const n = Number(value)
       return Number.isFinite(n) && Math.abs(n) <= eps
@@ -2639,12 +2639,52 @@ export default function CreateVideo() {
       return Math.abs(x - y) <= eps
     }
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
-    ctx.textBaseline = 'middle'
-    const activeDrag = trimDragging ? trimDragRef.current : null
+	    ctx.textBaseline = 'middle'
+	    const activeDrag = trimDragging ? trimDragRef.current : null
 
-    // Logo segments (topmost overlay lane; no overlaps)
-    for (let i = 0; i < logos.length; i++) {
-      const l: any = logos[i]
+	    // Lane labels in the left gutter (only when time=0 is visible, i.e. there is blank space to the left of the 0.0s tick).
+	    {
+	      const xZero = padPx - scrollLeft
+	      const gutterRight = Math.floor(xZero - 10)
+	      if (Number.isFinite(gutterRight) && gutterRight > 80) {
+	        const swatchW = 8
+	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
+	        const labels: Array<{ y: number; label: string; swatch: string }> = [
+	          { y: logoY + pillH / 2, label: 'LOGO', swatch: 'rgba(212,175,55,0.95)' },
+	          { y: lowerThirdY + pillH / 2, label: 'LOWER THIRD', swatch: 'rgba(94,92,230,0.90)' },
+	          { y: graphicsY + pillH / 2, label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
+	          { y: screenTitleY + pillH / 2, label: 'SCREEN TITLES', swatch: 'rgba(255,214,10,0.90)' },
+	          { y: videoY + pillH / 2, label: 'VIDEOS', swatch: 'rgba(212,175,55,0.75)' },
+	          { y: narrationY + pillH / 2, label: 'NARRATION', swatch: 'rgba(175,82,222,0.90)' },
+	          { y: audioY + pillH / 2, label: 'AUDIO/MUSIC', swatch: 'rgba(48,209,88,0.90)' },
+	        ]
+
+	        ctx.save()
+	        ctx.globalAlpha = 0.92
+	        ctx.textAlign = 'right'
+	        ctx.textBaseline = 'middle'
+	        ctx.font = '900 11px system-ui, -apple-system, Segoe UI, sans-serif'
+	        for (const row of labels) {
+	          const y = Math.round(row.y)
+	          const swatchX = gutterRight - swatchW
+	          const swatchY = Math.round(y - swatchH / 2)
+	          ctx.fillStyle = row.swatch
+	          ctx.fillRect(swatchX, swatchY, swatchW, swatchH)
+
+	          const textX = swatchX - 8
+	          const maxW = Math.max(0, textX - 8)
+	          if (maxW < 20) continue
+	          ctx.fillStyle = 'rgba(187,187,187,0.95)'
+	          const clipped = ellipsizeText(ctx, row.label, maxW)
+	          ctx.fillText(clipped, textX, y)
+	        }
+	        ctx.restore()
+	      }
+	    }
+
+	    // Logo segments (topmost overlay lane; no overlaps)
+	    for (let i = 0; i < logos.length; i++) {
+	      const l: any = logos[i]
       const start = Math.max(0, Number(l?.startSeconds || 0))
       const end = Math.max(0, Number(l?.endSeconds || 0))
       const len = Math.max(0, end - start)
