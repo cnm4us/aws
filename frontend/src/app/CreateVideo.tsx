@@ -532,6 +532,7 @@ export default function CreateVideo() {
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
+  const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
@@ -6382,6 +6383,7 @@ export default function CreateVideo() {
           const pad = 10
           const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
           const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+          timelineCtxMenuOpenedAtRef.current = performance.now()
           setTimelineCtxMenu({ kind: 'graphic', id: String((drag as any).graphicId), x, y })
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
@@ -6534,6 +6536,7 @@ export default function CreateVideo() {
     // Always center the menu; mobile long-press is imprecise and we want a predictable location.
     const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
     const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+    timelineCtxMenuOpenedAtRef.current = performance.now()
     setTimelineCtxMenu({ kind: target.kind, id: target.id, x, y })
   }, [])
 
@@ -10075,6 +10078,15 @@ export default function CreateVideo() {
 		          role="dialog"
 		          aria-modal="true"
 		          style={{ position: 'fixed', inset: 0, zIndex: 1400 }}
+		          onClickCapture={(e) => {
+		            const openedAt = timelineCtxMenuOpenedAtRef.current
+		            if (openedAt == null) return
+		            if (performance.now() - openedAt < 120) {
+		              timelineCtxMenuOpenedAtRef.current = null
+		              e.preventDefault()
+		              e.stopPropagation()
+		            }
+		          }}
 		          onPointerDown={() => setTimelineCtxMenu(null)}
 		        >
 		          <div
