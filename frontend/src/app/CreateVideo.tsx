@@ -536,7 +536,7 @@ export default function CreateVideo() {
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
-        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle'
+        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle' | 'clip'
         id: string
         x: number
         y: number
@@ -607,6 +607,7 @@ export default function CreateVideo() {
         edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
+        startClientY?: number
         startStartSeconds: number
         startEndSeconds: number
         maxDurationSeconds: number
@@ -616,6 +617,9 @@ export default function CreateVideo() {
         maxStartSeconds?: number
         // For trim (prevent overlapping the next clip on the timeline)
         maxTimelineDurationSeconds?: number
+        // For armed body/edge drag (so a click can still open the context menu)
+        armed?: boolean
+        moved?: boolean
       }
     | {
         kind: 'still'
@@ -5207,6 +5211,369 @@ export default function CreateVideo() {
     timeline.clips,
   ])
 
+  const deleteClipById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const idx0 = timeline.clips.findIndex((c) => String(c.id) === targetId)
+      if (idx0 < 0) return
+      const target = timeline.clips[idx0]
+      snapshotUndo()
+      setTimeline((prev) => {
+        const next = prev.clips.filter((c) => String(c.id) !== targetId)
+        const nextTimeline: any = { ...prev, clips: next }
+        const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+        return { ...nextTimeline, playheadSeconds: nextPlayhead }
+      })
+      setActiveUploadId((prev) => (prev === Number((target as any).uploadId) ? null : prev))
+      if (selectedClipId === targetId) setSelectedClipId(null)
+    },
+    [computeTotalSecondsForTimeline, selectedClipId, snapshotUndo, timeline.clips]
+  )
+
+  const duplicateClipById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const idx0 = timeline.clips.findIndex((c) => String(c.id) === targetId)
+      if (idx0 < 0) return
+      const starts0 = computeClipStarts(timeline.clips)
+      const normalizedClips: Clip[] = timeline.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(starts0[i] || 0) }))
+      const clip0 = normalizedClips[idx0]
+      const start0 = roundToTenth(Number((clip0 as any).startSeconds || 0))
+      const dur = Math.max(0.2, roundToTenth(clipDurationSeconds(clip0)))
+      const end0 = roundToTenth(start0 + dur)
+      const capEnd = 20 * 60
+
+      const occupied: Array<{ start: number; end: number }> = []
+      for (let i = 0; i < normalizedClips.length; i++) {
+        const c = normalizedClips[i]
+        const s = roundToTenth(Number((c as any).startSeconds || 0))
+        const e = roundToTenth(s + clipDurationSeconds(c))
+        if (e > s) occupied.push({ start: s, end: e })
+      }
+      const prevStills: any[] = Array.isArray((timeline as any).stills) ? (timeline as any).stills : []
+      for (const st of prevStills) {
+        const s = roundToTenth(Number((st as any).startSeconds || 0))
+        const e = roundToTenth(Number((st as any).endSeconds || 0))
+        if (e > s) occupied.push({ start: s, end: e })
+      }
+      occupied.sort((a, b) => a.start - b.start || a.end - b.end)
+      const merged: Array<{ start: number; end: number }> = []
+      for (const r of occupied) {
+        const s = clamp(roundToTenth(r.start), 0, capEnd)
+        const e = clamp(roundToTenth(r.end), 0, capEnd)
+        if (!(e > s)) continue
+        const last = merged.length ? merged[merged.length - 1] : null
+        if (!last) merged.push({ start: s, end: e })
+        else if (s <= last.end + 1e-6) last.end = Math.max(last.end, e)
+        else merged.push({ start: s, end: e })
+      }
+      const gaps: Array<{ start: number; end: number }> = []
+      let cursor = 0
+      for (const r of merged) {
+        if (r.start > cursor + 1e-6) gaps.push({ start: cursor, end: r.start })
+        cursor = Math.max(cursor, r.end)
+      }
+      if (capEnd > cursor + 1e-6) gaps.push({ start: cursor, end: capEnd })
+
+      let placedStart: number | null = null
+      for (const g of gaps) {
+        const s = Math.max(roundToTenth(g.start), roundToTenth(end0))
+        const e = roundToTenth(s + dur)
+        if (e <= roundToTenth(g.end) + 1e-6) {
+          placedStart = s
+          break
+        }
+      }
+      if (placedStart == null) {
+        setTimelineMessage('No available slot to duplicate that clip without overlapping.')
+        return
+      }
+
+      const newId = `clip_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const placed: Clip = { ...clip0, id: newId, startSeconds: placedStart }
+      const nextClips = [...normalizedClips, placed].sort(
+        (a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+      )
+      snapshotUndo()
+      const nextTimeline: any = { ...(timeline as any), clips: nextClips }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      setSelectedClipId(String(newId))
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline, stills]
+  )
+
+  const splitClipById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const res = splitClipAtPlayhead(timeline as any, targetId)
+      if (res.timeline === (timeline as any) && String(res.selectedClipId) === targetId) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedClipId(String(res.selectedClipId))
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
+  const applyClipGuidelineAction = useCallback(
+    (
+      id: string,
+      action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
+      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+    ) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+
+      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsSorted = Array.from(
+        new Map(
+          gsRaw
+            .map((x) => roundToTenth(Number(x)))
+            .filter((x) => Number.isFinite(x) && x >= 0)
+            .map((x) => [x.toFixed(1), x] as const)
+        ).values()
+      ).sort((a, b) => a - b)
+      if (!gsSorted.length) {
+        setTimelineMessage('No guidelines yet. Tap G to add one.')
+        return
+      }
+
+      const capEnd = 20 * 60
+      const starts0 = computeClipStarts(timeline.clips)
+      const normalizedClips: Clip[] = timeline.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(starts0[i] || 0) }))
+      const idx = normalizedClips.findIndex((c) => String(c.id) === targetId)
+      if (idx < 0) return
+      const clip0 = normalizedClips[idx]
+
+      const clipStartTimeline = roundToTenth(Number((clip0 as any).startSeconds || 0))
+      const dur0 = roundToTenth(Math.max(0.2, clipDurationSeconds(clip0)))
+      const clipEndTimeline = roundToTenth(clipStartTimeline + dur0)
+
+      const sourceStart0 = roundToTenth(Number((clip0 as any).sourceStartSeconds || 0))
+      const sourceEnd0 = roundToTenth(Number((clip0 as any).sourceEndSeconds || 0))
+      const sourceMaxRaw = durationsByUploadId[Number((clip0 as any).uploadId)] ?? sourceEnd0
+      const sourceMax = roundToTenth(Math.max(0, Number(sourceMaxRaw) || 0))
+
+      const occupied: Array<{ start: number; end: number }> = []
+      for (let i = 0; i < normalizedClips.length; i++) {
+        if (i === idx) continue
+        const c = normalizedClips[i]
+        const s = roundToTenth(Number((c as any).startSeconds || 0))
+        const e = roundToTenth(s + clipDurationSeconds(c))
+        if (e > s) occupied.push({ start: s, end: e })
+      }
+      const prevStills: any[] = Array.isArray((timeline as any).stills) ? (timeline as any).stills : []
+      for (const st of prevStills) {
+        const s = roundToTenth(Number((st as any).startSeconds || 0))
+        const e = roundToTenth(Number((st as any).endSeconds || 0))
+        if (e > s) occupied.push({ start: s, end: e })
+      }
+      occupied.sort((a, b) => a.start - b.start || a.end - b.end)
+
+      const overlapsAny = (start: number, end: number): boolean => {
+        const s0 = roundToTenth(start)
+        const e0 = roundToTenth(end)
+        for (const r of occupied) {
+          if (s0 < r.end - 1e-6 && e0 > r.start + 1e-6) return true
+        }
+        return false
+      }
+
+      const eps = 0.05
+      const prevStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = gsSorted.length - 1; i >= 0; i--) {
+          const v = gsSorted[i]
+          if (v < tt - eps) return v
+        }
+        return null
+      }
+      const nextStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = 0; i < gsSorted.length; i++) {
+          const v = gsSorted[i]
+          if (v > tt + eps) return v
+        }
+        return null
+      }
+      const nearestInclusive = (t: number) => {
+        let best: number | null = null
+        let bestDist = Number.POSITIVE_INFINITY
+        for (const v of gsSorted) {
+          const d = Math.abs(v - t)
+          if (d < bestDist - 1e-9) {
+            bestDist = d
+            best = v
+          }
+        }
+        return best == null ? null : { v: best, dist: bestDist }
+      }
+
+      let nextStartTimeline = clipStartTimeline
+      let nextSourceStart = sourceStart0
+      let nextSourceEnd = sourceEnd0
+
+      if (action === 'snap') {
+        const edgeIntent = opts?.edgeIntent || 'move'
+        if (edgeIntent === 'start') {
+          const cand = prevStrict(clipStartTimeline)
+          if (cand == null) {
+            setTimelineMessage('No guideline before start.')
+            return
+          }
+          if (Math.abs(cand - clipStartTimeline) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          nextStartTimeline = roundToTenth(cand)
+        } else if (edgeIntent === 'end') {
+          const cand = nextStrict(clipEndTimeline)
+          if (cand == null) {
+            setTimelineMessage('No guideline after end.')
+            return
+          }
+          if (Math.abs(cand - clipEndTimeline) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          nextStartTimeline = roundToTenth(cand - dur0)
+        } else {
+          const nS = nearestInclusive(clipStartTimeline)
+          const nE = nearestInclusive(clipEndTimeline)
+          if (!nS && !nE) {
+            setTimelineMessage('No guidelines available.')
+            return
+          }
+          const snapEdge = !nE || (nS && nS.dist <= nE.dist) ? ('start' as const) : ('end' as const)
+          const nn = snapEdge === 'start' ? nS : nE
+          if (!nn) return
+          if (nn.dist <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          nextStartTimeline = snapEdge === 'start' ? roundToTenth(nn.v) : roundToTenth(nn.v - dur0)
+        }
+
+        nextStartTimeline = clamp(roundToTenth(nextStartTimeline), 0, Math.max(0, capEnd - dur0))
+        const nextEndTimeline = roundToTenth(nextStartTimeline + dur0)
+        if (overlapsAny(nextStartTimeline, nextEndTimeline)) {
+          setTimelineMessage('Cannot snap (would overlap another base clip).')
+          return
+        }
+      } else if (action === 'expand_end' || action === 'contract_end') {
+        const cand = action === 'expand_end' ? nextStrict(clipEndTimeline) : prevStrict(clipEndTimeline)
+        if (cand == null) {
+          setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
+          return
+        }
+        const desiredEndTimeline = roundToTenth(cand)
+        const desiredDur = roundToTenth(desiredEndTimeline - clipStartTimeline)
+        if (!(desiredDur > 0.2)) {
+          setTimelineMessage('Resulting duration is too small.')
+          return
+        }
+        const desiredSourceEnd = roundToTenth(sourceStart0 + desiredDur)
+        if (desiredSourceEnd > sourceMax + 1e-6) {
+          setTimelineMessage('No more source video available to extend to that guideline.')
+          return
+        }
+        nextSourceEnd = clamp(desiredSourceEnd, sourceStart0 + 0.2, sourceMax)
+        const nextEndTimeline = roundToTenth(clipStartTimeline + (nextSourceEnd - sourceStart0))
+        if (nextEndTimeline > capEnd + 1e-6) {
+          setTimelineMessage('End exceeds allowed duration.')
+          return
+        }
+        if (overlapsAny(clipStartTimeline, nextEndTimeline)) {
+          setTimelineMessage('Cannot resize (would overlap another base clip).')
+          return
+        }
+      } else if (action === 'expand_start' || action === 'contract_start') {
+        const cand = action === 'expand_start' ? prevStrict(clipStartTimeline) : nextStrict(clipStartTimeline)
+        if (cand == null) {
+          setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
+          return
+        }
+        const desiredStartTimeline = roundToTenth(cand)
+        const delta = roundToTenth(clipStartTimeline - desiredStartTimeline)
+        if (action === 'contract_start') {
+          // delta is negative here (moving right); use abs for source trim.
+          const shift = roundToTenth(desiredStartTimeline - clipStartTimeline)
+          if (!(shift > 0)) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          const nextSourceStartCandidate = roundToTenth(sourceStart0 + shift)
+          if (nextSourceStartCandidate > sourceEnd0 - 0.2 + 1e-6) {
+            setTimelineMessage('Resulting duration is too small.')
+            return
+          }
+          nextStartTimeline = clamp(desiredStartTimeline, 0, capEnd)
+          nextSourceStart = nextSourceStartCandidate
+          // End stays fixed in timeline; sourceEnd unchanged.
+          const nextDur = roundToTenth(sourceEnd0 - nextSourceStart)
+          const nextEndTimeline = roundToTenth(nextStartTimeline + nextDur)
+          if (Math.abs(nextEndTimeline - clipEndTimeline) > 0.2 + 1e-6) {
+            // Keep end fixed: adjust end by shifting start only (duration already shrunk accordingly).
+          }
+          if (overlapsAny(nextStartTimeline, clipEndTimeline)) {
+            setTimelineMessage('Cannot resize (would overlap another base clip).')
+            return
+          }
+        } else {
+          // expand_start: move start left, keep end fixed by consuming earlier source.
+          if (!(delta > 0)) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          if (sourceStart0 < delta - 1e-6) {
+            setTimelineMessage('No more source video available to extend start to that guideline.')
+            return
+          }
+          nextStartTimeline = clamp(desiredStartTimeline, 0, capEnd)
+          nextSourceStart = roundToTenth(sourceStart0 - delta)
+          if (overlapsAny(nextStartTimeline, clipEndTimeline)) {
+            setTimelineMessage('Cannot resize (would overlap another base clip).')
+            return
+          }
+        }
+      }
+
+      snapshotUndo()
+      const nextClips = normalizedClips.slice()
+      const updated: Clip = {
+        ...clip0,
+        startSeconds: roundToTenth(nextStartTimeline),
+        sourceStartSeconds: roundToTenth(nextSourceStart),
+        sourceEndSeconds: roundToTenth(nextSourceEnd),
+      }
+      nextClips[idx] = updated
+      nextClips.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+      const nextTimeline: any = { ...(timeline as any), clips: nextClips }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline, stills, durationsByUploadId]
+  )
+
   const deleteGraphicById = useCallback(
     (id: string) => {
       const targetId = String(id || '')
@@ -7133,7 +7500,7 @@ export default function CreateVideo() {
 
 		      // Special case: "armed" drags. Don't start mutating the timeline until the pointer has moved a bit,
 		      // otherwise a simple tap on the selected pill can open a context menu / modal.
-		      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle') && (drag as any).armed) {
+		      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle' || drag.kind === 'clip') && (drag as any).armed) {
 		        const dx0 = e.clientX - drag.startClientX
 		        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
 		        const moved = Boolean((drag as any).moved)
@@ -7148,7 +7515,13 @@ export default function CreateVideo() {
 		          dbg('startTrimDrag', {
 		            kind: drag.kind,
 		            edge: String((drag as any).edge || 'move'),
-		            id: String((drag as any).logoId || (drag as any).lowerThirdId || (drag as any).screenTitleId || ''),
+		            id: String(
+		              (drag as any).logoId ||
+		                (drag as any).lowerThirdId ||
+		                (drag as any).screenTitleId ||
+		                (drag as any).clipId ||
+		                ''
+		            ),
 		          })
 		        }
 		      }
@@ -7741,6 +8114,35 @@ export default function CreateVideo() {
           }, 0)
         } catch {}
         stopTrimDrag('screenTitle_ctx_menu')
+        return
+      }
+
+      // For clips: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
+      if (drag && drag.kind === 'clip' && (drag as any).armed && !Boolean((drag as any).moved)) {
+        try {
+          const w = window.innerWidth || 0
+          const h = window.innerHeight || 0
+          const menuW = 170
+          const menuH = 188
+          const pad = 10
+          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
+          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+          const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
+          timelineCtxMenuOpenedAtRef.current = performance.now()
+          setTimelineCtxMenu({
+            kind: 'clip',
+            id: String((drag as any).clipId),
+            x,
+            y,
+            view: 'main',
+            edgeIntent,
+          })
+          suppressNextTimelineClickRef.current = true
+          window.setTimeout(() => {
+            suppressNextTimelineClickRef.current = false
+          }, 0)
+        } catch {}
+        stopTrimDrag('clip_ctx_menu')
         return
       }
 
@@ -8898,11 +9300,6 @@ export default function CreateVideo() {
                   if (!nearLeft && !nearRight) {
                     if (selectedClipId !== clip.id) return
                     e.preventDefault()
-                    snapshotUndo()
-                    setSelectedClipId(clip.id)
-                    setSelectedGraphicId(null)
-                    setSelectedStillId(null)
-                    setSelectedAudioId(null)
 
                     const capEnd = 20 * 60
                     const clipRanges = timeline.clips.map((c, i) => ({
@@ -8923,7 +9320,6 @@ export default function CreateVideo() {
                     const maxEndSeconds = capEnd
                     const maxStartSeconds = clamp(roundToTenth(nextStart - len), minStartSeconds, maxEndSeconds)
 
-                    trimDragLockScrollLeftRef.current = sc.scrollLeft
                     const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
                     trimDragRef.current = {
                       kind: 'clip',
@@ -8931,25 +9327,24 @@ export default function CreateVideo() {
                       edge: 'move',
                       pointerId: e.pointerId,
                       startClientX: e.clientX,
+                      startClientY: e.clientY,
                       startStartSeconds: start,
                       startEndSeconds: start + len,
                       maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
                       minStartSeconds,
                       maxEndSeconds,
                       maxStartSeconds,
+                      armed: true,
+                      moved: false,
                     }
-                    setTrimDragging(true)
                     try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('startTrimDrag', { kind: 'clip', edge: 'move', id: clip.id })
+                    dbg('armTrimDrag', { kind: 'clip', edge: 'move', id: clip.id })
                     return
                   }
 
+                  // Resize only when already selected.
+                  if (selectedClipId !== clip.id) return
                   e.preventDefault()
-                  snapshotUndo()
-                  setSelectedClipId(clip.id)
-                  setSelectedGraphicId(null)
-                  setSelectedAudioId(null)
-                  trimDragLockScrollLeftRef.current = sc.scrollLeft
                   const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
                   const capEnd = 20 * 60
                   const clipRanges = timeline.clips.map((c, i) => ({
@@ -8972,14 +9367,16 @@ export default function CreateVideo() {
                     edge: nearLeft ? 'start' : 'end',
                     pointerId: e.pointerId,
                     startClientX: e.clientX,
+                    startClientY: e.clientY,
                     startStartSeconds: clip.sourceStartSeconds,
                     startEndSeconds: clip.sourceEndSeconds,
                     maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
                     maxTimelineDurationSeconds,
+                    armed: true,
+                    moved: false,
                   }
-                  setTrimDragging(true)
                   try { sc.setPointerCapture(e.pointerId) } catch {}
-                  dbg('startTrimDrag', { kind: 'clip', edge: nearLeft ? 'start' : 'end', id: clip.id })
+                  dbg('armTrimDrag', { kind: 'clip', edge: nearLeft ? 'start' : 'end', id: clip.id })
                   return
                 }}
 	                onPointerDownCapture={(e) => {
@@ -9437,13 +9834,7 @@ export default function CreateVideo() {
 	                  if (nearLeft || nearRight) return
 
                   if (selectedClipId === clip.id) {
-                    setClipEditor({
-                      id: clip.id,
-                      start: clip.sourceStartSeconds,
-                      end: clip.sourceEndSeconds,
-                    })
-                    setClipEditorError(null)
-                    setFreezeInsertError(null)
+                    // Video properties are opened via the context menu (not by tapping).
                     return
                   }
 
@@ -11448,6 +11839,8 @@ export default function CreateVideo() {
 			                        ? 'Lower Third'
 			                        : timelineCtxMenu.kind === 'screenTitle'
 			                          ? 'Screen Title'
+			                          : timelineCtxMenu.kind === 'clip'
+			                            ? 'Video'
 			                        : 'Graphic'}
 			                </div>
 			              </div>
@@ -11547,6 +11940,22 @@ export default function CreateVideo() {
 			                        setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2, presetId, text })
 			                        setScreenTitleEditorError(null)
 			                      }
+			                    } else if (timelineCtxMenu.kind === 'clip') {
+			                      const idx = timeline.clips.findIndex((c) => String(c.id) === String(timelineCtxMenu.id))
+			                      if (idx >= 0) {
+			                        const clip = timeline.clips[idx]
+			                        setSelectedClipId(String(clip.id))
+			                        setSelectedGraphicId(null)
+			                        setSelectedLogoId(null)
+			                        setSelectedLowerThirdId(null)
+			                        setSelectedScreenTitleId(null)
+			                        setSelectedNarrationId(null)
+			                        setSelectedStillId(null)
+			                        setSelectedAudioId(null)
+			                        setClipEditor({ id: clip.id, start: clip.sourceStartSeconds, end: clip.sourceEndSeconds })
+			                        setClipEditorError(null)
+			                        setFreezeInsertError(null)
+			                      }
 			                    }
 			                    setTimelineCtxMenu(null)
 			                  }}
@@ -11590,6 +11999,7 @@ export default function CreateVideo() {
 			                    if (timelineCtxMenu.kind === 'logo') splitLogoById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'lowerThird') splitLowerThirdById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'screenTitle') splitScreenTitleById(timelineCtxMenu.id)
+			                    if (timelineCtxMenu.kind === 'clip') splitClipById(timelineCtxMenu.id)
 			                    setTimelineCtxMenu(null)
 			                  }}
 			                  style={{
@@ -11613,6 +12023,7 @@ export default function CreateVideo() {
 			                    if (timelineCtxMenu.kind === 'logo') duplicateLogoById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'lowerThird') duplicateLowerThirdById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'screenTitle') duplicateScreenTitleById(timelineCtxMenu.id)
+			                    if (timelineCtxMenu.kind === 'clip') duplicateClipById(timelineCtxMenu.id)
 			                    setTimelineCtxMenu(null)
 			                  }}
 			                  style={{
@@ -11636,6 +12047,7 @@ export default function CreateVideo() {
 			                    if (timelineCtxMenu.kind === 'logo') deleteLogoById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'lowerThird') deleteLowerThirdById(timelineCtxMenu.id)
 			                    if (timelineCtxMenu.kind === 'screenTitle') deleteScreenTitleById(timelineCtxMenu.id)
+			                    if (timelineCtxMenu.kind === 'clip') deleteClipById(timelineCtxMenu.id)
 			                    setTimelineCtxMenu(null)
 			                  }}
 			                  style={{
@@ -11672,6 +12084,7 @@ export default function CreateVideo() {
 			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
 			                          setTimelineCtxMenu(null)
 			                        }}
 			                        style={{
@@ -11695,6 +12108,7 @@ export default function CreateVideo() {
 			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
 			                          setTimelineCtxMenu(null)
 			                        }}
 			                        style={{
@@ -11718,6 +12132,7 @@ export default function CreateVideo() {
 			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
 			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
 			                          setTimelineCtxMenu(null)
 			                        }}
 			                        style={{
