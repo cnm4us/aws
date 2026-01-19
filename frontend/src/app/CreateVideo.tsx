@@ -1234,109 +1234,6 @@ export default function CreateVideo() {
     return Array.from(uniq.values()).sort((a, b) => a - b)
   }, [audioSegments, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
 
-  const addGuidelineAtPlayhead = useCallback(() => {
-    const t = roundToTenth(playhead)
-    const prevGs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
-    const map = new Map<string, number>()
-    for (const g of prevGs) {
-      const gg = roundToTenth(Number(g))
-      if (Number.isFinite(gg) && gg >= 0) map.set(gg.toFixed(1), gg)
-    }
-    map.set(t.toFixed(1), t)
-    const nextGs = Array.from(map.values()).sort((a, b) => a - b)
-    const nextTimeline: any = { ...(timeline as any), guidelines: nextGs, playheadSeconds: playhead }
-    snapshotUndo()
-    setTimeline(nextTimeline)
-    void saveTimelineNow(nextTimeline)
-    setTimelineMessage(`Guideline added at ${t.toFixed(1)}s`)
-  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
-
-  const removeNearestGuideline = useCallback(() => {
-    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
-    if (!gs.length) return
-    const t = roundToTenth(playhead)
-    let bestIdx = 0
-    let bestDist = Number.POSITIVE_INFINITY
-    for (let i = 0; i < gs.length; i++) {
-      const v = roundToTenth(Number(gs[i]))
-      const d = Math.abs(v - t)
-      if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) < 1e-6 && v > roundToTenth(Number(gs[bestIdx])))) {
-        bestDist = d
-        bestIdx = i
-      }
-    }
-    const next = gs
-      .map((x) => roundToTenth(Number(x)))
-      .filter((x) => Number.isFinite(x))
-      .filter((_, i) => i !== bestIdx)
-      .sort((a, b) => a - b)
-    const nextTimeline: any = { ...(timeline as any), guidelines: next, playheadSeconds: playhead }
-    snapshotUndo()
-    setTimeline(nextTimeline)
-    void saveTimelineNow(nextTimeline)
-    setTimelineMessage('Guideline removed')
-  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
-
-  const removeAllGuidelines = useCallback(() => {
-    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
-    if (!gs.length) return
-    const nextTimeline: any = { ...(timeline as any), guidelines: [], playheadSeconds: playhead }
-    snapshotUndo()
-    setTimeline(nextTimeline)
-    void saveTimelineNow(nextTimeline)
-    setTimelineMessage('All guidelines removed')
-  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
-
-  const openGuidelineMenu = useCallback(() => {
-    setGuidelineMenuOpen(true)
-  }, [])
-
-  const closeGuidelineMenu = useCallback(() => {
-    setGuidelineMenuOpen(false)
-  }, [])
-
-  const startGuidelinePress = useCallback(() => {
-    const cur = guidelinePressRef.current
-    if (cur?.timer != null) {
-      try { window.clearTimeout(cur.timer) } catch {}
-    }
-    const ref = { timer: null as any, fired: false }
-    ref.timer = window.setTimeout(() => {
-      ref.fired = true
-      openGuidelineMenu()
-    }, 650)
-    guidelinePressRef.current = ref
-  }, [openGuidelineMenu])
-
-  const finishGuidelinePress = useCallback(() => {
-    const cur = guidelinePressRef.current
-    guidelinePressRef.current = null
-    if (!cur) return
-    if (cur.timer != null) {
-      try { window.clearTimeout(cur.timer) } catch {}
-    }
-    if (!cur.fired) addGuidelineAtPlayhead()
-  }, [addGuidelineAtPlayhead])
-
-  const cancelGuidelinePress = useCallback(() => {
-    const cur = guidelinePressRef.current
-    guidelinePressRef.current = null
-    if (!cur) return
-    if (cur.timer != null) {
-      try { window.clearTimeout(cur.timer) } catch {}
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      const cur = guidelinePressRef.current
-      if (cur?.timer != null) {
-        try { window.clearTimeout(cur.timer) } catch {}
-      }
-      guidelinePressRef.current = null
-    }
-  }, [])
-
   const dragHud = useMemo(() => {
     if (!trimDragging) return null
     const drag = trimDragRef.current
@@ -3508,6 +3405,109 @@ export default function CreateVideo() {
     },
     [project?.id]
   )
+
+  const addGuidelineAtPlayhead = useCallback(() => {
+    const t = roundToTenth(playhead)
+    const prevGs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    const map = new Map<string, number>()
+    for (const g of prevGs) {
+      const gg = roundToTenth(Number(g))
+      if (Number.isFinite(gg) && gg >= 0) map.set(gg.toFixed(1), gg)
+    }
+    map.set(t.toFixed(1), t)
+    const nextGs = Array.from(map.values()).sort((a, b) => a - b)
+    const nextTimeline: any = { ...(timeline as any), guidelines: nextGs, playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage(`Guideline added at ${t.toFixed(1)}s`)
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const removeNearestGuideline = useCallback(() => {
+    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    if (!gs.length) return
+    const t = roundToTenth(playhead)
+    let bestIdx = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    for (let i = 0; i < gs.length; i++) {
+      const v = roundToTenth(Number(gs[i]))
+      const d = Math.abs(v - t)
+      if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) < 1e-6 && v > roundToTenth(Number(gs[bestIdx])))) {
+        bestDist = d
+        bestIdx = i
+      }
+    }
+    const next = gs
+      .map((x) => roundToTenth(Number(x)))
+      .filter((x) => Number.isFinite(x))
+      .filter((_, i) => i !== bestIdx)
+      .sort((a, b) => a - b)
+    const nextTimeline: any = { ...(timeline as any), guidelines: next, playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage('Guideline removed')
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const removeAllGuidelines = useCallback(() => {
+    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    if (!gs.length) return
+    const nextTimeline: any = { ...(timeline as any), guidelines: [], playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage('All guidelines removed')
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const openGuidelineMenu = useCallback(() => {
+    setGuidelineMenuOpen(true)
+  }, [])
+
+  const closeGuidelineMenu = useCallback(() => {
+    setGuidelineMenuOpen(false)
+  }, [])
+
+  const startGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    if (cur?.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+    const ref = { timer: null as any, fired: false }
+    ref.timer = window.setTimeout(() => {
+      ref.fired = true
+      openGuidelineMenu()
+    }, 650)
+    guidelinePressRef.current = ref
+  }, [openGuidelineMenu])
+
+  const finishGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    guidelinePressRef.current = null
+    if (!cur) return
+    if (cur.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+    if (!cur.fired) addGuidelineAtPlayhead()
+  }, [addGuidelineAtPlayhead])
+
+  const cancelGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    guidelinePressRef.current = null
+    if (!cur) return
+    if (cur.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      const cur = guidelinePressRef.current
+      if (cur?.timer != null) {
+        try { window.clearTimeout(cur.timer) } catch {}
+      }
+      guidelinePressRef.current = null
+    }
+  }, [])
 
   // Fetch upload names for clip pills
 		  useEffect(() => {
