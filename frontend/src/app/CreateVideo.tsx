@@ -5109,6 +5109,30 @@ export default function CreateVideo() {
     ]
   )
 
+  const splitGraphicById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const res = splitGraphicAtPlayhead(timeline as any, targetId)
+      const prevGraphics = Array.isArray((timeline as any).graphics) ? (timeline as any).graphics : []
+      const nextGraphics = Array.isArray((res.timeline as any).graphics) ? (res.timeline as any).graphics : []
+      if (res.timeline === (timeline as any) && String(res.selectedGraphicId) === targetId) return
+      if (nextGraphics === prevGraphics) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedGraphicId(String(res.selectedGraphicId))
+      setSelectedClipId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
   const saveClipEditor = useCallback(() => {
     if (!clipEditor) return
     const start = roundToTenth(Number(clipEditor.start))
@@ -6218,7 +6242,7 @@ export default function CreateVideo() {
           const w = window.innerWidth || 0
           const h = window.innerHeight || 0
           const menuW = 170
-          const menuH = 140
+          const menuH = 188
           const pad = 10
           const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
           const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
@@ -6369,7 +6393,7 @@ export default function CreateVideo() {
     const w = window.innerWidth || 0
     const h = window.innerHeight || 0
     const menuW = 170
-    const menuH = 140
+    const menuH = 188
     const pad = 10
     // Always center the menu; mobile long-press is imprecise and we want a predictable location.
     const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
@@ -9955,6 +9979,26 @@ export default function CreateVideo() {
 		              }}
 		            >
 		              Properties
+		            </button>
+		            <button
+		              type="button"
+		              onClick={() => {
+		                if (timelineCtxMenu.kind === 'graphic') splitGraphicById(timelineCtxMenu.id)
+		                setTimelineCtxMenu(null)
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,255,255,0.18)',
+		                background: 'rgba(255,255,255,0.06)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: 'pointer',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Split
 		            </button>
 		            <button
 		              type="button"
