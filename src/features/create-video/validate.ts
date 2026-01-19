@@ -916,12 +916,24 @@ export async function validateAndNormalizeCreateVideoTimeline(
     }
   }
 
+  // Optional: guidelines (UI-only, used for snapping/markers).
+  const rawGuidelines = Array.isArray((raw as any).guidelines) ? ((raw as any).guidelines as any[]) : []
+  const guidelinesMap = new Map<string, number>()
+  for (const g of rawGuidelines) {
+    const t0 = normalizeSeconds(g)
+    const t1 = legacyCumulative.length ? legacyMapTime(t0) : t0
+    const t = roundToTenth(Math.max(0, Math.min(MAX_SECONDS, t1)))
+    guidelinesMap.set(t.toFixed(1), t)
+  }
+  const guidelines = Array.from(guidelinesMap.values()).sort((a, b) => a - b)
+
   return {
     version: 'create_video_v1',
     playheadSeconds: safePlayheadSeconds,
     clips,
     stills,
     graphics,
+    guidelines,
     logos,
     lowerThirds,
     screenTitles,

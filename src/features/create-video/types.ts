@@ -138,6 +138,7 @@ export type CreateVideoTimelineV1 = {
   clips: CreateVideoClipV1[]
   stills?: CreateVideoStillV1[]
   graphics?: CreateVideoGraphicV1[]
+  guidelines?: number[]
   logos?: CreateVideoLogoV1[]
   lowerThirds?: CreateVideoLowerThirdV1[]
   screenTitles?: CreateVideoScreenTitleV1[]

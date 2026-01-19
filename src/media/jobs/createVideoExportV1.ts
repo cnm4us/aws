@@ -36,6 +36,7 @@ export type CreateVideoExportV1Input = {
     clips: Clip[]
     stills?: Still[]
     graphics?: Graphic[]
+    guidelines?: number[]
     logos?: Logo[]
     lowerThirds?: LowerThird[]
     screenTitles?: ScreenTitle[]

@@ -334,6 +334,7 @@ function migrateLegacyClipFreezeTimeline(tl: Timeline): { timeline: Timeline; ch
   }))
   next.stills = Array.isArray((tl as any).stills) ? ((tl as any).stills as any[]).map(mapRange) : []
   next.graphics = Array.isArray((tl as any).graphics) ? ((tl as any).graphics as any[]).map(mapRange) : []
+  next.guidelines = Array.isArray((tl as any).guidelines) ? ((tl as any).guidelines as any[]).map(mapTime) : []
   next.logos = Array.isArray((tl as any).logos) ? ((tl as any).logos as any[]).map(mapRange) : []
   next.lowerThirds = Array.isArray((tl as any).lowerThirds) ? ((tl as any).lowerThirds as any[]).map(mapRange) : []
   next.screenTitles = Array.isArray((tl as any).screenTitles) ? ((tl as any).screenTitles as any[]).map(mapRange) : []
@@ -529,6 +530,8 @@ export default function CreateVideo() {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
+  const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
+  const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
@@ -1000,6 +1003,14 @@ export default function CreateVideo() {
   }, [selectedClipId, timeline.clips])
 
   const graphics = useMemo(() => (Array.isArray((timeline as any).graphics) ? ((timeline as any).graphics as Graphic[]) : []), [timeline])
+  const guidelines = useMemo(
+    () =>
+      (Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : [])
+        .map((t: any) => roundToTenth(Number(t)))
+        .filter((t: any) => Number.isFinite(t) && t >= 0)
+        .sort((a: number, b: number) => a - b),
+    [timeline]
+  )
   const selectedGraphic = useMemo(() => {
     if (!selectedGraphicId) return null
     return graphics.find((g) => g.id === selectedGraphicId) || null
@@ -1209,6 +1220,11 @@ export default function CreateVideo() {
       const e = roundToTenth(Number((a as any).endSeconds || 0))
       if (e > s) out.push(s, e)
     }
+    const guidelines: any[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    for (const g of guidelines) {
+      const t = roundToTenth(Number(g || 0))
+      if (Number.isFinite(t) && t >= 0) out.push(t)
+    }
     out.push(roundToTenth(totalSeconds))
     const uniq = new Map<string, number>()
     for (const t of out) {
@@ -1218,10 +1234,113 @@ export default function CreateVideo() {
     return Array.from(uniq.values()).sort((a, b) => a - b)
   }, [audioSegments, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
 
-	  const dragHud = useMemo(() => {
-	    if (!trimDragging) return null
-	    const drag = trimDragRef.current
-	    if (!drag) return null
+  const addGuidelineAtPlayhead = useCallback(() => {
+    const t = roundToTenth(playhead)
+    const prevGs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    const map = new Map<string, number>()
+    for (const g of prevGs) {
+      const gg = roundToTenth(Number(g))
+      if (Number.isFinite(gg) && gg >= 0) map.set(gg.toFixed(1), gg)
+    }
+    map.set(t.toFixed(1), t)
+    const nextGs = Array.from(map.values()).sort((a, b) => a - b)
+    const nextTimeline: any = { ...(timeline as any), guidelines: nextGs, playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage(`Guideline added at ${t.toFixed(1)}s`)
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const removeNearestGuideline = useCallback(() => {
+    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    if (!gs.length) return
+    const t = roundToTenth(playhead)
+    let bestIdx = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    for (let i = 0; i < gs.length; i++) {
+      const v = roundToTenth(Number(gs[i]))
+      const d = Math.abs(v - t)
+      if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) < 1e-6 && v > roundToTenth(Number(gs[bestIdx])))) {
+        bestDist = d
+        bestIdx = i
+      }
+    }
+    const next = gs
+      .map((x) => roundToTenth(Number(x)))
+      .filter((x) => Number.isFinite(x))
+      .filter((_, i) => i !== bestIdx)
+      .sort((a, b) => a - b)
+    const nextTimeline: any = { ...(timeline as any), guidelines: next, playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage('Guideline removed')
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const removeAllGuidelines = useCallback(() => {
+    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    if (!gs.length) return
+    const nextTimeline: any = { ...(timeline as any), guidelines: [], playheadSeconds: playhead }
+    snapshotUndo()
+    setTimeline(nextTimeline)
+    void saveTimelineNow(nextTimeline)
+    setTimelineMessage('All guidelines removed')
+  }, [playhead, saveTimelineNow, snapshotUndo, timeline])
+
+  const openGuidelineMenu = useCallback(() => {
+    setGuidelineMenuOpen(true)
+  }, [])
+
+  const closeGuidelineMenu = useCallback(() => {
+    setGuidelineMenuOpen(false)
+  }, [])
+
+  const startGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    if (cur?.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+    const ref = { timer: null as any, fired: false }
+    ref.timer = window.setTimeout(() => {
+      ref.fired = true
+      openGuidelineMenu()
+    }, 650)
+    guidelinePressRef.current = ref
+  }, [openGuidelineMenu])
+
+  const finishGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    guidelinePressRef.current = null
+    if (!cur) return
+    if (cur.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+    if (!cur.fired) addGuidelineAtPlayhead()
+  }, [addGuidelineAtPlayhead])
+
+  const cancelGuidelinePress = useCallback(() => {
+    const cur = guidelinePressRef.current
+    guidelinePressRef.current = null
+    if (!cur) return
+    if (cur.timer != null) {
+      try { window.clearTimeout(cur.timer) } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      const cur = guidelinePressRef.current
+      if (cur?.timer != null) {
+        try { window.clearTimeout(cur.timer) } catch {}
+      }
+      guidelinePressRef.current = null
+    }
+  }, [])
+
+  const dragHud = useMemo(() => {
+    if (!trimDragging) return null
+    const drag = trimDragRef.current
+    if (!drag) return null
 
 	    const actionLabel =
 	      drag.edge === 'move' ? 'Move' : drag.edge === 'start' ? 'Resize start' : drag.edge === 'end' ? 'Resize end' : String(drag.edge)
@@ -2477,6 +2596,23 @@ export default function CreateVideo() {
         ctx.strokeStyle = isFive ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)'
         ctx.beginPath()
         ctx.moveTo(x + 0.5, rulerH)
+        ctx.lineTo(x + 0.5, hCss)
+        ctx.stroke()
+      }
+    }
+
+    // Guidelines (user markers) — full height.
+    const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    if (gs.length) {
+      ctx.strokeStyle = 'rgba(212,175,55,0.85)'
+      ctx.lineWidth = 1
+      for (const g of gs) {
+        const t = roundToTenth(Number(g))
+        if (!Number.isFinite(t) || t < startT - 0.5 || t > endT + 0.5) continue
+        const x = padPx + t * pxPerSecond - scrollLeft
+        if (x < -2 || x > wCss + 2) continue
+        ctx.beginPath()
+        ctx.moveTo(x + 0.5, 0)
         ctx.lineTo(x + 0.5, hCss)
         ctx.stroke()
       }
@@ -8096,24 +8232,58 @@ export default function CreateVideo() {
 			                >
 		                  Split
 		                </button>
-                <button
-                  type="button"
-                  onClick={undo}
-                  disabled={!canUndo}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: canUndo ? 'pointer' : 'default',
-                    flex: '0 0 auto',
-                  }}
-                >
-                  Undo
-                </button>
-              </div>
+	                <button
+	                  type="button"
+	                  onClick={undo}
+	                  disabled={!canUndo}
+	                  style={{
+	                    padding: '10px 12px',
+	                    borderRadius: 10,
+	                    border: '1px solid rgba(255,255,255,0.18)',
+	                    background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+	                    color: '#fff',
+	                    fontWeight: 900,
+	                    cursor: canUndo ? 'pointer' : 'default',
+	                    flex: '0 0 auto',
+	                  }}
+	                >
+	                  Undo
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+	                  onContextMenu={(e) => e.preventDefault()}
+	                  onPointerDown={(e) => {
+	                    if (e.button != null && e.button !== 0) return
+	                    if (totalSeconds <= 0) return
+	                    try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+	                    startGuidelinePress()
+	                  }}
+	                  onPointerUp={() => finishGuidelinePress()}
+	                  onPointerCancel={() => cancelGuidelinePress()}
+	                  onPointerLeave={() => cancelGuidelinePress()}
+	                  disabled={totalSeconds <= 0}
+	                  style={{
+	                    padding: '10px 12px',
+	                    borderRadius: 10,
+	                    border: '1px solid rgba(212,175,55,0.65)',
+	                    background: 'rgba(212,175,55,0.12)',
+	                    color: '#fff',
+	                    fontWeight: 900,
+	                    cursor: totalSeconds > 0 ? 'pointer' : 'default',
+	                    flex: '0 0 auto',
+	                    minWidth: 44,
+	                    lineHeight: 1,
+	                    userSelect: 'none',
+	                    WebkitUserSelect: 'none',
+	                    WebkitTouchCallout: 'none',
+	                  }}
+	                  title="Guideline (tap to add, hold for menu)"
+	                  aria-label="Guideline"
+	                >
+	                  G
+	                </button>
+	              </div>
 	              <button
 	                type="button"
 	                onClick={deleteSelected}
@@ -10039,6 +10209,99 @@ export default function CreateVideo() {
 		              }}
 		            >
 		              Delete
+		            </button>
+		          </div>
+		        </div>
+		      ) : null}
+
+		      {guidelineMenuOpen ? (
+		        <div
+		          role="dialog"
+		          aria-modal="true"
+		          style={{ position: 'fixed', inset: 0, zIndex: 1400 }}
+		          onPointerDown={() => closeGuidelineMenu()}
+		        >
+		          <div
+		            style={{
+		              position: 'fixed',
+		              left: '50%',
+		              top: '50%',
+		              transform: 'translate(-50%, -50%)',
+		              width: 200,
+		              background: 'rgba(0,0,0,0.92)',
+		              border: '1px solid rgba(255,255,255,0.18)',
+		              borderRadius: 12,
+		              padding: 8,
+		              display: 'grid',
+		              gap: 8,
+		              boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+		            }}
+		            onPointerDown={(e) => e.stopPropagation()}
+		          >
+		            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
+		              <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>Guidelines</div>
+		              <button
+		                type="button"
+		                onClick={() => closeGuidelineMenu()}
+		                style={{
+		                  width: 28,
+		                  height: 28,
+		                  borderRadius: 10,
+		                  border: '1px solid rgba(255,255,255,0.18)',
+		                  background: 'rgba(255,255,255,0.06)',
+		                  color: '#fff',
+		                  fontWeight: 900,
+		                  cursor: 'pointer',
+		                  lineHeight: '26px',
+		                  textAlign: 'center',
+		                }}
+		              >
+		                ×
+		              </button>
+		            </div>
+
+		            <button
+		              type="button"
+		              disabled={!guidelines.length}
+		              onClick={() => {
+		                removeNearestGuideline()
+		                closeGuidelineMenu()
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,255,255,0.18)',
+		                background: guidelines.length ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.06)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: guidelines.length ? 'pointer' : 'default',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Remove nearest
+		            </button>
+
+		            <button
+		              type="button"
+		              disabled={!guidelines.length}
+		              onClick={() => {
+		                removeAllGuidelines()
+		                closeGuidelineMenu()
+		              }}
+		              style={{
+		                width: '100%',
+		                padding: '10px 12px',
+		                borderRadius: 10,
+		                border: '1px solid rgba(255,155,155,0.40)',
+		                background: guidelines.length ? 'rgba(255,0,0,0.14)' : 'rgba(255,255,255,0.06)',
+		                color: '#fff',
+		                fontWeight: 900,
+		                cursor: guidelines.length ? 'pointer' : 'default',
+		                textAlign: 'left',
+		              }}
+		            >
+		              Remove all
 		            </button>
 		          </div>
 		        </div>

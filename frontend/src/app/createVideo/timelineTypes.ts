@@ -132,6 +132,7 @@ export type Timeline = {
   clips: Clip[]
   stills?: Still[]
   graphics: Graphic[]
+  guidelines?: number[]
   logos?: Logo[]
   lowerThirds?: LowerThird[]
   screenTitles?: ScreenTitle[]
@@ -172,6 +173,11 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           startSeconds: Number(g.startSeconds),
           endSeconds: Number(g.endSeconds),
         }))
+      : [],
+    guidelines: Array.isArray((timeline as any).guidelines)
+      ? (timeline as any).guidelines
+          .map((t: any) => Number(t))
+          .filter((t: any) => Number.isFinite(t))
       : [],
     narration: Array.isArray((timeline as any).narration)
       ? (timeline as any).narration.map((n: any) => ({
