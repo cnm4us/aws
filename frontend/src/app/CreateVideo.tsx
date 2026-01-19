@@ -3295,18 +3295,27 @@ export default function CreateVideo() {
         const pj = (json?.project || null) as any
         const id = Number(pj?.id)
         if (!Number.isFinite(id) || id <= 0) throw new Error('failed_to_load')
-        const tlRaw = pj?.timeline && typeof pj.timeline === 'object' ? pj.timeline : null
-	        const tl: Timeline = {
-	          version: 'create_video_v1',
-	          playheadSeconds: roundToTenth(Number(tlRaw?.playheadSeconds || 0)),
-	          clips: Array.isArray(tlRaw?.clips) ? (tlRaw.clips as any) : [],
-	          stills: Array.isArray(tlRaw?.stills) ? (tlRaw.stills as any) : [],
-	          graphics: Array.isArray(tlRaw?.graphics) ? (tlRaw.graphics as any) : [],
-	          logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
-	          lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
-	          screenTitles: Array.isArray(tlRaw?.screenTitles) ? (tlRaw.screenTitles as any) : [],
-	          narration: Array.isArray(tlRaw?.narration)
-	            ? (tlRaw.narration as any[]).map((n: any) => ({
+	        const tlRaw = pj?.timeline && typeof pj.timeline === 'object' ? pj.timeline : null
+	        const rawGuidelines: any[] = Array.isArray((tlRaw as any)?.guidelines) ? ((tlRaw as any).guidelines as any[]) : []
+	        const guidelinesMap = new Map<string, number>()
+	        for (const g of rawGuidelines) {
+	          const t = roundToTenth(Number(g || 0))
+	          if (!Number.isFinite(t) || t < 0) continue
+	          guidelinesMap.set(t.toFixed(1), t)
+	        }
+	        const guidelines = Array.from(guidelinesMap.values()).sort((a, b) => a - b)
+		        const tl: Timeline = {
+		          version: 'create_video_v1',
+		          playheadSeconds: roundToTenth(Number(tlRaw?.playheadSeconds || 0)),
+		          clips: Array.isArray(tlRaw?.clips) ? (tlRaw.clips as any) : [],
+		          stills: Array.isArray(tlRaw?.stills) ? (tlRaw.stills as any) : [],
+		          graphics: Array.isArray(tlRaw?.graphics) ? (tlRaw.graphics as any) : [],
+		          guidelines,
+		          logos: Array.isArray(tlRaw?.logos) ? (tlRaw.logos as any) : [],
+		          lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
+		          screenTitles: Array.isArray(tlRaw?.screenTitles) ? (tlRaw.screenTitles as any) : [],
+		          narration: Array.isArray(tlRaw?.narration)
+		            ? (tlRaw.narration as any[]).map((n: any) => ({
 	                ...n,
 	                id: String(n?.id || ''),
 	                uploadId: Number(n?.uploadId),

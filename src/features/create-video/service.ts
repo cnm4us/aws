@@ -21,10 +21,12 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
       clips: [],
       stills: [],
       graphics: [],
+      guidelines: [],
       logos: [],
       lowerThirds: [],
       screenTitles: [],
       narration: [],
+      audioSegments: [],
       audioTrack: null,
     }
   }
@@ -65,10 +67,12 @@ export async function createOrGetActiveProjectForUser(userId: number): Promise<{
         clips: [],
         stills: [],
         graphics: [],
+        guidelines: [],
         logos: [],
         lowerThirds: [],
         screenTitles: [],
         narration: [],
+        audioSegments: [],
         audioTrack: null,
       }),
     })
