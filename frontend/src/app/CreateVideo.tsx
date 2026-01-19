@@ -2565,6 +2565,18 @@ export default function CreateVideo() {
     const narrationY = NARRATION_Y
     const audioY = AUDIO_Y
     const pillH = PILL_H
+    const HANDLE_GOLD = 'rgba(212,175,55,0.95)'
+    const HANDLE_GREEN = 'rgba(48,209,88,0.95)'
+    const hasNoOffset = (value: unknown, eps = 0.05) => {
+      const n = Number(value)
+      return Number.isFinite(n) && Math.abs(n) <= eps
+    }
+    const nearEqual = (a: unknown, b: unknown, eps = 0.05) => {
+      const x = Number(a)
+      const y = Number(b)
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+      return Math.abs(x - y) <= eps
+    }
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
     ctx.textBaseline = 'middle'
     const activeDrag = trimDragging ? trimDragRef.current : null
@@ -2618,7 +2630,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = logoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -2688,7 +2700,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = lowerThirdY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -2760,7 +2772,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = screenTitleY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -2828,7 +2840,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = graphicsY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -2896,7 +2908,7 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -2962,13 +2974,20 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const uploadId = Number(clip.uploadId)
+        const fullDurRaw = durationsByUploadId[uploadId]
+        const fullDur =
+          fullDurRaw != null && Number.isFinite(Number(fullDurRaw)) && Number(fullDurRaw) > 0 ? Number(fullDurRaw) : null
+        const leftIsGreen = hasNoOffset(clip.sourceStartSeconds)
+        const rightIsGreen = fullDur != null && nearEqual(clip.sourceEndSeconds, fullDur)
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
+        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxL, hy, hs, hs, 4)
         ctx.fill()
+        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxR, hy, hs, hs, 4)
         ctx.fill()
       }
@@ -3035,13 +3054,25 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const uploadId = Number((n as any).uploadId)
+        const fullDurRaw = durationsByUploadId[uploadId]
+        const fullDur =
+          fullDurRaw != null && Number.isFinite(Number(fullDurRaw)) && Number(fullDurRaw) > 0 ? Number(fullDurRaw) : null
+        const srcStart =
+          (n as any).sourceStartSeconds != null && Number.isFinite(Number((n as any).sourceStartSeconds))
+            ? Number((n as any).sourceStartSeconds)
+            : 0
+        const srcEnd = roundToTenth(Math.max(0, srcStart + (end - start)))
+        const leftIsGreen = hasNoOffset(srcStart)
+        const rightIsGreen = fullDur != null && (srcEnd >= fullDur - 0.05)
         const hs = handleSize
         const hy = narrationY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
+        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxL, hy, hs, hs, 4)
         ctx.fill()
+        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxR, hy, hs, hs, 4)
         ctx.fill()
       }
@@ -3105,13 +3136,19 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
+        const uploadId = Number(seg.uploadId)
+        const srcStart =
+          seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds)) ? Number(seg.sourceStartSeconds) : 0
+        const leftIsGreen = hasNoOffset(srcStart)
+        const rightIsGreen = true // music loops; end is timeline-only
         const hs = handleSize
         const hy = audioY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
+        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxL, hy, hs, hs, 4)
         ctx.fill()
+        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
         roundRect(ctx, hxR, hy, hs, hs, 4)
         ctx.fill()
       }
