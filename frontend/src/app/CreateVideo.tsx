@@ -5349,37 +5349,70 @@ export default function CreateVideo() {
 
       if (action === 'snap') {
         const edgeIntent = opts?.edgeIntent || 'move'
-        const chooseEdge = () => {
-          if (edgeIntent === 'start') return 'start' as const
-          if (edgeIntent === 'end') return 'end' as const
+        // Directional snap for edge-specific UX:
+        // - start edge: snap left to the nearest guideline strictly before start
+        // - end edge: snap right to the nearest guideline strictly after end
+        if (edgeIntent === 'start') {
+          const cand = prevStrict(start0)
+          if (cand == null) {
+            setTimelineMessage('No guideline before start.')
+            return
+          }
+          if (Math.abs(cand - start0) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          startS = roundToTenth(cand)
+          endS = roundToTenth(startS + dur)
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another graphic).')
+            return
+          }
+        } else if (edgeIntent === 'end') {
+          const cand = nextStrict(end0)
+          if (cand == null) {
+            setTimelineMessage('No guideline after end.')
+            return
+          }
+          if (Math.abs(cand - end0) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          endS = roundToTenth(cand)
+          startS = roundToTenth(endS - dur)
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another graphic).')
+            return
+          }
+        } else {
+          // Fallback: nearest inclusive to whichever edge is closest.
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
-          if (!nS && !nE) return 'start' as const
-          if (!nS) return 'end' as const
-          if (!nE) return 'start' as const
-          return nS.dist <= nE.dist ? ('start' as const) : ('end' as const)
-        }
-        const snapEdge = chooseEdge()
-        const tEdge = snapEdge === 'start' ? start0 : end0
-        const nn = nearestInclusive(tEdge)
-        if (!nn) {
-          setTimelineMessage('No guidelines available.')
-          return
-        }
-        if (nn.dist <= eps) {
-          setTimelineMessage('Already aligned to guideline.')
-          return
-        }
-        if (snapEdge === 'start') {
-          startS = roundToTenth(nn.v)
-          endS = roundToTenth(startS + dur)
-        } else {
-          endS = roundToTenth(nn.v)
-          startS = roundToTenth(endS - dur)
-        }
-        if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
-          setTimelineMessage('Cannot snap (would overlap another graphic).')
-          return
+          if (!nS && !nE) {
+            setTimelineMessage('No guidelines available.')
+            return
+          }
+          const snapEdge = !nE || (nS && nS.dist <= nE.dist) ? ('start' as const) : ('end' as const)
+          const nn = snapEdge === 'start' ? nS : nE
+          if (!nn) {
+            setTimelineMessage('No guidelines available.')
+            return
+          }
+          if (nn.dist <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          if (snapEdge === 'start') {
+            startS = roundToTenth(nn.v)
+            endS = roundToTenth(startS + dur)
+          } else {
+            endS = roundToTenth(nn.v)
+            startS = roundToTenth(endS - dur)
+          }
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another graphic).')
+            return
+          }
         }
       } else if (action === 'expand_start') {
         const cand = prevStrict(start0)
@@ -10394,23 +10427,25 @@ export default function CreateVideo() {
 			                >
 			                  Properties
 			                </button>
-			                <button
-			                  type="button"
-			                  onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
-			                  style={{
-			                    width: '100%',
-			                    padding: '10px 12px',
-			                    borderRadius: 10,
-			                    border: '1px solid rgba(255,255,255,0.18)',
-			                    background: 'rgba(255,255,255,0.06)',
-			                    color: '#fff',
-			                    fontWeight: 900,
-			                    cursor: 'pointer',
-			                    textAlign: 'left',
-			                  }}
-			                >
-			                  Guidelines…
-			                </button>
+			                {(timelineCtxMenu.edgeIntent || 'move') !== 'move' ? (
+			                  <button
+			                    type="button"
+			                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
+			                    style={{
+			                      width: '100%',
+			                      padding: '10px 12px',
+			                      borderRadius: 10,
+			                      border: '1px solid rgba(255,255,255,0.18)',
+			                      background: 'rgba(255,255,255,0.06)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                      textAlign: 'left',
+			                    }}
+			                  >
+			                    Guidelines…
+			                  </button>
+			                ) : null}
 			                <button
 			                  type="button"
 			                  onClick={() => {
@@ -10476,35 +10511,12 @@ export default function CreateVideo() {
 			              <>
 			                {(() => {
 			                  const edgeIntent: any = timelineCtxMenu.edgeIntent || 'move'
-			                  if (edgeIntent === 'move') {
-			                    return (
-			                      <button
-			                        type="button"
-			                        onClick={() => {
-			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-			                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,255,255,0.18)',
-			                          background: 'rgba(255,255,255,0.06)',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        Snap to nearest guideline
-			                      </button>
-			                    )
-			                  }
+			                  if (edgeIntent === 'move') return null
 			                  const expandAction = edgeIntent === 'start' ? 'expand_start' : 'expand_end'
 			                  const contractAction = edgeIntent === 'start' ? 'contract_start' : 'contract_end'
-			                  const expandLabel = edgeIntent === 'start' ? 'Expand start to guideline' : 'Expand end to guideline'
-			                  const contractLabel = edgeIntent === 'start' ? 'Contract start to guideline' : 'Contract end to guideline'
-			                  const snapLabel = edgeIntent === 'start' ? 'Snap start to guideline' : 'Snap end to guideline'
+			                  const expandLabel = edgeIntent === 'start' ? 'Expand \u2190' : 'Expand \u2192'
+			                  const contractLabel = edgeIntent === 'start' ? 'Contract \u2192' : 'Contract \u2190'
+			                  const snapLabel = edgeIntent === 'start' ? 'Snap to \u2190' : 'Snap to \u2192'
 			                  return (
 			                    <>
 			                      <button
