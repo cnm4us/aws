@@ -8317,11 +8317,11 @@ export default function CreateVideo() {
 		            const delta = roundToTenth(nextStart - Number(drag.startStartSeconds))
 		            // Keep the audio "content" anchored: trimming start forward advances sourceStartSeconds,
 		            // extending start backward reduces sourceStartSeconds (down to 0) when possible.
-	            if (delta > 0) {
-	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
-	            } else if (delta < 0) {
-	              sourceStartS = roundToTenth(Math.max(0, sourceStartS + delta))
-	            }
+		            const baseSourceStart =
+		              drag.startSourceStartSeconds != null && Number.isFinite(Number(drag.startSourceStartSeconds))
+		                ? Number(drag.startSourceStartSeconds)
+		                : sourceStartS
+		            sourceStartS = roundToTenth(Math.max(0, baseSourceStart + delta))
 		            startS = nextStart
 		          } else if (drag.edge === 'end') {
 		            const maxEndByAudio =
