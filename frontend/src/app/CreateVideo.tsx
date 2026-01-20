@@ -536,7 +536,7 @@ export default function CreateVideo() {
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
-        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle' | 'clip' | 'narration'
+        kind: 'graphic' | 'logo' | 'lowerThird' | 'screenTitle' | 'clip' | 'narration' | 'audioSegment'
         id: string
         x: number
         y: number
@@ -724,11 +724,17 @@ export default function CreateVideo() {
         edge: 'start' | 'end' | 'move'
         pointerId: number
         startClientX: number
+        startClientY?: number
         startStartSeconds: number
         startEndSeconds: number
+        startSourceStartSeconds?: number
+        maxDurationSeconds?: number
         minStartSeconds: number
         maxEndSeconds: number
         maxStartSeconds?: number
+        // For armed body/edge drag (so a click can still open the context menu)
+        armed?: boolean
+        moved?: boolean
       }
     | null
   >(null)
@@ -5356,6 +5362,120 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline]
   )
 
+  const deleteAudioSegmentById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevSegs: any[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any[]) : []
+      if (!prevSegs.some((s: any) => String(s?.id) === targetId)) return
+      snapshotUndo()
+      const nextSegs = prevSegs.filter((s: any) => String(s?.id) !== targetId)
+      const nextTimeline: any = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (String(selectedAudioId || '') === targetId) setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, selectedAudioId, snapshotUndo, timeline]
+  )
+
+  const duplicateAudioSegmentById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevSegs: any[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any[]) : []
+      const s0 = prevSegs.find((s: any) => String(s?.id) === targetId) as any
+      if (!s0) return
+
+      const start0 = roundToTenth(Number(s0.startSeconds || 0))
+      const end0 = roundToTenth(Number(s0.endSeconds || 0))
+      const dur = roundToTenth(Math.max(0.2, end0 - start0))
+      const capEnd = 20 * 60
+      let start = roundToTenth(Math.max(0, end0))
+      let end = roundToTenth(start + dur)
+      if (end > capEnd + 1e-6) {
+        setTimelineMessage('Not enough room to duplicate that audio segment.')
+        return
+      }
+
+      // Disallow overlaps: slide forward to the next available slot.
+      const sorted = prevSegs
+        .filter((s: any) => String(s?.id) !== targetId)
+        .slice()
+        .map((s: any) => ({
+          ...s,
+          startSeconds: roundToTenth(Number(s?.startSeconds || 0)),
+          endSeconds: roundToTenth(Number(s?.endSeconds || 0)),
+        }))
+        .filter((s: any) => Number(s.endSeconds) > Number(s.startSeconds))
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+
+      for (const other of sorted) {
+        const os = Number(other.startSeconds || 0)
+        const oe = Number(other.endSeconds || 0)
+        const overlaps = start < oe - 1e-6 && end > os + 1e-6
+        if (overlaps) {
+          start = roundToTenth(oe)
+          end = roundToTenth(start + dur)
+        }
+        if (end > capEnd + 1e-6) break
+      }
+
+      // Final overlap check.
+      for (const other of sorted) {
+        const os = Number(other.startSeconds || 0)
+        const oe = Number(other.endSeconds || 0)
+        if (start < oe - 1e-6 && end > os + 1e-6) {
+          setTimelineMessage('No available slot to duplicate that audio segment without overlapping.')
+          return
+        }
+      }
+
+      const newId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const placed: any = { ...s0, id: newId, startSeconds: start, endSeconds: end }
+      const nextSegs = [...prevSegs, placed].sort(
+        (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+      )
+      snapshotUndo()
+      const nextTimeline: any = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      setSelectedAudioId(String(newId))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setTimelineMessage(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
+  const splitAudioSegmentById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const res = splitAudioSegmentAtPlayhead(timeline as any, targetId)
+      const prevSegs = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
+      const nextSegs = Array.isArray((res.timeline as any).audioSegments) ? (res.timeline as any).audioSegments : []
+      if (res.timeline === (timeline as any) && String(res.selectedAudioId) === targetId) return
+      if (nextSegs === prevSegs) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedAudioId(String(res.selectedAudioId))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
   const deleteNarrationById = useCallback(
     (id: string) => {
       const targetId = String(id || '')
@@ -5940,6 +6060,229 @@ export default function CreateVideo() {
       nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
       nextSegs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
       const nextTimeline: any = { ...(timeline as any), narration: nextSegs }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+    },
+    [durationsByUploadId, playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
+  const applyAudioSegmentGuidelineAction = useCallback(
+    (
+      id: string,
+      action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
+      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+    ) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+
+      const prevSegs: any[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any[]) : []
+      const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
+      if (idx < 0) return
+
+      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsSorted = Array.from(
+        new Map(
+          gsRaw
+            .map((x) => roundToTenth(Number(x)))
+            .filter((x) => Number.isFinite(x) && x >= 0)
+            .map((x) => [x.toFixed(1), x] as const)
+        ).values()
+      ).sort((a, b) => a - b)
+      if (!gsSorted.length) {
+        setTimelineMessage('No guidelines yet. Tap G to add one.')
+        return
+      }
+
+      const seg0 = prevSegs[idx] as any
+      const start0 = roundToTenth(Number(seg0.startSeconds || 0))
+      const end0 = roundToTenth(Number(seg0.endSeconds || 0))
+      const minLen = 0.2
+      const dur = roundToTenth(Math.max(minLen, end0 - start0))
+      const capEnd = 20 * 60
+
+      const sorted = prevSegs
+        .slice()
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const pos = sorted.findIndex((s: any) => String(s?.id) === targetId)
+      const prevEnd = pos > 0 ? roundToTenth(Number((sorted[pos - 1] as any).endSeconds || 0)) : 0
+      const nextStart =
+        pos >= 0 && pos < sorted.length - 1 ? roundToTenth(Number((sorted[pos + 1] as any).startSeconds || capEnd)) : roundToTenth(capEnd)
+      const minStartSeconds = clamp(prevEnd, 0, Math.max(0, capEnd))
+      const maxEndSeconds = clamp(nextStart, 0, Math.max(0, capEnd))
+
+      const totalNoOffsetSecondsRaw = durationsByUploadId[Number(seg0.uploadId)] ?? 0
+      const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+      const sourceStart0 =
+        seg0.sourceStartSeconds != null && Number.isFinite(Number(seg0.sourceStartSeconds)) ? roundToTenth(Number(seg0.sourceStartSeconds)) : 0
+
+      const eps = 0.05
+      const prevStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = gsSorted.length - 1; i >= 0; i--) {
+          const v = gsSorted[i]
+          if (v < tt - eps) return v
+        }
+        return null
+      }
+      const nextStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = 0; i < gsSorted.length; i++) {
+          const v = gsSorted[i]
+          if (v > tt + eps) return v
+        }
+        return null
+      }
+      const nearestInclusive = (t: number) => {
+        let best: number | null = null
+        let bestDist = Number.POSITIVE_INFINITY
+        for (const v of gsSorted) {
+          const d = Math.abs(v - t)
+          if (d < bestDist - 1e-9) {
+            bestDist = d
+            best = v
+          }
+        }
+        return best == null ? null : { v: best, dist: bestDist }
+      }
+
+      const overlapsAny = (start: number, end: number): boolean => {
+        const s0 = roundToTenth(start)
+        const e0 = roundToTenth(end)
+        for (const other of prevSegs) {
+          if (String((other as any)?.id) === targetId) continue
+          const os = roundToTenth(Number((other as any).startSeconds || 0))
+          const oe = roundToTenth(Number((other as any).endSeconds || 0))
+          if (!(oe > os)) continue
+          if (s0 < oe - 1e-6 && e0 > os + 1e-6) return true
+        }
+        return false
+      }
+
+      let startS = start0
+      let endS = end0
+      let sourceStartS = sourceStart0
+
+      if (action === 'snap') {
+        const edgeIntent = opts?.edgeIntent || 'move'
+        if (edgeIntent === 'start') {
+          const cand = prevStrict(start0)
+          if (cand == null) {
+            setTimelineMessage('No guideline before start.')
+            return
+          }
+          if (Math.abs(cand - start0) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          startS = roundToTenth(cand)
+          endS = roundToTenth(startS + dur)
+        } else if (edgeIntent === 'end') {
+          const cand = nextStrict(end0)
+          if (cand == null) {
+            setTimelineMessage('No guideline after end.')
+            return
+          }
+          if (Math.abs(cand - end0) <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          endS = roundToTenth(cand)
+          startS = roundToTenth(endS - dur)
+        } else {
+          const nS = nearestInclusive(start0)
+          const nE = nearestInclusive(end0)
+          if (!nS && !nE) {
+            setTimelineMessage('No guidelines available.')
+            return
+          }
+          const snapEdge = !nE || (nS && nS.dist <= nE.dist) ? ('start' as const) : ('end' as const)
+          const nn = snapEdge === 'start' ? nS : nE
+          if (!nn) return
+          if (nn.dist <= eps) {
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          if (snapEdge === 'start') {
+            startS = roundToTenth(nn.v)
+            endS = roundToTenth(startS + dur)
+          } else {
+            endS = roundToTenth(nn.v)
+            startS = roundToTenth(endS - dur)
+          }
+        }
+        if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+          setTimelineMessage('Cannot snap (would overlap another audio segment).')
+          return
+        }
+        if (overlapsAny(startS, endS)) {
+          setTimelineMessage('Cannot snap (would overlap another audio segment).')
+          return
+        }
+      } else if (action === 'expand_end' || action === 'contract_end') {
+        const cand = action === 'expand_end' ? nextStrict(end0) : prevStrict(end0)
+        if (cand == null) {
+          setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
+          return
+        }
+        const desiredEnd = roundToTenth(cand)
+        if (desiredEnd > maxEndSeconds + 1e-6 || desiredEnd < start0 + minLen - 1e-6) {
+          setTimelineMessage('No room to resize end to that guideline.')
+          return
+        }
+        const requestedLen = roundToTenth(Math.max(0, desiredEnd - start0))
+        if (!(requestedLen > minLen)) {
+          setTimelineMessage('Resulting duration is too small.')
+          return
+        }
+        if (totalNoOffsetSeconds > 0) {
+          const maxLen = roundToTenth(Math.max(0, totalNoOffsetSeconds - sourceStart0))
+          if (requestedLen > maxLen + 1e-6) {
+            setTimelineMessage('No more source audio available to extend to that guideline.')
+            return
+          }
+        }
+        startS = start0
+        endS = desiredEnd
+      } else if (action === 'expand_start' || action === 'contract_start') {
+        const cand = action === 'expand_start' ? prevStrict(start0) : nextStrict(start0)
+        if (cand == null) {
+          setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
+          return
+        }
+        const desiredStart = roundToTenth(cand)
+        if (desiredStart < minStartSeconds - 1e-6 || desiredStart > end0 - minLen + 1e-6) {
+          setTimelineMessage('No room to resize start to that guideline.')
+          return
+        }
+        const shift = roundToTenth(desiredStart - start0) // + when contracting (moving right), - when expanding (moving left)
+        if (shift > 0) {
+          // contract_start: move start right and advance sourceStartSeconds so content stays anchored.
+          sourceStartS = roundToTenth(Math.max(0, sourceStart0 + shift))
+        } else if (shift < 0) {
+          // expand_start: move start left and pull sourceStartSeconds back (must have enough source).
+          const delta = roundToTenth(-shift)
+          if (sourceStart0 < delta - 1e-6) {
+            setTimelineMessage('No more source audio available to extend start to that guideline.')
+            return
+          }
+          sourceStartS = roundToTenth(Math.max(0, sourceStart0 - delta))
+        }
+        startS = desiredStart
+        endS = end0
+      } else {
+        return
+      }
+
+      if (overlapsAny(startS, endS)) {
+        setTimelineMessage('Cannot resize (would overlap another audio segment).')
+        return
+      }
+
+      snapshotUndo()
+      const nextSegs = prevSegs.slice()
+      nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
+      nextSegs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTimeline: any = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
       setTimeline(nextTimeline)
       void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
     },
@@ -7872,11 +8215,11 @@ export default function CreateVideo() {
 
 		      // Special case: "armed" drags. Don't start mutating the timeline until the pointer has moved a bit,
 		      // otherwise a simple tap on the selected pill can open a context menu / modal.
-		      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle' || drag.kind === 'clip' || drag.kind === 'narration') && (drag as any).armed) {
-		        const dx0 = e.clientX - drag.startClientX
-		        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
-		        const moved = Boolean((drag as any).moved)
-		        if (!moved) {
+			      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle' || drag.kind === 'clip' || drag.kind === 'narration' || drag.kind === 'audioSegment') && (drag as any).armed) {
+			        const dx0 = e.clientX - drag.startClientX
+			        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
+			        const moved = Boolean((drag as any).moved)
+			        if (!moved) {
 		          const thresholdPx = 6
 		          if (Math.abs(dx0) < thresholdPx && Math.abs(dy0) < thresholdPx) return
 		          ;(drag as any).moved = true
@@ -7884,20 +8227,21 @@ export default function CreateVideo() {
 		          trimDragLockScrollLeftRef.current = timelineScrollRef.current ? timelineScrollRef.current.scrollLeft : null
 		          try { snapshotUndoRef.current?.() } catch {}
 		          setTrimDragging(true)
-		          dbg('startTrimDrag', {
-		            kind: drag.kind,
-		            edge: String((drag as any).edge || 'move'),
-		            id: String(
-		              (drag as any).logoId ||
-		                (drag as any).lowerThirdId ||
-		                (drag as any).screenTitleId ||
-		                (drag as any).clipId ||
-		                (drag as any).narrationId ||
-		                ''
-		            ),
-		          })
-		        }
-		      }
+			          dbg('startTrimDrag', {
+			            kind: drag.kind,
+			            edge: String((drag as any).edge || 'move'),
+			            id: String(
+			              (drag as any).logoId ||
+			                (drag as any).lowerThirdId ||
+			                (drag as any).screenTitleId ||
+			                (drag as any).clipId ||
+			                (drag as any).narrationId ||
+			                (drag as any).audioSegmentId ||
+			                ''
+			            ),
+			          })
+			        }
+			      }
 
 		      if (drag.kind === 'graphic' && (drag as any).armed) {
 		        const dx0 = e.clientX - drag.startClientX
@@ -8202,30 +8546,66 @@ export default function CreateVideo() {
           const s0: any = prevSegs[idx]
           let startS = roundToTenth(Number(s0.startSeconds || 0))
           let endS = roundToTenth(Number(s0.endSeconds || 0))
-          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          let sourceStartS =
+            (s0 as any).sourceStartSeconds != null && Number.isFinite(Number((s0 as any).sourceStartSeconds))
+              ? roundToTenth(Number((s0 as any).sourceStartSeconds))
+              : 0
+
+          const rawDur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          const maxDurForFile =
+            (drag as any).maxDurationSeconds != null && Number.isFinite(Number((drag as any).maxDurationSeconds))
+              ? Number((drag as any).maxDurationSeconds)
+              : Number.POSITIVE_INFINITY
+          const baseSourceStart =
+            (drag as any).startSourceStartSeconds != null && Number.isFinite(Number((drag as any).startSourceStartSeconds))
+              ? roundToTenth(Number((drag as any).startSourceStartSeconds))
+              : sourceStartS
+
+          // Ensure duration doesn't exceed remaining source when file duration is known.
+          const maxLenByAudio =
+            Number.isFinite(maxDurForFile) && maxDurForFile > 0 ? roundToTenth(Math.max(0, maxDurForFile - baseSourceStart)) : null
+          const dur = maxLenByAudio != null && Number.isFinite(maxLenByAudio) && maxLenByAudio > 0 ? Math.min(rawDur, maxLenByAudio) : rawDur
+
           if (drag.edge === 'start') {
-            startS = clamp(
+            const minStartByAudio =
+              (drag as any).startSourceStartSeconds != null && Number.isFinite(Number((drag as any).startSourceStartSeconds))
+                ? roundToTenth(Number(drag.startStartSeconds) - Number((drag as any).startSourceStartSeconds))
+                : drag.minStartSeconds
+            const nextStart = clamp(
               roundToTenth(drag.startStartSeconds + deltaSeconds),
-              drag.minStartSeconds,
+              Math.max(drag.minStartSeconds, minStartByAudio),
               Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
             )
+            const delta = roundToTenth(nextStart - Number(drag.startStartSeconds))
+            sourceStartS = roundToTenth(Math.max(0, baseSourceStart + delta))
+            startS = nextStart
             endS = roundToTenth(Number(drag.startEndSeconds))
           } else if (drag.edge === 'end') {
+            const maxEndByAudio =
+              Number.isFinite(maxDurForFile) && maxDurForFile > 0
+                ? Math.min(
+                    drag.maxEndSeconds,
+                    roundToTenth(Number(drag.startStartSeconds) + Math.max(0.2, maxLenByAudio != null ? maxLenByAudio : maxDurForFile))
+                  )
+                : drag.maxEndSeconds
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-              drag.maxEndSeconds
+              maxEndByAudio
             )
             startS = roundToTenth(Number(drag.startStartSeconds))
+            sourceStartS = baseSourceStart
           } else {
             const maxStart =
               drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
+            sourceStartS = baseSourceStart
           }
+
           if (!(endS > startS)) endS = roundToTenth(startS + minLen)
           const nextSegs = prevSegs.slice()
-          nextSegs[idx] = { ...(s0 as any), startSeconds: startS, endSeconds: endS }
+          nextSegs[idx] = { ...(s0 as any), startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
           nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
           return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
         }
@@ -8605,6 +8985,35 @@ export default function CreateVideo() {
           }, 0)
         } catch {}
         stopTrimDrag('narration_ctx_menu')
+        return
+      }
+
+      // For audio: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
+      if (drag && drag.kind === 'audioSegment' && (drag as any).armed && !Boolean((drag as any).moved)) {
+        try {
+          const w = window.innerWidth || 0
+          const h = window.innerHeight || 0
+          const menuW = 170
+          const menuH = 188
+          const pad = 10
+          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
+          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+          const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
+          timelineCtxMenuOpenedAtRef.current = performance.now()
+          setTimelineCtxMenu({
+            kind: 'audioSegment',
+            id: String((drag as any).audioSegmentId),
+            x,
+            y,
+            view: 'main',
+            edgeIntent,
+          })
+          suppressNextTimelineClickRef.current = true
+          window.setTimeout(() => {
+            suppressNextTimelineClickRef.current = false
+          }, 0)
+        } catch {}
+        stopTrimDrag('audio_ctx_menu')
         return
       }
 
@@ -9535,101 +9944,108 @@ export default function CreateVideo() {
 	                    return
 	                  }
 
-	                  if (withinAudio) {
-	                    cancelTimelineLongPress('new_pointerdown')
-	                    const seg = audioSegments.find((a: any) => {
-                      const ss = Number(a?.startSeconds || 0)
-                      const ee = Number(a?.endSeconds || 0)
-                      return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
-                    }) as any
-                    if (!seg) return
-	                    const s = Number(seg.startSeconds || 0)
-	                    const e2 = Number(seg.endSeconds || 0)
-	                    const leftX = padPx + s * pxPerSecond
-	                    const rightX = padPx + e2 * pxPerSecond
-	                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
-	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
-	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
-	                    if (!inside) return
-	                    if (String(selectedAudioId || '') === String(seg.id)) {
-	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
-	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
-	                    }
+		                  if (withinAudio) {
+		                    cancelTimelineLongPress('new_pointerdown')
+		                    const seg = audioSegments.find((a: any) => {
+		                      const ss = Number(a?.startSeconds || 0)
+		                      const ee = Number(a?.endSeconds || 0)
+		                      return Number.isFinite(ss) && Number.isFinite(ee) && ee > ss && t + 1e-6 >= ss && t <= ee - 1e-6
+		                    }) as any
+		                    if (!seg) return
 
-                    const capEnd = Math.max(0, totalSeconds)
-                    const sorted = audioSegments
-                      .slice()
-                      .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-                    const pos = sorted.findIndex((x: any) => String(x?.id) === String(seg.id))
-                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
-                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
-                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
-                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+		                    const s = Number(seg.startSeconds || 0)
+		                    const e2 = Number(seg.endSeconds || 0)
+		                    const leftX = padPx + s * pxPerSecond
+		                    const rightX = padPx + e2 * pxPerSecond
+		                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+		                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+		                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+		                    if (!inside) return
+		                    if (String(selectedAudioId || '') === String(seg.id)) {
+		                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+		                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+		                    }
 
-                    // Slide (body drag) only when already selected.
-                    if (!nearLeft && !nearRight) {
-                      if (String(selectedAudioId || '') !== String(seg.id)) return
-                      e.preventDefault()
-                      snapshotUndo()
-                      setSelectedAudioId(String(seg.id))
-                      setSelectedClipId(null)
-                      setSelectedGraphicId(null)
-                      setSelectedLogoId(null)
-                      setSelectedLowerThirdId(null)
-                      setSelectedScreenTitleId(null)
-                      setSelectedNarrationId(null)
-                      setSelectedStillId(null)
+		                    const capEnd = 20 * 60
+		                    const sorted = audioSegments
+		                      .slice()
+		                      .sort(
+		                        (a: any, b: any) =>
+		                          Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
+		                      )
+		                    const pos = sorted.findIndex((x: any) => String(x?.id) === String(seg.id))
+		                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+		                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+		                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+		                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-                      const dur = Math.max(0.2, roundToTenth(e2 - s))
-                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+		                    // Move/resize only when already selected (matches logo/lowerThird/screenTitle/narration).
+		                    if (String(selectedAudioId || '') !== String(seg.id)) return
 
-                      trimDragLockScrollLeftRef.current = sc.scrollLeft
-                      trimDragRef.current = {
-                        kind: 'audioSegment',
-                        audioSegmentId: String(seg.id),
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                      }
-                      setTrimDragging(true)
-                      try { sc.setPointerCapture(e.pointerId) } catch {}
-                      dbg('startTrimDrag', { kind: 'audioSegment', edge: 'move', id: String(seg.id) })
-                      return
-                    }
+		                    const segSourceStart =
+		                      seg?.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds))
+		                        ? roundToTenth(Number(seg.sourceStartSeconds))
+		                        : 0
+		                    const segMaxDurationSecondsRaw = durationsByUploadId[Number(seg.uploadId)] ?? 0
+		                    const segMaxDurationSeconds =
+		                      Number.isFinite(Number(segMaxDurationSecondsRaw)) && Number(segMaxDurationSecondsRaw) > 0
+		                        ? roundToTenth(Number(segMaxDurationSecondsRaw))
+		                        : null
 
-                    e.preventDefault()
-                    snapshotUndo()
-                    setSelectedAudioId(String(seg.id))
-                    setSelectedClipId(null)
-                    setSelectedGraphicId(null)
-                    setSelectedLogoId(null)
-                    setSelectedLowerThirdId(null)
-                    setSelectedScreenTitleId(null)
-                    setSelectedNarrationId(null)
-                    setSelectedStillId(null)
+		                    const dur = Math.max(0.2, roundToTenth(e2 - s))
+		                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
-                    trimDragLockScrollLeftRef.current = sc.scrollLeft
-                    trimDragRef.current = {
-                      kind: 'audioSegment',
-                      audioSegmentId: String(seg.id),
-                      edge: nearLeft ? 'start' : 'end',
-                      pointerId: e.pointerId,
-                      startClientX: e.clientX,
-                      startStartSeconds: s,
-                      startEndSeconds: e2,
-                      minStartSeconds,
-                      maxEndSeconds,
-                    }
-                    setTrimDragging(true)
-                    try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('startTrimDrag', { kind: 'audioSegment', edge: nearLeft ? 'start' : 'end', id: String(seg.id) })
-                    return
-                  }
+		                    if (!nearLeft && !nearRight) {
+		                      // Arm body drag (tap-release can open the context menu; pointer movement begins drag).
+		                      trimDragRef.current = {
+		                        kind: 'audioSegment',
+		                        audioSegmentId: String(seg.id),
+		                        edge: 'move',
+		                        pointerId: e.pointerId,
+		                        startClientX: e.clientX,
+		                        startClientY: e.clientY,
+		                        startStartSeconds: s,
+		                        startEndSeconds: e2,
+		                        startSourceStartSeconds: segSourceStart,
+		                        maxDurationSeconds: segMaxDurationSeconds ?? undefined,
+		                        minStartSeconds,
+		                        maxEndSeconds,
+		                        maxStartSeconds,
+		                        armed: true,
+		                        moved: false,
+		                      }
+		                      try {
+		                        sc.setPointerCapture(e.pointerId)
+		                      } catch {}
+		                      dbg('armTrimDrag', { kind: 'audioSegment', edge: 'move', id: String(seg.id) })
+		                      return
+		                    }
+
+		                    // Arm resize (tap-release can open the context menu; pointer movement begins drag).
+		                    e.preventDefault()
+		                    trimDragRef.current = {
+		                      kind: 'audioSegment',
+		                      audioSegmentId: String(seg.id),
+		                      edge: nearLeft ? 'start' : 'end',
+		                      pointerId: e.pointerId,
+		                      startClientX: e.clientX,
+		                      startClientY: e.clientY,
+		                      startStartSeconds: s,
+		                      startEndSeconds: e2,
+		                      startSourceStartSeconds: segSourceStart,
+		                      maxDurationSeconds: segMaxDurationSeconds ?? undefined,
+		                      minStartSeconds,
+		                      maxEndSeconds,
+		                      maxStartSeconds,
+		                      armed: true,
+		                      moved: false,
+		                    }
+		                    try {
+		                      sc.setPointerCapture(e.pointerId)
+		                    } catch {}
+		                    dbg('armTrimDrag', { kind: 'audioSegment', edge: nearLeft ? 'start' : 'end', id: String(seg.id) })
+		                    return
+		                  }
 
 	                  if (withinVideo) {
 	                    cancelTimelineLongPress('new_pointerdown')
@@ -10195,16 +10611,14 @@ export default function CreateVideo() {
 	                    }
 	                    if (nearLeft || nearRight) return
 
-		                    if (String(selectedAudioId || '') === String(seg.id)) {
-		                      openAudioEditor()
-		                      return
-		                    }
-		                    setSelectedAudioId(String(seg.id))
-		                    setSelectedClipId(null)
-		                    setSelectedGraphicId(null)
-		                    setSelectedLogoId(null)
-		                    setSelectedLowerThirdId(null)
-		                    setSelectedScreenTitleId(null)
+			                    // Audio properties are opened via the context menu (not by tapping).
+			                    if (String(selectedAudioId || '') === String(seg.id)) return
+			                    setSelectedAudioId(String(seg.id))
+			                    setSelectedClipId(null)
+			                    setSelectedGraphicId(null)
+			                    setSelectedLogoId(null)
+			                    setSelectedLowerThirdId(null)
+			                    setSelectedScreenTitleId(null)
 		                    setSelectedNarrationId(null)
 		                    setSelectedStillId(null)
 		                    return
@@ -12273,11 +12687,13 @@ export default function CreateVideo() {
 			                  </button>
 			                ) : null}
 			                <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>
-				                  {(timelineCtxMenu.view || 'main') === 'guidelines'
-				                    ? 'Guidelines'
-				                    : timelineCtxMenu.kind === 'logo'
-				                      ? 'Logo'
-				                      : timelineCtxMenu.kind === 'lowerThird'
+					                  {(timelineCtxMenu.view || 'main') === 'guidelines'
+					                    ? 'Guidelines'
+					                    : timelineCtxMenu.kind === 'audioSegment'
+					                      ? 'Audio'
+					                    : timelineCtxMenu.kind === 'logo'
+					                      ? 'Logo'
+					                      : timelineCtxMenu.kind === 'lowerThird'
 				                        ? 'Lower Third'
 				                        : timelineCtxMenu.kind === 'screenTitle'
 				                          ? 'Screen Title'
@@ -12400,9 +12816,9 @@ export default function CreateVideo() {
 				                        setClipEditorError(null)
 				                        setFreezeInsertError(null)
 				                      }
-				                    } else if (timelineCtxMenu.kind === 'narration') {
-				                      const n = narration.find((nn: any) => String((nn as any).id) === String(timelineCtxMenu.id)) as any
-				                      if (n) {
+					                    } else if (timelineCtxMenu.kind === 'narration') {
+					                      const n = narration.find((nn: any) => String((nn as any).id) === String(timelineCtxMenu.id)) as any
+					                      if (n) {
 				                        const s = roundToTenth(Number((n as any).startSeconds || 0))
 				                        const e2 = roundToTenth(Number((n as any).endSeconds || 0))
 				                        setSelectedNarrationId(String((n as any).id))
@@ -12419,11 +12835,37 @@ export default function CreateVideo() {
 				                          end: e2,
 				                          gainDb: (n as any).gainDb == null ? 0 : Number((n as any).gainDb),
 				                        })
-				                        setNarrationEditorError(null)
-				                      }
-				                    }
-				                    setTimelineCtxMenu(null)
-				                  }}
+					                        setNarrationEditorError(null)
+					                      }
+					                    } else if (timelineCtxMenu.kind === 'audioSegment') {
+					                      const seg = audioSegments.find((aa: any) => String((aa as any).id) === String(timelineCtxMenu.id)) as any
+					                      if (seg) {
+					                        const s = roundToTenth(Number((seg as any).startSeconds || 0))
+					                        const e2 = roundToTenth(Number((seg as any).endSeconds || 0))
+					                        setSelectedAudioId(String((seg as any).id))
+					                        setSelectedClipId(null)
+					                        setSelectedGraphicId(null)
+					                        setSelectedLogoId(null)
+					                        setSelectedLowerThirdId(null)
+					                        setSelectedScreenTitleId(null)
+					                        setSelectedNarrationId(null)
+					                        setSelectedStillId(null)
+					                        setAudioEditorError(null)
+					                        void (async () => {
+					                          try {
+					                            await ensureAudioConfigs()
+					                          } catch {}
+					                        })()
+					                        setAudioEditor({
+					                          id: String((seg as any).id),
+					                          start: s,
+					                          end: e2,
+					                          audioConfigId: Number((seg as any).audioConfigId),
+					                        })
+					                      }
+					                    }
+					                    setTimelineCtxMenu(null)
+					                  }}
 			                  style={{
 			                    width: '100%',
 			                    padding: '10px 12px',
@@ -12466,6 +12908,7 @@ export default function CreateVideo() {
 				                    if (timelineCtxMenu.kind === 'screenTitle') splitScreenTitleById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'clip') splitClipById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'narration') splitNarrationById(timelineCtxMenu.id)
+				                    if (timelineCtxMenu.kind === 'audioSegment') splitAudioSegmentById(timelineCtxMenu.id)
 				                    setTimelineCtxMenu(null)
 				                  }}
 			                  style={{
@@ -12491,6 +12934,7 @@ export default function CreateVideo() {
 				                    if (timelineCtxMenu.kind === 'screenTitle') duplicateScreenTitleById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'clip') duplicateClipById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'narration') duplicateNarrationById(timelineCtxMenu.id)
+				                    if (timelineCtxMenu.kind === 'audioSegment') duplicateAudioSegmentById(timelineCtxMenu.id)
 				                    setTimelineCtxMenu(null)
 				                  }}
 			                  style={{
@@ -12516,6 +12960,7 @@ export default function CreateVideo() {
 				                    if (timelineCtxMenu.kind === 'screenTitle') deleteScreenTitleById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'clip') deleteClipById(timelineCtxMenu.id)
 				                    if (timelineCtxMenu.kind === 'narration') deleteNarrationById(timelineCtxMenu.id)
+				                    if (timelineCtxMenu.kind === 'audioSegment') deleteAudioSegmentById(timelineCtxMenu.id)
 				                    setTimelineCtxMenu(null)
 				                  }}
 			                  style={{
@@ -12547,15 +12992,16 @@ export default function CreateVideo() {
 			                    <>
 			                      <button
 			                        type="button"
-				                        onClick={() => {
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-				                          setTimelineCtxMenu(null)
-				                        }}
+					                        onClick={() => {
+					                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
+					                          setTimelineCtxMenu(null)
+					                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -12572,15 +13018,16 @@ export default function CreateVideo() {
 			                      </button>
 			                      <button
 			                        type="button"
-				                        onClick={() => {
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-				                          setTimelineCtxMenu(null)
-				                        }}
+					                        onClick={() => {
+					                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
+					                          setTimelineCtxMenu(null)
+					                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -12597,15 +13044,16 @@ export default function CreateVideo() {
 			                      </button>
 			                      <button
 			                        type="button"
-				                        onClick={() => {
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-				                          setTimelineCtxMenu(null)
-				                        }}
+					                        onClick={() => {
+					                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
+					                          setTimelineCtxMenu(null)
+					                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
