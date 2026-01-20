@@ -1130,6 +1130,31 @@ export default function CreateVideo() {
     return []
   }, [audioTrack, timeline])
 
+  // If we learn the true audio duration after a segment was created, clamp its visible duration
+  // to avoid implying "looping" behavior.
+  useEffect(() => {
+    const raw: any[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any[]) : []
+    if (!raw.length) return
+    let changed = false
+    const next = raw.map((s: any) => {
+      const uploadId = Number(s?.uploadId)
+      const durRaw = durationsByUploadId[uploadId]
+      const dur = durRaw != null && Number.isFinite(Number(durRaw)) && Number(durRaw) > 0 ? roundToTenth(Number(durRaw)) : null
+      if (dur == null) return s
+      const srcStart =
+        s?.sourceStartSeconds != null && Number.isFinite(Number(s.sourceStartSeconds)) ? roundToTenth(Number(s.sourceStartSeconds)) : 0
+      const startS = roundToTenth(Number(s?.startSeconds || 0))
+      const endS = roundToTenth(Number(s?.endSeconds || 0))
+      const maxLen = roundToTenth(Math.max(0, dur - srcStart))
+      const len = roundToTenth(Math.max(0, endS - startS))
+      if (len <= maxLen + 0.05) return s
+      changed = true
+      return { ...(s as any), endSeconds: roundToTenth(startS + maxLen) }
+    })
+    if (!changed) return
+    setTimeline((prev) => ({ ...(prev as any), audioSegments: next, audioTrack: null } as any))
+  }, [durationsByUploadId, timeline])
+
   const selectedAudio = Boolean(selectedAudioId)
   const selectedAudioSegment = useMemo(() => {
     if (!selectedAudioId) return null
@@ -1416,7 +1441,7 @@ export default function CreateVideo() {
 	      const durationWithOffsetsSeconds = len
 	      const endWithOffsetSeconds = roundToTenth(
 	        totalNoOffsetSeconds > 0
-	          ? (startWithOffsetSeconds + durationWithOffsetsSeconds) % totalNoOffsetSeconds
+	          ? Math.min(totalNoOffsetSeconds, startWithOffsetSeconds + durationWithOffsetsSeconds)
 	          : startWithOffsetSeconds + durationWithOffsetsSeconds
 	      )
 
@@ -3277,7 +3302,11 @@ export default function CreateVideo() {
         const srcStart =
           seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds)) ? Number(seg.sourceStartSeconds) : 0
         const leftIsGreen = hasNoOffset(srcStart)
-        const rightIsGreen = true // music loops; end is timeline-only
+        const fullDurRaw = durationsByUploadId[uploadId]
+        const fullDur =
+          fullDurRaw != null && Number.isFinite(Number(fullDurRaw)) && Number(fullDurRaw) > 0 ? roundToTenth(Number(fullDurRaw)) : null
+        const srcEnd = roundToTenth(Math.max(0, srcStart + (end - start)))
+        const rightIsGreen = fullDur != null ? (srcEnd >= fullDur - 0.05) : true
         const hs = handleSize
         const hy = audioY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
@@ -3312,6 +3341,7 @@ export default function CreateVideo() {
     narration,
     stills,
     namesByUploadId,
+    durationsByUploadId,
     pxPerSecond,
     selectedAudioId,
     selectedClipId,
@@ -4715,6 +4745,10 @@ export default function CreateVideo() {
       }
       const name = String(upload.modified_filename || upload.original_filename || `Audio ${id}`)
       setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
+      const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
+      if (dur != null && Number.isFinite(dur) && dur > 0) {
+        setDurationsByUploadId((prev) => ({ ...prev, [id]: dur }))
+      }
 
       const cfgs = Array.isArray(audioConfigs) ? audioConfigs : []
       const pickDefault = (): number | null => {
@@ -4731,7 +4765,9 @@ export default function CreateVideo() {
         return
       }
 
-      const end = roundToTenth(Math.max(0, totalSeconds))
+      const end = roundToTenth(
+        Math.max(0, dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(totalSeconds, dur) : Math.max(0, totalSeconds))
+      )
       snapshotUndo()
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       setTimeline((prev) => ({
