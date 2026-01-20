@@ -3685,12 +3685,14 @@ export default function CreateVideo() {
         const data: any = await res.json().catch(() => null)
         if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
         lastSavedRef.current = json
+        // Keep local undo/redo persistence aligned to the latest saved timeline.
+        persistHistoryNow({ timelineOverride: next as any })
       } catch {
         // ignore; user can still export later
       }
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [playhead, project?.id, timeline])
+  }, [persistHistoryNow, playhead, project?.id, timeline])
 
   const saveTimelineNow = useCallback(
     async (nextTimeline: Timeline) => {
@@ -3709,11 +3711,13 @@ export default function CreateVideo() {
         const data: any = await res.json().catch(() => null)
         if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
         lastSavedRef.current = JSON.stringify(nextTimeline)
+        // Keep local undo/redo persistence aligned to the latest saved timeline.
+        persistHistoryNow({ timelineOverride: nextTimeline })
       } catch {
         // ignore; user can still export later
       }
     },
-    [project?.id]
+    [persistHistoryNow, project?.id]
   )
 
   const addGuidelineAtPlayhead = useCallback(() => {
