@@ -446,6 +446,12 @@ export default function CreateVideo() {
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
   const [freezeInsertBusy, setFreezeInsertBusy] = useState(false)
   const [freezeInsertError, setFreezeInsertError] = useState<string | null>(null)
+
+  // Freeze insertion duration is fixed in v1.
+  useEffect(() => {
+    if (!clipEditor) return
+    setFreezeInsertSeconds(2)
+  }, [clipEditor])
   const [graphicPickerLoading, setGraphicPickerLoading] = useState(false)
   const [graphicPickerError, setGraphicPickerError] = useState<string | null>(null)
   const [graphicPickerItems, setGraphicPickerItems] = useState<UploadListItem[]>([])
@@ -7769,14 +7775,6 @@ export default function CreateVideo() {
         const clip = timeline.clips[idx]
         if (!clip) throw new Error('clip_not_found')
 
-        // Require that trim changes are saved before inserting freeze segments.
-        if (
-          roundToTenth(Number(clipEditor.start)) !== roundToTenth(Number(clip.sourceStartSeconds)) ||
-          roundToTenth(Number(clipEditor.end)) !== roundToTenth(Number(clip.sourceEndSeconds))
-        ) {
-          throw new Error('save_trim_first')
-        }
-
         const clipStart = roundToTenth(Number(clipStarts[idx] || 0))
         const clipLen = roundToTenth(Math.max(0, clipSourceDurationSeconds(clip)))
         const clipEnd = roundToTenth(clipStart + clipLen)
@@ -7809,10 +7807,9 @@ export default function CreateVideo() {
         setClipEditor(null)
       } catch (e: any) {
         const msg = String(e?.message || 'failed')
-        if (msg === 'save_trim_first') setFreezeInsertError('Save trim changes first (click Save), then insert a freeze frame.')
-        else if (msg === 'freeze_timeout') setFreezeInsertError('Timed out while generating freeze frame. Try again.')
+        if (msg === 'freeze_timeout') setFreezeInsertError('Timed out while generating freeze frame. Try again.')
         else if (msg === 'freeze_failed') setFreezeInsertError('Freeze frame generation failed.')
-        else if (msg === 'pick_duration') setFreezeInsertError('Pick a freeze duration.')
+        else if (msg === 'pick_duration') setFreezeInsertError('Freeze duration is invalid.')
         else setFreezeInsertError('Failed to insert freeze frame.')
       } finally {
         setFreezeInsertBusy(false)
@@ -12372,41 +12369,10 @@ export default function CreateVideo() {
               {(() => {
                 const clip = timeline.clips.find((c) => c.id === clipEditor.id) || null
                 const maxDur = clip ? (durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds) : null
-                const start = Number(clipEditor.start)
-                const end = Number(clipEditor.end)
-                const safeMax = maxDur != null && Number.isFinite(Number(maxDur)) ? Number(maxDur) : null
-                const minLen = 0.2
-
-                const adjustStart = (delta: number) => {
-                  setClipEditorError(null)
-                  setClipEditor((p) => {
-                    if (!p) return p
-                    const next = roundToTenth(Number(p.start) + delta)
-                    const maxStart = Math.max(0, (Number(p.end) - minLen))
-                    return { ...p, start: clamp(next, 0, maxStart) }
-                  })
-                }
-
-                const adjustEnd = (delta: number) => {
-                  setClipEditorError(null)
-                  setClipEditor((p) => {
-                    if (!p) return p
-                    const maxEnd = safeMax ?? Number.POSITIVE_INFINITY
-                    const next = roundToTenth(Number(p.end) + delta)
-                    const minEnd = Math.max(0, (Number(p.start) + minLen))
-                    return { ...p, end: clamp(next, minEnd, maxEnd) }
-                  })
-                }
-
-                const canStartDec1 = Number.isFinite(start) && start > 0 + 1e-9
-                const canStartDec10 = Number.isFinite(start) && start > 10 + 1e-9
-                const canStartInc1 = Number.isFinite(start) && Number.isFinite(end) && start + 1 <= end - minLen + 1e-9
-                const canStartInc10 = Number.isFinite(start) && Number.isFinite(end) && start + 10 <= end - minLen + 1e-9
-
-                const canEndDec1 = Number.isFinite(start) && Number.isFinite(end) && end - 1 >= start + minLen - 1e-9
-                const canEndDec10 = Number.isFinite(start) && Number.isFinite(end) && end - 10 >= start + minLen - 1e-9
-                const canEndInc1 = safeMax == null ? Number.isFinite(end) : (Number.isFinite(end) && end + 1 <= safeMax + 1e-9)
-                const canEndInc10 = safeMax == null ? Number.isFinite(end) : (Number.isFinite(end) && end + 10 <= safeMax + 1e-9)
+                const safeMax = maxDur != null && Number.isFinite(Number(maxDur)) ? roundToTenth(Number(maxDur)) : null
+                const start = clip ? roundToTenth(Number(clip.sourceStartSeconds || 0)) : 0
+                const end = clip ? roundToTenth(Number(clip.sourceEndSeconds || 0)) : 0
+                const dur = roundToTenth(Math.max(0, end - start))
 
                 const statBox: React.CSSProperties = {
                   borderRadius: 12,
@@ -12416,93 +12382,33 @@ export default function CreateVideo() {
                   minWidth: 0,
                 }
 
-                const adjustBtn = (enabled: boolean): React.CSSProperties => ({
-                  padding: '8px 10px',
-                  borderRadius: 10,
-                  border: `1px solid ${enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'}`,
-                  background: enabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
-                  color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
-                  fontWeight: 900,
-                  cursor: enabled ? 'pointer' : 'not-allowed',
-                })
-
                 return (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                       <div style={statBox}>
                         <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{`${start.toFixed(1)}s`}</div>
+                        <div style={{ height: 1, background: 'rgba(255,255,255,0.14)', margin: '6px 0' }} />
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#bbb' }}>0.0s</div>
                       </div>
                       <div style={statBox}>
                         <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Total</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{safeMax != null ? `${safeMax.toFixed(1)}s` : '—'}</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{`${dur.toFixed(1)}s`}</div>
+                        <div style={{ height: 1, background: 'rgba(255,255,255,0.14)', margin: '6px 0' }} />
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#bbb' }}>{safeMax != null ? `${safeMax.toFixed(1)}s` : '—'}</div>
                       </div>
                       <div style={statBox}>
                         <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
+                        <div style={{ fontSize: 14, fontWeight: 900 }}>{`${end.toFixed(1)}s`}</div>
+                        <div style={{ height: 1, background: 'rgba(255,255,255,0.14)', margin: '6px 0' }} />
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#bbb' }}>{safeMax != null ? `${safeMax.toFixed(1)}s` : '—'}</div>
                       </div>
-                    </div>
-
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-                      <input
-                        type="number"
-                        step={0.1}
-                        min={0}
-                        value={String(clipEditor.start)}
-                        onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                      />
-                    </label>
-
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <button type="button" disabled={!canStartDec10} onClick={() => adjustStart(-10)} style={adjustBtn(canStartDec10)}>-10s</button>
-                        <button type="button" disabled={!canStartDec1} onClick={() => adjustStart(-1)} style={adjustBtn(canStartDec1)}>-1s</button>
-                        <button type="button" disabled={!canStartInc1} onClick={() => adjustStart(1)} style={adjustBtn(canStartInc1)}>+1s</button>
-                        <button type="button" disabled={!canStartInc10} onClick={() => adjustStart(10)} style={adjustBtn(canStartInc10)}>+10s</button>
-                      </div>
-                    </div>
-
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-                      <input
-                        type="number"
-                        step={0.1}
-                        min={0}
-                        value={String(clipEditor.end)}
-                        onChange={(e) => { setClipEditorError(null); setClipEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                      />
-                    </label>
-
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <button type="button" disabled={!canEndDec10} onClick={() => adjustEnd(-10)} style={adjustBtn(canEndDec10)}>-10s</button>
-                        <button type="button" disabled={!canEndDec1} onClick={() => adjustEnd(-1)} style={adjustBtn(canEndDec1)}>-1s</button>
-                        <button type="button" disabled={!canEndInc1} onClick={() => adjustEnd(1)} style={adjustBtn(canEndInc1)}>+1s</button>
-                        <button type="button" disabled={!canEndInc10} onClick={() => adjustEnd(10)} style={adjustBtn(canEndInc10)}>+10s</button>
-                      </div>
-                      {safeMax != null ? <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {safeMax.toFixed(1)}s</div> : null}
                     </div>
 
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
                       <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                        <label style={{ display: 'grid', gap: 6, minWidth: 180 }}>
-                          <div style={{ color: '#bbb', fontSize: 13 }}>Duration</div>
-                          <select
-                            value={String(freezeInsertSeconds)}
-                            onChange={(e) => { setFreezeInsertError(null); setFreezeInsertSeconds(Number(e.target.value)) }}
-                            style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                          >
-                            {FREEZE_OPTIONS_SECONDS.filter((v) => Number(v) > 0).map((v) => (
-                              <option key={`fi_${String(v)}`} value={String(v)}>{Number(v).toFixed(1)}s</option>
-                            ))}
-                          </select>
-                        </label>
+                        <div style={{ color: '#bbb', fontSize: 13, paddingBottom: 10, minWidth: 180 }}>Duration: 2.0s</div>
 
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           <button
@@ -12553,10 +12459,7 @@ export default function CreateVideo() {
               {clipEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{clipEditorError}</div> : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
                 <button type="button" onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
-                  Cancel
-                </button>
-                <button type="button" onClick={saveClipEditor} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(212,175,55,0.65)', background: 'rgba(212,175,55,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                  Save
+                  Close
                 </button>
               </div>
             </div>
