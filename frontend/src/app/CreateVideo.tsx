@@ -11186,54 +11186,11 @@ export default function CreateVideo() {
                 >
                   Add
                 </button>
-			                <button
-			                  type="button"
-			                  onClick={split}
-			                  disabled={
-			                    !selectedClipId &&
-			                    !selectedGraphicId &&
-			                    !selectedLogoId &&
-			                    !selectedLowerThirdId &&
-			                    !selectedScreenTitleId &&
-			                    !selectedNarrationId &&
-			                    !selectedAudioId
-			                  }
-			                  style={{
-		                    padding: '10px 12px',
-		                    borderRadius: 10,
-		                    border: '1px solid rgba(255,255,255,0.18)',
-			                    background:
-			                      selectedClipId ||
-			                      selectedGraphicId ||
-			                      selectedLogoId ||
-			                      selectedLowerThirdId ||
-			                      selectedScreenTitleId ||
-			                      selectedNarrationId ||
-			                      selectedAudioId
-			                        ? '#0c0c0c'
-			                        : 'rgba(255,255,255,0.06)',
-			                    color: '#fff',
-			                    fontWeight: 900,
-			                    cursor:
-			                      selectedClipId ||
-			                      selectedGraphicId ||
-			                      selectedLogoId ||
-			                      selectedLowerThirdId ||
-			                      selectedScreenTitleId ||
-			                      selectedNarrationId ||
-			                      selectedAudioId
-			                        ? 'pointer'
-			                        : 'default',
-			                    flex: '0 0 auto',
-			                  }}
-			                >
-		                  Split
-		                </button>
-	                <button
-	                  type="button"
-	                  onClick={undo}
-	                  disabled={!canUndo}
-	                  style={{
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  style={{
 	                    padding: '10px 12px',
 	                    borderRadius: 10,
 	                    border: '1px solid rgba(255,255,255,0.18)',
