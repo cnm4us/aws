@@ -579,7 +579,21 @@ export default function CreateVideo() {
       selectedAudioId: string | null
     }>
   >([])
+  const redoStackRef = useRef<
+    Array<{
+      timeline: Timeline
+      selectedClipId: string | null
+      selectedGraphicId: string | null
+      selectedLogoId: string | null
+      selectedLowerThirdId: string | null
+      selectedScreenTitleId: string | null
+      selectedNarrationId: string | null
+      selectedStillId: string | null
+      selectedAudioId: string | null
+    }>
+  >([])
   const [undoDepth, setUndoDepth] = useState(0)
+  const [redoDepth, setRedoDepth] = useState(0)
   const lastSavedRef = useRef<string>('')
   const hydratingRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
@@ -603,6 +617,66 @@ export default function CreateVideo() {
 
   const nudgeRepeatRef = useRef<{ timeout: number | null; interval: number | null; deltaSeconds: number; fired: boolean } | null>(null)
   const suppressNextNudgeClickRef = useRef(false)
+
+  const historyKey = useMemo(() => {
+    const id = Number(project?.id || 0)
+    if (!Number.isFinite(id) || id <= 0) return null
+    return `createVideoHistory:v1:${id}`
+  }, [project?.id])
+
+  const hashString = useCallback((s: string): string => {
+    // FNV-1a 32-bit
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193)
+    }
+    return (h >>> 0).toString(16)
+  }, [])
+
+  const computeTimelineHash = useCallback(
+    (tl: Timeline): string => {
+      try {
+        // Ignore playhead for history reconciliation: scrubbing shouldn't invalidate undo/redo persistence.
+        const normalized: any = { ...(tl as any), playheadSeconds: 0 }
+        return hashString(JSON.stringify(normalized))
+      } catch {
+        return ''
+      }
+    },
+    [hashString]
+  )
+
+  const historyPersistTimerRef = useRef<number | null>(null)
+  const persistHistoryNow = useCallback(
+    (opts?: { timelineOverride?: Timeline }) => {
+      if (!historyKey) return
+      try {
+        const currentTimeline = opts?.timelineOverride ? cloneTimeline(opts.timelineOverride) : cloneTimeline({ ...(timeline as any), playheadSeconds: playhead } as any)
+        const payload = {
+          v: 1,
+          timelineHash: computeTimelineHash(currentTimeline),
+          undo: undoStackRef.current,
+          redo: redoStackRef.current,
+        }
+        localStorage.setItem(historyKey, JSON.stringify(payload))
+      } catch {
+        // ignore
+      }
+    },
+    [computeTimelineHash, historyKey, playhead, timeline]
+  )
+
+  const persistHistorySoon = useCallback(() => {
+    if (!historyKey) return
+    if (historyPersistTimerRef.current != null) {
+      try { window.clearTimeout(historyPersistTimerRef.current) } catch {}
+    }
+    historyPersistTimerRef.current = window.setTimeout(() => {
+      historyPersistTimerRef.current = null
+      persistHistoryNow()
+    }, 200)
+  }, [historyKey, persistHistoryNow])
 
   const setTimelineScrollContainerRef = useCallback((el: HTMLDivElement | null) => {
     timelineScrollRef.current = el
@@ -1257,6 +1331,7 @@ export default function CreateVideo() {
   )
 
   const canUndo = undoDepth > 0
+  const canRedo = redoDepth > 0
 
   const boundaries = useMemo(() => {
     const out: number[] = []
@@ -2435,7 +2510,12 @@ export default function CreateVideo() {
     // Cap memory and keep behavior predictable.
     if (stack.length > 50) stack.splice(0, stack.length - 50)
     setUndoDepth(stack.length)
+    // New edits invalidate the redo stack.
+    redoStackRef.current = []
+    setRedoDepth(0)
+    persistHistorySoon()
   }, [
+    persistHistorySoon,
     selectedAudioId,
     selectedClipId,
     selectedGraphicId,
@@ -2457,6 +2537,21 @@ export default function CreateVideo() {
     const snap = stack.pop()
     if (!snap) return
     setUndoDepth(stack.length)
+    // Push current state to redo stack.
+    const redoStack = redoStackRef.current
+    redoStack.push({
+      timeline: cloneTimeline(timeline),
+      selectedClipId,
+      selectedGraphicId,
+      selectedLogoId,
+      selectedLowerThirdId,
+      selectedScreenTitleId,
+      selectedNarrationId,
+      selectedStillId,
+      selectedAudioId,
+    })
+    if (redoStack.length > 50) redoStack.splice(0, redoStack.length - 50)
+    setRedoDepth(redoStack.length)
     hydratingRef.current = true
     try {
       setTimeline(snap.timeline)
@@ -2471,7 +2566,67 @@ export default function CreateVideo() {
     } finally {
       hydratingRef.current = false
     }
-  }, [])
+    persistHistorySoon()
+  }, [
+    persistHistorySoon,
+    selectedAudioId,
+    selectedClipId,
+    selectedGraphicId,
+    selectedLogoId,
+    selectedLowerThirdId,
+    selectedNarrationId,
+    selectedScreenTitleId,
+    selectedStillId,
+    timeline,
+  ])
+
+  const redo = useCallback(() => {
+    const stack = redoStackRef.current
+    const snap = stack.pop()
+    if (!snap) return
+    setRedoDepth(stack.length)
+    // Push current state to undo stack.
+    const undoStack = undoStackRef.current
+    undoStack.push({
+      timeline: cloneTimeline(timeline),
+      selectedClipId,
+      selectedGraphicId,
+      selectedLogoId,
+      selectedLowerThirdId,
+      selectedScreenTitleId,
+      selectedNarrationId,
+      selectedStillId,
+      selectedAudioId,
+    })
+    if (undoStack.length > 50) undoStack.splice(0, undoStack.length - 50)
+    setUndoDepth(undoStack.length)
+    hydratingRef.current = true
+    try {
+      setTimeline(snap.timeline)
+      setSelectedClipId(snap.selectedClipId)
+      setSelectedGraphicId(snap.selectedGraphicId)
+      setSelectedLogoId(snap.selectedLogoId)
+      setSelectedLowerThirdId((snap as any).selectedLowerThirdId || null)
+      setSelectedScreenTitleId((snap as any).selectedScreenTitleId || null)
+      setSelectedNarrationId((snap as any).selectedNarrationId || null)
+      setSelectedStillId(snap.selectedStillId)
+      setSelectedAudioId((snap as any).selectedAudioId || null)
+    } finally {
+      hydratingRef.current = false
+    }
+    persistHistorySoon()
+  }, [
+    persistHistorySoon,
+    selectedAudioId,
+    selectedClipId,
+    selectedGraphicId,
+    selectedLogoId,
+    selectedLowerThirdId,
+    selectedNarrationId,
+    selectedScreenTitleId,
+    selectedStillId,
+    timeline,
+  ])
 
   // Timeline padding so t=0 and t=end can align under the centered playhead line.
   useEffect(() => {
@@ -3467,8 +3622,32 @@ export default function CreateVideo() {
           // If we migrated a legacy timeline, leave lastSavedRef pointing at the pre-migration JSON so
           // the debounced autosave will persist the normalized form.
           lastSavedRef.current = JSON.stringify(migratedFreeze.changed || migratedAudio.changed ? tl : tlFinal)
-          undoStackRef.current = []
-          setUndoDepth(0)
+          // Restore undo/redo history if it matches the current timeline (ignoring playhead).
+          try {
+            const histKey = `createVideoHistory:v1:${id}`
+            const raw = localStorage.getItem(histKey)
+            const parsed: any = raw ? JSON.parse(raw) : null
+            const expectedHash = computeTimelineHash(tlFinal)
+            const ok = parsed && typeof parsed === 'object' && Number(parsed.v) === 1 && String(parsed.timelineHash || '') === String(expectedHash || '')
+            if (ok) {
+              const u = Array.isArray(parsed.undo) ? parsed.undo : []
+              const r = Array.isArray(parsed.redo) ? parsed.redo : []
+              undoStackRef.current = u
+              redoStackRef.current = r
+              setUndoDepth(u.length)
+              setRedoDepth(r.length)
+            } else {
+              undoStackRef.current = []
+              redoStackRef.current = []
+              setUndoDepth(0)
+              setRedoDepth(0)
+            }
+          } catch {
+            undoStackRef.current = []
+            redoStackRef.current = []
+            setUndoDepth(0)
+            setRedoDepth(0)
+          }
           setSelectedAudioId(null)
         } finally {
           hydratingRef.current = false
@@ -3483,7 +3662,7 @@ export default function CreateVideo() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [computeTimelineHash])
 
   // Autosave timeline (debounced)
   useEffect(() => {
@@ -9545,7 +9724,12 @@ export default function CreateVideo() {
       await fetch('/api/create-video/project/archive', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
     } catch {}
     undoStackRef.current = []
+    redoStackRef.current = []
     setUndoDepth(0)
+    setRedoDepth(0)
+    try {
+      localStorage.removeItem(`createVideoHistory:v1:${Number(project?.id)}`)
+    } catch {}
     window.location.reload()
   }, [project?.id])
 
@@ -11200,14 +11384,35 @@ export default function CreateVideo() {
 	                    cursor: canUndo ? 'pointer' : 'default',
 	                    flex: '0 0 auto',
 	                  }}
+                  title="Undo"
+                  aria-label="Undo"
 	                >
-	                  Undo
+	                  U
 	                </button>
-	                <button
-	                  type="button"
-	                  onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-	                  onContextMenu={(e) => e.preventDefault()}
-	                  onPointerDown={(e) => {
+                <button
+                  type="button"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: canRedo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: canRedo ? 'pointer' : 'default',
+                    flex: '0 0 auto',
+                  }}
+                  title="Redo"
+                  aria-label="Redo"
+                >
+                  R
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => {
 	                    if (e.button != null && e.button !== 0) return
 	                    if (totalSeconds <= 0) return
 	                    try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
