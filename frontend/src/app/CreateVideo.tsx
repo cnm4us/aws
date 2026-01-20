@@ -11843,9 +11843,10 @@ export default function CreateVideo() {
                 })
 
                 const canStartDec1 = Number.isFinite(start) && start > 0 + 1e-9
-                const canStartInc1 = Number.isFinite(start) && Number.isFinite(end) && start + 1 <= end - minLen + 1e-9
-                const canEndDec1 = Number.isFinite(start) && Number.isFinite(end) && end - 1 >= start + minLen - 1e-9
-                const canEndInc1 = Number.isFinite(end) && end + 1 <= cap + 1e-9
+                const canStartDec01 = Number.isFinite(start) && start - 0.1 >= 0 - 1e-9
+                const canStartInc01 = Number.isFinite(start) && Number.isFinite(end) && start + 0.1 <= end - minLen + 1e-9
+                const canEndDec01 = Number.isFinite(start) && Number.isFinite(end) && end - 0.1 >= start + minLen - 1e-9
+                const canEndInc01 = Number.isFinite(end) && end + 0.1 <= cap + 1e-9
 
                 return (
                   <>
@@ -11864,45 +11865,24 @@ export default function CreateVideo() {
                       </div>
                     </div>
 
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-                      <input
-                        type="number"
-                        step={0.1}
-                        min={0}
-                        value={String(graphicEditor.start)}
-                        onChange={(e) => { setGraphicEditorError(null); setGraphicEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                      />
-                    </label>
-
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <button type="button" disabled={!canStartDec1} onClick={() => adjustStart(-1)} style={adjustBtn(canStartDec1)}>-1s</button>
-                        <button type="button" disabled={!canStartInc1} onClick={() => adjustStart(1)} style={adjustBtn(canStartInc1)}>+1s</button>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            <button type="button" disabled={!canStartDec01} onClick={() => adjustStart(-0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
+                            <button type="button" disabled={!canStartInc01} onClick={() => adjustStart(0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            <button type="button" disabled={!canEndDec01} onClick={() => adjustEnd(-0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
+                            <button type="button" disabled={!canEndInc01} onClick={() => adjustEnd(0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
+                          </div>
+                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
+                        </div>
                       </div>
-                    </div>
-
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-                      <input
-                        type="number"
-                        step={0.1}
-                        min={0}
-                        value={String(graphicEditor.end)}
-                        onChange={(e) => { setGraphicEditorError(null); setGraphicEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                      />
-                    </label>
-
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <button type="button" disabled={!canEndDec1} onClick={() => adjustEnd(-1)} style={adjustBtn(canEndDec1)}>-1s</button>
-                        <button type="button" disabled={!canEndInc1} onClick={() => adjustEnd(1)} style={adjustBtn(canEndInc1)}>+1s</button>
-                      </div>
-                      <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
                     </div>
                   </>
                 )
