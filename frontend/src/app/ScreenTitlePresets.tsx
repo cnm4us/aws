@@ -124,17 +124,22 @@ function parseFromHref(): string | null {
 export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
   const backHref = fromHref || '/uploads'
-  const backLabel = fromHref?.startsWith('/produce') ? '← Back to Produce' : '← Back'
+  const backLabel =
+    fromHref?.startsWith('/create-video') ? '← Back to Create Video'
+      : fromHref?.startsWith('/produce') ? '← Back to Produce'
+        : '← Back'
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<'list' | 'edit'>('list')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState(defaultDraft)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [cloningId, setCloningId] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -155,13 +160,12 @@ export default function ScreenTitlePresetsPage() {
       const data = await res.json()
       const items: ScreenTitlePreset[] = Array.isArray(data) ? data : []
       setPresets(items)
-      if (items.length && selectedId == null) setSelectedId(items[0].id)
     } catch (e: any) {
       setError(e?.message || 'Failed to load presets')
     } finally {
       setLoading(false)
     }
-  }, [selectedId])
+  }, [])
 
   useEffect(() => {
     if (!me?.userId) return
@@ -172,28 +176,48 @@ export default function ScreenTitlePresetsPage() {
     if (selectedId == null) return null
     return presets.find((p) => p.id === selectedId) || null
   }, [presets, selectedId])
+  const activePresets = useMemo(() => presets.filter((p) => !p.archivedAt), [presets])
 
-  useEffect(() => {
-    if (!selected) return
+  const openNew = useCallback(() => {
+    setSelectedId(null)
+    setDraft(defaultDraft())
+    setSaveError(null)
+    setView('edit')
+  }, [])
+
+  const openEdit = useCallback((preset: ScreenTitlePreset) => {
+    setSelectedId(preset.id)
     setDraft({
-      name: selected.name,
-      description: selected.description ?? null,
-      style: selected.style,
-      fontKey: selected.fontKey,
-      fontSizePct: selected.fontSizePct ?? 4.5,
-      trackingPct: selected.trackingPct ?? 0,
-      fontColor: selected.fontColor || '#ffffff',
-      pillBgColor: selected.pillBgColor || '#000000',
-      pillBgOpacityPct: selected.pillBgOpacityPct ?? 55,
-      position: selected.position,
-      maxWidthPct: selected.maxWidthPct,
-      insetXPreset: selected.insetXPreset ?? null,
-      insetYPreset: selected.insetYPreset ?? null,
-      timingRule: selected.timingRule,
-      timingSeconds: selected.timingSeconds ?? null,
-      fade: selected.fade,
+      name: preset.name,
+      description: preset.description ?? null,
+      style: preset.style,
+      fontKey: preset.fontKey,
+      fontSizePct: preset.fontSizePct ?? 4.5,
+      trackingPct: preset.trackingPct ?? 0,
+      fontColor: preset.fontColor || '#ffffff',
+      pillBgColor: preset.pillBgColor || '#000000',
+      pillBgOpacityPct: preset.pillBgOpacityPct ?? 55,
+      position: preset.position,
+      maxWidthPct: preset.maxWidthPct,
+      insetXPreset: preset.insetXPreset ?? null,
+      insetYPreset: preset.insetYPreset ?? null,
+      timingRule: preset.timingRule,
+      timingSeconds: preset.timingSeconds ?? null,
+      fade: preset.fade,
     })
-  }, [selected?.id])
+    setSaveError(null)
+    setView('edit')
+  }, [])
+
+  const closeEdit = useCallback(() => {
+    setView('list')
+    setSelectedId(null)
+    setDraft(defaultDraft())
+    setSaveError(null)
+    setDeletingId(null)
+    setCloningId(null)
+    setSaving(false)
+  }, [])
 
   const save = useCallback(async () => {
     if (!me?.userId) return
@@ -214,35 +238,72 @@ export default function ScreenTitlePresetsPage() {
         if (!res.ok) throw new Error(data?.error || 'Failed to save')
       }
       await load()
+      closeEdit()
     } catch (e: any) {
       setSaveError(e?.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
-  }, [me?.userId, draft, selectedId, load])
+  }, [me?.userId, draft, selectedId, load, closeEdit])
 
-  const archive = useCallback(async () => {
-    if (!selectedId) return
-    const ok = window.confirm('Archive this preset?')
-    if (!ok) return
-    setDeleting(true)
+  const deletePreset = useCallback(async (id: number) => {
+    if (!id) return
+    setDeletingId(id)
     setSaveError(null)
     try {
       const headers: Record<string, string> = {}
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(selectedId))}`, { method: 'DELETE', credentials: 'same-origin', headers })
+      const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(id))}`, { method: 'DELETE', credentials: 'same-origin', headers })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || 'Failed to archive')
-      setSelectedId(null)
-      setDraft(defaultDraft())
       await load()
+      if (selectedId === id) closeEdit()
     } catch (e: any) {
       setSaveError(e?.message || 'Failed to archive')
     } finally {
-      setDeleting(false)
+      setDeletingId(null)
     }
-  }, [selectedId, load])
+  }, [load, selectedId, closeEdit])
+
+  const clonePreset = useCallback(async (preset: ScreenTitlePreset) => {
+    setCloningId(preset.id)
+    setSaveError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const cloneName = `${preset.name} (copy)`
+      const body = JSON.stringify({
+        name: cloneName,
+        description: preset.description ?? null,
+        style: preset.style,
+        fontKey: preset.fontKey,
+        fontSizePct: preset.fontSizePct,
+        trackingPct: preset.trackingPct ?? 0,
+        fontColor: preset.fontColor,
+        pillBgColor: preset.pillBgColor,
+        pillBgOpacityPct: preset.pillBgOpacityPct,
+        position: preset.position,
+        maxWidthPct: preset.maxWidthPct,
+        insetXPreset: preset.insetXPreset ?? null,
+        insetYPreset: preset.insetYPreset ?? null,
+        timingRule: preset.timingRule,
+        timingSeconds: preset.timingSeconds ?? null,
+        fade: preset.fade,
+      })
+
+      const res = await fetch('/api/screen-title-presets', { method: 'POST', credentials: 'same-origin', headers, body })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to clone')
+      await load()
+      if (data?.preset) openEdit(data.preset as ScreenTitlePreset)
+    } catch (e: any) {
+      setSaveError(e?.message || 'Failed to clone')
+    } finally {
+      setCloningId(null)
+    }
+  }, [load, openEdit])
 
   if (me === null) {
     return (
@@ -262,78 +323,139 @@ export default function ScreenTitlePresetsPage() {
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Presets</h1>
-            <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles; set per-production title text on the Build Production page.</p>
+            <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles for Create Video screen titles.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedId(null)
-              setDraft(defaultDraft())
-            }}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: 'rgba(255,255,255,0.06)',
-              color: '#fff',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            New
-          </button>
+          {view === 'list' ? (
+            <button
+              type="button"
+              onClick={openNew}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              New
+            </button>
+          ) : null}
         </header>
 
         {loading ? <div style={{ color: '#888', padding: '12px 0' }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{error}</div> : null}
         {saveError ? <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{saveError}</div> : null}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 360px) 1fr', gap: 16, marginTop: 14 }}>
-          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, overflow: 'hidden', background: 'rgba(255,255,255,0.03)' }}>
-            <div style={{ padding: 12, borderBottom: '1px solid rgba(255,255,255,0.10)', fontWeight: 800 }}>Presets</div>
-            <div style={{ display: 'grid' }}>
-              {presets.length === 0 ? (
-                <div style={{ padding: 12, color: '#bbb' }}>No presets yet.</div>
-              ) : (
-                presets.map((p) => {
-                  const active = p.id === selectedId
-                  return (
+        {view === 'list' ? (
+          <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+            <div style={{ fontWeight: 850, color: '#eaeaea', fontSize: 16 }}>Named Presets</div>
+            {activePresets.length === 0 ? (
+              <div style={{ color: '#bbb', padding: '8px 0' }}>No presets yet.</div>
+            ) : (
+              activePresets.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 14,
+                    background: 'rgba(255,255,255,0.03)',
+                    padding: 14,
+                    display: 'grid',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>{p.name}</div>
+                    <div style={{ color: '#a9a9a9', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                      {(p.description || '').trim() || 'No description'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#cfcfcf' }}>
+                      {styleLabel(p.style)} • {positionLabel(p.position)} • {timingLabel(p.timingRule, p.timingSeconds)}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <button
-                      key={p.id}
                       type="button"
-                      onClick={() => setSelectedId(p.id)}
+                      onClick={() => clonePreset(p)}
+                      disabled={cloningId === p.id || saving || deletingId != null}
                       style={{
-                        textAlign: 'left',
-                        padding: 12,
-                        border: 'none',
-                        borderBottom: '1px solid rgba(255,255,255,0.08)',
-                        background: active ? 'rgba(10,132,255,0.18)' : 'transparent',
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: 'rgba(255,255,255,0.06)',
                         color: '#fff',
-                        cursor: 'pointer',
-                        display: 'grid',
-                        gap: 4,
+                        fontWeight: 750,
+                        cursor: cloningId === p.id ? 'default' : 'pointer',
+                        opacity: cloningId === p.id ? 0.7 : 1,
                       }}
                     >
-                      <div style={{ fontWeight: 850 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: '#cfcfcf' }}>
-                        {styleLabel(p.style)} • {positionLabel(p.position)} • {timingLabel(p.timingRule, p.timingSeconds)}
-                      </div>
+                      {cloningId === p.id ? 'Cloning…' : 'Clone'}
                     </button>
-                  )
-                })
-              )}
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(p)}
+                      disabled={saving || deletingId != null}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(10,132,255,0.55)',
+                        background: 'rgba(10,132,255,0.12)',
+                        color: '#fff',
+                        fontWeight: 850,
+                        cursor: 'pointer',
+                        opacity: saving ? 0.7 : 1,
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deletePreset(p.id)}
+                      disabled={deletingId === p.id || saving}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,155,155,0.35)',
+                        background: 'rgba(255,155,155,0.08)',
+                        color: '#fff',
+                        fontWeight: 750,
+                        cursor: deletingId === p.id ? 'default' : 'pointer',
+                        opacity: deletingId === p.id ? 0.7 : 1,
+                      }}
+                    >
+                      {deletingId === p.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-
-          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, background: 'rgba(255,255,255,0.03)', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-              <div style={{ fontWeight: 850, fontSize: 16 }}>{selectedId ? 'Edit Preset' : 'New Preset'}</div>
+        ) : (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={closeEdit}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Back to Presets
+              </button>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 {selectedId ? (
                   <button
                     type="button"
-                    onClick={archive}
-                    disabled={deleting}
+                    onClick={() => deletePreset(selectedId)}
+                    disabled={deletingId === selectedId || saving}
                     style={{
                       padding: '8px 12px',
                       borderRadius: 10,
@@ -341,11 +463,11 @@ export default function ScreenTitlePresetsPage() {
                       background: 'rgba(255,155,155,0.08)',
                       color: '#fff',
                       fontWeight: 750,
-                      cursor: deleting ? 'default' : 'pointer',
-                      opacity: deleting ? 0.7 : 1,
+                      cursor: deletingId === selectedId ? 'default' : 'pointer',
+                      opacity: deletingId === selectedId ? 0.7 : 1,
                     }}
                   >
-                    {deleting ? 'Archiving…' : 'Archive'}
+                    {deletingId === selectedId ? 'Deleting…' : 'Delete'}
                   </button>
                 ) : null}
                 <button
@@ -368,7 +490,9 @@ export default function ScreenTitlePresetsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, background: 'rgba(255,255,255,0.03)', padding: 14, marginTop: 12 }}>
+              <div style={{ fontWeight: 850, fontSize: 16, marginBottom: 12 }}>{selectedId ? 'Edit Preset' : 'New Preset'}</div>
+              <div style={{ display: 'grid', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontWeight: 750 }}>Name</div>
                 <input
@@ -713,7 +837,8 @@ export default function ScreenTitlePresetsPage() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
