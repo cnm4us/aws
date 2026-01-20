@@ -608,8 +608,12 @@ export default function CreateVideo() {
         pointerId: number
         startClientX: number
         startClientY?: number
+        // For trims: these are source-time bounds (seconds in the file)
         startStartSeconds: number
         startEndSeconds: number
+        // For trims: the timeline-time bounds at drag start (used to keep the opposite edge fixed)
+        startTimelineStartSeconds?: number
+        startTimelineEndSeconds?: number
         maxDurationSeconds: number
         // For move (timeline placement)
         minStartSeconds?: number
@@ -8040,36 +8044,64 @@ export default function CreateVideo() {
 	            next[idx] = { ...c, startSeconds: startTimeline }
 	            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
 		          } else {
-	            let startS = c.sourceStartSeconds
-	            let endS = c.sourceEndSeconds
-	            const maxTimelineDur = drag.maxTimelineDurationSeconds != null ? Number(drag.maxTimelineDurationSeconds) : Number.POSITIVE_INFINITY
-	            if (drag.edge === 'start') {
-	              startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), 0, Math.max(0, drag.startEndSeconds - minLen))
-	              if (Number.isFinite(maxTimelineDur) && maxTimelineDur > 0) {
-	                const maxSourceDur = Math.max(minLen, roundToTenth(maxTimelineDur))
-	                startS = Math.max(startS, roundToTenth(drag.startEndSeconds - maxSourceDur))
-	              }
-	            } else {
-	              endS = clamp(
-	                roundToTenth(drag.startEndSeconds + deltaSeconds),
-	                Math.max(0, drag.startStartSeconds + minLen),
-	                drag.maxDurationSeconds
-	              )
-	              if (Number.isFinite(maxTimelineDur) && maxTimelineDur > 0) {
-	                const maxSourceDur = Math.max(minLen, roundToTenth(maxTimelineDur))
-	                endS = Math.min(endS, roundToTenth(drag.startStartSeconds + maxSourceDur))
-	              }
-	              endS = Math.max(endS, startS + minLen)
-	            }
+		            // Trimming clips edits the source-time window, and can also affect the timeline start when trimming the start edge.
+		            // `startS/endS` are source-time seconds; `timelineStartS` is timeline-time seconds.
+		            let timelineStartS = roundToTenth(Number((c as any).startSeconds || 0))
+		            let startS = roundToTenth(Number(c.sourceStartSeconds || 0))
+		            let endS = roundToTenth(Number(c.sourceEndSeconds || 0))
+
+		            const maxTimelineDur = drag.maxTimelineDurationSeconds != null ? Number(drag.maxTimelineDurationSeconds) : Number.POSITIVE_INFINITY
+
+		            if (drag.edge === 'start') {
+		              // Behave like narration: moving the start edge shifts the clip on the timeline AND
+		              // shifts the sourceStartSeconds by the same delta, keeping the timeline end fixed.
+		              const startTimeline0 =
+		                drag.startTimelineStartSeconds != null && Number.isFinite(Number(drag.startTimelineStartSeconds))
+		                  ? roundToTenth(Number(drag.startTimelineStartSeconds))
+		                  : timelineStartS
+		              const endTimeline0 =
+		                drag.startTimelineEndSeconds != null && Number.isFinite(Number(drag.startTimelineEndSeconds))
+		                  ? roundToTenth(Number(drag.startTimelineEndSeconds))
+		                  : roundToTenth(startTimeline0 + Math.max(minLen, roundToTenth(Number(drag.startEndSeconds || 0) - Number(drag.startStartSeconds || 0))))
+
+		              const minStartByPrev =
+		                drag.minStartSeconds != null && Number.isFinite(Number(drag.minStartSeconds)) ? Number(drag.minStartSeconds) : 0
+		              const minStartBySource = roundToTenth(startTimeline0 - roundToTenth(Number(drag.startStartSeconds || 0)))
+		              const minStartTimeline = Math.max(0, roundToTenth(Math.max(minStartByPrev, minStartBySource)))
+		              const maxStartTimeline = roundToTenth(Math.max(minStartTimeline, endTimeline0 - minLen))
+
+		              timelineStartS = clamp(roundToTenth(startTimeline0 + deltaSeconds), minStartTimeline, maxStartTimeline)
+		              const deltaTimeline = roundToTenth(timelineStartS - startTimeline0)
+		              startS = clamp(
+		                roundToTenth(Number(drag.startStartSeconds || 0) + deltaTimeline),
+		                0,
+		                Math.max(0, roundToTenth(Number(drag.startEndSeconds || 0) - minLen))
+		              )
+		              // Keep the end fixed (sourceEnd stays anchored to drag.startEndSeconds).
+		              endS = roundToTenth(Number(drag.startEndSeconds || endS))
+		            } else {
+		              // Trimming the end edge keeps the timeline start fixed and adjusts sourceEndSeconds.
+		              startS = roundToTenth(Number(drag.startStartSeconds || startS))
+		              endS = clamp(
+		                roundToTenth(drag.startEndSeconds + deltaSeconds),
+		                Math.max(0, Number(drag.startStartSeconds || startS) + minLen),
+		                drag.maxDurationSeconds
+		              )
+		              if (Number.isFinite(maxTimelineDur) && maxTimelineDur > 0) {
+		                const maxSourceDur = Math.max(minLen, roundToTenth(maxTimelineDur))
+		                endS = Math.min(endS, roundToTenth(Number(drag.startStartSeconds || startS) + maxSourceDur))
+		              }
+		              endS = Math.max(endS, startS + minLen)
+		            }
 
 	            // Safety valve: trimming that extends duration must never overlap the next base-track segment
 	            // (including freeze-frame stills). We already constrain at pointerdown-time, but this keeps
 	            // behavior correct if nearby items change while dragging.
-	            const clipStartTimeline = roundToTenth(Number((c as any).startSeconds || 0))
-	            if (Number.isFinite(clipStartTimeline)) {
-	              const otherBaseStarts: number[] = []
-	              for (let i = 0; i < next.length; i++) {
-	                if (i === idx) continue
+		            const clipStartTimeline = roundToTenth(timelineStartS)
+		            if (Number.isFinite(clipStartTimeline)) {
+		              const otherBaseStarts: number[] = []
+		              for (let i = 0; i < next.length; i++) {
+		                if (i === idx) continue
 	                const s = roundToTenth(Number((next[i] as any).startSeconds || 0))
 	                if (Number.isFinite(s) && s > clipStartTimeline + 1e-6) otherBaseStarts.push(s)
 	              }
@@ -8079,23 +8111,36 @@ export default function CreateVideo() {
 	              }
 	              const nextBaseStart =
 	                otherBaseStarts.length > 0 ? otherBaseStarts.reduce((min, v) => (v < min ? v : min), Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY
-	              if (Number.isFinite(nextBaseStart) && nextBaseStart < Number.POSITIVE_INFINITY) {
-	                const maxDur = roundToTenth(Math.max(minLen, nextBaseStart - clipStartTimeline))
-	                const curDur = roundToTenth(Math.max(minLen, endS - startS))
-	                if (curDur > maxDur + 1e-6) {
-	                  if (drag.edge === 'start') {
-	                    startS = roundToTenth(endS - maxDur)
-	                    startS = clamp(startS, 0, Math.max(0, endS - minLen))
-	                  } else {
-	                    endS = roundToTenth(startS + maxDur)
-	                    endS = Math.max(endS, startS + minLen)
-	                  }
-	                }
-	              }
-	            }
+		              if (Number.isFinite(nextBaseStart) && nextBaseStart < Number.POSITIVE_INFINITY) {
+		                const maxDur = roundToTenth(Math.max(minLen, nextBaseStart - clipStartTimeline))
+		                const curDur = roundToTenth(Math.max(minLen, endS - startS))
+		                if (curDur > maxDur + 1e-6) {
+		                  if (drag.edge === 'start') {
+		                    startS = roundToTenth(endS - maxDur)
+		                    startS = clamp(startS, 0, Math.max(0, endS - minLen))
+		                    // Adjust timeline start to preserve the fixed end when the safety valve clamps duration.
+		                    const endTimeline0 =
+		                      drag.startTimelineEndSeconds != null && Number.isFinite(Number(drag.startTimelineEndSeconds))
+		                        ? roundToTenth(Number(drag.startTimelineEndSeconds))
+		                        : roundToTenth(
+		                            (drag.startTimelineStartSeconds != null && Number.isFinite(Number(drag.startTimelineStartSeconds))
+		                              ? Number(drag.startTimelineStartSeconds)
+		                              : timelineStartS) +
+		                              Math.max(minLen, roundToTenth(Number(drag.startEndSeconds || 0) - Number(drag.startStartSeconds || 0)))
+		                          )
+		                    const newDur = roundToTenth(Math.max(minLen, endS - startS))
+		                    timelineStartS = roundToTenth(Math.max(0, endTimeline0 - newDur))
+		                  } else {
+		                    endS = roundToTenth(startS + maxDur)
+		                    endS = Math.max(endS, startS + minLen)
+		                  }
+		                }
+		              }
+		            }
 
-	            next[idx] = { ...c, sourceStartSeconds: startS, sourceEndSeconds: endS }
-	          }
+		            next[idx] = { ...c, startSeconds: roundToTenth(timelineStartS), sourceStartSeconds: startS, sourceEndSeconds: endS }
+		            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+		          }
           const nextTimeline: any = { ...prev, clips: next }
           const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
           const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
@@ -9760,22 +9805,26 @@ export default function CreateVideo() {
                   }))
                   const ranges = [...clipRanges, ...stillRanges].sort((a, b) => a.start - b.start || String(a.id).localeCompare(String(b.id)))
                   const pos = ranges.findIndex((r) => r.id === `clip:${String(clip.id)}`)
-                  const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
-                  const maxTimelineDurationSeconds = clamp(roundToTenth(nextStart - start), 0.2, capEnd)
-                  trimDragRef.current = {
-                    kind: 'clip',
-                    clipId: clip.id,
-                    edge: nearLeft ? 'start' : 'end',
-                    pointerId: e.pointerId,
-                    startClientX: e.clientX,
-                    startClientY: e.clientY,
-                    startStartSeconds: clip.sourceStartSeconds,
-                    startEndSeconds: clip.sourceEndSeconds,
-                    maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
-                    maxTimelineDurationSeconds,
-                    armed: true,
-                    moved: false,
-                  }
+	                  const prevEnd = pos > 0 ? Number(ranges[pos - 1].end || 0) : 0
+	                  const nextStart = pos >= 0 && pos < ranges.length - 1 ? Number(ranges[pos + 1].start || capEnd) : capEnd
+	                  const maxTimelineDurationSeconds = clamp(roundToTenth(nextStart - start), 0.2, capEnd)
+	                  trimDragRef.current = {
+	                    kind: 'clip',
+	                    clipId: clip.id,
+	                    edge: nearLeft ? 'start' : 'end',
+	                    pointerId: e.pointerId,
+	                    startClientX: e.clientX,
+	                    startClientY: e.clientY,
+	                    startStartSeconds: clip.sourceStartSeconds,
+	                    startEndSeconds: clip.sourceEndSeconds,
+	                    startTimelineStartSeconds: roundToTenth(start),
+	                    startTimelineEndSeconds: roundToTenth(start + len),
+	                    maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
+	                    maxTimelineDurationSeconds,
+	                    minStartSeconds: clamp(roundToTenth(prevEnd), 0, capEnd),
+	                    armed: true,
+	                    moved: false,
+	                  }
                   try { sc.setPointerCapture(e.pointerId) } catch {}
                   dbg('armTrimDrag', { kind: 'clip', edge: nearLeft ? 'start' : 'end', id: clip.id })
                   return
