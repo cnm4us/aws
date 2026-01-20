@@ -12406,10 +12406,8 @@ export default function CreateVideo() {
                     </div>
 
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames</div>
+                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                        <div style={{ color: '#bbb', fontSize: 13, paddingBottom: 10, minWidth: 180 }}>Duration: 2.0s</div>
-
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
                           <button
                             type="button"
