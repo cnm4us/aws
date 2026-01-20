@@ -12410,7 +12410,7 @@ export default function CreateVideo() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                         <div style={{ color: '#bbb', fontSize: 13, paddingBottom: 10, minWidth: 180 }}>Duration: 2.0s</div>
 
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
                           <button
                             type="button"
                             disabled={freezeInsertBusy}
@@ -12426,7 +12426,7 @@ export default function CreateVideo() {
                               opacity: freezeInsertBusy ? 0.6 : 1,
                             }}
                           >
-                            Insert first-frame freeze
+                            First Frame
                           </button>
                           <button
                             type="button"
@@ -12443,7 +12443,7 @@ export default function CreateVideo() {
                               opacity: freezeInsertBusy ? 0.6 : 1,
                             }}
                           >
-                            Insert last-frame freeze
+                            Last Frame
                           </button>
                         </div>
                       </div>
