@@ -638,7 +638,9 @@ export default function CreateVideo() {
     (tl: Timeline): string => {
       try {
         // Ignore playhead for history reconciliation: scrubbing shouldn't invalidate undo/redo persistence.
-        const normalized: any = { ...(tl as any), playheadSeconds: 0 }
+        // Also normalize key order by hashing the cloned/normalized shape.
+        const normalized: any = cloneTimeline(tl as any)
+        normalized.playheadSeconds = 0
         return hashString(JSON.stringify(normalized))
       } catch {
         return ''
