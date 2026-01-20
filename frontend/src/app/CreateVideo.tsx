@@ -652,7 +652,7 @@ export default function CreateVideo() {
     (opts?: { timelineOverride?: Timeline }) => {
       if (!historyKey) return
       try {
-        const currentTimeline = opts?.timelineOverride ? cloneTimeline(opts.timelineOverride) : cloneTimeline({ ...(timeline as any), playheadSeconds: playhead } as any)
+        const currentTimeline = opts?.timelineOverride ? cloneTimeline(opts.timelineOverride) : cloneTimeline(timeline)
         const payload = {
           v: 1,
           timelineHash: computeTimelineHash(currentTimeline),
@@ -664,7 +664,7 @@ export default function CreateVideo() {
         // ignore
       }
     },
-    [computeTimelineHash, historyKey, playhead, timeline]
+    [computeTimelineHash, historyKey, timeline]
   )
 
   const persistHistorySoon = useCallback(() => {
