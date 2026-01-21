@@ -658,6 +658,128 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
+                  <select
+                    value={draft.position}
+                    onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value as any }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="top">Top</option>
+                    <option value="middle">Middle</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Alignment</div>
+                  <select
+                    value={draft.alignment}
+                    onChange={(e) => setDraft((d) => ({ ...d, alignment: e.target.value as any }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Max width (%)</div>
+                  <input
+                    type="number"
+                    min={10}
+                    max={100}
+                    value={draft.maxWidthPct}
+                    onChange={(e) => setDraft((d) => ({ ...d, maxWidthPct: Number(e.target.value) }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Inset X</div>
+                  <select
+                    value={draft.insetXPreset || ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, insetXPreset: (e.target.value || null) as any }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">Auto</option>
+                    {INSET_PRESETS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {draft.position !== 'middle' ? (
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Inset Y</div>
+                    <select
+                      value={draft.insetYPreset || ''}
+                      onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">Auto</option>
+                      {INSET_PRESETS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Font family</div>
                   <select
                     value={selectedFontFamily.familyKey}
@@ -711,7 +833,7 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font size (% of frame height)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font size</div>
                   <input
                     type="number"
                     step="0.1"
@@ -737,7 +859,7 @@ export default function ScreenTitlePresetsPage() {
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Character spacing (%)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Character spacing</div>
                   <input
                     type="number"
                     step="1"
@@ -761,7 +883,9 @@ export default function ScreenTitlePresetsPage() {
                     }}
                   />
                 </label>
+              </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Font color</div>
                   <input
@@ -773,7 +897,7 @@ export default function ScreenTitlePresetsPage() {
                       height: 44,
                       maxWidth: '100%',
                       boxSizing: 'border-box',
-                      padding: '6px 8px',
+                      padding: 0,
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
                       background: '#0c0c0c',
@@ -790,9 +914,10 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, fontGradientKey: e.target.value ? e.target.value : null }))}
                     style={{
                       width: '100%',
+                      height: 44,
                       maxWidth: '100%',
                       boxSizing: 'border-box',
-                      padding: '10px 12px',
+                      padding: '0 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
                       background: '#0c0c0c',
@@ -805,9 +930,6 @@ export default function ScreenTitlePresetsPage() {
                       <option key={g.key} value={g.key}>{g.label || g.key}</option>
                     ))}
                   </select>
-                  <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
-                    Gradient fills the text; the rest of the PNG stays transparent.
-                  </div>
                 </label>
               </div>
 
@@ -986,77 +1108,9 @@ export default function ScreenTitlePresetsPage() {
                     <option value="strip">Strip</option>
                   </select>
                 </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Alignment</div>
-                  <select
-                    value={draft.alignment}
-                    onChange={(e) => setDraft((d) => ({ ...d, alignment: e.target.value as any }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
-                  <select
-                    value={draft.position}
-                    onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value as any }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                  </select>
-                </label>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Max width (%)</div>
-                  <input
-                    type="number"
-                    min={10}
-                    max={100}
-                    value={draft.maxWidthPct}
-                    onChange={(e) => setDraft((d) => ({ ...d, maxWidthPct: Number(e.target.value) }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  />
-                </label>
-
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Fade</div>
                   <select
@@ -1080,58 +1134,6 @@ export default function ScreenTitlePresetsPage() {
                     <option value="in_out">Fade in + out</option>
                   </select>
                 </label>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Inset X</div>
-                  <select
-                    value={draft.insetXPreset || ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, insetXPreset: (e.target.value || null) as any }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="">Auto</option>
-                    {INSET_PRESETS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {draft.position !== 'middle' ? (
-                  <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Inset Y</div>
-                    <select
-                      value={draft.insetYPreset || ''}
-                      onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="">Auto</option>
-                      {INSET_PRESETS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
               </div>
 
               <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>
