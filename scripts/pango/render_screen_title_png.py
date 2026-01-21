@@ -309,18 +309,19 @@ def main():
   else:
     layout.set_alignment(Pango.Alignment.CENTER)
   # Clamp to N lines so the text box always fits within the vertical margins.
-  # (Pango line-height is font-dependent; we use a conservative approximation.)
+  # We start with a conservative approximation, then tighten using actual
+  # rendered extents to avoid the last line being clipped by the frame edge.
   margin_top_px0 = pct_to_px(margin_top_pct, width)
   margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
   max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
   max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0))
-  approx_line_h0 = max(1.0, font_px * 1.20)
+  approx_line_h0 = max(1.0, font_px * 1.35)
   max_lines0 = int(max_layout_h_allowed0 / approx_line_h0)
   if max_lines0 < 1:
     max_lines0 = 1
   if max_lines0 > 30:
     max_lines0 = 30
-  layout.set_height(-max_lines0)
+
   layout.set_ellipsize(Pango.EllipsizeMode.END)
 
   # Text shaping on by default; allow \n.
@@ -342,7 +343,19 @@ def main():
     except Exception:
       pass
 
-  ink, logical = layout.get_pixel_extents()
+  # Tighten the line clamp until the full box (including stroke/shadow/padding)
+  # fits within the available height.
+  ink = None
+  logical = None
+  for lines in range(max_lines0, 0, -1):
+    layout.set_height(-lines)
+    ink, logical = layout.get_pixel_extents()
+    content_h0 = float(ink.height) if ink.height > 0 else float(logical.height)
+    box_h0 = content_h0 + 2.0 * (pad_y0 + stroke_pad0) + abs(shadow_dy0)
+    if box_h0 <= max_box_h_allowed0 + 0.5:
+      break
+  if ink is None or logical is None:
+    ink, logical = layout.get_pixel_extents()
   # Prefer ink extents for sizing backgrounds (pill) so we don't clip glyphs.
   # logical extents can undercount depending on font metrics / stroke / layout alignment.
   content_x = float(ink.x)
