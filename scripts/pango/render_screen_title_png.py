@@ -349,10 +349,13 @@ def main():
   shadow_dx = 0.0
   shadow_dy = 2.0
 
+  # Margins are expressed as pct-of-width for both axes so that a given numeric
+  # value yields a visually similar pixel margin horizontally and vertically
+  # across portrait/landscape and different aspect ratios.
   margin_left_px = pct_to_px(margin_left_pct, width)
   margin_right_px = pct_to_px(margin_right_pct, width)
-  margin_top_px = pct_to_px(margin_top_pct, height)
-  margin_bottom_px = pct_to_px(margin_bottom_pct, height)
+  margin_top_px = pct_to_px(margin_top_pct, width)
+  margin_bottom_px = pct_to_px(margin_bottom_pct, width)
 
   # Compute a bounding box in layout coordinates that should fit on-screen.
   box_x0 = content_x - pad_x - stroke_pad

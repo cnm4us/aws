@@ -145,6 +145,11 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
   }
 }
 
+// Margin inputs are treated as pixels at a baseline 1080px-wide frame (even for vertical),
+// and converted to pct-of-width for storage/rendering so equal numeric values look
+// visually comparable in X and Y.
+const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
+
 function positionLabel(p: ScreenTitlePosition): string {
   if (p === 'top') return 'Top'
   if (p === 'middle') return 'Middle'
@@ -734,18 +739,28 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Horizontal margin (%)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Horizontal margin (px)</div>
                   <input
                     type="number"
-                    step="0.5"
+                    step="1"
                     min={0}
-                    max={40}
-                    value={(draft.marginLeftPct ?? draft.marginRightPct) == null ? '' : String(draft.marginLeftPct ?? draft.marginRightPct)}
+                    max={Math.round((40 / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)}
+                    value={
+                      (draft.marginLeftPct ?? draft.marginRightPct) == null
+                        ? ''
+                        : String(
+                            Math.round(
+                              (((draft.marginLeftPct ?? draft.marginRightPct) as number) / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX,
+                            ),
+                          )
+                    }
                     onChange={(e) => {
                       const raw = e.target.value
                       const n = raw ? Number(raw) : null
                       setDraft((d) => {
-                        const horizontalMarginPct = n != null && Number.isFinite(n) ? n : null
+                        const px = n != null && Number.isFinite(n) ? n : null
+                        const horizontalMarginPct =
+                          px != null ? Math.round(((px / SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX) * 100) * 100) / 100 : null
                         const derivedMax =
                           horizontalMarginPct != null
                             ? Math.round(Math.min(Math.max(100 - horizontalMarginPct - horizontalMarginPct, 10), 100))
@@ -774,17 +789,27 @@ export default function ScreenTitlePresetsPage() {
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Vertical margin (%)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Vertical margin (px)</div>
                   <input
                     type="number"
-                    step="0.5"
+                    step="1"
                     min={0}
-                    max={40}
-                    value={(draft.marginTopPct ?? draft.marginBottomPct) == null ? '' : String(draft.marginTopPct ?? draft.marginBottomPct)}
+                    max={Math.round((40 / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)}
+                    value={
+                      (draft.marginTopPct ?? draft.marginBottomPct) == null
+                        ? ''
+                        : String(
+                            Math.round(
+                              (((draft.marginTopPct ?? draft.marginBottomPct) as number) / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX,
+                            ),
+                          )
+                    }
                     onChange={(e) => {
                       const raw = e.target.value
                       const n = raw ? Number(raw) : null
-                      const verticalMarginPct = n != null && Number.isFinite(n) ? n : null
+                      const px = n != null && Number.isFinite(n) ? n : null
+                      const verticalMarginPct =
+                        px != null ? Math.round(((px / SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX) * 100) * 100) / 100 : null
                       setDraft((d) => ({
                         ...d,
                         marginTopPct: verticalMarginPct,
