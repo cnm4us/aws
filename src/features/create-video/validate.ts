@@ -737,9 +737,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const textRaw = (st as any).text
     const text = textRaw == null ? '' : String(textRaw)
-    if (text.length > 400) throw new ValidationError('invalid_screen_title_text')
+    if (text.length > 800) throw new ValidationError('invalid_screen_title_text')
     const lines = text.split(/\r?\n/)
-    if (lines.length > 12) throw new ValidationError('invalid_screen_title_text')
+    if (lines.length > 24) throw new ValidationError('invalid_screen_title_text')
 
     const renderUploadIdRaw = (st as any).renderUploadId
     const renderUploadId = renderUploadIdRaw == null ? null : Number(renderUploadIdRaw)

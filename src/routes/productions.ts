@@ -20,7 +20,7 @@ const createProductionSchema = z.object({
   lowerThirdUploadId: z.union([z.number().int().positive(), z.null()]).optional(),
   lowerThirdConfigId: z.union([z.number().int().positive(), z.null()]).optional(),
   screenTitlePresetId: z.union([z.number().int().positive(), z.null()]).optional(),
-  screenTitleText: z.union([z.string().max(400), z.null()]).optional(),
+  screenTitleText: z.union([z.string().max(800), z.null()]).optional(),
   profile: z.string().optional(),
   quality: z.string().optional(),
   sound: z.string().optional(),
