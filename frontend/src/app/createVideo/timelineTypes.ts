@@ -102,17 +102,27 @@ export type Narration = {
 export type ScreenTitlePresetSnapshot = {
   id: number
   name: string
-  style: 'pill' | 'outline' | 'strip'
+  // Legacy: some stored timelines may still contain style='outline' (used to mean "no background + outline").
+  style: 'none' | 'pill' | 'strip' | 'outline'
   fontKey: string
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment?: 'left' | 'center' | 'right'
   position: 'top' | 'middle' | 'bottom'
   maxWidthPct: number
   insetXPreset: 'small' | 'medium' | 'large' | null
   insetYPreset: 'small' | 'medium' | 'large' | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   fade: 'none' | 'in' | 'out' | 'in_out'
 }
 

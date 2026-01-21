@@ -283,13 +283,13 @@ export async function ensureSchema(db: DB) {
 				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
 
 	          // --- Screen titles (plan_47) ---
-          await db.query(`
+	          await db.query(`
             CREATE TABLE IF NOT EXISTS screen_title_presets (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
               owner_user_id BIGINT UNSIGNED NOT NULL,
               name VARCHAR(120) NOT NULL,
               description TEXT NULL,
-              style ENUM('pill','outline','strip') NOT NULL DEFAULT 'pill',
+              style ENUM('none','pill','strip') NOT NULL DEFAULT 'pill',
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
               tracking_pct TINYINT NOT NULL DEFAULT 0,
@@ -298,9 +298,15 @@ export async function ensureSchema(db: DB) {
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
               alignment ENUM('left','center','right') NOT NULL DEFAULT 'center',
               position ENUM('top','middle','bottom') NOT NULL DEFAULT 'top',
+              -- Deprecated: max_width_pct + inset_* were used to approximate a "safe area" and wrap width.
+              -- We now use explicit margins (pct of frame) and derive wrap width from left/right margins.
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
               inset_y_preset VARCHAR(16) NULL,
+              margin_left_pct DECIMAL(5,2) NULL,
+              margin_right_pct DECIMAL(5,2) NULL,
+              margin_top_pct DECIMAL(5,2) NULL,
+              margin_bottom_pct DECIMAL(5,2) NULL,
               timing_rule ENUM('entire','first_only') NOT NULL DEFAULT 'first_only',
               timing_seconds INT UNSIGNED NULL,
               fade ENUM('none','in','out','in_out') NOT NULL DEFAULT 'out',
@@ -317,6 +323,100 @@ export async function ensureSchema(db: DB) {
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
 	          // Optional text gradient fill (PNG key under assets/font_gradients).
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_gradient_key VARCHAR(128) NULL`);
+	          // Optional outline controls (width as % of font size, opacity %, and color (NULL/'auto'/#rrggbb)).
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS outline_width_pct DECIMAL(5,2) NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS outline_opacity_pct TINYINT UNSIGNED NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS outline_color VARCHAR(32) NULL`);
+
+	          // New: explicit margins (pct of frame).
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS margin_left_pct DECIMAL(5,2) NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS margin_right_pct DECIMAL(5,2) NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS margin_top_pct DECIMAL(5,2) NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS margin_bottom_pct DECIMAL(5,2) NULL`);
+
+	          // Plan: migrate style enum from (pill/outline/strip) to background (none/pill/strip).
+	          // Preserve old "outline" behavior by backfilling explicit outline settings before conversion.
+	          try {
+	            const [styleRows] = await db.query(
+	              `SELECT COLUMN_TYPE
+	                 FROM INFORMATION_SCHEMA.COLUMNS
+	                WHERE TABLE_SCHEMA = DATABASE()
+	                  AND TABLE_NAME = 'screen_title_presets'
+	                  AND COLUMN_NAME = 'style'
+	                LIMIT 1`
+	            )
+	            const styleType = (styleRows as any[])[0]?.COLUMN_TYPE
+	            if (typeof styleType === 'string' && styleType.includes("'outline'") && !styleType.includes("'none'")) {
+	              // Backfill outline defaults for legacy outline presets.
+	              try {
+	                await db.query(
+	                  `UPDATE screen_title_presets
+	                      SET outline_width_pct = COALESCE(outline_width_pct, 1.20),
+	                          outline_opacity_pct = COALESCE(outline_opacity_pct, 45),
+	                          outline_color = NULL
+	                    WHERE style = 'outline'`
+	                )
+	              } catch {}
+	              // Widen to VARCHAR to allow re-mapping values.
+	              await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN style VARCHAR(16) NOT NULL DEFAULT 'pill'`)
+	              await db.query(`UPDATE screen_title_presets SET style = 'none' WHERE style = 'outline'`)
+	              await db.query(
+	                `ALTER TABLE screen_title_presets
+	                   MODIFY COLUMN style ENUM('none','pill','strip')
+	                   NOT NULL DEFAULT 'pill'`
+	              )
+	            }
+	          } catch {}
+
+	          // Backfill margins from legacy insets when missing.
+	          try {
+	            await db.query(
+	              `UPDATE screen_title_presets
+	                  SET margin_left_pct = CASE COALESCE(inset_x_preset,'')
+	                    WHEN 'small' THEN 6.00
+	                    WHEN 'large' THEN 14.00
+	                    WHEN 'medium' THEN 10.00
+	                    ELSE 10.00
+	                  END
+	                WHERE margin_left_pct IS NULL`
+	            )
+	          } catch {}
+	          try {
+	            await db.query(
+	              `UPDATE screen_title_presets
+	                  SET margin_right_pct = CASE COALESCE(inset_x_preset,'')
+	                    WHEN 'small' THEN 6.00
+	                    WHEN 'large' THEN 14.00
+	                    WHEN 'medium' THEN 10.00
+	                    ELSE 10.00
+	                  END
+	                WHERE margin_right_pct IS NULL`
+	            )
+	          } catch {}
+	          try {
+	            await db.query(
+	              `UPDATE screen_title_presets
+	                  SET margin_top_pct = CASE COALESCE(inset_y_preset,'')
+	                    WHEN 'small' THEN 6.00
+	                    WHEN 'large' THEN 14.00
+	                    WHEN 'medium' THEN 10.00
+	                    ELSE 10.00
+	                  END
+	                WHERE margin_top_pct IS NULL`
+	            )
+	          } catch {}
+	          try {
+	            await db.query(
+	              `UPDATE screen_title_presets
+	                  SET margin_bottom_pct = CASE COALESCE(inset_y_preset,'')
+	                    WHEN 'small' THEN 6.00
+	                    WHEN 'large' THEN 14.00
+	                    WHEN 'medium' THEN 10.00
+	                    ELSE 10.00
+	                  END
+	                WHERE margin_bottom_pct IS NULL`
+	            )
+	          } catch {}
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
           // Plan: screen title text alignment (left/center/right).

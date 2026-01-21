@@ -169,13 +169,22 @@ type ScreenTitlePreset = {
   id: number
   name: string
   description?: string | null
-  style: 'pill' | 'outline' | 'strip'
+  style: 'none' | 'pill' | 'outline' | 'strip'
   fontKey: string
   fontSizePct?: number
   trackingPct?: number
   fontColor?: string
+  fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   pillBgColor?: string
   pillBgOpacityPct?: number
+  alignment?: 'left' | 'center' | 'right'
   position: 'top' | 'middle' | 'bottom' | 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right'
   maxWidthPct: number
   insetXPreset?: InsetPreset | null

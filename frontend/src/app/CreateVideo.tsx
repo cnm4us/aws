@@ -4930,11 +4930,11 @@ export default function CreateVideo() {
       const snapshot: any = {
         id: presetId,
         name: String((preset as any).name || ''),
-        style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+        style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
           ? 'pill'
-          : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+          : String((preset as any).style || 'none').toLowerCase() === 'strip'
             ? 'strip'
-            : 'outline') as any,
+            : 'none') as any,
         fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
         fontSizePct: Number((preset as any).fontSizePct),
         trackingPct: Number((preset as any).trackingPct),
@@ -8665,11 +8665,11 @@ export default function CreateVideo() {
       const snapshot: any = {
       id: presetId,
       name: String((preset as any).name || `Preset ${presetId}`),
-      style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+      style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
         ? 'pill'
-        : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+        : String((preset as any).style || 'none').toLowerCase() === 'strip'
           ? 'strip'
-          : 'outline') as any,
+          : 'none') as any,
       fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
       fontSizePct: Number((preset as any).fontSizePct),
       trackingPct: Number((preset as any).trackingPct),
@@ -8790,11 +8790,11 @@ export default function CreateVideo() {
           ? {
               id: presetId,
               name: String((preset as any).name || `Preset ${presetId}`),
-              style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
+              style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
                 ? 'pill'
-                : String((preset as any).style || 'outline').toLowerCase() === 'strip'
+                : String((preset as any).style || 'none').toLowerCase() === 'strip'
                   ? 'strip'
-                  : 'outline') as any,
+                  : 'none') as any,
               fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
               fontSizePct: Number((preset as any).fontSizePct),
               trackingPct: Number((preset as any).trackingPct),

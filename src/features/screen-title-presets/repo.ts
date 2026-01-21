@@ -35,6 +35,13 @@ export async function create(input: {
   trackingPct: number
   fontColor: string
   fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: string
@@ -49,8 +56,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO screen_title_presets
-      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, font_gradient_key, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, font_gradient_key, outline_width_pct, outline_opacity_pct, outline_color, margin_left_pct, margin_right_pct, margin_top_pct, margin_bottom_pct, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -61,6 +68,13 @@ export async function create(input: {
       input.trackingPct,
       input.fontColor,
       input.fontGradientKey ?? null,
+      input.outlineWidthPct ?? null,
+      input.outlineOpacityPct ?? null,
+      input.outlineColor ?? null,
+      input.marginLeftPct ?? null,
+      input.marginRightPct ?? null,
+      input.marginTopPct ?? null,
+      input.marginBottomPct ?? null,
       input.pillBgColor,
       input.pillBgOpacityPct,
       input.alignment,
@@ -88,6 +102,13 @@ export async function update(id: number, patch: {
   trackingPct?: number
   fontColor?: string
   fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   pillBgColor?: string
   pillBgOpacityPct?: number
   alignment?: string
@@ -110,6 +131,13 @@ export async function update(id: number, patch: {
   if (patch.trackingPct !== undefined) { sets.push('tracking_pct = ?'); args.push(patch.trackingPct) }
   if (patch.fontColor !== undefined) { sets.push('font_color = ?'); args.push(patch.fontColor) }
   if (patch.fontGradientKey !== undefined) { sets.push('font_gradient_key = ?'); args.push(patch.fontGradientKey) }
+  if (patch.outlineWidthPct !== undefined) { sets.push('outline_width_pct = ?'); args.push(patch.outlineWidthPct) }
+  if (patch.outlineOpacityPct !== undefined) { sets.push('outline_opacity_pct = ?'); args.push(patch.outlineOpacityPct) }
+  if (patch.outlineColor !== undefined) { sets.push('outline_color = ?'); args.push(patch.outlineColor) }
+  if (patch.marginLeftPct !== undefined) { sets.push('margin_left_pct = ?'); args.push(patch.marginLeftPct) }
+  if (patch.marginRightPct !== undefined) { sets.push('margin_right_pct = ?'); args.push(patch.marginRightPct) }
+  if (patch.marginTopPct !== undefined) { sets.push('margin_top_pct = ?'); args.push(patch.marginTopPct) }
+  if (patch.marginBottomPct !== undefined) { sets.push('margin_bottom_pct = ?'); args.push(patch.marginBottomPct) }
   if (patch.pillBgColor !== undefined) { sets.push('pill_bg_color = ?'); args.push(patch.pillBgColor) }
   if (patch.pillBgOpacityPct !== undefined) { sets.push('pill_bg_opacity_pct = ?'); args.push(patch.pillBgOpacityPct) }
   if (patch.alignment !== undefined) { sets.push('alignment = ?'); args.push(patch.alignment) }

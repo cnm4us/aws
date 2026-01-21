@@ -5,7 +5,7 @@ import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
-const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
+const STYLES: readonly ScreenTitleStyle[] = ['none', 'pill', 'strip']
 const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
@@ -23,6 +23,18 @@ function toInsetPresetOrNull(raw: any): InsetPreset | null {
   return null
 }
 
+function insetPresetToMarginPct(preset: InsetPreset | null): number {
+  if (preset === 'small') return 6
+  if (preset === 'large') return 14
+  return 10
+}
+
+function toNumberOrNull(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
 function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const rawFont = String((row as any).font_key || 'dejavu_sans_bold').trim()
   const fontKey: ScreenTitleFontKey = rawFont && isFontKeyAllowed(rawFont) ? rawFont : 'dejavu_sans_bold'
@@ -35,6 +47,12 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const gradientRaw = (row as any).font_gradient_key
   const fontGradientKey = gradientRaw == null ? null : String(gradientRaw).trim() || null
+  const outlineWidthPctRaw = (row as any).outline_width_pct
+  const outlineWidthPct = outlineWidthPctRaw == null ? null : Number(outlineWidthPctRaw)
+  const outlineOpacityPctRaw = (row as any).outline_opacity_pct
+  const outlineOpacityPct = outlineOpacityPctRaw == null ? null : Number(outlineOpacityPctRaw)
+  const outlineColorRaw = (row as any).outline_color
+  const outlineColor = outlineColorRaw == null ? null : String(outlineColorRaw).trim() || null
   const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
   const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
   const pillBgOpacityPct = Number.isFinite(pillBgOpacityPctRaw) ? pillBgOpacityPctRaw : 55
@@ -45,23 +63,47 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
       : posRaw === 'bottom' || posRaw.startsWith('bottom_')
         ? 'bottom'
         : 'top'
+
+  const insetXPreset = toInsetPresetOrNull((row as any).inset_x_preset)
+  const insetYPreset = toInsetPresetOrNull((row as any).inset_y_preset)
+  const marginLeftPctRaw = toNumberOrNull((row as any).margin_left_pct)
+  const marginRightPctRaw = toNumberOrNull((row as any).margin_right_pct)
+  const marginTopPctRaw = toNumberOrNull((row as any).margin_top_pct)
+  const marginBottomPctRaw = toNumberOrNull((row as any).margin_bottom_pct)
+
+  const marginLeftPct = marginLeftPctRaw == null ? insetPresetToMarginPct(insetXPreset) : marginLeftPctRaw
+  const marginRightPct = marginRightPctRaw == null ? insetPresetToMarginPct(insetXPreset) : marginRightPctRaw
+  const marginTopPct = marginTopPctRaw == null ? insetPresetToMarginPct(insetYPreset) : marginTopPctRaw
+  const marginBottomPct = marginBottomPctRaw == null ? insetPresetToMarginPct(insetYPreset) : marginBottomPctRaw
+
+  const styleRaw = String((row as any).style || 'pill').trim().toLowerCase()
+  const style: ScreenTitleStyle =
+    styleRaw === 'strip' ? 'strip' : styleRaw === 'none' ? 'none' : styleRaw === 'outline' ? 'none' : 'pill'
+
   return {
     id: Number(row.id),
     name: String(row.name || ''),
     description: row.description == null ? null : String(row.description),
-    style: row.style,
+    style,
     fontKey,
     fontSizePct,
     trackingPct,
     fontColor,
     fontGradientKey,
+    outlineWidthPct: outlineWidthPct != null && Number.isFinite(outlineWidthPct) ? outlineWidthPct : null,
+    outlineOpacityPct: outlineOpacityPct != null && Number.isFinite(outlineOpacityPct) ? Math.round(Math.min(Math.max(outlineOpacityPct, 0), 100)) : null,
+    outlineColor,
     pillBgColor,
     pillBgOpacityPct,
     alignment,
     position,
     maxWidthPct: Number((row as any).max_width_pct),
-    insetXPreset: toInsetPresetOrNull((row as any).inset_x_preset),
-    insetYPreset: toInsetPresetOrNull((row as any).inset_y_preset),
+    insetXPreset,
+    insetYPreset,
+    marginLeftPct: Number.isFinite(marginLeftPct) ? marginLeftPct : null,
+    marginRightPct: Number.isFinite(marginRightPct) ? marginRightPct : null,
+    marginTopPct: Number.isFinite(marginTopPct) ? marginTopPct : null,
+    marginBottomPct: Number.isFinite(marginBottomPct) ? marginBottomPct : null,
     timingRule: row.timing_rule,
     timingSeconds: row.timing_seconds == null ? null : Number(row.timing_seconds),
     fade: row.fade,
@@ -155,6 +197,37 @@ function normalizeOpacityPct(raw: any, fallback: number): number {
   return Math.round(Math.min(Math.max(n, 0), 100))
 }
 
+function normalizeOptionalOpacityPct(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n)) throw new DomainError('invalid_outline_opacity', 'invalid_outline_opacity', 400)
+  return Math.round(Math.min(Math.max(n, 0), 100))
+}
+
+function normalizeOutlineWidthPct(raw: any): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 20) throw new DomainError('invalid_outline_width', 'invalid_outline_width', 400)
+  return Math.round(n * 100) / 100
+}
+
+function normalizeOutlineColor(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const s = String(raw).trim()
+  if (!s) return null
+  if (s.toLowerCase() === 'auto') return null
+  const m = s.match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) throw new DomainError('invalid_outline_color', 'invalid_outline_color', 400)
+  return `#${m[1].toLowerCase()}`
+}
+
+function normalizeMarginPct(raw: any, code: string): number | null {
+  if (raw == null || raw === '') return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0 || n > 40) throw new DomainError(code, code, 400)
+  return Math.round(n * 100) / 100
+}
+
 function positionAxes(pos: ScreenTitlePosition): { x: 'center'; y: 'top' | 'middle' | 'bottom' } {
   const y: 'top' | 'middle' | 'bottom' = pos === 'bottom' ? 'bottom' : pos === 'middle' ? 'middle' : 'top'
   return { x: 'center', y }
@@ -194,6 +267,13 @@ export async function createForUser(input: {
   fontSizePct?: any
   trackingPct?: any
   fontColor?: any
+  outlineWidthPct?: any
+  outlineOpacityPct?: any
+  outlineColor?: any
+  marginLeftPct?: any
+  marginRightPct?: any
+  marginTopPct?: any
+  marginBottomPct?: any
   pillBgColor?: any
   pillBgOpacityPct?: any
   alignment?: any
@@ -208,17 +288,32 @@ export async function createForUser(input: {
   if (!userId) throw new ForbiddenError()
   const name = normalizeName(input.name)
   const description = normalizeDescription(input.description)
-  const style: ScreenTitleStyle = isEnumValue(input.style, STYLES) ? input.style : 'pill'
+  const styleRaw = typeof input.style === 'string' ? String(input.style).trim().toLowerCase() : ''
+  const style: ScreenTitleStyle =
+    isEnumValue(styleRaw, STYLES) ? (styleRaw as any) : (styleRaw === 'outline' ? 'none' : 'pill')
   const fontKey: ScreenTitleFontKey = normalizeFontKey(input.fontKey)
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
   const fontColor = normalizeFontColor(input.fontColor)
   const fontGradientKey = normalizeFontGradientKey((input as any).fontGradientKey)
+  const outlineWidthPct = normalizeOutlineWidthPct((input as any).outlineWidthPct)
+  const outlineOpacityPct = normalizeOptionalOpacityPct((input as any).outlineOpacityPct)
+  const outlineColor = normalizeOutlineColor((input as any).outlineColor)
+  const marginLeftPct = normalizeMarginPct((input as any).marginLeftPct, 'invalid_margin_left')
+  const marginRightPct = normalizeMarginPct((input as any).marginRightPct, 'invalid_margin_right')
+  const marginTopPct = normalizeMarginPct((input as any).marginTopPct, 'invalid_margin_top')
+  const marginBottomPct = normalizeMarginPct((input as any).marginBottomPct, 'invalid_margin_bottom')
   const pillBgColor = normalizePillBgColor(input.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
   const alignment: ScreenTitleAlignment = isEnumValue(input.alignment, ALIGNMENTS) ? input.alignment : 'center'
   const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top'
-  const maxWidthPct = normalizePct(input.maxWidthPct ?? 90, 'invalid_max_width', 10, 100)
+  const derivedMaxWidthPct = (() => {
+    if (marginLeftPct == null || marginRightPct == null) return 90
+    const w = 100 - marginLeftPct - marginRightPct
+    if (!Number.isFinite(w)) return 90
+    return Math.round(Math.min(Math.max(w, 10), 100))
+  })()
+  const maxWidthPct = normalizePct(input.maxWidthPct ?? derivedMaxWidthPct, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(input.insetXPreset)
   const rawInsetY = normalizeInsetPreset(input.insetYPreset)
   const coerced = coerceInsetsForPosition(position, rawInsetX, rawInsetY)
@@ -236,8 +331,15 @@ export async function createForUser(input: {
     trackingPct,
     fontColor,
     fontGradientKey,
-    pillBgColor: style === 'pill' ? pillBgColor : '#000000',
-    pillBgOpacityPct: style === 'pill' ? pillBgOpacityPct : 55,
+    outlineWidthPct,
+    outlineOpacityPct,
+    outlineColor,
+    marginLeftPct,
+    marginRightPct,
+    marginTopPct,
+    marginBottomPct,
+    pillBgColor: style === 'pill' || style === 'strip' ? pillBgColor : '#000000',
+    pillBgOpacityPct: style === 'pill' || style === 'strip' ? pillBgOpacityPct : 55,
     alignment,
     position,
     maxWidthPct,
@@ -261,6 +363,13 @@ export async function updateForUser(
     fontSizePct?: any
     trackingPct?: any
     fontColor?: any
+    outlineWidthPct?: any
+    outlineOpacityPct?: any
+    outlineColor?: any
+    marginLeftPct?: any
+    marginRightPct?: any
+    marginTopPct?: any
+    marginBottomPct?: any
     pillBgColor?: any
     pillBgOpacityPct?: any
     alignment?: any
@@ -288,6 +397,13 @@ export async function updateForUser(
     trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
     fontGradientKey: patch.fontGradientKey !== undefined ? patch.fontGradientKey : (existing as any).font_gradient_key,
+    outlineWidthPct: patch.outlineWidthPct !== undefined ? patch.outlineWidthPct : (existing as any).outline_width_pct,
+    outlineOpacityPct: patch.outlineOpacityPct !== undefined ? patch.outlineOpacityPct : (existing as any).outline_opacity_pct,
+    outlineColor: patch.outlineColor !== undefined ? patch.outlineColor : (existing as any).outline_color,
+    marginLeftPct: patch.marginLeftPct !== undefined ? patch.marginLeftPct : (existing as any).margin_left_pct,
+    marginRightPct: patch.marginRightPct !== undefined ? patch.marginRightPct : (existing as any).margin_right_pct,
+    marginTopPct: patch.marginTopPct !== undefined ? patch.marginTopPct : (existing as any).margin_top_pct,
+    marginBottomPct: patch.marginBottomPct !== undefined ? patch.marginBottomPct : (existing as any).margin_bottom_pct,
     pillBgColor: patch.pillBgColor !== undefined ? patch.pillBgColor : (existing as any).pill_bg_color,
     pillBgOpacityPct: patch.pillBgOpacityPct !== undefined ? patch.pillBgOpacityPct : (existing as any).pill_bg_opacity_pct,
     alignment: patch.alignment !== undefined ? patch.alignment : (existing as any).alignment,
@@ -300,18 +416,32 @@ export async function updateForUser(
     fade: patch.fade !== undefined ? patch.fade : existing.fade,
   }
 
+  if (typeof next.style === 'string' && String(next.style).trim().toLowerCase() === 'outline') next.style = 'none'
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   next.fontKey = normalizeFontKey(next.fontKey)
   next.fontGradientKey = normalizeFontGradientKey(next.fontGradientKey)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
   const fontColor = normalizeFontColor(next.fontColor)
+  const outlineWidthPct = normalizeOutlineWidthPct(next.outlineWidthPct)
+  const outlineOpacityPct = normalizeOptionalOpacityPct(next.outlineOpacityPct)
+  const outlineColor = normalizeOutlineColor(next.outlineColor)
+  const marginLeftPct = normalizeMarginPct(next.marginLeftPct, 'invalid_margin_left')
+  const marginRightPct = normalizeMarginPct(next.marginRightPct, 'invalid_margin_right')
+  const marginTopPct = normalizeMarginPct(next.marginTopPct, 'invalid_margin_top')
+  const marginBottomPct = normalizeMarginPct(next.marginBottomPct, 'invalid_margin_bottom')
   const pillBgColor = normalizePillBgColor(next.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(next.pillBgOpacityPct, 55)
   if (!isEnumValue(String(next.alignment || '').toLowerCase(), ALIGNMENTS)) throw new DomainError('invalid_alignment', 'invalid_alignment', 400)
   const alignment: ScreenTitleAlignment = String(next.alignment || 'center').toLowerCase() as any
   if (!isEnumValue(next.position, POSITIONS)) throw new DomainError('invalid_position', 'invalid_position', 400)
-  const maxWidthPct = normalizePct(next.maxWidthPct, 'invalid_max_width', 10, 100)
+  const derivedMaxWidthPct = (() => {
+    if (marginLeftPct == null || marginRightPct == null) return Number(next.maxWidthPct)
+    const w = 100 - marginLeftPct - marginRightPct
+    if (!Number.isFinite(w)) return Number(next.maxWidthPct)
+    return Math.round(Math.min(Math.max(w, 10), 100))
+  })()
+  const maxWidthPct = normalizePct(next.maxWidthPct ?? derivedMaxWidthPct, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(next.insetXPreset)
   const rawInsetY = normalizeInsetPreset(next.insetYPreset)
   const coerced = coerceInsetsForPosition(next.position, rawInsetX, rawInsetY)
@@ -328,8 +458,15 @@ export async function updateForUser(
     trackingPct,
     fontColor,
     fontGradientKey: next.fontGradientKey,
-    pillBgColor: next.style === 'pill' ? pillBgColor : '#000000',
-    pillBgOpacityPct: next.style === 'pill' ? pillBgOpacityPct : 55,
+    outlineWidthPct,
+    outlineOpacityPct,
+    outlineColor,
+    marginLeftPct,
+    marginRightPct,
+    marginTopPct,
+    marginBottomPct,
+    pillBgColor: next.style === 'pill' || next.style === 'strip' ? pillBgColor : '#000000',
+    pillBgOpacityPct: next.style === 'pill' || next.style === 'strip' ? pillBgOpacityPct : 55,
     alignment,
     position: next.position,
     maxWidthPct,

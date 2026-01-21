@@ -339,8 +339,8 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   if (!Number.isFinite(id) || id <= 0 || id !== Number(presetId)) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const name = String((raw as any).name || '').trim()
   if (!name || name.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
-  const styleRaw = String((raw as any).style || 'outline').trim().toLowerCase()
-  const style = (styleRaw === 'pill' ? 'pill' : styleRaw === 'strip' ? 'strip' : 'outline') as 'pill' | 'outline' | 'strip'
+  const styleRaw = String((raw as any).style || 'none').trim().toLowerCase()
+  const style = (styleRaw === 'pill' ? 'pill' : styleRaw === 'strip' ? 'strip' : 'none') as 'none' | 'pill' | 'strip'
   const fontKey = String((raw as any).fontKey || '').trim()
   if (!fontKey || fontKey.length > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const fontSizePct = Number((raw as any).fontSizePct)
@@ -350,9 +350,31 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
 	  const fontColor = String((raw as any).fontColor || '').trim()
 	  const fontGradientKeyRaw = (raw as any).fontGradientKey
 	  const fontGradientKey = fontGradientKeyRaw == null ? null : String(fontGradientKeyRaw || '').trim() || null
+	  const outlineWidthPctRaw = (raw as any).outlineWidthPct
+	  const outlineWidthPct = outlineWidthPctRaw == null ? null : Number(outlineWidthPctRaw)
+	  const outlineOpacityPctRaw = (raw as any).outlineOpacityPct
+	  const outlineOpacityPct = outlineOpacityPctRaw == null ? null : Number(outlineOpacityPctRaw)
+	  const outlineColorRaw = (raw as any).outlineColor
+	  const outlineColorStr = outlineColorRaw == null ? null : String(outlineColorRaw || '').trim() || null
+	  const outlineColor = outlineColorStr == null || outlineColorStr.toLowerCase() === 'auto' ? null : outlineColorStr
+	  const marginLeftPctRaw = (raw as any).marginLeftPct
+	  const marginLeftPct = marginLeftPctRaw == null ? null : Number(marginLeftPctRaw)
+	  const marginRightPctRaw = (raw as any).marginRightPct
+	  const marginRightPct = marginRightPctRaw == null ? null : Number(marginRightPctRaw)
+	  const marginTopPctRaw = (raw as any).marginTopPct
+	  const marginTopPct = marginTopPctRaw == null ? null : Number(marginTopPctRaw)
+	  const marginBottomPctRaw = (raw as any).marginBottomPct
+	  const marginBottomPct = marginBottomPctRaw == null ? null : Number(marginBottomPctRaw)
 	  const pillBgColor = String((raw as any).pillBgColor || '').trim()
 	  if (!fontColor || fontColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (fontGradientKey != null && fontGradientKey.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (outlineWidthPct != null && (!Number.isFinite(outlineWidthPct) || outlineWidthPct < 0 || outlineWidthPct > 20)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (outlineOpacityPct != null && (!Number.isFinite(outlineOpacityPct) || outlineOpacityPct < 0 || outlineOpacityPct > 100)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (outlineColor != null && !/^#([0-9a-fA-F]{6})$/.test(outlineColor)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (marginLeftPct != null && (!Number.isFinite(marginLeftPct) || marginLeftPct < 0 || marginLeftPct > 40)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (marginRightPct != null && (!Number.isFinite(marginRightPct) || marginRightPct < 0 || marginRightPct > 40)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (marginTopPct != null && (!Number.isFinite(marginTopPct) || marginTopPct < 0 || marginTopPct > 40)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (marginBottomPct != null && (!Number.isFinite(marginBottomPct) || marginBottomPct < 0 || marginBottomPct > 40)) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (!pillBgColor || pillBgColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const pillBgOpacityPct = Number((raw as any).pillBgOpacityPct)
   if (!Number.isFinite(pillBgOpacityPct) || pillBgOpacityPct < 0 || pillBgOpacityPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
@@ -376,6 +398,11 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   const alignmentRaw = String((raw as any).alignment || 'center').trim().toLowerCase()
   const alignment = (alignmentRaw === 'left' ? 'left' : alignmentRaw === 'right' ? 'right' : 'center') as 'left' | 'center' | 'right'
 
+  // Legacy: some stored snapshots may use style='outline' without explicit outline fields.
+  // Treat it as background none + classic outline.
+  const legacyStyleRaw = String((raw as any).style || '').trim().toLowerCase()
+  const legacyNeedsOutline = legacyStyleRaw === 'outline' && outlineWidthPct == null && outlineOpacityPct == null && outlineColor == null
+
   return {
     id,
     name,
@@ -385,6 +412,13 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
 	    trackingPct: Math.round(trackingPct),
 	    fontColor,
 	    fontGradientKey,
+	    outlineWidthPct: legacyNeedsOutline ? 1.2 : (outlineWidthPct == null ? null : Math.round(outlineWidthPct * 100) / 100),
+	    outlineOpacityPct: legacyNeedsOutline ? 45 : (outlineOpacityPct == null ? null : Math.round(outlineOpacityPct)),
+	    outlineColor,
+	    marginLeftPct: marginLeftPct == null ? null : Math.round(marginLeftPct * 100) / 100,
+	    marginRightPct: marginRightPct == null ? null : Math.round(marginRightPct * 100) / 100,
+	    marginTopPct: marginTopPct == null ? null : Math.round(marginTopPct * 100) / 100,
+	    marginBottomPct: marginBottomPct == null ? null : Math.round(marginBottomPct * 100) / 100,
 	    pillBgColor,
 	    pillBgOpacityPct: Math.round(pillBgOpacityPct),
 	    alignment,

@@ -19,6 +19,10 @@ def hex_to_rgba(hex_str, alpha):
   b = int(s[5:7], 16) / 255.0
   return (r, g, b, alpha)
 
+def luminance(rgb):
+  r, g, b = rgb
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
 
 def inset_pct_for_preset(preset):
   p = (preset or "").strip().lower()
@@ -27,6 +31,26 @@ def inset_pct_for_preset(preset):
   if p == "large":
     return 0.14
   return 0.10
+
+def pct_to_px(pct, total_px):
+  try:
+    return float(total_px) * (float(pct) / 100.0)
+  except Exception:
+    return 0.0
+
+def normalize_margin_pct(raw, fallback_pct):
+  if raw is None:
+    return float(fallback_pct)
+  try:
+    s = str(raw).strip()
+    if s == "":
+      return float(fallback_pct)
+    n = float(s)
+    if not math.isfinite(n):
+      return float(fallback_pct)
+    return clamp(n, 0.0, 40.0)
+  except Exception:
+    return float(fallback_pct)
 
 
 def normalize_position(pos):
@@ -86,18 +110,36 @@ def main():
 
   preset = payload.get("preset") or {}
   style = str(preset.get("style") or "pill").strip().lower()
+  # Legacy support: old presets used style='outline' to mean "no background + outlined text".
+  # We now model this as style='none' with explicit outline settings.
+  if style == "outline":
+    style = "none"
   pos = normalize_position(preset.get("position"))
   aln = normalize_alignment(preset.get("alignment"))
   font_size_pct = float(preset.get("fontSizePct") or 4.5)
   font_size_pct = clamp(font_size_pct, 2.0, 8.0)
-  max_width_pct = float(preset.get("maxWidthPct") or 90.0)
-  max_width_pct = clamp(max_width_pct, 20.0, 100.0) / 100.0
+  max_width_pct_raw = preset.get("maxWidthPct")
+  try:
+    max_width_pct = clamp(float(max_width_pct_raw or 90.0), 20.0, 100.0) / 100.0
+  except Exception:
+    max_width_pct = 0.90
 
   tracking_pct = float(preset.get("trackingPct") or 0.0)
   tracking_pct = clamp(tracking_pct, -20.0, 50.0)
 
-  x_inset = inset_pct_for_preset(preset.get("insetXPreset"))
-  y_inset = inset_pct_for_preset(preset.get("insetYPreset") or "medium")
+  # Margins (pct of frame). If not provided, fall back to legacy inset presets.
+  has_any_margin = (
+    preset.get("marginLeftPct") is not None
+    or preset.get("marginRightPct") is not None
+    or preset.get("marginTopPct") is not None
+    or preset.get("marginBottomPct") is not None
+  )
+  inset_x_pct = inset_pct_for_preset(preset.get("insetXPreset")) * 100.0
+  inset_y_pct = inset_pct_for_preset(preset.get("insetYPreset") or "medium") * 100.0
+  margin_left_pct = normalize_margin_pct(preset.get("marginLeftPct"), inset_x_pct)
+  margin_right_pct = normalize_margin_pct(preset.get("marginRightPct"), inset_x_pct)
+  margin_top_pct = normalize_margin_pct(preset.get("marginTopPct"), inset_y_pct)
+  margin_bottom_pct = normalize_margin_pct(preset.get("marginBottomPct"), inset_y_pct)
 
   font_color = str(preset.get("fontColor") or "#ffffff")
   bg_color = str(preset.get("pillBgColor") or "#000000")
@@ -173,6 +215,30 @@ def main():
   font_px = height * (font_size_pct / 100.0)
   font_px = clamp(font_px, 8.0, 220.0)
 
+  # Outline settings (optional overrides; when unset, use style defaults).
+  outline_width_pct_raw = preset.get("outlineWidthPct")
+  outline_opacity_pct_raw = preset.get("outlineOpacityPct")
+  outline_color_raw = preset.get("outlineColor")
+
+  outline_width_px_default = 1.0 if style == "outline" else (0.9 if style in ("pill", "strip") else 0.0)
+  outline_opacity_default = 0.45 if style == "outline" else (0.25 if style in ("pill", "strip") else 0.0)
+
+  outline_width_px = outline_width_px_default
+  if outline_width_pct_raw is not None and str(outline_width_pct_raw).strip() != "":
+    try:
+      outline_width_pct = float(outline_width_pct_raw)
+      outline_width_px = font_px * (outline_width_pct / 100.0)
+    except Exception:
+      outline_width_px = outline_width_px_default
+  outline_width_px = clamp(outline_width_px, 0.0, 12.0)
+
+  outline_opacity = outline_opacity_default
+  if outline_opacity_pct_raw is not None and str(outline_opacity_pct_raw).strip() != "":
+    try:
+      outline_opacity = clamp(float(outline_opacity_pct_raw) / 100.0, 0.0, 1.0)
+    except Exception:
+      outline_opacity = outline_opacity_default
+
   # Import GI only after validating args; yields clearer error if missing.
   try:
     import gi  # type: ignore
@@ -218,14 +284,18 @@ def main():
   # fits within the X inset on both sides; otherwise we end up clamping the pill
   # against one edge, producing visibly asymmetric margins.
   pad_x0 = 0.0
-  stroke_pad0 = 1.5
+  stroke_pad0 = max(1.5, outline_width_px * 1.5)
   shadow_dx0 = 0.0
-  if style == "pill":
+  if style in ("pill", "strip"):
     pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
-  inset_x_px0 = width * x_inset
-  max_box_w_allowed0 = max(10.0, width - (2.0 * inset_x_px0))
+  margin_left_px0 = pct_to_px(margin_left_pct, width)
+  margin_right_px0 = pct_to_px(margin_right_pct, width)
+  max_box_w_allowed0 = max(10.0, width - margin_left_px0 - margin_right_px0)
   max_layout_w_allowed0 = max(10.0, max_box_w_allowed0 - (2.0 * (pad_x0 + stroke_pad0)) - abs(shadow_dx0))
-  max_w = min(width * max_width_pct, max_layout_w_allowed0)
+  max_w = max_layout_w_allowed0
+  # Legacy: if no explicit margins were provided, respect maxWidthPct.
+  if not has_any_margin:
+    max_w = min(width * max_width_pct, max_layout_w_allowed0)
   max_w = max(10.0, max_w)
   layout.set_width(int(max_w * Pango.SCALE))
   layout.set_wrap(Pango.WrapMode.WORD_CHAR)
@@ -269,18 +339,20 @@ def main():
   # Padding around text for pill background.
   pad_x = 0.0
   pad_y = 0.0
-  if style == "pill":
+  if style in ("pill", "strip"):
     pad_x = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y = clamp(font_px * 0.30, 6.0, 28.0)
 
   # Extra padding for stroke + shadow so text never touches/overflows the pill.
   # (We draw shadow with a small positive y offset, and we may stroke glyph paths.)
-  stroke_pad = 1.5
+  stroke_pad = stroke_pad0
   shadow_dx = 0.0
   shadow_dy = 2.0
 
-  inset_x_px = width * x_inset
-  inset_y_px = height * y_inset
+  margin_left_px = pct_to_px(margin_left_pct, width)
+  margin_right_px = pct_to_px(margin_right_pct, width)
+  margin_top_px = pct_to_px(margin_top_pct, height)
+  margin_bottom_px = pct_to_px(margin_bottom_pct, height)
 
   # Compute a bounding box in layout coordinates that should fit on-screen.
   box_x0 = content_x - pad_x - stroke_pad
@@ -290,19 +362,22 @@ def main():
 
   # Position the bounding box, then derive the layout draw origin.
   if aln == "left":
-    box_x = inset_x_px
+    box_x = margin_left_px
   elif aln == "right":
-    box_x = width - box_w - inset_x_px
+    box_x = width - box_w - margin_right_px
   else:
     box_x = (width - box_w) / 2.0
-  box_x = clamp(box_x, inset_x_px, width - box_w - inset_x_px)
+  box_x = clamp(box_x, margin_left_px, width - box_w - margin_right_px)
 
+  min_y = margin_top_px
+  max_y = height - box_h - margin_bottom_px
   if pos == "bottom":
-    box_y = height - box_h - inset_y_px
+    box_y = max_y
   elif pos == "middle":
     box_y = (height - box_h) / 2.0
   else:
-    box_y = inset_y_px
+    box_y = min_y
+  box_y = clamp(box_y, min_y, max_y)
 
   x_draw = box_x - box_x0
   y_draw = box_y - box_y0
@@ -317,6 +392,14 @@ def main():
     rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
     ctx.set_source_rgba(rr, gg, bb, aa)
     rounded_rect(ctx, pill_x, pill_y, pill_w, pill_h, radius)
+    ctx.fill()
+  elif style == "strip":
+    # Full-width strip between left/right margins (text still aligns within via Pango alignment).
+    strip_x = margin_left_px
+    strip_w = max(10.0, width - margin_left_px - margin_right_px)
+    rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
+    ctx.set_source_rgba(rr, gg, bb, aa)
+    ctx.rectangle(strip_x, box_y, strip_w, box_h)
     ctx.fill()
 
   # Simple shadow (offset only, no blur).
@@ -353,52 +436,45 @@ def main():
       gradient_surface = None
       gradient_pattern = None
 
-  # Outline: stroke the glyph path, then fill.
-  if style == "outline":
-    ctx.save()
-    ctx.translate(x_draw, y_draw)
-    PangoCairo.update_layout(ctx, layout)
-    PangoCairo.layout_path(ctx, layout)
-    ctx.set_source_rgba(0.0, 0.0, 0.0, 0.45)
-    ctx.set_line_width(1.0)
+  # Resolve outline color. If unset/'auto', choose a high-contrast color based on fontColor.
+  outline_color = None
+  if outline_color_raw is not None and str(outline_color_raw).strip() != "":
+    s = str(outline_color_raw).strip()
+    if s.lower() != "auto":
+      outline_color = s
+
+  if outline_color is None:
+    fr, fg, fb, _ = hex_to_rgba(font_color, 1.0)
+    # For gradients, "auto" is ambiguous; use fontColor as a hint and bias toward black.
+    lum = luminance((fr, fg, fb))
+    if gradient_pattern is not None:
+      outline_color = "#000000"
+    else:
+      outline_color = "#000000" if lum > 0.55 else "#ffffff"
+
+  # Draw: stroke (optional), then fill (solid or gradient).
+  rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
+  ctx.save()
+  ctx.translate(x_draw, y_draw)
+  PangoCairo.update_layout(ctx, layout)
+  PangoCairo.layout_path(ctx, layout)
+  if outline_width_px > 0.0 and outline_opacity > 0.0:
+    or_, og, ob, _oa = hex_to_rgba(outline_color, outline_opacity)
+    ctx.set_source_rgba(or_, og, ob, outline_opacity)
+    ctx.set_line_width(outline_width_px)
     ctx.stroke_preserve()
-    if gradient_pattern is not None and gradient_surface is not None:
-      gw = float(gradient_surface.get_width())
-      gh = float(gradient_surface.get_height())
-      sx = gw / float(width) if width > 0 else 1.0
-      sy = gh / float(height) if height > 0 else 1.0
-      m = cairo.Matrix(sx, 0.0, 0.0, sy, x_draw * sx, y_draw * sy)
-      gradient_pattern.set_matrix(m)
-      ctx.set_source(gradient_pattern)
-    else:
-      rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
-      ctx.set_source_rgba(rr, gg, bb, aa)
-    ctx.fill()
-    ctx.restore()
+  if gradient_pattern is not None and gradient_surface is not None:
+    gw = float(gradient_surface.get_width())
+    gh = float(gradient_surface.get_height())
+    sx = gw / float(width) if width > 0 else 1.0
+    sy = gh / float(height) if height > 0 else 1.0
+    m = cairo.Matrix(sx, 0.0, 0.0, sy, x_draw * sx, y_draw * sy)
+    gradient_pattern.set_matrix(m)
+    ctx.set_source(gradient_pattern)
   else:
-    rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
-    ctx.save()
-    ctx.translate(x_draw, y_draw)
-    PangoCairo.update_layout(ctx, layout)
-    PangoCairo.layout_path(ctx, layout)
-    # Add a very subtle outline for pill/strip to better match browser-rendered
-    # system fonts (which often look heavier than DejaVu Sans Bold).
-    if style in ("pill", "strip"):
-      ctx.set_source_rgba(0.0, 0.0, 0.0, 0.25)
-      ctx.set_line_width(0.9)
-      ctx.stroke_preserve()
-    if gradient_pattern is not None and gradient_surface is not None:
-      gw = float(gradient_surface.get_width())
-      gh = float(gradient_surface.get_height())
-      sx = gw / float(width) if width > 0 else 1.0
-      sy = gh / float(height) if height > 0 else 1.0
-      m = cairo.Matrix(sx, 0.0, 0.0, sy, x_draw * sx, y_draw * sy)
-      gradient_pattern.set_matrix(m)
-      ctx.set_source(gradient_pattern)
-    else:
-      ctx.set_source_rgba(rr, gg, bb, aa)
-    ctx.fill()
-    ctx.restore()
+    ctx.set_source_rgba(rr, gg, bb, aa)
+  ctx.fill()
+  ctx.restore()
 
   try:
     surface.write_to_png(args.out)

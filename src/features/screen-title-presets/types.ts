@@ -1,6 +1,6 @@
 export type InsetPreset = 'small' | 'medium' | 'large'
 
-export type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
+export type ScreenTitleStyle = 'none' | 'pill' | 'strip'
 export type ScreenTitleFontKey = string
 export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
@@ -18,6 +18,9 @@ export type ScreenTitlePresetRow = {
   tracking_pct: number
   font_color: string
   font_gradient_key: string | null
+  outline_width_pct: number | null
+  outline_opacity_pct: number | null
+  outline_color: string | null
   pill_bg_color: string
   pill_bg_opacity_pct: number
   alignment: ScreenTitleAlignment
@@ -25,6 +28,10 @@ export type ScreenTitlePresetRow = {
   max_width_pct: number
   inset_x_preset: string | null
   inset_y_preset: string | null
+  margin_left_pct: number | null
+  margin_right_pct: number | null
+  margin_top_pct: number | null
+  margin_bottom_pct: number | null
   timing_rule: ScreenTitleTimingRule
   timing_seconds: number | null
   fade: ScreenTitleFade
@@ -43,6 +50,9 @@ export type ScreenTitlePresetDto = {
   trackingPct: number
   fontColor: string
   fontGradientKey: string | null
+  outlineWidthPct: number | null
+  outlineOpacityPct: number | null
+  outlineColor: string | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: ScreenTitleAlignment
@@ -50,6 +60,10 @@ export type ScreenTitlePresetDto = {
   maxWidthPct: number
   insetXPreset: InsetPreset | null
   insetYPreset: InsetPreset | null
+  marginLeftPct: number | null
+  marginRightPct: number | null
+  marginTopPct: number | null
+  marginBottomPct: number | null
   timingRule: ScreenTitleTimingRule
   timingSeconds: number | null
   fade: ScreenTitleFade

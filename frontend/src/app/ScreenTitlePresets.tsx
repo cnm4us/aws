@@ -7,7 +7,7 @@ type MeResponse = {
 }
 
 type InsetPreset = 'small' | 'medium' | 'large'
-type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
+type ScreenTitleStyle = 'none' | 'pill' | 'strip'
 type ScreenTitleFontKey = string
 type ScreenTitleAlignment = 'left' | 'center' | 'right'
 type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
@@ -49,6 +49,10 @@ type ScreenTitlePreset = {
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
   insetYPreset?: InsetPreset | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   timingRule: ScreenTitleTimingRule
   timingSeconds: number | null
   fade: ScreenTitleFade
@@ -129,8 +133,12 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     alignment: 'center',
     position: 'top',
     maxWidthPct: 90,
-    insetXPreset: 'medium',
-    insetYPreset: 'medium',
+    insetXPreset: null,
+    insetYPreset: null,
+    marginLeftPct: 10,
+    marginRightPct: 10,
+    marginTopPct: 10,
+    marginBottomPct: 10,
     timingRule: 'first_only',
     timingSeconds: 10,
     fade: 'out',
@@ -143,10 +151,12 @@ function positionLabel(p: ScreenTitlePosition): string {
   return 'Bottom'
 }
 
-function styleLabel(s: ScreenTitleStyle): string {
-  if (s === 'pill') return 'Pill'
-  if (s === 'outline') return 'Outline'
-  return 'Strip'
+function styleLabel(s: any): string {
+  const v = String(s || '').toLowerCase()
+  if (v === 'none' || v === 'outline') return 'None'
+  if (v === 'pill') return 'Pill'
+  if (v === 'strip') return 'Strip'
+  return 'None'
 }
 
 function fadeLabel(f: ScreenTitleFade): string {
@@ -272,11 +282,21 @@ export default function ScreenTitlePresetsPage() {
   }, [])
 
   const openEdit = useCallback((preset: ScreenTitlePreset) => {
+    const presetInsetToMargin = (raw: any) => {
+      const s = String(raw || '').trim().toLowerCase()
+      if (s === 'small') return 6
+      if (s === 'large') return 14
+      return 10
+    }
+    const deriveMargin = (value: any, fallback: number) => {
+      const n = value == null ? NaN : Number(value)
+      return Number.isFinite(n) ? n : fallback
+    }
     setSelectedId(preset.id)
     setDraft({
       name: preset.name,
       description: preset.description ?? null,
-      style: preset.style,
+      style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
       fontKey: preset.fontKey,
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
@@ -292,6 +312,10 @@ export default function ScreenTitlePresetsPage() {
       maxWidthPct: preset.maxWidthPct,
       insetXPreset: preset.insetXPreset ?? null,
       insetYPreset: preset.insetYPreset ?? null,
+      marginLeftPct: deriveMargin((preset as any).marginLeftPct, presetInsetToMargin(preset.insetXPreset)),
+      marginRightPct: deriveMargin((preset as any).marginRightPct, presetInsetToMargin(preset.insetXPreset)),
+      marginTopPct: deriveMargin((preset as any).marginTopPct, presetInsetToMargin(preset.insetYPreset)),
+      marginBottomPct: deriveMargin((preset as any).marginBottomPct, presetInsetToMargin(preset.insetYPreset)),
       timingRule: preset.timingRule,
       timingSeconds: preset.timingSeconds ?? null,
       fade: preset.fade,
@@ -376,7 +400,7 @@ export default function ScreenTitlePresetsPage() {
       const body = JSON.stringify({
         name: cloneName,
         description: preset.description ?? null,
-        style: preset.style,
+        style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
         fontKey: preset.fontKey,
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
@@ -385,6 +409,10 @@ export default function ScreenTitlePresetsPage() {
         outlineWidthPct: preset.outlineWidthPct ?? null,
         outlineOpacityPct: preset.outlineOpacityPct ?? null,
         outlineColor: preset.outlineColor ?? null,
+        marginLeftPct: (preset as any).marginLeftPct ?? null,
+        marginRightPct: (preset as any).marginRightPct ?? null,
+        marginTopPct: (preset as any).marginTopPct ?? null,
+        marginBottomPct: (preset as any).marginBottomPct ?? null,
         pillBgColor: preset.pillBgColor,
         pillBgOpacityPct: preset.pillBgOpacityPct,
         alignment: preset.alignment ?? 'center',
@@ -702,15 +730,35 @@ export default function ScreenTitlePresetsPage() {
                     <option value="right">Right</option>
                   </select>
                 </label>
+              </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Max width (%)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Horizontal margin (%)</div>
                   <input
                     type="number"
-                    min={10}
-                    max={100}
-                    value={draft.maxWidthPct}
-                    onChange={(e) => setDraft((d) => ({ ...d, maxWidthPct: Number(e.target.value) }))}
+                    step="0.5"
+                    min={0}
+                    max={40}
+                    value={(draft.marginLeftPct ?? draft.marginRightPct) == null ? '' : String(draft.marginLeftPct ?? draft.marginRightPct)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const n = raw ? Number(raw) : null
+                      setDraft((d) => {
+                        const horizontalMarginPct = n != null && Number.isFinite(n) ? n : null
+                        const derivedMax =
+                          horizontalMarginPct != null
+                            ? Math.round(Math.min(Math.max(100 - horizontalMarginPct - horizontalMarginPct, 10), 100))
+                            : d.maxWidthPct
+                        return {
+                          ...d,
+                          marginLeftPct: horizontalMarginPct,
+                          marginRightPct: horizontalMarginPct,
+                          insetXPreset: null,
+                          maxWidthPct: derivedMax,
+                        }
+                      })
+                    }}
                     style={{
                       width: '100%',
                       maxWidth: '100%',
@@ -724,14 +772,26 @@ export default function ScreenTitlePresetsPage() {
                     }}
                   />
                 </label>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Inset X</div>
-                  <select
-                    value={draft.insetXPreset || ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, insetXPreset: (e.target.value || null) as any }))}
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Vertical margin (%)</div>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    max={40}
+                    value={(draft.marginTopPct ?? draft.marginBottomPct) == null ? '' : String(draft.marginTopPct ?? draft.marginBottomPct)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const n = raw ? Number(raw) : null
+                      const verticalMarginPct = n != null && Number.isFinite(n) ? n : null
+                      setDraft((d) => ({
+                        ...d,
+                        marginTopPct: verticalMarginPct,
+                        marginBottomPct: verticalMarginPct,
+                        insetYPreset: null,
+                      }))
+                    }}
                     style={{
                       width: '100%',
                       maxWidth: '100%',
@@ -743,39 +803,8 @@ export default function ScreenTitlePresetsPage() {
                       color: '#fff',
                       outline: 'none',
                     }}
-                  >
-                    <option value="">Auto</option>
-                    {INSET_PRESETS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
+                  />
                 </label>
-
-                {draft.position !== 'middle' ? (
-                  <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Inset Y</div>
-                    <select
-                      value={draft.insetYPreset || ''}
-                      onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="">Auto</option>
-                      {INSET_PRESETS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
@@ -1035,10 +1064,10 @@ export default function ScreenTitlePresetsPage() {
                 </div>
               </div>
 
-              {draft.style === 'pill' ? (
+              {draft.style !== 'none' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Pill background color</div>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Background color</div>
                     <input
                       type="color"
                       value={draft.pillBgColor || '#000000'}
@@ -1059,7 +1088,7 @@ export default function ScreenTitlePresetsPage() {
                   </label>
 
                   <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Pill background opacity (%)</div>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>Background opacity (%)</div>
                     <input
                       type="number"
                       min={0}
@@ -1087,7 +1116,7 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Style</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Background</div>
                   <select
                     value={draft.style}
                     onChange={(e) => setDraft((d) => ({ ...d, style: e.target.value as any }))}
@@ -1103,8 +1132,8 @@ export default function ScreenTitlePresetsPage() {
                       outline: 'none',
                     }}
                   >
+                    <option value="none">None</option>
                     <option value="pill">Pill</option>
-                    <option value="outline">Outline</option>
                     <option value="strip">Strip</option>
                   </select>
                 </label>
