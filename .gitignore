@@ -26,6 +26,9 @@ public/app/index.html
 public/space-app/assets/
 public/space-app/index.html
 
+# Fontconfig runtime artifacts (generated when scanning assets/fonts)
+assets/fonts/**/.uuid
+
 # Ignore PlayWright Artificats.
 playwright-report/
 test-results/
