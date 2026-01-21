@@ -39,6 +39,9 @@ type ScreenTitlePreset = {
   trackingPct?: number
   fontColor: string
   fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: ScreenTitleAlignment
@@ -118,6 +121,9 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     trackingPct: 0,
     fontColor: '#ffffff',
     fontGradientKey: null,
+    outlineWidthPct: null,
+    outlineOpacityPct: null,
+    outlineColor: null,
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
     alignment: 'center',
@@ -172,7 +178,8 @@ export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
   const backHref = fromHref || '/uploads'
   const backLabel =
-    fromHref?.startsWith('/create-video') ? '← Back to Create Video'
+    fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
+      : fromHref?.startsWith('/create-video') ? '← Back to Create Video'
       : fromHref?.startsWith('/produce') ? '← Back to Produce'
         : '← Back'
 
@@ -275,6 +282,9 @@ export default function ScreenTitlePresetsPage() {
       trackingPct: preset.trackingPct ?? 0,
       fontColor: preset.fontColor || '#ffffff',
       fontGradientKey: preset.fontGradientKey ?? null,
+      outlineWidthPct: preset.outlineWidthPct ?? null,
+      outlineOpacityPct: preset.outlineOpacityPct ?? null,
+      outlineColor: preset.outlineColor ?? null,
       pillBgColor: preset.pillBgColor || '#000000',
       pillBgOpacityPct: preset.pillBgOpacityPct ?? 55,
       alignment: preset.alignment ?? 'center',
@@ -372,6 +382,9 @@ export default function ScreenTitlePresetsPage() {
         trackingPct: preset.trackingPct ?? 0,
         fontColor: preset.fontColor,
         fontGradientKey: preset.fontGradientKey ?? null,
+        outlineWidthPct: preset.outlineWidthPct ?? null,
+        outlineOpacityPct: preset.outlineOpacityPct ?? null,
+        outlineColor: preset.outlineColor ?? null,
         pillBgColor: preset.pillBgColor,
         pillBgOpacityPct: preset.pillBgOpacityPct,
         alignment: preset.alignment ?? 'center',
@@ -440,8 +453,8 @@ export default function ScreenTitlePresetsPage() {
               style={{
                 padding: '10px 14px',
                 borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(10,132,255,0.95)',
+                background: '#0a84ff',
                 color: '#fff',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -482,41 +495,7 @@ export default function ScreenTitlePresetsPage() {
                       {styleLabel(p.style)} • {positionLabel(p.position)} • {timingLabel(p.timingRule, p.timingSeconds)}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      onClick={() => clonePreset(p)}
-                      disabled={cloningId === p.id || saving || deletingId != null}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: 'rgba(255,255,255,0.06)',
-                        color: '#fff',
-                        fontWeight: 750,
-                        cursor: cloningId === p.id ? 'default' : 'pointer',
-                        opacity: cloningId === p.id ? 0.7 : 1,
-                      }}
-                    >
-                      {cloningId === p.id ? 'Cloning…' : 'Clone'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(p)}
-                      disabled={saving || deletingId != null}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: 'rgba(10,132,255,0.12)',
-                        color: '#fff',
-                        fontWeight: 850,
-                        cursor: 'pointer',
-                        opacity: saving ? 0.7 : 1,
-                      }}
-                    >
-                      Edit
-                    </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={() => deletePreset(p.id)}
@@ -524,16 +503,53 @@ export default function ScreenTitlePresetsPage() {
                       style={{
                         padding: '8px 12px',
                         borderRadius: 10,
-                        border: '1px solid rgba(255,155,155,0.35)',
-                        background: 'rgba(255,155,155,0.08)',
+                        border: '1px solid rgba(255,59,48,0.95)',
+                        background: '#ff3b30',
                         color: '#fff',
-                        fontWeight: 750,
+                        fontWeight: 850,
                         cursor: deletingId === p.id ? 'default' : 'pointer',
                         opacity: deletingId === p.id ? 0.7 : 1,
                       }}
                     >
                       {deletingId === p.id ? 'Deleting…' : 'Delete'}
                     </button>
+
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => clonePreset(p)}
+                        disabled={cloningId === p.id || saving || deletingId != null}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: '#000',
+                          color: '#fff',
+                          fontWeight: 750,
+                          cursor: cloningId === p.id ? 'default' : 'pointer',
+                          opacity: cloningId === p.id ? 0.7 : 1,
+                        }}
+                      >
+                        {cloningId === p.id ? 'Cloning…' : 'Clone'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(p)}
+                        disabled={saving || deletingId != null}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(10,132,255,0.95)',
+                          background: '#0a84ff',
+                          color: '#fff',
+                          fontWeight: 850,
+                          cursor: 'pointer',
+                          opacity: saving ? 0.7 : 1,
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -793,6 +809,108 @@ export default function ScreenTitlePresetsPage() {
                     Gradient fills the text; the rest of the PNG stays transparent.
                   </div>
                 </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (% of font size)</div>
+                  <input
+                    type="number"
+                    step="0.25"
+                    min={0}
+                    max={20}
+                    value={draft.outlineWidthPct == null ? '' : String(draft.outlineWidthPct)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (!raw) return setDraft((d) => ({ ...d, outlineWidthPct: null }))
+                      const n = Number(raw)
+                      setDraft((d) => ({ ...d, outlineWidthPct: Number.isFinite(n) ? n : null }))
+                    }}
+                    placeholder="Auto"
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline opacity (%)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={0}
+                    max={100}
+                    value={draft.outlineOpacityPct == null ? '' : String(draft.outlineOpacityPct)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (!raw) return setDraft((d) => ({ ...d, outlineOpacityPct: null }))
+                      const n = Number(raw)
+                      setDraft((d) => ({ ...d, outlineOpacityPct: Number.isFinite(n) ? n : null }))
+                    }}
+                    placeholder="Auto"
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
+                    <select
+                      value={draft.outlineColor ? 'custom' : 'auto'}
+                      onChange={(e) => {
+                        const mode = e.target.value
+                        setDraft((d) => ({ ...d, outlineColor: mode === 'custom' ? (d.outlineColor || '#000000') : null }))
+                      }}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    <input
+                      type="color"
+                      value={draft.outlineColor || '#000000'}
+                      disabled={!draft.outlineColor}
+                      onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
+                      style={{
+                        width: 56,
+                        height: 44,
+                        padding: '6px 8px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        opacity: draft.outlineColor ? 1 : 0.45,
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
               {draft.style === 'pill' ? (

@@ -89,6 +89,10 @@ type ScreenTitlePresetItem = {
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment?: string
@@ -4936,6 +4940,9 @@ export default function CreateVideo() {
         trackingPct: Number((preset as any).trackingPct),
         fontColor: String((preset as any).fontColor || '#ffffff'),
         fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
+        outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
+        outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
+        outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
         pillBgColor: String((preset as any).pillBgColor || '#000000'),
         pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
         alignment: (String((preset as any).alignment || 'center').toLowerCase() === 'left'
@@ -8668,6 +8675,9 @@ export default function CreateVideo() {
       trackingPct: Number((preset as any).trackingPct),
       fontColor: String((preset as any).fontColor || '#ffffff'),
       fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
+      outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
+      outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
+      outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
       pillBgColor: String((preset as any).pillBgColor || '#000000'),
       pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
       position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
@@ -8790,6 +8800,9 @@ export default function CreateVideo() {
               trackingPct: Number((preset as any).trackingPct),
               fontColor: String((preset as any).fontColor || '#ffffff'),
               fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
+              outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
+              outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
+              outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
               pillBgColor: String((preset as any).pillBgColor || '#000000'),
               pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
               position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
@@ -12294,7 +12307,7 @@ export default function CreateVideo() {
 	              <>
 	                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 	                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Screen Title Style</h1>
-	                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
+	                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage Styles</a>
 	                </div>
 	                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
 	                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
@@ -13106,7 +13119,7 @@ export default function CreateVideo() {
 	                  })()}
 	                  style={{ color: '#0a84ff', textDecoration: 'none' }}
 	                >
-	                  Manage presets
+	                  Manage Styles
 	                </a>
 	              </div>
 
