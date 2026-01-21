@@ -1,10 +1,11 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
-import type { InsetPreset, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
+import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
 const FONT_KEYS: readonly ScreenTitleFontKey[] = ['dejavu_sans_bold']
+const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
@@ -24,6 +25,8 @@ function toInsetPresetOrNull(raw: any): InsetPreset | null {
 function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const rawFont = String((row as any).font_key || 'dejavu_sans_bold').trim() as any
   const fontKey: ScreenTitleFontKey = isEnumValue(rawFont, FONT_KEYS) ? rawFont : 'dejavu_sans_bold'
+  const alignmentRaw = String((row as any).alignment || 'center').trim().toLowerCase()
+  const alignment: ScreenTitleAlignment = isEnumValue(alignmentRaw, ALIGNMENTS) ? (alignmentRaw as any) : 'center'
   const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
   const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
@@ -50,6 +53,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontColor,
     pillBgColor,
     pillBgOpacityPct,
+    alignment,
     position,
     maxWidthPct: Number((row as any).max_width_pct),
     insetXPreset: toInsetPresetOrNull((row as any).inset_x_preset),
@@ -172,6 +176,7 @@ export async function createForUser(input: {
   fontColor?: any
   pillBgColor?: any
   pillBgOpacityPct?: any
+  alignment?: any
   position?: any
   maxWidthPct?: any
   insetXPreset?: any
@@ -190,6 +195,7 @@ export async function createForUser(input: {
   const fontColor = normalizeFontColor(input.fontColor)
   const pillBgColor = normalizePillBgColor(input.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
+  const alignment: ScreenTitleAlignment = isEnumValue(input.alignment, ALIGNMENTS) ? input.alignment : 'center'
   const position: ScreenTitlePosition = isEnumValue(input.position, POSITIONS) ? input.position : 'top'
   const maxWidthPct = normalizePct(input.maxWidthPct ?? 90, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(input.insetXPreset)
@@ -210,6 +216,7 @@ export async function createForUser(input: {
     fontColor,
     pillBgColor: style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: style === 'pill' ? pillBgOpacityPct : 55,
+    alignment,
     position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,
@@ -233,6 +240,7 @@ export async function updateForUser(
     fontColor?: any
     pillBgColor?: any
     pillBgOpacityPct?: any
+    alignment?: any
     position?: any
     maxWidthPct?: any
     insetXPreset?: any
@@ -258,6 +266,7 @@ export async function updateForUser(
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
     pillBgColor: patch.pillBgColor !== undefined ? patch.pillBgColor : (existing as any).pill_bg_color,
     pillBgOpacityPct: patch.pillBgOpacityPct !== undefined ? patch.pillBgOpacityPct : (existing as any).pill_bg_opacity_pct,
+    alignment: patch.alignment !== undefined ? patch.alignment : (existing as any).alignment,
     position: patch.position !== undefined ? patch.position : existing.position,
     maxWidthPct: patch.maxWidthPct !== undefined ? patch.maxWidthPct : (existing as any).max_width_pct,
     insetXPreset: patch.insetXPreset !== undefined ? patch.insetXPreset : (existing as any).inset_x_preset,
@@ -274,6 +283,8 @@ export async function updateForUser(
   const fontColor = normalizeFontColor(next.fontColor)
   const pillBgColor = normalizePillBgColor(next.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(next.pillBgOpacityPct, 55)
+  if (!isEnumValue(String(next.alignment || '').toLowerCase(), ALIGNMENTS)) throw new DomainError('invalid_alignment', 'invalid_alignment', 400)
+  const alignment: ScreenTitleAlignment = String(next.alignment || 'center').toLowerCase() as any
   if (!isEnumValue(next.position, POSITIONS)) throw new DomainError('invalid_position', 'invalid_position', 400)
   const maxWidthPct = normalizePct(next.maxWidthPct, 'invalid_max_width', 10, 100)
   const rawInsetX = normalizeInsetPreset(next.insetXPreset)
@@ -293,6 +304,7 @@ export async function updateForUser(
     fontColor,
     pillBgColor: next.style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: next.style === 'pill' ? pillBgOpacityPct : 55,
+    alignment,
     position: next.position,
     maxWidthPct,
     insetXPreset: coerced.insetXPreset,

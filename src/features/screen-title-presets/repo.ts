@@ -36,6 +36,7 @@ export async function create(input: {
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment: string
   position: string
   maxWidthPct: number
   insetXPreset?: string | null
@@ -47,8 +48,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO screen_title_presets
-      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, pill_bg_color, pill_bg_opacity_pct, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -60,6 +61,7 @@ export async function create(input: {
       input.fontColor,
       input.pillBgColor,
       input.pillBgOpacityPct,
+      input.alignment,
       input.position,
       input.maxWidthPct,
       input.insetXPreset ?? null,
@@ -85,6 +87,7 @@ export async function update(id: number, patch: {
   fontColor?: string
   pillBgColor?: string
   pillBgOpacityPct?: number
+  alignment?: string
   position?: string
   maxWidthPct?: number
   insetXPreset?: string | null
@@ -105,6 +108,7 @@ export async function update(id: number, patch: {
   if (patch.fontColor !== undefined) { sets.push('font_color = ?'); args.push(patch.fontColor) }
   if (patch.pillBgColor !== undefined) { sets.push('pill_bg_color = ?'); args.push(patch.pillBgColor) }
   if (patch.pillBgOpacityPct !== undefined) { sets.push('pill_bg_opacity_pct = ?'); args.push(patch.pillBgOpacityPct) }
+  if (patch.alignment !== undefined) { sets.push('alignment = ?'); args.push(patch.alignment) }
   if (patch.position !== undefined) { sets.push('position = ?'); args.push(patch.position) }
   if (patch.maxWidthPct !== undefined) { sets.push('max_width_pct = ?'); args.push(patch.maxWidthPct) }
   if (patch.insetXPreset !== undefined) { sets.push('inset_x_preset = ?'); args.push(patch.insetXPreset) }

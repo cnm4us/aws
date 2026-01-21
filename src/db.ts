@@ -296,6 +296,7 @@ export async function ensureSchema(db: DB) {
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
+              alignment ENUM('left','center','right') NOT NULL DEFAULT 'center',
               position ENUM('top','middle','bottom') NOT NULL DEFAULT 'top',
               max_width_pct TINYINT UNSIGNED NOT NULL DEFAULT 90,
               inset_x_preset VARCHAR(16) NULL,
@@ -316,6 +317,8 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
+          // Plan: screen title text alignment (left/center/right).
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS alignment ENUM('left','center','right') NOT NULL DEFAULT 'center'`);
           // Plan: simplify screen title positions to top/middle/bottom.
           // Existing tables created with older enums won't accept these values, so we:
           // 1) temporarily widen to VARCHAR

@@ -91,6 +91,7 @@ type ScreenTitlePresetItem = {
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment?: string
   position: string
   maxWidthPct: number
   insetXPreset: string | null
@@ -4933,6 +4934,11 @@ export default function CreateVideo() {
         fontColor: String((preset as any).fontColor || '#ffffff'),
         pillBgColor: String((preset as any).pillBgColor || '#000000'),
         pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
+        alignment: (String((preset as any).alignment || 'center').toLowerCase() === 'left'
+          ? 'left'
+          : String((preset as any).alignment || 'center').toLowerCase() === 'right'
+            ? 'right'
+            : 'center') as any,
         position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
           ? 'bottom'
           : String((preset as any).position || 'top').toLowerCase() === 'middle'

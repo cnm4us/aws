@@ -370,6 +370,8 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
     | 'in'
     | 'out'
     | 'in_out'
+  const alignmentRaw = String((raw as any).alignment || 'center').trim().toLowerCase()
+  const alignment = (alignmentRaw === 'left' ? 'left' : alignmentRaw === 'right' ? 'right' : 'center') as 'left' | 'center' | 'right'
 
   return {
     id,
@@ -381,6 +383,7 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
     fontColor,
     pillBgColor,
     pillBgOpacityPct: Math.round(pillBgOpacityPct),
+    alignment,
     position,
     maxWidthPct: Math.round(maxWidthPct),
     insetXPreset: insetXPreset as any,

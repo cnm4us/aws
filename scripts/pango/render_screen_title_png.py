@@ -37,6 +37,14 @@ def normalize_position(pos):
     return "bottom"
   return "top"
 
+def normalize_alignment(aln):
+  raw = (aln or "center").strip().lower()
+  if raw == "left":
+    return "left"
+  if raw == "right":
+    return "right"
+  return "center"
+
 
 def rounded_rect(ctx, x, y, w, h, r):
   r = max(0.0, min(r, min(w, h) / 2.0))
@@ -79,6 +87,7 @@ def main():
   preset = payload.get("preset") or {}
   style = str(preset.get("style") or "pill").strip().lower()
   pos = normalize_position(preset.get("position"))
+  aln = normalize_alignment(preset.get("alignment"))
   font_size_pct = float(preset.get("fontSizePct") or 4.5)
   font_size_pct = clamp(font_size_pct, 2.0, 8.0)
   max_width_pct = float(preset.get("maxWidthPct") or 90.0)
@@ -149,7 +158,12 @@ def main():
   max_w = max(10.0, max_w)
   layout.set_width(int(max_w * Pango.SCALE))
   layout.set_wrap(Pango.WrapMode.WORD_CHAR)
-  layout.set_alignment(Pango.Alignment.CENTER)
+  if aln == "left":
+    layout.set_alignment(Pango.Alignment.LEFT)
+  elif aln == "right":
+    layout.set_alignment(Pango.Alignment.RIGHT)
+  else:
+    layout.set_alignment(Pango.Alignment.CENTER)
   # Clamp to max 3 lines; ellipsize if needed.
   layout.set_height(-3)
   layout.set_ellipsize(Pango.EllipsizeMode.END)
@@ -204,7 +218,12 @@ def main():
   box_h = content_h + 2.0 * (pad_y + stroke_pad) + abs(shadow_dy)
 
   # Position the bounding box, then derive the layout draw origin.
-  box_x = (width - box_w) / 2.0
+  if aln == "left":
+    box_x = inset_x_px
+  elif aln == "right":
+    box_x = width - box_w - inset_x_px
+  else:
+    box_x = (width - box_w) / 2.0
   box_x = clamp(box_x, inset_x_px, width - box_w - inset_x_px)
 
   if pos == "bottom":

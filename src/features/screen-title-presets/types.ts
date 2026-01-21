@@ -2,6 +2,7 @@ export type InsetPreset = 'small' | 'medium' | 'large'
 
 export type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
 export type ScreenTitleFontKey = 'dejavu_sans_bold'
+export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 export type ScreenTitleTimingRule = 'entire' | 'first_only'
 export type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
@@ -18,6 +19,7 @@ export type ScreenTitlePresetRow = {
   font_color: string
   pill_bg_color: string
   pill_bg_opacity_pct: number
+  alignment: ScreenTitleAlignment
   position: ScreenTitlePosition
   max_width_pct: number
   inset_x_preset: string | null
@@ -41,6 +43,7 @@ export type ScreenTitlePresetDto = {
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment: ScreenTitleAlignment
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset: InsetPreset | null

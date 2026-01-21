@@ -9,6 +9,7 @@ type MeResponse = {
 type InsetPreset = 'small' | 'medium' | 'large'
 type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
 type ScreenTitleFontKey = 'dejavu_sans_bold'
+type ScreenTitleAlignment = 'left' | 'center' | 'right'
 type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
 type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
@@ -24,6 +25,7 @@ type ScreenTitlePreset = {
   fontColor: string
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment: ScreenTitleAlignment
   position: ScreenTitlePosition
   maxWidthPct: number
   insetXPreset?: InsetPreset | null
@@ -74,6 +76,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontColor: '#ffffff',
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
+    alignment: 'center',
     position: 'top',
     maxWidthPct: 90,
     insetXPreset: 'medium',
@@ -197,6 +200,7 @@ export default function ScreenTitlePresetsPage() {
       fontColor: preset.fontColor || '#ffffff',
       pillBgColor: preset.pillBgColor || '#000000',
       pillBgOpacityPct: preset.pillBgOpacityPct ?? 55,
+      alignment: preset.alignment ?? 'center',
       position: preset.position,
       maxWidthPct: preset.maxWidthPct,
       insetXPreset: preset.insetXPreset ?? null,
@@ -284,6 +288,7 @@ export default function ScreenTitlePresetsPage() {
         fontColor: preset.fontColor,
         pillBgColor: preset.pillBgColor,
         pillBgOpacityPct: preset.pillBgOpacityPct,
+        alignment: preset.alignment ?? 'center',
         position: preset.position,
         maxWidthPct: preset.maxWidthPct,
         insetXPreset: preset.insetXPreset ?? null,
@@ -516,6 +521,8 @@ export default function ScreenTitlePresetsPage() {
                   onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                   style={{
                     width: '100%',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
                     padding: '10px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(255,255,255,0.16)',
@@ -534,6 +541,8 @@ export default function ScreenTitlePresetsPage() {
                   rows={3}
                   style={{
                     width: '100%',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
                     padding: '10px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(255,255,255,0.16)',
@@ -545,7 +554,7 @@ export default function ScreenTitlePresetsPage() {
                 />
               </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Font size (% of frame height)</div>
                   <input
@@ -560,6 +569,8 @@ export default function ScreenTitlePresetsPage() {
                     }}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -584,6 +595,8 @@ export default function ScreenTitlePresetsPage() {
                     }}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -603,6 +616,8 @@ export default function ScreenTitlePresetsPage() {
                     style={{
                       width: '100%',
                       height: 44,
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '6px 8px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -615,7 +630,7 @@ export default function ScreenTitlePresetsPage() {
               </div>
 
               {draft.style === 'pill' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                   <label style={{ display: 'grid', gap: 6 }}>
                     <div style={{ color: '#bbb', fontWeight: 750 }}>Pill background color</div>
                     <input
@@ -625,6 +640,8 @@ export default function ScreenTitlePresetsPage() {
                       style={{
                         width: '100%',
                         height: 44,
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
                         padding: '6px 8px',
                         borderRadius: 10,
                         border: '1px solid rgba(255,255,255,0.16)',
@@ -648,6 +665,8 @@ export default function ScreenTitlePresetsPage() {
                       }}
                       style={{
                         width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
                         padding: '10px 12px',
                         borderRadius: 10,
                         border: '1px solid rgba(255,255,255,0.16)',
@@ -660,7 +679,7 @@ export default function ScreenTitlePresetsPage() {
                 </div>
               ) : null}
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Style</div>
                   <select
@@ -668,6 +687,8 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, style: e.target.value as any }))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -683,12 +704,37 @@ export default function ScreenTitlePresetsPage() {
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Alignment</div>
+                  <select
+                    value={draft.alignment}
+                    onChange={(e) => setDraft((d) => ({ ...d, alignment: e.target.value as any }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
                   <select
                     value={draft.position}
                     onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value as any }))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -704,7 +750,7 @@ export default function ScreenTitlePresetsPage() {
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Max width (%)</div>
                   <input
@@ -715,6 +761,8 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, maxWidthPct: Number(e.target.value) }))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -732,6 +780,8 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, fade: e.target.value as any }))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -748,7 +798,7 @@ export default function ScreenTitlePresetsPage() {
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Inset X</div>
                   <select
@@ -756,6 +806,8 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, insetXPreset: (e.target.value || null) as any }))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
                       borderRadius: 10,
                       border: '1px solid rgba(255,255,255,0.16)',
@@ -779,6 +831,8 @@ export default function ScreenTitlePresetsPage() {
                       onChange={(e) => setDraft((d) => ({ ...d, insetYPreset: (e.target.value || null) as any }))}
                       style={{
                         width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
                         padding: '10px 12px',
                         borderRadius: 10,
                         border: '1px solid rgba(255,255,255,0.16)',
@@ -794,58 +848,6 @@ export default function ScreenTitlePresetsPage() {
                     </select>
                   </label>
                 ) : null}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Timing</div>
-                  <select
-                    value={draft.timingRule}
-                    onChange={(e) => {
-                      const rule = e.target.value as ScreenTitleTimingRule
-                      setDraft((d) => ({
-                        ...d,
-                        timingRule: rule,
-                        timingSeconds: rule === 'entire' ? null : (d.timingSeconds ?? 10),
-                      }))
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="first_only">First N seconds</option>
-                    <option value="entire">Till end</option>
-                  </select>
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Seconds</div>
-                  <select
-                    value={draft.timingSeconds != null ? String(draft.timingSeconds) : ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, timingSeconds: Number(e.target.value) }))}
-                    disabled={draft.timingRule === 'entire'}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      opacity: draft.timingRule === 'entire' ? 0.6 : 1,
-                    }}
-                  >
-                    {[5, 10, 15, 20].map((s) => (
-                      <option key={s} value={String(s)}>{s}s</option>
-                    ))}
-                  </select>
-                </label>
               </div>
 
               <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>
