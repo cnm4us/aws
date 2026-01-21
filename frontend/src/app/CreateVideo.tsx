@@ -12941,72 +12941,131 @@ export default function CreateVideo() {
               >
                 Close
               </button>
-            </div>
+	            </div>
+	
+	            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+	              {(() => {
+	                const start = roundToTenth(Number(screenTitleEditor.start))
+	                const end = roundToTenth(Number(screenTitleEditor.end))
+	                const cap = roundToTenth(Math.max(0, Number(totalSeconds || 0)))
+	                const minLen = 0.1
 
-            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
-              <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
-            </div>
+	                const setStart = (v: number) => {
+	                  setScreenTitleEditor((p) => {
+	                    if (!p) return p
+	                    const next = clamp(roundToTenth(v), 0, Math.max(0, roundToTenth(Number(p.end)) - minLen))
+	                    return { ...p, start: next }
+	                  })
+	                }
+	                const setEnd = (v: number) => {
+	                  setScreenTitleEditor((p) => {
+	                    if (!p) return p
+	                    const next = clamp(roundToTenth(v), Math.max(0, roundToTenth(Number(p.start)) + minLen), cap)
+	                    return { ...p, end: next }
+	                  })
+	                }
 
-            <div style={{ marginTop: 8, display: 'grid', gap: 10 }}>
-              <select
-                value={String(screenTitleEditor.presetId ?? '')}
-                onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, presetId: e.target.value ? Number(e.target.value) : null }) : p) }}
-                style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-              >
-                <option value="" disabled>
-                  Select…
-                </option>
-                {screenTitlePresets
-                  .filter((p: any) => !(p && typeof p === 'object' && (p as any).archived_at))
-                  .map((p: any) => (
-                    <option key={`stp-${String(p.id)}`} value={String(p.id)}>{String(p.name || `Preset ${p.id}`)}</option>
-                  ))}
-              </select>
-              {screenTitlePresetsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitlePresetsError}</div> : null}
+	                const statBox: React.CSSProperties = {
+	                  borderRadius: 12,
+	                  border: '1px solid rgba(255,255,255,0.14)',
+	                  background: 'rgba(255,255,255,0.04)',
+	                  padding: 10,
+	                  minWidth: 0,
+	                }
 
-              <div style={{ display: 'grid', gap: 6 }}>
-                <textarea
-                  value={String(screenTitleEditor.text || '')}
-                  placeholder="Type your screen title here"
-                  rows={3}
-                  onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, resize: 'vertical' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
-                  <div>Max 140 chars • max 3 lines</div>
-                  <div>{String(screenTitleEditor.text || '').length}</div>
-                </div>
-              </div>
+	                const adjustBtn = (enabled: boolean): React.CSSProperties => ({
+	                  padding: '8px 10px',
+	                  borderRadius: 10,
+	                  border: `1px solid ${enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'}`,
+	                  background: enabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+	                  color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
+	                  fontWeight: 900,
+	                  cursor: enabled ? 'pointer' : 'not-allowed',
+	                })
 
-	              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 64px) minmax(0, 64px)', gap: 16, justifyContent: 'start' }}>
-	                <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-	                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-	                  <input
-	                    type="number"
-	                    step={0.1}
-	                    min={0}
-	                    value={String(screenTitleEditor.start)}
-	                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-	                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 8px', fontSize: 13 }}
-	                  />
-	                </label>
-	                <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-	                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-	                  <input
-	                    type="number"
-	                    step={0.1}
-	                    min={0}
-	                    value={String(screenTitleEditor.end)}
-	                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-	                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 8px', fontSize: 13 }}
-	                  />
-	                </label>
+	                const canStartDec01 = Number.isFinite(start) && start - 0.1 >= 0 - 1e-9
+	                const canStartInc01 = Number.isFinite(start) && Number.isFinite(end) && start + 0.1 <= end - minLen + 1e-9
+	                const canEndDec01 = Number.isFinite(start) && Number.isFinite(end) && end - 0.1 >= start + minLen - 1e-9
+	                const canEndInc01 = Number.isFinite(end) && end + 0.1 <= cap + 1e-9
+
+	                return (
+	                  <>
+	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Duration</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) && Number.isFinite(end) ? `${Math.max(0, end - start).toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                    </div>
+
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                            <button type="button" disabled={!canStartDec01} onClick={() => setStart(start - 0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
+	                            <button type="button" disabled={!canStartInc01} onClick={() => setStart(start + 0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
+	                          </div>
+	                        </div>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
+	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                            <button type="button" disabled={!canEndDec01} onClick={() => setEnd(end - 0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
+	                            <button type="button" disabled={!canEndInc01} onClick={() => setEnd(end + 0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
+	                          </div>
+	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
+	                        </div>
+	                      </div>
+	                    </div>
+	                  </>
+	                )
+	              })()}
+
+	              <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
+	                <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
 	              </div>
 
-              {screenTitleEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleEditorError}</div> : null}
+	              <select
+	                value={String(screenTitleEditor.presetId ?? '')}
+	                onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, presetId: e.target.value ? Number(e.target.value) : null }) : p) }}
+	                style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+	              >
+	                <option value="" disabled>
+	                  Select…
+	                </option>
+	                {screenTitlePresets
+	                  .filter((p: any) => !(p && typeof p === 'object' && (p as any).archived_at))
+	                  .map((p: any) => (
+	                    <option key={`stp-${String(p.id)}`} value={String(p.id)}>{String(p.name || `Preset ${p.id}`)}</option>
+	                  ))}
+	              </select>
+	              {screenTitlePresetsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitlePresetsError}</div> : null}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+	              <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+	                <textarea
+	                  value={String(screenTitleEditor.text || '')}
+	                  placeholder="Type your screen title here"
+	                  rows={3}
+	                  onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
+	                  style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, resize: 'vertical' }}
+	                />
+	                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
+	                  <div>Max 140 chars • max 3 lines</div>
+	                  <div>{String(screenTitleEditor.text || '').length}</div>
+	                </div>
+	              </div>
+	
+	              {screenTitleEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleEditorError}</div> : null}
+	
+	              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
                 <button
                   type="button"
                   onClick={saveScreenTitleEditor}
