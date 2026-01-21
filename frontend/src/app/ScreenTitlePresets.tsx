@@ -8,7 +8,7 @@ type MeResponse = {
 
 type InsetPreset = 'small' | 'medium' | 'large'
 type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
-type ScreenTitleFontKey = 'dejavu_sans_bold'
+type ScreenTitleFontKey = string
 type ScreenTitleAlignment = 'left' | 'center' | 'right'
 type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
@@ -42,6 +42,33 @@ const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
   { label: 'Small', value: 'small' },
   { label: 'Medium', value: 'medium' },
   { label: 'Large', value: 'large' },
+]
+
+const FONT_FAMILIES: Array<{
+  familyKey: string
+  label: string
+  variants: Array<{ key: ScreenTitleFontKey; label: string }>
+}> = [
+  {
+    familyKey: 'dejavu_sans',
+    label: 'DejaVu Sans',
+    variants: [
+      { key: 'dejavu_sans_regular', label: 'Regular' },
+      { key: 'dejavu_sans_bold', label: 'Bold' },
+      { key: 'dejavu_sans_italic', label: 'Italic' },
+      { key: 'dejavu_sans_bold_italic', label: 'Bold Italic' },
+    ],
+  },
+  {
+    familyKey: 'caveat',
+    label: 'Caveat',
+    variants: [
+      { key: 'caveat_regular', label: 'Regular' },
+      { key: 'caveat_medium', label: 'Medium' },
+      { key: 'caveat_semibold', label: 'SemiBold' },
+      { key: 'caveat_bold', label: 'Bold' },
+    ],
+  },
 ]
 
 function getCsrfToken(): string | null {
@@ -222,6 +249,14 @@ export default function ScreenTitlePresetsPage() {
     setCloningId(null)
     setSaving(false)
   }, [])
+
+  const selectedFontFamily = useMemo(() => {
+    const currentKey = String(draft.fontKey || '').trim()
+    for (const fam of FONT_FAMILIES) {
+      if (fam.variants.some((v) => String(v.key) === currentKey)) return fam
+    }
+    return FONT_FAMILIES[0]
+  }, [draft.fontKey])
 
   const save = useCallback(async () => {
     if (!me?.userId) return
@@ -556,6 +591,59 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font family</div>
+                  <select
+                    value={selectedFontFamily.familyKey}
+                    onChange={(e) => {
+                      const familyKey = e.target.value
+                      const fam = FONT_FAMILIES.find((f) => f.familyKey === familyKey) || FONT_FAMILIES[0]
+                      const nextKey = fam.variants[0]?.key || 'dejavu_sans_bold'
+                      setDraft((d) => ({ ...d, fontKey: nextKey }))
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    {FONT_FAMILIES.map((f) => (
+                      <option key={f.familyKey} value={f.familyKey}>{f.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Variant</div>
+                  <select
+                    value={String(draft.fontKey || '')}
+                    onChange={(e) => setDraft((d) => ({ ...d, fontKey: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    {selectedFontFamily.variants.map((v) => (
+                      <option key={String(v.key)} value={String(v.key)}>{v.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Font size (% of frame height)</div>
                   <input
                     type="number"
@@ -851,7 +939,7 @@ export default function ScreenTitlePresetsPage() {
               </div>
 
               <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>
-                Font: DejaVu Sans Bold (curated list; more fonts can be added later).
+                Fonts are curated and rendered server-side with Pango. To add fonts: place TTF/OTF under `assets/fonts/` and extend the curated list.
               </div>
             </div>
           </div>

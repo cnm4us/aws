@@ -104,11 +104,36 @@ def main():
   bg_opacity_pct = float(preset.get("pillBgOpacityPct") or 55.0)
   bg_opacity = clamp(bg_opacity_pct / 100.0, 0.0, 1.0)
 
-  # Font: start with curated DejaVu Sans Bold. (Future: map fontKey to Pango family/weight.)
-  font_family = "DejaVu Sans"
-  # Use a slightly heavier weight than Bold so the PNG preview matches the on-page CSS
-  # (which uses very heavy weights like 800–900 on system fonts).
-  font_weight = "UltraBold"
+  # Font: curated list via fontKey -> (family, weight, style).
+  # NOTE: font files are provided via assets/fonts and discovered through Fontconfig.
+  def resolve_font(font_key: str):
+    k = str(font_key or "").strip().lower()
+    # Defaults
+    family = "DejaVu Sans"
+    weight = "UltraBold"
+    style0 = "normal"
+
+    if k == "dejavu_sans_regular":
+      family, weight, style0 = "DejaVu Sans", "Normal", "normal"
+    elif k == "dejavu_sans_bold":
+      # Slightly heavier than Bold so the PNG preview matches the on-page CSS (800–900).
+      family, weight, style0 = "DejaVu Sans", "UltraBold", "normal"
+    elif k == "dejavu_sans_italic":
+      family, weight, style0 = "DejaVu Sans", "Normal", "italic"
+    elif k == "dejavu_sans_bold_italic":
+      family, weight, style0 = "DejaVu Sans", "UltraBold", "italic"
+    elif k == "caveat_regular":
+      family, weight, style0 = "Caveat", "Normal", "normal"
+    elif k == "caveat_medium":
+      family, weight, style0 = "Caveat", "Medium", "normal"
+    elif k == "caveat_semibold":
+      family, weight, style0 = "Caveat", "SemiBold", "normal"
+    elif k == "caveat_bold":
+      family, weight, style0 = "Caveat", "Bold", "normal"
+    return family, weight, style0
+
+  font_key = str(preset.get("fontKey") or "dejavu_sans_bold")
+  font_family, font_weight, font_style = resolve_font(font_key)
   font_px = height * (font_size_pct / 100.0)
   font_px = clamp(font_px, 8.0, 220.0)
 
@@ -138,8 +163,18 @@ def main():
     fd.set_weight(Pango.Weight.ULTRABOLD)
   elif font_weight.lower() == "heavy":
     fd.set_weight(Pango.Weight.HEAVY)
+  elif font_weight.lower() == "semibold":
+    fd.set_weight(Pango.Weight.SEMIBOLD)
+  elif font_weight.lower() == "medium":
+    fd.set_weight(Pango.Weight.MEDIUM)
   else:
     fd.set_weight(Pango.Weight.BOLD if font_weight.lower() == "bold" else Pango.Weight.NORMAL)
+  if font_style.lower() == "italic":
+    fd.set_style(Pango.Style.ITALIC)
+  elif font_style.lower() == "oblique":
+    fd.set_style(Pango.Style.OBLIQUE)
+  else:
+    fd.set_style(Pango.Style.NORMAL)
   fd.set_absolute_size(int(font_px * Pango.SCALE))
   layout.set_font_description(fd)
 

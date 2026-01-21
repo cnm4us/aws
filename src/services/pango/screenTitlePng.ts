@@ -28,7 +28,14 @@ async function runPythonPangoRenderer(inputJsonPath: string, outPath: string): P
   await new Promise<void>((resolve, reject) => {
     const scriptPath = path.join(process.cwd(), 'scripts', 'pango', 'render_screen_title_png.py')
     const args = ['-u', scriptPath, '--input-json', inputJsonPath, '--out', outPath]
-    const p = spawn('python3', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const fontConfigFile = path.join(process.cwd(), 'assets', 'fonts', 'fonts.conf')
+    const p = spawn('python3', args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        FONTCONFIG_FILE: fontConfigFile,
+      },
+    })
     let stderr = ''
     const maxStderr = 8000
     p.stderr.on('data', (d) => {
@@ -41,4 +48,3 @@ async function runPythonPangoRenderer(inputJsonPath: string, outPath: string): P
     })
   })
 }
-

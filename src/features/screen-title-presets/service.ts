@@ -4,7 +4,16 @@ import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFon
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
-const FONT_KEYS: readonly ScreenTitleFontKey[] = ['dejavu_sans_bold']
+const FONT_KEYS: readonly ScreenTitleFontKey[] = [
+  'dejavu_sans_regular',
+  'dejavu_sans_bold',
+  'dejavu_sans_italic',
+  'dejavu_sans_bold_italic',
+  'caveat_regular',
+  'caveat_medium',
+  'caveat_semibold',
+  'caveat_bold',
+]
 const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
