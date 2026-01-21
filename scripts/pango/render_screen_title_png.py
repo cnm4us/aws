@@ -316,16 +316,38 @@ def main():
   max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
   max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0))
   approx_line_h0 = max(1.0, font_px * 1.35)
-  max_lines0 = int(max_layout_h_allowed0 / approx_line_h0)
+
+  # Text shaping on by default; allow \n.
+  layout.set_text(text, -1)
+
+  # Measure actual wrapped layout (including blank lines) to estimate a stable
+  # per-line height, then derive the max lines that fit in the available height.
+  try:
+    layout.set_height(0)  # no limit
+  except Exception:
+    pass
+  try:
+    _ink0, _logical0 = layout.get_pixel_extents()
+    _line_count0 = int(layout.get_line_count() or 0)
+  except Exception:
+    _logical0 = None
+    _line_count0 = 0
+  if _line_count0 < 1:
+    _line_count0 = 1
+  avg_line_h0 = approx_line_h0
+  if _logical0 is not None:
+    try:
+      avg_line_h0 = max(1.0, float(_logical0.height) / float(_line_count0))
+    except Exception:
+      avg_line_h0 = approx_line_h0
+
+  max_lines0 = int(max_layout_h_allowed0 / avg_line_h0)
   if max_lines0 < 1:
     max_lines0 = 1
   if max_lines0 > 30:
     max_lines0 = 30
 
   layout.set_ellipsize(Pango.EllipsizeMode.END)
-
-  # Text shaping on by default; allow \n.
-  layout.set_text(text, -1)
 
   if tracking_pct != 0.0:
     # Pango letter spacing is in Pango units (Pango.SCALE == 1024 units per device unit).
@@ -344,13 +366,14 @@ def main():
       pass
 
   # Tighten the line clamp until the full box (including stroke/shadow/padding)
-  # fits within the available height.
+  # fits within the available height. Use logical extents for height so we
+  # account for line spacing and blank lines (ink extents would undercount).
   ink = None
   logical = None
   for lines in range(max_lines0, 0, -1):
     layout.set_height(-lines)
     ink, logical = layout.get_pixel_extents()
-    content_h0 = float(ink.height) if ink.height > 0 else float(logical.height)
+    content_h0 = float(logical.height)
     box_h0 = content_h0 + 2.0 * (pad_y0 + stroke_pad0) + abs(shadow_dy0)
     if box_h0 <= max_box_h_allowed0 + 0.5:
       break
