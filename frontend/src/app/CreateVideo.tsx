@@ -1162,6 +1162,57 @@ export default function CreateVideo() {
     return screenTitles.find((st) => String((st as any).id) === String(selectedScreenTitleId)) || null
   }, [screenTitles, selectedScreenTitleId])
 
+  const openScreenTitleEditorById = useCallback(
+    (id: string) => {
+      const st = screenTitles.find((ss: any) => String((ss as any).id) === String(id)) as any
+      if (!st) return false
+      const s = roundToTenth(Number((st as any).startSeconds || 0))
+      const e2 = roundToTenth(Number((st as any).endSeconds || 0))
+      const presetId = Number((st as any).presetId || 0)
+      const text = String((st as any).text || '')
+      setSelectedScreenTitleId(String((st as any).id))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+      setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2, presetId, text })
+      setScreenTitleEditorError(null)
+      return true
+    },
+    [screenTitles]
+  )
+
+  const returnToScreenTitleId = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return null
+      const qp = new URLSearchParams(window.location.search)
+      const v = String(qp.get('cvScreenTitleId') || '').trim()
+      if (!v) return null
+      return v
+    } catch {
+      return null
+    }
+  }, [])
+
+  const handledReturnToScreenTitleRef = useRef(false)
+  useEffect(() => {
+    if (handledReturnToScreenTitleRef.current) return
+    if (!returnToScreenTitleId) return
+    if (!screenTitles.length) return
+    const ok = openScreenTitleEditorById(returnToScreenTitleId)
+    if (!ok) return
+    handledReturnToScreenTitleRef.current = true
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('cvScreenTitleId')
+      const next = `${url.pathname}${url.search}${url.hash || ''}`
+      window.history.replaceState({}, '', next)
+    } catch {}
+  }, [openScreenTitleEditorById, returnToScreenTitleId, screenTitles.length])
+
   const narration = useMemo(() => (Array.isArray((timeline as any).narration) ? (((timeline as any).narration as any) as Narration[]) : []), [timeline])
   const selectedNarration = useMemo(() => {
     if (!selectedNarrationId) return null
@@ -13028,9 +13079,23 @@ export default function CreateVideo() {
 	                )
 	              })()}
 
-	              <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	            <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 	                <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
-	                <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage presets</a>
+	                <a
+	                  href={(() => {
+	                    try {
+	                      const url = new URL(window.location.href)
+	                      url.searchParams.set('cvScreenTitleId', String(screenTitleEditor.id))
+	                      const from = `${url.pathname}${url.search}`
+	                      return `/screen-title-presets?from=${encodeURIComponent(from)}`
+	                    } catch {
+	                      return '/screen-title-presets'
+	                    }
+	                  })()}
+	                  style={{ color: '#0a84ff', textDecoration: 'none' }}
+	                >
+	                  Manage presets
+	                </a>
 	              </div>
 
 	              <select

@@ -319,7 +319,24 @@ export default function ScreenTitlePresetsPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
+        {view === 'edit' ? (
+          <button
+            type="button"
+            onClick={closeEdit}
+            style={{
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              color: '#0a84ff',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            ← Back to Presets
+          </button>
+        ) : (
+          <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
+        )}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Presets</h1>
