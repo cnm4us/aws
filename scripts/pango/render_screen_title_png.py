@@ -284,10 +284,13 @@ def main():
   # fits within the X inset on both sides; otherwise we end up clamping the pill
   # against one edge, producing visibly asymmetric margins.
   pad_x0 = 0.0
+  pad_y0 = 0.0
   stroke_pad0 = max(1.5, outline_width_px * 1.5)
   shadow_dx0 = 0.0
+  shadow_dy0 = 2.0
   if style in ("pill", "strip"):
     pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
+    pad_y0 = clamp(font_px * 0.30, 6.0, 28.0)
   margin_left_px0 = pct_to_px(margin_left_pct, width)
   margin_right_px0 = pct_to_px(margin_right_pct, width)
   max_box_w_allowed0 = max(10.0, width - margin_left_px0 - margin_right_px0)
@@ -305,8 +308,19 @@ def main():
     layout.set_alignment(Pango.Alignment.RIGHT)
   else:
     layout.set_alignment(Pango.Alignment.CENTER)
-  # Clamp to max 30 lines; ellipsize if needed.
-  layout.set_height(-30)
+  # Clamp to N lines so the text box always fits within the vertical margins.
+  # (Pango line-height is font-dependent; we use a conservative approximation.)
+  margin_top_px0 = pct_to_px(margin_top_pct, width)
+  margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
+  max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
+  max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0))
+  approx_line_h0 = max(1.0, font_px * 1.20)
+  max_lines0 = int(max_layout_h_allowed0 / approx_line_h0)
+  if max_lines0 < 1:
+    max_lines0 = 1
+  if max_lines0 > 30:
+    max_lines0 = 30
+  layout.set_height(-max_lines0)
   layout.set_ellipsize(Pango.EllipsizeMode.END)
 
   # Text shaping on by default; allow \n.
