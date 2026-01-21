@@ -223,10 +223,10 @@ export async function validateAndNormalizeDraftConfig(
   if ('screenTitleText' in next) {
     let text = String(next.screenTitleText ?? '').replace(/\r\n/g, '\n')
     const lines = text.split('\n')
-    if (lines.length > 3) text = `${lines[0]}\n${lines[1]}\n${lines[2]}`
+    if (lines.length > 12) text = lines.slice(0, 12).join('\n')
     text = text.trim()
     if (!text) next.screenTitleText = null
-    else if (text.length > 140) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+    else if (text.length > 400) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
     else next.screenTitleText = text
   }
 
@@ -286,4 +286,3 @@ export async function validateAndNormalizeDraftConfig(
 
   return next
 }
-

@@ -341,42 +341,43 @@ export async function create(
 
   // Screen title (Plan 47): per-production text + preset snapshot.
   {
-    const presetIdRaw = input.screenTitlePresetId
-    const presetId = presetIdRaw != null ? Number(presetIdRaw) : null
-    const rawText = input.screenTitleText
-    let text = String(rawText ?? '').replace(/\r\n/g, '\n')
-    const lines = text.split('\n')
-    if (lines.length > 3) text = `${lines[0]}\n${lines[1]}\n${lines[2]}`
-    text = text.trim()
-    if (!text) {
-      mergedConfig.screenTitlePresetId = null
-      mergedConfig.screenTitlePresetSnapshot = null
-      mergedConfig.screenTitleText = null
-    } else {
-      if (text.length > 140) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
-      if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
-        throw new DomainError('missing_screen_title_preset', 'missing_screen_title_preset', 400)
-      }
+	    const presetIdRaw = input.screenTitlePresetId
+	    const presetId = presetIdRaw != null ? Number(presetIdRaw) : null
+	    const rawText = input.screenTitleText
+	    let text = String(rawText ?? '').replace(/\r\n/g, '\n')
+	    const lines = text.split('\n')
+	    if (lines.length > 12) text = lines.slice(0, 12).join('\n')
+	    text = text.trim()
+	    if (!text) {
+	      mergedConfig.screenTitlePresetId = null
+	      mergedConfig.screenTitlePresetSnapshot = null
+	      mergedConfig.screenTitleText = null
+	    } else {
+	      if (text.length > 400) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+	      if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+	        throw new DomainError('missing_screen_title_preset', 'missing_screen_title_preset', 400)
+	      }
       const preset = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
       mergedConfig.screenTitlePresetId = preset.id
-      mergedConfig.screenTitlePresetSnapshot = {
-        id: preset.id,
-        name: preset.name,
-        style: (preset as any).style,
-        fontKey: (preset as any).fontKey,
-        fontSizePct: (preset as any).fontSizePct,
-        trackingPct: (preset as any).trackingPct,
-        fontColor: (preset as any).fontColor,
-        pillBgColor: (preset as any).pillBgColor,
-        pillBgOpacityPct: (preset as any).pillBgOpacityPct,
-        position: (preset as any).position,
-        maxWidthPct: (preset as any).maxWidthPct,
-        insetXPreset: (preset as any).insetXPreset ?? null,
-        insetYPreset: (preset as any).insetYPreset ?? null,
-        timingRule: (preset as any).timingRule,
-        timingSeconds: (preset as any).timingSeconds ?? null,
-        fade: (preset as any).fade,
-      }
+	      mergedConfig.screenTitlePresetSnapshot = {
+	        id: preset.id,
+	        name: preset.name,
+	        style: (preset as any).style,
+	        fontKey: (preset as any).fontKey,
+	        fontSizePct: (preset as any).fontSizePct,
+	        trackingPct: (preset as any).trackingPct,
+	        fontColor: (preset as any).fontColor,
+	        pillBgColor: (preset as any).pillBgColor,
+	        pillBgOpacityPct: (preset as any).pillBgOpacityPct,
+	        alignment: (preset as any).alignment,
+	        position: (preset as any).position,
+	        maxWidthPct: (preset as any).maxWidthPct,
+	        insetXPreset: (preset as any).insetXPreset ?? null,
+	        insetYPreset: (preset as any).insetYPreset ?? null,
+	        timingRule: (preset as any).timingRule,
+	        timingSeconds: (preset as any).timingSeconds ?? null,
+	        fade: (preset as any).fade,
+	      }
       mergedConfig.screenTitleText = text
     }
   }

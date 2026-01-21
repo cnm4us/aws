@@ -2721,8 +2721,8 @@ export default function ProducePage() {
                         let v = String(e.target.value || '')
                         v = v.replace(/\r\n/g, '\n')
                         const lines = v.split('\n')
-                        if (lines.length > 3) v = `${lines[0]}\n${lines[1]}\n${lines[2]}`
-                        if (v.length > 140) v = v.slice(0, 140)
+                        if (lines.length > 12) v = lines.slice(0, 12).join('\n')
+                        if (v.length > 400) v = v.slice(0, 400)
                         setScreenTitleText(v)
                       }}
                       rows={3}
@@ -2741,7 +2741,7 @@ export default function ProducePage() {
                       }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: '#777', fontSize: 13 }}>
-                      <div>Max 140 chars • max 3 lines</div>
+                      <div>Max 400 chars • max 12 lines</div>
                       <div>{(screenTitleText || '').length}/140</div>
                     </div>
                   </label>

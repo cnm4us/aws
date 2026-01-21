@@ -8630,12 +8630,12 @@ export default function CreateVideo() {
       setScreenTitleEditorError('Pick a screen title style.')
       return
     }
-    if (text.length > 140) {
-      setScreenTitleEditorError('Max 140 characters.')
+    if (text.length > 400) {
+      setScreenTitleEditorError('Max 400 characters.')
       return
     }
-    if (text.split('\n').length > 3) {
-      setScreenTitleEditorError('Max 3 lines.')
+    if (text.split('\n').length > 12) {
+      setScreenTitleEditorError('Max 12 lines.')
       return
     }
 
@@ -8737,12 +8737,12 @@ export default function CreateVideo() {
       setScreenTitleEditorError('Enter text.')
       return
     }
-    if (text.length > 140) {
-      setScreenTitleEditorError('Max 140 characters.')
+    if (text.length > 400) {
+      setScreenTitleEditorError('Max 400 characters.')
       return
     }
-    if (text.split('\n').length > 3) {
-      setScreenTitleEditorError('Max 3 lines.')
+    if (text.split('\n').length > 12) {
+      setScreenTitleEditorError('Max 12 lines.')
       return
     }
 
@@ -13125,11 +13125,12 @@ export default function CreateVideo() {
 	                  value={String(screenTitleEditor.text || '')}
 	                  placeholder="Type your screen title here"
 	                  rows={3}
+	                  maxLength={400}
 	                  onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
 	                  style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, resize: 'vertical' }}
 	                />
 	                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
-	                  <div>Max 140 chars • max 3 lines</div>
+	                  <div>Max 400 chars • max 12 lines</div>
 	                  <div>{String(screenTitleEditor.text || '').length}</div>
 	                </div>
 	              </div>

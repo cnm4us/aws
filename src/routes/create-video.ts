@@ -90,8 +90,8 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
     const frameH = Number(body.frameH)
     if (!Number.isFinite(presetId) || presetId <= 0) throw new DomainError('bad_preset_id', 'bad_preset_id', 400)
     if (!text) throw new DomainError('missing_text', 'missing_text', 400)
-    if (text.length > 140) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
-    if (text.split('\n').length > 3) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
+    if (text.length > 400) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+    if (text.split('\n').length > 12) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
     if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || frameW <= 0 || frameH <= 0) throw new DomainError('bad_frame', 'bad_frame', 400)
     if (frameW > 3840 || frameH > 3840) throw new DomainError('bad_frame', 'bad_frame', 400)
 
