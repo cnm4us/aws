@@ -1,8 +1,18 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth'
 import * as svc from '../features/screen-title-presets/service'
+import { listScreenTitleFontFamilies } from '../services/fonts/screenTitleFonts'
 
 export const screenTitlePresetsRouter = Router()
+
+screenTitlePresetsRouter.get('/api/screen-title-fonts', requireAuth, async (_req, res, next) => {
+  try {
+    const families = listScreenTitleFontFamilies()
+    res.json({ families })
+  } catch (err: any) {
+    next(err)
+  }
+})
 
 screenTitlePresetsRouter.get('/api/screen-title-presets', requireAuth, async (req, res, next) => {
   try {

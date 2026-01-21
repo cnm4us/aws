@@ -1,19 +1,10 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
 import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
+import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
-const FONT_KEYS: readonly ScreenTitleFontKey[] = [
-  'dejavu_sans_regular',
-  'dejavu_sans_bold',
-  'dejavu_sans_italic',
-  'dejavu_sans_bold_italic',
-  'caveat_regular',
-  'caveat_medium',
-  'caveat_semibold',
-  'caveat_bold',
-]
 const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
@@ -32,8 +23,8 @@ function toInsetPresetOrNull(raw: any): InsetPreset | null {
 }
 
 function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
-  const rawFont = String((row as any).font_key || 'dejavu_sans_bold').trim() as any
-  const fontKey: ScreenTitleFontKey = isEnumValue(rawFont, FONT_KEYS) ? rawFont : 'dejavu_sans_bold'
+  const rawFont = String((row as any).font_key || 'dejavu_sans_bold').trim()
+  const fontKey: ScreenTitleFontKey = rawFont && isFontKeyAllowed(rawFont) ? rawFont : 'dejavu_sans_bold'
   const alignmentRaw = String((row as any).alignment || 'center').trim().toLowerCase()
   const alignment: ScreenTitleAlignment = isEnumValue(alignmentRaw, ALIGNMENTS) ? (alignmentRaw as any) : 'center'
   const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
@@ -123,6 +114,13 @@ function normalizeTrackingPct(raw: any): number {
   return Math.round(clamped)
 }
 
+function normalizeFontKey(raw: any): ScreenTitleFontKey {
+  const s = String(raw ?? '').trim()
+  if (!s) return 'dejavu_sans_bold'
+  if (!isFontKeyAllowed(s)) throw new DomainError('invalid_font', 'invalid_font', 400)
+  return s
+}
+
 function normalizeFontColor(raw: any): string {
   const s = String(raw ?? '').trim()
   if (!s) return '#ffffff'
@@ -198,7 +196,7 @@ export async function createForUser(input: {
   const name = normalizeName(input.name)
   const description = normalizeDescription(input.description)
   const style: ScreenTitleStyle = isEnumValue(input.style, STYLES) ? input.style : 'pill'
-  const fontKey: ScreenTitleFontKey = isEnumValue(input.fontKey, FONT_KEYS) ? input.fontKey : 'dejavu_sans_bold'
+  const fontKey: ScreenTitleFontKey = normalizeFontKey(input.fontKey)
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
   const fontColor = normalizeFontColor(input.fontColor)
@@ -286,7 +284,7 @@ export async function updateForUser(
   }
 
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
-  if (!isEnumValue(next.fontKey, FONT_KEYS)) throw new DomainError('invalid_font', 'invalid_font', 400)
+  next.fontKey = normalizeFontKey(next.fontKey)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
   const fontColor = normalizeFontColor(next.fontColor)

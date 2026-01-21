@@ -14,6 +14,14 @@ type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
 type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
 
+type ScreenTitleFontFamiliesResponse = {
+  families: Array<{
+    familyKey: string
+    label: string
+    variants: Array<{ key: string; label: string }>
+  }>
+}
+
 type ScreenTitlePreset = {
   id: number
   name: string
@@ -44,7 +52,7 @@ const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
   { label: 'Large', value: 'large' },
 ]
 
-const FONT_FAMILIES: Array<{
+const DEFAULT_FONT_FAMILIES: Array<{
   familyKey: string
   label: string
   variants: Array<{ key: ScreenTitleFontKey; label: string }>
@@ -161,6 +169,7 @@ export default function ScreenTitlePresetsPage() {
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
+  const [fontFamilies, setFontFamilies] = useState(DEFAULT_FONT_FAMILIES)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'list' | 'edit'>('list')
@@ -185,11 +194,28 @@ export default function ScreenTitlePresetsPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/screen-title-presets', { credentials: 'same-origin' })
-      if (!res.ok) throw new Error('failed_to_load')
-      const data = await res.json()
-      const items: ScreenTitlePreset[] = Array.isArray(data) ? data : []
+      const [presetsRes, fontsRes] = await Promise.all([
+        fetch('/api/screen-title-presets', { credentials: 'same-origin' }),
+        fetch('/api/screen-title-fonts', { credentials: 'same-origin' }),
+      ])
+      if (!presetsRes.ok) throw new Error('failed_to_load')
+      const presetsData = await presetsRes.json()
+      const items: ScreenTitlePreset[] = Array.isArray(presetsData) ? presetsData : []
       setPresets(items)
+
+      if (fontsRes.ok) {
+        const fontsData = (await fontsRes.json().catch(() => null)) as ScreenTitleFontFamiliesResponse | null
+        const fams = Array.isArray(fontsData?.families) ? fontsData!.families : null
+        if (fams && fams.length) {
+          setFontFamilies(
+            fams.map((f) => ({
+              familyKey: String(f.familyKey || ''),
+              label: String(f.label || ''),
+              variants: Array.isArray(f.variants) ? f.variants.map((v) => ({ key: String(v.key || ''), label: String(v.label || '') })) : [],
+            }))
+          )
+        }
+      }
     } catch (e: any) {
       setError(e?.message || 'Failed to load presets')
     } finally {
@@ -252,11 +278,11 @@ export default function ScreenTitlePresetsPage() {
 
   const selectedFontFamily = useMemo(() => {
     const currentKey = String(draft.fontKey || '').trim()
-    for (const fam of FONT_FAMILIES) {
+    for (const fam of fontFamilies) {
       if (fam.variants.some((v) => String(v.key) === currentKey)) return fam
     }
-    return FONT_FAMILIES[0]
-  }, [draft.fontKey])
+    return fontFamilies[0] || DEFAULT_FONT_FAMILIES[0]
+  }, [draft.fontKey, fontFamilies])
 
   const save = useCallback(async () => {
     if (!me?.userId) return
@@ -596,7 +622,7 @@ export default function ScreenTitlePresetsPage() {
                     value={selectedFontFamily.familyKey}
                     onChange={(e) => {
                       const familyKey = e.target.value
-                      const fam = FONT_FAMILIES.find((f) => f.familyKey === familyKey) || FONT_FAMILIES[0]
+                      const fam = fontFamilies.find((f) => f.familyKey === familyKey) || fontFamilies[0] || DEFAULT_FONT_FAMILIES[0]
                       const nextKey = fam.variants[0]?.key || 'dejavu_sans_bold'
                       setDraft((d) => ({ ...d, fontKey: nextKey }))
                     }}
@@ -612,7 +638,7 @@ export default function ScreenTitlePresetsPage() {
                       outline: 'none',
                     }}
                   >
-                    {FONT_FAMILIES.map((f) => (
+                    {fontFamilies.map((f) => (
                       <option key={f.familyKey} value={f.familyKey}>{f.label}</option>
                     ))}
                   </select>

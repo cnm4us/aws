@@ -107,11 +107,41 @@ def main():
   # Font: curated list via fontKey -> (family, weight, style).
   # NOTE: font files are provided via assets/fonts and discovered through Fontconfig.
   def resolve_font(font_key: str):
-    k = str(font_key or "").strip().lower()
+    raw = str(font_key or "").strip()
+    k = raw.lower()
     # Defaults
     family = "DejaVu Sans"
     weight = "UltraBold"
     style0 = "normal"
+
+    # Dynamic Fontconfig keys: fc:<family>:<style>
+    if raw.startswith("fc:"):
+      try:
+        import urllib.parse
+        parts = raw.split(":", 2)
+        if len(parts) == 3:
+          fam = urllib.parse.unquote(parts[1])
+          sty = urllib.parse.unquote(parts[2])
+          if fam:
+            family = fam
+          s = (sty or "").strip()
+          sl = s.lower()
+          style0 = "italic" if ("italic" in sl or "oblique" in sl) else "normal"
+          if "ultra" in sl or "black" in sl:
+            weight = "UltraBold"
+          elif "heavy" in sl:
+            weight = "Heavy"
+          elif "semibold" in sl or "demibold" in sl:
+            weight = "SemiBold"
+          elif "medium" in sl:
+            weight = "Medium"
+          elif "bold" in sl:
+            weight = "Bold"
+          else:
+            weight = "Normal"
+          return family, weight, style0
+      except Exception:
+        pass
 
     if k == "dejavu_sans_regular":
       family, weight, style0 = "DejaVu Sans", "Normal", "normal"

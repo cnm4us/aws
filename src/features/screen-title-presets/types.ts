@@ -1,15 +1,7 @@
 export type InsetPreset = 'small' | 'medium' | 'large'
 
 export type ScreenTitleStyle = 'pill' | 'outline' | 'strip'
-export type ScreenTitleFontKey =
-  | 'dejavu_sans_regular'
-  | 'dejavu_sans_bold'
-  | 'dejavu_sans_italic'
-  | 'dejavu_sans_bold_italic'
-  | 'caveat_regular'
-  | 'caveat_medium'
-  | 'caveat_semibold'
-  | 'caveat_bold'
+export type ScreenTitleFontKey = string
 export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 export type ScreenTitleTimingRule = 'entire' | 'first_only'
