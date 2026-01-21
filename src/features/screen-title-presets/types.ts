@@ -17,6 +17,7 @@ export type ScreenTitlePresetRow = {
   font_size_pct: number
   tracking_pct: number
   font_color: string
+  font_gradient_key: string | null
   pill_bg_color: string
   pill_bg_opacity_pct: number
   alignment: ScreenTitleAlignment
@@ -41,6 +42,7 @@ export type ScreenTitlePresetDto = {
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  fontGradientKey: string | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: ScreenTitleAlignment

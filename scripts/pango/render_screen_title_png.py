@@ -104,6 +104,12 @@ def main():
   bg_opacity_pct = float(preset.get("pillBgOpacityPct") or 55.0)
   bg_opacity = clamp(bg_opacity_pct / 100.0, 0.0, 1.0)
 
+  font_gradient_key = preset.get("fontGradientKey")
+  if font_gradient_key is not None:
+    font_gradient_key = str(font_gradient_key).strip()
+    if font_gradient_key == "":
+      font_gradient_key = None
+
   # Font: curated list via fontKey -> (family, weight, style).
   # NOTE: font files are provided via assets/fonts and discovered through Fontconfig.
   def resolve_font(font_key: str):
@@ -323,6 +329,30 @@ def main():
     PangoCairo.show_layout(ctx, layout)
     ctx.restore()
 
+  # Optional gradient fill (screen-sized PNG masked by glyphs).
+  gradient_surface = None
+  gradient_pattern = None
+  if font_gradient_key:
+    try:
+      import os
+      # Prevent traversal: filenames only.
+      if "/" not in font_gradient_key and "\\" not in font_gradient_key and ".." not in font_gradient_key:
+        gp = os.path.join(os.getcwd(), "assets", "font_gradients", font_gradient_key)
+        if os.path.isfile(gp):
+          gradient_surface = cairo.ImageSurface.create_from_png(gp)
+          gradient_pattern = cairo.SurfacePattern(gradient_surface)
+          try:
+            gradient_pattern.set_filter(cairo.FILTER_BILINEAR)
+          except Exception:
+            pass
+          try:
+            gradient_pattern.set_extend(cairo.EXTEND_PAD)
+          except Exception:
+            pass
+    except Exception:
+      gradient_surface = None
+      gradient_pattern = None
+
   # Outline: stroke the glyph path, then fill.
   if style == "outline":
     ctx.save()
@@ -332,8 +362,17 @@ def main():
     ctx.set_source_rgba(0.0, 0.0, 0.0, 0.45)
     ctx.set_line_width(1.0)
     ctx.stroke_preserve()
-    rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
-    ctx.set_source_rgba(rr, gg, bb, aa)
+    if gradient_pattern is not None and gradient_surface is not None:
+      gw = float(gradient_surface.get_width())
+      gh = float(gradient_surface.get_height())
+      sx = gw / float(width) if width > 0 else 1.0
+      sy = gh / float(height) if height > 0 else 1.0
+      m = cairo.Matrix(sx, 0.0, 0.0, sy, x_draw * sx, y_draw * sy)
+      gradient_pattern.set_matrix(m)
+      ctx.set_source(gradient_pattern)
+    else:
+      rr, gg, bb, aa = hex_to_rgba(font_color, 1.0)
+      ctx.set_source_rgba(rr, gg, bb, aa)
     ctx.fill()
     ctx.restore()
   else:
@@ -348,7 +387,16 @@ def main():
       ctx.set_source_rgba(0.0, 0.0, 0.0, 0.25)
       ctx.set_line_width(0.9)
       ctx.stroke_preserve()
-    ctx.set_source_rgba(rr, gg, bb, aa)
+    if gradient_pattern is not None and gradient_surface is not None:
+      gw = float(gradient_surface.get_width())
+      gh = float(gradient_surface.get_height())
+      sx = gw / float(width) if width > 0 else 1.0
+      sy = gh / float(height) if height > 0 else 1.0
+      m = cairo.Matrix(sx, 0.0, 0.0, sy, x_draw * sx, y_draw * sy)
+      gradient_pattern.set_matrix(m)
+      ctx.set_source(gradient_pattern)
+    else:
+      ctx.set_source_rgba(rr, gg, bb, aa)
     ctx.fill()
     ctx.restore()
 

@@ -359,18 +359,19 @@ export async function create(
 		      }
       const preset = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
       mergedConfig.screenTitlePresetId = preset.id
-	      mergedConfig.screenTitlePresetSnapshot = {
-	        id: preset.id,
-	        name: preset.name,
-	        style: (preset as any).style,
-	        fontKey: (preset as any).fontKey,
-	        fontSizePct: (preset as any).fontSizePct,
-	        trackingPct: (preset as any).trackingPct,
-	        fontColor: (preset as any).fontColor,
-	        pillBgColor: (preset as any).pillBgColor,
-	        pillBgOpacityPct: (preset as any).pillBgOpacityPct,
-	        alignment: (preset as any).alignment,
-	        position: (preset as any).position,
+		      mergedConfig.screenTitlePresetSnapshot = {
+		        id: preset.id,
+		        name: preset.name,
+		        style: (preset as any).style,
+		        fontKey: (preset as any).fontKey,
+		        fontSizePct: (preset as any).fontSizePct,
+		        trackingPct: (preset as any).trackingPct,
+		        fontColor: (preset as any).fontColor,
+		        fontGradientKey: (preset as any).fontGradientKey ?? null,
+		        pillBgColor: (preset as any).pillBgColor,
+		        pillBgOpacityPct: (preset as any).pillBgOpacityPct,
+		        alignment: (preset as any).alignment,
+		        position: (preset as any).position,
 	        maxWidthPct: (preset as any).maxWidthPct,
 	        insetXPreset: (preset as any).insetXPreset ?? null,
 	        insetYPreset: (preset as any).insetYPreset ?? null,

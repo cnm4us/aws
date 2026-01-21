@@ -347,10 +347,13 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   const trackingPct = Number((raw as any).trackingPct)
   if (!Number.isFinite(fontSizePct) || fontSizePct < 1 || fontSizePct > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
   if (!Number.isFinite(trackingPct) || trackingPct < -40 || trackingPct > 40) throw new ValidationError('invalid_screen_title_preset_snapshot')
-  const fontColor = String((raw as any).fontColor || '').trim()
-  const pillBgColor = String((raw as any).pillBgColor || '').trim()
-  if (!fontColor || fontColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
-  if (!pillBgColor || pillBgColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  const fontColor = String((raw as any).fontColor || '').trim()
+	  const fontGradientKeyRaw = (raw as any).fontGradientKey
+	  const fontGradientKey = fontGradientKeyRaw == null ? null : String(fontGradientKeyRaw || '').trim() || null
+	  const pillBgColor = String((raw as any).pillBgColor || '').trim()
+	  if (!fontColor || fontColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (fontGradientKey != null && fontGradientKey.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!pillBgColor || pillBgColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const pillBgOpacityPct = Number((raw as any).pillBgOpacityPct)
   if (!Number.isFinite(pillBgOpacityPct) || pillBgOpacityPct < 0 || pillBgOpacityPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const positionRaw = String((raw as any).position || 'top').trim().toLowerCase()
@@ -379,11 +382,12 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
     style,
     fontKey,
     fontSizePct: roundToTenth(fontSizePct),
-    trackingPct: Math.round(trackingPct),
-    fontColor,
-    pillBgColor,
-    pillBgOpacityPct: Math.round(pillBgOpacityPct),
-    alignment,
+	    trackingPct: Math.round(trackingPct),
+	    fontColor,
+	    fontGradientKey,
+	    pillBgColor,
+	    pillBgOpacityPct: Math.round(pillBgOpacityPct),
+	    alignment,
     position,
     maxWidthPct: Math.round(maxWidthPct),
     insetXPreset: insetXPreset as any,

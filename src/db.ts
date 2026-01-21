@@ -282,7 +282,7 @@ export async function ensureSchema(db: DB) {
 				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_before_ms SMALLINT UNSIGNED NULL`);
 				  await db.query(`ALTER TABLE audio_configurations ADD COLUMN IF NOT EXISTS opener_cut_fade_after_ms SMALLINT UNSIGNED NULL`);
 
-          // --- Screen titles (plan_47) ---
+	          // --- Screen titles (plan_47) ---
           await db.query(`
             CREATE TABLE IF NOT EXISTS screen_title_presets (
               id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -314,8 +314,10 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS tracking_pct TINYINT NOT NULL DEFAULT 0`);
           try { await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN tracking_pct TINYINT NOT NULL DEFAULT 0`); } catch {}
-          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
-          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
+	          // Optional text gradient fill (PNG key under assets/font_gradients).
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_gradient_key VARCHAR(128) NULL`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55`);
           // Plan: screen title text alignment (left/center/right).
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS alignment ENUM('left','center','right') NOT NULL DEFAULT 'center'`);

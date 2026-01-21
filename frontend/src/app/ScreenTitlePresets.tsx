@@ -22,6 +22,13 @@ type ScreenTitleFontFamiliesResponse = {
   }>
 }
 
+type ScreenTitleGradientsResponse = {
+  gradients: Array<{
+    key: string
+    label: string
+  }>
+}
+
 type ScreenTitlePreset = {
   id: number
   name: string
@@ -31,6 +38,7 @@ type ScreenTitlePreset = {
   fontSizePct: number
   trackingPct?: number
   fontColor: string
+  fontGradientKey?: string | null
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: ScreenTitleAlignment
@@ -109,6 +117,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontSizePct: 4.5,
     trackingPct: 0,
     fontColor: '#ffffff',
+    fontGradientKey: null,
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
     alignment: 'center',
@@ -170,6 +179,7 @@ export default function ScreenTitlePresetsPage() {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
   const [fontFamilies, setFontFamilies] = useState(DEFAULT_FONT_FAMILIES)
+  const [gradients, setGradients] = useState<Array<{ key: string; label: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'list' | 'edit'>('list')
@@ -194,9 +204,10 @@ export default function ScreenTitlePresetsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [presetsRes, fontsRes] = await Promise.all([
+      const [presetsRes, fontsRes, gradientsRes] = await Promise.all([
         fetch('/api/screen-title-presets', { credentials: 'same-origin' }),
         fetch('/api/screen-title-fonts', { credentials: 'same-origin' }),
+        fetch('/api/screen-title-gradients', { credentials: 'same-origin' }),
       ])
       if (!presetsRes.ok) throw new Error('failed_to_load')
       const presetsData = await presetsRes.json()
@@ -215,6 +226,18 @@ export default function ScreenTitlePresetsPage() {
             }))
           )
         }
+      }
+
+      if (gradientsRes.ok) {
+        const data = (await gradientsRes.json().catch(() => null)) as ScreenTitleGradientsResponse | null
+        const list = Array.isArray(data?.gradients) ? data!.gradients : []
+        setGradients(
+          list
+            .map((g) => ({ key: String(g.key || ''), label: String(g.label || '') }))
+            .filter((g) => g.key)
+        )
+      } else {
+        setGradients([])
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to load presets')
@@ -251,6 +274,7 @@ export default function ScreenTitlePresetsPage() {
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
       fontColor: preset.fontColor || '#ffffff',
+      fontGradientKey: preset.fontGradientKey ?? null,
       pillBgColor: preset.pillBgColor || '#000000',
       pillBgOpacityPct: preset.pillBgOpacityPct ?? 55,
       alignment: preset.alignment ?? 'center',
@@ -347,6 +371,7 @@ export default function ScreenTitlePresetsPage() {
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
         fontColor: preset.fontColor,
+        fontGradientKey: preset.fontGradientKey ?? null,
         pillBgColor: preset.pillBgColor,
         pillBgOpacityPct: preset.pillBgOpacityPct,
         alignment: preset.alignment ?? 'center',
@@ -740,6 +765,33 @@ export default function ScreenTitlePresetsPage() {
                       outline: 'none',
                     }}
                   />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Text gradient</div>
+                  <select
+                    value={String(draft.fontGradientKey || '')}
+                    onChange={(e) => setDraft((d) => ({ ...d, fontGradientKey: e.target.value ? e.target.value : null }))}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">None (solid color)</option>
+                    {gradients.map((g) => (
+                      <option key={g.key} value={g.key}>{g.label || g.key}</option>
+                    ))}
+                  </select>
+                  <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+                    Gradient fills the text; the rest of the PNG stays transparent.
+                  </div>
                 </label>
               </div>
 

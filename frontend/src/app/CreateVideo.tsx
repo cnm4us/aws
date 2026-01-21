@@ -4935,6 +4935,7 @@ export default function CreateVideo() {
         fontSizePct: Number((preset as any).fontSizePct),
         trackingPct: Number((preset as any).trackingPct),
         fontColor: String((preset as any).fontColor || '#ffffff'),
+        fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
         pillBgColor: String((preset as any).pillBgColor || '#000000'),
         pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
         alignment: (String((preset as any).alignment || 'center').toLowerCase() === 'left'
@@ -8654,7 +8655,7 @@ export default function CreateVideo() {
       return
     }
 
-    const snapshot: any = {
+      const snapshot: any = {
       id: presetId,
       name: String((preset as any).name || `Preset ${presetId}`),
       style: (String((preset as any).style || 'outline').toLowerCase() === 'pill'
@@ -8666,6 +8667,7 @@ export default function CreateVideo() {
       fontSizePct: Number((preset as any).fontSizePct),
       trackingPct: Number((preset as any).trackingPct),
       fontColor: String((preset as any).fontColor || '#ffffff'),
+      fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
       pillBgColor: String((preset as any).pillBgColor || '#000000'),
       pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
       position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
@@ -8787,6 +8789,7 @@ export default function CreateVideo() {
               fontSizePct: Number((preset as any).fontSizePct),
               trackingPct: Number((preset as any).trackingPct),
               fontColor: String((preset as any).fontColor || '#ffffff'),
+              fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
               pillBgColor: String((preset as any).pillBgColor || '#000000'),
               pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
               position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'

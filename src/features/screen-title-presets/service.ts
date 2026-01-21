@@ -2,6 +2,7 @@ import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
 import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
 import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
+import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['pill', 'outline', 'strip']
@@ -32,6 +33,8 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
   const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
+  const gradientRaw = (row as any).font_gradient_key
+  const fontGradientKey = gradientRaw == null ? null : String(gradientRaw).trim() || null
   const pillBgColor = String((row as any).pill_bg_color || '#000000').trim() || '#000000'
   const pillBgOpacityPctRaw = (row as any).pill_bg_opacity_pct != null ? Number((row as any).pill_bg_opacity_pct) : 55
   const pillBgOpacityPct = Number.isFinite(pillBgOpacityPctRaw) ? pillBgOpacityPctRaw : 55
@@ -51,6 +54,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontSizePct,
     trackingPct,
     fontColor,
+    fontGradientKey,
     pillBgColor,
     pillBgOpacityPct,
     alignment,
@@ -121,6 +125,14 @@ function normalizeFontKey(raw: any): ScreenTitleFontKey {
   return s
 }
 
+function normalizeFontGradientKey(raw: any): string | null {
+  if (raw == null || raw === '') return null
+  const s = String(raw).trim()
+  if (!s) return null
+  if (!isGradientKeyAllowed(s)) throw new DomainError('invalid_font_gradient', 'invalid_font_gradient', 400)
+  return s
+}
+
 function normalizeFontColor(raw: any): string {
   const s = String(raw ?? '').trim()
   if (!s) return '#ffffff'
@@ -178,6 +190,7 @@ export async function createForUser(input: {
   description?: any
   style?: any
   fontKey?: any
+  fontGradientKey?: any
   fontSizePct?: any
   trackingPct?: any
   fontColor?: any
@@ -200,6 +213,7 @@ export async function createForUser(input: {
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
   const fontColor = normalizeFontColor(input.fontColor)
+  const fontGradientKey = normalizeFontGradientKey((input as any).fontGradientKey)
   const pillBgColor = normalizePillBgColor(input.pillBgColor)
   const pillBgOpacityPct = normalizeOpacityPct(input.pillBgOpacityPct, 55)
   const alignment: ScreenTitleAlignment = isEnumValue(input.alignment, ALIGNMENTS) ? input.alignment : 'center'
@@ -221,6 +235,7 @@ export async function createForUser(input: {
     fontSizePct,
     trackingPct,
     fontColor,
+    fontGradientKey,
     pillBgColor: style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: style === 'pill' ? pillBgOpacityPct : 55,
     alignment,
@@ -242,6 +257,7 @@ export async function updateForUser(
     description?: any
     style?: any
     fontKey?: any
+    fontGradientKey?: any
     fontSizePct?: any
     trackingPct?: any
     fontColor?: any
@@ -271,6 +287,7 @@ export async function updateForUser(
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
     trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
+    fontGradientKey: patch.fontGradientKey !== undefined ? patch.fontGradientKey : (existing as any).font_gradient_key,
     pillBgColor: patch.pillBgColor !== undefined ? patch.pillBgColor : (existing as any).pill_bg_color,
     pillBgOpacityPct: patch.pillBgOpacityPct !== undefined ? patch.pillBgOpacityPct : (existing as any).pill_bg_opacity_pct,
     alignment: patch.alignment !== undefined ? patch.alignment : (existing as any).alignment,
@@ -285,6 +302,7 @@ export async function updateForUser(
 
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   next.fontKey = normalizeFontKey(next.fontKey)
+  next.fontGradientKey = normalizeFontGradientKey(next.fontGradientKey)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
   const fontColor = normalizeFontColor(next.fontColor)
@@ -309,6 +327,7 @@ export async function updateForUser(
     fontSizePct,
     trackingPct,
     fontColor,
+    fontGradientKey: next.fontGradientKey,
     pillBgColor: next.style === 'pill' ? pillBgColor : '#000000',
     pillBgOpacityPct: next.style === 'pill' ? pillBgOpacityPct : 55,
     alignment,
