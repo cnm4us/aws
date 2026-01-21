@@ -35,3 +35,7 @@ test-results/
 e2e/utils/.auth/
 e2e/.auth/
 /reports/
+
+# Python bytecode
+__pycache__/
+*.pyc
