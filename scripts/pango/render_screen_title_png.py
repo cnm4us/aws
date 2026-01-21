@@ -164,8 +164,8 @@ def main():
     layout.set_alignment(Pango.Alignment.RIGHT)
   else:
     layout.set_alignment(Pango.Alignment.CENTER)
-  # Clamp to max 24 lines; ellipsize if needed.
-  layout.set_height(-24)
+  # Clamp to max 30 lines; ellipsize if needed.
+  layout.set_height(-30)
   layout.set_ellipsize(Pango.EllipsizeMode.END)
 
   # Text shaping on by default; allow \n.

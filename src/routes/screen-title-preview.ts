@@ -22,9 +22,9 @@ screenTitlePreviewRouter.post('/api/screen-titles/preview', requireAuth, async (
     if (!Number.isFinite(uploadId) || uploadId <= 0) throw new DomainError('bad_upload_id', 'bad_upload_id', 400)
     if (!Number.isFinite(presetId) || presetId <= 0) throw new DomainError('bad_preset_id', 'bad_preset_id', 400)
     if (!text) throw new DomainError('missing_text', 'missing_text', 400)
-    if (text.length > 800) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+    if (text.length > 1000) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
     const lines = text.split('\n')
-    if (lines.length > 24) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
+    if (lines.length > 30) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
 
     const [uRows] = await db.query(`SELECT id, user_id, width, height FROM uploads WHERE id = ? LIMIT 1`, [uploadId])
     const upload = (uRows as any[])[0]

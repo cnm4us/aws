@@ -345,18 +345,18 @@ export async function create(
 	    const presetId = presetIdRaw != null ? Number(presetIdRaw) : null
 	    const rawText = input.screenTitleText
 	    let text = String(rawText ?? '').replace(/\r\n/g, '\n')
-	    const lines = text.split('\n')
-	    if (lines.length > 24) text = lines.slice(0, 24).join('\n')
-	    text = text.trim()
-	    if (!text) {
-	      mergedConfig.screenTitlePresetId = null
-	      mergedConfig.screenTitlePresetSnapshot = null
-	      mergedConfig.screenTitleText = null
-	    } else {
-	      if (text.length > 800) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
-	      if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
-	        throw new DomainError('missing_screen_title_preset', 'missing_screen_title_preset', 400)
-	      }
+		    const lines = text.split('\n')
+		    if (lines.length > 30) text = lines.slice(0, 30).join('\n')
+		    text = text.trim()
+		    if (!text) {
+		      mergedConfig.screenTitlePresetId = null
+		      mergedConfig.screenTitlePresetSnapshot = null
+		      mergedConfig.screenTitleText = null
+		    } else {
+		      if (text.length > 1000) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+		      if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+		        throw new DomainError('missing_screen_title_preset', 'missing_screen_title_preset', 400)
+		      }
       const preset = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
       mergedConfig.screenTitlePresetId = preset.id
 	      mergedConfig.screenTitlePresetSnapshot = {

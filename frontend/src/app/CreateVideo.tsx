@@ -485,6 +485,9 @@ export default function CreateVideo() {
   const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number; presetId: number | null; text: string } | null>(null)
   const [screenTitleEditorError, setScreenTitleEditorError] = useState<string | null>(null)
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
+  const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
+  const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
+  const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
   const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
@@ -8630,12 +8633,12 @@ export default function CreateVideo() {
       setScreenTitleEditorError('Pick a screen title style.')
       return
     }
-    if (text.length > 800) {
-      setScreenTitleEditorError('Max 800 characters.')
+    if (text.length > 1000) {
+      setScreenTitleEditorError('Max 1000 characters.')
       return
     }
-    if (text.split('\n').length > 24) {
-      setScreenTitleEditorError('Max 24 lines.')
+    if (text.split('\n').length > 30) {
+      setScreenTitleEditorError('Max 30 lines.')
       return
     }
 
@@ -8737,12 +8740,12 @@ export default function CreateVideo() {
       setScreenTitleEditorError('Enter text.')
       return
     }
-    if (text.length > 800) {
-      setScreenTitleEditorError('Max 800 characters.')
+    if (text.length > 1000) {
+      setScreenTitleEditorError('Max 1000 characters.')
       return
     }
-    if (text.split('\n').length > 24) {
-      setScreenTitleEditorError('Max 24 lines.')
+    if (text.split('\n').length > 30) {
+      setScreenTitleEditorError('Max 30 lines.')
       return
     }
 
@@ -13120,20 +13123,70 @@ export default function CreateVideo() {
 	              </select>
 	              {screenTitlePresetsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitlePresetsError}</div> : null}
 
-	              <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-	                <textarea
-	                  value={String(screenTitleEditor.text || '')}
-	                  placeholder="Type your screen title here"
-	                  rows={3}
-	                  maxLength={800}
-	                  onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
-	                  style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, resize: 'vertical' }}
-	                />
-	                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
-	                  <div>Max 800 chars • max 24 lines</div>
-	                  <div>{String(screenTitleEditor.text || '').length}</div>
-	                </div>
-	              </div>
+		              <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+		                <div style={{ position: 'relative' }}>
+		                  <textarea
+		                    ref={screenTitleTextAreaRef}
+		                    value={String(screenTitleEditor.text || '')}
+		                    placeholder="Type your screen title here"
+		                    rows={3}
+		                    maxLength={1000}
+		                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
+		                    style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', paddingBottom: 34, paddingRight: 44, fontSize: 14, resize: 'none', height: screenTitleTextAreaHeight }}
+		                  />
+		                  <div
+		                    role="button"
+		                    aria-label="Resize text area"
+		                    onPointerDown={(e) => {
+		                      const ta = screenTitleTextAreaRef.current
+		                      if (!ta) return
+		                      e.preventDefault()
+		                      e.stopPropagation()
+		                      const rect = ta.getBoundingClientRect()
+		                      screenTitleTextAreaDragRef.current = { pointerId: e.pointerId, startClientY: e.clientY, startHeight: rect.height }
+		                      try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+		                    }}
+		                    onPointerMove={(e) => {
+		                      const cur = screenTitleTextAreaDragRef.current
+		                      if (!cur || e.pointerId !== cur.pointerId) return
+		                      e.preventDefault()
+		                      e.stopPropagation()
+		                      const dy = e.clientY - cur.startClientY
+		                      const nextH = clamp(cur.startHeight + dy, 72, 520)
+		                      setScreenTitleTextAreaHeight(nextH)
+		                    }}
+		                    onPointerUp={(e) => {
+		                      const cur = screenTitleTextAreaDragRef.current
+		                      if (!cur || e.pointerId !== cur.pointerId) return
+		                      e.preventDefault()
+		                      e.stopPropagation()
+		                      screenTitleTextAreaDragRef.current = null
+		                      try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId) } catch {}
+		                    }}
+		                    style={{
+		                      position: 'absolute',
+		                      right: 8,
+		                      bottom: 8,
+		                      width: 28,
+		                      height: 28,
+		                      borderRadius: 8,
+		                      background: 'rgba(255,255,255,0.06)',
+		                      border: '1px solid rgba(255,255,255,0.22)',
+		                      cursor: 'nwse-resize',
+		                      touchAction: 'none',
+		                      userSelect: 'none',
+		                      display: 'grid',
+		                      placeItems: 'center',
+		                    }}
+		                  >
+		                    <div style={{ width: 16, height: 16, borderRight: '2px solid rgba(255,255,255,0.38)', borderBottom: '2px solid rgba(255,255,255,0.38)' }} />
+		                  </div>
+		                </div>
+		                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
+		                  <div>Max 1000 chars • max 30 lines</div>
+		                  <div>{String(screenTitleEditor.text || '').length}/1000</div>
+		                </div>
+		              </div>
 	
 	              {screenTitleEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleEditorError}</div> : null}
 	
