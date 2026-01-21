@@ -339,8 +339,8 @@ export default function ScreenTitlePresetsPage() {
         )}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Presets</h1>
-            <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles for Create Video screen titles.</p>
+            <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Styles</h1>
+            <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles for Screen Titles</p>
           </div>
           {view === 'list' ? (
             <button
@@ -367,7 +367,6 @@ export default function ScreenTitlePresetsPage() {
 
         {view === 'list' ? (
           <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-            <div style={{ fontWeight: 850, color: '#eaeaea', fontSize: 16 }}>Named Presets</div>
             {activePresets.length === 0 ? (
               <div style={{ color: '#bbb', padding: '8px 0' }}>No presets yet.</div>
             ) : (
@@ -377,7 +376,7 @@ export default function ScreenTitlePresetsPage() {
                   style={{
                     border: '1px solid rgba(255,255,255,0.12)',
                     borderRadius: 14,
-                    background: 'rgba(255,255,255,0.03)',
+                    background: 'rgba(88, 20, 24, 0.9)',
                     padding: 14,
                     display: 'grid',
                     gap: 10,
@@ -507,7 +506,7 @@ export default function ScreenTitlePresetsPage() {
               </div>
             </div>
 
-            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, background: 'rgba(255,255,255,0.03)', padding: 14, marginTop: 12 }}>
+            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, background: 'rgba(88, 20, 24, 0.9)', padding: 14, marginTop: 12 }}>
               <div style={{ fontWeight: 850, fontSize: 16, marginBottom: 12 }}>{selectedId ? 'Edit Preset' : 'New Preset'}</div>
               <div style={{ display: 'grid', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6 }}>
