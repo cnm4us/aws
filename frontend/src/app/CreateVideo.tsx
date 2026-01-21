@@ -12979,8 +12979,8 @@ export default function CreateVideo() {
                 </div>
               </div>
 
-	              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 120px) minmax(0, 120px)', gap: 10, justifyContent: 'start' }}>
-	                <label style={{ display: 'grid', gap: 6 }}>
+	              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 64px) minmax(0, 64px)', gap: 16, justifyContent: 'start' }}>
+	                <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
 	                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
 	                  <input
 	                    type="number"
@@ -12988,10 +12988,10 @@ export default function CreateVideo() {
 	                    min={0}
 	                    value={String(screenTitleEditor.start)}
 	                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-	                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+	                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 8px', fontSize: 13 }}
 	                  />
 	                </label>
-	                <label style={{ display: 'grid', gap: 6 }}>
+	                <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
 	                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
 	                  <input
 	                    type="number"
@@ -12999,7 +12999,7 @@ export default function CreateVideo() {
 	                    min={0}
 	                    value={String(screenTitleEditor.end)}
 	                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-	                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+	                    style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 8px', fontSize: 13 }}
 	                  />
 	                </label>
 	              </div>
