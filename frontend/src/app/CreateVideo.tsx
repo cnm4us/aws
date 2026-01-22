@@ -1205,6 +1205,19 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const refreshScreenTitlePresetId = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return null
+      const qp = new URLSearchParams(window.location.search)
+      const raw = String(qp.get('cvRefreshScreenTitlePresetId') || '').trim()
+      if (!raw) return null
+      const n = Number(raw)
+      return Number.isFinite(n) && n > 0 ? n : null
+    } catch {
+      return null
+    }
+  }, [])
+
   const handledReturnToScreenTitleRef = useRef(false)
   useEffect(() => {
     if (handledReturnToScreenTitleRef.current) return
@@ -3780,6 +3793,93 @@ export default function CreateVideo() {
     },
     [persistHistoryNow, project?.id]
   )
+
+  const forceReloadScreenTitlePresets = useCallback(async (): Promise<ScreenTitlePresetItem[]> => {
+    setScreenTitlePresetsError(null)
+    try {
+      const res = await fetch(`/api/screen-title-presets?limit=200`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: ScreenTitlePresetItem[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+      setScreenTitlePresets(items)
+      setScreenTitlePresetsLoaded(true)
+      return items
+    } catch (e: any) {
+      setScreenTitlePresetsError(e?.message || 'Failed to load screen title presets')
+      setScreenTitlePresetsLoaded(true)
+      return []
+    }
+  }, [])
+
+  const handledRefreshScreenTitlesRef = useRef(false)
+  useEffect(() => {
+    if (handledRefreshScreenTitlesRef.current) return
+    if (refreshScreenTitlePresetId == null) return
+    if (!screenTitles.length) return
+    handledRefreshScreenTitlesRef.current = true
+    ;(async () => {
+      try {
+        await forceReloadScreenTitlePresets()
+      } catch {}
+      const presetId = Number(refreshScreenTitlePresetId)
+      if (!Number.isFinite(presetId) || presetId <= 0) return
+
+      const headers: any = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+
+      let nextTimeline: any = timeline
+      let changed = false
+      for (const st of screenTitles) {
+        const stPresetId = Number((st as any).presetId || 0)
+        if (stPresetId !== presetId) continue
+        const textRaw = String((st as any).text || '').replace(/\r\n/g, '\n')
+        const text = textRaw.trim()
+        if (!text) continue
+        try {
+          const res = await fetch(`/api/create-video/screen-titles/render`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers,
+            body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height }),
+          })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) continue
+          const uploadId = Number(json?.uploadId || 0)
+          if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+          changed = true
+          const prevSts: any[] = Array.isArray((nextTimeline as any).screenTitles) ? ((nextTimeline as any).screenTitles as any[]) : []
+          const idx = prevSts.findIndex((x: any) => String((x as any).id) === String((st as any).id))
+          if (idx >= 0) {
+            const updated = { ...(prevSts[idx] as any), renderUploadId: uploadId }
+            const out = prevSts.slice()
+            out[idx] = updated
+            out.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+            nextTimeline = { ...(nextTimeline as any), screenTitles: out }
+          }
+
+          try {
+            const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
+            if (url) {
+              setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
+            }
+          } catch {}
+        } catch {}
+      }
+
+      if (changed) {
+        setTimeline(nextTimeline)
+        try { await saveTimelineNow(nextTimeline) } catch {}
+      }
+
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('cvRefreshScreenTitlePresetId')
+        const next = `${url.pathname}${url.search}${url.hash || ''}`
+        window.history.replaceState({}, '', next)
+      } catch {}
+    })()
+  }, [forceReloadScreenTitlePresets, getUploadCdnUrl, outputFrame.height, outputFrame.width, refreshScreenTitlePresetId, saveTimelineNow, screenTitles, timeline])
 
   const addGuidelineAtPlayhead = useCallback(() => {
     const t = roundToTenth(playhead)
@@ -13710,14 +13810,44 @@ export default function CreateVideo() {
 			                    cursor: 'pointer',
 			                    textAlign: 'left',
 			                  }}
-			                >
-			                  Properties
-			                </button>
-			                {(timelineCtxMenu.edgeIntent || 'move') !== 'move' ? (
-			                  <button
-			                    type="button"
-			                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
-			                    style={{
+				                >
+				                  Properties
+				                </button>
+                        {timelineCtxMenu.kind === 'screenTitle' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
+                              const presetId = Number((st as any)?.presetId || 0)
+                              if (!Number.isFinite(presetId) || presetId <= 0) return
+                              try {
+                                const base = new URL(window.location.href)
+                                base.searchParams.set('cvScreenTitleId', String((st as any).id))
+                                base.searchParams.set('cvRefreshScreenTitlePresetId', String(presetId))
+                                const from = `${base.pathname}${base.search}${base.hash || ''}`
+                                window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(presetId))}&from=${encodeURIComponent(from)}`
+                              } catch {}
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#000',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            Edit Style
+                          </button>
+                        ) : null}
+				                {(timelineCtxMenu.edgeIntent || 'move') !== 'move' ? (
+				                  <button
+				                    type="button"
+				                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
+				                    style={{
 			                      width: '100%',
 			                      padding: '10px 12px',
 			                      borderRadius: 10,

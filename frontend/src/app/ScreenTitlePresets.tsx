@@ -189,8 +189,21 @@ function parseFromHref(): string | null {
   }
 }
 
+function parseEditPresetId(): number | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('editPresetId') || params.get('edit') || '').trim()
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
 export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
+  const editPresetId = useMemo(() => parseEditPresetId(), [])
   const backHref = fromHref || '/uploads'
   const backLabel =
     fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
@@ -211,6 +224,7 @@ export default function ScreenTitlePresetsPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [cloningId, setCloningId] = useState<number | null>(null)
+  const handledDeepLinkRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -442,6 +456,30 @@ export default function ScreenTitlePresetsPage() {
     }
   }, [load, openEdit])
 
+  useEffect(() => {
+    if (handledDeepLinkRef.current) return
+    if (editPresetId == null) return
+    if (!presets.length) return
+    const p = presets.find((x) => Number(x.id) === Number(editPresetId)) || null
+    if (!p) return
+    handledDeepLinkRef.current = true
+    openEdit(p)
+  }, [editPresetId, openEdit, presets])
+
+  const backToTimelineHref = useMemo(() => {
+    if (!fromHref) return null
+    if (!fromHref.startsWith('/create-video')) return null
+    try {
+      const url = new URL(fromHref, window.location.origin)
+      if (selectedId != null && Number.isFinite(Number(selectedId)) && Number(selectedId) > 0) {
+        url.searchParams.set('cvRefreshScreenTitlePresetId', String(selectedId))
+      }
+      return `${url.pathname}${url.search}${url.hash || ''}`
+    } catch {
+      return fromHref
+    }
+  }, [fromHref, selectedId])
+
   if (me === null) {
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -457,20 +495,25 @@ export default function ScreenTitlePresetsPage() {
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
         {view === 'edit' ? (
-          <button
-            type="button"
-            onClick={closeEdit}
-            style={{
-              padding: 0,
-              border: 'none',
-              background: 'transparent',
-              color: '#0a84ff',
-              cursor: 'pointer',
-              font: 'inherit',
-            }}
-          >
-            ← Back to Presets
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={closeEdit}
+              style={{
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                color: '#0a84ff',
+                cursor: 'pointer',
+                font: 'inherit',
+              }}
+            >
+              ← Back to Presets
+            </button>
+            {backToTimelineHref ? (
+              <a href={backToTimelineHref} style={{ color: '#0a84ff', textDecoration: 'none', fontSize: 14 }}>← Back to Timeline</a>
+            ) : null}
+          </div>
         ) : (
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
         )}
