@@ -222,6 +222,11 @@ export default function ScreenTitlePresetsPage() {
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState(defaultDraft)
+  const lastNonNoneOutlineRef = useRef<{
+    outlineWidthPct: number | null
+    outlineOpacityPct: number | null
+    outlineColor: string | null
+  }>({ outlineWidthPct: null, outlineOpacityPct: null, outlineColor: null })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -1106,10 +1111,51 @@ export default function ScreenTitlePresetsPage() {
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
                     <select
-                      value={draft.outlineColor ? 'custom' : 'auto'}
+                      value={
+                        Number(draft.outlineWidthPct) === 0 || Number(draft.outlineOpacityPct) === 0
+                          ? 'none'
+                          : draft.outlineColor
+                            ? 'custom'
+                            : 'auto'
+                      }
                       onChange={(e) => {
                         const mode = e.target.value
-                        setDraft((d) => ({ ...d, outlineColor: mode === 'custom' ? (d.outlineColor || '#000000') : null }))
+                        setDraft((d) => {
+                          const wasNone = Number(d.outlineWidthPct) === 0 || Number(d.outlineOpacityPct) === 0
+
+                          if (mode === 'none') {
+                            if (!wasNone) {
+                              lastNonNoneOutlineRef.current = {
+                                outlineWidthPct: d.outlineWidthPct ?? null,
+                                outlineOpacityPct: d.outlineOpacityPct ?? null,
+                                outlineColor: d.outlineColor ?? null,
+                              }
+                            }
+                            return { ...d, outlineWidthPct: 0, outlineOpacityPct: 0, outlineColor: null }
+                          }
+
+                          const restore = wasNone ? lastNonNoneOutlineRef.current : null
+                          const nextWidthPct = restore ? restore.outlineWidthPct : d.outlineWidthPct
+                          const nextOpacityPct = restore ? restore.outlineOpacityPct : d.outlineOpacityPct
+                          const restoredColor = restore ? restore.outlineColor : d.outlineColor
+
+                          if (mode === 'custom') {
+                            return {
+                              ...d,
+                              outlineWidthPct: nextWidthPct == null ? 5 : nextWidthPct,
+                              outlineOpacityPct: nextOpacityPct == null ? 85 : nextOpacityPct,
+                              outlineColor: restoredColor || '#000000',
+                            }
+                          }
+
+                          // auto
+                          return {
+                            ...d,
+                            outlineWidthPct: nextWidthPct == null ? 5 : nextWidthPct,
+                            outlineOpacityPct: nextOpacityPct == null ? 85 : nextOpacityPct,
+                            outlineColor: null,
+                          }
+                        })
                       }}
                       style={{
                         width: '100%',
@@ -1125,13 +1171,14 @@ export default function ScreenTitlePresetsPage() {
                         lineHeight: '20px',
                       }}
                     >
+                      <option value="none">None</option>
                       <option value="auto">Auto</option>
                       <option value="custom">Custom</option>
                     </select>
                     <input
                       type="color"
                       value={draft.outlineColor || '#000000'}
-                      disabled={!draft.outlineColor}
+                      disabled={!draft.outlineColor || Number(draft.outlineWidthPct) === 0 || Number(draft.outlineOpacityPct) === 0}
                       onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
                       style={{
                         width: 56,
@@ -1140,7 +1187,7 @@ export default function ScreenTitlePresetsPage() {
                         borderRadius: 10,
                         border: '1px solid rgba(255,255,255,0.16)',
                         background: '#0c0c0c',
-                        opacity: draft.outlineColor ? 1 : 0.45,
+                        opacity: draft.outlineColor && Number(draft.outlineWidthPct) !== 0 && Number(draft.outlineOpacityPct) !== 0 ? 1 : 0.45,
                         fontSize: FORM_CONTROL_FONT_SIZE_PX,
                       }}
                     />
