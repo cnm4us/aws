@@ -10503,6 +10503,21 @@ export default function CreateVideo() {
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
 
+                    // Ensure first tap selects the segment so handles/highlight render even if
+                    // the subsequent click event gets suppressed by pointer logic.
+                    if (selectedScreenTitleId !== String((st as any).id)) {
+                      setSelectedScreenTitleId(String((st as any).id))
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      suppressNextTimelineClickRef.current = true
+                      return
+                    }
+
                     const capEnd = Math.max(0, totalSeconds)
                     const sorted = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
                     const pos = sorted.findIndex((x: any) => String(x?.id) === String((st as any).id))
