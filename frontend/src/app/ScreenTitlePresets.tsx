@@ -805,8 +805,8 @@ export default function ScreenTitlePresetsPage() {
                     style={{
                       padding: '8px 12px',
                       borderRadius: 10,
-                      border: '1px solid rgba(10,132,255,0.55)',
-                      background: 'rgba(10,132,255,0.12)',
+                      border: '1px solid rgba(10,132,255,0.95)',
+                      background: '#0a84ff',
                       color: '#fff',
                       fontWeight: 850,
                       cursor: saving ? 'default' : 'pointer',
@@ -823,8 +823,8 @@ export default function ScreenTitlePresetsPage() {
                   style={{
                     padding: '8px 12px',
                     borderRadius: 10,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: 'rgba(10,132,255,0.12)',
+                    border: '1px solid rgba(10,132,255,0.95)',
+                    background: '#0a84ff',
                     color: '#fff',
                     fontWeight: 850,
                     cursor: saving ? 'default' : 'pointer',
@@ -1552,10 +1552,60 @@ export default function ScreenTitlePresetsPage() {
                   </select>
                 </label>
               </div>
+            </div>
 
-              <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.03)', color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>
-                Fonts are curated and rendered server-side with Pango. To add fonts: place TTF/OTF under `assets/fonts/` and extend the curated list.
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={closeEdit}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 750,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Styles
+              </button>
+              {backToTimelineHref ? (
+                <button
+                  type="button"
+                  onClick={saveAndBackToTimeline}
+                  disabled={saving}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(10,132,255,0.95)',
+                    background: '#0a84ff',
+                    color: '#fff',
+                    fontWeight: 850,
+                    cursor: saving ? 'default' : 'pointer',
+                    opacity: saving ? 0.7 : 1,
+                  }}
+                >
+                  ← Timeline
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(10,132,255,0.95)',
+                  background: '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 850,
+                  cursor: saving ? 'default' : 'pointer',
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
             </div>
           </div>
           </div>
