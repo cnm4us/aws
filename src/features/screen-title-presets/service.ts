@@ -3,6 +3,7 @@ import * as repo from './repo'
 import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleSizeKey, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
 import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
+import { resolveScreenTitleFontSizePreset } from '../../services/fonts/screenTitleFontPresets'
 
 const INSET_PRESETS: readonly InsetPreset[] = ['small', 'medium', 'large']
 const STYLES: readonly ScreenTitleStyle[] = ['none', 'pill', 'strip']
@@ -41,14 +42,15 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontKey: ScreenTitleFontKey = rawFont && isFontKeyAllowed(rawFont) ? rawFont : 'dejavu_sans_bold'
   const alignmentRaw = String((row as any).alignment || 'center').trim().toLowerCase()
   const alignment: ScreenTitleAlignment = isEnumValue(alignmentRaw, ALIGNMENTS) ? (alignmentRaw as any) : 'center'
-  const fontSizePctRaw = (row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5
-  const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
-  const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
-  const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
-  const lineSpacingPctRaw = (row as any).line_spacing_pct != null ? Number((row as any).line_spacing_pct) : 0
-  const lineSpacingPct = Number.isFinite(lineSpacingPctRaw) ? Math.round(Math.min(Math.max(lineSpacingPctRaw, -20), 200)) : 0
   const sizeKeyRaw = String((row as any).size_key || 'medium').trim().toLowerCase()
   const sizeKey: ScreenTitleSizeKey = isEnumValue(sizeKeyRaw, SIZE_KEYS) ? (sizeKeyRaw as any) : 'medium'
+  const resolved = resolveScreenTitleFontSizePreset(fontKey, sizeKey as any)
+  const fontSizePctRaw = resolved?.fontSizePct ?? ((row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5)
+  const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
+  const trackingPctRaw = resolved?.trackingPct ?? ((row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0)
+  const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
+  const lineSpacingPctRaw = resolved?.lineSpacingPct ?? ((row as any).line_spacing_pct != null ? Number((row as any).line_spacing_pct) : 0)
+  const lineSpacingPct = Number.isFinite(lineSpacingPctRaw) ? Math.round(Math.min(Math.max(lineSpacingPctRaw, -20), 200)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const shadowColor = String((row as any).shadow_color || '#000000').trim() || '#000000'
   const shadowOffsetPxRaw = (row as any).shadow_offset_px != null ? Number((row as any).shadow_offset_px) : 2
@@ -167,7 +169,7 @@ function normalizeInsetPreset(raw: any): InsetPreset | null {
 function normalizeFontSizePct(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 4.5
-  const clamped = Math.min(Math.max(n, 2), 8)
+  const clamped = Math.min(Math.max(n, 1), 8)
   return Math.round(clamped * 10) / 10
 }
 
@@ -357,9 +359,10 @@ export async function createForUser(input: {
     isEnumValue(styleRaw, STYLES) ? (styleRaw as any) : (styleRaw === 'outline' ? 'none' : 'pill')
   const fontKey: ScreenTitleFontKey = normalizeFontKey(input.fontKey)
   const sizeKey: ScreenTitleSizeKey = normalizeSizeKey((input as any).sizeKey)
-  const fontSizePct = normalizeFontSizePct(input.fontSizePct)
-  const trackingPct = normalizeTrackingPct(input.trackingPct)
-  const lineSpacingPct = normalizeLineSpacingPct((input as any).lineSpacingPct)
+  const derived = resolveScreenTitleFontSizePreset(fontKey, sizeKey as any)
+  const fontSizePct = derived ? normalizeFontSizePct(derived.fontSizePct) : normalizeFontSizePct(input.fontSizePct)
+  const trackingPct = derived ? normalizeTrackingPct(derived.trackingPct) : normalizeTrackingPct(input.trackingPct)
+  const lineSpacingPct = derived ? normalizeLineSpacingPct(derived.lineSpacingPct) : normalizeLineSpacingPct((input as any).lineSpacingPct)
   const fontColor = normalizeFontColor(input.fontColor)
   const shadowColor = normalizeShadowColor((input as any).shadowColor)
   const shadowOffsetPx = normalizeShadowOffsetPx((input as any).shadowOffsetPx)
@@ -509,9 +512,10 @@ export async function updateForUser(
   next.fontKey = normalizeFontKey(next.fontKey)
   const sizeKey: ScreenTitleSizeKey = normalizeSizeKey(next.sizeKey)
   next.fontGradientKey = normalizeFontGradientKey(next.fontGradientKey)
-  const fontSizePct = normalizeFontSizePct(next.fontSizePct)
-  const trackingPct = normalizeTrackingPct(next.trackingPct)
-  const lineSpacingPct = normalizeLineSpacingPct(next.lineSpacingPct)
+  const derived = resolveScreenTitleFontSizePreset(next.fontKey, sizeKey as any)
+  const fontSizePct = derived ? normalizeFontSizePct(derived.fontSizePct) : normalizeFontSizePct(next.fontSizePct)
+  const trackingPct = derived ? normalizeTrackingPct(derived.trackingPct) : normalizeTrackingPct(next.trackingPct)
+  const lineSpacingPct = derived ? normalizeLineSpacingPct(derived.lineSpacingPct) : normalizeLineSpacingPct(next.lineSpacingPct)
   const fontColor = normalizeFontColor(next.fontColor)
   const shadowColor = normalizeShadowColor(next.shadowColor)
   const shadowOffsetPx = normalizeShadowOffsetPx(next.shadowOffsetPx)

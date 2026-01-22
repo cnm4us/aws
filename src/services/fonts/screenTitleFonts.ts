@@ -55,6 +55,16 @@ export function listScreenTitleFontFamilies(): ScreenTitleFontFamily[] {
   return getScreenTitleFontsCached().families
 }
 
+export function resolveFamilyKeyForFontKey(fontKey: string): string | null {
+  const k = String(fontKey || '').trim()
+  if (!k) return null
+  const c = getScreenTitleFontsCached()
+  for (const fam of c.families) {
+    if (fam.variants.some((v) => String(v.key) === k)) return String(fam.familyKey)
+  }
+  return null
+}
+
 function getScreenTitleFontsCached(): Cache {
   // Fonts only change when the repo changes; cache for the process lifetime.
   if (cache) return cache

@@ -131,7 +131,7 @@ def main():
   pos = normalize_position(preset.get("position"))
   aln = normalize_alignment(preset.get("alignment"))
   font_size_pct = float(preset.get("fontSizePct") or 4.5)
-  font_size_pct = clamp(font_size_pct, 2.0, 8.0)
+  font_size_pct = clamp(font_size_pct, 1.0, 8.0)
   max_width_pct_raw = preset.get("maxWidthPct")
   try:
     max_width_pct = clamp(float(max_width_pct_raw or 90.0), 20.0, 100.0) / 100.0

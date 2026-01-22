@@ -31,7 +31,7 @@ module.exports = {
     dejavu_sans: {
       label: 'DejaVu Sans',
       sizes: {
-        x_small: { fontSizePct: 2.8, trackingPct: 0, lineSpacingPct: 0 },
+        x_small: { fontSizePct: 1.0, trackingPct: 0, lineSpacingPct: 0 },
         small: { fontSizePct: 3.4, trackingPct: 0, lineSpacingPct: 0 },
         medium: { fontSizePct: 4.2, trackingPct: 0, lineSpacingPct: 0 },
         large: { fontSizePct: 5.2, trackingPct: 0, lineSpacingPct: 0 },

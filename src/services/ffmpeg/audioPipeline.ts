@@ -250,7 +250,7 @@ function escapeFfmpegExprCommas(expr: string): string {
 
 function lineSpacingPxForFrame(frameH: number, fontSizePct: number): number {
   const h = Number.isFinite(frameH) && frameH > 0 ? frameH : 1080
-  const pct = clampNum(fontSizePct, 2, 8)
+  const pct = clampNum(fontSizePct, 1, 8)
   const px = Math.round(h * (pct / 100) * 0.18)
   return Math.max(0, Math.min(200, px))
 }
@@ -596,7 +596,7 @@ async function burnScreenTitleWithDrawtext(opts: {
     const preset = opts.screenTitle.preset || {}
     const pos = normalizeScreenTitlePosition(preset.position)
     const style = String(preset.style || 'pill').toLowerCase()
-    const initialFontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 8)
+    const initialFontSizePct = clampNum(preset.fontSizePct ?? 4.5, 1, 8)
     const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
     const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
     const pillBgOpacityPct = clampNum(preset.pillBgOpacityPct ?? 55, 0, 100)
