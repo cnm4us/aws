@@ -11734,8 +11734,12 @@ export default function CreateVideo() {
                   background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
+                  fontSize: 54,
+                  lineHeight: '54px',
                   cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
                   flex: '0 0 auto',
+                  minWidth: 72,
+                  height: 72,
                 }}
                 title="Jump to previous boundary"
                 aria-label="Jump to previous boundary"
@@ -11768,11 +11772,15 @@ export default function CreateVideo() {
                   background: '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
+                  fontSize: 54,
+                  lineHeight: '54px',
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
                   WebkitTouchCallout: 'none',
+                  minWidth: 72,
+                  height: 72,
                 }}
                 title="Nudge backward 0.1s"
                 aria-label="Nudge backward 0.1 seconds"
@@ -11851,11 +11859,15 @@ export default function CreateVideo() {
                   background: '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
+                  fontSize: 54,
+                  lineHeight: '54px',
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
                   WebkitTouchCallout: 'none',
+                  minWidth: 72,
+                  height: 72,
                 }}
                 title="Nudge forward 0.1s"
                 aria-label="Nudge forward 0.1 seconds"
@@ -11873,8 +11885,12 @@ export default function CreateVideo() {
                   background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
                   color: '#fff',
                   fontWeight: 900,
+                  fontSize: 54,
+                  lineHeight: '54px',
                   cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
                   flex: '0 0 auto',
+                  minWidth: 72,
+                  height: 72,
                 }}
                 title="Jump to next boundary"
                 aria-label="Jump to next boundary"
