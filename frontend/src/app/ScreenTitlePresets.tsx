@@ -1172,7 +1172,9 @@ export default function ScreenTitlePresetsPage() {
                     }}
                   />
                 </label>
+              </div>
 
+              <div style={{ display: 'grid', gap: 12 }}>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
