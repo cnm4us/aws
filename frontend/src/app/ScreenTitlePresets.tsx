@@ -471,6 +471,8 @@ export default function ScreenTitlePresetsPage() {
     if (!fromHref.startsWith('/create-video')) return null
     try {
       const url = new URL(fromHref, window.location.origin)
+      // Returning from editing a style: go back to the timeline only (no modal reopen).
+      url.searchParams.delete('cvScreenTitleId')
       if (selectedId != null && Number.isFinite(Number(selectedId)) && Number(selectedId) > 0) {
         url.searchParams.set('cvRefreshScreenTitlePresetId', String(selectedId))
       }
@@ -479,6 +481,36 @@ export default function ScreenTitlePresetsPage() {
       return fromHref
     }
   }, [fromHref, selectedId])
+
+  const saveAndBackToTimeline = useCallback(async () => {
+    if (!me?.userId) return
+    if (!backToTimelineHref) return
+    if (selectedId == null) {
+      setSaveError('Save this style first before returning to the timeline.')
+      return
+    }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const body = JSON.stringify(draft)
+      const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(selectedId))}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers,
+        body,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to save')
+      window.location.href = backToTimelineHref
+    } catch (e: any) {
+      setSaveError(e?.message || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }, [me?.userId, backToTimelineHref, selectedId, draft])
 
   if (me === null) {
     return (
@@ -511,7 +543,23 @@ export default function ScreenTitlePresetsPage() {
               ← Back to Presets
             </button>
             {backToTimelineHref ? (
-              <a href={backToTimelineHref} style={{ color: '#0a84ff', textDecoration: 'none', fontSize: 14 }}>← Back to Timeline</a>
+              <button
+                type="button"
+                onClick={saveAndBackToTimeline}
+                disabled={saving}
+                style={{
+                  padding: 0,
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#0a84ff',
+                  cursor: saving ? 'default' : 'pointer',
+                  font: 'inherit',
+                  fontSize: 14,
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                ← Back to Timeline
+              </button>
             ) : null}
           </div>
         ) : (
