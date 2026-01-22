@@ -52,6 +52,20 @@ def normalize_margin_pct(raw, fallback_pct):
   except Exception:
     return float(fallback_pct)
 
+def normalize_number(raw, fallback):
+  if raw is None:
+    return float(fallback)
+  try:
+    s = str(raw).strip()
+    if s == "":
+      return float(fallback)
+    n = float(s)
+    if not math.isfinite(n):
+      return float(fallback)
+    return float(n)
+  except Exception:
+    return float(fallback)
+
 
 def normalize_position(pos):
   raw = (pos or "top").strip().lower()
@@ -145,11 +159,11 @@ def main():
 
   font_color = str(preset.get("fontColor") or "#ffffff")
   shadow_color = str(preset.get("shadowColor") or "#000000")
-  shadow_offset_px = float(preset.get("shadowOffsetPx") or 2.0)
+  shadow_offset_px = normalize_number(preset.get("shadowOffsetPx"), 2.0)
   shadow_offset_px = clamp(shadow_offset_px, -50.0, 50.0)
-  shadow_blur_px = float(preset.get("shadowBlurPx") or 0.0)
+  shadow_blur_px = normalize_number(preset.get("shadowBlurPx"), 0.0)
   shadow_blur_px = clamp(shadow_blur_px, 0.0, 20.0)
-  shadow_opacity_pct = float(preset.get("shadowOpacityPct") or 65.0)
+  shadow_opacity_pct = normalize_number(preset.get("shadowOpacityPct"), 65.0)
   shadow_opacity = clamp(shadow_opacity_pct / 100.0, 0.0, 1.0)
   bg_color = str(preset.get("pillBgColor") or "#000000")
   bg_opacity_pct = float(preset.get("pillBgOpacityPct") or 55.0)
