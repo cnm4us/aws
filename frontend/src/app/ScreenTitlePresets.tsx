@@ -1110,9 +1110,56 @@ export default function ScreenTitlePresetsPage() {
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
+              <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
+                    <select
+                      value={draft.outlineColor ? 'custom' : 'auto'}
+                      onChange={(e) => {
+                        const mode = e.target.value
+                        setDraft((d) => ({ ...d, outlineColor: mode === 'custom' ? (d.outlineColor || '#000000') : null }))
+                      }}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                        lineHeight: '20px',
+                      }}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                    <input
+                      type="color"
+                      value={draft.outlineColor || '#000000'}
+                      disabled={!draft.outlineColor}
+                      onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
+                      style={{
+                        width: 56,
+                        height: 44,
+                        padding: '6px 8px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        opacity: draft.outlineColor ? 1 : 0.45,
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (% of font size)</div>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (%)</div>
                   <input
                     type="number"
                     step="0.25"
@@ -1172,53 +1219,6 @@ export default function ScreenTitlePresetsPage() {
                     }}
                   />
                 </label>
-              </div>
-
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
-                    <select
-                      value={draft.outlineColor ? 'custom' : 'auto'}
-                      onChange={(e) => {
-                        const mode = e.target.value
-                        setDraft((d) => ({ ...d, outlineColor: mode === 'custom' ? (d.outlineColor || '#000000') : null }))
-                      }}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                        lineHeight: '20px',
-                      }}
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    <input
-                      type="color"
-                      value={draft.outlineColor || '#000000'}
-                      disabled={!draft.outlineColor}
-                      onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
-                      style={{
-                        width: 56,
-                        height: 44,
-                        padding: '6px 8px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        opacity: draft.outlineColor ? 1 : 0.45,
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      }}
-                    />
-                  </div>
-                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
