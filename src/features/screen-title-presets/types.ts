@@ -16,6 +16,7 @@ export type ScreenTitlePresetRow = {
   font_key: string
   font_size_pct: number
   tracking_pct: number
+  line_spacing_pct: number
   font_color: string
   shadow_color: string
   shadow_offset_px: number
@@ -52,6 +53,7 @@ export type ScreenTitlePresetDto = {
   fontKey: ScreenTitleFontKey
   fontSizePct: number
   trackingPct: number
+  lineSpacingPct: number
   fontColor: string
   shadowColor: string
   shadowOffsetPx: number

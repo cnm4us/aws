@@ -89,6 +89,7 @@ export type ScreenTitlePresetSnapshotV1 = {
   fontKey?: string
   fontSizePct?: number
   trackingPct?: number
+  lineSpacingPct?: number
   fontColor?: string
   shadowColor?: string
   shadowOffsetPx?: number

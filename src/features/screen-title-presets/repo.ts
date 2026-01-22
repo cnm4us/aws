@@ -33,6 +33,7 @@ export async function create(input: {
   fontKey: string
   fontSizePct: number
   trackingPct: number
+  lineSpacingPct: number
   fontColor: string
   shadowColor: string
   shadowOffsetPx: number
@@ -60,8 +61,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO screen_title_presets
-      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, shadow_color, shadow_offset_px, shadow_blur_px, shadow_opacity_pct, font_gradient_key, outline_width_pct, outline_opacity_pct, outline_color, margin_left_pct, margin_right_pct, margin_top_pct, margin_bottom_pct, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, line_spacing_pct, font_color, shadow_color, shadow_offset_px, shadow_blur_px, shadow_opacity_pct, font_gradient_key, outline_width_pct, outline_opacity_pct, outline_color, margin_left_pct, margin_right_pct, margin_top_pct, margin_bottom_pct, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -70,6 +71,7 @@ export async function create(input: {
       input.fontKey,
       input.fontSizePct,
       input.trackingPct,
+      input.lineSpacingPct,
       input.fontColor,
       input.shadowColor,
       input.shadowOffsetPx,
@@ -108,6 +110,7 @@ export async function update(id: number, patch: {
   fontKey?: string
   fontSizePct?: number
   trackingPct?: number
+  lineSpacingPct?: number
   fontColor?: string
   shadowColor?: string
   shadowOffsetPx?: number
@@ -141,6 +144,7 @@ export async function update(id: number, patch: {
   if (patch.fontKey !== undefined) { sets.push('font_key = ?'); args.push(patch.fontKey) }
   if (patch.fontSizePct !== undefined) { sets.push('font_size_pct = ?'); args.push(patch.fontSizePct) }
   if (patch.trackingPct !== undefined) { sets.push('tracking_pct = ?'); args.push(patch.trackingPct) }
+  if (patch.lineSpacingPct !== undefined) { sets.push('line_spacing_pct = ?'); args.push(patch.lineSpacingPct) }
   if (patch.fontColor !== undefined) { sets.push('font_color = ?'); args.push(patch.fontColor) }
   if (patch.shadowColor !== undefined) { sets.push('shadow_color = ?'); args.push(patch.shadowColor) }
   if (patch.shadowOffsetPx !== undefined) { sets.push('shadow_offset_px = ?'); args.push(patch.shadowOffsetPx) }

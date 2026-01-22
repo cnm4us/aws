@@ -37,6 +37,7 @@ type ScreenTitlePreset = {
   fontKey: ScreenTitleFontKey
   fontSizePct: number
   trackingPct?: number
+  lineSpacingPct?: number
   fontColor: string
   shadowColor?: string
   shadowOffsetPx?: number
@@ -127,6 +128,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontKey: 'dejavu_sans_bold',
     fontSizePct: 4.5,
     trackingPct: 0,
+    lineSpacingPct: 0,
     fontColor: '#ffffff',
     shadowColor: '#000000',
     shadowOffsetPx: 2,
@@ -334,6 +336,7 @@ export default function ScreenTitlePresetsPage() {
       fontKey: preset.fontKey,
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
+      lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
       fontColor: preset.fontColor || '#ffffff',
       shadowColor: (preset as any).shadowColor || '#000000',
       shadowOffsetPx: Number.isFinite(Number((preset as any).shadowOffsetPx)) ? Number((preset as any).shadowOffsetPx) : 2,
@@ -442,6 +445,7 @@ export default function ScreenTitlePresetsPage() {
         fontKey: preset.fontKey,
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
+        lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
         fontColor: preset.fontColor,
         shadowColor: (preset as any).shadowColor || '#000000',
         shadowOffsetPx: Number.isFinite(Number((preset as any).shadowOffsetPx)) ? Number((preset as any).shadowOffsetPx) : 2,
@@ -1054,6 +1058,34 @@ export default function ScreenTitlePresetsPage() {
                     onChange={(e) => {
                       const n = Number(e.target.value)
                       setDraft((d) => ({ ...d, trackingPct: Number.isFinite(n) ? n : 0 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Line spacing (%)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={-20}
+                    max={200}
+                    value={Number.isFinite(Number(draft.lineSpacingPct)) ? String(draft.lineSpacingPct) : '0'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, lineSpacingPct: Number.isFinite(n) ? n : 0 }))
                     }}
                     style={{
                       width: '100%',

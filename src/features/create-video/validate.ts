@@ -347,6 +347,8 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   const trackingPct = Number((raw as any).trackingPct)
   if (!Number.isFinite(fontSizePct) || fontSizePct < 1 || fontSizePct > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
   if (!Number.isFinite(trackingPct) || trackingPct < -40 || trackingPct > 40) throw new ValidationError('invalid_screen_title_preset_snapshot')
+  const lineSpacingPctRaw = (raw as any).lineSpacingPct
+  const lineSpacingPct = lineSpacingPctRaw == null ? 0 : Number(lineSpacingPctRaw)
 	  const fontColor = String((raw as any).fontColor || '').trim()
 	  const shadowColorRaw = (raw as any).shadowColor
 	  const shadowColor = String(shadowColorRaw || '#000000').trim()
@@ -379,6 +381,7 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
 	  if (!Number.isFinite(shadowOffsetPx) || shadowOffsetPx < -50 || shadowOffsetPx > 50) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (!Number.isFinite(shadowBlurPx) || shadowBlurPx < 0 || shadowBlurPx > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (!Number.isFinite(shadowOpacityPct) || shadowOpacityPct < 0 || shadowOpacityPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!Number.isFinite(lineSpacingPct) || lineSpacingPct < -20 || lineSpacingPct > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (fontGradientKey != null && fontGradientKey.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (outlineWidthPct != null && (!Number.isFinite(outlineWidthPct) || outlineWidthPct < 0 || outlineWidthPct > 20)) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (outlineOpacityPct != null && (!Number.isFinite(outlineOpacityPct) || outlineOpacityPct < 0 || outlineOpacityPct > 100)) throw new ValidationError('invalid_screen_title_preset_snapshot')
@@ -422,6 +425,7 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
     fontKey,
     fontSizePct: roundToTenth(fontSizePct),
 	    trackingPct: Math.round(trackingPct),
+	    lineSpacingPct: Math.round(lineSpacingPct),
 	    fontColor,
 	    shadowColor: shadowColor.toLowerCase(),
 	    shadowOffsetPx: Math.round(shadowOffsetPx),

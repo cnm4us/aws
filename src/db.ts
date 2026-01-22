@@ -293,6 +293,7 @@ export async function ensureSchema(db: DB) {
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
               tracking_pct TINYINT NOT NULL DEFAULT 0,
+              line_spacing_pct DECIMAL(5,2) NOT NULL DEFAULT 0.00,
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
               shadow_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               shadow_offset_px SMALLINT NOT NULL DEFAULT 2,
@@ -324,6 +325,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS tracking_pct TINYINT NOT NULL DEFAULT 0`);
           try { await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN tracking_pct TINYINT NOT NULL DEFAULT 0`); } catch {}
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS line_spacing_pct DECIMAL(5,2) NOT NULL DEFAULT 0.00`);
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
 	          // Shadow controls (color, offset, blur, opacity).
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS shadow_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);

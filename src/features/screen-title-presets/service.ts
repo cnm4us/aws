@@ -44,6 +44,8 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
   const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
   const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
+  const lineSpacingPctRaw = (row as any).line_spacing_pct != null ? Number((row as any).line_spacing_pct) : 0
+  const lineSpacingPct = Number.isFinite(lineSpacingPctRaw) ? Math.round(Math.min(Math.max(lineSpacingPctRaw, -20), 200)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const shadowColor = String((row as any).shadow_color || '#000000').trim() || '#000000'
   const shadowOffsetPxRaw = (row as any).shadow_offset_px != null ? Number((row as any).shadow_offset_px) : 2
@@ -95,6 +97,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontKey,
     fontSizePct,
     trackingPct,
+    lineSpacingPct,
     fontColor,
     shadowColor,
     shadowOffsetPx,
@@ -168,6 +171,13 @@ function normalizeTrackingPct(raw: any): number {
   const n = Number(raw)
   if (!Number.isFinite(n)) return 0
   const clamped = Math.min(Math.max(n, -20), 50)
+  return Math.round(clamped)
+}
+
+function normalizeLineSpacingPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  const clamped = Math.min(Math.max(n, -20), 200)
   return Math.round(clamped)
 }
 
@@ -303,6 +313,7 @@ export async function createForUser(input: {
   fontGradientKey?: any
   fontSizePct?: any
   trackingPct?: any
+  lineSpacingPct?: any
   fontColor?: any
   shadowColor?: any
   shadowOffsetPx?: any
@@ -335,6 +346,7 @@ export async function createForUser(input: {
   const fontKey: ScreenTitleFontKey = normalizeFontKey(input.fontKey)
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
+  const lineSpacingPct = normalizeLineSpacingPct((input as any).lineSpacingPct)
   const fontColor = normalizeFontColor(input.fontColor)
   const shadowColor = normalizeShadowColor((input as any).shadowColor)
   const shadowOffsetPx = normalizeShadowOffsetPx((input as any).shadowOffsetPx)
@@ -374,6 +386,7 @@ export async function createForUser(input: {
     fontKey,
     fontSizePct,
     trackingPct,
+    lineSpacingPct,
     fontColor,
     shadowColor,
     shadowOffsetPx,
@@ -411,6 +424,7 @@ export async function updateForUser(
     fontGradientKey?: any
     fontSizePct?: any
     trackingPct?: any
+    lineSpacingPct?: any
     fontColor?: any
     shadowColor?: any
     shadowOffsetPx?: any
@@ -448,6 +462,7 @@ export async function updateForUser(
     fontKey: patch.fontKey !== undefined ? patch.fontKey : (existing as any).font_key,
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
     trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
+    lineSpacingPct: patch.lineSpacingPct !== undefined ? patch.lineSpacingPct : (existing as any).line_spacing_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
     shadowColor: patch.shadowColor !== undefined ? patch.shadowColor : (existing as any).shadow_color,
     shadowOffsetPx: patch.shadowOffsetPx !== undefined ? patch.shadowOffsetPx : (existing as any).shadow_offset_px,
@@ -479,6 +494,7 @@ export async function updateForUser(
   next.fontGradientKey = normalizeFontGradientKey(next.fontGradientKey)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
+  const lineSpacingPct = normalizeLineSpacingPct(next.lineSpacingPct)
   const fontColor = normalizeFontColor(next.fontColor)
   const shadowColor = normalizeShadowColor(next.shadowColor)
   const shadowOffsetPx = normalizeShadowOffsetPx(next.shadowOffsetPx)
@@ -517,6 +533,7 @@ export async function updateForUser(
     fontKey: next.fontKey,
     fontSizePct,
     trackingPct,
+    lineSpacingPct,
     fontColor,
     shadowColor,
     shadowOffsetPx,

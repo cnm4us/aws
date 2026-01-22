@@ -88,6 +88,7 @@ type ScreenTitlePresetItem = {
   fontKey: string
   fontSizePct: number
   trackingPct: number
+  lineSpacingPct?: number
   fontColor: string
   shadowColor?: string
   shadowOffsetPx?: number
@@ -5042,6 +5043,7 @@ export default function CreateVideo() {
         fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
         fontSizePct: Number((preset as any).fontSizePct),
         trackingPct: Number((preset as any).trackingPct),
+        lineSpacingPct: Number((preset as any).lineSpacingPct ?? 0),
         fontColor: String((preset as any).fontColor || '#ffffff'),
         shadowColor: String((preset as any).shadowColor || '#000000'),
         shadowOffsetPx: Number((preset as any).shadowOffsetPx ?? 2),

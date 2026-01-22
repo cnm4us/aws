@@ -126,6 +126,8 @@ def main():
 
   tracking_pct = float(preset.get("trackingPct") or 0.0)
   tracking_pct = clamp(tracking_pct, -20.0, 50.0)
+  line_spacing_pct = float(preset.get("lineSpacingPct") or 0.0)
+  line_spacing_pct = clamp(line_spacing_pct, -20.0, 200.0)
 
   # Margins (pct of frame). If not provided, fall back to legacy inset presets.
   has_any_margin = (
@@ -327,6 +329,14 @@ def main():
 
   # Text shaping on by default; allow \n.
   layout.set_text(text, -1)
+
+  # Extra line spacing, expressed as % of font size.
+  # Pango spacing is in Pango units (Pango.SCALE). This adds *extra* spacing between lines.
+  try:
+    extra_line_px = font_px * (line_spacing_pct / 100.0)
+    layout.set_spacing(int(extra_line_px * Pango.SCALE))
+  except Exception:
+    pass
 
   layout.set_ellipsize(Pango.EllipsizeMode.END)
   try:
