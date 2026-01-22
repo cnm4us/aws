@@ -536,49 +536,19 @@ export default function ScreenTitlePresetsPage() {
       }}
     >
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-        {view === 'edit' ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={closeEdit}
-              style={{
-                padding: 0,
-                border: 'none',
-                background: 'transparent',
-                color: '#0a84ff',
-                cursor: 'pointer',
-                font: 'inherit',
-              }}
-            >
-              ← Back to Presets
-            </button>
-            {backToTimelineHref ? (
-              <button
-                type="button"
-                onClick={saveAndBackToTimeline}
-                disabled={saving}
-                style={{
-                  padding: 0,
-                  border: 'none',
-                  background: 'transparent',
-                  color: '#0a84ff',
-                  cursor: saving ? 'default' : 'pointer',
-                  font: 'inherit',
-                  fontSize: 14,
-                  opacity: saving ? 0.7 : 1,
-                }}
-              >
-                ← Back to Timeline
-              </button>
-            ) : null}
-          </div>
-        ) : (
+        {view !== 'edit' ? (
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
-        )}
+        ) : null}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 28 }}>Screen Title Styles</h1>
-            <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles for Screen Titles</p>
+            {view === 'edit' ? (
+              <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>
+                Currently editing: {String(draft?.name || '').trim() || 'Untitled'}
+              </p>
+            ) : (
+              <p style={{ margin: '6px 0 0', color: '#a0a0a0' }}>Create reusable styles for Screen Titles</p>
+            )}
           </div>
           {view === 'list' ? (
             <button
@@ -692,21 +662,42 @@ export default function ScreenTitlePresetsPage() {
         ) : (
           <div style={{ marginTop: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={closeEdit}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: 'rgba(255,255,255,0.06)',
-                  color: '#fff',
-                  fontWeight: 750,
-                  cursor: 'pointer',
-                }}
-              >
-                ← Back to Presets
-              </button>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    fontWeight: 750,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ← Styles
+                </button>
+                {backToTimelineHref ? (
+                  <button
+                    type="button"
+                    onClick={saveAndBackToTimeline}
+                    disabled={saving}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      fontWeight: 750,
+                      cursor: saving ? 'default' : 'pointer',
+                      opacity: saving ? 0.7 : 1,
+                    }}
+                  >
+                    ← Timeline
+                  </button>
+                ) : null}
+              </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 {selectedId ? (
                   <button
