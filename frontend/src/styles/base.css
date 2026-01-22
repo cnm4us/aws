@@ -12,3 +12,15 @@ button {
   font-family: inherit;
 }
 
+/* Better contrast for native select dropdowns in dark UI (where supported). */
+select {
+  color-scheme: dark;
+}
+select option {
+  background-color: #061a2c; /* deep navy */
+  color: #d1d5db; /* light gray */
+}
+select option:checked {
+  background-color: #0b3d73; /* deeper blue highlight */
+  color: #e5e7eb;
+}
