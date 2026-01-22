@@ -29,12 +29,31 @@ type ScreenTitleGradientsResponse = {
   }>
 }
 
+type FontSizeKey = 'x_small' | 'small' | 'medium' | 'large' | 'x_large'
+
+type ScreenTitleFontPresetsResponse = {
+  schemaVersion: number
+  baselineFrame?: { width: number; height: number }
+  families: Record<
+    string,
+    {
+      label: string
+      sizes: Record<FontSizeKey, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>
+      variants?: Record<
+        string,
+        { label: string; sizes?: Partial<Record<FontSizeKey, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>> }
+      >
+    }
+  >
+}
+
 type ScreenTitlePreset = {
   id: number
   name: string
   description?: string | null
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
+  sizeKey?: FontSizeKey
   fontSizePct: number
   trackingPct?: number
   lineSpacingPct?: number
@@ -126,6 +145,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     description: null,
     style: 'pill',
     fontKey: 'dejavu_sans_bold',
+    sizeKey: 'medium',
     fontSizePct: 4.5,
     trackingPct: 0,
     lineSpacingPct: 0,
@@ -161,6 +181,14 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
 // iOS Safari auto-zooms focused inputs if font-size < 16px.
 const FORM_CONTROL_FONT_SIZE_PX = 16
+
+const SIZE_OPTIONS: Array<{ value: FontSizeKey; label: string }> = [
+  { value: 'x_small', label: 'X-Small' },
+  { value: 'small', label: 'Small' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'large', label: 'Large' },
+  { value: 'x_large', label: 'X-Large' },
+]
 
 function positionLabel(p: ScreenTitlePosition): string {
   if (p === 'top') return 'Top'
@@ -226,6 +254,7 @@ export default function ScreenTitlePresetsPage() {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
   const [fontFamilies, setFontFamilies] = useState(DEFAULT_FONT_FAMILIES)
+  const [fontPresets, setFontPresets] = useState<ScreenTitleFontPresetsResponse | null>(null)
   const [gradients, setGradients] = useState<Array<{ key: string; label: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -257,10 +286,11 @@ export default function ScreenTitlePresetsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [presetsRes, fontsRes, gradientsRes] = await Promise.all([
+      const [presetsRes, fontsRes, gradientsRes, fontPresetsRes] = await Promise.all([
         fetch('/api/screen-title-presets', { credentials: 'same-origin' }),
         fetch('/api/screen-title-fonts', { credentials: 'same-origin' }),
         fetch('/api/screen-title-gradients', { credentials: 'same-origin' }),
+        fetch('/api/screen-title-font-presets', { credentials: 'same-origin' }),
       ])
       if (!presetsRes.ok) throw new Error('failed_to_load')
       const presetsData = await presetsRes.json()
@@ -291,6 +321,13 @@ export default function ScreenTitlePresetsPage() {
         )
       } else {
         setGradients([])
+      }
+
+      if (fontPresetsRes.ok) {
+        const data = (await fontPresetsRes.json().catch(() => null)) as ScreenTitleFontPresetsResponse | null
+        if (data && typeof data === 'object' && data.families && typeof data.families === 'object') {
+          setFontPresets(data)
+        }
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to load presets')
@@ -334,6 +371,7 @@ export default function ScreenTitlePresetsPage() {
       description: preset.description ?? null,
       style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
       fontKey: preset.fontKey,
+      sizeKey: (preset as any).sizeKey || 'medium',
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
       lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
@@ -382,6 +420,37 @@ export default function ScreenTitlePresetsPage() {
     }
     return fontFamilies[0] || DEFAULT_FONT_FAMILIES[0]
   }, [draft.fontKey, fontFamilies])
+
+  const resolveFamilyKeyForFontKey = useCallback((fontKey: string): string | null => {
+    const k = String(fontKey || '').trim()
+    if (!k) return null
+    for (const fam of fontFamilies) {
+      if (fam.variants.some((v) => String(v.key) === k)) return String(fam.familyKey)
+    }
+    return null
+  }, [fontFamilies])
+
+  const applySizePreset = useCallback(
+    (next: { familyKey: string | null; fontKey: string; sizeKey: FontSizeKey }) => {
+      if (!fontPresets?.families) return
+      const famKey = String(next.familyKey || '').trim()
+      const fam = famKey ? (fontPresets.families as any)[famKey] : null
+      if (!fam?.sizes) return
+      const base = fam.sizes[next.sizeKey]
+      if (!base) return
+      const v = fam.variants && (fam.variants as any)[String(next.fontKey)] ? (fam.variants as any)[String(next.fontKey)] : null
+      const ov = v?.sizes && v.sizes[next.sizeKey] ? v.sizes[next.sizeKey] : null
+      const resolved = { ...base, ...(ov || {}) }
+      setDraft((d) => ({
+        ...d,
+        sizeKey: next.sizeKey,
+        fontSizePct: Number(resolved.fontSizePct),
+        trackingPct: Number(resolved.trackingPct),
+        lineSpacingPct: Number(resolved.lineSpacingPct),
+      }))
+    },
+    [fontPresets]
+  )
 
   const save = useCallback(async () => {
     if (!me?.userId) return
@@ -443,6 +512,7 @@ export default function ScreenTitlePresetsPage() {
         description: preset.description ?? null,
         style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
         fontKey: preset.fontKey,
+        sizeKey: (preset as any).sizeKey || 'medium',
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
         lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
@@ -971,6 +1041,8 @@ export default function ScreenTitlePresetsPage() {
                       const fam = fontFamilies.find((f) => f.familyKey === familyKey) || fontFamilies[0] || DEFAULT_FONT_FAMILIES[0]
                       const nextKey = fam.variants[0]?.key || 'dejavu_sans_bold'
                       setDraft((d) => ({ ...d, fontKey: nextKey }))
+                      const sizeKey = ((draft as any).sizeKey as FontSizeKey) || 'medium'
+                      applySizePreset({ familyKey, fontKey: String(nextKey), sizeKey })
                     }}
                     style={{
                       width: '100%',
@@ -996,7 +1068,13 @@ export default function ScreenTitlePresetsPage() {
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Variant</div>
                   <select
                     value={String(draft.fontKey || '')}
-                    onChange={(e) => setDraft((d) => ({ ...d, fontKey: e.target.value }))}
+                    onChange={(e) => {
+                      const nextKey = e.target.value
+                      setDraft((d) => ({ ...d, fontKey: nextKey }))
+                      const familyKey = resolveFamilyKeyForFontKey(nextKey)
+                      const sizeKey = ((draft as any).sizeKey as FontSizeKey) || 'medium'
+                      applySizePreset({ familyKey, fontKey: String(nextKey), sizeKey })
+                    }}
                     style={{
                       width: '100%',
                       maxWidth: '100%',
@@ -1020,16 +1098,14 @@ export default function ScreenTitlePresetsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Font size</div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={2}
-                    max={8}
-                    value={Number.isFinite(Number(draft.fontSizePct)) ? String(draft.fontSizePct) : '4.5'}
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Text size</div>
+                  <select
+                    value={String((draft as any).sizeKey || 'medium')}
                     onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, fontSizePct: Number.isFinite(n) ? n : 4.5 }))
+                      const sizeKey = (e.target.value as FontSizeKey) || 'medium'
+                      const familyKey = resolveFamilyKeyForFontKey(String(draft.fontKey || ''))
+                      applySizePreset({ familyKey, fontKey: String(draft.fontKey || ''), sizeKey })
+                      setDraft((d) => ({ ...d, sizeKey }))
                     }}
                     style={{
                       width: '100%',
@@ -1044,63 +1120,11 @@ export default function ScreenTitlePresetsPage() {
                       fontSize: FORM_CONTROL_FONT_SIZE_PX,
                       lineHeight: '20px',
                     }}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Character spacing</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={-20}
-                    max={50}
-                    value={Number.isFinite(Number(draft.trackingPct)) ? String(draft.trackingPct) : '0'}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, trackingPct: Number.isFinite(n) ? n : 0 }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Line spacing (%)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={-20}
-                    max={200}
-                    value={Number.isFinite(Number(draft.lineSpacingPct)) ? String(draft.lineSpacingPct) : '0'}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, lineSpacingPct: Number.isFinite(n) ? n : 0 }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
+                  >
+                    {SIZE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
 

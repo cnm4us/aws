@@ -6,6 +6,7 @@ export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 export type ScreenTitleTimingRule = 'entire' | 'first_only'
 export type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
+export type ScreenTitleSizeKey = 'x_small' | 'small' | 'medium' | 'large' | 'x_large'
 
 export type ScreenTitlePresetRow = {
   id: number
@@ -14,6 +15,7 @@ export type ScreenTitlePresetRow = {
   description: string | null
   style: ScreenTitleStyle
   font_key: string
+  size_key: ScreenTitleSizeKey
   font_size_pct: number
   tracking_pct: number
   line_spacing_pct: number
@@ -51,6 +53,7 @@ export type ScreenTitlePresetDto = {
   description: string | null
   style: ScreenTitleStyle
   fontKey: ScreenTitleFontKey
+  sizeKey: ScreenTitleSizeKey
   fontSizePct: number
   trackingPct: number
   lineSpacingPct: number

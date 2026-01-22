@@ -291,6 +291,7 @@ export async function ensureSchema(db: DB) {
               description TEXT NULL,
               style ENUM('none','pill','strip') NOT NULL DEFAULT 'pill',
               font_key VARCHAR(64) NOT NULL DEFAULT 'dejavu_sans_bold',
+              size_key VARCHAR(16) NOT NULL DEFAULT 'medium',
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
               tracking_pct TINYINT NOT NULL DEFAULT 0,
               line_spacing_pct DECIMAL(5,2) NOT NULL DEFAULT 0.00,
@@ -325,6 +326,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS tracking_pct TINYINT NOT NULL DEFAULT 0`);
           try { await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN tracking_pct TINYINT NOT NULL DEFAULT 0`); } catch {}
+          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS size_key VARCHAR(16) NOT NULL DEFAULT 'medium'`);
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS line_spacing_pct DECIMAL(5,2) NOT NULL DEFAULT 0.00`);
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
 	          // Shadow controls (color, offset, blur, opacity).

@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth'
 import * as svc from '../features/screen-title-presets/service'
 import { listScreenTitleFontFamilies } from '../services/fonts/screenTitleFonts'
 import { listScreenTitleGradients } from '../services/fonts/screenTitleGradients'
+import { getScreenTitleFontPresets } from '../services/fonts/screenTitleFontPresets'
 
 export const screenTitlePresetsRouter = Router()
 
@@ -19,6 +20,15 @@ screenTitlePresetsRouter.get('/api/screen-title-gradients', requireAuth, async (
   try {
     const gradients = listScreenTitleGradients()
     res.json({ gradients })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+screenTitlePresetsRouter.get('/api/screen-title-font-presets', requireAuth, async (_req, res, next) => {
+  try {
+    const presets = getScreenTitleFontPresets()
+    res.json(presets)
   } catch (err: any) {
     next(err)
   }
@@ -42,6 +52,7 @@ screenTitlePresetsRouter.post('/api/screen-title-presets', requireAuth, async (r
       description: body.description,
       style: body.style,
       fontKey: body.fontKey,
+      sizeKey: body.sizeKey,
       fontGradientKey: body.fontGradientKey,
       fontSizePct: body.fontSizePct,
       trackingPct: body.trackingPct,
@@ -92,6 +103,7 @@ async function handleUpdate(req: any, res: any, next: any) {
       description: body.description,
       style: body.style,
       fontKey: body.fontKey,
+      sizeKey: body.sizeKey,
       fontGradientKey: body.fontGradientKey,
       fontSizePct: body.fontSizePct,
       trackingPct: body.trackingPct,

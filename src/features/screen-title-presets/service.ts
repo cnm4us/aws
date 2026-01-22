@@ -1,6 +1,6 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
-import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
+import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleSizeKey, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
 import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
 
@@ -10,6 +10,7 @@ const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const POSITIONS: readonly ScreenTitlePosition[] = ['top', 'middle', 'bottom']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
+const SIZE_KEYS: readonly ScreenTitleSizeKey[] = ['x_small', 'small', 'medium', 'large', 'x_large']
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -46,6 +47,8 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
   const lineSpacingPctRaw = (row as any).line_spacing_pct != null ? Number((row as any).line_spacing_pct) : 0
   const lineSpacingPct = Number.isFinite(lineSpacingPctRaw) ? Math.round(Math.min(Math.max(lineSpacingPctRaw, -20), 200)) : 0
+  const sizeKeyRaw = String((row as any).size_key || 'medium').trim().toLowerCase()
+  const sizeKey: ScreenTitleSizeKey = isEnumValue(sizeKeyRaw, SIZE_KEYS) ? (sizeKeyRaw as any) : 'medium'
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
   const shadowColor = String((row as any).shadow_color || '#000000').trim() || '#000000'
   const shadowOffsetPxRaw = (row as any).shadow_offset_px != null ? Number((row as any).shadow_offset_px) : 2
@@ -95,6 +98,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     description: row.description == null ? null : String(row.description),
     style,
     fontKey,
+    sizeKey,
     fontSizePct,
     trackingPct,
     lineSpacingPct,
@@ -179,6 +183,13 @@ function normalizeLineSpacingPct(raw: any): number {
   if (!Number.isFinite(n)) return 0
   const clamped = Math.min(Math.max(n, -20), 200)
   return Math.round(clamped)
+}
+
+function normalizeSizeKey(raw: any): ScreenTitleSizeKey {
+  const s = String(raw ?? '').trim().toLowerCase()
+  if (!s) return 'medium'
+  if (!isEnumValue(s, SIZE_KEYS)) throw new DomainError('invalid_size_key', 'invalid_size_key', 400)
+  return s as ScreenTitleSizeKey
 }
 
 function normalizeFontKey(raw: any): ScreenTitleFontKey {
@@ -310,6 +321,7 @@ export async function createForUser(input: {
   description?: any
   style?: any
   fontKey?: any
+  sizeKey?: any
   fontGradientKey?: any
   fontSizePct?: any
   trackingPct?: any
@@ -344,6 +356,7 @@ export async function createForUser(input: {
   const style: ScreenTitleStyle =
     isEnumValue(styleRaw, STYLES) ? (styleRaw as any) : (styleRaw === 'outline' ? 'none' : 'pill')
   const fontKey: ScreenTitleFontKey = normalizeFontKey(input.fontKey)
+  const sizeKey: ScreenTitleSizeKey = normalizeSizeKey((input as any).sizeKey)
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
   const lineSpacingPct = normalizeLineSpacingPct((input as any).lineSpacingPct)
@@ -384,6 +397,7 @@ export async function createForUser(input: {
     description,
     style,
     fontKey,
+    sizeKey,
     fontSizePct,
     trackingPct,
     lineSpacingPct,
@@ -421,6 +435,7 @@ export async function updateForUser(
     description?: any
     style?: any
     fontKey?: any
+    sizeKey?: any
     fontGradientKey?: any
     fontSizePct?: any
     trackingPct?: any
@@ -460,6 +475,7 @@ export async function updateForUser(
     description: patch.description !== undefined ? normalizeDescription(patch.description) : (existing.description == null ? null : String(existing.description)),
     style: patch.style !== undefined ? patch.style : existing.style,
     fontKey: patch.fontKey !== undefined ? patch.fontKey : (existing as any).font_key,
+    sizeKey: patch.sizeKey !== undefined ? patch.sizeKey : (existing as any).size_key,
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
     trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
     lineSpacingPct: patch.lineSpacingPct !== undefined ? patch.lineSpacingPct : (existing as any).line_spacing_pct,
@@ -491,6 +507,7 @@ export async function updateForUser(
   if (typeof next.style === 'string' && String(next.style).trim().toLowerCase() === 'outline') next.style = 'none'
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   next.fontKey = normalizeFontKey(next.fontKey)
+  const sizeKey: ScreenTitleSizeKey = normalizeSizeKey(next.sizeKey)
   next.fontGradientKey = normalizeFontGradientKey(next.fontGradientKey)
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
@@ -531,6 +548,7 @@ export async function updateForUser(
     description: next.description,
     style: next.style,
     fontKey: next.fontKey,
+    sizeKey,
     fontSizePct,
     trackingPct,
     lineSpacingPct,
