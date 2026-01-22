@@ -663,6 +663,27 @@ export default function ScreenTitlePresetsPage() {
           <div style={{ marginTop: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {selectedId ? (
+                  <button
+                    type="button"
+                    onClick={() => deletePreset(selectedId)}
+                    disabled={deletingId === selectedId || saving}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,59,48,0.95)',
+                      background: '#ff3b30',
+                      color: '#fff',
+                      fontWeight: 850,
+                      cursor: deletingId === selectedId || saving ? 'default' : 'pointer',
+                      opacity: deletingId === selectedId || saving ? 0.7 : 1,
+                    }}
+                  >
+                    {deletingId === selectedId ? 'Deleting…' : 'Delete'}
+                  </button>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
                 <button
                   type="button"
                   onClick={closeEdit}
@@ -686,36 +707,15 @@ export default function ScreenTitlePresetsPage() {
                     style={{
                       padding: '8px 12px',
                       borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      background: 'rgba(10,132,255,0.12)',
                       color: '#fff',
-                      fontWeight: 750,
+                      fontWeight: 850,
                       cursor: saving ? 'default' : 'pointer',
                       opacity: saving ? 0.7 : 1,
                     }}
                   >
                     ← Timeline
-                  </button>
-                ) : null}
-              </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                {selectedId ? (
-                  <button
-                    type="button"
-                    onClick={() => deletePreset(selectedId)}
-                    disabled={deletingId === selectedId || saving}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,155,155,0.35)',
-                      background: 'rgba(255,155,155,0.08)',
-                      color: '#fff',
-                      fontWeight: 750,
-                      cursor: deletingId === selectedId ? 'default' : 'pointer',
-                      opacity: deletingId === selectedId ? 0.7 : 1,
-                    }}
-                  >
-                    {deletingId === selectedId ? 'Deleting…' : 'Delete'}
                   </button>
                 ) : null}
                 <button
