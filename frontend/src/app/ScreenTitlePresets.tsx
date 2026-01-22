@@ -1382,19 +1382,14 @@ export default function ScreenTitlePresetsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (%)</div>
-                  <input
-                    type="number"
-                    step="0.25"
-                    min={0}
-                    max={20}
+                  <select
                     value={draft.outlineWidthPct == null ? '' : String(draft.outlineWidthPct)}
                     onChange={(e) => {
-                      const raw = e.target.value
+                      const raw = String(e.target.value || '').trim()
                       if (!raw) return setDraft((d) => ({ ...d, outlineWidthPct: null }))
                       const n = Number(raw)
                       setDraft((d) => ({ ...d, outlineWidthPct: Number.isFinite(n) ? n : null }))
                     }}
-                    placeholder="Auto"
                     style={{
                       width: '100%',
                       maxWidth: '100%',
@@ -1408,7 +1403,14 @@ export default function ScreenTitlePresetsPage() {
                       fontSize: FORM_CONTROL_FONT_SIZE_PX,
                       lineHeight: '20px',
                     }}
-                  />
+                  >
+                    <option value="">Auto</option>
+                    <option value="3">X-Thin (3)</option>
+                    <option value="5">Thin (5)</option>
+                    <option value="10">Medium (10)</option>
+                    <option value="15">Thick (15)</option>
+                    <option value="20">X-Thick (20)</option>
+                  </select>
                 </label>
 
                 <label style={{ display: 'grid', gap: 6 }}>
