@@ -308,9 +308,9 @@ def main():
     layout.set_alignment(Pango.Alignment.RIGHT)
   else:
     layout.set_alignment(Pango.Alignment.CENTER)
-  # Clamp to N lines so the text box always fits within the vertical margins.
-  # We compute this using *logical* extents, which include line spacing and blank
-  # lines (paragraph breaks), so the bottom margin is honored even with \n\n.
+  # Clamp layout height so the text box always fits within the vertical margins.
+  # We clamp by pixel height (not “number of lines”) so paragraph breaks / blank
+  # lines behave consistently and we don’t get clipping at the bottom edge.
   margin_top_px0 = pct_to_px(margin_top_pct, width)
   margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
   max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
@@ -319,35 +319,15 @@ def main():
   # Text shaping on by default; allow \n.
   layout.set_text(text, -1)
 
-  # Measure the full wrapped layout (no height cap, no ellipsize) to estimate
-  # average line height and total line count.
-  layout.set_ellipsize(Pango.EllipsizeMode.NONE)
-  try:
-    layout.set_height(0)
-  except Exception:
-    pass
-  try:
-    _ink0, _logical0 = layout.get_pixel_extents()
-    _line_count0 = int(layout.get_line_count() or 0)
-  except Exception:
-    _logical0 = None
-    _line_count0 = 0
-  if _line_count0 < 1:
-    _line_count0 = 1
-  avg_line_h0 = max(1.0, font_px * 1.20)
-  if _logical0 is not None:
-    try:
-      avg_line_h0 = max(1.0, float(_logical0.height) / float(_line_count0))
-    except Exception:
-      avg_line_h0 = max(1.0, font_px * 1.20)
-
-  max_lines0 = int(max_layout_h_allowed0 / avg_line_h0)
-  if max_lines0 < 1:
-    max_lines0 = 1
-  if max_lines0 > 30:
-    max_lines0 = 30
-
   layout.set_ellipsize(Pango.EllipsizeMode.END)
+  try:
+    layout.set_height(int(max_layout_h_allowed0 * Pango.SCALE))
+  except Exception:
+    # If height clamp fails for any reason, fall back to “no limit”.
+    try:
+      layout.set_height(0)
+    except Exception:
+      pass
 
   if tracking_pct != 0.0:
     # Pango letter spacing is in Pango units (Pango.SCALE == 1024 units per device unit).
@@ -365,28 +345,13 @@ def main():
     except Exception:
       pass
 
-  # Tighten the line clamp until the full box (including stroke/shadow/padding)
-  # fits within the available height. Use logical extents for height so we
-  # account for line spacing and blank lines (ink extents would undercount).
-  ink = None
-  logical = None
-  lines = max_lines0
-  while lines >= 1:
-    layout.set_height(-lines)
-    ink, logical = layout.get_pixel_extents()
-    content_h0 = float(logical.height)
-    box_h0 = content_h0 + 2.0 * (pad_y0 + stroke_pad0) + abs(shadow_dy0)
-    if box_h0 <= max_box_h_allowed0 + 0.5:
-      break
-    lines -= 1
-  if ink is None or logical is None:
-    ink, logical = layout.get_pixel_extents()
+  ink, logical = layout.get_pixel_extents()
   # Prefer ink extents for sizing backgrounds (pill) so we don't clip glyphs.
   # logical extents can undercount depending on font metrics / stroke / layout alignment.
   content_x = float(ink.x)
   content_y = float(ink.y)
   content_w = float(ink.width) if ink.width > 0 else float(logical.width)
-  content_h = float(ink.height) if ink.height > 0 else float(logical.height)
+  content_h = max(float(ink.height), float(logical.height))
 
   # Padding around text for pill background.
   pad_x = 0.0
