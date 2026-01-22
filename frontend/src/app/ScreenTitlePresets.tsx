@@ -1221,59 +1221,6 @@ export default function ScreenTitlePresetsPage() {
                 </div>
               </div>
 
-              {draft.style !== 'none' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                  <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Background color</div>
-                    <input
-                      type="color"
-                      value={draft.pillBgColor || '#000000'}
-                      onChange={(e) => setDraft((d) => ({ ...d, pillBgColor: e.target.value || '#000000' }))}
-                      style={{
-                        width: '100%',
-                        height: 44,
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '6px 8px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      }}
-                    />
-                  </label>
-
-                  <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontWeight: 750 }}>Background opacity (%)</div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={Number.isFinite(Number(draft.pillBgOpacityPct)) ? String(draft.pillBgOpacityPct) : '55'}
-                      onChange={(e) => {
-                        const n = Number(e.target.value)
-                        setDraft((d) => ({ ...d, pillBgOpacityPct: Number.isFinite(n) ? n : 55 }))
-                      }}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                        lineHeight: '20px',
-                      }}
-                    />
-                  </label>
-                </div>
-              ) : null}
-
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Background</div>
@@ -1300,6 +1247,59 @@ export default function ScreenTitlePresetsPage() {
                   </select>
                 </label>
               </div>
+
+              {draft.style !== 'none' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>BG Color</div>
+                    <input
+                      type="color"
+                      value={draft.pillBgColor || '#000000'}
+                      onChange={(e) => setDraft((d) => ({ ...d, pillBgColor: e.target.value || '#000000' }))}
+                      style={{
+                        width: '100%',
+                        height: 44,
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '6px 8px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontWeight: 750 }}>BG opacity (%)</div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={Number.isFinite(Number(draft.pillBgOpacityPct)) ? String(draft.pillBgOpacityPct) : '55'}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        setDraft((d) => ({ ...d, pillBgOpacityPct: Number.isFinite(n) ? n : 55 }))
+                      }}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                        lineHeight: '20px',
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
