@@ -432,22 +432,25 @@ export default function ScreenTitlePresetsPage() {
 
   const applySizePreset = useCallback(
     (next: { familyKey: string | null; fontKey: string; sizeKey: FontSizeKey }) => {
-      if (!fontPresets?.families) return
-      const famKey = String(next.familyKey || '').trim()
-      const fam = famKey ? (fontPresets.families as any)[famKey] : null
-      if (!fam?.sizes) return
-      const base = fam.sizes[next.sizeKey]
-      if (!base) return
-      const v = fam.variants && (fam.variants as any)[String(next.fontKey)] ? (fam.variants as any)[String(next.fontKey)] : null
-      const ov = v?.sizes && v.sizes[next.sizeKey] ? v.sizes[next.sizeKey] : null
-      const resolved = { ...base, ...(ov || {}) }
-      setDraft((d) => ({
-        ...d,
-        sizeKey: next.sizeKey,
-        fontSizePct: Number(resolved.fontSizePct),
-        trackingPct: Number(resolved.trackingPct),
-        lineSpacingPct: Number(resolved.lineSpacingPct),
-      }))
+      setDraft((d) => {
+        const baseUpdate: any = { ...d, sizeKey: next.sizeKey }
+        if (!fontPresets?.families) return baseUpdate
+        const famKey = String(next.familyKey || '').trim()
+        const fam = famKey ? (fontPresets.families as any)[famKey] : null
+        if (!fam?.sizes) return baseUpdate
+        const base = fam.sizes[next.sizeKey]
+        if (!base) return baseUpdate
+        const v =
+          fam.variants && (fam.variants as any)[String(next.fontKey)] ? (fam.variants as any)[String(next.fontKey)] : null
+        const ov = v?.sizes && v.sizes[next.sizeKey] ? v.sizes[next.sizeKey] : null
+        const resolved = { ...base, ...(ov || {}) }
+        return {
+          ...baseUpdate,
+          fontSizePct: Number(resolved.fontSizePct),
+          trackingPct: Number(resolved.trackingPct),
+          lineSpacingPct: Number(resolved.lineSpacingPct),
+        }
+      })
     },
     [fontPresets]
   )
@@ -1105,7 +1108,6 @@ export default function ScreenTitlePresetsPage() {
                       const sizeKey = (e.target.value as FontSizeKey) || 'medium'
                       const familyKey = resolveFamilyKeyForFontKey(String(draft.fontKey || ''))
                       applySizePreset({ familyKey, fontKey: String(draft.fontKey || ''), sizeKey })
-                      setDraft((d) => ({ ...d, sizeKey }))
                     }}
                     style={{
                       width: '100%',
