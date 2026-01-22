@@ -6010,7 +6010,7 @@ export default function CreateVideo() {
       if (!targetId) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -6019,8 +6019,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const capEnd = 20 * 60
@@ -6254,7 +6257,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -6263,8 +6266,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const seg0 = prevSegs[idx] as any
@@ -6492,7 +6498,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -6501,8 +6507,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const seg0 = prevSegs[idx] as any
@@ -6923,7 +6932,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -6932,8 +6941,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const s0 = prevStills[idx] as any
@@ -7146,7 +7158,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -7155,8 +7167,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const g0 = prevGraphics[idx] as any
@@ -7474,7 +7489,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -7483,8 +7498,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const seg0 = prevSegs[idx] as any
@@ -7799,7 +7817,7 @@ export default function CreateVideo() {
       if (idx < 0) return
 
       const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
-      const gsSorted = Array.from(
+      let gsSorted = Array.from(
         new Map(
           gsRaw
             .map((x) => roundToTenth(Number(x)))
@@ -7808,8 +7826,11 @@ export default function CreateVideo() {
         ).values()
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
-        setTimelineMessage('No guidelines yet. Tap G to add one.')
-        return
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
       }
 
       const seg0 = prevSegs[idx] as any
