@@ -17,6 +17,10 @@ export type ScreenTitlePresetRow = {
   font_size_pct: number
   tracking_pct: number
   font_color: string
+  shadow_color: string
+  shadow_offset_px: number
+  shadow_blur_px: number
+  shadow_opacity_pct: number
   font_gradient_key: string | null
   outline_width_pct: number | null
   outline_opacity_pct: number | null
@@ -49,6 +53,10 @@ export type ScreenTitlePresetDto = {
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  shadowColor: string
+  shadowOffsetPx: number
+  shadowBlurPx: number
+  shadowOpacityPct: number
   fontGradientKey: string | null
   outlineWidthPct: number | null
   outlineOpacityPct: number | null

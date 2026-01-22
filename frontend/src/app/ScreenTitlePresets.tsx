@@ -38,6 +38,10 @@ type ScreenTitlePreset = {
   fontSizePct: number
   trackingPct?: number
   fontColor: string
+  shadowColor?: string
+  shadowOffsetPx?: number
+  shadowBlurPx?: number
+  shadowOpacityPct?: number
   fontGradientKey?: string | null
   outlineWidthPct?: number | null
   outlineOpacityPct?: number | null
@@ -124,6 +128,10 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     fontSizePct: 4.5,
     trackingPct: 0,
     fontColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffsetPx: 2,
+    shadowBlurPx: 0,
+    shadowOpacityPct: 65,
     fontGradientKey: null,
     outlineWidthPct: null,
     outlineOpacityPct: null,
@@ -327,6 +335,10 @@ export default function ScreenTitlePresetsPage() {
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
       fontColor: preset.fontColor || '#ffffff',
+      shadowColor: (preset as any).shadowColor || '#000000',
+      shadowOffsetPx: Number.isFinite(Number((preset as any).shadowOffsetPx)) ? Number((preset as any).shadowOffsetPx) : 2,
+      shadowBlurPx: Number.isFinite(Number((preset as any).shadowBlurPx)) ? Number((preset as any).shadowBlurPx) : 0,
+      shadowOpacityPct: Number.isFinite(Number((preset as any).shadowOpacityPct)) ? Number((preset as any).shadowOpacityPct) : 65,
       fontGradientKey: preset.fontGradientKey ?? null,
       outlineWidthPct: preset.outlineWidthPct ?? null,
       outlineOpacityPct: preset.outlineOpacityPct ?? null,
@@ -431,6 +443,10 @@ export default function ScreenTitlePresetsPage() {
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
         fontColor: preset.fontColor,
+        shadowColor: (preset as any).shadowColor || '#000000',
+        shadowOffsetPx: Number.isFinite(Number((preset as any).shadowOffsetPx)) ? Number((preset as any).shadowOffsetPx) : 2,
+        shadowBlurPx: Number.isFinite(Number((preset as any).shadowBlurPx)) ? Number((preset as any).shadowBlurPx) : 0,
+        shadowOpacityPct: Number.isFinite(Number((preset as any).shadowOpacityPct)) ? Number((preset as any).shadowOpacityPct) : 65,
         fontGradientKey: preset.fontGradientKey ?? null,
         outlineWidthPct: preset.outlineWidthPct ?? null,
         outlineOpacityPct: preset.outlineOpacityPct ?? null,
@@ -1103,6 +1119,116 @@ export default function ScreenTitlePresetsPage() {
                       <option key={g.key} value={g.key}>{g.label || g.key}</option>
                     ))}
                   </select>
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow color</div>
+                  <input
+                    type="color"
+                    value={draft.shadowColor || '#000000'}
+                    onChange={(e) => setDraft((d) => ({ ...d, shadowColor: e.target.value || '#000000' }))}
+                    style={{
+                      width: '100%',
+                      height: 44,
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: 0,
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow offset (px)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={-50}
+                    max={50}
+                    value={Number.isFinite(Number(draft.shadowOffsetPx)) ? String(draft.shadowOffsetPx) : '2'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, shadowOffsetPx: Number.isFinite(n) ? n : 2 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow blur (px)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={0}
+                    max={20}
+                    value={Number.isFinite(Number(draft.shadowBlurPx)) ? String(draft.shadowBlurPx) : '0'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, shadowBlurPx: Number.isFinite(n) ? n : 0 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow opacity (%)</div>
+                  <input
+                    type="number"
+                    step="1"
+                    min={0}
+                    max={100}
+                    value={Number.isFinite(Number(draft.shadowOpacityPct)) ? String(draft.shadowOpacityPct) : '65'}
+                    onChange={(e) => {
+                      const n = Number(e.target.value)
+                      setDraft((d) => ({ ...d, shadowOpacityPct: Number.isFinite(n) ? n : 65 }))
+                    }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
+                    }}
+                  />
                 </label>
               </div>
 

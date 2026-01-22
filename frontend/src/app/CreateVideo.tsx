@@ -89,6 +89,10 @@ type ScreenTitlePresetItem = {
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  shadowColor?: string
+  shadowOffsetPx?: number
+  shadowBlurPx?: number
+  shadowOpacityPct?: number
   fontGradientKey?: string | null
   outlineWidthPct?: number | null
   outlineOpacityPct?: number | null
@@ -5039,6 +5043,10 @@ export default function CreateVideo() {
         fontSizePct: Number((preset as any).fontSizePct),
         trackingPct: Number((preset as any).trackingPct),
         fontColor: String((preset as any).fontColor || '#ffffff'),
+        shadowColor: String((preset as any).shadowColor || '#000000'),
+        shadowOffsetPx: Number((preset as any).shadowOffsetPx ?? 2),
+        shadowBlurPx: Number((preset as any).shadowBlurPx ?? 0),
+        shadowOpacityPct: Number((preset as any).shadowOpacityPct ?? 65),
         fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
         outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
         outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),

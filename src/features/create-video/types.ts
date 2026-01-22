@@ -72,17 +72,30 @@ export type CreateVideoLowerThirdV1 = {
 export type CreateVideoScreenTitlePresetSnapshotV1 = {
   id: number
   name: string
-  style: 'pill' | 'outline' | 'strip'
+  style: 'none' | 'pill' | 'strip' | 'outline'
   fontKey: string
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  shadowColor?: string
+  shadowOffsetPx?: number
+  shadowBlurPx?: number
+  shadowOpacityPct?: number
+  fontGradientKey?: string | null
+  outlineWidthPct?: number | null
+  outlineOpacityPct?: number | null
+  outlineColor?: string | null
   pillBgColor: string
   pillBgOpacityPct: number
+  alignment?: 'left' | 'center' | 'right'
   position: 'top' | 'middle' | 'bottom'
   maxWidthPct: number
   insetXPreset: 'small' | 'medium' | 'large' | null
   insetYPreset: 'small' | 'medium' | 'large' | null
+  marginLeftPct?: number | null
+  marginRightPct?: number | null
+  marginTopPct?: number | null
+  marginBottomPct?: number | null
   fade: 'none' | 'in' | 'out' | 'in_out'
 }
 

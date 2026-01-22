@@ -294,6 +294,10 @@ export async function ensureSchema(db: DB) {
               font_size_pct DECIMAL(4,2) NOT NULL DEFAULT 4.50,
               tracking_pct TINYINT NOT NULL DEFAULT 0,
               font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff',
+              shadow_color VARCHAR(32) NOT NULL DEFAULT '#000000',
+              shadow_offset_px SMALLINT NOT NULL DEFAULT 2,
+              shadow_blur_px SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              shadow_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 65,
               pill_bg_color VARCHAR(32) NOT NULL DEFAULT '#000000',
               pill_bg_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 55,
               alignment ENUM('left','center','right') NOT NULL DEFAULT 'center',
@@ -321,6 +325,11 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS tracking_pct TINYINT NOT NULL DEFAULT 0`);
           try { await db.query(`ALTER TABLE screen_title_presets MODIFY COLUMN tracking_pct TINYINT NOT NULL DEFAULT 0`); } catch {}
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT '#ffffff'`);
+	          // Shadow controls (color, offset, blur, opacity).
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS shadow_color VARCHAR(32) NOT NULL DEFAULT '#000000'`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS shadow_offset_px SMALLINT NOT NULL DEFAULT 2`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS shadow_blur_px SMALLINT UNSIGNED NOT NULL DEFAULT 0`);
+	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS shadow_opacity_pct TINYINT UNSIGNED NOT NULL DEFAULT 65`);
 	          // Optional text gradient fill (PNG key under assets/font_gradients).
 	          await db.query(`ALTER TABLE screen_title_presets ADD COLUMN IF NOT EXISTS font_gradient_key VARCHAR(128) NULL`);
 	          // Optional outline controls (width as % of font size, opacity %, and color (NULL/'auto'/#rrggbb)).

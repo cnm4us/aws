@@ -34,6 +34,10 @@ export async function create(input: {
   fontSizePct: number
   trackingPct: number
   fontColor: string
+  shadowColor: string
+  shadowOffsetPx: number
+  shadowBlurPx: number
+  shadowOpacityPct: number
   fontGradientKey?: string | null
   outlineWidthPct?: number | null
   outlineOpacityPct?: number | null
@@ -56,8 +60,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO screen_title_presets
-      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, font_gradient_key, outline_width_pct, outline_opacity_pct, outline_color, margin_left_pct, margin_right_pct, margin_top_pct, margin_bottom_pct, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, font_key, font_size_pct, tracking_pct, font_color, shadow_color, shadow_offset_px, shadow_blur_px, shadow_opacity_pct, font_gradient_key, outline_width_pct, outline_opacity_pct, outline_color, margin_left_pct, margin_right_pct, margin_top_pct, margin_bottom_pct, pill_bg_color, pill_bg_opacity_pct, alignment, position, max_width_pct, inset_x_preset, inset_y_preset, timing_rule, timing_seconds, fade)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -67,6 +71,10 @@ export async function create(input: {
       input.fontSizePct,
       input.trackingPct,
       input.fontColor,
+      input.shadowColor,
+      input.shadowOffsetPx,
+      input.shadowBlurPx,
+      input.shadowOpacityPct,
       input.fontGradientKey ?? null,
       input.outlineWidthPct ?? null,
       input.outlineOpacityPct ?? null,
@@ -101,6 +109,10 @@ export async function update(id: number, patch: {
   fontSizePct?: number
   trackingPct?: number
   fontColor?: string
+  shadowColor?: string
+  shadowOffsetPx?: number
+  shadowBlurPx?: number
+  shadowOpacityPct?: number
   fontGradientKey?: string | null
   outlineWidthPct?: number | null
   outlineOpacityPct?: number | null
@@ -130,6 +142,10 @@ export async function update(id: number, patch: {
   if (patch.fontSizePct !== undefined) { sets.push('font_size_pct = ?'); args.push(patch.fontSizePct) }
   if (patch.trackingPct !== undefined) { sets.push('tracking_pct = ?'); args.push(patch.trackingPct) }
   if (patch.fontColor !== undefined) { sets.push('font_color = ?'); args.push(patch.fontColor) }
+  if (patch.shadowColor !== undefined) { sets.push('shadow_color = ?'); args.push(patch.shadowColor) }
+  if (patch.shadowOffsetPx !== undefined) { sets.push('shadow_offset_px = ?'); args.push(patch.shadowOffsetPx) }
+  if (patch.shadowBlurPx !== undefined) { sets.push('shadow_blur_px = ?'); args.push(patch.shadowBlurPx) }
+  if (patch.shadowOpacityPct !== undefined) { sets.push('shadow_opacity_pct = ?'); args.push(patch.shadowOpacityPct) }
   if (patch.fontGradientKey !== undefined) { sets.push('font_gradient_key = ?'); args.push(patch.fontGradientKey) }
   if (patch.outlineWidthPct !== undefined) { sets.push('outline_width_pct = ?'); args.push(patch.outlineWidthPct) }
   if (patch.outlineOpacityPct !== undefined) { sets.push('outline_opacity_pct = ?'); args.push(patch.outlineOpacityPct) }

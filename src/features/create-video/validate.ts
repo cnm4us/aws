@@ -348,6 +348,14 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   if (!Number.isFinite(fontSizePct) || fontSizePct < 1 || fontSizePct > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
   if (!Number.isFinite(trackingPct) || trackingPct < -40 || trackingPct > 40) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  const fontColor = String((raw as any).fontColor || '').trim()
+	  const shadowColorRaw = (raw as any).shadowColor
+	  const shadowColor = String(shadowColorRaw || '#000000').trim()
+	  const shadowOffsetPxRaw = (raw as any).shadowOffsetPx
+	  const shadowOffsetPx = shadowOffsetPxRaw == null ? 2 : Number(shadowOffsetPxRaw)
+	  const shadowBlurPxRaw = (raw as any).shadowBlurPx
+	  const shadowBlurPx = shadowBlurPxRaw == null ? 0 : Number(shadowBlurPxRaw)
+	  const shadowOpacityPctRaw = (raw as any).shadowOpacityPct
+	  const shadowOpacityPct = shadowOpacityPctRaw == null ? 65 : Number(shadowOpacityPctRaw)
 	  const fontGradientKeyRaw = (raw as any).fontGradientKey
 	  const fontGradientKey = fontGradientKeyRaw == null ? null : String(fontGradientKeyRaw || '').trim() || null
 	  const outlineWidthPctRaw = (raw as any).outlineWidthPct
@@ -367,6 +375,10 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
 	  const marginBottomPct = marginBottomPctRaw == null ? null : Number(marginBottomPctRaw)
 	  const pillBgColor = String((raw as any).pillBgColor || '').trim()
 	  if (!fontColor || fontColor.length > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!shadowColor || shadowColor.length > 20 || !/^#([0-9a-fA-F]{6})$/.test(shadowColor)) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!Number.isFinite(shadowOffsetPx) || shadowOffsetPx < -50 || shadowOffsetPx > 50) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!Number.isFinite(shadowBlurPx) || shadowBlurPx < 0 || shadowBlurPx > 20) throw new ValidationError('invalid_screen_title_preset_snapshot')
+	  if (!Number.isFinite(shadowOpacityPct) || shadowOpacityPct < 0 || shadowOpacityPct > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (fontGradientKey != null && fontGradientKey.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (outlineWidthPct != null && (!Number.isFinite(outlineWidthPct) || outlineWidthPct < 0 || outlineWidthPct > 20)) throw new ValidationError('invalid_screen_title_preset_snapshot')
 	  if (outlineOpacityPct != null && (!Number.isFinite(outlineOpacityPct) || outlineOpacityPct < 0 || outlineOpacityPct > 100)) throw new ValidationError('invalid_screen_title_preset_snapshot')
@@ -411,6 +423,10 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
     fontSizePct: roundToTenth(fontSizePct),
 	    trackingPct: Math.round(trackingPct),
 	    fontColor,
+	    shadowColor: shadowColor.toLowerCase(),
+	    shadowOffsetPx: Math.round(shadowOffsetPx),
+	    shadowBlurPx: Math.round(shadowBlurPx),
+	    shadowOpacityPct: Math.round(shadowOpacityPct),
 	    fontGradientKey,
 	    outlineWidthPct: legacyNeedsOutline ? 1.2 : (outlineWidthPct == null ? null : Math.round(outlineWidthPct * 100) / 100),
 	    outlineOpacityPct: legacyNeedsOutline ? 45 : (outlineOpacityPct == null ? null : Math.round(outlineOpacityPct)),

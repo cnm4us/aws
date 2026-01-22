@@ -142,6 +142,13 @@ def main():
   margin_bottom_pct = normalize_margin_pct(preset.get("marginBottomPct"), inset_y_pct)
 
   font_color = str(preset.get("fontColor") or "#ffffff")
+  shadow_color = str(preset.get("shadowColor") or "#000000")
+  shadow_offset_px = float(preset.get("shadowOffsetPx") or 2.0)
+  shadow_offset_px = clamp(shadow_offset_px, -50.0, 50.0)
+  shadow_blur_px = float(preset.get("shadowBlurPx") or 0.0)
+  shadow_blur_px = clamp(shadow_blur_px, 0.0, 20.0)
+  shadow_opacity_pct = float(preset.get("shadowOpacityPct") or 65.0)
+  shadow_opacity = clamp(shadow_opacity_pct / 100.0, 0.0, 1.0)
   bg_color = str(preset.get("pillBgColor") or "#000000")
   bg_opacity_pct = float(preset.get("pillBgOpacityPct") or 55.0)
   bg_opacity = clamp(bg_opacity_pct / 100.0, 0.0, 1.0)
@@ -286,15 +293,17 @@ def main():
   pad_x0 = 0.0
   pad_y0 = 0.0
   stroke_pad0 = max(1.5, outline_width_px * 1.5)
-  shadow_dx0 = 0.0
-  shadow_dy0 = 2.0
+  # Apply a single configured offset to both axes (diagonal shadow).
+  shadow_dx0 = shadow_offset_px
+  shadow_dy0 = shadow_offset_px
+  shadow_blur0 = shadow_blur_px
   if style in ("pill", "strip"):
     pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y0 = clamp(font_px * 0.30, 6.0, 28.0)
   margin_left_px0 = pct_to_px(margin_left_pct, width)
   margin_right_px0 = pct_to_px(margin_right_pct, width)
   max_box_w_allowed0 = max(10.0, width - margin_left_px0 - margin_right_px0)
-  max_layout_w_allowed0 = max(10.0, max_box_w_allowed0 - (2.0 * (pad_x0 + stroke_pad0)) - abs(shadow_dx0))
+  max_layout_w_allowed0 = max(10.0, max_box_w_allowed0 - (2.0 * (pad_x0 + stroke_pad0)) - abs(shadow_dx0) - (2.0 * shadow_blur0))
   max_w = max_layout_w_allowed0
   # Legacy: if no explicit margins were provided, respect maxWidthPct.
   if not has_any_margin:
@@ -314,7 +323,7 @@ def main():
   margin_top_px0 = pct_to_px(margin_top_pct, width)
   margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
   max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
-  max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0))
+  max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0) - (2.0 * shadow_blur0))
 
   # Text shaping on by default; allow \n.
   layout.set_text(text, -1)
@@ -363,8 +372,9 @@ def main():
   # Extra padding for stroke + shadow so text never touches/overflows the pill.
   # (We draw shadow with a small positive y offset, and we may stroke glyph paths.)
   stroke_pad = stroke_pad0
-  shadow_dx = 0.0
-  shadow_dy = 2.0
+  shadow_dx = shadow_offset_px
+  shadow_dy = shadow_offset_px
+  shadow_blur = shadow_blur_px
 
   # Margins are expressed as pct-of-width for both axes so that a given numeric
   # value yields a visually similar pixel margin horizontally and vertically
@@ -377,8 +387,8 @@ def main():
   # Compute a bounding box in layout coordinates that should fit on-screen.
   box_x0 = content_x - pad_x - stroke_pad
   box_y0 = content_y - pad_y - stroke_pad
-  box_w = content_w + 2.0 * (pad_x + stroke_pad) + abs(shadow_dx)
-  box_h = content_h + 2.0 * (pad_y + stroke_pad) + abs(shadow_dy)
+  box_w = content_w + 2.0 * (pad_x + stroke_pad) + abs(shadow_dx) + (2.0 * shadow_blur)
+  box_h = content_h + 2.0 * (pad_y + stroke_pad) + abs(shadow_dy) + (2.0 * shadow_blur)
 
   # Position the bounding box, then derive the layout draw origin.
   if aln == "left":
@@ -422,14 +432,40 @@ def main():
     ctx.rectangle(strip_x, box_y, strip_w, box_h)
     ctx.fill()
 
-  # Simple shadow (offset only, no blur).
-  shadow_a = 0.65
-  if style in ("pill", "outline", "strip"):
+  # Shadow (configurable offset/blur/opacity).
+  if style in ("pill", "none", "strip") and shadow_opacity > 0.0:
+    sr, sg, sb, _sa = hex_to_rgba(shadow_color, shadow_opacity)
+
+    def shadow_samples(blur):
+      # Cairo/Pango doesn't provide a native blur. Approximate by re-drawing the text multiple times
+      # around the target offset. For blur=0, draw once.
+      if blur <= 0.01:
+        return [(0.0, 0.0, 1.0)]
+      b = float(blur)
+      samples = [(0.0, 0.0, 3.5)]
+      # Inner ring
+      r1 = max(0.5, b * 0.55)
+      # Outer ring
+      r2 = max(0.8, b)
+      for i in range(0, 8):
+        ang = (2.0 * math.pi) * (float(i) / 8.0)
+        samples.append((math.cos(ang) * r1, math.sin(ang) * r1, 1.6))
+        samples.append((math.cos(ang) * r2, math.sin(ang) * r2, 0.9))
+      return samples
+
+    samples = shadow_samples(shadow_blur)
+    wsum = sum([w for (_x, _y, w) in samples]) or 1.0
     ctx.save()
-    ctx.translate(x_draw + shadow_dx, y_draw + shadow_dy)
-    ctx.set_source_rgba(0.0, 0.0, 0.0, shadow_a)
     PangoCairo.update_layout(ctx, layout)
-    PangoCairo.show_layout(ctx, layout)
+    for ox, oy, w in samples:
+      a = shadow_opacity * (w / wsum)
+      if a <= 0.0001:
+        continue
+      ctx.save()
+      ctx.translate(x_draw + shadow_dx + ox, y_draw + shadow_dy + oy)
+      ctx.set_source_rgba(sr, sg, sb, a)
+      PangoCairo.show_layout(ctx, layout)
+      ctx.restore()
     ctx.restore()
 
   # Optional gradient fill (screen-sized PNG masked by glyphs).

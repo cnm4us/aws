@@ -45,6 +45,13 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const trackingPctRaw = (row as any).tracking_pct != null ? Number((row as any).tracking_pct) : 0
   const trackingPct = Number.isFinite(trackingPctRaw) ? Math.round(Math.min(Math.max(trackingPctRaw, -20), 50)) : 0
   const fontColor = String((row as any).font_color || '#ffffff').trim() || '#ffffff'
+  const shadowColor = String((row as any).shadow_color || '#000000').trim() || '#000000'
+  const shadowOffsetPxRaw = (row as any).shadow_offset_px != null ? Number((row as any).shadow_offset_px) : 2
+  const shadowOffsetPx = Number.isFinite(shadowOffsetPxRaw) ? Math.round(Math.min(Math.max(shadowOffsetPxRaw, -50), 50)) : 2
+  const shadowBlurPxRaw = (row as any).shadow_blur_px != null ? Number((row as any).shadow_blur_px) : 0
+  const shadowBlurPx = Number.isFinite(shadowBlurPxRaw) ? Math.round(Math.min(Math.max(shadowBlurPxRaw, 0), 20)) : 0
+  const shadowOpacityPctRaw = (row as any).shadow_opacity_pct != null ? Number((row as any).shadow_opacity_pct) : 65
+  const shadowOpacityPct = Number.isFinite(shadowOpacityPctRaw) ? Math.round(Math.min(Math.max(shadowOpacityPctRaw, 0), 100)) : 65
   const gradientRaw = (row as any).font_gradient_key
   const fontGradientKey = gradientRaw == null ? null : String(gradientRaw).trim() || null
   const outlineWidthPctRaw = (row as any).outline_width_pct
@@ -89,6 +96,10 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
     fontSizePct,
     trackingPct,
     fontColor,
+    shadowColor,
+    shadowOffsetPx,
+    shadowBlurPx,
+    shadowOpacityPct,
     fontGradientKey,
     outlineWidthPct: outlineWidthPct != null && Number.isFinite(outlineWidthPct) ? outlineWidthPct : null,
     outlineOpacityPct: outlineOpacityPct != null && Number.isFinite(outlineOpacityPct) ? Math.round(Math.min(Math.max(outlineOpacityPct, 0), 100)) : null,
@@ -183,6 +194,32 @@ function normalizeFontColor(raw: any): string {
   return `#${m[1].toLowerCase()}`
 }
 
+function normalizeShadowColor(raw: any): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return '#000000'
+  const m = s.match(/^#([0-9a-fA-F]{6})$/)
+  if (!m) throw new DomainError('invalid_shadow_color', 'invalid_shadow_color', 400)
+  return `#${m[1].toLowerCase()}`
+}
+
+function normalizeShadowOffsetPx(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 2
+  return Math.round(Math.min(Math.max(n, -50), 50))
+}
+
+function normalizeShadowBlurPx(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.min(Math.max(n, 0), 20))
+}
+
+function normalizeShadowOpacityPct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 65
+  return Math.round(Math.min(Math.max(n, 0), 100))
+}
+
 function normalizePillBgColor(raw: any): string {
   const s = String(raw ?? '').trim()
   if (!s) return '#000000'
@@ -267,6 +304,10 @@ export async function createForUser(input: {
   fontSizePct?: any
   trackingPct?: any
   fontColor?: any
+  shadowColor?: any
+  shadowOffsetPx?: any
+  shadowBlurPx?: any
+  shadowOpacityPct?: any
   outlineWidthPct?: any
   outlineOpacityPct?: any
   outlineColor?: any
@@ -295,6 +336,10 @@ export async function createForUser(input: {
   const fontSizePct = normalizeFontSizePct(input.fontSizePct)
   const trackingPct = normalizeTrackingPct(input.trackingPct)
   const fontColor = normalizeFontColor(input.fontColor)
+  const shadowColor = normalizeShadowColor((input as any).shadowColor)
+  const shadowOffsetPx = normalizeShadowOffsetPx((input as any).shadowOffsetPx)
+  const shadowBlurPx = normalizeShadowBlurPx((input as any).shadowBlurPx)
+  const shadowOpacityPct = normalizeShadowOpacityPct((input as any).shadowOpacityPct)
   const fontGradientKey = normalizeFontGradientKey((input as any).fontGradientKey)
   const outlineWidthPct = normalizeOutlineWidthPct((input as any).outlineWidthPct)
   const outlineOpacityPct = normalizeOptionalOpacityPct((input as any).outlineOpacityPct)
@@ -330,6 +375,10 @@ export async function createForUser(input: {
     fontSizePct,
     trackingPct,
     fontColor,
+    shadowColor,
+    shadowOffsetPx,
+    shadowBlurPx,
+    shadowOpacityPct,
     fontGradientKey,
     outlineWidthPct,
     outlineOpacityPct,
@@ -363,6 +412,10 @@ export async function updateForUser(
     fontSizePct?: any
     trackingPct?: any
     fontColor?: any
+    shadowColor?: any
+    shadowOffsetPx?: any
+    shadowBlurPx?: any
+    shadowOpacityPct?: any
     outlineWidthPct?: any
     outlineOpacityPct?: any
     outlineColor?: any
@@ -396,6 +449,10 @@ export async function updateForUser(
     fontSizePct: patch.fontSizePct !== undefined ? patch.fontSizePct : (existing as any).font_size_pct,
     trackingPct: patch.trackingPct !== undefined ? patch.trackingPct : (existing as any).tracking_pct,
     fontColor: patch.fontColor !== undefined ? patch.fontColor : (existing as any).font_color,
+    shadowColor: patch.shadowColor !== undefined ? patch.shadowColor : (existing as any).shadow_color,
+    shadowOffsetPx: patch.shadowOffsetPx !== undefined ? patch.shadowOffsetPx : (existing as any).shadow_offset_px,
+    shadowBlurPx: patch.shadowBlurPx !== undefined ? patch.shadowBlurPx : (existing as any).shadow_blur_px,
+    shadowOpacityPct: patch.shadowOpacityPct !== undefined ? patch.shadowOpacityPct : (existing as any).shadow_opacity_pct,
     fontGradientKey: patch.fontGradientKey !== undefined ? patch.fontGradientKey : (existing as any).font_gradient_key,
     outlineWidthPct: patch.outlineWidthPct !== undefined ? patch.outlineWidthPct : (existing as any).outline_width_pct,
     outlineOpacityPct: patch.outlineOpacityPct !== undefined ? patch.outlineOpacityPct : (existing as any).outline_opacity_pct,
@@ -423,6 +480,10 @@ export async function updateForUser(
   const fontSizePct = normalizeFontSizePct(next.fontSizePct)
   const trackingPct = normalizeTrackingPct(next.trackingPct)
   const fontColor = normalizeFontColor(next.fontColor)
+  const shadowColor = normalizeShadowColor(next.shadowColor)
+  const shadowOffsetPx = normalizeShadowOffsetPx(next.shadowOffsetPx)
+  const shadowBlurPx = normalizeShadowBlurPx(next.shadowBlurPx)
+  const shadowOpacityPct = normalizeShadowOpacityPct(next.shadowOpacityPct)
   const outlineWidthPct = normalizeOutlineWidthPct(next.outlineWidthPct)
   const outlineOpacityPct = normalizeOptionalOpacityPct(next.outlineOpacityPct)
   const outlineColor = normalizeOutlineColor(next.outlineColor)
@@ -457,6 +518,10 @@ export async function updateForUser(
     fontSizePct,
     trackingPct,
     fontColor,
+    shadowColor,
+    shadowOffsetPx,
+    shadowBlurPx,
+    shadowOpacityPct,
     fontGradientKey: next.fontGradientKey,
     outlineWidthPct,
     outlineOpacityPct,
