@@ -149,6 +149,8 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 // and converted to pct-of-width for storage/rendering so equal numeric values look
 // visually comparable in X and Y.
 const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
+// iOS Safari auto-zooms focused inputs if font-size < 16px.
+const FORM_CONTROL_FONT_SIZE_PX = 16
 
 function positionLabel(p: ScreenTitlePosition): string {
   if (p === 'top') return 'Top'
@@ -524,7 +526,15 @@ export default function ScreenTitlePresetsPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#050505',
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+        WebkitTextSizeAdjust: '100%',
+      }}
+    >
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
         {view === 'edit' ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -755,6 +765,8 @@ export default function ScreenTitlePresetsPage() {
                     background: '#0c0c0c',
                     color: '#fff',
                     outline: 'none',
+                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                    lineHeight: '20px',
                   }}
                 />
               </label>
@@ -776,6 +788,8 @@ export default function ScreenTitlePresetsPage() {
                     color: '#fff',
                     outline: 'none',
                     resize: 'vertical',
+                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                    lineHeight: '20px',
                   }}
                 />
               </label>
@@ -796,6 +810,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     <option value="top">Top</option>
@@ -819,6 +835,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     <option value="left">Left</option>
@@ -875,6 +893,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -918,6 +938,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -944,6 +966,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     {fontFamilies.map((f) => (
@@ -967,6 +991,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     {selectedFontFamily.variants.map((v) => (
@@ -999,6 +1025,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -1025,6 +1053,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -1048,6 +1078,7 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
                     }}
                   />
                 </label>
@@ -1068,6 +1099,7 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
                     }}
                   >
                     <option value="">None (solid color)</option>
@@ -1104,6 +1136,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -1133,6 +1167,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   />
                 </label>
@@ -1156,6 +1192,8 @@ export default function ScreenTitlePresetsPage() {
                         background: '#0c0c0c',
                         color: '#fff',
                         outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                        lineHeight: '20px',
                       }}
                     >
                       <option value="auto">Auto</option>
@@ -1174,6 +1212,7 @@ export default function ScreenTitlePresetsPage() {
                         border: '1px solid rgba(255,255,255,0.16)',
                         background: '#0c0c0c',
                         opacity: draft.outlineColor ? 1 : 0.45,
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
                       }}
                     />
                   </div>
@@ -1199,6 +1238,7 @@ export default function ScreenTitlePresetsPage() {
                         background: '#0c0c0c',
                         color: '#fff',
                         outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
                       }}
                     />
                   </label>
@@ -1224,6 +1264,8 @@ export default function ScreenTitlePresetsPage() {
                         background: '#0c0c0c',
                         color: '#fff',
                         outline: 'none',
+                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                        lineHeight: '20px',
                       }}
                     />
                   </label>
@@ -1246,6 +1288,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     <option value="none">None</option>
@@ -1271,6 +1315,8 @@ export default function ScreenTitlePresetsPage() {
                       background: '#0c0c0c',
                       color: '#fff',
                       outline: 'none',
+                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      lineHeight: '20px',
                     }}
                   >
                     <option value="none">None</option>
