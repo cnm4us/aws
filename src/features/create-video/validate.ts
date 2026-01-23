@@ -287,10 +287,10 @@ function normalizeLowerThirdConfigSnapshot(raw: any, configId: number) {
   }
 }
 
-async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
+async function loadBackgroundMusicAudioMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
   const db = getPool()
   const [rows] = await db.query(
-    `SELECT id, kind, status, is_system, source_deleted_at
+    `SELECT id, user_id, kind, status, is_system, s3_key, source_deleted_at
        FROM uploads
       WHERE id = ?
       LIMIT 1`,
@@ -299,11 +299,18 @@ async function loadSystemAudioMeta(uploadId: number): Promise<{ id: number }> {
   const row = (rows as any[])[0]
   if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
   if (String(row.kind || '').toLowerCase() !== 'audio') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
-  if (Number(row.is_system || 0) !== 1) throw new DomainError('not_system_audio', 'not_system_audio', 403)
   if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
 
   const status = String(row.status || '').toLowerCase()
   if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const key = String(row.s3_key || '')
+  if (!key.includes('/audio/music/')) throw new DomainError('invalid_audio_role', 'invalid_audio_role', 403)
+
+  const isSystem = Number(row.is_system || 0) === 1
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  if (!isSystem && !isOwner) throw new ForbiddenError()
 
   return { id: Number(row.id) }
 }
@@ -921,7 +928,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
         if (commonUploadId != null && uploadId !== commonUploadId) throw new DomainError('multiple_audio_tracks_not_supported', 'multiple_audio_tracks_not_supported', 400)
         if (commonAudioConfigId != null && audioConfigId !== commonAudioConfigId) throw new DomainError('multiple_audio_configs_not_supported', 'multiple_audio_configs_not_supported', 400)
 
-        const meta = await loadSystemAudioMeta(uploadId)
+        const meta = await loadBackgroundMusicAudioMetaForUser(uploadId, ctx.userId)
         // Validate audio config exists and is not archived.
         await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
 
@@ -956,7 +963,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       const audioConfigId = Number((audioTrackRaw as any).audioConfigId)
       if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
       if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
-      const meta = await loadSystemAudioMeta(uploadId)
+      const meta = await loadBackgroundMusicAudioMetaForUser(uploadId, ctx.userId)
       await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
 
       const startSeconds = normalizeSeconds((audioTrackRaw as any).startSeconds ?? 0)
