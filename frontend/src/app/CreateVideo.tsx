@@ -113,10 +113,12 @@ type AddStep =
   | 'type'
   | 'video'
   | 'graphic'
-  | 'audio'
   | 'narration'
   | 'narration_new'
   | 'narration_edit'
+  | 'audio'
+  | 'audio_new'
+  | 'audio_edit'
   | 'logo'
   | 'logoConfig'
   | 'lowerThird'
@@ -501,7 +503,21 @@ export default function CreateVideo() {
   const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
-  const [audioPickerItems, setAudioPickerItems] = useState<SystemAudioItem[]>([])
+  const [audioPickerItems, setAudioPickerItems] = useState<any[]>([])
+  const [audioScope, setAudioScope] = useState<'system' | 'user'>('system')
+  const [audioDescModal, setAudioDescModal] = useState<{ title: string; description: string | null } | null>(null)
+  const [audioNewName, setAudioNewName] = useState('')
+  const [audioNewDescription, setAudioNewDescription] = useState('')
+  const [audioUploadBusy, setAudioUploadBusy] = useState(false)
+  const [audioUploadError, setAudioUploadError] = useState<string | null>(null)
+  const [audioEditId, setAudioEditId] = useState<number | null>(null)
+  const [audioEditName, setAudioEditName] = useState('')
+  const [audioEditDescription, setAudioEditDescription] = useState('')
+  const [audioEditSaving, setAudioEditSaving] = useState(false)
+  const [audioEditError, setAudioEditError] = useState<string | null>(null)
+  const [audioDeleteModal, setAudioDeleteModal] = useState<{ id: number; title: string } | null>(null)
+  const [audioDeleteBusy, setAudioDeleteBusy] = useState(false)
+  const [audioDeleteError, setAudioDeleteError] = useState<string | null>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
   const musicPreviewRef = useRef<HTMLAudioElement | null>(null)
@@ -1363,6 +1379,83 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const audioDeleteInUse = useMemo(() => {
+    if (!audioDeleteModal) return false
+    const uploadId = Number(audioDeleteModal.id || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return false
+    return (audioSegments || []).some((s: any) => Number((s as any).uploadId || 0) === uploadId)
+  }, [audioDeleteModal, audioSegments])
+
+  const loadAudioLibrary = useCallback(
+    async (scope: 'system' | 'user') => {
+      setAudioPickerError(null)
+      setAudioPickerLoading(true)
+      try {
+        await ensureAudioConfigs()
+        if (scope === 'system') {
+          const res = await fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+          const items: any[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+          setAudioPickerItems(items)
+        } else {
+          const res = await fetch(`/api/create-video/audio/list`, { credentials: 'same-origin' })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+          const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+          setAudioPickerItems(items)
+        }
+      } catch (e: any) {
+        setAudioPickerItems([])
+        setAudioPickerError(String(e?.message || 'Failed to load audio'))
+      } finally {
+        setAudioPickerLoading(false)
+      }
+    },
+    [ensureAudioConfigs]
+  )
+
+  const updateAudioMetadata = useCallback(async (uploadId: number, next: { name: string; description: string }) => {
+    const name = String(next.name || '').trim()
+    const description = String(next.description || '').trim()
+    if (!name) throw new Error('missing_name')
+    const headers: any = { 'Content-Type': 'application/json' }
+    const csrf = getCsrfToken()
+    if (csrf) headers['x-csrf-token'] = csrf
+    const res = await fetch(`/api/create-video/audio/${uploadId}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ name, description: description.length ? description : null }),
+    })
+    const json: any = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_update'))
+    setAudioPickerItems((prev) =>
+      prev.map((it: any) => {
+        const id = Number(it?.id || 0)
+        if (id !== uploadId) return it
+        return { ...(it || {}), modified_filename: name, description: description.length ? description : null }
+      })
+    )
+  }, [])
+
+  const deleteAudioUpload = useCallback(
+    async (uploadId: number) => {
+      if ((audioSegments || []).some((s: any) => Number((s as any).uploadId || 0) === uploadId)) {
+        throw new Error('in_use')
+      }
+      const headers: any = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/audio/${uploadId}`, { method: 'DELETE', credentials: 'same-origin', headers })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_delete'))
+      setAudioPickerItems((prev) => prev.filter((it: any) => Number(it?.id || 0) !== uploadId))
+      setAudioDescModal(null)
+    },
+    [audioSegments]
+  )
+
   const uploadNarrationFile = useCallback(
     async (file: File, opts?: { name?: string; description?: string }): Promise<{ uploadId: number; durationSeconds: number | null }> => {
       const durationSeconds = await probeAudioDurationSeconds(file)
@@ -1370,6 +1463,56 @@ export default function CreateVideo() {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
       const signRes = await fetch('/api/create-video/narration/sign', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({
+          name: opts?.name || null,
+          description: opts?.description || null,
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+          durationSeconds: durationSeconds != null ? Math.round(durationSeconds) : null,
+        }),
+      })
+      const signJson: any = await signRes.json().catch(() => null)
+      if (!signRes.ok) throw new Error(String(signJson?.detail || signJson?.error || 'failed_to_sign'))
+      const uploadId = Number(signJson?.id || 0)
+      const post = signJson?.post
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('failed_to_sign')
+      if (!post || typeof post !== 'object' || !post.url) throw new Error('failed_to_sign')
+
+      const formData = new FormData()
+      for (const [k, v] of Object.entries(post.fields || {})) formData.append(k, String(v))
+      formData.append('file', file)
+      const upRes = await fetch(String(post.url), { method: 'POST', body: formData })
+      if (!upRes.ok) throw new Error(`s3_upload_failed_${String(upRes.status)}`)
+
+      const completeHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf2 = getCsrfToken()
+      if (csrf2) completeHeaders['x-csrf-token'] = csrf2
+      const completeRes = await fetch('/api/mark-complete', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: completeHeaders,
+        body: JSON.stringify({ id: uploadId, sizeBytes: file.size }),
+      })
+      if (!completeRes.ok) {
+        const j: any = await completeRes.json().catch(() => null)
+        throw new Error(String(j?.detail || j?.error || 'failed_to_mark'))
+      }
+      return { uploadId, durationSeconds }
+    },
+    [probeAudioDurationSeconds]
+  )
+
+  const uploadMusicFile = useCallback(
+    async (file: File, opts?: { name?: string; description?: string }): Promise<{ uploadId: number; durationSeconds: number | null }> => {
+      const durationSeconds = await probeAudioDurationSeconds(file)
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const signRes = await fetch('/api/create-video/audio/sign', {
         method: 'POST',
         credentials: 'same-origin',
         headers,
@@ -4719,21 +4862,9 @@ export default function CreateVideo() {
 
   const openAudioPicker = useCallback(async () => {
     if (!me?.userId) return
-    setAudioPickerLoading(true)
-    setAudioPickerError(null)
-    try {
-      await ensureAudioConfigs()
-      const res = await fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: SystemAudioItem[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
-      setAudioPickerItems(items)
-    } catch (e: any) {
-      setAudioPickerError(e?.message || 'Failed to load system audio')
-    } finally {
-      setAudioPickerLoading(false)
-    }
-  }, [ensureAudioConfigs, me?.userId])
+    setAudioScope('system')
+    await loadAudioLibrary('system')
+  }, [loadAudioLibrary, me?.userId])
 
   useEffect(() => {
     if (pickOpen && addStep === 'audio') return
@@ -4746,6 +4877,12 @@ export default function CreateVideo() {
     } catch {}
     setAudioPreviewPlayingId(null)
   }, [addStep, pickOpen])
+
+  useEffect(() => {
+    if (!pickOpen) return
+    if (addStep !== 'audio') return
+    void loadAudioLibrary(audioScope)
+  }, [addStep, audioScope, loadAudioLibrary, pickOpen])
 
   const addClipFromUpload = useCallback(
     (upload: UploadListItem) => {
@@ -12149,6 +12286,13 @@ export default function CreateVideo() {
 		                          setAddStep('narration')
 		                          loadNarrationLibrary().catch(() => {})
 		                        }
+		                        else if (addStep === 'audio_new' || addStep === 'audio_edit') {
+		                          setAudioUploadError(null)
+		                          setAudioEditError(null)
+		                          setAudioEditSaving(false)
+		                          setAddStep('audio')
+		                          loadAudioLibrary(audioScope).catch(() => {})
+		                        }
 		                        else setAddStep('type')
 		                      }}
 		                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
@@ -12190,7 +12334,7 @@ export default function CreateVideo() {
 	                                  ? `Configs: ${lowerThirdConfigs.length}`
 	                                  : addStep === 'screenTitle'
 	                                    ? `Styles: ${screenTitlePresets.length}`
-		                              : addStep === 'audio'
+		                              : addStep === 'audio' || addStep === 'audio_new' || addStep === 'audio_edit'
 		                                ? `Tracks: ${audioPickerItems.length}`
 		                                : 'Choose a type'}
 		                </div>
@@ -13154,79 +13298,584 @@ export default function CreateVideo() {
 	                    })}
 	                </div>
 	              </>
-	            ) : (
-	              <>
-	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Audio</h1>
-	                {audioPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-                {audioPickerError ? <div style={{ color: '#ff9b9b' }}>{audioPickerError}</div> : null}
-                {audioConfigsError ? <div style={{ color: '#ff9b9b' }}>{audioConfigsError}</div> : null}
-                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                  {audioPickerItems.map((it) => {
-                    const id = Number(it.id)
-                    if (!Number.isFinite(id) || id <= 0) return null
-                    const name = String(it.modified_filename || it.original_filename || `Audio ${id}`)
-                    const artist = (it as any).artist != null ? String((it as any).artist || '').trim() : ''
-                    const isPlaying = audioPreviewPlayingId === id
-                    return (
-                      <div
-                        key={`pick-audio-${id}`}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'auto 1fr auto',
-                          gap: 12,
-                          alignItems: 'center',
-                          padding: 12,
-                          borderRadius: 12,
-                          border: '1px solid rgba(48,209,88,0.55)',
-                          background: 'rgba(0,0,0,0.35)',
-                          color: '#fff',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleAudioPreview(id)}
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            border: '1px solid rgba(255,255,255,0.20)',
-                            background: 'rgba(255,255,255,0.06)',
-                            color: '#fff',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                          }}
-                          aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-                        >
-                          {isPlaying ? '❚❚' : '▶'}
-                        </button>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{artist ? `Artist: ${artist}` : 'System audio'}</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => addAudioFromUpload(it)}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(255,255,255,0.18)',
-                            background: '#0c0c0c',
-                            color: '#fff',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Select
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
+		            ) : addStep === 'audio' ? (
+		              <>
+		                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+		                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Audio</h1>
+		                  <button
+		                    type="button"
+		                    onClick={() => {
+		                      setAudioUploadError(null)
+		                      setAudioNewName('')
+		                      setAudioNewDescription('')
+		                      setAudioScope('user')
+		                      setAddStep('audio_new')
+		                    }}
+		                    style={{
+		                      padding: '10px 12px',
+		                      borderRadius: 10,
+		                      border: '1px solid rgba(10,132,255,0.65)',
+		                      background: '#0a84ff',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                    }}
+		                  >
+		                    New Audio
+		                  </button>
+		                </div>
+
+		                <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+		                  <button
+		                    type="button"
+		                    onClick={() => setAudioScope('system')}
+		                    style={{
+		                      padding: '8px 10px',
+		                      borderRadius: 999,
+		                      border: '1px solid rgba(255,255,255,0.18)',
+		                      background: audioScope === 'system' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                    }}
+		                  >
+		                    System
+		                  </button>
+		                  <button
+		                    type="button"
+		                    onClick={() => setAudioScope('user')}
+		                    style={{
+		                      padding: '8px 10px',
+		                      borderRadius: 999,
+		                      border: '1px solid rgba(255,255,255,0.18)',
+		                      background: audioScope === 'user' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                    }}
+		                  >
+		                    My Audio
+		                  </button>
+		                </div>
+
+		                {audioPickerLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+		                {audioPickerError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{audioPickerError}</div> : null}
+		                {audioConfigsError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{audioConfigsError}</div> : null}
+
+		                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+		                  {audioPickerItems.map((it: any) => {
+		                    const id = Number(it?.id || 0)
+		                    if (!Number.isFinite(id) || id <= 0) return null
+		                    const name = String(it?.modified_filename || it?.original_filename || `Audio ${id}`).trim() || `Audio ${id}`
+		                    const artist = it?.artist != null ? String(it.artist || '').trim() : ''
+		                    const date = fmtYmd(it?.uploaded_at || it?.created_at)
+		                    const size = fmtSize(it?.size_bytes)
+		                    const dur = fmtDuration(it?.duration_seconds)
+		                    const descriptionRaw = it?.description == null ? null : String(it.description)
+		                    const description = descriptionRaw && descriptionRaw.trim().length ? descriptionRaw.trim() : null
+		                    const isSystem = audioScope === 'system' || Number((it as any)?.is_system || 0) === 1
+		                    const isPlaying = audioPreviewPlayingId === id
+
+		                    return (
+		                      <div
+		                        key={`pick-audio-${id}`}
+		                        style={{
+		                          padding: 12,
+		                          borderRadius: 12,
+		                          border: '1px solid rgba(48,209,88,0.55)',
+		                          background: 'rgba(0,0,0,0.35)',
+		                          color: '#fff',
+		                          display: 'grid',
+		                          gap: 8,
+		                        }}
+		                      >
+		                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+		                          <button
+		                            type="button"
+		                            onClick={() => toggleAudioPreview(id)}
+		                            style={{
+		                              width: 44,
+		                              height: 44,
+		                              borderRadius: 12,
+		                              border: '1px solid rgba(255,255,255,0.20)',
+		                              background: 'rgba(255,255,255,0.06)',
+		                              color: '#fff',
+		                              fontWeight: 900,
+		                              cursor: 'pointer',
+		                              flex: '0 0 auto',
+		                            }}
+		                            aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
+		                          >
+		                            {isPlaying ? '❚❚' : '▶'}
+		                          </button>
+		                          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+		                            <button
+		                              type="button"
+		                              onClick={() => setAudioDescModal({ title: name, description })}
+		                              style={{
+		                                display: 'block',
+		                                width: '100%',
+		                                fontWeight: 900,
+		                                overflow: 'hidden',
+		                                textOverflow: 'ellipsis',
+		                                whiteSpace: 'nowrap',
+		                                background: 'transparent',
+		                                border: 'none',
+		                                padding: 0,
+		                                color: '#ffd60a',
+		                                cursor: 'pointer',
+		                                textAlign: 'left',
+		                              }}
+		                              title={name}
+		                              aria-label={`About: ${name}`}
+		                            >
+		                              {name}
+		                            </button>
+		                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+		                              {(date ? `${date}: ` : '') + size + ` * ${dur}` + (artist ? ` • Artist: ${artist}` : isSystem ? ' • System audio' : ' • My audio')}
+		                            </div>
+		                          </div>
+		                        </div>
+
+		                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+		                          {!isSystem ? (
+		                            <button
+		                              type="button"
+		                              onClick={() => {
+		                                setAudioDeleteError(null)
+		                                setAudioDeleteModal({ id, title: name })
+		                              }}
+		                              style={{
+		                                padding: '8px 10px',
+		                                borderRadius: 10,
+		                                border: '1px solid rgba(255,255,255,0.18)',
+		                                background: '#ff3b30',
+		                                color: '#fff',
+		                                fontWeight: 900,
+		                                cursor: 'pointer',
+		                                flex: '0 0 auto',
+		                              }}
+		                            >
+		                              Delete
+		                            </button>
+		                          ) : (
+		                            <div />
+		                          )}
+
+		                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+		                            {!isSystem ? (
+		                              <button
+		                                type="button"
+		                                onClick={() => {
+		                                  setAudioEditError(null)
+		                                  setAudioEditSaving(false)
+		                                  setAudioEditId(id)
+		                                  setAudioEditName(name)
+		                                  setAudioEditDescription(description || '')
+		                                  setAddStep('audio_edit')
+		                                }}
+		                                style={{
+		                                  padding: '8px 10px',
+		                                  borderRadius: 10,
+		                                  border: '1px solid rgba(48,209,88,0.55)',
+		                                  background: '#000',
+		                                  color: '#fff',
+		                                  fontWeight: 900,
+		                                  cursor: 'pointer',
+		                                  flex: '0 0 auto',
+		                                }}
+		                              >
+		                                Edit
+		                              </button>
+		                            ) : null}
+		                            <button
+		                              type="button"
+		                              onClick={() => addAudioFromUpload(it)}
+		                              style={{
+		                                padding: '8px 10px',
+		                                borderRadius: 10,
+		                                border: '1px solid rgba(10,132,255,0.65)',
+		                                background: '#0a84ff',
+		                                color: '#fff',
+		                                fontWeight: 900,
+		                                cursor: 'pointer',
+		                                flex: '0 0 auto',
+		                              }}
+		                            >
+		                              Select
+		                            </button>
+		                          </div>
+		                        </div>
+		                      </div>
+		                    )
+		                  })}
+		                </div>
+
+		                {audioDescModal ? (
+		                  <div
+		                    role="dialog"
+		                    aria-modal="true"
+		                    onClick={() => setAudioDescModal(null)}
+		                    style={{
+		                      position: 'fixed',
+		                      inset: 0,
+		                      zIndex: 6000,
+		                      background: 'rgba(0,0,0,0.55)',
+		                      display: 'flex',
+		                      alignItems: 'center',
+		                      justifyContent: 'center',
+		                      padding: 16,
+		                    }}
+		                  >
+		                    <div
+		                      onClick={(e) => e.stopPropagation()}
+		                      style={{
+		                        width: 'min(560px, 100%)',
+		                        borderRadius: 14,
+		                        border: '1px solid rgba(0,0,0,0.18)',
+		                        background: '#ffd60a',
+		                        padding: 14,
+		                        color: '#333',
+		                      }}
+		                    >
+		                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+		                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
+		                          {audioDescModal.title}
+		                        </div>
+		                        <button
+		                          type="button"
+		                          onClick={() => setAudioDescModal(null)}
+		                          style={{
+		                            color: '#fff',
+		                            background: '#000',
+		                            border: '1px solid #000',
+		                            padding: '6px 8px',
+		                            borderRadius: 10,
+		                            cursor: 'pointer',
+		                            fontWeight: 900,
+		                          }}
+		                          aria-label="Close"
+		                        >
+		                          ✕
+		                        </button>
+		                      </div>
+		                      <div style={{ marginTop: 10, color: '#333', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+		                        {audioDescModal.description || 'No description.'}
+		                      </div>
+		                    </div>
+		                  </div>
+		                ) : null}
+
+		                {audioDeleteModal ? (
+		                  <div
+		                    role="dialog"
+		                    aria-modal="true"
+		                    onClick={() => {
+		                      if (audioDeleteBusy) return
+		                      setAudioDeleteModal(null)
+		                    }}
+		                    style={{
+		                      position: 'fixed',
+		                      inset: 0,
+		                      zIndex: 6500,
+		                      background: 'rgba(0,0,0,0.65)',
+		                      display: 'flex',
+		                      alignItems: 'center',
+		                      justifyContent: 'center',
+		                      padding: 16,
+		                    }}
+		                  >
+		                    <div
+		                      onClick={(e) => e.stopPropagation()}
+		                      style={{
+		                        width: 'min(560px, 100%)',
+		                        borderRadius: 14,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: '#0b0b0b',
+		                        padding: 14,
+		                        color: '#fff',
+		                      }}
+		                    >
+		                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+		                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+		                          Delete audio?
+		                        </div>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (audioDeleteBusy) return
+		                            setAudioDeleteModal(null)
+		                          }}
+		                          style={{
+		                            color: '#fff',
+		                            background: 'rgba(255,255,255,0.08)',
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            padding: '6px 8px',
+		                            borderRadius: 10,
+		                            cursor: 'pointer',
+		                            fontWeight: 900,
+		                          }}
+		                          aria-label="Close"
+		                        >
+		                          ✕
+		                        </button>
+		                      </div>
+		                      <div style={{ marginTop: 10, color: '#ddd', lineHeight: 1.35 }}>
+		                        <div style={{ fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+		                          {audioDeleteModal.title}
+		                        </div>
+		                        <div style={{ marginTop: 6, color: '#bbb' }}>This cannot be undone.</div>
+		                        {audioDeleteInUse ? (
+		                          <div style={{ marginTop: 8, color: '#ff9b9b' }}>This audio is currently used on your timeline. Remove it from the timeline before deleting.</div>
+		                        ) : null}
+		                      </div>
+		                      {audioDeleteError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{audioDeleteError}</div> : null}
+		                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (audioDeleteBusy) return
+		                            setAudioDeleteModal(null)
+		                          }}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            background: '#000',
+		                            color: '#fff',
+		                            fontWeight: 900,
+		                            cursor: 'pointer',
+		                          }}
+		                          disabled={audioDeleteBusy}
+		                        >
+		                          Cancel
+		                        </button>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (audioDeleteInUse) {
+		                              setAudioDeleteError('Remove this audio from the timeline before deleting.')
+		                              return
+		                            }
+		                            const id = audioDeleteModal.id
+		                            setAudioDeleteError(null)
+		                            setAudioDeleteBusy(true)
+		                            deleteAudioUpload(id)
+		                              .then(() => setAudioDeleteModal(null))
+		                              .catch((e: any) => {
+		                                const msg = String(e?.message || '')
+		                                setAudioDeleteError(msg === 'in_use' ? 'Remove this audio from the timeline before deleting.' : 'Failed to delete audio.')
+		                              })
+		                              .finally(() => setAudioDeleteBusy(false))
+		                          }}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            background: '#ff3b30',
+		                            color: '#fff',
+		                            fontWeight: 900,
+		                            cursor: 'pointer',
+		                          }}
+		                          disabled={audioDeleteBusy || audioDeleteInUse}
+		                        >
+		                          Delete
+		                        </button>
+		                      </div>
+		                    </div>
+		                  </div>
+		                ) : null}
+		              </>
+		            ) : addStep === 'audio_new' ? (
+		              <>
+		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Audio</h1>
+		                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+		                  <label style={{ display: 'grid', gap: 6 }}>
+		                    <div style={{ color: '#bbb', fontSize: 12 }}>Name</div>
+		                    <input
+		                      value={audioNewName}
+		                      onChange={(e) => setAudioNewName(e.target.value)}
+		                      maxLength={255}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: 'rgba(0,0,0,0.35)',
+		                        color: '#fff',
+		                      }}
+		                    />
+		                  </label>
+		                  <label style={{ display: 'grid', gap: 6 }}>
+		                    <div style={{ color: '#bbb', fontSize: 12 }}>Description</div>
+		                    <textarea
+		                      value={audioNewDescription}
+		                      onChange={(e) => setAudioNewDescription(e.target.value)}
+		                      rows={4}
+		                      maxLength={2000}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: 'rgba(0,0,0,0.35)',
+		                        color: '#fff',
+		                      }}
+		                    />
+		                  </label>
+		                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+		                    <button
+		                      type="button"
+		                      onClick={() => setAddStep('audio')}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: '#000',
+		                        color: '#fff',
+		                        fontWeight: 900,
+		                        cursor: 'pointer',
+		                      }}
+		                      disabled={audioUploadBusy}
+		                    >
+		                      Cancel
+		                    </button>
+		                    <button
+		                      type="button"
+		                      onClick={() => {
+		                        const input = document.createElement('input')
+		                        input.type = 'file'
+		                        input.accept = 'audio/*'
+		                        input.onchange = () => {
+		                          const f = input.files && input.files[0]
+		                          if (!f) return
+		                          setAudioUploadError(null)
+		                          setAudioUploadBusy(true)
+		                          uploadMusicFile(f, { name: audioNewName.trim() || undefined, description: audioNewDescription.trim() || undefined })
+		                            .then(({ uploadId, durationSeconds }) => {
+		                              const baseName = audioNewName.trim() || String(f.name || '').trim() || `Audio ${uploadId}`
+		                              setNamesByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: baseName }))
+		                              if (durationSeconds != null && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+		                                setDurationsByUploadId((prev) => ({ ...prev, [uploadId]: durationSeconds }))
+		                              }
+		                              setAudioScope('user')
+		                              setAddStep('audio')
+		                              loadAudioLibrary('user').catch(() => {})
+		                            })
+		                            .catch((e: any) => {
+		                              setAudioUploadError(String(e?.message || 'Failed to upload audio.'))
+		                            })
+		                            .finally(() => setAudioUploadBusy(false))
+		                        }
+		                        input.click()
+		                      }}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(10,132,255,0.65)',
+		                        background: '#0a84ff',
+		                        color: '#fff',
+		                        fontWeight: 900,
+		                        cursor: 'pointer',
+		                      }}
+		                      disabled={audioUploadBusy}
+		                    >
+		                      Upload
+		                    </button>
+		                  </div>
+		                  {audioUploadError ? <div style={{ color: '#ff9b9b' }}>{audioUploadError}</div> : null}
+		                </div>
+		              </>
+		            ) : addStep === 'audio_edit' ? (
+		              <>
+		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Edit Audio</h1>
+		                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+		                  <label style={{ display: 'grid', gap: 6 }}>
+		                    <div style={{ color: '#bbb', fontSize: 12 }}>Name</div>
+		                    <input
+		                      value={audioEditName}
+		                      onChange={(e) => setAudioEditName(e.target.value)}
+		                      maxLength={255}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: 'rgba(0,0,0,0.35)',
+		                        color: '#fff',
+		                      }}
+		                    />
+		                  </label>
+		                  <label style={{ display: 'grid', gap: 6 }}>
+		                    <div style={{ color: '#bbb', fontSize: 12 }}>Description</div>
+		                    <textarea
+		                      value={audioEditDescription}
+		                      onChange={(e) => setAudioEditDescription(e.target.value)}
+		                      rows={5}
+		                      maxLength={2000}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: 'rgba(0,0,0,0.35)',
+		                        color: '#fff',
+		                      }}
+		                    />
+		                  </label>
+		                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+		                    <button
+		                      type="button"
+		                      onClick={() => setAddStep('audio')}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: '#000',
+		                        color: '#fff',
+		                        fontWeight: 900,
+		                        cursor: 'pointer',
+		                      }}
+		                      disabled={audioEditSaving}
+		                    >
+		                      Cancel
+		                    </button>
+		                    <button
+		                      type="button"
+		                      onClick={() => {
+		                        if (!audioEditId) return
+		                        setAudioEditError(null)
+		                        setAudioEditSaving(true)
+		                        updateAudioMetadata(audioEditId, { name: audioEditName, description: audioEditDescription })
+		                          .then(() => {
+		                            setAddStep('audio')
+		                            loadAudioLibrary('user').catch(() => {})
+		                          })
+		                          .catch((e: any) => {
+		                            const msg = String(e?.message || '')
+		                            setAudioEditError(msg === 'missing_name' ? 'Name is required.' : 'Failed to save changes.')
+		                          })
+		                          .finally(() => setAudioEditSaving(false))
+		                      }}
+		                      style={{
+		                        padding: '10px 12px',
+		                        borderRadius: 10,
+		                        border: '1px solid rgba(10,132,255,0.65)',
+		                        background: '#0a84ff',
+		                        color: '#fff',
+		                        fontWeight: 900,
+		                        cursor: 'pointer',
+		                      }}
+		                      disabled={audioEditSaving}
+		                    >
+		                      Save
+		                    </button>
+		                  </div>
+		                  {audioEditError ? <div style={{ color: '#ff9b9b' }}>{audioEditError}</div> : null}
+		                </div>
+		              </>
+		            ) : (
+		              <div style={{ color: '#bbb', marginTop: 12 }}>Unknown picker state.</div>
+		            )}
+	          </div>
+	        </div>
+	      ) : null}
 
       {graphicEditor ? (
         <div
