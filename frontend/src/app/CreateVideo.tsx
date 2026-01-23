@@ -11674,52 +11674,6 @@ export default function CreateVideo() {
 	                  G
 	                </button>
 	              </div>
-	              <button
-	                type="button"
-	                onClick={deleteSelected}
-	                disabled={
-	                  !selectedClipId &&
-	                  !selectedGraphicId &&
-	                  !selectedLogoId &&
-	                  !selectedLowerThirdId &&
-	                  !selectedScreenTitleId &&
-	                  !selectedNarrationId &&
-	                  !selectedStillId &&
-	                  !selectedAudio
-	                }
-	                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-	                  background:
-	                    selectedClipId ||
-	                    selectedGraphicId ||
-	                    selectedLogoId ||
-	                    selectedLowerThirdId ||
-	                    selectedScreenTitleId ||
-	                    selectedNarrationId ||
-	                    selectedStillId ||
-	                    selectedAudio
-	                      ? '#300'
-	                      : 'rgba(255,255,255,0.06)',
-	                  color: '#fff',
-	                  fontWeight: 900,
-	                  cursor:
-	                    selectedClipId ||
-	                    selectedGraphicId ||
-	                    selectedLogoId ||
-	                    selectedLowerThirdId ||
-	                    selectedScreenTitleId ||
-	                    selectedNarrationId ||
-	                    selectedStillId ||
-	                    selectedAudio
-	                      ? 'pointer'
-	                      : 'default',
-	                  flex: '0 0 auto',
-	                }}
-	              >
-                Delete
-              </button>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
