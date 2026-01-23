@@ -11941,10 +11941,14 @@ export default function CreateVideo() {
 	                      fontWeight: 900,
 	                      cursor: 'pointer',
 	                      flex: '0 0 auto',
+	                      minWidth: 44,
+	                      lineHeight: 1,
 	                    }}
 	                    aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
 	                  >
-	                    {musicPreviewPlaying ? 'Pause' : 'Play'}
+	                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                      {playPauseGlyph(musicPreviewPlaying)}
+	                    </span>
 	                  </button>
 	                </div>
 	              )
