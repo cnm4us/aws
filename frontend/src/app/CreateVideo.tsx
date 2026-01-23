@@ -157,8 +157,20 @@ async function ensureLoggedIn(): Promise<MeResponse | null> {
 
 function getCsrfToken(): string | null {
   try {
-    const match = document.cookie.match(/(?:^|;)\s*csrf=([^;]+)/)
-    return match ? decodeURIComponent(match[1]) : null
+    // Prefer a parser over regex so we mirror server behavior if duplicate cookie names exist.
+    // (Server parseCookies overwrites earlier entries; we do the same here.)
+    const cookies: Record<string, string> = {}
+    const raw = String(document.cookie || '')
+    if (!raw) return null
+    for (const part of raw.split(';')) {
+      const idx = part.indexOf('=')
+      if (idx < 0) continue
+      const name = part.slice(0, idx).trim()
+      if (!name) continue
+      const value = decodeURIComponent(part.slice(idx + 1).trim())
+      cookies[name] = value
+    }
+    return cookies.csrf || null
   } catch {
     return null
   }
@@ -1385,35 +1397,6 @@ export default function CreateVideo() {
     if (!Number.isFinite(uploadId) || uploadId <= 0) return false
     return (audioSegments || []).some((s: any) => Number((s as any).uploadId || 0) === uploadId)
   }, [audioDeleteModal, audioSegments])
-
-  const loadAudioLibrary = useCallback(
-    async (scope: 'system' | 'user') => {
-      setAudioPickerError(null)
-      setAudioPickerLoading(true)
-      try {
-        await ensureAudioConfigs()
-        if (scope === 'system') {
-          const res = await fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' })
-          const json: any = await res.json().catch(() => null)
-          if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-          const items: any[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
-          setAudioPickerItems(items)
-        } else {
-          const res = await fetch(`/api/create-video/audio/list`, { credentials: 'same-origin' })
-          const json: any = await res.json().catch(() => null)
-          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-          const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-          setAudioPickerItems(items)
-        }
-      } catch (e: any) {
-        setAudioPickerItems([])
-        setAudioPickerError(String(e?.message || 'Failed to load audio'))
-      } finally {
-        setAudioPickerLoading(false)
-      }
-    },
-    [ensureAudioConfigs]
-  )
 
   const updateAudioMetadata = useCallback(async (uploadId: number, next: { name: string; description: string }) => {
     const name = String(next.name || '').trim()
@@ -4827,6 +4810,35 @@ export default function CreateVideo() {
       return []
     }
   }, [audioConfigs, audioConfigsLoaded])
+
+  const loadAudioLibrary = useCallback(
+    async (scope: 'system' | 'user') => {
+      setAudioPickerError(null)
+      setAudioPickerLoading(true)
+      try {
+        await ensureAudioConfigs()
+        if (scope === 'system') {
+          const res = await fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+          const items: any[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+          setAudioPickerItems(items)
+        } else {
+          const res = await fetch(`/api/create-video/audio/list`, { credentials: 'same-origin' })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+          const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+          setAudioPickerItems(items)
+        }
+      } catch (e: any) {
+        setAudioPickerItems([])
+        setAudioPickerError(String(e?.message || 'Failed to load audio'))
+      } finally {
+        setAudioPickerLoading(false)
+      }
+    },
+    [ensureAudioConfigs]
+  )
 
   // If a timeline already has an audio track (hydrated from a saved draft), prefetch audio configs
   // so labels render as "{audio_name} * {audioConfig_name}" without requiring opening the editor.
