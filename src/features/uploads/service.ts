@@ -1,7 +1,7 @@
 import { enhanceUploadRow } from '../../utils/enhance'
 import { buildUploadThumbKey } from '../../utils/uploadThumb'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
-import { ForbiddenError, NotFoundError, DomainError } from '../../core/errors'
+import { ForbiddenError, NotFoundError, DomainError, ValidationError } from '../../core/errors'
 import * as repo from './repo'
 import * as pubsSvc from '../publications/service'
 import * as logoConfigsSvc from '../logo-configs/service'
@@ -19,6 +19,7 @@ import { clampLimit } from '../../core/pagination'
 import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
+import * as audioFavoritesRepo from '../audio-favorites/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
@@ -759,26 +760,28 @@ export async function listSystemAudio(
   const lim = clampLimit(params?.limit, 50, 1, 200)
   const cursorId = params?.cursorId && Number.isFinite(params.cursorId) ? Number(params.cursorId) : undefined
 
-	  try {
-	    const rows = await repo.list({
-	      status: ['uploaded', 'completed'],
-	      kind: 'audio',
-	      isSystem: true,
-	      cursorId,
-	      limit: lim,
-	    })
-      const uploadIds = rows.map((r) => Number((r as any).id)).filter((n) => Number.isFinite(n) && n > 0)
-      const tagMap = await audioTagsRepo.listTagAssignmentsForUploadIds(uploadIds)
-      return rows.map((row) => {
-        const enhanced: any = enhanceUploadRow(row)
-        const id = Number((row as any).id)
-        const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [], themeTagIds: [], instrumentTagIds: [] }
-        enhanced.genreTagIds = tags.genreTagIds
-        enhanced.moodTagIds = tags.moodTagIds
-        enhanced.themeTagIds = tags.themeTagIds
-        enhanced.instrumentTagIds = tags.instrumentTagIds
-        return enhanced
-      })
+		  try {
+		    const rows = await repo.list({
+		      status: ['uploaded', 'completed'],
+		      kind: 'audio',
+		      isSystem: true,
+		      cursorId,
+		      limit: lim,
+		    })
+	      const uploadIds = rows.map((r) => Number((r as any).id)).filter((n) => Number.isFinite(n) && n > 0)
+	      const tagMap = await audioTagsRepo.listTagAssignmentsForUploadIds(uploadIds)
+        const favSet = await audioFavoritesRepo.listFavoriteUploadIdsForUser(Number(ctx.userId), uploadIds)
+	      return rows.map((row) => {
+	        const enhanced: any = enhanceUploadRow(row)
+	        const id = Number((row as any).id)
+	        const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [], themeTagIds: [], instrumentTagIds: [] }
+	        enhanced.genreTagIds = tags.genreTagIds
+	        enhanced.moodTagIds = tags.moodTagIds
+	        enhanced.themeTagIds = tags.themeTagIds
+	        enhanced.instrumentTagIds = tags.instrumentTagIds
+          enhanced.is_favorite = favSet.has(id)
+	        return enhanced
+	      })
 		  } catch (e: any) {
 		    const msg = String(e?.message || '')
 		    // Backward compatibility when `uploads.is_system` is not deployed yet.
@@ -793,6 +796,7 @@ export async function searchSystemAudioByTags(
     moodTagIds?: number[]
     themeTagIds?: number[]
     instrumentTagIds?: number[]
+    favoriteOnly?: boolean
     cursorId?: number
     limit?: number
   },
@@ -811,7 +815,7 @@ export async function searchSystemAudioByTags(
   const instrumentTagIds = normalizeIds(input?.instrumentTagIds)
 
   const anyFilters = Boolean(genreTagIds.length || moodTagIds.length || themeTagIds.length || instrumentTagIds.length)
-  if (!anyFilters) return await listSystemAudio({ cursorId: input?.cursorId, limit: input?.limit }, ctx)
+  if (!anyFilters && !input?.favoriteOnly) return await listSystemAudio({ cursorId: input?.cursorId, limit: input?.limit }, ctx)
 
   const lim = clampLimit(input?.limit, 50, 1, 200)
   const cursorId = input?.cursorId && Number.isFinite(input.cursorId) ? Number(input.cursorId) : undefined
@@ -826,6 +830,10 @@ export async function searchSystemAudioByTags(
   if (cursorId) {
     where.push(`u.id < ?`)
     args.push(cursorId)
+  }
+  if (input?.favoriteOnly) {
+    where.push(`EXISTS (SELECT 1 FROM user_audio_favorites f WHERE f.user_id = ? AND f.upload_id = u.id)`)
+    args.push(Number(ctx.userId))
   }
 
   const addAxisExists = (kind: string, ids: number[]) => {
@@ -854,6 +862,7 @@ export async function searchSystemAudioByTags(
   const [rows] = await db.query(`SELECT u.* FROM uploads u ${whereSql} ORDER BY u.id DESC LIMIT ?`, [...args, lim])
   const uploadIds = (rows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)
   const tagMap = await audioTagsRepo.listTagAssignmentsForUploadIds(uploadIds)
+  const favSet = await audioFavoritesRepo.listFavoriteUploadIdsForUser(Number(ctx.userId), uploadIds)
   return (rows as any[]).map((row) => {
     const enhanced: any = enhanceUploadRow(row)
     const id = Number((row as any).id)
@@ -862,8 +871,27 @@ export async function searchSystemAudioByTags(
     enhanced.moodTagIds = tags.moodTagIds
     enhanced.themeTagIds = tags.themeTagIds
     enhanced.instrumentTagIds = tags.instrumentTagIds
+    enhanced.is_favorite = favSet.has(id)
     return enhanced
   })
+}
+
+export async function setSystemAudioFavorite(
+  input: { uploadId: number; favorite: boolean },
+  ctx: ServiceContext
+): Promise<{ ok: true; uploadId: number; favorite: boolean }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const uploadId = Number(input.uploadId)
+  if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('bad_id')
+  const favorite = Boolean(input.favorite)
+
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+  if (String((row as any).kind || '').toLowerCase() !== 'audio') throw new ForbiddenError()
+  if (Number((row as any).is_system || 0) !== 1) throw new ForbiddenError()
+
+  await audioFavoritesRepo.setFavorite(Number(ctx.userId), uploadId, favorite)
+  return { ok: true, uploadId, favorite }
 }
 
 export async function listSummariesByIds(

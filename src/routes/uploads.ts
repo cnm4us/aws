@@ -98,7 +98,7 @@ function parseIdList(raw: any): number[] {
 
 uploadsRouter.get('/api/system-audio/search', requireAuth, async (req, res) => {
   try {
-    const { limit, cursor, genreTagIds, moodTagIds, themeTagIds, instrumentTagIds } = req.query as any
+    const { limit, cursor, genreTagIds, moodTagIds, themeTagIds, instrumentTagIds, favorite_only } = req.query as any
     const lim = clampLimit(limit, 50, 1, 200)
     const curId = parseNumberCursor(cursor) ?? undefined
     const data = await uploadsSvc.searchSystemAudioByTags(
@@ -109,6 +109,7 @@ uploadsRouter.get('/api/system-audio/search', requireAuth, async (req, res) => {
         moodTagIds: parseIdList(moodTagIds),
         themeTagIds: parseIdList(themeTagIds),
         instrumentTagIds: parseIdList(instrumentTagIds),
+        favoriteOnly: favorite_only === '1' || favorite_only === 'true',
       },
       { userId: Number(req.user!.id) }
     )
@@ -117,6 +118,21 @@ uploadsRouter.get('/api/system-audio/search', requireAuth, async (req, res) => {
     console.error('search system audio error', err)
     const status = err?.status || 500
     res.status(status).json({ error: err?.code || 'failed_to_search', detail: String(err?.message || err) })
+  }
+})
+
+uploadsRouter.post('/api/system-audio/:id/favorite', requireAuth, async (req, res) => {
+  try {
+    const userId = Number(req.user!.id)
+    const uploadId = Number(req.params.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return res.status(400).json({ error: 'bad_id' })
+    const favorite = Boolean((req.body || {})?.favorite)
+    const result = await uploadsSvc.setSystemAudioFavorite({ uploadId, favorite }, { userId })
+    return res.json(result)
+  } catch (err: any) {
+    console.error('toggle system audio favorite error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }
 })
 

@@ -114,22 +114,34 @@ export async function ensureSchema(db: DB) {
 		    await db.query(`ALTER TABLE audio_tags MODIFY kind ENUM('genre','mood','theme','instrument') NOT NULL`)
 		  } catch {}
 
-		  await db.query(`
-		    CREATE TABLE IF NOT EXISTS upload_audio_tags (
-		      upload_id BIGINT UNSIGNED NOT NULL,
-		      tag_id BIGINT UNSIGNED NOT NULL,
-	      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	      UNIQUE KEY uniq_upload_audio_tags_pair (upload_id, tag_id),
-	      KEY idx_upload_audio_tags_upload (upload_id, tag_id),
-	      KEY idx_upload_audio_tags_tag (tag_id, upload_id)
-	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-		  `)
+			  await db.query(`
+			    CREATE TABLE IF NOT EXISTS upload_audio_tags (
+			      upload_id BIGINT UNSIGNED NOT NULL,
+			      tag_id BIGINT UNSIGNED NOT NULL,
+		      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		      UNIQUE KEY uniq_upload_audio_tags_pair (upload_id, tag_id),
+		      KEY idx_upload_audio_tags_upload (upload_id, tag_id),
+		      KEY idx_upload_audio_tags_tag (tag_id, upload_id)
+		    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+			  `)
 
-		  // Plan 52: license sources (system audio vendor/platform) + one-time user upload terms acceptance
-		  await db.query(`
-		    CREATE TABLE IF NOT EXISTS license_sources (
-		      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		      kind VARCHAR(32) NOT NULL,
+        // Plan 67: per-user favorites for system audio (not a tag; user preference).
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS user_audio_favorites (
+            user_id BIGINT UNSIGNED NOT NULL,
+            upload_id BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_audio_favorites (user_id, upload_id),
+            KEY idx_user_audio_favorites_user (user_id, created_at, upload_id),
+            KEY idx_user_audio_favorites_upload (upload_id, user_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `)
+
+			  // Plan 52: license sources (system audio vendor/platform) + one-time user upload terms acceptance
+			  await db.query(`
+			    CREATE TABLE IF NOT EXISTS license_sources (
+			      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+			      kind VARCHAR(32) NOT NULL,
 		      name VARCHAR(120) NOT NULL,
 		      slug VARCHAR(140) NOT NULL,
 		      sort_order INT NOT NULL DEFAULT 0,

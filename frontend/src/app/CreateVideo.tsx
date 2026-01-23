@@ -531,6 +531,7 @@ export default function CreateVideo() {
   const [audioSearchMoodIds, setAudioSearchMoodIds] = useState<number[]>([])
   const [audioSearchThemeIds, setAudioSearchThemeIds] = useState<number[]>([])
   const [audioSearchInstrumentIds, setAudioSearchInstrumentIds] = useState<number[]>([])
+  const [audioSearchFavoritesOnly, setAudioSearchFavoritesOnly] = useState(false)
   const [audioSearchGenresOpen, setAudioSearchGenresOpen] = useState(false)
   const [audioSearchMoodsOpen, setAudioSearchMoodsOpen] = useState(false)
   const [audioSearchThemesOpen, setAudioSearchThemesOpen] = useState(false)
@@ -1455,6 +1456,32 @@ export default function CreateVideo() {
       setAudioDescModal(null)
     },
     [audioSegments]
+  )
+
+  const toggleSystemAudioFavorite = useCallback(
+    async (uploadId: number, favorite: boolean) => {
+      const headers: any = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/system-audio/${uploadId}/favorite`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ favorite }),
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_favorite'))
+      const fav = Boolean(json?.favorite)
+      setAudioPickerItems((prev) =>
+        prev.map((it: any) => {
+          const id = Number(it?.id || 0)
+          if (id !== uploadId) return it
+          return { ...(it || {}), is_favorite: fav }
+        })
+      )
+      return fav
+    },
+    []
   )
 
   const uploadNarrationFile = useCallback(
@@ -4862,6 +4889,7 @@ export default function CreateVideo() {
       if (audioSearchMoodIds.length) params.set('moodTagIds', audioSearchMoodIds.join(','))
       if (audioSearchThemeIds.length) params.set('themeTagIds', audioSearchThemeIds.join(','))
       if (audioSearchInstrumentIds.length) params.set('instrumentTagIds', audioSearchInstrumentIds.join(','))
+      if (audioSearchFavoritesOnly) params.set('favorite_only', '1')
       const res = await fetch(`/api/system-audio/search?${params.toString()}`, { credentials: 'same-origin' })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
@@ -4874,6 +4902,7 @@ export default function CreateVideo() {
       setAudioPickerLoading(false)
     }
   }, [
+    audioSearchFavoritesOnly,
     audioSearchGenreIds,
     audioSearchInstrumentIds,
     audioSearchMoodIds,
@@ -13470,11 +13499,28 @@ export default function CreateVideo() {
 
 			                {audioScope === 'search' ? (
 			                  <div style={{ marginTop: 12, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, background: 'rgba(0,0,0,0.25)' }}>
-			                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-			                      <div style={{ fontWeight: 900 }}>Filter System Audio</div>
+			                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+			                    <div style={{ fontWeight: 900 }}>Filter System Audio</div>
+			                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+			                      <button
+			                        type="button"
+			                        onClick={() => setAudioSearchFavoritesOnly((v) => !v)}
+			                        style={{
+			                          padding: '8px 10px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: audioSearchFavoritesOnly ? 'rgba(255,214,10,0.22)' : 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                        }}
+			                      >
+			                        ★ Favorites
+			                      </button>
 			                      <button
 			                        type="button"
 			                        onClick={() => {
+			                          setAudioSearchFavoritesOnly(false)
 			                          setAudioSearchGenreIds([])
 			                          setAudioSearchMoodIds([])
 			                          setAudioSearchThemeIds([])
@@ -13493,6 +13539,7 @@ export default function CreateVideo() {
 			                        Clear
 			                      </button>
 			                    </div>
+			                  </div>
 			                    {audioTagsError ? <div style={{ color: '#ff453a', marginTop: 8 }}>{audioTagsError}</div> : null}
 			                    {!audioTags ? (
 			                      <div style={{ color: '#bbb', marginTop: 8 }}>Loading tags…</div>
@@ -13627,6 +13674,7 @@ export default function CreateVideo() {
 		                    const descriptionRaw = it?.description == null ? null : String(it.description)
 		                    const description = descriptionRaw && descriptionRaw.trim().length ? descriptionRaw.trim() : null
 		                    const isSystem = audioScope === 'system' || Number((it as any)?.is_system || 0) === 1
+		                    const isFavorite = Boolean((it as any)?.is_favorite)
 		                    const isPlaying = audioPreviewPlayingId === id
 
 		                    return (
@@ -13661,6 +13709,42 @@ export default function CreateVideo() {
 		                          >
 		                            {isPlaying ? '❚❚' : '▶'}
 		                          </button>
+		                          {isSystem ? (
+		                            <button
+		                              type="button"
+		                              onClick={async () => {
+		                                setAudioPickerError(null)
+		                                try {
+		                                  const nextFav = await toggleSystemAudioFavorite(id, !isFavorite)
+		                                  if (!nextFav && audioScope === 'search' && audioSearchFavoritesOnly) {
+		                                    setAudioPickerItems((prev) => prev.filter((p: any) => Number(p?.id || 0) !== id))
+		                                  }
+		                                } catch (e: any) {
+		                                  setAudioPickerError(String(e?.message || 'Failed to update favorite'))
+		                                }
+		                              }}
+		                              style={{
+		                                width: 44,
+		                                height: 44,
+		                                borderRadius: 12,
+		                                border: isFavorite ? '1px solid rgba(255,214,10,0.55)' : '1px solid rgba(255,255,255,0.20)',
+		                                background: isFavorite ? 'rgba(255,214,10,0.18)' : 'rgba(255,255,255,0.06)',
+		                                color: '#ffd60a',
+		                                fontWeight: 900,
+		                                cursor: 'pointer',
+		                                flex: '0 0 auto',
+		                                display: 'inline-flex',
+		                                alignItems: 'center',
+		                                justifyContent: 'center',
+		                                fontSize: 18,
+		                                lineHeight: 1,
+		                              }}
+		                              aria-label={isFavorite ? 'Unfavorite' : 'Favorite'}
+		                              title={isFavorite ? 'Unfavorite' : 'Favorite'}
+		                            >
+		                              {isFavorite ? '★' : '☆'}
+		                            </button>
+		                          ) : null}
 		                          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
 		                            <button
 		                              type="button"
