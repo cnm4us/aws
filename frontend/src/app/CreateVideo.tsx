@@ -1362,7 +1362,7 @@ export default function CreateVideo() {
   }, [])
 
   const uploadNarrationFile = useCallback(
-    async (file: File): Promise<{ uploadId: number; durationSeconds: number | null }> => {
+    async (file: File, opts?: { name?: string; description?: string }): Promise<{ uploadId: number; durationSeconds: number | null }> => {
       const durationSeconds = await probeAudioDurationSeconds(file)
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
@@ -1372,6 +1372,8 @@ export default function CreateVideo() {
         credentials: 'same-origin',
         headers,
         body: JSON.stringify({
+          name: opts?.name || null,
+          description: opts?.description || null,
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
           sizeBytes: file.size,
@@ -5186,6 +5188,110 @@ export default function CreateVideo() {
     [audioConfigs, audioSegments, snapshotUndo, totalSeconds]
   )
 
+  const fmtSize = useCallback((bytes: any): string => {
+    const n = Number(bytes)
+    if (!Number.isFinite(n) || n <= 0) return '—'
+    const kb = n / 1024
+    if (kb < 1024) return `${Math.round(kb)} KB`
+    const mb = kb / 1024
+    return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
+  }, [])
+
+  const fmtYmd = useCallback((dt: any): string => {
+    if (!dt) return ''
+    const d = new Date(dt)
+    if (!Number.isFinite(d.getTime())) return ''
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }, [])
+
+  const [narrationLibrary, setNarrationLibrary] = useState<any[]>([])
+  const [narrationLibraryLoading, setNarrationLibraryLoading] = useState(false)
+  const [narrationLibraryError, setNarrationLibraryError] = useState<string | null>(null)
+
+  const loadNarrationLibrary = useCallback(async () => {
+    setNarrationLibraryError(null)
+    setNarrationLibraryLoading(true)
+    try {
+      const res = await fetch('/api/create-video/narration/list', { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+      const items = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+      setNarrationLibrary(items)
+    } catch (e: any) {
+      setNarrationLibraryError('Failed to load narration audio.')
+      setNarrationLibrary([])
+    } finally {
+      setNarrationLibraryLoading(false)
+    }
+  }, [])
+
+  const [narrationNewName, setNarrationNewName] = useState('')
+  const [narrationNewDescription, setNarrationNewDescription] = useState('')
+
+  const addNarrationFromUpload = useCallback(
+    async (item: any) => {
+      const uploadId = Number(item?.id || 0)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) return
+      const name = String(item?.modified_filename || item?.original_filename || `Narration ${uploadId}`).trim() || `Narration ${uploadId}`
+      setNamesByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: name }))
+      const dur = item?.duration_seconds != null ? Number(item.duration_seconds) : null
+      if (dur != null && Number.isFinite(dur) && dur > 0) setDurationsByUploadId((prev) => ({ ...prev, [uploadId]: dur }))
+
+      setNarrationAddError(null)
+      const maxSeconds = 20 * 60
+      const start0 = clamp(roundToTenth(playhead), 0, maxSeconds)
+      const segDur = roundToTenth(Math.max(0.2, dur != null && Number.isFinite(dur) ? dur : 5.0))
+      const start = start0
+      const end = clamp(roundToTenth(start + segDur), 0, maxSeconds)
+      if (!(end > start + 0.05)) {
+        setNarrationAddError('Narration clip is too short.')
+        return
+      }
+
+      // Disallow overlaps in narration lane.
+      const existing = narration.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      for (const n of existing as any[]) {
+        const ns = Number(n.startSeconds || 0)
+        const ne = Number(n.endSeconds || 0)
+        if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
+        const overlaps = start < ne - 1e-6 && end > ns + 1e-6
+        if (overlaps) {
+          setNarrationAddError('Narration overlaps an existing narration segment. Move the playhead or trim/delete the existing narration first.')
+          return
+        }
+      }
+
+      const id = `nar_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, gainDb: 0 }
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
+        const next = [...prevNs, seg].sort(
+          (a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
+        )
+        const nextTimeline: any = { ...(prev as any), narration: next }
+        const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+        return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+      })
+      setSelectedNarrationId(id)
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+
+      setPickOpen(false)
+      setAddStep('type')
+    },
+    [computeTotalSecondsForTimeline, narration, playhead, snapshotUndo]
+  )
+
   const addNarrationFromFile = useCallback(
     async (file: File) => {
       if (narrationUploadBusy) return
@@ -5194,8 +5300,8 @@ export default function CreateVideo() {
       try {
         const maxSeconds = 20 * 60
         const start0 = clamp(roundToTenth(playhead), 0, maxSeconds)
-        const { uploadId, durationSeconds } = await uploadNarrationFile(file)
-        const baseName = String(file.name || '').trim() || `Narration ${uploadId}`
+        const { uploadId, durationSeconds } = await uploadNarrationFile(file, { name: narrationNewName.trim() || undefined, description: narrationNewDescription.trim() || undefined })
+        const baseName = narrationNewName.trim() || String(file.name || '').trim() || `Narration ${uploadId}`
         setNamesByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: baseName }))
         if (durationSeconds != null && Number.isFinite(durationSeconds) && durationSeconds > 0) {
           setDurationsByUploadId((prev) => ({ ...prev, [uploadId]: durationSeconds }))
@@ -5253,7 +5359,16 @@ export default function CreateVideo() {
         setNarrationUploadBusy(false)
       }
     },
-    [computeTotalSecondsForTimeline, narration, narrationUploadBusy, playhead, snapshotUndo, uploadNarrationFile]
+    [
+      computeTotalSecondsForTimeline,
+      narration,
+      narrationNewDescription,
+      narrationNewName,
+      narrationUploadBusy,
+      playhead,
+      snapshotUndo,
+      uploadNarrationFile,
+    ]
   )
 
   const openAudioEditor = useCallback(async () => {
@@ -11929,17 +12044,22 @@ export default function CreateVideo() {
 	                    >
 	                      ← Cancel
 	                    </button>
-	                  ) : (
-	                    <button
-	                      type="button"
-	                      onClick={() => {
-	                        if (addStep === 'logoConfig') setAddStep('logo')
-	                        else if (addStep === 'lowerThirdConfig') setAddStep('lowerThird')
-	                        else setAddStep('type')
-	                      }}
-	                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
-	                    >
-	                      ← Back
+		                  ) : (
+		                    <button
+		                      type="button"
+		                      onClick={() => {
+		                        if (addStep === 'logoConfig') setAddStep('logo')
+		                        else if (addStep === 'lowerThirdConfig') setAddStep('lowerThird')
+		                        else if (addStep === 'narration_new') {
+		                          setNarrationAddError(null)
+		                          setAddStep('narration')
+		                          loadNarrationLibrary().catch(() => {})
+		                        }
+		                        else setAddStep('type')
+		                      }}
+		                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+		                    >
+		                      ← Back
 	                    </button>
 	                  )}
 	                </div>
@@ -11964,12 +12084,12 @@ export default function CreateVideo() {
 		                    ? `Videos: ${pickerItems.length}`
 		                    : addStep === 'graphic'
 		                      ? `Images: ${graphicPickerItems.length}`
-		                      : addStep === 'narration'
-		                        ? 'Voice Memos'
-		                      : addStep === 'logo'
-		                          ? `Logos: ${logoPickerItems.length}`
-		                          : addStep === 'logoConfig'
-		                              ? `Configs: ${logoConfigs.length}`
+			                      : addStep === 'narration' || addStep === 'narration_new'
+			                        ? `Voice Memos: ${narrationLibrary.length}`
+			                      : addStep === 'logo'
+			                          ? `Logos: ${logoPickerItems.length}`
+			                          : addStep === 'logoConfig'
+			                              ? `Configs: ${logoConfigs.length}`
 		                              : addStep === 'lowerThird'
 	                                ? `Lower thirds: ${lowerThirdPickerItems.length}`
 	                                : addStep === 'lowerThirdConfig'
@@ -12100,15 +12220,16 @@ export default function CreateVideo() {
 		                    <div style={{ fontWeight: 900, fontSize: 16 }}>Audio</div>
 		                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Background music (system audio)</div>
 		                  </button>
-		                  <button
-		                    type="button"
-		                    onClick={() => {
-		                      setNarrationAddError(null)
-		                      setAddStep('narration')
-		                    }}
-		                    style={{
-		                      padding: 12,
-		                      borderRadius: 12,
+			                  <button
+			                    type="button"
+			                    onClick={() => {
+			                      setNarrationAddError(null)
+			                      setAddStep('narration')
+			                      loadNarrationLibrary().catch(() => {})
+			                    }}
+			                    style={{
+			                      padding: 12,
+			                      borderRadius: 12,
 		                      border: '1px solid rgba(191,90,242,0.55)',
 		                      background: 'rgba(0,0,0,0.35)',
 		                      color: '#fff',
@@ -12120,47 +12241,171 @@ export default function CreateVideo() {
 		                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Add a Voice Memo (.m4a)</div>
 		                  </button>
 		                </div>
-		              </>
-		            ) : addStep === 'narration' ? (
-		              <>
-		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Add Narration</h1>
-		                <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.4 }}>
-		                  Import a Voice Memo (or any audio file) as a narration segment. It will be mixed into the export above background music.
-		                </div>
-		                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-		                  <button
-		                    type="button"
-		                    disabled={narrationUploadBusy}
-		                    onClick={() => narrationFileInputRef.current?.click()}
-		                    style={{
-		                      padding: '10px 12px',
-		                      borderRadius: 10,
-		                      border: '1px solid rgba(191,90,242,0.65)',
-		                      background: 'rgba(191,90,242,0.14)',
-		                      color: '#fff',
-		                      fontWeight: 900,
-		                      cursor: narrationUploadBusy ? 'not-allowed' : 'pointer',
-		                      opacity: narrationUploadBusy ? 0.7 : 1,
-		                    }}
-		                  >
-		                    {narrationUploadBusy ? 'Uploading…' : 'Choose Voice Memo'}
-		                  </button>
-		                  <input
-		                    ref={narrationFileInputRef}
-		                    type="file"
-		                    accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm"
-		                    style={{ display: 'none' }}
-		                    onChange={(e) => {
-		                      const f = (e.target.files && e.target.files[0]) ? e.target.files[0] : null
-		                      e.currentTarget.value = ''
-		                      if (!f) return
-		                      addNarrationFromFile(f).catch(() => {})
-		                    }}
-		                  />
-		                </div>
-		                {narrationAddError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{narrationAddError}</div> : null}
-		              </>
-		            ) : addStep === 'video' ? (
+			              </>
+			            ) : addStep === 'narration' ? (
+			              <>
+			                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+			                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Narration Audio</h1>
+			                  <button
+			                    type="button"
+			                    onClick={() => {
+			                      setNarrationAddError(null)
+			                      setNarrationNewName('')
+			                      setNarrationNewDescription('')
+			                      setAddStep('narration_new')
+			                    }}
+			                    style={{
+			                      padding: '10px 12px',
+			                      borderRadius: 10,
+			                      border: '1px solid rgba(191,90,242,0.65)',
+			                      background: 'rgba(191,90,242,0.14)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                    }}
+			                  >
+			                    New Audio
+			                  </button>
+			                </div>
+			                <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.4 }}>
+			                  Select an uploaded voice memo to add as a narration segment.
+			                </div>
+			                {narrationLibraryLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+			                {narrationLibraryError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{narrationLibraryError}</div> : null}
+			                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+			                  {narrationLibrary.map((it: any) => {
+			                    const id = Number(it?.id || 0)
+			                    if (!Number.isFinite(id) || id <= 0) return null
+			                    const name = String(it?.modified_filename || it?.original_filename || `Narration ${id}`).trim() || `Narration ${id}`
+			                    const size = fmtSize(it?.size_bytes)
+			                    const date = fmtYmd(it?.uploaded_at || it?.created_at)
+			                    return (
+			                      <div
+			                        key={`nar-lib-${id}`}
+			                        style={{
+			                          padding: 12,
+			                          borderRadius: 12,
+			                          border: '1px solid rgba(191,90,242,0.55)',
+			                          background: 'rgba(0,0,0,0.35)',
+			                          color: '#fff',
+			                          display: 'grid',
+			                          gap: 10,
+			                        }}
+			                      >
+			                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+			                          <div style={{ minWidth: 0 }}>
+			                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+			                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+			                              {size}
+			                              {date ? ` • ${date}` : ''}
+			                            </div>
+			                          </div>
+			                          <button
+			                            type="button"
+			                            onClick={() => addNarrationFromUpload(it)}
+			                            style={{
+			                              padding: '8px 10px',
+			                              borderRadius: 10,
+			                              border: '1px solid rgba(255,255,255,0.18)',
+			                              background: '#0c0c0c',
+			                              color: '#fff',
+			                              fontWeight: 900,
+			                              cursor: 'pointer',
+			                              flex: '0 0 auto',
+			                            }}
+			                          >
+			                            Select
+			                          </button>
+			                        </div>
+			                      </div>
+			                    )
+			                  })}
+			                </div>
+			                {narrationAddError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{narrationAddError}</div> : null}
+			              </>
+			            ) : addStep === 'narration_new' ? (
+			              <>
+			                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Narration Audio</h1>
+			                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+			                  <label style={{ display: 'grid', gap: 6 }}>
+			                    <div style={{ color: '#bbb', fontSize: 12 }}>Name</div>
+			                    <input
+			                      value={narrationNewName}
+			                      onChange={(e) => setNarrationNewName(e.target.value)}
+			                      maxLength={255}
+			                      style={{
+			                        padding: '10px 12px',
+			                        borderRadius: 10,
+			                        border: '1px solid rgba(255,255,255,0.18)',
+			                        background: 'rgba(0,0,0,0.35)',
+			                        color: '#fff',
+			                      }}
+			                    />
+			                  </label>
+			                  <label style={{ display: 'grid', gap: 6 }}>
+			                    <div style={{ color: '#bbb', fontSize: 12 }}>Description</div>
+			                    <textarea
+			                      value={narrationNewDescription}
+			                      onChange={(e) => setNarrationNewDescription(e.target.value)}
+			                      rows={4}
+			                      maxLength={2000}
+			                      style={{
+			                        padding: '10px 12px',
+			                        borderRadius: 10,
+			                        border: '1px solid rgba(255,255,255,0.18)',
+			                        background: 'rgba(0,0,0,0.35)',
+			                        color: '#fff',
+			                        resize: 'vertical',
+			                      }}
+			                    />
+			                  </label>
+			                </div>
+			                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14, alignItems: 'center' }}>
+			                  <button
+			                    type="button"
+			                    disabled={narrationUploadBusy || !narrationNewName.trim()}
+			                    onClick={() => narrationFileInputRef.current?.click()}
+			                    style={{
+			                      padding: '10px 12px',
+			                      borderRadius: 10,
+			                      border: '1px solid rgba(191,90,242,0.65)',
+			                      background: 'rgba(191,90,242,0.14)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: narrationUploadBusy || !narrationNewName.trim() ? 'not-allowed' : 'pointer',
+			                      opacity: narrationUploadBusy || !narrationNewName.trim() ? 0.7 : 1,
+			                    }}
+			                  >
+			                    {narrationUploadBusy ? 'Uploading…' : 'Upload'}
+			                  </button>
+			                  <input
+			                    ref={narrationFileInputRef}
+			                    type="file"
+			                    accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm"
+			                    style={{ display: 'none' }}
+			                    onChange={(e) => {
+			                      const f = (e.target.files && e.target.files[0]) ? e.target.files[0] : null
+			                      e.currentTarget.value = ''
+			                      if (!f) return
+			                      setNarrationAddError(null)
+			                      setNarrationUploadBusy(true)
+			                      uploadNarrationFile(f, { name: narrationNewName.trim(), description: narrationNewDescription.trim() || undefined })
+			                        .then(({ uploadId, durationSeconds }) => {
+			                          setNamesByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: narrationNewName.trim() }))
+			                          if (durationSeconds != null && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+			                            setDurationsByUploadId((prev) => ({ ...prev, [uploadId]: durationSeconds }))
+			                          }
+			                          setAddStep('narration')
+			                          loadNarrationLibrary().catch(() => {})
+			                        })
+			                        .catch(() => setNarrationAddError('Failed to upload narration audio.'))
+			                        .finally(() => setNarrationUploadBusy(false))
+			                    }}
+			                  />
+			                </div>
+			                {narrationAddError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{narrationAddError}</div> : null}
+			              </>
+			            ) : addStep === 'video' ? (
 		              <>
 		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Video</h1>
 		                {pickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}

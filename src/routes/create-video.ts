@@ -131,6 +131,8 @@ createVideoRouter.post('/api/create-video/narration/sign', requireAuth, async (r
     const currentUserId = Number(req.user!.id)
     const body = (req.body || {}) as any
     const filenameRaw = String(body.filename || '').trim()
+    const nameRaw = body.name == null ? '' : String(body.name || '').trim()
+    const descRaw = body.description == null ? '' : String(body.description || '').trim()
     const contentTypeRaw = String(body.contentType || '').trim() || 'application/octet-stream'
     const sizeBytesRaw = body.sizeBytes == null ? null : Number(body.sizeBytes)
     const durationSecondsRaw = body.durationSeconds == null ? null : Number(body.durationSeconds)
@@ -177,19 +179,29 @@ createVideoRouter.post('/api/create-video/narration/sign', requireAuth, async (r
     const db = getPool()
     let insertId: number | null = null
     try {
+      const description = descRaw.length ? descRaw : null
+      const modifiedFilename = (modifiedFilenameRaw && modifiedFilenameRaw.length ? modifiedFilenameRaw : (nameRaw.length ? nameRaw : safeName)).slice(0, 512)
       const [result] = await db.query(
-        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, size_bytes, duration_seconds, status, kind, user_id, asset_uuid, date_ymd)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', 'audio', ?, ?, ?)`,
-        [bucket, key, safeName, modifiedFilenameRaw || null, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, duration_seconds, status, kind, user_id, asset_uuid, date_ymd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'signed', 'audio', ?, ?, ?)`,
+        [bucket, key, safeName, modifiedFilename, description, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
       )
       insertId = Number((result as any).insertId)
     } catch (e: any) {
       const msg = String(e?.message || '')
-      if (msg.includes('Unknown column') && msg.includes('kind')) {
+      if (msg.includes('Unknown column') && msg.includes('description')) {
+        const modifiedFilename = (modifiedFilenameRaw && modifiedFilenameRaw.length ? modifiedFilenameRaw : (nameRaw.length ? nameRaw : safeName)).slice(0, 512)
+        const [result] = await db.query(
+          `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, size_bytes, duration_seconds, status, kind, user_id, asset_uuid, date_ymd)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', 'audio', ?, ?, ?)`,
+          [bucket, key, safeName, modifiedFilename, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
+        )
+        insertId = Number((result as any).insertId)
+      } else if (msg.includes('Unknown column') && msg.includes('kind')) {
         const [result] = await db.query(
           `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, content_type, size_bytes, duration_seconds, status, user_id, asset_uuid, date_ymd)
            VALUES (?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?)`,
-          [bucket, key, safeName, modifiedFilenameRaw || null, contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
+          [bucket, key, safeName, (modifiedFilenameRaw && modifiedFilenameRaw.length ? modifiedFilenameRaw : (nameRaw.length ? nameRaw : safeName)).slice(0, 512), contentTypeRaw || null, sizeBytes, durationSeconds, currentUserId, uuid, dateYmd]
         )
         insertId = Number((result as any).insertId)
       } else {
@@ -219,6 +231,27 @@ createVideoRouter.post('/api/create-video/narration/sign', requireAuth, async (r
     })
 
     res.json({ id, bucket, key, post: presigned })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.get('/api/create-video/narration/list', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, modified_filename, original_filename, description, size_bytes, duration_seconds, created_at, uploaded_at
+         FROM uploads
+        WHERE user_id = ?
+          AND kind = 'audio'
+          AND s3_key LIKE '%audio/narration/%'
+          AND status IN ('uploaded','completed')
+        ORDER BY COALESCE(uploaded_at, created_at) DESC, id DESC
+        LIMIT 200`,
+      [currentUserId]
+    )
+    res.json({ items: rows })
   } catch (err: any) {
     next(err)
   }
