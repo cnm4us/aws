@@ -11582,9 +11582,9 @@ export default function CreateVideo() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+	          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+	            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+	              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={openAdd}
@@ -11671,12 +11671,61 @@ export default function CreateVideo() {
 	                  title="Guideline (tap to add, hold for menu)"
 	                  aria-label="Guideline"
 	                >
-	                  G
+		                  G
+		                </button>
+		              </div>
+	              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	                <button
+	                  type="button"
+	                  onClick={toggleNarrationPlay}
+	                  disabled={!sortedNarration.length}
+	                  style={{
+	                    padding: '10px 12px',
+	                    borderRadius: 10,
+	                    border: '1px solid rgba(175,82,222,0.65)',
+	                    background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+	                    color: '#fff',
+	                    fontWeight: 900,
+	                    cursor: sortedNarration.length ? 'pointer' : 'default',
+	                    flex: '0 0 auto',
+	                    minWidth: 44,
+	                    lineHeight: 1,
+	                  }}
+	                  title="Play narration (voice memo)"
+	                  aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+	                >
+	                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                    {playPauseGlyph(narrationPreviewPlaying)}
+	                  </span>
+	                </button>
+
+	                <button
+	                  type="button"
+	                  onClick={toggleMusicPlay}
+	                  disabled={!audioSegments.length}
+	                  style={{
+	                    padding: '10px 12px',
+	                    borderRadius: 10,
+	                    border: '1px solid rgba(48,209,88,0.65)',
+	                    background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+	                    color: '#fff',
+	                    fontWeight: 900,
+	                    cursor: audioSegments.length ? 'pointer' : 'default',
+	                    flex: '0 0 auto',
+	                    minWidth: 44,
+	                    lineHeight: 1,
+	                  }}
+	                  title="Play music"
+	                  aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+	                >
+	                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                    {playPauseGlyph(musicPreviewPlaying)}
+	                  </span>
 	                </button>
 	              </div>
-            </div>
+	            </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+	            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={jumpPrevBoundary}
@@ -11767,36 +11816,13 @@ export default function CreateVideo() {
 	                aria-label={playing ? 'Pause' : 'Play'}
 	              >
 	                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-	                  {playPauseGlyph(playing)}
-	                </span>
-	              </button>
+		                  {playPauseGlyph(playing)}
+		                </span>
+		              </button>
 	              <button
 	                type="button"
-	                onClick={toggleNarrationPlay}
-	                disabled={!sortedNarration.length}
-	                style={{
-	                  padding: '10px 12px',
-	                  borderRadius: 10,
-	                  border: '1px solid rgba(175,82,222,0.65)',
-	                  background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
-	                  color: '#fff',
-	                  fontWeight: 900,
-	                  cursor: sortedNarration.length ? 'pointer' : 'default',
-	                  flex: '0 0 auto',
-	                  minWidth: 44,
-	                  lineHeight: 1,
-	                }}
-	                title="Play narration (voice memo)"
-	                aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
-	              >
-	                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-	                  {playPauseGlyph(narrationPreviewPlaying)}
-	                </span>
-	              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (suppressNextNudgeClickRef.current) {
+	                onClick={() => {
+	                  if (suppressNextNudgeClickRef.current) {
                     suppressNextNudgeClickRef.current = false
                     return
                   }
@@ -11869,45 +11895,22 @@ export default function CreateVideo() {
           </div>
         </div>
 
-        {audioSegments.length
-          ? (() => {
-              const sorted = audioSegments
-                .slice()
-                .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-              const primary: any = sorted[0]
-              if (!primary) return null
-              const uploadId = Number(primary.uploadId)
-              const audioConfigId = Number(primary.audioConfigId)
-              return (
-                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <div style={{ color: '#fff', fontWeight: 900 }}>
-                    {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
-                  </div>
-	                  <button
-	                    type="button"
-	                    onClick={toggleMusicPlay}
-	                    style={{
-	                      padding: '8px 12px',
-	                      borderRadius: 10,
-	                      border: '1px solid rgba(48,209,88,0.65)',
-	                      background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
-	                      color: '#fff',
-	                      fontWeight: 900,
-	                      cursor: 'pointer',
-	                      flex: '0 0 auto',
-	                      minWidth: 44,
-	                      lineHeight: 1,
-	                    }}
-	                    aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
-	                  >
-	                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-	                      {playPauseGlyph(musicPreviewPlaying)}
-	                    </span>
-	                  </button>
+	        {audioSegments.length
+	          ? (() => {
+	              const sorted = audioSegments
+	                .slice()
+	                .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+	              const primary: any = sorted[0]
+	              if (!primary) return null
+	              const uploadId = Number(primary.uploadId)
+	              const audioConfigId = Number(primary.audioConfigId)
+	              return (
+	                <div style={{ marginTop: 12, color: '#fff', fontWeight: 900 }}>
+	                  {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
 	                </div>
 	              )
-            })()
-          : null}
+	            })()
+	          : null}
 
         {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
