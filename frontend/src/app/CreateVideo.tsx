@@ -5207,6 +5207,17 @@ export default function CreateVideo() {
     return `${y}-${m}-${day}`
   }, [])
 
+  const fmtDuration = useCallback((seconds: any): string => {
+    const s0 = Number(seconds)
+    if (!Number.isFinite(s0) || s0 <= 0) return '—'
+    const s = Math.round(s0)
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    const ss = s % 60
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+    return `${m}:${String(ss).padStart(2, '0')}`
+  }, [])
+
   const [narrationLibrary, setNarrationLibrary] = useState<any[]>([])
   const [narrationLibraryLoading, setNarrationLibraryLoading] = useState(false)
   const [narrationLibraryError, setNarrationLibraryError] = useState<string | null>(null)
@@ -12274,15 +12285,16 @@ export default function CreateVideo() {
 			                {narrationLibraryError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{narrationLibraryError}</div> : null}
 			                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
 			                  {narrationLibrary.map((it: any) => {
-			                    const id = Number(it?.id || 0)
-			                    if (!Number.isFinite(id) || id <= 0) return null
-			                    const name = String(it?.modified_filename || it?.original_filename || `Narration ${id}`).trim() || `Narration ${id}`
-			                    const size = fmtSize(it?.size_bytes)
-			                    const date = fmtYmd(it?.uploaded_at || it?.created_at)
-			                    return (
-			                      <div
-			                        key={`nar-lib-${id}`}
-			                        style={{
+                            const id = Number(it?.id || 0)
+                            if (!Number.isFinite(id) || id <= 0) return null
+                            const name = String(it?.modified_filename || it?.original_filename || `Narration ${id}`).trim() || `Narration ${id}`
+                            const size = fmtSize(it?.size_bytes)
+                            const date = fmtYmd(it?.uploaded_at || it?.created_at)
+                            const dur = fmtDuration(it?.duration_seconds)
+                            return (
+                              <div
+                                key={`nar-lib-${id}`}
+                                style={{
 			                          padding: 12,
 			                          borderRadius: 12,
 			                          border: '1px solid rgba(191,90,242,0.55)',
@@ -12292,17 +12304,16 @@ export default function CreateVideo() {
 			                          gap: 10,
 			                        }}
 			                      >
-			                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-			                          <div style={{ minWidth: 0 }}>
-			                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-			                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
-			                              {size}
-			                              {date ? ` • ${date}` : ''}
-			                            </div>
-			                          </div>
-			                          <button
-			                            type="button"
-			                            onClick={() => addNarrationFromUpload(it)}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+                                      {(date ? `${date}: ` : '') + size + ` * ${dur}`}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => addNarrationFromUpload(it)}
 			                            style={{
 			                              padding: '8px 10px',
 			                              borderRadius: 10,
