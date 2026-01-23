@@ -71,6 +71,14 @@ type SystemAudioItem = UploadListItem & {
   artist?: string | null
 }
 
+type AudioTagSummary = { id: number; name: string; slug: string }
+type AudioTagsDto = {
+  genres: AudioTagSummary[]
+  moods: AudioTagSummary[]
+  themes: AudioTagSummary[]
+  instruments: AudioTagSummary[]
+}
+
 type AudioConfigItem = {
   id: number
   name: string
@@ -516,7 +524,13 @@ export default function CreateVideo() {
   const [audioPickerLoading, setAudioPickerLoading] = useState(false)
   const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
   const [audioPickerItems, setAudioPickerItems] = useState<any[]>([])
-  const [audioScope, setAudioScope] = useState<'system' | 'user'>('system')
+  const [audioScope, setAudioScope] = useState<'system' | 'search' | 'user'>('system')
+  const [audioTags, setAudioTags] = useState<AudioTagsDto | null>(null)
+  const [audioTagsError, setAudioTagsError] = useState<string | null>(null)
+  const [audioSearchGenreIds, setAudioSearchGenreIds] = useState<number[]>([])
+  const [audioSearchMoodIds, setAudioSearchMoodIds] = useState<number[]>([])
+  const [audioSearchThemeIds, setAudioSearchThemeIds] = useState<number[]>([])
+  const [audioSearchInstrumentIds, setAudioSearchInstrumentIds] = useState<number[]>([])
   const [audioDescModal, setAudioDescModal] = useState<{ title: string; description: string | null } | null>(null)
   const [audioNewName, setAudioNewName] = useState('')
   const [audioNewDescription, setAudioNewDescription] = useState('')
@@ -4811,6 +4825,59 @@ export default function CreateVideo() {
     }
   }, [audioConfigs, audioConfigsLoaded])
 
+  const ensureAudioTags = useCallback(async (): Promise<AudioTagsDto | null> => {
+    if (audioTags) return audioTags
+    setAudioTagsError(null)
+    try {
+      const res = await fetch(`/api/audio-tags`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+      const next: AudioTagsDto = {
+        genres: Array.isArray(json?.genres) ? json.genres : [],
+        moods: Array.isArray(json?.moods) ? json.moods : [],
+        themes: Array.isArray(json?.themes) ? json.themes : [],
+        instruments: Array.isArray(json?.instruments) ? json.instruments : [],
+      }
+      setAudioTags(next)
+      return next
+    } catch (e: any) {
+      setAudioTagsError(String(e?.message || 'Failed to load tags'))
+      return null
+    }
+  }, [audioTags])
+
+  const loadSystemAudioSearch = useCallback(async () => {
+    setAudioPickerError(null)
+    setAudioPickerLoading(true)
+    try {
+      await ensureAudioConfigs()
+      await ensureAudioTags()
+      const params = new URLSearchParams()
+      params.set('limit', '200')
+      if (audioSearchGenreIds.length) params.set('genreTagIds', audioSearchGenreIds.join(','))
+      if (audioSearchMoodIds.length) params.set('moodTagIds', audioSearchMoodIds.join(','))
+      if (audioSearchThemeIds.length) params.set('themeTagIds', audioSearchThemeIds.join(','))
+      if (audioSearchInstrumentIds.length) params.set('instrumentTagIds', audioSearchInstrumentIds.join(','))
+      const res = await fetch(`/api/system-audio/search?${params.toString()}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+      const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
+      setAudioPickerItems(items)
+    } catch (e: any) {
+      setAudioPickerItems([])
+      setAudioPickerError(String(e?.message || 'Failed to load audio'))
+    } finally {
+      setAudioPickerLoading(false)
+    }
+  }, [
+    audioSearchGenreIds,
+    audioSearchInstrumentIds,
+    audioSearchMoodIds,
+    audioSearchThemeIds,
+    ensureAudioConfigs,
+    ensureAudioTags,
+  ])
+
   const loadAudioLibrary = useCallback(
     async (scope: 'system' | 'user') => {
       setAudioPickerError(null)
@@ -4893,8 +4960,14 @@ export default function CreateVideo() {
   useEffect(() => {
     if (!pickOpen) return
     if (addStep !== 'audio') return
+    if (audioScope === 'search') {
+      const t = window.setTimeout(() => {
+        loadSystemAudioSearch().catch(() => {})
+      }, 250)
+      return () => window.clearTimeout(t)
+    }
     void loadAudioLibrary(audioScope)
-  }, [addStep, audioScope, loadAudioLibrary, pickOpen])
+  }, [addStep, audioScope, loadAudioLibrary, loadSystemAudioSearch, pickOpen])
 
   const addClipFromUpload = useCallback(
     (upload: UploadListItem) => {
@@ -13337,27 +13410,42 @@ export default function CreateVideo() {
 		                  </button>
 		                </div>
 
-		                <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-		                  <button
-		                    type="button"
-		                    onClick={() => setAudioScope('system')}
-		                    style={{
-		                      padding: '8px 10px',
-		                      borderRadius: 999,
-		                      border: '1px solid rgba(255,255,255,0.18)',
-		                      background: audioScope === 'system' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-		                      color: '#fff',
-		                      fontWeight: 900,
-		                      cursor: 'pointer',
-		                    }}
-		                  >
-		                    System
-		                  </button>
-		                  <button
-		                    type="button"
-		                    onClick={() => setAudioScope('user')}
-		                    style={{
-		                      padding: '8px 10px',
+			                <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+			                  <button
+			                    type="button"
+			                    onClick={() => setAudioScope('system')}
+			                    style={{
+			                      padding: '8px 10px',
+			                      borderRadius: 999,
+			                      border: '1px solid rgba(255,255,255,0.18)',
+			                      background: audioScope === 'system' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                    }}
+			                  >
+			                    System
+			                  </button>
+			                  <button
+			                    type="button"
+			                    onClick={() => setAudioScope('search')}
+			                    style={{
+			                      padding: '8px 10px',
+			                      borderRadius: 999,
+			                      border: '1px solid rgba(255,255,255,0.18)',
+			                      background: audioScope === 'search' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                    }}
+			                  >
+			                    Search
+			                  </button>
+			                  <button
+			                    type="button"
+			                    onClick={() => setAudioScope('user')}
+			                    style={{
+			                      padding: '8px 10px',
 		                      borderRadius: 999,
 		                      border: '1px solid rgba(255,255,255,0.18)',
 		                      background: audioScope === 'user' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
@@ -13366,9 +13454,91 @@ export default function CreateVideo() {
 		                      cursor: 'pointer',
 		                    }}
 		                  >
-		                    My Audio
-		                  </button>
-		                </div>
+			                    My Audio
+			                  </button>
+			                </div>
+
+			                {audioScope === 'search' ? (
+			                  <div style={{ marginTop: 12, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: 12, background: 'rgba(0,0,0,0.25)' }}>
+			                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+			                      <div style={{ fontWeight: 900 }}>Filter System Audio</div>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          setAudioSearchGenreIds([])
+			                          setAudioSearchMoodIds([])
+			                          setAudioSearchThemeIds([])
+			                          setAudioSearchInstrumentIds([])
+			                        }}
+			                        style={{
+			                          padding: '8px 10px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          background: 'rgba(255,255,255,0.06)',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                        }}
+			                      >
+			                        Clear
+			                      </button>
+			                    </div>
+			                    {audioTagsError ? <div style={{ color: '#ff453a', marginTop: 8 }}>{audioTagsError}</div> : null}
+			                    {!audioTags ? (
+			                      <div style={{ color: '#bbb', marginTop: 8 }}>Loading tags…</div>
+			                    ) : (
+			                      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+			                        {([
+			                          { label: 'Genres', key: 'genres', ids: audioSearchGenreIds, setIds: setAudioSearchGenreIds },
+			                          { label: 'Moods', key: 'moods', ids: audioSearchMoodIds, setIds: setAudioSearchMoodIds },
+			                          { label: 'Video Themes', key: 'themes', ids: audioSearchThemeIds, setIds: setAudioSearchThemeIds },
+			                          { label: 'Instruments', key: 'instruments', ids: audioSearchInstrumentIds, setIds: setAudioSearchInstrumentIds },
+			                        ] as Array<{
+			                          label: string
+			                          key: keyof AudioTagsDto
+			                          ids: number[]
+			                          setIds: React.Dispatch<React.SetStateAction<number[]>>
+			                        }>).map((axis) => {
+			                          const tags = (audioTags as any)[axis.key] as AudioTagSummary[]
+			                          return (
+			                            <div key={`audio-search-${axis.key}`}>
+			                              <div style={{ fontWeight: 900, color: '#ddd', marginBottom: 6 }}>{axis.label}</div>
+			                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+			                                {tags.map((t) => {
+			                                  const id = Number((t as any).id)
+			                                  const name = String((t as any).name || '')
+			                                  const selected = axis.ids.includes(id)
+			                                  return (
+			                                    <button
+			                                      key={`tag-${axis.key}-${id}`}
+			                                      type="button"
+			                                      onClick={() =>
+			                                        axis.setIds((prev) =>
+			                                          prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+			                                        )
+			                                      }
+			                                      style={{
+			                                        padding: '7px 10px',
+			                                        borderRadius: 999,
+			                                        border: '1px solid rgba(255,255,255,0.18)',
+			                                        background: selected ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.04)',
+			                                        color: '#fff',
+			                                        fontWeight: 900,
+			                                        cursor: 'pointer',
+			                                      }}
+			                                    >
+			                                      {name}
+			                                    </button>
+			                                  )
+			                                })}
+			                              </div>
+			                            </div>
+			                          )
+			                        })}
+			                      </div>
+			                    )}
+			                  </div>
+			                ) : null}
 
 		                {audioPickerLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
 		                {audioPickerError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{audioPickerError}</div> : null}
