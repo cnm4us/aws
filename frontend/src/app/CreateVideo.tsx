@@ -2257,16 +2257,24 @@ export default function CreateVideo() {
     setNarrationPreviewPlaying(true)
     setTimelineMessage(null)
 
-    const tick = () => {
-      if (!narrationPreviewRef.current) return
-      if (!narrationPreviewSegRef.current) return
-      const cur = narrationPreviewRef.current
-      const seg = narrationPreviewSegRef.current
-      const srcStart1 = Number(seg.sourceStartSeconds || 0)
-      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
-      playheadFromVideoRef.current = true
-      playheadRef.current = nextPlayhead
-      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
+	    const tick = () => {
+	      if (!narrationPreviewRef.current) return
+	      if (!narrationPreviewSegRef.current) return
+	      const cur = narrationPreviewRef.current
+	      const seg = narrationPreviewSegRef.current
+	      // If the <audio> element has ended or was auto-paused, stop the preview loop so it doesn't
+	      // fight user timeline panning by repeatedly snapping the playhead back to the segment end.
+	      if (cur.ended || cur.paused) {
+	        const stopAt = roundToTenth(Number(seg.segEnd || 0))
+	        stopNarrationPreview()
+	        setTimeline((prev) => ({ ...prev, playheadSeconds: stopAt }))
+	        return
+	      }
+	      const srcStart1 = Number(seg.sourceStartSeconds || 0)
+	      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
+	      playheadFromVideoRef.current = true
+	      playheadRef.current = nextPlayhead
+	      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
 
       // When we hit the end of the current segment, auto-advance only if the next segment is
       // contiguous on the timeline AND uses the same source uploadId. This avoids requiring an
@@ -2402,16 +2410,22 @@ export default function CreateVideo() {
     setMusicPreviewPlaying(true)
     setTimelineMessage(null)
 
-    const tick = () => {
-      if (!musicPreviewRef.current) return
-      if (!musicPreviewSegRef.current) return
-      const cur = musicPreviewRef.current
-      const seg = musicPreviewSegRef.current
-      const srcStart1 = Number(seg.sourceStartSeconds || 0)
-      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
-      playheadFromVideoRef.current = true
-      playheadRef.current = nextPlayhead
-      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
+	    const tick = () => {
+	      if (!musicPreviewRef.current) return
+	      if (!musicPreviewSegRef.current) return
+	      const cur = musicPreviewRef.current
+	      const seg = musicPreviewSegRef.current
+	      if (cur.ended || cur.paused) {
+	        const stopAt = roundToTenth(Number(seg.segEnd || 0))
+	        stopMusicPreview()
+	        setTimeline((prev) => ({ ...prev, playheadSeconds: stopAt }))
+	        return
+	      }
+	      const srcStart1 = Number(seg.sourceStartSeconds || 0)
+	      const nextPlayhead = clamp(roundToTenth(seg.segStart + Math.max(0, Number(cur.currentTime || 0) - srcStart1)), 0, Math.max(0, totalSeconds))
+	      playheadFromVideoRef.current = true
+	      playheadRef.current = nextPlayhead
+	      setTimeline((prev) => ({ ...prev, playheadSeconds: nextPlayhead }))
 
       // Auto-advance to the next contiguous segment when it uses the same source uploadId.
       if (nextPlayhead >= seg.segEnd - 0.02) {
