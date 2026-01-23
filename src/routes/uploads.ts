@@ -86,6 +86,40 @@ uploadsRouter.get('/api/system-audio', requireAuth, async (req, res) => {
   }
 })
 
+function parseIdList(raw: any): number[] {
+  const s = raw == null ? '' : String(raw)
+  if (!s.trim()) return []
+  const parts = s
+    .split(',')
+    .map((p) => Number(String(p).trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return Array.from(new Set(parts)).slice(0, 50)
+}
+
+uploadsRouter.get('/api/system-audio/search', requireAuth, async (req, res) => {
+  try {
+    const { limit, cursor, genreTagIds, moodTagIds, themeTagIds, instrumentTagIds } = req.query as any
+    const lim = clampLimit(limit, 50, 1, 200)
+    const curId = parseNumberCursor(cursor) ?? undefined
+    const data = await uploadsSvc.searchSystemAudioByTags(
+      {
+        limit: lim,
+        cursorId: curId,
+        genreTagIds: parseIdList(genreTagIds),
+        moodTagIds: parseIdList(moodTagIds),
+        themeTagIds: parseIdList(themeTagIds),
+        instrumentTagIds: parseIdList(instrumentTagIds),
+      },
+      { userId: Number(req.user!.id) }
+    )
+    return res.json({ items: data })
+  } catch (err: any) {
+    console.error('search system audio error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_search', detail: String(err?.message || err) })
+  }
+})
+
 uploadsRouter.get('/api/audio-tags', requireAuth, async (req, res) => {
   try {
     const userId = Number(req.user!.id)

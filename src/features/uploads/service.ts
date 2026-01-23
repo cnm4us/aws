@@ -779,12 +779,91 @@ export async function listSystemAudio(
         enhanced.instrumentTagIds = tags.instrumentTagIds
         return enhanced
       })
-	  } catch (e: any) {
-	    const msg = String(e?.message || '')
-	    // Backward compatibility when `uploads.is_system` is not deployed yet.
-	    if (msg.includes('Unknown column') && msg.includes('is_system')) return []
-	    throw e
-	  }
+		  } catch (e: any) {
+		    const msg = String(e?.message || '')
+		    // Backward compatibility when `uploads.is_system` is not deployed yet.
+		    if (msg.includes('Unknown column') && msg.includes('is_system')) return []
+		    throw e
+		  }
+	}
+
+export async function searchSystemAudioByTags(
+  input: {
+    genreTagIds?: number[]
+    moodTagIds?: number[]
+    themeTagIds?: number[]
+    instrumentTagIds?: number[]
+    cursorId?: number
+    limit?: number
+  },
+  ctx: ServiceContext
+) {
+  if (!ctx.userId) throw new ForbiddenError()
+
+  const normalizeIds = (ids: any): number[] => {
+    const raw = Array.isArray(ids) ? ids : []
+    const cleaned = raw.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+    return Array.from(new Set(cleaned)).slice(0, 50)
+  }
+  const genreTagIds = normalizeIds(input?.genreTagIds)
+  const moodTagIds = normalizeIds(input?.moodTagIds)
+  const themeTagIds = normalizeIds(input?.themeTagIds)
+  const instrumentTagIds = normalizeIds(input?.instrumentTagIds)
+
+  const anyFilters = Boolean(genreTagIds.length || moodTagIds.length || themeTagIds.length || instrumentTagIds.length)
+  if (!anyFilters) return await listSystemAudio({ cursorId: input?.cursorId, limit: input?.limit }, ctx)
+
+  const lim = clampLimit(input?.limit, 50, 1, 200)
+  const cursorId = input?.cursorId && Number.isFinite(input.cursorId) ? Number(input.cursorId) : undefined
+
+  const db = getPool()
+  const where: string[] = []
+  const args: any[] = []
+
+  where.push(`u.kind = 'audio'`)
+  where.push(`u.is_system = 1`)
+  where.push(`u.status IN ('uploaded','completed')`)
+  if (cursorId) {
+    where.push(`u.id < ?`)
+    args.push(cursorId)
+  }
+
+  const addAxisExists = (kind: string, ids: number[]) => {
+    if (!ids.length) return
+    const placeholders = ids.map(() => '?').join(', ')
+    where.push(
+      `EXISTS (
+        SELECT 1
+          FROM upload_audio_tags uat
+          JOIN audio_tags t ON t.id = uat.tag_id
+         WHERE uat.upload_id = u.id
+           AND t.archived_at IS NULL
+           AND t.kind = ?
+           AND t.id IN (${placeholders})
+      )`
+    )
+    args.push(kind, ...ids)
+  }
+
+  addAxisExists('genre', genreTagIds)
+  addAxisExists('mood', moodTagIds)
+  addAxisExists('theme', themeTagIds)
+  addAxisExists('instrument', instrumentTagIds)
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const [rows] = await db.query(`SELECT u.* FROM uploads u ${whereSql} ORDER BY u.id DESC LIMIT ?`, [...args, lim])
+  const uploadIds = (rows as any[]).map((r) => Number(r.id)).filter((n) => Number.isFinite(n) && n > 0)
+  const tagMap = await audioTagsRepo.listTagAssignmentsForUploadIds(uploadIds)
+  return (rows as any[]).map((row) => {
+    const enhanced: any = enhanceUploadRow(row)
+    const id = Number((row as any).id)
+    const tags = tagMap.get(id) || { genreTagIds: [], moodTagIds: [], themeTagIds: [], instrumentTagIds: [] }
+    enhanced.genreTagIds = tags.genreTagIds
+    enhanced.moodTagIds = tags.moodTagIds
+    enhanced.themeTagIds = tags.themeTagIds
+    enhanced.instrumentTagIds = tags.instrumentTagIds
+    return enhanced
+  })
 }
 
 export async function listSummariesByIds(
