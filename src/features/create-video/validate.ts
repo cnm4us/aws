@@ -304,10 +304,19 @@ async function loadBackgroundMusicAudioMetaForUser(uploadId: number, userId: num
   const status = String(row.status || '').toLowerCase()
   if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
 
-  const key = String(row.s3_key || '')
-  if (!key.includes('/audio/music/')) throw new DomainError('invalid_audio_role', 'invalid_audio_role', 403)
-
   const isSystem = Number(row.is_system || 0) === 1
+  const key = String(row.s3_key || '')
+  const isMusicKey = key.includes('audio/music/') || key.includes('/audio/music/')
+  const isNarrationKey = key.includes('audio/narration/') || key.includes('/audio/narration/')
+  // Allow:
+  // - user-uploaded background music under audio/music/
+  // - system background music (legacy keys) under audio/*, but never narration
+  if (!isMusicKey) {
+    if (!(isSystem && (key.includes('audio/') || key.includes('/audio/')) && !isNarrationKey)) {
+      throw new DomainError('invalid_audio_role', 'invalid_audio_role', 403)
+    }
+  }
+
   const ownerId = row.user_id != null ? Number(row.user_id) : null
   const isOwner = ownerId != null && ownerId === Number(userId)
   if (!isSystem && !isOwner) throw new ForbiddenError()
