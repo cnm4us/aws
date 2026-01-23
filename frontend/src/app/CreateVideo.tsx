@@ -1412,45 +1412,50 @@ export default function CreateVideo() {
   const canUndo = undoDepth > 0
   const canRedo = redoDepth > 0
 
-  const boundaries = useMemo(() => {
-    const out: number[] = []
-    out.push(0)
-    for (let i = 0; i < timeline.clips.length; i++) {
-      const start = roundToTenth(clipStarts[i] || 0)
-      const len = clipDurationSeconds(timeline.clips[i])
-      const end = roundToTenth(start + len)
-      out.push(start, end)
-    }
-    for (const s of stills) {
-      const a = roundToTenth(Number((s as any).startSeconds || 0))
-      const b = roundToTenth(Number((s as any).endSeconds || 0))
-      if (b > a) out.push(a, b)
-    }
-    for (const g of graphics) {
-      const s = roundToTenth(Number((g as any).startSeconds || 0))
-      const e = roundToTenth(Number((g as any).endSeconds || 0))
-      if (e > s) out.push(s, e)
-    }
-    for (const l of logos) {
-      const s = roundToTenth(Number((l as any).startSeconds || 0))
-      const e = roundToTenth(Number((l as any).endSeconds || 0))
-      if (e > s) out.push(s, e)
-    }
-    for (const lt of lowerThirds) {
-      const s = roundToTenth(Number((lt as any).startSeconds || 0))
-      const e = roundToTenth(Number((lt as any).endSeconds || 0))
-      if (e > s) out.push(s, e)
-    }
-    for (const st of screenTitles) {
-      const s = roundToTenth(Number((st as any).startSeconds || 0))
-      const e = roundToTenth(Number((st as any).endSeconds || 0))
-      if (e > s) out.push(s, e)
-    }
-    for (const a of audioSegments) {
-      const s = roundToTenth(Number((a as any).startSeconds || 0))
-      const e = roundToTenth(Number((a as any).endSeconds || 0))
-      if (e > s) out.push(s, e)
-    }
+	  const boundaries = useMemo(() => {
+	    const out: number[] = []
+	    out.push(0)
+	    for (let i = 0; i < timeline.clips.length; i++) {
+	      const start = roundToTenth(clipStarts[i] || 0)
+	      const len = clipDurationSeconds(timeline.clips[i])
+	      const end = roundToTenth(start + len)
+	      out.push(start, end)
+	    }
+	    for (const s of stills) {
+	      const a = roundToTenth(Number((s as any).startSeconds || 0))
+	      const b = roundToTenth(Number((s as any).endSeconds || 0))
+	      if (b > a) out.push(a, b)
+	    }
+	    for (const g of graphics) {
+	      const s = roundToTenth(Number((g as any).startSeconds || 0))
+	      const e = roundToTenth(Number((g as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
+	    for (const l of logos) {
+	      const s = roundToTenth(Number((l as any).startSeconds || 0))
+	      const e = roundToTenth(Number((l as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
+	    for (const lt of lowerThirds) {
+	      const s = roundToTenth(Number((lt as any).startSeconds || 0))
+	      const e = roundToTenth(Number((lt as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
+	    for (const st of screenTitles) {
+	      const s = roundToTenth(Number((st as any).startSeconds || 0))
+	      const e = roundToTenth(Number((st as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
+	    for (const n of narration) {
+	      const s = roundToTenth(Number((n as any).startSeconds || 0))
+	      const e = roundToTenth(Number((n as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
+	    for (const a of audioSegments) {
+	      const s = roundToTenth(Number((a as any).startSeconds || 0))
+	      const e = roundToTenth(Number((a as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
     const guidelines: any[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
     for (const g of guidelines) {
       const t = roundToTenth(Number(g || 0))
@@ -1458,12 +1463,12 @@ export default function CreateVideo() {
     }
     out.push(roundToTenth(totalSeconds))
     const uniq = new Map<string, number>()
-    for (const t of out) {
-      const tt = roundToTenth(Number(t) || 0)
-      uniq.set(tt.toFixed(1), tt)
-    }
-    return Array.from(uniq.values()).sort((a, b) => a - b)
-  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, screenTitles, stills, timeline.clips, totalSeconds])
+	    for (const t of out) {
+	      const tt = roundToTenth(Number(t) || 0)
+	      uniq.set(tt.toFixed(1), tt)
+	    }
+	    return Array.from(uniq.values()).sort((a, b) => a - b)
+	  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, narration, screenTitles, stills, timeline, totalSeconds])
 
   const dragHud = useMemo(() => {
     if (!trimDragging) return null
