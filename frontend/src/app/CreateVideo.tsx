@@ -12127,52 +12127,14 @@ export default function CreateVideo() {
 		                </div>
 	              </div>
 	            </div>
-	            {addStep === 'type' ? (
-	              <>
-	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Add Asset</h1>
-		                <div style={{ display: 'grid', gap: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddStep('video')
-                      openPicker().catch(() => {})
-                    }}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      border: '1px solid rgba(212,175,55,0.55)',
-                      background: 'rgba(0,0,0,0.35)',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>Video</div>
-                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Add and trim video clips</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddStep('graphic')
-                      openGraphicPicker().catch(() => {})
-                    }}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      border: '1px solid rgba(10,132,255,0.55)',
-                      background: 'rgba(0,0,0,0.35)',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-	                  >
-	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Graphic</div>
-	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Full-frame overlays (no overlaps)</div>
-	                  </button>
-	                  <button
-	                    type="button"
-	                    onClick={() => {
-	                      setAddStep('logo')
+		            {addStep === 'type' ? (
+		              <>
+		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Add Asset</h1>
+			                <div style={{ display: 'grid', gap: 12 }}>
+		                  <button
+		                    type="button"
+		                    onClick={() => {
+		                      setAddStep('logo')
 	                      openLogoPicker().catch(() => {})
 	                    }}
 	                    style={{
@@ -12223,32 +12185,51 @@ export default function CreateVideo() {
                       textAlign: 'left',
                     }}
                   >
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>Screen Title</div>
-                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Text overlays (no overlaps)</div>
-                  </button>
-		                  <button
-		                    type="button"
-		                    onClick={() => {
-		                      setAddStep('audio')
-		                      openAudioPicker().catch(() => {})
+	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Screen Title</div>
+	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Text overlays (no overlaps)</div>
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setAddStep('graphic')
+	                      openGraphicPicker().catch(() => {})
 	                    }}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      border: '1px solid rgba(48,209,88,0.55)',
-                      background: 'rgba(0,0,0,0.35)',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-		                    <div style={{ fontWeight: 900, fontSize: 16 }}>Audio</div>
-		                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Background music (system audio)</div>
-		                  </button>
-			                  <button
-			                    type="button"
-			                    onClick={() => {
-			                      setNarrationAddError(null)
+	                    style={{
+	                      padding: 12,
+	                      borderRadius: 12,
+	                      border: '1px solid rgba(10,132,255,0.55)',
+	                      background: 'rgba(0,0,0,0.35)',
+	                      color: '#fff',
+	                      cursor: 'pointer',
+	                      textAlign: 'left',
+	                    }}
+	                  >
+	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Graphic</div>
+	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Full-frame overlays (no overlaps)</div>
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setAddStep('video')
+	                      openPicker().catch(() => {})
+	                    }}
+	                    style={{
+	                      padding: 12,
+	                      borderRadius: 12,
+	                      border: '1px solid rgba(212,175,55,0.55)',
+	                      background: 'rgba(0,0,0,0.35)',
+	                      color: '#fff',
+	                      cursor: 'pointer',
+	                      textAlign: 'left',
+	                    }}
+	                  >
+	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Video</div>
+	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Add and trim video clips</div>
+	                  </button>
+				                  <button
+				                    type="button"
+				                    onClick={() => {
+				                      setNarrationAddError(null)
 			                      setAddStep('narration')
 			                      loadNarrationLibrary().catch(() => {})
 			                    }}
@@ -12261,13 +12242,32 @@ export default function CreateVideo() {
 		                      cursor: 'pointer',
 		                      textAlign: 'left',
 		                    }}
-		                  >
-		                    <div style={{ fontWeight: 900, fontSize: 16 }}>Narration</div>
-		                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Add a Voice Memo (.m4a)</div>
-		                  </button>
-		                </div>
-			              </>
-			            ) : addStep === 'narration' ? (
+			                  >
+			                    <div style={{ fontWeight: 900, fontSize: 16 }}>Narration</div>
+			                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Voice memos (no overlaps)</div>
+			                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setAddStep('audio')
+	                      openAudioPicker().catch(() => {})
+		                    }}
+	                    style={{
+	                      padding: 12,
+	                      borderRadius: 12,
+	                      border: '1px solid rgba(48,209,88,0.55)',
+	                      background: 'rgba(0,0,0,0.35)',
+	                      color: '#fff',
+	                      cursor: 'pointer',
+	                      textAlign: 'left',
+	                    }}
+	                  >
+	                    <div style={{ fontWeight: 900, fontSize: 16 }}>Audio</div>
+	                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>Background music</div>
+	                  </button>
+			                </div>
+				              </>
+				            ) : addStep === 'narration' ? (
 			              <>
 			                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 			                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Narration Audio</h1>
