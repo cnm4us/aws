@@ -306,13 +306,15 @@ async function loadBackgroundMusicAudioMetaForUser(uploadId: number, userId: num
 
   const isSystem = Number(row.is_system || 0) === 1
   const key = String(row.s3_key || '')
-  const isMusicKey = key.includes('audio/music/') || key.includes('/audio/music/')
-  const isNarrationKey = key.includes('audio/narration/') || key.includes('/audio/narration/')
+  // Match both unprefixed keys like "audio/music/..." and prefixed keys like "foo/audio/music/..."
+  // without relying on a leading slash.
+  const isMusicKey = key.includes('audio/music/')
+  const isNarrationKey = key.includes('audio/narration/')
   // Allow:
   // - user-uploaded background music under audio/music/
   // - system background music (legacy keys) under audio/*, but never narration
   if (!isMusicKey) {
-    if (!(isSystem && (key.includes('audio/') || key.includes('/audio/')) && !isNarrationKey)) {
+    if (!(isSystem && key.includes('audio/') && !isNarrationKey)) {
       throw new DomainError('invalid_audio_role', 'invalid_audio_role', 403)
     }
   }
