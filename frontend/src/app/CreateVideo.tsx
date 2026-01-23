@@ -531,6 +531,10 @@ export default function CreateVideo() {
   const [audioSearchMoodIds, setAudioSearchMoodIds] = useState<number[]>([])
   const [audioSearchThemeIds, setAudioSearchThemeIds] = useState<number[]>([])
   const [audioSearchInstrumentIds, setAudioSearchInstrumentIds] = useState<number[]>([])
+  const [audioSearchGenresOpen, setAudioSearchGenresOpen] = useState(false)
+  const [audioSearchMoodsOpen, setAudioSearchMoodsOpen] = useState(false)
+  const [audioSearchThemesOpen, setAudioSearchThemesOpen] = useState(false)
+  const [audioSearchInstrumentsOpen, setAudioSearchInstrumentsOpen] = useState(false)
   const [audioDescModal, setAudioDescModal] = useState<{ title: string; description: string | null } | null>(null)
   const [audioNewName, setAudioNewName] = useState('')
   const [audioNewDescription, setAudioNewDescription] = useState('')
@@ -13428,7 +13432,13 @@ export default function CreateVideo() {
 			                  </button>
 			                  <button
 			                    type="button"
-			                    onClick={() => setAudioScope('search')}
+			                    onClick={() => {
+			                      setAudioScope('search')
+			                      setAudioSearchGenresOpen(false)
+			                      setAudioSearchMoodsOpen(false)
+			                      setAudioSearchThemesOpen(false)
+			                      setAudioSearchInstrumentsOpen(false)
+			                    }}
 			                    style={{
 			                      padding: '8px 10px',
 			                      borderRadius: 999,
@@ -13489,49 +13499,110 @@ export default function CreateVideo() {
 			                    ) : (
 			                      <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
 			                        {([
-			                          { label: 'Genres', key: 'genres', ids: audioSearchGenreIds, setIds: setAudioSearchGenreIds },
-			                          { label: 'Moods', key: 'moods', ids: audioSearchMoodIds, setIds: setAudioSearchMoodIds },
-			                          { label: 'Video Themes', key: 'themes', ids: audioSearchThemeIds, setIds: setAudioSearchThemeIds },
-			                          { label: 'Instruments', key: 'instruments', ids: audioSearchInstrumentIds, setIds: setAudioSearchInstrumentIds },
+			                          {
+			                            label: 'Genres',
+			                            key: 'genres',
+			                            ids: audioSearchGenreIds,
+			                            setIds: setAudioSearchGenreIds,
+			                            open: audioSearchGenresOpen,
+			                            setOpen: setAudioSearchGenresOpen,
+			                          },
+			                          {
+			                            label: 'Moods',
+			                            key: 'moods',
+			                            ids: audioSearchMoodIds,
+			                            setIds: setAudioSearchMoodIds,
+			                            open: audioSearchMoodsOpen,
+			                            setOpen: setAudioSearchMoodsOpen,
+			                          },
+			                          {
+			                            label: 'Video Themes',
+			                            key: 'themes',
+			                            ids: audioSearchThemeIds,
+			                            setIds: setAudioSearchThemeIds,
+			                            open: audioSearchThemesOpen,
+			                            setOpen: setAudioSearchThemesOpen,
+			                          },
+			                          {
+			                            label: 'Instruments',
+			                            key: 'instruments',
+			                            ids: audioSearchInstrumentIds,
+			                            setIds: setAudioSearchInstrumentIds,
+			                            open: audioSearchInstrumentsOpen,
+			                            setOpen: setAudioSearchInstrumentsOpen,
+			                          },
 			                        ] as Array<{
 			                          label: string
 			                          key: keyof AudioTagsDto
 			                          ids: number[]
 			                          setIds: React.Dispatch<React.SetStateAction<number[]>>
+			                          open: boolean
+			                          setOpen: React.Dispatch<React.SetStateAction<boolean>>
 			                        }>).map((axis) => {
 			                          const tags = (audioTags as any)[axis.key] as AudioTagSummary[]
+			                          const selectedCount = axis.ids.length
 			                          return (
 			                            <div key={`audio-search-${axis.key}`}>
-			                              <div style={{ fontWeight: 900, color: '#ddd', marginBottom: 6 }}>{axis.label}</div>
-			                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-			                                {tags.map((t) => {
-			                                  const id = Number((t as any).id)
-			                                  const name = String((t as any).name || '')
-			                                  const selected = axis.ids.includes(id)
-			                                  return (
-			                                    <button
-			                                      key={`tag-${axis.key}-${id}`}
-			                                      type="button"
-			                                      onClick={() =>
-			                                        axis.setIds((prev) =>
-			                                          prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-			                                        )
-			                                      }
-			                                      style={{
-			                                        padding: '7px 10px',
-			                                        borderRadius: 999,
-			                                        border: '1px solid rgba(255,255,255,0.18)',
-			                                        background: selected ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.04)',
-			                                        color: '#fff',
-			                                        fontWeight: 900,
-			                                        cursor: 'pointer',
-			                                      }}
-			                                    >
-			                                      {name}
-			                                    </button>
-			                                  )
-			                                })}
-			                              </div>
+			                              <button
+			                                type="button"
+			                                onClick={() => axis.setOpen((v) => !v)}
+			                                aria-expanded={axis.open}
+			                                style={{
+			                                  width: '100%',
+			                                  display: 'flex',
+			                                  justifyContent: 'space-between',
+			                                  alignItems: 'center',
+			                                  gap: 10,
+			                                  padding: '8px 10px',
+			                                  borderRadius: 10,
+			                                  border: '1px solid rgba(255,255,255,0.12)',
+			                                  background: 'rgba(255,255,255,0.04)',
+			                                  color: '#ddd',
+			                                  fontWeight: 900,
+			                                  cursor: 'pointer',
+			                                  textAlign: 'left',
+			                                }}
+			                              >
+			                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+			                                  <span style={{ color: '#ffd60a' }}>{axis.open ? '▾' : '▸'}</span>
+			                                  <span>
+			                                    {axis.label}
+			                                    {selectedCount ? ` (${selectedCount})` : ''}
+			                                  </span>
+			                                </span>
+			                                <span style={{ color: '#bbb', fontWeight: 900 }}>{axis.open ? 'Hide' : 'Show'}</span>
+			                              </button>
+			                              {axis.open ? (
+			                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+			                                  {tags.map((t) => {
+			                                    const id = Number((t as any).id)
+			                                    const name = String((t as any).name || '')
+			                                    const selected = axis.ids.includes(id)
+			                                    return (
+			                                      <button
+			                                        key={`tag-${axis.key}-${id}`}
+			                                        type="button"
+			                                        onClick={() =>
+			                                          axis.setIds((prev) =>
+			                                            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+			                                          )
+			                                        }
+			                                        style={{
+			                                          padding: '7px 10px',
+			                                          borderRadius: 999,
+			                                          border: '1px solid rgba(255,255,255,0.18)',
+			                                          background: selected ? 'rgba(10,132,255,0.35)' : 'rgba(255,255,255,0.04)',
+			                                          color: '#fff',
+			                                          fontWeight: 900,
+			                                          cursor: 'pointer',
+			                                        }}
+			                                      >
+			                                        {name}
+			                                      </button>
+			                                    )
+			                                  })}
+			                                </div>
+			                              ) : null}
 			                            </div>
 			                          )
 			                        })}
