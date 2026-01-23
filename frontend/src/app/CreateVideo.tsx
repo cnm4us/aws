@@ -11725,192 +11725,181 @@ export default function CreateVideo() {
 	              </div>
 	            </div>
 
-	            <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={jumpPrevBoundary}
-                disabled={totalSeconds <= 0 || !canJumpPrev}
-                style={{
-                  padding: 0,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
-                  color: '#ffd24a',
-                  fontWeight: 900,
-                  fontSize: 30,
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                  minWidth: 44,
-                  height: 44,
-                }}
-                title="Jump to previous boundary"
-                aria-label="Jump to previous boundary"
-              >
-                «
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (suppressNextNudgeClickRef.current) {
-                    suppressNextNudgeClickRef.current = false
-                    return
-                  }
-                  nudgePlayhead(-0.1)
-                }}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={totalSeconds <= 0}
-                onPointerDown={(e) => {
-                  if (e.button != null && e.button !== 0) return
-                  if (totalSeconds <= 0) return
-                  try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
-                  startNudgeRepeat(-0.1)
-                }}
-                onPointerUp={() => finishNudgePress(-0.1)}
-                onPointerLeave={() => finishNudgePress(-0.1)}
-                style={{
-                  padding: 0,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: '#0c0c0c',
-                  color: '#ffd24a',
-                  fontWeight: 900,
-                  fontSize: 30,
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                  minWidth: 44,
-                  height: 44,
-                }}
-                title="Nudge backward 0.1s"
-                aria-label="Nudge backward 0.1 seconds"
-              >
-                ‹
-              </button>
-	              <button
-	                type="button"
-	                onClick={togglePlay}
-	                disabled={totalSeconds <= 0}
-	                style={{
-	                  padding: '10px 12px',
-	                  borderRadius: 10,
-	                  border: '1px solid rgba(10,132,255,0.55)',
-	                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-	                  color: '#fff',
-	                  fontWeight: 900,
-	                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-	                  flex: '0 0 auto',
-	                  minWidth: 44,
-	                  lineHeight: 1,
-	                }}
-	                title="Play/Pause"
-	                aria-label={playing ? 'Pause' : 'Play'}
-	              >
-	                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+		            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 10, alignItems: 'center' }}>
+		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-start' }}>
+		                <button
+		                  type="button"
+		                  onClick={jumpPrevBoundary}
+		                  disabled={totalSeconds <= 0 || !canJumpPrev}
+		                  style={{
+		                    padding: 0,
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+		                    background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+		                    color: '#ffd24a',
+		                    fontWeight: 900,
+		                    fontSize: 30,
+		                    lineHeight: 1,
+		                    display: 'flex',
+		                    alignItems: 'center',
+		                    justifyContent: 'center',
+		                    cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
+		                    flex: '0 0 auto',
+		                    minWidth: 44,
+		                    height: 44,
+		                  }}
+		                  title="Jump to previous boundary"
+		                  aria-label="Jump to previous boundary"
+		                >
+		                  «
+		                </button>
+		                <button
+		                  type="button"
+		                  onClick={() => {
+		                    if (suppressNextNudgeClickRef.current) {
+		                      suppressNextNudgeClickRef.current = false
+		                      return
+		                    }
+		                    nudgePlayhead(-0.1)
+		                  }}
+		                  onContextMenu={(e) => e.preventDefault()}
+		                  disabled={totalSeconds <= 0}
+		                  onPointerDown={(e) => {
+		                    if (e.button != null && e.button !== 0) return
+		                    if (totalSeconds <= 0) return
+		                    try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+		                    startNudgeRepeat(-0.1)
+		                  }}
+		                  onPointerUp={() => finishNudgePress(-0.1)}
+		                  onPointerLeave={() => finishNudgePress(-0.1)}
+		                  style={{
+		                    padding: 0,
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+		                    background: '#0c0c0c',
+		                    color: '#ffd24a',
+		                    fontWeight: 900,
+		                    fontSize: 30,
+		                    lineHeight: 1,
+		                    display: 'flex',
+		                    alignItems: 'center',
+		                    justifyContent: 'center',
+		                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+		                    flex: '0 0 auto',
+		                    userSelect: 'none',
+		                    WebkitUserSelect: 'none',
+		                    WebkitTouchCallout: 'none',
+		                    minWidth: 44,
+		                    height: 44,
+		                  }}
+		                  title="Nudge backward 0.1s"
+		                  aria-label="Nudge backward 0.1 seconds"
+		                >
+		                  ‹
+		                </button>
+		              </div>
+
+		              <button
+		                type="button"
+		                onClick={togglePlay}
+		                disabled={totalSeconds <= 0}
+		                style={{
+		                  padding: '10px 12px',
+		                  borderRadius: 10,
+		                  border: '1px solid rgba(10,132,255,0.55)',
+		                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+		                  color: '#fff',
+		                  fontWeight: 900,
+		                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+		                  flex: '0 0 auto',
+		                  minWidth: 44,
+		                  lineHeight: 1,
+		                }}
+		                title="Play/Pause"
+		                aria-label={playing ? 'Pause' : 'Play'}
+		              >
+		                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
 		                  {playPauseGlyph(playing)}
 		                </span>
 		              </button>
-	              <button
-	                type="button"
-	                onClick={() => {
-	                  if (suppressNextNudgeClickRef.current) {
-                    suppressNextNudgeClickRef.current = false
-                    return
-                  }
-                  nudgePlayhead(0.1)
-                }}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={totalSeconds <= 0}
-                onPointerDown={(e) => {
-                  if (e.button != null && e.button !== 0) return
-                  if (totalSeconds <= 0) return
-                  try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
-                  startNudgeRepeat(0.1)
-                }}
-                onPointerUp={() => finishNudgePress(0.1)}
-                onPointerLeave={() => finishNudgePress(0.1)}
-                style={{
-                  padding: 0,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: '#0c0c0c',
-                  color: '#ffd24a',
-                  fontWeight: 900,
-                  fontSize: 30,
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                  minWidth: 44,
-                  height: 44,
-                }}
-                title="Nudge forward 0.1s"
-                aria-label="Nudge forward 0.1 seconds"
-              >
-                ›
-              </button>
-              <button
-                type="button"
-                onClick={jumpNextBoundary}
-                disabled={totalSeconds <= 0 || !canJumpNext}
-                style={{
-                  padding: 0,
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
-                  color: '#ffd24a',
-                  fontWeight: 900,
-                  fontSize: 30,
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
-                  flex: '0 0 auto',
-                  minWidth: 44,
-                  height: 44,
-                }}
-                title="Jump to next boundary"
-                aria-label="Jump to next boundary"
-              >
-                »
-              </button>
-            </div>
+
+		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' }}>
+		                <button
+		                  type="button"
+		                  onClick={() => {
+		                    if (suppressNextNudgeClickRef.current) {
+		                      suppressNextNudgeClickRef.current = false
+		                      return
+		                    }
+		                    nudgePlayhead(0.1)
+		                  }}
+		                  onContextMenu={(e) => e.preventDefault()}
+		                  disabled={totalSeconds <= 0}
+		                  onPointerDown={(e) => {
+		                    if (e.button != null && e.button !== 0) return
+		                    if (totalSeconds <= 0) return
+		                    try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+		                    startNudgeRepeat(0.1)
+		                  }}
+		                  onPointerUp={() => finishNudgePress(0.1)}
+		                  onPointerLeave={() => finishNudgePress(0.1)}
+		                  style={{
+		                    padding: 0,
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+		                    background: '#0c0c0c',
+		                    color: '#ffd24a',
+		                    fontWeight: 900,
+		                    fontSize: 30,
+		                    lineHeight: 1,
+		                    display: 'flex',
+		                    alignItems: 'center',
+		                    justifyContent: 'center',
+		                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+		                    flex: '0 0 auto',
+		                    userSelect: 'none',
+		                    WebkitUserSelect: 'none',
+		                    WebkitTouchCallout: 'none',
+		                    minWidth: 44,
+		                    height: 44,
+		                  }}
+		                  title="Nudge forward 0.1s"
+		                  aria-label="Nudge forward 0.1 seconds"
+		                >
+		                  ›
+		                </button>
+		                <button
+		                  type="button"
+		                  onClick={jumpNextBoundary}
+		                  disabled={totalSeconds <= 0 || !canJumpNext}
+		                  style={{
+		                    padding: 0,
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+		                    background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+		                    color: '#ffd24a',
+		                    fontWeight: 900,
+		                    fontSize: 30,
+		                    lineHeight: 1,
+		                    display: 'flex',
+		                    alignItems: 'center',
+		                    justifyContent: 'center',
+		                    cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
+		                    flex: '0 0 auto',
+		                    minWidth: 44,
+		                    height: 44,
+		                  }}
+		                  title="Jump to next boundary"
+		                  aria-label="Jump to next boundary"
+		                >
+		                  »
+		                </button>
+		              </div>
+		            </div>
 
             {timelineMessage ? <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center' }}>{timelineMessage}</div> : null}
           </div>
         </div>
-
-	        {audioSegments.length
-	          ? (() => {
-	              const sorted = audioSegments
-	                .slice()
-	                .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-	              const primary: any = sorted[0]
-	              if (!primary) return null
-	              const uploadId = Number(primary.uploadId)
-	              const audioConfigId = Number(primary.audioConfigId)
-	              return (
-	                <div style={{ marginTop: 12, color: '#fff', fontWeight: 900 }}>
-	                  {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
-	                </div>
-	              )
-	            })()
-	          : null}
 
         {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
