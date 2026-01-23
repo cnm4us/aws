@@ -14,8 +14,45 @@ import { MAX_UPLOAD_MB, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../config'
 import { randomUUID } from 'crypto'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { s3 } from '../services/s3'
+import { DeleteObjectsCommand, ListObjectsV2Command, type ListObjectsV2CommandOutput, type _Object } from '@aws-sdk/client-s3'
 
 export const createVideoRouter = Router()
+
+type DeleteSummary = { bucket: string; prefix: string; deleted: number; batches: number; samples: string[]; errors: string[] }
+async function deletePrefix(bucket: string, prefix: string): Promise<DeleteSummary> {
+  let token: string | undefined = undefined
+  let totalDeleted = 0
+  let batches = 0
+  const samples: string[] = []
+  const errors: string[] = []
+  do {
+    let list: ListObjectsV2CommandOutput
+    try {
+      list = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }))
+    } catch (e: any) {
+      errors.push(`list:${bucket}:${prefix}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+      break
+    }
+    const contents = list.Contents ?? []
+    if (contents.length) {
+      const Objects = contents.map((o: _Object) => ({ Key: o.Key! }))
+      for (let i = 0; i < Math.min(10, contents.length); i++) {
+        const k = contents[i]?.Key
+        if (k && samples.length < 10) samples.push(String(k))
+      }
+      try {
+        await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }))
+      } catch (e: any) {
+        errors.push(`delete:${bucket}:${prefix}:${String(e?.name || e?.Code || e)}:${String(e?.message || e)}`)
+        break
+      }
+      totalDeleted += Objects.length
+      batches += 1
+    }
+    token = list.IsTruncated ? list.NextContinuationToken : undefined
+  } while (token)
+  return { bucket, prefix, deleted: totalDeleted, batches, samples, errors }
+}
 
 createVideoRouter.post('/api/create-video/project', requireAuth, async (req, res, next) => {
   try {
@@ -252,6 +289,81 @@ createVideoRouter.get('/api/create-video/narration/list', requireAuth, async (re
       [currentUserId]
     )
     res.json({ items: rows })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.patch('/api/create-video/narration/:id', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) throw new DomainError('bad_id', 'bad_id', 400)
+    const body = (req.body || {}) as any
+    const nameRaw = String(body.name ?? body.modified_filename ?? body.modifiedFilename ?? '').trim()
+    const descRaw = body.description == null ? '' : String(body.description || '').trim()
+    if (!nameRaw) throw new DomainError('missing_name', 'missing_name', 400)
+    if (nameRaw.length > 512) throw new DomainError('invalid_name', 'invalid_name', 400)
+    if (descRaw.length > 2000) throw new DomainError('invalid_description', 'invalid_description', 400)
+    const description = descRaw.length ? descRaw : null
+
+    const db = getPool()
+    const [result] = await db.query(
+      `UPDATE uploads
+          SET modified_filename = ?, description = ?
+        WHERE id = ?
+          AND user_id = ?
+          AND kind = 'audio'
+          AND s3_key LIKE '%audio/narration/%'
+        LIMIT 1`,
+      [nameRaw, description, id, currentUserId]
+    )
+    const affected = Number((result as any)?.affectedRows || 0)
+    if (!affected) throw new DomainError('not_found', 'not_found', 404)
+    res.json({ ok: true })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.delete('/api/create-video/narration/:id', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) throw new DomainError('bad_id', 'bad_id', 400)
+
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id, s3_bucket, s3_key
+         FROM uploads
+        WHERE id = ?
+          AND user_id = ?
+          AND kind = 'audio'
+          AND s3_key LIKE '%audio/narration/%'
+        LIMIT 1`,
+      [id, currentUserId]
+    )
+    const u = (rows as any[])[0]
+    if (!u) throw new DomainError('not_found', 'not_found', 404)
+    const bucket = String(u.s3_bucket || '')
+    const key = String(u.s3_key || '')
+    if (!bucket || !key) throw new DomainError('not_found', 'not_found', 404)
+
+    const lastSlash = key.lastIndexOf('/')
+    const audioPrefix = lastSlash >= 0 ? key.slice(0, lastSlash + 1) : key
+    const proxyPrefix = `proxies/uploads/${id}/audio/`
+
+    const del1 = await deletePrefix(bucket, audioPrefix)
+    const del2 = await deletePrefix(bucket, proxyPrefix)
+    const hadErr = del1.errors.length || del2.errors.length
+    if (hadErr) {
+      const err: any = new DomainError('s3_delete_failed', 's3_delete_failed', 502)
+      err.detail = { audio: del1, proxy: del2 }
+      throw err
+    }
+
+    await db.query(`DELETE FROM uploads WHERE id = ? AND user_id = ? LIMIT 1`, [id, currentUserId])
+    res.json({ ok: true })
   } catch (err: any) {
     next(err)
   }

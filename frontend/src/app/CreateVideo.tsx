@@ -115,6 +115,8 @@ type AddStep =
   | 'graphic'
   | 'audio'
   | 'narration'
+  | 'narration_new'
+  | 'narration_edit'
   | 'logo'
   | 'logoConfig'
   | 'lowerThird'
@@ -5235,6 +5237,7 @@ export default function CreateVideo() {
   const [narrationLibrary, setNarrationLibrary] = useState<any[]>([])
   const [narrationLibraryLoading, setNarrationLibraryLoading] = useState(false)
   const [narrationLibraryError, setNarrationLibraryError] = useState<string | null>(null)
+  const [narrationDescModal, setNarrationDescModal] = useState<{ title: string; description: string | null } | null>(null)
 
   const loadNarrationLibrary = useCallback(async () => {
     setNarrationLibraryError(null)
@@ -5255,6 +5258,66 @@ export default function CreateVideo() {
 
   const [narrationNewName, setNarrationNewName] = useState('')
   const [narrationNewDescription, setNarrationNewDescription] = useState('')
+  const [narrationEditId, setNarrationEditId] = useState<number | null>(null)
+  const [narrationEditName, setNarrationEditName] = useState('')
+  const [narrationEditDescription, setNarrationEditDescription] = useState('')
+  const [narrationEditSaving, setNarrationEditSaving] = useState(false)
+  const [narrationEditError, setNarrationEditError] = useState<string | null>(null)
+  const [narrationDeleteModal, setNarrationDeleteModal] = useState<{ id: number; title: string } | null>(null)
+  const [narrationDeleteBusy, setNarrationDeleteBusy] = useState(false)
+  const [narrationDeleteError, setNarrationDeleteError] = useState<string | null>(null)
+
+  const narrationDeleteInUse = useMemo(() => {
+    if (!narrationDeleteModal) return false
+    const uploadId = Number(narrationDeleteModal.id || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return false
+    return (timeline?.narration || []).some((n: any) => Number(n?.uploadId || 0) === uploadId)
+  }, [narrationDeleteModal, timeline?.narration])
+
+  const updateNarrationMetadata = useCallback(async (uploadId: number, next: { name: string; description: string }) => {
+    const name = String(next.name || '').trim()
+    const description = String(next.description || '').trim()
+    if (!name) throw new Error('missing_name')
+    const headers: any = { 'Content-Type': 'application/json' }
+    const csrf = getCsrfToken()
+    if (csrf) headers['x-csrf-token'] = csrf
+    const res = await fetch(`/api/create-video/narration/${uploadId}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({
+        name,
+        description: description.length ? description : null,
+      }),
+    })
+    const json: any = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_update'))
+    setNarrationLibrary((prev) =>
+      prev.map((it: any) => {
+        const id = Number(it?.id || 0)
+        if (id !== uploadId) return it
+        return { ...(it || {}), modified_filename: name, description: description.length ? description : null }
+      })
+    )
+  }, [])
+
+  const deleteNarrationUpload = useCallback(
+    async (uploadId: number) => {
+      const inUse = (timeline?.narration || []).some((n: any) => Number(n?.uploadId || 0) === uploadId)
+      if (inUse) {
+        throw new Error('in_use')
+      }
+      const headers: any = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/narration/${uploadId}`, { method: 'DELETE', credentials: 'same-origin', headers })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_delete'))
+      setNarrationLibrary((prev) => prev.filter((it: any) => Number(it?.id || 0) !== uploadId))
+      setNarrationDescModal(null)
+    },
+    [timeline?.narration]
+  )
 
   const addNarrationFromUpload = useCallback(
     async (item: any) => {
@@ -12080,6 +12143,12 @@ export default function CreateVideo() {
 		                          setAddStep('narration')
 		                          loadNarrationLibrary().catch(() => {})
 		                        }
+		                        else if (addStep === 'narration_edit') {
+		                          setNarrationEditError(null)
+		                          setNarrationEditSaving(false)
+		                          setAddStep('narration')
+		                          loadNarrationLibrary().catch(() => {})
+		                        }
 		                        else setAddStep('type')
 		                      }}
 		                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
@@ -12109,7 +12178,7 @@ export default function CreateVideo() {
 		                    ? `Videos: ${pickerItems.length}`
 		                    : addStep === 'graphic'
 		                      ? `Images: ${graphicPickerItems.length}`
-			                      : addStep === 'narration' || addStep === 'narration_new'
+			                      : addStep === 'narration' || addStep === 'narration_new' || addStep === 'narration_edit'
 			                        ? `Voice Memos: ${narrationLibrary.length}`
 			                      : addStep === 'logo'
 			                          ? `Logos: ${logoPickerItems.length}`
@@ -12297,61 +12366,395 @@ export default function CreateVideo() {
 			                </div>
 			                {narrationLibraryLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
 			                {narrationLibraryError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{narrationLibraryError}</div> : null}
-			                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-			                  {narrationLibrary.map((it: any) => {
+                        <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                          {narrationLibrary.map((it: any) => {
                             const id = Number(it?.id || 0)
                             if (!Number.isFinite(id) || id <= 0) return null
                             const name = String(it?.modified_filename || it?.original_filename || `Narration ${id}`).trim() || `Narration ${id}`
                             const size = fmtSize(it?.size_bytes)
                             const date = fmtYmd(it?.uploaded_at || it?.created_at)
                             const dur = fmtDuration(it?.duration_seconds)
+                            const descriptionRaw = it?.description == null ? null : String(it.description)
+                            const description = descriptionRaw && descriptionRaw.trim().length ? descriptionRaw.trim() : null
                             return (
                               <div
                                 key={`nar-lib-${id}`}
                                 style={{
-			                          padding: 12,
-			                          borderRadius: 12,
-			                          border: '1px solid rgba(191,90,242,0.55)',
-			                          background: 'rgba(0,0,0,0.35)',
-			                          color: '#fff',
-			                          display: 'grid',
-			                          gap: 10,
-			                        }}
-			                      >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                                    <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
-                                      {(date ? `${date}: ` : '') + size + ` * ${dur}`}
-                                    </div>
-                                  </div>
+                                  padding: 12,
+                                  borderRadius: 12,
+                                  border: '1px solid rgba(191,90,242,0.55)',
+                                  background: 'rgba(0,0,0,0.35)',
+                                  color: '#fff',
+                                  display: 'grid',
+                                  gap: 8,
+                                }}
+                              >
+                                <div style={{ minWidth: 0 }}>
                                   <button
                                     type="button"
-                                    onClick={() => addNarrationFromUpload(it)}
-			                            style={{
-			                              padding: '8px 10px',
-			                              borderRadius: 10,
-			                              border: '1px solid rgba(255,255,255,0.18)',
-			                              background: '#0c0c0c',
-			                              color: '#fff',
-			                              fontWeight: 900,
-			                              cursor: 'pointer',
-			                              flex: '0 0 auto',
-			                            }}
-			                          >
-			                            Select
-			                          </button>
-			                        </div>
-			                      </div>
-			                    )
-			                  })}
-			                </div>
-			                {narrationAddError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{narrationAddError}</div> : null}
-			              </>
-			            ) : addStep === 'narration_new' ? (
-			              <>
-			                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Narration Audio</h1>
-			                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                                    onClick={() => setNarrationDescModal({ title: name, description })}
+                                    style={{
+                                      display: 'block',
+                                      width: '100%',
+                                      fontWeight: 900,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      padding: 0,
+                                      color: '#ffd60a',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                    }}
+                                    title={name}
+                                    aria-label={`About: ${name}`}
+                                  >
+                                    {name}
+                                  </button>
+                                  <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>
+                                    {(date ? `${date}: ` : '') + size + ` * ${dur}`}
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNarrationDeleteError(null)
+                                      setNarrationDeleteModal({ id, title: name })
+                                    }}
+                                    style={{
+                                      padding: '8px 10px',
+                                      borderRadius: 10,
+                                      border: '1px solid rgba(255,255,255,0.18)',
+                                      background: '#ff3b30',
+                                      color: '#fff',
+                                      fontWeight: 900,
+                                      cursor: 'pointer',
+                                      flex: '0 0 auto',
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNarrationEditError(null)
+                                        setNarrationEditSaving(false)
+                                        setNarrationEditId(id)
+                                        setNarrationEditName(name)
+                                        setNarrationEditDescription(description || '')
+                                        setAddStep('narration_edit')
+                                      }}
+                                      style={{
+                                        padding: '8px 10px',
+                                        borderRadius: 10,
+                                        border: '1px solid rgba(191,90,242,0.65)',
+                                        background: '#000',
+                                        color: '#fff',
+                                        fontWeight: 900,
+                                        cursor: 'pointer',
+                                        flex: '0 0 auto',
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => addNarrationFromUpload(it)}
+                                      style={{
+                                        padding: '8px 10px',
+                                        borderRadius: 10,
+                                        border: '1px solid rgba(10,132,255,0.65)',
+                                        background: '#0a84ff',
+                                        color: '#fff',
+                                        fontWeight: 900,
+                                        cursor: 'pointer',
+                                        flex: '0 0 auto',
+                                      }}
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {narrationAddError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{narrationAddError}</div> : null}
+                        {narrationDescModal ? (
+                          <div
+                            role="dialog"
+                            aria-modal="true"
+                            onClick={() => setNarrationDescModal(null)}
+                            style={{
+                              position: 'fixed',
+                              inset: 0,
+                              zIndex: 6000,
+                              background: 'rgba(0,0,0,0.55)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: 16,
+                            }}
+                          >
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: 'min(560px, 100%)',
+                                borderRadius: 14,
+                                border: '1px solid rgba(0,0,0,0.18)',
+                                background: '#ffd60a',
+                                padding: 14,
+                                color: '#333',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                                <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
+                                  {narrationDescModal.title}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setNarrationDescModal(null)}
+                                  style={{
+                                    color: '#fff',
+                                    background: '#000',
+                                    border: '1px solid #000',
+                                    padding: '6px 8px',
+                                    borderRadius: 10,
+                                    cursor: 'pointer',
+                                    fontWeight: 900,
+                                  }}
+                                  aria-label="Close"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div style={{ marginTop: 10, color: '#333', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+                                {narrationDescModal.description || 'No description.'}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                        {narrationDeleteModal ? (
+                          <div
+                            role="dialog"
+                            aria-modal="true"
+                            onClick={() => {
+                              if (narrationDeleteBusy) return
+                              setNarrationDeleteModal(null)
+                            }}
+                            style={{
+                              position: 'fixed',
+                              inset: 0,
+                              zIndex: 6500,
+                              background: 'rgba(0,0,0,0.65)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: 16,
+                            }}
+                          >
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: 'min(560px, 100%)',
+                                borderRadius: 14,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: '#0b0b0b',
+                                padding: 14,
+                                color: '#fff',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                                <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  Delete narration audio?
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (narrationDeleteBusy) return
+                                    setNarrationDeleteModal(null)
+                                  }}
+                                  style={{
+                                    color: '#fff',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    border: '1px solid rgba(255,255,255,0.18)',
+                                    padding: '6px 8px',
+                                    borderRadius: 10,
+                                    cursor: 'pointer',
+                                    fontWeight: 900,
+                                  }}
+                                  aria-label="Close"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div style={{ marginTop: 10, color: '#ddd', lineHeight: 1.35 }}>
+                                <div style={{ fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {narrationDeleteModal.title}
+                                </div>
+                                <div style={{ marginTop: 6, color: '#bbb' }}>This cannot be undone.</div>
+                                {narrationDeleteInUse ? (
+                                  <div style={{ marginTop: 8, color: '#ff9b9b' }}>
+                                    This narration audio is currently used on your timeline. Remove it from the timeline before deleting.
+                                  </div>
+                                ) : null}
+                              </div>
+                              {narrationDeleteError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{narrationDeleteError}</div> : null}
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (narrationDeleteBusy) return
+                                    setNarrationDeleteModal(null)
+                                  }}
+                                  style={{
+                                    padding: '10px 12px',
+                                    borderRadius: 10,
+                                    border: '1px solid rgba(255,255,255,0.18)',
+                                    background: '#000',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                  }}
+                                  disabled={narrationDeleteBusy}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (narrationDeleteInUse) {
+                                      setNarrationDeleteError('Remove this narration audio from the timeline before deleting.')
+                                      return
+                                    }
+                                    const id = narrationDeleteModal.id
+                                    setNarrationDeleteError(null)
+                                    setNarrationDeleteBusy(true)
+                                    deleteNarrationUpload(id)
+                                      .then(() => setNarrationDeleteModal(null))
+                                      .catch((e: any) => {
+                                        const msg = String(e?.message || '')
+                                        setNarrationDeleteError(
+                                          msg === 'in_use' ? 'Remove this narration audio from the timeline before deleting.' : 'Failed to delete narration audio.'
+                                        )
+                                      })
+                                      .finally(() => setNarrationDeleteBusy(false))
+                                  }}
+                                  style={{
+                                    padding: '10px 12px',
+                                    borderRadius: 10,
+                                    border: '1px solid rgba(255,255,255,0.18)',
+                                    background: '#ff3b30',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                  }}
+                                  disabled={narrationDeleteBusy || narrationDeleteInUse}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : addStep === 'narration_edit' ? (
+                      <>
+                        <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Edit Narration Audio</h1>
+	                        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+	                          <label style={{ display: 'grid', gap: 6 }}>
+	                            <div style={{ color: '#bbb', fontSize: 12 }}>Name</div>
+	                            <input
+	                              value={narrationEditName}
+	                              onChange={(e) => setNarrationEditName(e.target.value)}
+	                              maxLength={255}
+	                              style={{
+	                                padding: '10px 12px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: 'rgba(0,0,0,0.35)',
+	                                color: '#fff',
+	                              }}
+	                            />
+	                          </label>
+	                          <label style={{ display: 'grid', gap: 6 }}>
+	                            <div style={{ color: '#bbb', fontSize: 12 }}>Description</div>
+	                            <textarea
+	                              value={narrationEditDescription}
+	                              onChange={(e) => setNarrationEditDescription(e.target.value)}
+	                              rows={5}
+	                              maxLength={2000}
+	                              style={{
+	                                padding: '10px 12px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: 'rgba(0,0,0,0.35)',
+	                                color: '#fff',
+	                              }}
+	                            />
+	                          </label>
+	                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                setNarrationEditError(null)
+	                                setAddStep('narration')
+	                              }}
+	                              style={{
+	                                padding: '10px 12px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: '#000',
+	                                color: '#fff',
+	                                fontWeight: 900,
+	                                cursor: 'pointer',
+	                              }}
+	                              disabled={narrationEditSaving}
+	                            >
+	                              Cancel
+	                            </button>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                if (!narrationEditId) return
+	                                setNarrationEditError(null)
+	                                setNarrationEditSaving(true)
+	                                updateNarrationMetadata(narrationEditId, { name: narrationEditName, description: narrationEditDescription })
+	                                  .then(() => {
+	                                    setAddStep('narration')
+	                                    loadNarrationLibrary().catch(() => {})
+	                                  })
+	                                  .catch((e: any) => {
+	                                    const msg = String(e?.message || '')
+	                                    setNarrationEditError(msg === 'missing_name' ? 'Name is required.' : 'Failed to save changes.')
+	                                  })
+	                                  .finally(() => setNarrationEditSaving(false))
+	                              }}
+	                              style={{
+	                                padding: '10px 12px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(10,132,255,0.65)',
+	                                background: '#0a84ff',
+	                                color: '#fff',
+	                                fontWeight: 900,
+	                                cursor: 'pointer',
+	                              }}
+	                              disabled={narrationEditSaving}
+	                            >
+	                              Save
+	                            </button>
+	                          </div>
+	                          {narrationEditError ? <div style={{ color: '#ff9b9b' }}>{narrationEditError}</div> : null}
+	                        </div>
+	                      </>
+	                    ) : addStep === 'narration_new' ? (
+	                      <>
+	                        <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Narration Audio</h1>
+				                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
 			                  <label style={{ display: 'grid', gap: 6 }}>
 			                    <div style={{ color: '#bbb', fontSize: 12 }}>Name</div>
 			                    <input
