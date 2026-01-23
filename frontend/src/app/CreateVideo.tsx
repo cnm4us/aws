@@ -11728,7 +11728,7 @@ export default function CreateVideo() {
                 onClick={jumpPrevBoundary}
                 disabled={totalSeconds <= 0 || !canJumpPrev}
                 style={{
-                  padding: '10px 12px',
+                  padding: 0,
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
                   background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
@@ -11736,6 +11736,9 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   fontSize: 30,
                   lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   minWidth: 44,
@@ -11766,7 +11769,7 @@ export default function CreateVideo() {
                 onPointerUp={() => finishNudgePress(-0.1)}
                 onPointerLeave={() => finishNudgePress(-0.1)}
                 style={{
-                  padding: '10px 12px',
+                  padding: 0,
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
                   background: '#0c0c0c',
@@ -11774,6 +11777,9 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   fontSize: 30,
                   lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   userSelect: 'none',
@@ -11853,7 +11859,7 @@ export default function CreateVideo() {
                 onPointerUp={() => finishNudgePress(0.1)}
                 onPointerLeave={() => finishNudgePress(0.1)}
                 style={{
-                  padding: '10px 12px',
+                  padding: 0,
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
                   background: '#0c0c0c',
@@ -11861,6 +11867,9 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   fontSize: 30,
                   lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   cursor: totalSeconds <= 0 ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   userSelect: 'none',
@@ -11879,7 +11888,7 @@ export default function CreateVideo() {
                 onClick={jumpNextBoundary}
                 disabled={totalSeconds <= 0 || !canJumpNext}
                 style={{
-                  padding: '10px 12px',
+                  padding: 0,
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.18)',
                   background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
@@ -11887,6 +11896,9 @@ export default function CreateVideo() {
                   fontWeight: 900,
                   fontSize: 30,
                   lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
                   flex: '0 0 auto',
                   minWidth: 44,
