@@ -13611,7 +13611,7 @@ export default function CreateVideo() {
 			                              >
 			                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
 			                                  <span style={{ color: '#ffd60a' }}>{axis.open ? '▾' : '▸'}</span>
-			                                  <span>
+			                                  <span style={{ color: '#ffd60a' }}>
 			                                    {axis.label}
 			                                    {selectedCount ? ` (${selectedCount})` : ''}
 			                                  </span>
