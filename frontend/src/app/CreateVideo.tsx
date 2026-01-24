@@ -15447,8 +15447,8 @@ export default function CreateVideo() {
 	              </>
 		            ) : addStep === 'screenTitle' ? (
 		              <>
-		                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'baseline', gap: 12 }}>
-		                  <h1 style={{ margin: '12px 0 14px', fontSize: 28, minWidth: 0 }}>Select Screen Title Style</h1>
+		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Screen Titles Styles</h1>
+		                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
 		                  <a
 		                    href="/screen-title-presets"
 		                    style={{
