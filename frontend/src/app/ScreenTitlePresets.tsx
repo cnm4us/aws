@@ -241,9 +241,20 @@ function parseEditPresetId(): number | null {
   }
 }
 
+function parseOpenNew(): boolean {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('new') || params.get('create') || '').trim().toLowerCase()
+    return raw === '1' || raw === 'true' || raw === 'yes'
+  } catch {
+    return false
+  }
+}
+
 export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
   const editPresetId = useMemo(() => parseEditPresetId(), [])
+  const openNewParam = useMemo(() => parseOpenNew(), [])
   const backHref = fromHref || '/uploads'
   const backLabel =
     fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
@@ -555,6 +566,14 @@ export default function ScreenTitlePresetsPage() {
       setCloningId(null)
     }
   }, [load, openEdit])
+
+  useEffect(() => {
+    if (handledDeepLinkRef.current) return
+    if (editPresetId != null) return
+    if (!openNewParam) return
+    handledDeepLinkRef.current = true
+    openNew()
+  }, [editPresetId, openNew, openNewParam])
 
   useEffect(() => {
     if (handledDeepLinkRef.current) return

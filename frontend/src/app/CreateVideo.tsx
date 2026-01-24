@@ -15449,8 +15449,17 @@ export default function CreateVideo() {
 		              <>
 		                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Screen Titles Styles</h1>
 		                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-		                  <a
-		                    href="/screen-title-presets"
+		                  <button
+		                    type="button"
+		                    onClick={() => {
+		                      try {
+		                        const base = new URL(window.location.href)
+		                        const from = `${base.pathname}${base.search}${base.hash || ''}`
+		                        window.location.href = `/screen-title-presets?new=1&from=${encodeURIComponent(from)}`
+		                      } catch {
+		                        window.location.href = '/screen-title-presets?new=1'
+		                      }
+		                    }}
 		                    style={{
 		                      padding: '10px 12px',
 		                      borderRadius: 10,
@@ -15459,11 +15468,10 @@ export default function CreateVideo() {
 		                      color: '#fff',
 		                      fontWeight: 900,
 		                      cursor: 'pointer',
-		                      textDecoration: 'none',
 		                    }}
 		                  >
 		                    New Style
-		                  </a>
+		                  </button>
 		                </div>
 		                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
 		                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
