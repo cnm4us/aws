@@ -2676,7 +2676,6 @@ export default function CreateVideo() {
         if (!player) {
           player = new Audio()
           player.preload = 'none'
-          player.crossOrigin = 'anonymous'
           audioPreviewRef.current = player
         }
 
