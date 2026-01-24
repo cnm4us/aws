@@ -15449,7 +15449,21 @@ export default function CreateVideo() {
 		              <>
 		                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 		                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Screen Title Style</h1>
-		                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage Styles</a>
+		                  <a
+		                    href="/screen-title-presets"
+		                    style={{
+		                      padding: '10px 12px',
+		                      borderRadius: 10,
+		                      border: '1px solid rgba(10,132,255,0.65)',
+		                      background: '#0a84ff',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                      textDecoration: 'none',
+		                    }}
+		                  >
+		                    New Style
+		                  </a>
 		                </div>
 		                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
 		                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
