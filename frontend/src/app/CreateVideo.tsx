@@ -132,6 +132,8 @@ type AddStep =
   | 'audio_new'
   | 'audio_edit'
   | 'logo'
+  | 'logo_new'
+  | 'logo_edit'
   | 'logoConfig'
   | 'lowerThird'
   | 'lowerThirdConfig'
@@ -513,6 +515,22 @@ export default function CreateVideo() {
   const [logoPickerLoading, setLogoPickerLoading] = useState(false)
   const [logoPickerError, setLogoPickerError] = useState<string | null>(null)
   const [logoPickerItems, setLogoPickerItems] = useState<UploadListItem[]>([])
+  const [logoNewName, setLogoNewName] = useState('')
+  const [logoNewDescription, setLogoNewDescription] = useState('')
+  const [logoUploadBusy, setLogoUploadBusy] = useState(false)
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null)
+  const [logoEditId, setLogoEditId] = useState<number | null>(null)
+  const [logoEditName, setLogoEditName] = useState('')
+  const [logoEditDescription, setLogoEditDescription] = useState('')
+  const [logoEditSaving, setLogoEditSaving] = useState(false)
+  const [logoEditError, setLogoEditError] = useState<string | null>(null)
+  const [logoDescModal, setLogoDescModal] = useState<{ title: string; description: string | null } | null>(null)
+  const [logoPreviewModal, setLogoPreviewModal] = useState<{ title: string; src: string } | null>(null)
+  const [logoDeleteModal, setLogoDeleteModal] = useState<{ id: number; title: string } | null>(null)
+  const [logoDeleteError, setLogoDeleteError] = useState<string | null>(null)
+  const [logoDeleteBusy, setLogoDeleteBusy] = useState(false)
+  const [logoDeleteInUse, setLogoDeleteInUse] = useState(false)
+  const logoUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [logoConfigs, setLogoConfigs] = useState<LogoConfigItem[]>([])
   const [logoConfigsLoaded, setLogoConfigsLoaded] = useState(false)
   const [logoConfigsError, setLogoConfigsError] = useState<string | null>(null)
@@ -1714,6 +1732,98 @@ export default function CreateVideo() {
       setGraphicPreviewModal(null)
     },
     [graphics]
+  )
+
+  const uploadLogoFile = useCallback(
+    async (file: File, opts?: { name?: string; description?: string }): Promise<{ uploadId: number; width: number | null; height: number | null }> => {
+      const dims = await probeImageFileDimensions(file)
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const signRes = await fetch('/api/sign-upload', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({
+          kind: 'logo',
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+          width: dims.width,
+          height: dims.height,
+          modifiedFilename: (opts?.name || '').trim() || undefined,
+          description: (opts?.description || '').trim() || undefined,
+        }),
+      })
+      const signJson: any = await signRes.json().catch(() => null)
+      if (!signRes.ok) throw new Error(String(signJson?.detail || signJson?.error || 'failed_to_sign'))
+      const uploadId = Number(signJson?.id || 0)
+      const post = signJson?.post
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('failed_to_sign')
+      if (!post || typeof post !== 'object' || !post.url) throw new Error('failed_to_sign')
+
+      const formData = new FormData()
+      for (const [k, v] of Object.entries(post.fields || {})) formData.append(k, String(v))
+      formData.append('file', file)
+      const upRes = await fetch(String(post.url), { method: 'POST', body: formData })
+      if (!upRes.ok) throw new Error(`s3_upload_failed_${String(upRes.status)}`)
+
+      const completeHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf2 = getCsrfToken()
+      if (csrf2) completeHeaders['x-csrf-token'] = csrf2
+      const completeRes = await fetch('/api/mark-complete', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: completeHeaders,
+        body: JSON.stringify({ id: uploadId, sizeBytes: file.size }),
+      })
+      if (!completeRes.ok) {
+        const j: any = await completeRes.json().catch(() => null)
+        throw new Error(String(j?.detail || j?.error || 'failed_to_mark'))
+      }
+      return { uploadId, width: dims.width, height: dims.height }
+    },
+    [probeImageFileDimensions]
+  )
+
+  const updateLogoMetadata = useCallback(async (uploadId: number, next: { name: string; description: string }) => {
+    const name = String(next.name || '').trim()
+    const description = String(next.description || '').trim()
+    if (!name) throw new Error('missing_name')
+    const headers: any = { 'Content-Type': 'application/json' }
+    const csrf = getCsrfToken()
+    if (csrf) headers['x-csrf-token'] = csrf
+    const res = await fetch(`/api/uploads/${uploadId}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ modified_filename: name, description: description.length ? description : null }),
+    })
+    const json: any = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_update'))
+    setLogoPickerItems((prev) =>
+      prev.map((it) => {
+        const id = Number((it as any)?.id || 0)
+        if (id !== uploadId) return it
+        return { ...(it as any), modified_filename: name, description: description.length ? description : null }
+      })
+    )
+  }, [])
+
+  const deleteLogoUpload = useCallback(
+    async (uploadId: number) => {
+      if ((logos || []).some((l: any) => Number((l as any).uploadId || 0) === uploadId)) throw new Error('in_use')
+      const headers: any = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/uploads/${uploadId}`, { method: 'DELETE', credentials: 'same-origin', headers })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_delete'))
+      setLogoPickerItems((prev) => prev.filter((it) => Number((it as any)?.id || 0) !== uploadId))
+      setLogoDescModal(null)
+      setLogoPreviewModal(null)
+    },
+    [logos]
   )
 
   const canUndo = undoDepth > 0
@@ -12554,6 +12664,18 @@ export default function CreateVideo() {
 		                          setAddStep('graphic')
 		                          openGraphicPicker().catch(() => {})
 		                        }
+		                        else if (addStep === 'logo_new') {
+		                          setLogoUploadError(null)
+		                          setLogoUploadBusy(false)
+		                          setAddStep('logo')
+		                          openLogoPicker().catch(() => {})
+		                        }
+		                        else if (addStep === 'logo_edit') {
+		                          setLogoEditError(null)
+		                          setLogoEditSaving(false)
+		                          setAddStep('logo')
+		                          openLogoPicker().catch(() => {})
+		                        }
 		                        else setAddStep('type')
 		                      }}
 		                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
@@ -12585,7 +12707,7 @@ export default function CreateVideo() {
 		                      ? `Images: ${graphicPickerItems.length}`
 			                      : addStep === 'narration' || addStep === 'narration_new' || addStep === 'narration_edit'
 			                        ? `Voice Memos: ${narrationLibrary.length}`
-			                      : addStep === 'logo'
+			                      : addStep === 'logo' || addStep === 'logo_new' || addStep === 'logo_edit'
 			                          ? `Logos: ${logoPickerItems.length}`
 			                          : addStep === 'logoConfig'
 			                              ? `Configs: ${logoConfigs.length}`
@@ -13883,49 +14005,601 @@ export default function CreateVideo() {
 	              </>
 	            ) : addStep === 'logo' ? (
 	              <>
-	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Logo</h1>
+	                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Logos</h1>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setLogoUploadError(null)
+	                      setLogoNewName('')
+	                      setLogoNewDescription('')
+	                      setAddStep('logo_new')
+	                    }}
+	                    style={{
+	                      padding: '10px 12px',
+	                      borderRadius: 10,
+	                      border: '1px solid rgba(10,132,255,0.65)',
+	                      background: '#0a84ff',
+	                      color: '#fff',
+	                      fontWeight: 900,
+	                      cursor: 'pointer',
+	                    }}
+	                  >
+	                    New Logo
+	                  </button>
+	                </div>
+
 	                {logoPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
 	                {logoPickerError ? <div style={{ color: '#ff9b9b' }}>{logoPickerError}</div> : null}
 	                {logoConfigsError ? <div style={{ color: '#ff9b9b' }}>{logoConfigsError}</div> : null}
+
 	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-	                  {logoPickerItems.map((it) => {
-	                    const id = Number(it.id)
-	                    if (!Number.isFinite(id) || id <= 0) return null
-	                    const name = String(it.modified_filename || it.original_filename || `Logo ${id}`)
-	                    const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
-	                    return (
-	                      <button
-	                        key={`pick-logo-${id}`}
-	                        type="button"
-	                        onClick={() => chooseLogoUpload(it)}
-	                        style={{
-	                          display: 'grid',
-	                          gridTemplateColumns: '96px 1fr',
-	                          gap: 12,
-	                          alignItems: 'center',
-	                          padding: 12,
-	                          borderRadius: 12,
-	                          border: '1px solid rgba(255,214,10,0.55)',
-	                          background: 'rgba(0,0,0,0.35)',
-	                          color: '#fff',
-	                          cursor: 'pointer',
-	                          textAlign: 'left',
-	                        }}
-	                      >
-	                        <img
-	                          src={src}
-	                          alt=""
-	                          loading="lazy"
-	                          style={{ width: 96, height: 54, objectFit: 'contain', borderRadius: 8, background: '#000' }}
-	                        />
-	                        <div style={{ minWidth: 0 }}>
-	                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-	                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>Pick a logo, then pick a logo config</div>
+	                  {[...logoPickerItems]
+	                    .sort((a: any, b: any) => {
+	                      const ta = Date.parse(String(a?.uploaded_at || a?.created_at || '')) || 0
+	                      const tb = Date.parse(String(b?.uploaded_at || b?.created_at || '')) || 0
+	                      return tb - ta
+	                    })
+	                    .map((it: any) => {
+	                      const id = Number(it?.id || 0)
+	                      if (!Number.isFinite(id) || id <= 0) return null
+	                      const name = String(it?.modified_filename || it?.original_filename || `Logo ${id}`).trim() || `Logo ${id}`
+	                      const date = fmtYmd(it?.uploaded_at || it?.created_at)
+	                      const size = fmtSize(it?.size_bytes)
+	                      const descriptionRaw = it?.description == null ? null : String(it.description)
+	                      const description = descriptionRaw && descriptionRaw.trim().length ? descriptionRaw.trim() : null
+	                      const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
+	                      const inUse = (logos || []).some((l: any) => Number((l as any).uploadId || 0) === id)
+
+	                      return (
+	                        <div
+	                          key={`pick-logo-${id}`}
+	                          style={{
+	                            padding: 12,
+	                            borderRadius: 12,
+	                            border: '1px solid rgba(255,214,10,0.55)',
+	                            background: 'rgba(0,0,0,0.35)',
+	                            color: '#fff',
+	                            display: 'grid',
+	                            gap: 10,
+	                          }}
+	                        >
+	                          <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr', gap: 12, alignItems: 'start' }}>
+	                            <button
+	                              type="button"
+	                              onClick={() => setLogoPreviewModal({ title: name, src })}
+	                              style={{
+	                                width: 56,
+	                                height: 56,
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: '#000',
+	                                padding: 0,
+	                                cursor: 'pointer',
+	                                overflow: 'hidden',
+	                              }}
+	                              aria-label={`Preview: ${name}`}
+	                            >
+	                              <img src={src} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+	                            </button>
+
+	                            <div style={{ minWidth: 0 }}>
+	                              <button
+	                                type="button"
+	                                onClick={() => setLogoDescModal({ title: name, description })}
+	                                style={{
+	                                  display: 'block',
+	                                  width: '100%',
+	                                  fontWeight: 900,
+	                                  overflow: 'hidden',
+	                                  textOverflow: 'ellipsis',
+	                                  whiteSpace: 'nowrap',
+	                                  background: 'transparent',
+	                                  border: 'none',
+	                                  padding: 0,
+	                                  color: '#ffd60a',
+	                                  cursor: 'pointer',
+	                                  textAlign: 'left',
+	                                }}
+	                                title={name}
+	                                aria-label={`About: ${name}`}
+	                              >
+	                                {name}
+	                              </button>
+	                              <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>{(date ? `${date}: ` : '') + size}</div>
+	                            </div>
+	                          </div>
+
+	                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                setLogoDeleteError(null)
+	                                setLogoDeleteInUse(inUse)
+	                                setLogoDeleteModal({ id, title: name })
+	                              }}
+	                              style={{
+	                                padding: '8px 10px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: '#ff3b30',
+	                                color: '#fff',
+	                                fontWeight: 900,
+	                                cursor: 'pointer',
+	                                flex: '0 0 auto',
+	                              }}
+	                            >
+	                              Delete
+	                            </button>
+
+	                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+	                              <button
+	                                type="button"
+	                                onClick={() => {
+	                                  setLogoEditError(null)
+	                                  setLogoEditSaving(false)
+	                                  setLogoEditId(id)
+	                                  setLogoEditName(name)
+	                                  setLogoEditDescription(description || '')
+	                                  setAddStep('logo_edit')
+	                                }}
+	                                style={{
+	                                  padding: '8px 10px',
+	                                  borderRadius: 10,
+	                                  border: '1px solid rgba(255,214,10,0.55)',
+	                                  background: '#000',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                  cursor: 'pointer',
+	                                  flex: '0 0 auto',
+	                                }}
+	                              >
+	                                Edit
+	                              </button>
+	                              <button
+	                                type="button"
+	                                onClick={() => chooseLogoUpload(it)}
+	                                style={{
+	                                  padding: '8px 10px',
+	                                  borderRadius: 10,
+	                                  border: '1px solid rgba(10,132,255,0.65)',
+	                                  background: '#0a84ff',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                  cursor: 'pointer',
+	                                  flex: '0 0 auto',
+	                                }}
+	                              >
+	                                Select
+	                              </button>
+	                            </div>
+	                          </div>
 	                        </div>
-	                      </button>
-	                    )
-	                  })}
+	                      )
+	                    })}
 	                </div>
+
+	                {logoDescModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => setLogoDescModal(null)}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6000,
+	                      background: 'rgba(0,0,0,0.55)',
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      padding: 16,
+	                      paddingTop: 64,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(560px, 100%)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(0,0,0,0.18)',
+	                        background: '#ffd60a',
+	                        padding: 14,
+	                        color: '#333',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
+	                          {logoDescModal.title}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setLogoDescModal(null)}
+	                          style={{
+	                            color: '#fff',
+	                            background: '#000',
+	                            border: '1px solid #000',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10, color: '#333', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+	                        {logoDescModal.description || 'No description.'}
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {logoPreviewModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => setLogoPreviewModal(null)}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6200,
+	                      background: 'rgba(0,0,0,0.55)',
+	                      display: 'flex',
+	                      alignItems: 'flex-start',
+	                      justifyContent: 'flex-start',
+	                      padding: 16,
+	                      paddingTop: 64,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(520px, 92vw)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0b0b0b',
+	                        padding: 12,
+	                        color: '#fff',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 14, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          {logoPreviewModal.title}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setLogoPreviewModal(null)}
+	                          style={{
+	                            color: '#fff',
+	                            background: 'rgba(255,255,255,0.08)',
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10 }}>
+	                        <img
+	                          src={logoPreviewModal.src}
+	                          alt=""
+	                          style={{
+	                            maxWidth: '100%',
+	                            maxHeight: '80vh',
+	                            width: '100%',
+	                            height: 'auto',
+	                            objectFit: 'contain',
+	                            display: 'block',
+	                            background: '#000',
+	                            borderRadius: 10,
+	                          }}
+	                        />
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {logoDeleteModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => {
+	                      if (logoDeleteBusy) return
+	                      setLogoDeleteModal(null)
+	                    }}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6500,
+	                      background: 'rgba(0,0,0,0.65)',
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      padding: 16,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(560px, 100%)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0b0b0b',
+	                        padding: 14,
+	                        color: '#fff',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          Delete logo?
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            if (logoDeleteBusy) return
+	                            setLogoDeleteModal(null)
+	                          }}
+	                          style={{
+	                            color: '#fff',
+	                            background: 'rgba(255,255,255,0.08)',
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10, color: '#ddd', lineHeight: 1.35 }}>
+	                        <div style={{ fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          {logoDeleteModal.title}
+	                        </div>
+	                        <div style={{ marginTop: 6, color: '#bbb' }}>This cannot be undone.</div>
+	                        {logoDeleteInUse ? (
+	                          <div style={{ marginTop: 8, color: '#ff9b9b' }}>
+	                            This logo is currently used on your timeline. Remove it from the timeline before deleting.
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                      {logoDeleteError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{logoDeleteError}</div> : null}
+	                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            if (logoDeleteBusy) return
+	                            setLogoDeleteModal(null)
+	                          }}
+	                          style={{
+	                            padding: '10px 12px',
+	                            borderRadius: 10,
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            background: '#000',
+	                            color: '#fff',
+	                            fontWeight: 900,
+	                            cursor: 'pointer',
+	                          }}
+	                        >
+	                          Cancel
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={async () => {
+	                            if (logoDeleteBusy) return
+	                            if (logoDeleteInUse) return
+	                            setLogoDeleteBusy(true)
+	                            setLogoDeleteError(null)
+	                            try {
+	                              await deleteLogoUpload(logoDeleteModal.id)
+	                              setLogoDeleteModal(null)
+	                            } catch (e: any) {
+	                              const msg = String(e?.message || 'Failed to delete')
+	                              setLogoDeleteError(msg === 'in_use' ? 'This logo is currently used on your timeline.' : msg)
+	                            } finally {
+	                              setLogoDeleteBusy(false)
+	                            }
+	                          }}
+	                          style={{
+	                            padding: '10px 12px',
+	                            borderRadius: 10,
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            background: '#ff3b30',
+	                            color: '#fff',
+	                            fontWeight: 900,
+	                            cursor: logoDeleteInUse ? 'not-allowed' : 'pointer',
+	                            opacity: logoDeleteInUse ? 0.6 : 1,
+	                          }}
+	                        >
+	                          {logoDeleteBusy ? 'Deleting…' : 'Delete'}
+	                        </button>
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+	              </>
+	            ) : addStep === 'logo_new' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Logo</h1>
+	                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Name</div>
+	                    <input
+	                      value={logoNewName}
+	                      onChange={(e) => setLogoNewName(e.target.value)}
+	                      placeholder="Name"
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                      }}
+	                    />
+	                  </label>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Description</div>
+	                    <textarea
+	                      value={logoNewDescription}
+	                      onChange={(e) => setLogoNewDescription(e.target.value)}
+	                      placeholder="Description"
+	                      rows={4}
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                        resize: 'vertical',
+	                      }}
+	                    />
+	                  </label>
+	                  <input
+	                    ref={logoUploadInputRef}
+	                    type="file"
+	                    accept="image/png,image/jpeg"
+	                    style={{ display: 'none' }}
+	                    onChange={(e) => {
+	                      const f = e.target.files && e.target.files[0]
+	                      e.currentTarget.value = ''
+	                      if (!f) return
+	                      setLogoUploadError(null)
+	                      setLogoUploadBusy(true)
+	                      uploadLogoFile(f, { name: logoNewName.trim(), description: logoNewDescription.trim() || undefined })
+	                        .then(() => {
+	                          setAddStep('logo')
+	                          openLogoPicker().catch(() => {})
+	                        })
+	                        .catch(() => setLogoUploadError('Failed to upload logo.'))
+	                        .finally(() => setLogoUploadBusy(false))
+	                    }}
+	                  />
+	                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        if (logoUploadBusy) return
+	                        setLogoUploadError(null)
+	                        setAddStep('logo')
+	                        openLogoPicker().catch(() => {})
+	                      }}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#000',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
+	                      Cancel
+	                    </button>
+	                    <button
+	                      type="button"
+	                      disabled={logoUploadBusy || !logoNewName.trim()}
+	                      onClick={() => logoUploadInputRef.current?.click()}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(10,132,255,0.65)',
+	                        background: '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: logoUploadBusy || !logoNewName.trim() ? 'not-allowed' : 'pointer',
+	                        opacity: logoUploadBusy || !logoNewName.trim() ? 0.6 : 1,
+	                      }}
+	                    >
+	                      {logoUploadBusy ? 'Uploading…' : 'Upload'}
+	                    </button>
+	                  </div>
+	                </div>
+	                {logoUploadError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{logoUploadError}</div> : null}
+	              </>
+	            ) : addStep === 'logo_edit' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Edit Logo</h1>
+	                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Name</div>
+	                    <input
+	                      value={logoEditName}
+	                      onChange={(e) => setLogoEditName(e.target.value)}
+	                      placeholder="Name"
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                      }}
+	                    />
+	                  </label>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Description</div>
+	                    <textarea
+	                      value={logoEditDescription}
+	                      onChange={(e) => setLogoEditDescription(e.target.value)}
+	                      placeholder="Description"
+	                      rows={4}
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                        resize: 'vertical',
+	                      }}
+	                    />
+	                  </label>
+	                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                    <button
+	                      type="button"
+	                      onClick={async () => {
+	                        if (logoEditSaving) return
+	                        const id = Number(logoEditId || 0)
+	                        if (!Number.isFinite(id) || id <= 0) return
+	                        setLogoEditSaving(true)
+	                        setLogoEditError(null)
+	                        try {
+	                          await updateLogoMetadata(id, { name: logoEditName.trim(), description: logoEditDescription.trim() })
+	                          setAddStep('logo')
+	                          openLogoPicker().catch(() => {})
+	                        } catch (e: any) {
+	                          setLogoEditError(String(e?.message || 'Failed to save changes'))
+	                        } finally {
+	                          setLogoEditSaving(false)
+	                        }
+	                      }}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(10,132,255,0.65)',
+	                        background: '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
+	                      {logoEditSaving ? 'Saving…' : 'Save'}
+	                    </button>
+	                  </div>
+	                </div>
+	                {logoEditError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{logoEditError}</div> : null}
 	              </>
 	            ) : addStep === 'logoConfig' ? (
 	              <>
