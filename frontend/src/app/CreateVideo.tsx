@@ -571,6 +571,10 @@ export default function CreateVideo() {
   const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePresetItem[]>([])
   const [screenTitlePresetsLoaded, setScreenTitlePresetsLoaded] = useState(false)
   const [screenTitlePresetsError, setScreenTitlePresetsError] = useState<string | null>(null)
+  const [screenTitlePresetDeleteModal, setScreenTitlePresetDeleteModal] = useState<{ id: number; title: string } | null>(null)
+  const [screenTitlePresetDeleteBusy, setScreenTitlePresetDeleteBusy] = useState(false)
+  const [screenTitlePresetDeleteError, setScreenTitlePresetDeleteError] = useState<string | null>(null)
+  const [screenTitlePresetDeleteInUse, setScreenTitlePresetDeleteInUse] = useState(false)
   const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number; presetId: number | null; text: string } | null>(null)
   const [screenTitleEditorError, setScreenTitleEditorError] = useState<string | null>(null)
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
@@ -4361,6 +4365,23 @@ export default function CreateVideo() {
       return []
     }
   }, [])
+
+  const deleteScreenTitlePreset = useCallback(
+    async (presetId: number) => {
+      const headers: any = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(presetId))}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers,
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_delete'))
+      await forceReloadScreenTitlePresets()
+    },
+    [forceReloadScreenTitlePresets]
+  )
 
   const handledRefreshScreenTitlesRef = useRef(false)
   useEffect(() => {
@@ -15424,53 +15445,235 @@ export default function CreateVideo() {
 	                    })}
 	                </div>
 	              </>
-	            ) : addStep === 'screenTitle' ? (
-	              <>
-	                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-	                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Screen Title Style</h1>
-	                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage Styles</a>
-	                </div>
-	                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
-	                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-	                  {screenTitlePresets
-	                    .filter((p: any) => !(p && typeof p === 'object' && (p.archived_at || p.archivedAt)))
-	                    .map((p: any) => {
-	                      const id = Number(p.id)
-	                      if (!Number.isFinite(id) || id <= 0) return null
-	                      const name = String(p.name || `Preset ${id}`)
-	                      const style = String(p.style || '').toLowerCase()
-	                      const fade = String(p.fade || '').toLowerCase()
-	                      return (
-	                        <button
-	                          key={`pick-st-${id}`}
-	                          type="button"
-	                          onClick={() => addScreenTitleFromPreset(p)}
-	                          style={{
-	                            display: 'grid',
-	                            gridTemplateColumns: '1fr auto',
-	                            gap: 12,
-	                            alignItems: 'center',
-	                            padding: 12,
-	                            borderRadius: 12,
-	                            border: '1px solid rgba(255,214,10,0.55)',
-	                            background: 'rgba(0,0,0,0.35)',
-	                            color: '#fff',
-	                            cursor: 'pointer',
-	                            textAlign: 'left',
-	                          }}
-	                        >
-	                          <div style={{ minWidth: 0 }}>
-	                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-	                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{`Style: ${style || 'outline'} • Fade: ${fade || 'none'}`}</div>
-	                          </div>
-	                          <div style={{ fontWeight: 900, color: '#fff' }}>Add</div>
-	                        </button>
-	                      )
-	                    })}
-	                </div>
-	              </>
-		            ) : addStep === 'audio' ? (
+		            ) : addStep === 'screenTitle' ? (
+		              <>
+		                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+		                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Screen Title Style</h1>
+		                  <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>Manage Styles</a>
+		                </div>
+		                {screenTitlePresetsError ? <div style={{ color: '#ff9b9b' }}>{screenTitlePresetsError}</div> : null}
+		                {!screenTitlePresetsLoaded ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+		                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+		                  {screenTitlePresets
+		                    .filter((p: any) => !(p && typeof p === 'object' && (p.archived_at || p.archivedAt)))
+		                    .map((p: any) => {
+		                      const id = Number(p.id)
+		                      if (!Number.isFinite(id) || id <= 0) return null
+		                      const name = String(p.name || `Preset ${id}`)
+		                      const style = String(p.style || '').toLowerCase()
+		                      const fade = String(p.fade || '').toLowerCase()
+		                      const inUse = (Array.isArray((timeline as any).screenTitles) ? ((timeline as any).screenTitles as any[]) : []).some(
+		                        (st: any) => Number((st as any).presetId || 0) === id
+		                      )
+		                      return (
+		                        <div
+		                          key={`pick-st-${id}`}
+		                          style={{
+		                            padding: 12,
+		                            borderRadius: 12,
+		                            border: '1px solid rgba(255,214,10,0.55)',
+		                            background: 'rgba(0,0,0,0.35)',
+		                            color: '#fff',
+		                            display: 'grid',
+		                            gap: 10,
+		                          }}
+		                        >
+		                          <div style={{ minWidth: 0 }}>
+		                            <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+		                            <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>{`Style: ${style || 'outline'} • Fade: ${fade || 'none'}`}</div>
+		                          </div>
+		                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+		                            <button
+		                              type="button"
+		                              onClick={() => {
+		                                setScreenTitlePresetDeleteError(null)
+		                                setScreenTitlePresetDeleteInUse(inUse)
+		                                setScreenTitlePresetDeleteModal({ id, title: name })
+		                              }}
+		                              style={{
+		                                padding: '8px 10px',
+		                                borderRadius: 10,
+		                                border: '1px solid rgba(255,255,255,0.18)',
+		                                background: '#ff3b30',
+		                                color: '#fff',
+		                                fontWeight: 900,
+		                                cursor: 'pointer',
+		                                flex: '0 0 auto',
+		                              }}
+		                            >
+		                              Delete
+		                            </button>
+
+		                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+		                              <button
+		                                type="button"
+		                                onClick={() => {
+		                                  try {
+		                                    const base = new URL(window.location.href)
+		                                    base.searchParams.set('cvRefreshScreenTitlePresetId', String(id))
+		                                    const from = `${base.pathname}${base.search}${base.hash || ''}`
+		                                    window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}&from=${encodeURIComponent(from)}`
+		                                  } catch {
+		                                    window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}`
+		                                  }
+		                                }}
+		                                style={{
+		                                  padding: '8px 10px',
+		                                  borderRadius: 10,
+		                                  border: '1px solid rgba(255,214,10,0.55)',
+		                                  background: '#000',
+		                                  color: '#fff',
+		                                  fontWeight: 900,
+		                                  cursor: 'pointer',
+		                                  flex: '0 0 auto',
+		                                }}
+		                              >
+		                                Edit
+		                              </button>
+		                              <button
+		                                type="button"
+		                                onClick={() => addScreenTitleFromPreset(p)}
+		                                style={{
+		                                  padding: '8px 10px',
+		                                  borderRadius: 10,
+		                                  border: '1px solid rgba(10,132,255,0.65)',
+		                                  background: '#0a84ff',
+		                                  color: '#fff',
+		                                  fontWeight: 900,
+		                                  cursor: 'pointer',
+		                                  flex: '0 0 auto',
+		                                }}
+		                              >
+		                                Select
+		                              </button>
+		                            </div>
+		                          </div>
+		                        </div>
+		                      )
+		                    })}
+		                </div>
+
+		                {screenTitlePresetDeleteModal ? (
+		                  <div
+		                    role="dialog"
+		                    aria-modal="true"
+		                    onClick={() => {
+		                      if (screenTitlePresetDeleteBusy) return
+		                      setScreenTitlePresetDeleteModal(null)
+		                    }}
+		                    style={{
+		                      position: 'fixed',
+		                      inset: 0,
+		                      zIndex: 6500,
+		                      background: 'rgba(0,0,0,0.65)',
+		                      display: 'flex',
+		                      alignItems: 'center',
+		                      justifyContent: 'center',
+		                      padding: 16,
+		                    }}
+		                  >
+		                    <div
+		                      onClick={(e) => e.stopPropagation()}
+		                      style={{
+		                        width: 'min(560px, 100%)',
+		                        borderRadius: 14,
+		                        border: '1px solid rgba(255,255,255,0.18)',
+		                        background: '#0b0b0b',
+		                        padding: 14,
+		                        color: '#fff',
+		                      }}
+		                    >
+		                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+		                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+		                          Delete screen title style?
+		                        </div>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (screenTitlePresetDeleteBusy) return
+		                            setScreenTitlePresetDeleteModal(null)
+		                          }}
+		                          style={{
+		                            color: '#fff',
+		                            background: 'rgba(255,255,255,0.08)',
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            padding: '6px 8px',
+		                            borderRadius: 10,
+		                            cursor: 'pointer',
+		                            fontWeight: 900,
+		                          }}
+		                          aria-label="Close"
+		                        >
+		                          ✕
+		                        </button>
+		                      </div>
+		                      <div style={{ marginTop: 10, color: '#ddd', lineHeight: 1.35 }}>
+		                        <div style={{ fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+		                          {screenTitlePresetDeleteModal.title}
+		                        </div>
+		                        <div style={{ marginTop: 6, color: '#bbb' }}>This cannot be undone.</div>
+		                        {screenTitlePresetDeleteInUse ? (
+		                          <div style={{ marginTop: 8, color: '#ff9b9b' }}>This style is currently used on your timeline. Remove it from the timeline before deleting.</div>
+		                        ) : null}
+		                      </div>
+		                      {screenTitlePresetDeleteError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{screenTitlePresetDeleteError}</div> : null}
+		                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (screenTitlePresetDeleteBusy) return
+		                            setScreenTitlePresetDeleteModal(null)
+		                          }}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            background: '#000',
+		                            color: '#fff',
+		                            fontWeight: 900,
+		                            cursor: 'pointer',
+		                          }}
+		                          disabled={screenTitlePresetDeleteBusy}
+		                        >
+		                          Cancel
+		                        </button>
+		                        <button
+		                          type="button"
+		                          onClick={() => {
+		                            if (screenTitlePresetDeleteInUse) {
+		                              setScreenTitlePresetDeleteError('Remove this style from the timeline before deleting.')
+		                              return
+		                            }
+		                            const id = screenTitlePresetDeleteModal.id
+		                            setScreenTitlePresetDeleteError(null)
+		                            setScreenTitlePresetDeleteBusy(true)
+		                            deleteScreenTitlePreset(id)
+		                              .then(() => setScreenTitlePresetDeleteModal(null))
+		                              .catch((e: any) => {
+		                                const msg = String(e?.message || '')
+		                                setScreenTitlePresetDeleteError(msg === 'in_use' ? 'Remove this style from the timeline before deleting.' : 'Failed to delete style.')
+		                              })
+		                              .finally(() => setScreenTitlePresetDeleteBusy(false))
+		                          }}
+		                          style={{
+		                            padding: '10px 12px',
+		                            borderRadius: 10,
+		                            border: '1px solid rgba(255,255,255,0.18)',
+		                            background: '#ff3b30',
+		                            color: '#fff',
+		                            fontWeight: 900,
+		                            cursor: 'pointer',
+		                          }}
+		                          disabled={screenTitlePresetDeleteBusy}
+		                        >
+		                          Delete
+		                        </button>
+		                      </div>
+		                    </div>
+		                  </div>
+		                ) : null}
+		              </>
+			            ) : addStep === 'audio' ? (
 		              <>
 		                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 		                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Audio</h1>
