@@ -5340,8 +5340,8 @@ export default function CreateVideo() {
       setPendingLogoUploadId(id)
       const name = String(upload.modified_filename || upload.original_filename || `Logo ${upload.id}`)
       setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
-      await ensureLogoConfigs()
       setAddStep('logoConfig')
+      ensureLogoConfigs().catch(() => {})
     },
     [ensureLogoConfigs]
   )
@@ -14609,6 +14609,7 @@ export default function CreateVideo() {
 	                {!pendingLogoUploadId ? (
 	                  <div style={{ color: '#bbb', marginTop: 12 }}>Pick a logo first.</div>
 	                ) : null}
+	                {!logoConfigsLoaded && pendingLogoUploadId ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
 	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
 	                  {logoConfigs
 	                    .filter((c: any) => !(c && typeof c === 'object' && c.archived_at))
