@@ -54,6 +54,8 @@ type UploadListItem = {
   duration_seconds: number | null
   status: string
   kind?: string
+  image_role?: string | null
+  uploaded_at?: string | null
   created_at: string
 }
 
@@ -121,6 +123,8 @@ type AddStep =
   | 'type'
   | 'video'
   | 'graphic'
+  | 'graphic_new'
+  | 'graphic_edit'
   | 'narration'
   | 'narration_new'
   | 'narration_edit'
@@ -490,6 +494,21 @@ export default function CreateVideo() {
   const [graphicPickerLoading, setGraphicPickerLoading] = useState(false)
   const [graphicPickerError, setGraphicPickerError] = useState<string | null>(null)
   const [graphicPickerItems, setGraphicPickerItems] = useState<UploadListItem[]>([])
+  const [graphicNewName, setGraphicNewName] = useState('')
+  const [graphicNewDescription, setGraphicNewDescription] = useState('')
+  const [graphicUploadBusy, setGraphicUploadBusy] = useState(false)
+  const [graphicUploadError, setGraphicUploadError] = useState<string | null>(null)
+  const [graphicEditId, setGraphicEditId] = useState<number | null>(null)
+  const [graphicEditName, setGraphicEditName] = useState('')
+  const [graphicEditDescription, setGraphicEditDescription] = useState('')
+  const [graphicEditSaving, setGraphicEditSaving] = useState(false)
+  const [graphicEditError, setGraphicEditError] = useState<string | null>(null)
+  const [graphicDescModal, setGraphicDescModal] = useState<{ title: string; description: string | null } | null>(null)
+  const [graphicPreviewModal, setGraphicPreviewModal] = useState<{ title: string; src: string } | null>(null)
+  const [graphicDeleteModal, setGraphicDeleteModal] = useState<{ id: number; title: string } | null>(null)
+  const [graphicDeleteError, setGraphicDeleteError] = useState<string | null>(null)
+  const [graphicDeleteBusy, setGraphicDeleteBusy] = useState(false)
+  const [graphicDeleteInUse, setGraphicDeleteInUse] = useState(false)
   const [logoPickerLoading, setLogoPickerLoading] = useState(false)
   const [logoPickerError, setLogoPickerError] = useState<string | null>(null)
   const [logoPickerItems, setLogoPickerItems] = useState<UploadListItem[]>([])
@@ -1410,6 +1429,25 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const probeImageFileDimensions = useCallback(async (file: File): Promise<{ width: number | null; height: number | null }> => {
+    try {
+      const url = URL.createObjectURL(file)
+      try {
+        const dims = await new Promise<{ width: number | null; height: number | null }>((resolve) => {
+          const img = new Image()
+          img.onload = () => resolve({ width: (img.naturalWidth || img.width) || null, height: (img.naturalHeight || img.height) || null })
+          img.onerror = () => resolve({ width: null, height: null })
+          img.src = url
+        })
+        return dims
+      } finally {
+        try { URL.revokeObjectURL(url) } catch {}
+      }
+    } catch {
+      return { width: null, height: null }
+    }
+  }, [])
+
   const audioDeleteInUse = useMemo(() => {
     if (!audioDeleteModal) return false
     const uploadId = Number(audioDeleteModal.id || 0)
@@ -1582,6 +1620,99 @@ export default function CreateVideo() {
       return { uploadId, durationSeconds }
     },
     [probeAudioDurationSeconds]
+  )
+
+  const uploadGraphicFile = useCallback(
+    async (file: File, opts?: { name?: string; description?: string }): Promise<{ uploadId: number; width: number | null; height: number | null }> => {
+      const dims = await probeImageFileDimensions(file)
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const signRes = await fetch('/api/sign-upload', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({
+          kind: 'image',
+          imageRole: 'overlay',
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+          width: dims.width,
+          height: dims.height,
+          modifiedFilename: (opts?.name || '').trim() || undefined,
+          description: (opts?.description || '').trim() || undefined,
+        }),
+      })
+      const signJson: any = await signRes.json().catch(() => null)
+      if (!signRes.ok) throw new Error(String(signJson?.detail || signJson?.error || 'failed_to_sign'))
+      const uploadId = Number(signJson?.id || 0)
+      const post = signJson?.post
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('failed_to_sign')
+      if (!post || typeof post !== 'object' || !post.url) throw new Error('failed_to_sign')
+
+      const formData = new FormData()
+      for (const [k, v] of Object.entries(post.fields || {})) formData.append(k, String(v))
+      formData.append('file', file)
+      const upRes = await fetch(String(post.url), { method: 'POST', body: formData })
+      if (!upRes.ok) throw new Error(`s3_upload_failed_${String(upRes.status)}`)
+
+      const completeHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf2 = getCsrfToken()
+      if (csrf2) completeHeaders['x-csrf-token'] = csrf2
+      const completeRes = await fetch('/api/mark-complete', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: completeHeaders,
+        body: JSON.stringify({ id: uploadId, sizeBytes: file.size }),
+      })
+      if (!completeRes.ok) {
+        const j: any = await completeRes.json().catch(() => null)
+        throw new Error(String(j?.detail || j?.error || 'failed_to_mark'))
+      }
+      return { uploadId, width: dims.width, height: dims.height }
+    },
+    [probeImageFileDimensions]
+  )
+
+  const updateGraphicMetadata = useCallback(async (uploadId: number, next: { name: string; description: string }) => {
+    const name = String(next.name || '').trim()
+    const description = String(next.description || '').trim()
+    if (!name) throw new Error('missing_name')
+    const headers: any = { 'Content-Type': 'application/json' }
+    const csrf = getCsrfToken()
+    if (csrf) headers['x-csrf-token'] = csrf
+    const res = await fetch(`/api/uploads/${uploadId}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ modified_filename: name, description: description.length ? description : null }),
+    })
+    const json: any = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_update'))
+    setGraphicPickerItems((prev) =>
+      prev.map((it) => {
+        const id = Number((it as any)?.id || 0)
+        if (id !== uploadId) return it
+        return { ...(it as any), modified_filename: name, description: description.length ? description : null }
+      })
+    )
+  }, [])
+
+  const deleteGraphicUpload = useCallback(
+    async (uploadId: number) => {
+      if ((graphics || []).some((g: any) => Number((g as any).uploadId || 0) === uploadId)) throw new Error('in_use')
+      const headers: any = {}
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/uploads/${uploadId}`, { method: 'DELETE', credentials: 'same-origin', headers })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_delete'))
+      setGraphicPickerItems((prev) => prev.filter((it) => Number((it as any)?.id || 0) !== uploadId))
+      setGraphicDescModal(null)
+      setGraphicPreviewModal(null)
+    },
+    [graphics]
   )
 
   const canUndo = undoDepth > 0
@@ -12410,6 +12541,18 @@ export default function CreateVideo() {
 		                          setAddStep('audio')
 		                          loadAudioLibrary(audioScope).catch(() => {})
 		                        }
+		                        else if (addStep === 'graphic_new') {
+		                          setGraphicUploadError(null)
+		                          setGraphicUploadBusy(false)
+		                          setAddStep('graphic')
+		                          openGraphicPicker().catch(() => {})
+		                        }
+		                        else if (addStep === 'graphic_edit') {
+		                          setGraphicEditError(null)
+		                          setGraphicEditSaving(false)
+		                          setAddStep('graphic')
+		                          openGraphicPicker().catch(() => {})
+		                        }
 		                        else setAddStep('type')
 		                      }}
 		                      style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
@@ -12437,7 +12580,7 @@ export default function CreateVideo() {
 		                <div style={{ color: '#bbb', fontSize: 13 }}>
 		                  {addStep === 'video'
 		                    ? `Videos: ${pickerItems.length}`
-		                    : addStep === 'graphic'
+		                    : addStep === 'graphic' || addStep === 'graphic_new' || addStep === 'graphic_edit'
 		                      ? `Images: ${graphicPickerItems.length}`
 			                      : addStep === 'narration' || addStep === 'narration_new' || addStep === 'narration_edit'
 			                        ? `Voice Memos: ${narrationLibrary.length}`
@@ -13139,43 +13282,563 @@ export default function CreateVideo() {
 	              </>
 	            ) : addStep === 'graphic' ? (
 	              <>
-                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Select Graphic</h1>
-                {graphicPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-                {graphicPickerError ? <div style={{ color: '#ff9b9b' }}>{graphicPickerError}</div> : null}
-                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                  {graphicPickerItems.map((it) => {
-                    const id = Number(it.id)
-                    if (!Number.isFinite(id) || id <= 0) return null
-                    const name = String(it.modified_filename || it.original_filename || `Upload ${id}`)
-                    const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
-                    return (
-                      <button
-                        key={`pick-gfx-${id}`}
-                        type="button"
-                        onClick={() => addGraphicFromUpload(it)}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '96px 1fr',
-                          gap: 12,
-                          alignItems: 'center',
-                          padding: 12,
-                          borderRadius: 12,
-                          border: '1px solid rgba(10,132,255,0.55)',
-                          background: 'rgba(0,0,0,0.35)',
-                          color: '#fff',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <img src={src} alt="" loading="lazy" style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 8, background: '#000' }} />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                          <div style={{ color: '#bbb', fontSize: 12, marginTop: 2 }}>Full-frame graphic • No overlaps</div>
-                        </div>
-                      </button>
-                    )
-	                  })}
+	                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                  <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Graphics</h1>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setGraphicUploadError(null)
+	                      setGraphicNewName('')
+	                      setGraphicNewDescription('')
+	                      setAddStep('graphic_new')
+	                    }}
+	                    style={{
+	                      padding: '10px 12px',
+	                      borderRadius: 10,
+	                      border: '1px solid rgba(10,132,255,0.65)',
+	                      background: '#0a84ff',
+	                      color: '#fff',
+	                      fontWeight: 900,
+	                      cursor: 'pointer',
+	                    }}
+	                  >
+	                    New Graphic
+	                  </button>
 	                </div>
+
+	                {graphicPickerLoading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
+	                {graphicPickerError ? <div style={{ color: '#ff9b9b' }}>{graphicPickerError}</div> : null}
+
+	                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+	                  {[...graphicPickerItems]
+	                    .filter((it) => String((it as any)?.image_role || 'overlay') === 'overlay')
+	                    .sort((a: any, b: any) => {
+	                      const ta = Date.parse(String(a?.uploaded_at || a?.created_at || '')) || 0
+	                      const tb = Date.parse(String(b?.uploaded_at || b?.created_at || '')) || 0
+	                      return tb - ta
+	                    })
+	                    .map((it: any) => {
+	                      const id = Number(it?.id || 0)
+	                      if (!Number.isFinite(id) || id <= 0) return null
+	                      const name = String(it?.modified_filename || it?.original_filename || `Graphic ${id}`).trim() || `Graphic ${id}`
+	                      const date = fmtYmd(it?.uploaded_at || it?.created_at)
+	                      const size = fmtSize(it?.size_bytes)
+	                      const descriptionRaw = it?.description == null ? null : String(it.description)
+	                      const description = descriptionRaw && descriptionRaw.trim().length ? descriptionRaw.trim() : null
+	                      const src = `/api/uploads/${encodeURIComponent(String(id))}/file`
+	                      const inUse = (graphics || []).some((g: any) => Number((g as any).uploadId || 0) === id)
+
+	                      return (
+	                        <div
+	                          key={`pick-gfx-${id}`}
+	                          style={{
+	                            padding: 12,
+	                            borderRadius: 12,
+	                            border: '1px solid rgba(10,132,255,0.55)',
+	                            background: 'rgba(0,0,0,0.35)',
+	                            color: '#fff',
+	                            display: 'grid',
+	                            gap: 10,
+	                          }}
+	                        >
+	                          <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr', gap: 12, alignItems: 'start' }}>
+	                            <button
+	                              type="button"
+	                              onClick={() => setGraphicPreviewModal({ title: name, src })}
+	                              style={{
+	                                width: 56,
+	                                height: 56,
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: '#000',
+	                                padding: 0,
+	                                cursor: 'pointer',
+	                                overflow: 'hidden',
+	                              }}
+	                              aria-label={`Preview: ${name}`}
+	                            >
+	                              <img src={src} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+	                            </button>
+
+	                            <div style={{ minWidth: 0 }}>
+	                              <button
+	                                type="button"
+	                                onClick={() => setGraphicDescModal({ title: name, description })}
+	                                style={{
+	                                  display: 'block',
+	                                  width: '100%',
+	                                  fontWeight: 900,
+	                                  overflow: 'hidden',
+	                                  textOverflow: 'ellipsis',
+	                                  whiteSpace: 'nowrap',
+	                                  background: 'transparent',
+	                                  border: 'none',
+	                                  padding: 0,
+	                                  color: '#ffd60a',
+	                                  cursor: 'pointer',
+	                                  textAlign: 'left',
+	                                }}
+	                                title={name}
+	                                aria-label={`About: ${name}`}
+	                              >
+	                                {name}
+	                              </button>
+	                              <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>
+	                                {(date ? `${date}: ` : '') + size}
+	                              </div>
+	                            </div>
+	                          </div>
+
+	                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                setGraphicDeleteError(null)
+	                                setGraphicDeleteInUse(inUse)
+	                                setGraphicDeleteModal({ id, title: name })
+	                              }}
+	                              style={{
+	                                padding: '8px 10px',
+	                                borderRadius: 10,
+	                                border: '1px solid rgba(255,255,255,0.18)',
+	                                background: '#ff3b30',
+	                                color: '#fff',
+	                                fontWeight: 900,
+	                                cursor: 'pointer',
+	                                flex: '0 0 auto',
+	                              }}
+	                            >
+	                              Delete
+	                            </button>
+
+	                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+	                              <button
+	                                type="button"
+	                                onClick={() => {
+	                                  setGraphicEditError(null)
+	                                  setGraphicEditSaving(false)
+	                                  setGraphicEditId(id)
+	                                  setGraphicEditName(name)
+	                                  setGraphicEditDescription(description || '')
+	                                  setAddStep('graphic_edit')
+	                                }}
+	                                style={{
+	                                  padding: '8px 10px',
+	                                  borderRadius: 10,
+	                                  border: '1px solid rgba(10,132,255,0.55)',
+	                                  background: '#000',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                  cursor: 'pointer',
+	                                  flex: '0 0 auto',
+	                                }}
+	                              >
+	                                Edit
+	                              </button>
+	                              <button
+	                                type="button"
+	                                onClick={() => addGraphicFromUpload(it)}
+	                                style={{
+	                                  padding: '8px 10px',
+	                                  borderRadius: 10,
+	                                  border: '1px solid rgba(10,132,255,0.65)',
+	                                  background: '#0a84ff',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                  cursor: 'pointer',
+	                                  flex: '0 0 auto',
+	                                }}
+	                              >
+	                                Select
+	                              </button>
+	                            </div>
+	                          </div>
+	                        </div>
+	                      )
+	                    })}
+	                </div>
+
+	                {graphicDescModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => setGraphicDescModal(null)}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6000,
+	                      background: 'rgba(0,0,0,0.55)',
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      padding: 16,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(560px, 100%)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(0,0,0,0.18)',
+	                        background: '#ffd60a',
+	                        padding: 14,
+	                        color: '#333',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
+	                          {graphicDescModal.title}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setGraphicDescModal(null)}
+	                          style={{
+	                            color: '#fff',
+	                            background: '#000',
+	                            border: '1px solid #000',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10, color: '#333', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
+	                        {graphicDescModal.description || 'No description.'}
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {graphicPreviewModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => setGraphicPreviewModal(null)}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6200,
+	                      background: 'rgba(0,0,0,0.55)',
+	                      display: 'flex',
+	                      alignItems: 'flex-start',
+	                      justifyContent: 'flex-start',
+	                      padding: 16,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(520px, 92vw)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0b0b0b',
+	                        padding: 12,
+	                        color: '#fff',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 14, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          {graphicPreviewModal.title}
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => setGraphicPreviewModal(null)}
+	                          style={{
+	                            color: '#fff',
+	                            background: 'rgba(255,255,255,0.08)',
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10 }}>
+	                        <img
+	                          src={graphicPreviewModal.src}
+	                          alt=""
+	                          style={{
+	                            maxWidth: '100%',
+	                            maxHeight: '80vh',
+	                            width: '100%',
+	                            height: 'auto',
+	                            objectFit: 'contain',
+	                            display: 'block',
+	                            background: '#000',
+	                            borderRadius: 10,
+	                          }}
+	                        />
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {graphicDeleteModal ? (
+	                  <div
+	                    role="dialog"
+	                    aria-modal="true"
+	                    onClick={() => {
+	                      if (graphicDeleteBusy) return
+	                      setGraphicDeleteModal(null)
+	                    }}
+	                    style={{
+	                      position: 'fixed',
+	                      inset: 0,
+	                      zIndex: 6500,
+	                      background: 'rgba(0,0,0,0.65)',
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      padding: 16,
+	                    }}
+	                  >
+	                    <div
+	                      onClick={(e) => e.stopPropagation()}
+	                      style={{
+	                        width: 'min(560px, 100%)',
+	                        borderRadius: 14,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0b0b0b',
+	                        padding: 14,
+	                        color: '#fff',
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+	                        <div style={{ fontWeight: 900, fontSize: 16, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          Delete graphic?
+	                        </div>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            if (graphicDeleteBusy) return
+	                            setGraphicDeleteModal(null)
+	                          }}
+	                          style={{
+	                            color: '#fff',
+	                            background: 'rgba(255,255,255,0.08)',
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            padding: '6px 8px',
+	                            borderRadius: 10,
+	                            cursor: 'pointer',
+	                            fontWeight: 900,
+	                          }}
+	                          aria-label="Close"
+	                        >
+	                          ✕
+	                        </button>
+	                      </div>
+	                      <div style={{ marginTop: 10, color: '#ddd', lineHeight: 1.35 }}>
+	                        <div style={{ fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+	                          {graphicDeleteModal.title}
+	                        </div>
+	                        <div style={{ marginTop: 6, color: '#bbb' }}>This cannot be undone.</div>
+	                        {graphicDeleteInUse ? (
+	                          <div style={{ marginTop: 8, color: '#ff9b9b' }}>
+	                            This graphic is currently used on your timeline. Remove it from the timeline before deleting.
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                      {graphicDeleteError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{graphicDeleteError}</div> : null}
+	                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            if (graphicDeleteBusy) return
+	                            setGraphicDeleteModal(null)
+	                          }}
+	                          style={{
+	                            padding: '10px 12px',
+	                            borderRadius: 10,
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            background: '#000',
+	                            color: '#fff',
+	                            fontWeight: 900,
+	                            cursor: 'pointer',
+	                          }}
+	                        >
+	                          Cancel
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={async () => {
+	                            if (graphicDeleteBusy) return
+	                            if (graphicDeleteInUse) return
+	                            setGraphicDeleteBusy(true)
+	                            setGraphicDeleteError(null)
+	                            try {
+	                              await deleteGraphicUpload(graphicDeleteModal.id)
+	                              setGraphicDeleteModal(null)
+	                            } catch (e: any) {
+	                              const msg = String(e?.message || 'Failed to delete')
+	                              setGraphicDeleteError(msg === 'in_use' ? 'This graphic is currently used on your timeline.' : msg)
+	                            } finally {
+	                              setGraphicDeleteBusy(false)
+	                            }
+	                          }}
+	                          style={{
+	                            padding: '10px 12px',
+	                            borderRadius: 10,
+	                            border: '1px solid rgba(255,255,255,0.18)',
+	                            background: '#ff3b30',
+	                            color: '#fff',
+	                            fontWeight: 900,
+	                            cursor: graphicDeleteInUse ? 'not-allowed' : 'pointer',
+	                            opacity: graphicDeleteInUse ? 0.6 : 1,
+	                          }}
+	                        >
+	                          {graphicDeleteBusy ? 'Deleting…' : 'Delete'}
+	                        </button>
+	                      </div>
+	                    </div>
+	                  </div>
+	                ) : null}
+	              </>
+	            ) : addStep === 'graphic_new' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Upload Graphic</h1>
+	                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Name</div>
+	                    <input
+	                      value={graphicNewName}
+	                      onChange={(e) => setGraphicNewName(e.target.value)}
+	                      placeholder="Name"
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                      }}
+	                    />
+	                  </label>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Description</div>
+	                    <textarea
+	                      value={graphicNewDescription}
+	                      onChange={(e) => setGraphicNewDescription(e.target.value)}
+	                      placeholder="Description"
+	                      rows={4}
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                        resize: 'vertical',
+	                      }}
+	                    />
+	                  </label>
+	                  <div>
+	                    <input
+	                      type="file"
+	                      accept="image/*"
+	                      disabled={graphicUploadBusy || !graphicNewName.trim()}
+	                      onChange={(e) => {
+	                        const f = e.target.files && e.target.files[0]
+	                        e.currentTarget.value = ''
+	                        if (!f) return
+	                        setGraphicUploadError(null)
+	                        setGraphicUploadBusy(true)
+	                        uploadGraphicFile(f, { name: graphicNewName.trim(), description: graphicNewDescription.trim() || undefined })
+	                          .then(() => {
+	                            setAddStep('graphic')
+	                            openGraphicPicker().catch(() => {})
+	                          })
+	                          .catch(() => setGraphicUploadError('Failed to upload graphic.'))
+	                          .finally(() => setGraphicUploadBusy(false))
+	                      }}
+	                    />
+	                  </div>
+	                </div>
+	                {graphicUploadError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{graphicUploadError}</div> : null}
+	              </>
+	            ) : addStep === 'graphic_edit' ? (
+	              <>
+	                <h1 style={{ margin: '12px 0 14px', fontSize: 28 }}>Edit Graphic</h1>
+	                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Name</div>
+	                    <input
+	                      value={graphicEditName}
+	                      onChange={(e) => setGraphicEditName(e.target.value)}
+	                      placeholder="Name"
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                      }}
+	                    />
+	                  </label>
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ fontWeight: 900 }}>Description</div>
+	                    <textarea
+	                      value={graphicEditDescription}
+	                      onChange={(e) => setGraphicEditDescription(e.target.value)}
+	                      placeholder="Description"
+	                      rows={4}
+	                      style={{
+	                        width: '100%',
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: 'rgba(255,255,255,0.06)',
+	                        color: '#fff',
+	                        fontSize: 16,
+	                        resize: 'vertical',
+	                      }}
+	                    />
+	                  </label>
+	                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                    <button
+	                      type="button"
+	                      onClick={async () => {
+	                        if (graphicEditSaving) return
+	                        const id = Number(graphicEditId || 0)
+	                        if (!Number.isFinite(id) || id <= 0) return
+	                        setGraphicEditSaving(true)
+	                        setGraphicEditError(null)
+	                        try {
+	                          await updateGraphicMetadata(id, { name: graphicEditName.trim(), description: graphicEditDescription.trim() })
+	                          setAddStep('graphic')
+	                          openGraphicPicker().catch(() => {})
+	                        } catch (e: any) {
+	                          setGraphicEditError(String(e?.message || 'Failed to save changes'))
+	                        } finally {
+	                          setGraphicEditSaving(false)
+	                        }
+	                      }}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(10,132,255,0.65)',
+	                        background: '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
+	                      {graphicEditSaving ? 'Saving…' : 'Save'}
+	                    </button>
+	                  </div>
+	                </div>
+	                {graphicEditError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{graphicEditError}</div> : null}
 	              </>
 	            ) : addStep === 'logo' ? (
 	              <>
