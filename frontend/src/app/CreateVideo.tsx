@@ -509,6 +509,7 @@ export default function CreateVideo() {
   const [graphicDeleteError, setGraphicDeleteError] = useState<string | null>(null)
   const [graphicDeleteBusy, setGraphicDeleteBusy] = useState(false)
   const [graphicDeleteInUse, setGraphicDeleteInUse] = useState(false)
+  const graphicUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [logoPickerLoading, setLogoPickerLoading] = useState(false)
   const [logoPickerError, setLogoPickerError] = useState<string | null>(null)
   const [logoPickerItems, setLogoPickerItems] = useState<UploadListItem[]>([])
@@ -13472,6 +13473,7 @@ export default function CreateVideo() {
 	                      alignItems: 'center',
 	                      justifyContent: 'center',
 	                      padding: 16,
+	                      paddingTop: 64,
 	                    }}
 	                  >
 	                    <div
@@ -13527,6 +13529,7 @@ export default function CreateVideo() {
 	                      alignItems: 'flex-start',
 	                      justifyContent: 'flex-start',
 	                      padding: 16,
+	                      paddingTop: 64,
 	                    }}
 	                  >
 	                    <div
@@ -13741,26 +13744,64 @@ export default function CreateVideo() {
 	                      }}
 	                    />
 	                  </label>
-	                  <div>
-	                    <input
-	                      type="file"
-	                      accept="image/*"
-	                      disabled={graphicUploadBusy || !graphicNewName.trim()}
-	                      onChange={(e) => {
-	                        const f = e.target.files && e.target.files[0]
-	                        e.currentTarget.value = ''
-	                        if (!f) return
+	                  <input
+	                    ref={graphicUploadInputRef}
+	                    type="file"
+	                    accept="image/*"
+	                    style={{ display: 'none' }}
+	                    onChange={(e) => {
+	                      const f = e.target.files && e.target.files[0]
+	                      e.currentTarget.value = ''
+	                      if (!f) return
+	                      setGraphicUploadError(null)
+	                      setGraphicUploadBusy(true)
+	                      uploadGraphicFile(f, { name: graphicNewName.trim(), description: graphicNewDescription.trim() || undefined })
+	                        .then(() => {
+	                          setAddStep('graphic')
+	                          openGraphicPicker().catch(() => {})
+	                        })
+	                        .catch(() => setGraphicUploadError('Failed to upload graphic.'))
+	                        .finally(() => setGraphicUploadBusy(false))
+	                    }}
+	                  />
+	                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        if (graphicUploadBusy) return
 	                        setGraphicUploadError(null)
-	                        setGraphicUploadBusy(true)
-	                        uploadGraphicFile(f, { name: graphicNewName.trim(), description: graphicNewDescription.trim() || undefined })
-	                          .then(() => {
-	                            setAddStep('graphic')
-	                            openGraphicPicker().catch(() => {})
-	                          })
-	                          .catch(() => setGraphicUploadError('Failed to upload graphic.'))
-	                          .finally(() => setGraphicUploadBusy(false))
+	                        setAddStep('graphic')
+	                        openGraphicPicker().catch(() => {})
 	                      }}
-	                    />
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#000',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: 'pointer',
+	                      }}
+	                    >
+	                      Cancel
+	                    </button>
+	                    <button
+	                      type="button"
+	                      disabled={graphicUploadBusy || !graphicNewName.trim()}
+	                      onClick={() => graphicUploadInputRef.current?.click()}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(10,132,255,0.65)',
+	                        background: '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: graphicUploadBusy || !graphicNewName.trim() ? 'not-allowed' : 'pointer',
+	                        opacity: graphicUploadBusy || !graphicNewName.trim() ? 0.6 : 1,
+	                      }}
+	                    >
+	                      {graphicUploadBusy ? 'Uploading…' : 'Upload'}
+	                    </button>
 	                  </div>
 	                </div>
 	                {graphicUploadError ? <div style={{ color: '#ff9b9b', marginTop: 10 }}>{graphicUploadError}</div> : null}
