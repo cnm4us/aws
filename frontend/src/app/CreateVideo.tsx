@@ -11026,6 +11026,34 @@ export default function CreateVideo() {
   const exportNow = useCallback(async () => {
     if (!(totalSeconds > 0)) return
     if (!project?.id) return
+    const existingName = String(project?.name || '').trim()
+    if (!existingName) {
+      const suggested = `Timeline ${new Date().toISOString().slice(0, 10)}`
+      const entered = window.prompt('Name this timeline before exporting:', suggested)
+      if (entered == null) return
+      const nextName = String(entered).trim()
+      if (!nextName) {
+        window.alert('Timeline name is required.')
+        return
+      }
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ name: nextName }),
+        })
+        const json: any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.error || 'failed_to_save_name'))
+        setProject((prev) => (prev ? { ...prev, name: nextName } : prev))
+      } catch (e: any) {
+        window.alert(e?.message || 'Failed to save timeline name')
+        return
+      }
+    }
     setExporting(true)
     setExportError(null)
     setExportStatus('Starting export…')
