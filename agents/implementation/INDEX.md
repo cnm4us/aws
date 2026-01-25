@@ -10,7 +10,8 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_63.md` — Create Video: Audio Track v1 (single system background track)
 - `agents/implementation/plan_64.md` — Create Video: Freeze Frames v1 (as `freeze_frame` image segments)
 - `agents/implementation/plan_65.md` — Create Video: Logo Track v1 (topmost overlay)
+- `agents/implementation/plan_68.md` — Timeline-first library (Uploads vs Exports vs Productions)
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`
-  - Next: Logo Track v1 (`plan_65.md`)
+  - Next: Timeline-first library (`plan_68.md`)
