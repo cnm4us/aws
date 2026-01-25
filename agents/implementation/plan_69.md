@@ -136,6 +136,6 @@ Status: Pending
   - `npm run web:build` passes.
 
 ## 6. Open Questions (to confirm before coding)
-1) Should `/assets/video` be a dedicated list, or just link to `/uploads` (raw videos only) initially?
-2) Do we want a dedicated `/timelines` page (list projects) outside of Create Video’s in-page picker, or keep the picker-only for now?
-
+Resolved:
+1) `/assets/video` should be a dedicated list (aligned with the new architecture).
+2) Add a dedicated `/timelines` page (list projects) outside of Create Video’s in-page picker.
