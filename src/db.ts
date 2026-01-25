@@ -82,6 +82,9 @@ export async function ensureSchema(db: DB) {
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS origin_space_id BIGINT UNSIGNED NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS source_deleted_at DATETIME NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS is_system TINYINT(1) NOT NULL DEFAULT 0`);
+	  // Plan 68: discriminate raw uploads vs Create Video exports, and link export uploads back to their timeline project.
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS video_role ENUM('source','export') NULL`);
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS create_video_project_id BIGINT UNSIGNED NULL`);
 	  // Plan 51: richer system audio metadata (selectable by creators)
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS artist VARCHAR(255) NULL`);
 	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads (user_id)`);
@@ -89,9 +92,10 @@ export async function ensureSchema(db: DB) {
 	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_space_id ON uploads (space_id)`);
 	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_origin_space_id ON uploads (origin_space_id)`);
 	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_source_deleted_at ON uploads (source_deleted_at, id)`); } catch {}
-	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
-	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
-	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_system_status ON uploads (kind, is_system, status, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_project ON uploads (video_role, create_video_project_id, id)`); } catch {}
 
 		  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
 		  await db.query(`
@@ -702,28 +706,31 @@ export async function ensureSchema(db: DB) {
 
   // --- Create Video projects (Plan 62) ---
   // Timeline-first composer projects (separate from production drafts).
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS create_video_projects (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      user_id BIGINT UNSIGNED NOT NULL,
-      status ENUM('active','archived') NOT NULL DEFAULT 'active',
-      timeline_json JSON NOT NULL,
-      last_export_upload_id BIGINT UNSIGNED NULL,
-      last_export_job_id BIGINT UNSIGNED NULL,
+	  await db.query(`
+	    CREATE TABLE IF NOT EXISTS create_video_projects (
+	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+	      user_id BIGINT UNSIGNED NOT NULL,
+	      name VARCHAR(255) NULL,
+	      status ENUM('active','archived') NOT NULL DEFAULT 'active',
+	      timeline_json JSON NOT NULL,
+	      last_export_upload_id BIGINT UNSIGNED NULL,
+	      last_export_job_id BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      archived_at TIMESTAMP NULL DEFAULT NULL,
-      active_key TINYINT GENERATED ALWAYS AS (CASE WHEN archived_at IS NULL THEN 1 ELSE NULL END) STORED,
-      UNIQUE KEY uniq_create_video_projects_active (user_id, active_key),
-      KEY idx_create_video_projects_user (user_id, updated_at, id),
-      KEY idx_create_video_projects_status (status, archived_at, id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `);
-  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS status ENUM('active','archived') NOT NULL DEFAULT 'active'`);
-  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
-  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_upload_id BIGINT UNSIGNED NULL`);
-  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_job_id BIGINT UNSIGNED NULL`);
-  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_create_video_projects_user ON create_video_projects (user_id, updated_at, id)`); } catch {}
+	      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	      archived_at TIMESTAMP NULL DEFAULT NULL,
+	      active_key TINYINT GENERATED ALWAYS AS (CASE WHEN archived_at IS NULL THEN 1 ELSE NULL END) STORED,
+	      KEY idx_create_video_projects_user (user_id, updated_at, id),
+	      KEY idx_create_video_projects_status (status, archived_at, id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+	  `);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS status ENUM('active','archived') NOT NULL DEFAULT 'active'`);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_upload_id BIGINT UNSIGNED NULL`);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_job_id BIGINT UNSIGNED NULL`);
+	  // Plan 68: allow multiple active projects per user (timeline-first library). Best-effort drop of legacy uniqueness.
+	  try { await db.query(`ALTER TABLE create_video_projects DROP INDEX uniq_create_video_projects_active`); } catch {}
+	  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_create_video_projects_user ON create_video_projects (user_id, updated_at, id)`); } catch {}
 
 	  // --- Media processing jobs (Plan 36 / feature_08) ---
 	  // DB-backed queue; logs/artifacts stored in S3 with pointers in DB.

@@ -21,7 +21,7 @@ Out of scope (for this plan):
 ## 2. Step-by-Step Plan
 
 ### 1) Schema + Discriminators
-Status: Pending
+Status: Completed
 
 Changes:
 - Allow **multiple** Create Video timelines per user:
@@ -40,6 +40,8 @@ Notes:
 Testing:
 - `npm run build` (ensures TS compiles after schema code changes).
 - Manual smoke: start server and confirm no DB init errors.
+
+Test log: `agents/implementation/tests/plan_68/step_01_schema.md`
 
 Checkpoint: Wait for approval before proceeding.
 
