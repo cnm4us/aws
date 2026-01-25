@@ -261,6 +261,25 @@ function parseReturnMode(): 'picker' | null {
   }
 }
 
+function buildBackToPickerHrefWithRefresh(
+  returnMode: 'picker' | null,
+  refreshPresetId?: number | null
+): string | null {
+  if (returnMode !== 'picker') return null
+  const id = refreshPresetId == null ? NaN : Number(refreshPresetId)
+  const refresh = Number.isFinite(id) && id > 0 ? id : null
+  try {
+    const url = new URL('/create-video', window.location.origin)
+    url.searchParams.set('cvOpenAdd', 'screenTitle')
+    if (refresh != null) url.searchParams.set('cvRefreshScreenTitlePresetId', String(refresh))
+    return `${url.pathname}${url.search}${url.hash || ''}`
+  } catch {
+    return refresh != null
+      ? `/create-video?cvOpenAdd=screenTitle&cvRefreshScreenTitlePresetId=${encodeURIComponent(String(refresh))}`
+      : '/create-video?cvOpenAdd=screenTitle'
+  }
+}
+
 export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
   const editPresetId = useMemo(() => parseEditPresetId(), [])
@@ -503,7 +522,7 @@ export default function ScreenTitlePresetsPage() {
       }
       await load()
       const refreshId = selectedId != null ? Number(selectedId) : createdId
-      const href = backToPickerHrefWithRefresh(refreshId)
+      const href = buildBackToPickerHrefWithRefresh(returnMode, refreshId)
       if (href) {
         window.location.href = href
         return
@@ -513,7 +532,7 @@ export default function ScreenTitlePresetsPage() {
     } finally {
       setSaving(false)
     }
-  }, [me?.userId, draft, selectedId, load, backToPickerHrefWithRefresh])
+  }, [me?.userId, draft, selectedId, load, returnMode])
 
   const deletePreset = useCallback(async (id: number) => {
     if (!id) return
@@ -617,23 +636,6 @@ export default function ScreenTitlePresetsPage() {
       return '/create-video?cvOpenAdd=screenTitle'
     }
   }, [returnMode])
-
-  const backToPickerHrefWithRefresh = useCallback(
-    (refreshPresetId?: number | null) => {
-      if (returnMode !== 'picker') return null
-      const id = refreshPresetId == null ? NaN : Number(refreshPresetId)
-      const refresh = Number.isFinite(id) && id > 0 ? id : null
-      try {
-        const url = new URL('/create-video', window.location.origin)
-        url.searchParams.set('cvOpenAdd', 'screenTitle')
-        if (refresh != null) url.searchParams.set('cvRefreshScreenTitlePresetId', String(refresh))
-        return `${url.pathname}${url.search}${url.hash || ''}`
-      } catch {
-        return refresh != null ? `/create-video?cvOpenAdd=screenTitle&cvRefreshScreenTitlePresetId=${encodeURIComponent(String(refresh))}` : '/create-video?cvOpenAdd=screenTitle'
-      }
-    },
-    [returnMode]
-  )
 
   const backToTimelineHref = useMemo(() => {
     if (!fromHref) return null
