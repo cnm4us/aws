@@ -1332,6 +1332,18 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const openAddStepFromUrl = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return null
+      const qp = new URLSearchParams(window.location.search)
+      const raw = String(qp.get('cvOpenAdd') || '').trim()
+      if (!raw) return null
+      return raw
+    } catch {
+      return null
+    }
+  }, [])
+
   const handledReturnToScreenTitleRef = useRef(false)
   useEffect(() => {
     if (handledReturnToScreenTitleRef.current) return
@@ -5210,6 +5222,24 @@ export default function CreateVideo() {
       return []
     }
   }, [screenTitlePresets, screenTitlePresetsLoaded])
+
+  const handledOpenAddStepRef = useRef(false)
+  useEffect(() => {
+    if (handledOpenAddStepRef.current) return
+    if (!openAddStepFromUrl) return
+    handledOpenAddStepRef.current = true
+    setPickOpen(true)
+    if (openAddStepFromUrl === 'screenTitle') {
+      setAddStep('screenTitle')
+      void ensureScreenTitlePresets()
+    }
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('cvOpenAdd')
+      const next = `${url.pathname}${url.search}${url.hash || ''}`
+      window.history.replaceState({}, '', next)
+    } catch {}
+  }, [ensureScreenTitlePresets, openAddStepFromUrl])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
@@ -15452,13 +15482,7 @@ export default function CreateVideo() {
 		                  <button
 		                    type="button"
 		                    onClick={() => {
-		                      try {
-		                        const base = new URL(window.location.href)
-		                        const from = `${base.pathname}${base.search}${base.hash || ''}`
-		                        window.location.href = `/screen-title-presets?new=1&from=${encodeURIComponent(from)}`
-		                      } catch {
-		                        window.location.href = '/screen-title-presets?new=1'
-		                      }
+		                      window.location.href = `/screen-title-presets?new=1&return=picker&from=${encodeURIComponent('/create-video')}`
 		                    }}
 		                    style={{
 		                      padding: '10px 12px',
@@ -15530,14 +15554,7 @@ export default function CreateVideo() {
 		                              <button
 		                                type="button"
 		                                onClick={() => {
-		                                  try {
-		                                    const base = new URL(window.location.href)
-		                                    base.searchParams.set('cvRefreshScreenTitlePresetId', String(id))
-		                                    const from = `${base.pathname}${base.search}${base.hash || ''}`
-		                                    window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}&from=${encodeURIComponent(from)}`
-		                                  } catch {
-		                                    window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}`
-		                                  }
+		                                  window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}&return=picker&from=${encodeURIComponent('/create-video')}`
 		                                }}
 		                                style={{
 		                                  padding: '8px 10px',

@@ -251,10 +251,21 @@ function parseOpenNew(): boolean {
   }
 }
 
+function parseReturnMode(): 'picker' | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('return') || '').trim().toLowerCase()
+    return raw === 'picker' ? 'picker' : null
+  } catch {
+    return null
+  }
+}
+
 export default function ScreenTitlePresetsPage() {
   const fromHref = useMemo(() => parseFromHref(), [])
   const editPresetId = useMemo(() => parseEditPresetId(), [])
   const openNewParam = useMemo(() => parseOpenNew(), [])
+  const returnMode = useMemo(() => parseReturnMode(), [])
   const backHref = fromHref || '/uploads'
   const backLabel =
     fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
@@ -479,19 +490,20 @@ export default function ScreenTitlePresetsPage() {
         const res = await fetch('/api/screen-title-presets', { method: 'POST', credentials: 'same-origin', headers, body })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || 'Failed to create')
+        const createdId = Number(data?.preset?.id || data?.id || 0)
+        if (Number.isFinite(createdId) && createdId > 0) setSelectedId(createdId)
       } else {
         const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(selectedId))}`, { method: 'PATCH', credentials: 'same-origin', headers, body })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || 'Failed to save')
       }
       await load()
-      closeEdit()
     } catch (e: any) {
       setSaveError(e?.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
-  }, [me?.userId, draft, selectedId, load, closeEdit])
+  }, [me?.userId, draft, selectedId, load])
 
   const deletePreset = useCallback(async (id: number) => {
     if (!id) return
@@ -585,6 +597,17 @@ export default function ScreenTitlePresetsPage() {
     openEdit(p)
   }, [editPresetId, openEdit, presets])
 
+  const backToPickerHref = useMemo(() => {
+    if (returnMode !== 'picker') return null
+    try {
+      const url = new URL('/create-video', window.location.origin)
+      url.searchParams.set('cvOpenAdd', 'screenTitle')
+      return `${url.pathname}${url.search}${url.hash || ''}`
+    } catch {
+      return '/create-video?cvOpenAdd=screenTitle'
+    }
+  }, [returnMode])
+
   const backToTimelineHref = useMemo(() => {
     if (!fromHref) return null
     if (!fromHref.startsWith('/create-video')) return null
@@ -600,6 +623,14 @@ export default function ScreenTitlePresetsPage() {
       return fromHref
     }
   }, [fromHref, selectedId])
+
+  const goBackToStyles = useCallback(() => {
+    if (backToPickerHref) {
+      window.location.href = backToPickerHref
+      return
+    }
+    window.location.href = backHref
+  }, [backHref, backToPickerHref])
 
   const saveAndBackToTimeline = useCallback(async () => {
     if (!me?.userId) return
@@ -691,90 +722,31 @@ export default function ScreenTitlePresetsPage() {
         {saveError ? <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{saveError}</div> : null}
 
         {view === 'list' ? (
-          <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-            {activePresets.length === 0 ? (
-              <div style={{ color: '#bbb', padding: '8px 0' }}>No presets yet.</div>
-            ) : (
-              activePresets.map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: 14,
-                    background: 'rgba(88, 20, 24, 0.9)',
-                    padding: 14,
-                    display: 'grid',
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>{p.name}</div>
-                    <div style={{ color: '#a9a9a9', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
-                      {(p.description || '').trim() || 'No description'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#cfcfcf' }}>
-                      {styleLabel(p.style)} • {positionLabel(p.position)} • {timingLabel(p.timingRule, p.timingSeconds)}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={() => deletePreset(p.id)}
-                      disabled={deletingId === p.id || saving}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,59,48,0.95)',
-                        background: '#ff3b30',
-                        color: '#fff',
-                        fontWeight: 850,
-                        cursor: deletingId === p.id ? 'default' : 'pointer',
-                        opacity: deletingId === p.id ? 0.7 : 1,
-                      }}
-                    >
-                      {deletingId === p.id ? 'Deleting…' : 'Delete'}
-                    </button>
-
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        onClick={() => clonePreset(p)}
-                        disabled={cloningId === p.id || saving || deletingId != null}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          background: '#000',
-                          color: '#fff',
-                          fontWeight: 750,
-                          cursor: cloningId === p.id ? 'default' : 'pointer',
-                          opacity: cloningId === p.id ? 0.7 : 1,
-                        }}
-                      >
-                        {cloningId === p.id ? 'Cloning…' : 'Clone'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(p)}
-                        disabled={saving || deletingId != null}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(10,132,255,0.95)',
-                          background: '#0a84ff',
-                          color: '#fff',
-                          fontWeight: 850,
-                          cursor: 'pointer',
-                          opacity: saving ? 0.7 : 1,
-                        }}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+          <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.35)' }}>
+            <div style={{ fontWeight: 900, fontSize: 16 }}>Styles are managed from Create Video</div>
+            <div style={{ marginTop: 8, color: '#bbb', lineHeight: 1.35 }}>
+              Open Create Video to select, edit, clone, or delete styles. This page is used for editing a specific style.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={openNew}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(10,132,255,0.95)',
+                  background: '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                New Style
+              </button>
+              <a href="/create-video?cvOpenAdd=screenTitle" style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 900, alignSelf: 'center' }}>
+                Go to Create Video
+              </a>
+            </div>
           </div>
         ) : (
           <div style={{ marginTop: 14 }}>
@@ -803,7 +775,7 @@ export default function ScreenTitlePresetsPage() {
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
                 <button
                   type="button"
-                  onClick={closeEdit}
+                  onClick={goBackToStyles}
                   style={{
                     padding: '8px 12px',
                     borderRadius: 10,
@@ -1576,7 +1548,7 @@ export default function ScreenTitlePresetsPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
               <button
                 type="button"
-                onClick={closeEdit}
+                onClick={goBackToStyles}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
