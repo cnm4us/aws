@@ -486,24 +486,34 @@ export default function ScreenTitlePresetsPage() {
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
       const body = JSON.stringify(draft)
+      let createdId: number | null = null
       if (selectedId == null) {
         const res = await fetch('/api/screen-title-presets', { method: 'POST', credentials: 'same-origin', headers, body })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || 'Failed to create')
-        const createdId = Number(data?.preset?.id || data?.id || 0)
-        if (Number.isFinite(createdId) && createdId > 0) setSelectedId(createdId)
+        const n = Number(data?.preset?.id || data?.id || 0)
+        if (Number.isFinite(n) && n > 0) {
+          createdId = n
+          setSelectedId(n)
+        }
       } else {
         const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(selectedId))}`, { method: 'PATCH', credentials: 'same-origin', headers, body })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || 'Failed to save')
       }
       await load()
+      const refreshId = selectedId != null ? Number(selectedId) : createdId
+      const href = backToPickerHrefWithRefresh(refreshId)
+      if (href) {
+        window.location.href = href
+        return
+      }
     } catch (e: any) {
       setSaveError(e?.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
-  }, [me?.userId, draft, selectedId, load])
+  }, [me?.userId, draft, selectedId, load, backToPickerHrefWithRefresh])
 
   const deletePreset = useCallback(async (id: number) => {
     if (!id) return
@@ -607,6 +617,23 @@ export default function ScreenTitlePresetsPage() {
       return '/create-video?cvOpenAdd=screenTitle'
     }
   }, [returnMode])
+
+  const backToPickerHrefWithRefresh = useCallback(
+    (refreshPresetId?: number | null) => {
+      if (returnMode !== 'picker') return null
+      const id = refreshPresetId == null ? NaN : Number(refreshPresetId)
+      const refresh = Number.isFinite(id) && id > 0 ? id : null
+      try {
+        const url = new URL('/create-video', window.location.origin)
+        url.searchParams.set('cvOpenAdd', 'screenTitle')
+        if (refresh != null) url.searchParams.set('cvRefreshScreenTitlePresetId', String(refresh))
+        return `${url.pathname}${url.search}${url.hash || ''}`
+      } catch {
+        return refresh != null ? `/create-video?cvOpenAdd=screenTitle&cvRefreshScreenTitlePresetId=${encodeURIComponent(String(refresh))}` : '/create-video?cvOpenAdd=screenTitle'
+      }
+    },
+    [returnMode]
+  )
 
   const backToTimelineHref = useMemo(() => {
     if (!fromHref) return null
