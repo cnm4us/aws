@@ -80,7 +80,7 @@ Test log: `agents/implementation/tests/plan_68/step_02_backend_api.md`
 Checkpoint: Wait for approval before proceeding.
 
 ### 3) Export Job: Write to `renders/` + link export upload to project
-Status: Pending
+Status: Completed
 
 Changes:
 - Change Create Video export MP4 S3 key root from `videos/` to `renders/` (new stable discriminator).
@@ -104,6 +104,8 @@ Testing:
   - `uploads.video_role='export'` and `uploads.create_video_project_id` is set.
 - Thumbnails for export uploads should be **lazy-generated**:
   - If `/api/uploads/:id/thumb` is requested and the thumb does not exist yet, generate it on-demand (or enqueue generation) and the UI should fall back to poster/blank until the thumb becomes available.
+
+Test log: `agents/implementation/tests/plan_68/step_03_export_renders.md`
 
 Checkpoint: Wait for approval before proceeding.
 
