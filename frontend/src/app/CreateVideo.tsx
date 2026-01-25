@@ -63,10 +63,21 @@ type UploadSummary = { id: number; original_filename: string; modified_filename:
 
 type Project = {
   id: number
+  name?: string | null
   status: string
   timeline: Timeline
   lastExportJobId?: number | null
   lastExportUploadId?: number | null
+}
+
+type ProjectListItem = {
+  id: number
+  name: string | null
+  status: string
+  lastExportUploadId: number | null
+  createdAt: string
+  updatedAt: string
+  archivedAt: string | null
 }
 
 type SystemAudioItem = UploadListItem & {
@@ -140,6 +151,8 @@ type AddStep =
   | 'lowerThird_edit'
   | 'lowerThirdConfig'
   | 'screenTitle'
+
+const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
 const FREEZE_OPTIONS_SECONDS = [
   0,
@@ -453,6 +466,10 @@ export default function CreateVideo() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [projectPickerLoading, setProjectPickerLoading] = useState(false)
+  const [projectPickerError, setProjectPickerError] = useState<string | null>(null)
+  const [projectPickerItems, setProjectPickerItems] = useState<ProjectListItem[]>([])
   const [timeline, setTimeline] = useState<Timeline>({
     version: 'create_video_v1',
     playheadSeconds: 0,
@@ -4204,12 +4221,37 @@ export default function CreateVideo() {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         const csrf = getCsrfToken()
         if (csrf) headers['x-csrf-token'] = csrf
-        const res = await fetch('/api/create-video/project', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
-        const json: any = await res.json().catch(() => null)
-        if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-        const pj = (json?.project || null) as any
+        const qp = new URLSearchParams(window.location.search)
+        const qpProjectId = Number(String(qp.get('project') || '0'))
+        const storedProjectId = Number(String(localStorage.getItem(CURRENT_PROJECT_ID_KEY) || '0'))
+        const pickId = (n: number) => (Number.isFinite(n) && n > 0 ? n : null)
+        let desiredProjectId = pickId(qpProjectId) ?? pickId(storedProjectId)
+
+        let pj: any = null
+        if (desiredProjectId) {
+          const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(desiredProjectId))}`, { credentials: 'same-origin' })
+          const json: any = await res.json().catch(() => null)
+          if (res.ok && json?.project) {
+            pj = json.project
+          } else {
+            desiredProjectId = null
+          }
+        }
+
+        if (pj && String(pj?.status || '') === 'archived') {
+          pj = null
+        }
+
+        if (!pj) {
+          const res = await fetch('/api/create-video/projects', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+          pj = json?.project || null
+        }
+
         const id = Number(pj?.id)
         if (!Number.isFinite(id) || id <= 0) throw new Error('failed_to_load')
+        try { localStorage.setItem(CURRENT_PROJECT_ID_KEY, String(id)) } catch {}
 	        const tlRaw = pj?.timeline && typeof pj.timeline === 'object' ? pj.timeline : null
 	        const rawGuidelines: any[] = Array.isArray((tlRaw as any)?.guidelines) ? ((tlRaw as any).guidelines as any[]) : []
 	        const guidelinesMap = new Map<string, number>()
@@ -4317,7 +4359,7 @@ export default function CreateVideo() {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         const csrf = getCsrfToken()
         if (csrf) headers['x-csrf-token'] = csrf
-        const res = await fetch('/api/create-video/project', {
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/timeline`, {
           method: 'PATCH',
           credentials: 'same-origin',
           headers,
@@ -4343,7 +4385,7 @@ export default function CreateVideo() {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         const csrf = getCsrfToken()
         if (csrf) headers['x-csrf-token'] = csrf
-        const res = await fetch('/api/create-video/project', {
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/timeline`, {
           method: 'PATCH',
           credentials: 'same-origin',
           headers,
@@ -10795,25 +10837,93 @@ export default function CreateVideo() {
     }
   }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
 
-  const archiveAndRestart = useCallback(async () => {
-    if (!project?.id) return
-    const ok = window.confirm('Start a new Create Video project? This will archive the current timeline.')
-    if (!ok) return
+  const createNewProjectAndReload = useCallback(async () => {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      await fetch('/api/create-video/project/archive', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
-    } catch {}
-    undoStackRef.current = []
-    redoStackRef.current = []
-    setUndoDepth(0)
-    setRedoDepth(0)
+      const res = await fetch('/api/create-video/projects', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_create'))
+      const id = Number(json?.project?.id)
+      if (!Number.isFinite(id) || id <= 0) throw new Error('failed_to_create')
+      try { localStorage.setItem(CURRENT_PROJECT_ID_KEY, String(id)) } catch {}
+      window.location.href = `/create-video?project=${encodeURIComponent(String(id))}`
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const openProject = useCallback((projectId: number) => {
+    const id = Number(projectId)
+    if (!Number.isFinite(id) || id <= 0) return
+    try { localStorage.setItem(CURRENT_PROJECT_ID_KEY, String(id)) } catch {}
+    window.location.href = `/create-video?project=${encodeURIComponent(String(id))}`
+  }, [])
+
+  const refreshProjectPicker = useCallback(async () => {
+    setProjectPickerError(null)
+    setProjectPickerLoading(true)
     try {
-      localStorage.removeItem(`createVideoHistory:v1:${Number(project?.id)}`)
-    } catch {}
-    window.location.reload()
-  }, [project?.id])
+      const res = await fetch('/api/create-video/projects', { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: ProjectListItem[] = Array.isArray(json?.items) ? json.items : []
+      setProjectPickerItems(items)
+    } catch (e: any) {
+      setProjectPickerError(e?.message || 'Failed to load timelines')
+      setProjectPickerItems([])
+    } finally {
+      setProjectPickerLoading(false)
+    }
+  }, [])
+
+  const openProjectPicker = useCallback(async () => {
+    setProjectPickerOpen(true)
+    await refreshProjectPicker()
+  }, [refreshProjectPicker])
+
+  const renameProjectFromPicker = useCallback(
+    async (projectId: number) => {
+      const cur = projectPickerItems.find((p) => Number(p.id) === Number(projectId))
+      const initial = cur?.name ? String(cur.name) : ''
+      const next = window.prompt('Rename timeline', initial)
+      if (next == null) return
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ name: next }),
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_rename'))
+      await refreshProjectPicker()
+    },
+    [projectPickerItems, refreshProjectPicker]
+  )
+
+  const archiveProjectFromPicker = useCallback(
+    async (projectId: number) => {
+      const ok = window.confirm('Archive this timeline?')
+      if (!ok) return
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}/archive`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: '{}',
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_archive'))
+      await refreshProjectPicker()
+    },
+    [refreshProjectPicker]
+  )
 
   const cancelTimelineLongPress = useCallback((reason: string) => {
     const lp = timelineLongPressRef.current
@@ -10905,6 +11015,7 @@ export default function CreateVideo() {
 
   const exportNow = useCallback(async () => {
     if (!(totalSeconds > 0)) return
+    if (!project?.id) return
     setExporting(true)
     setExportError(null)
     setExportStatus('Starting export…')
@@ -10912,7 +11023,12 @@ export default function CreateVideo() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch('/api/create-video/project/export', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: '{}',
+      })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'export_failed'))
       setExportStatus('Export in progress…')
@@ -10921,14 +11037,15 @@ export default function CreateVideo() {
       setExportStatus(null)
       setExporting(false)
     }
-  }, [totalSeconds])
+  }, [project?.id, totalSeconds])
 
   useEffect(() => {
     if (!exporting) return
+    if (!project?.id) return
     let alive = true
     const tick = async () => {
       try {
-        const res = await fetch('/api/create-video/project/export-status', { credentials: 'same-origin' })
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export-status`, { credentials: 'same-origin' })
         const json: any = await res.json().catch(() => null)
         if (!alive) return
         const status = String(json?.status || '')
@@ -10939,7 +11056,7 @@ export default function CreateVideo() {
         if (status === 'completed') {
           const uploadId = Number(json?.resultUploadId)
           if (Number.isFinite(uploadId) && uploadId > 0) {
-            window.location.href = `/produce?upload=${encodeURIComponent(String(uploadId))}&from=${encodeURIComponent('/create-video')}`
+            window.location.href = `/exports?from=${encodeURIComponent('/create-video')}`
             return
           }
           setExportError('Export completed but missing upload id.')
@@ -10962,7 +11079,7 @@ export default function CreateVideo() {
       alive = false
       window.clearInterval(t)
     }
-  }, [exporting])
+  }, [exporting, project?.id])
 
   if (loading) {
     return (
@@ -10994,7 +11111,7 @@ export default function CreateVideo() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <button
               type="button"
-              onClick={archiveAndRestart}
+              onClick={openProjectPicker}
               style={{
                 padding: '10px 12px',
                 borderRadius: 10,
@@ -11005,7 +11122,7 @@ export default function CreateVideo() {
                 cursor: 'pointer',
               }}
             >
-              New Project
+              Timelines
             </button>
             <button
               type="button"
@@ -18036,6 +18153,125 @@ export default function CreateVideo() {
 			          </div>
 			        </div>
 			      ) : null}
+
+        {projectPickerOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 5200, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+            onClick={() => setProjectPickerOpen(false)}
+          >
+            <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#000', padding: '6px 0 10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setProjectPickerOpen(false)}
+                    style={{ color: '#0a84ff', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 14 }}
+                  >
+                    ← Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createNewProjectAndReload}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      background: '#0a84ff',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    New
+                  </button>
+                </div>
+                <h2 style={{ margin: '10px 0 0', fontSize: 22 }}>Timelines</h2>
+                {projectPickerError ? <div style={{ color: '#ff9b9b', marginTop: 8 }}>{projectPickerError}</div> : null}
+              </div>
+
+              {projectPickerLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+
+              <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+                {projectPickerItems.map((p) => {
+                  const isActive = String(p.status || '') === 'active'
+                  const isCurrent = Number(project?.id || 0) === Number(p.id)
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        border: isCurrent ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+                        background: 'rgba(255,255,255,0.04)',
+                        borderRadius: 12,
+                        padding: 12,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, color: isActive ? '#fff' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {p.name && String(p.name).trim() ? String(p.name) : `Untitled #${p.id}`}
+                          </div>
+                          <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
+                            {String(p.updatedAt || p.createdAt || '').slice(0, 10)} {isActive ? '' : '· Archived'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={() => openProject(p.id)}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(10,132,255,0.55)',
+                              background: '#0a84ff',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => renameProjectFromPicker(p.id)}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#0c0c0c',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isActive}
+                            onClick={() => archiveProjectFromPicker(p.id)}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,155,155,0.40)',
+                              background: isActive ? 'rgba(255,0,0,0.14)' : 'rgba(255,255,255,0.06)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: isActive ? 'pointer' : 'default',
+                            }}
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
 		      {guidelineMenuOpen ? (
 		        <div
