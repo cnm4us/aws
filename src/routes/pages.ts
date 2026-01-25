@@ -6740,6 +6740,22 @@ pagesRouter.get('/exports/', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
+pagesRouter.get('/assets', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/assets/', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/assets/:type', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/timelines', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/timelines/', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+
 pagesRouter.get('/logo-configs', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

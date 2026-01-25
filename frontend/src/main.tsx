@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadLogoConfigs, loadLowerThirds, loadScreenTitlePresets, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadAssets, loadTimelines, loadLogoConfigs, loadLowerThirds, loadScreenTitlePresets, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -19,6 +19,8 @@ const ProducePage = React.lazy(loadProduce)
 const EditVideoPage = React.lazy(loadEditVideo)
 const CreateVideoPage = React.lazy(loadCreateVideo)
 const ExportsPage = React.lazy(loadExports)
+const AssetsPage = React.lazy(loadAssets)
+const TimelinesPage = React.lazy(loadTimelines)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const LowerThirdsPage = React.lazy(loadLowerThirds)
 const ScreenTitlePresetsPage = React.lazy(loadScreenTitlePresets)
@@ -216,6 +218,22 @@ if (path === '/' || path === '') {
     <Layout label="Exports">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <ExportsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/assets')) {
+  root.render(
+    <Layout label="Assets">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <AssetsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/timelines')) {
+  root.render(
+    <Layout label="Timelines">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <TimelinesPage />
       </Suspense>
     </Layout>
   )

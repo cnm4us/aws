@@ -11,6 +11,8 @@ export const loadProduce = () => import('../app/Produce')
 export const loadEditVideo = () => import('../app/EditVideo')
 export const loadCreateVideo = () => import('../app/CreateVideo')
 export const loadExports = () => import('../app/Exports')
+export const loadAssets = () => import('../app/Assets')
+export const loadTimelines = () => import('../app/Timelines')
 export const loadLogoConfigs = () => import('../app/LogoConfigs')
 export const loadLowerThirds = () => import('../app/LowerThirds')
 export const loadScreenTitlePresets = () => import('../app/ScreenTitlePresets')
@@ -33,6 +35,8 @@ export function prefetchForHref(href: string) {
     else if (href.startsWith('/edit-video')) { void loadEditVideo() }
     else if (href.startsWith('/create-video')) { void loadCreateVideo() }
     else if (href.startsWith('/exports')) { void loadExports() }
+    else if (href.startsWith('/assets')) { void loadAssets() }
+    else if (href.startsWith('/timelines')) { void loadTimelines() }
     else if (href.startsWith('/logo-configs')) { void loadLogoConfigs() }
     else if (href.startsWith('/lower-thirds')) { void loadLowerThirds() }
     else if (href.startsWith('/screen-title-presets')) { void loadScreenTitlePresets() }
