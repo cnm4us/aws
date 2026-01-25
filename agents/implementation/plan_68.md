@@ -129,11 +129,11 @@ Testing:
 Test log: `agents/implementation/tests/plan_68/step_04_frontend_projects.md`
 
 ### 5) Frontend: Export UX (name prompt + redirect to /exports)
-Status: In progress
+Status: Completed
 
 Changes:
 - On “Export” click:
-  - (TODO) If project has no name (or empty) → prompt for name and save before exporting.
+  - If project has no name (or empty) → prompt for name and save before exporting.
   - Enqueue export and show “Exporting…” state (poll status).
   - On completion → redirect to `/exports`.
 
