@@ -164,7 +164,7 @@ Testing:
 Test log: `agents/implementation/tests/plan_68/step_06_exports_page.md`
 
 ### 7) Update `/uploads` to “raw video assets only”
-Status: Pending
+Status: Completed
 
 Changes:
 - Filter `/uploads` (video kind) to show `video_role='source'`, with fallback:
@@ -180,7 +180,7 @@ Testing:
 Checkpoint: Wait for approval before proceeding.
 
 ### 8) Ensure “Add Video” in Create Video uses raw uploads only
-Status: Pending
+Status: Completed
 
 Changes:
 - Update Create Video’s “Add → Video” picker to list only source uploads (exclude exports).
