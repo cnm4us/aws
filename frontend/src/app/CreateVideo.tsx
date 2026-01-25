@@ -17191,24 +17191,28 @@ export default function CreateVideo() {
 	                )
 	              })()}
 
-	            <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
-	                <a
-	                  href={(() => {
-	                    try {
-	                      const url = new URL(window.location.href)
-	                      url.searchParams.set('cvScreenTitleId', String(screenTitleEditor.id))
-	                      const from = `${url.pathname}${url.search}`
-	                      return `/screen-title-presets?from=${encodeURIComponent(from)}`
-	                    } catch {
-	                      return '/screen-title-presets'
-	                    }
-	                  })()}
-	                  style={{ color: '#0a84ff', textDecoration: 'none' }}
-	                >
-	                  Manage Styles
-	                </a>
-	              </div>
+		            <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+		                <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
+		                <button
+		                  type="button"
+		                  onClick={() => {
+		                    setPickOpen(true)
+		                    setAddStep('screenTitle')
+		                    void ensureScreenTitlePresets()
+		                  }}
+		                  style={{
+		                    color: '#0a84ff',
+		                    textDecoration: 'none',
+		                    background: 'transparent',
+		                    border: 'none',
+		                    padding: 0,
+		                    cursor: 'pointer',
+		                    font: 'inherit',
+		                  }}
+		                >
+		                  Manage Styles
+		                </button>
+		              </div>
 
 	              <select
 	                value={String(screenTitleEditor.presetId ?? '')}
