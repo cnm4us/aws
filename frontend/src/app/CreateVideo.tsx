@@ -57,6 +57,8 @@ type UploadListItem = {
   image_role?: string | null
   uploaded_at?: string | null
   created_at: string
+  s3_key?: string | null
+  video_role?: string | null
 }
 
 type UploadSummary = { id: number; original_filename: string; modified_filename: string | null; duration_seconds?: number | null }
@@ -5132,7 +5134,15 @@ export default function CreateVideo() {
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
       const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      setPickerItems(items)
+      const isSourceVideoUpload = (u: UploadListItem): boolean => {
+        const role = u.video_role ? String(u.video_role) : ''
+        if (role === 'source') return true
+        if (role === 'export') return false
+        const key = u.s3_key ? String(u.s3_key) : ''
+        if (key.includes('/renders/') || key.startsWith('renders/')) return false
+        return true
+      }
+      setPickerItems(items.filter(isSourceVideoUpload))
     } catch (e: any) {
       setPickerError(e?.message || 'Failed to load videos')
     } finally {

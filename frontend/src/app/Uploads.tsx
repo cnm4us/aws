@@ -1,45 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
-type PublicationSummary = {
-  spaceId: number
-  spaceName: string
-  spaceType: 'personal' | 'group' | 'channel' | string
-  status: string
-  publishedAt: string | null
-  unpublishedAt: string | null
-}
-
-type ProductionSummary = {
-  id: number
-  name: string | null
-  status: string | null
-  created_at?: string | null
-  started_at?: string | null
-  completed_at?: string | null
-}
-
 type UploadListItem = {
   id: number
   original_filename: string
   modified_filename: string | null
   description: string | null
   size_bytes: number | null
+  duration_seconds?: number | null
   width: number | null
   height: number | null
   status: string
-  kind?: 'video' | 'logo' | 'image' | string
+  kind?: 'video' | 'logo' | 'audio' | 'image' | string
   image_role?: string | null
   created_at: string
   uploaded_at: string | null
   source_deleted_at?: string | null
+  s3_key?: string | null
+  video_role?: string | null
   poster_portrait_cdn?: string
   poster_landscape_cdn?: string
   poster_cdn?: string
   poster_portrait_s3?: string
   poster_landscape_s3?: string
   poster_s3?: string
-  publications?: PublicationSummary[]
-  productions?: ProductionSummary[]
 }
 
 type MeResponse = {
@@ -48,23 +31,11 @@ type MeResponse = {
   displayName: string | null
 }
 
-type ActiveDraftSummary = {
-  id: number
-  uploadId: number
-  updatedAt: string
-}
-
-type SpaceBuckets = {
-  personal: PublicationSummary[]
-  groups: PublicationSummary[]
-  channels: PublicationSummary[]
-  other: PublicationSummary[]
-}
-
 function formatBytes(bytes: number | null): string {
-  if (!bytes && bytes !== 0) return ''
+  if (bytes == null) return ''
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let value = bytes
+  let value = Number(bytes)
+  if (!Number.isFinite(value) || value <= 0) return ''
   let unitIndex = 0
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024
@@ -80,19 +51,12 @@ function formatDate(input: string | null): string {
   return d.toISOString().slice(0, 10)
 }
 
-function partitionPublications(list: PublicationSummary[] | undefined): SpaceBuckets {
-  const buckets: SpaceBuckets = { personal: [], groups: [], channels: [], other: [] }
-  if (!Array.isArray(list)) return buckets
-  for (const item of list) {
-    const status = item.status
-    if (status === 'unpublished' || status === 'rejected') continue
-    const type = item.spaceType
-    if (type === 'personal') buckets.personal.push(item)
-    else if (type === 'group') buckets.groups.push(item)
-    else if (type === 'channel') buckets.channels.push(item)
-    else buckets.other.push(item)
-  }
-  return buckets
+function formatDuration(seconds: number | null | undefined): string {
+  const s = seconds == null ? 0 : Number(seconds)
+  if (!Number.isFinite(s) || s <= 0) return ''
+  const m = Math.floor(s / 60)
+  const ss = Math.floor(s % 60)
+  return `${m}:${String(ss).padStart(2, '0')}`
 }
 
 function pickPoster(u: UploadListItem): string | undefined {
@@ -108,6 +72,15 @@ function pickPoster(u: UploadListItem): string | undefined {
 
 function buildUploadThumbUrl(uploadId: number): string {
   return `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+}
+
+function isSourceVideoUpload(u: UploadListItem): boolean {
+  const role = u.video_role ? String(u.video_role) : ''
+  if (role === 'source') return true
+  if (role === 'export') return false
+  const key = u.s3_key ? String(u.s3_key) : ''
+  if (key.includes('/renders/') || key.startsWith('renders/')) return false
+  return true
 }
 
 const VideoThumb: React.FC<{
@@ -177,65 +150,46 @@ const UploadsPage: React.FC = () => {
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [uploads, setUploads] = useState<UploadListItem[]>([])
-  const [draftsByUploadId, setDraftsByUploadId] = useState<Record<number, ActiveDraftSummary>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState<Record<number, boolean>>({})
-  const [deletingSource, setDeletingSource] = useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<Record<number, boolean>>({})
+
   const [editUpload, setEditUpload] = useState<UploadListItem | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
-  const [openUploadId, setOpenUploadId] = useState<number | null>(null)
-  const [isNarrowScreen, setIsNarrowScreen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 640 : false))
 
-	const loadUploads = useCallback(
-	    async (userId: number) => {
+  const loadUploads = useCallback(
+    async (userId: number) => {
       setLoading(true)
       setError(null)
-	      try {
-	        const params = new URLSearchParams({
-	          limit: '100',
-	          user_id: String(userId),
-	          include_productions: kind === 'video' ? '1' : '0',
-	          kind,
-	        })
-	        if (kind === 'image' && imageRole) params.set('image_role', imageRole)
-	        const [res, draftsRes] = await Promise.all([
-	          fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' }),
-	          kind === 'video' ? fetch('/api/production-drafts/active', { credentials: 'same-origin' }) : Promise.resolve(null as any),
-	        ])
-	        if (!res.ok) throw new Error('failed_to_fetch_uploads')
-	        const data = (await res.json()) as UploadListItem[]
+      try {
+        const params = new URLSearchParams({
+          limit: '200',
+          user_id: String(userId),
+          include_productions: '0',
+          kind,
+        })
+        if (kind === 'image' && imageRole) params.set('image_role', imageRole)
+        const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
+        if (!res.ok) throw new Error('failed_to_fetch_uploads')
+        const data = (await res.json()) as UploadListItem[]
         const items = Array.isArray(data) ? data : []
-        // Hide uploads whose source file was deleted (keeps DB rows + publications intact, but removes them from the "Uploads" view).
-        setUploads(kind === 'video' ? items.filter((u) => !u.source_deleted_at) : items)
-
-        if (kind === 'video') {
-          const dj = draftsRes ? await draftsRes.json().catch(() => ({})) : {}
-          const rows: ActiveDraftSummary[] = Array.isArray(dj?.items) ? dj.items : []
-          const map: Record<number, ActiveDraftSummary> = {}
-          for (const r of rows) {
-            const uploadId = Number((r as any).uploadId)
-            const id = Number((r as any).id)
-            if (!Number.isFinite(uploadId) || uploadId <= 0) continue
-            if (!Number.isFinite(id) || id <= 0) continue
-            map[uploadId] = { id, uploadId, updatedAt: String((r as any).updatedAt || '') }
-          }
-          setDraftsByUploadId(map)
-        } else {
-          setDraftsByUploadId({})
-        }
+        const visible =
+          kind === 'video'
+            ? items.filter((u) => !u.source_deleted_at && isSourceVideoUpload(u))
+            : items
+        setUploads(visible)
       } catch (err: any) {
         setError(err?.message ?? 'Failed to load uploads')
       } finally {
         setLoading(false)
       }
-	    },
-	    [kind, imageRole]
-	  )
+    },
+    [kind, imageRole]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -252,397 +206,307 @@ const UploadsPage: React.FC = () => {
     }
   }, [loadUploads])
 
-  const renderPublicationLines = useCallback((upload: UploadListItem) => {
-    const buckets = partitionPublications(upload.publications)
-    const nodes: React.ReactNode[] = []
-    if (buckets.personal.length) {
-      nodes.push(
-        <div key="personal" style={{ color: '#888' }}>
-          Personal Space
-        </div>
-      )
-    }
-    if (buckets.groups.length) {
-      const names = buckets.groups.map((p) => p.spaceName || `Group ${p.spaceId}`)
-      nodes.push(
-        <div key="groups" style={{ color: '#888' }}>
-          Groups: {names.join(', ')}
-        </div>
-      )
-    }
-    if (buckets.channels.length) {
-      const names = buckets.channels.map((p) => p.spaceName || `Channel ${p.spaceId}`)
-      nodes.push(
-        <div key="channels" style={{ color: '#888' }}>
-          Channels: {names.join(', ')}
-        </div>
-      )
-    }
-    if (buckets.other.length) {
-      const names = buckets.other.map((p) => p.spaceName || `Space ${p.spaceId}`)
-      nodes.push(
-        <div key="other" style={{ color: '#888' }}>
-          {names.join(', ')}
-        </div>
-      )
-    }
-    return nodes
-  }, [])
+  const title = useMemo(() => {
+    if (kind === 'video') return 'My Videos'
+    if (kind === 'logo') return 'My Logos'
+    if (imageRole === 'lower_third') return 'My Lower Third Images'
+    if (imageRole === 'overlay') return 'My Overlay Images'
+    if (imageRole === 'title_page') return 'My Title Pages'
+    return 'My Images'
+  }, [imageRole, kind])
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpenUploadId(null)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  const subtitle = useMemo(() => {
+    if (kind === 'video') return 'Raw uploaded video assets (source inputs only).'
+    if (kind === 'logo') return 'Upload logos to use as watermarks in videos.'
+    if (imageRole === 'lower_third') return 'Upload PNG lower third images to overlay on your videos.'
+    if (imageRole === 'overlay') return 'Upload images to insert as full-screen overlays in Create Video.'
+    if (imageRole === 'title_page') return 'Upload title page images for use in Create Video.'
+    return 'Upload images for use in Create Video.'
+  }, [imageRole, kind])
 
-  useEffect(() => {
-    const onResize = () => setIsNarrowScreen(window.innerWidth < 640)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+  if (me === null) {
+    return (
+      <div style={{ color: '#fff', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+        <h2>Uploads</h2>
+        <p>
+          Please <a href="/login" style={{ color: '#0a84ff' }}>sign in</a> to view your uploads.
+        </p>
+      </div>
+    )
+  }
 
-	const uploadCards = useMemo(() => {
-      const fromHref = `${window.location.pathname}${window.location.search}`
-	    return uploads.map((upload) => {
-	      const poster = pickPoster(upload)
-	      const logoSrc = (kind === 'logo' || kind === 'image') ? `/api/uploads/${encodeURIComponent(String(upload.id))}/file` : null
-	      const image =
-	        kind === 'logo' || kind === 'image' ? (
-	          <img
-	            src={logoSrc as string}
-            alt={kind === 'image' ? 'image' : 'logo'}
-            style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
-          />
-        ) : poster ? (
-          <img
-            src={poster}
-            alt="poster"
-            style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
-          />
-        ) : (
-          <div style={{ width: 96, height: 96, borderRadius: 8, background: '#1c1c1c' }} />
-        )
+  const uploadNewHref =
+    kind === 'video'
+      ? '/uploads/new?kind=video'
+      : kind === 'image'
+        ? `/uploads/new?kind=image&image_role=${encodeURIComponent(String(imageRole || 'title_page'))}`
+        : `/uploads/new?kind=${encodeURIComponent(String(kind))}`
 
-      const productionHref = `/productions?upload=${encodeURIComponent(String(upload.id))}`
-      const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
-      const description = upload.description && upload.description.trim().length > 0 ? upload.description.trim() : null
-      const date = formatDate(upload.created_at)
-      const size = formatBytes(upload.size_bytes)
-      const dimensions = upload.width && upload.height ? `${upload.width}×${upload.height}` : null
-      const metaPieces = [date, size, dimensions].filter((value) => value && value.length)
-      const metaLine = metaPieces.join(' / ')
-	      const publicationLines = renderPublicationLines(upload)
-	      const detailHref =
-	        kind === 'video'
-	          ? productionHref
-	          : kind === 'logo' || kind === 'image'
-	            ? logoSrc || '#'
-	            : '#'
-	      const isDeleting = !!deleting[upload.id]
-
-	      if (kind === 'video') {
-	        const href = productionHref
-	        const produceHref = `/produce?upload=${encodeURIComponent(String(upload.id))}&from=${encodeURIComponent(fromHref)}`
-	        const activeDraft = draftsByUploadId[upload.id] || null
-	        const sourceDeleted = !!upload.source_deleted_at
-        const isDeletingSource = !!deletingSource[upload.id]
-        const baseAspectRatio = upload.width && upload.height ? `${upload.width} / ${upload.height}` : '9 / 16'
-        const isLandscape = !!(upload.width && upload.height && upload.width > upload.height)
-        const isOpen = openUploadId === upload.id
-        const expandedForOverlay = isOpen && isNarrowScreen && isLandscape
-        const frameAspectRatio = expandedForOverlay ? '9 / 16' : baseAspectRatio
-        const productions = Array.isArray(upload.productions) ? upload.productions : []
-        return (
-          <div
-            key={upload.id}
-            style={{
-              borderRadius: 16,
-              border: '1px solid rgba(255,255,255,0.22)',
-              background: 'rgba(255,255,255,0.03)',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ width: '100%', position: 'relative', aspectRatio: frameAspectRatio, background: '#111' }}>
-              {expandedForOverlay ? (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ width: '100%', position: 'relative', aspectRatio: baseAspectRatio, background: '#111', flex: '0 0 auto' }}>
-                    <a href={href} style={{ position: 'absolute', inset: 0, display: 'block', textDecoration: 'none', zIndex: 1 }}>
-                      <VideoThumb
-                        uploadId={upload.id}
-                        fallbackSrc={poster}
-                        alt="poster"
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#111' }}
-                      />
-                    </a>
-                  </div>
-                  <div style={{ flex: '1 1 auto', background: '#0e0e0e' }} />
-                </div>
-              ) : (
-                <a href={href} style={{ position: 'absolute', inset: 0, display: 'block', textDecoration: 'none', zIndex: 1 }}>
-                  <VideoThumb
-                    uploadId={upload.id}
-                    fallbackSrc={poster}
-                    alt="poster"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#111' }}
-                  />
-                </a>
-              )}
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setOpenUploadId((prev) => (prev === upload.id ? null : upload.id))
-                }}
-                aria-label={isOpen ? 'Close details' : 'Open details'}
-                aria-expanded={isOpen}
+  return (
+    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+          {[
+            { label: 'Videos', kind: 'video' },
+            { label: 'Logos', kind: 'logo' },
+            { label: 'Title Pages', kind: 'image', image_role: 'title_page' },
+            { label: 'Lower Third Images', kind: 'image', image_role: 'lower_third' },
+            { label: 'Overlay Images', kind: 'image', image_role: 'overlay' },
+          ].map((t: any) => {
+            const active = kind === t.kind && (t.kind !== 'image' || String(imageRole || '') === String(t.image_role || 'title_page'))
+            const href =
+              t.kind === 'video'
+                ? '/uploads'
+                : t.kind === 'image'
+                  ? `/uploads?kind=image&image_role=${encodeURIComponent(String(t.image_role || 'title_page'))}`
+                  : `/uploads?kind=${encodeURIComponent(String(t.kind))}`
+            return (
+              <a
+                key={`${t.kind}:${t.image_role || ''}`}
+                href={href}
                 style={{
-                  position: 'absolute',
-                  top: 'calc(10px + env(safe-area-inset-top))',
-                  right: 10,
-                  zIndex: 5,
-                  width: 44,
-                  height: 44,
-                  borderRadius: 999,
-                  border: '1px solid rgba(255,255,255,0.20)',
-                  background: 'rgba(0,0,0,0.40)',
-                  color: '#fff',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer',
-                  backdropFilter: 'blur(6px)',
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.16)',
+                  background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+                  color: '#fff',
+                  textDecoration: 'none',
+                  fontWeight: 650,
                 }}
               >
-                {isOpen ? (
-                  <span style={{ fontSize: 18, fontWeight: 900, lineHeight: 1 }}>✕</span>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M19.4 15a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2-1.5-2-3.5-2.4.8a7.7 7.7 0 0 0-1.7-1L15 4h-6l-.3 2.8a7.7 7.7 0 0 0-1.7 1L4.6 7l-2 3.5 2 1.5a7.8 7.8 0 0 0-.1 1c0 .3 0 .7.1 1l-2 1.5 2 3.5 2.4-.8c.5.4 1.1.7 1.7 1L9 20h6l.3-2.8c.6-.3 1.2-.6 1.7-1l2.4.8 2-3.5-2-1.5Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      opacity="0.85"
-                    />
-                  </svg>
-                )}
-              </button>
+                {t.label}
+              </a>
+            )
+          })}
+        </div>
 
-              {isOpen ? (
-                <div
-                  role="dialog"
-                  aria-modal="false"
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 28 }}>{title}</h1>
+            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>{subtitle}</p>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <a
+              href={uploadNewHref}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '10px 18px',
+                borderRadius: 10,
+                border: '1px solid rgba(10,132,255,0.55)',
+                color: '#fff',
+                textDecoration: 'none',
+                fontWeight: 650,
+                background: '#0a84ff',
+              }}
+            >
+              Upload
+            </a>
+            {kind === 'video' ? (
+              <>
+                <a
+                  href="/create-video"
                   style={{
-                    position: 'absolute',
-                    inset: 0,
-                    zIndex: 4,
-                    background: 'linear-gradient(180deg, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.70) 60%, rgba(0,0,0,0.58) 100%)',
-                    padding: 14,
-                    paddingTop: 'calc(14px + env(safe-area-inset-top))',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'flex-start',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '10px 18px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(212,175,55,0.65)',
+                    color: '#fff',
+                    textDecoration: 'none',
+                    fontWeight: 650,
+                    background: 'rgba(212,175,55,0.10)',
                   }}
-                  onClick={() => setOpenUploadId(null)}
                 >
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ display: 'grid', gap: 8, paddingRight: 62, maxHeight: '100%', overflowY: 'auto' }}
-                  >
-                    <div style={{ fontSize: 16, fontWeight: 850, lineHeight: 1.2 }}>{displayName}</div>
-                    {description ? (
-                      <div style={{ color: '#ddd', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>{description}</div>
-                    ) : null}
-                    {metaLine ? (
-                      <div style={{ color: '#bcbcbc', fontSize: 13, lineHeight: 1.35 }}>{metaLine}</div>
-                    ) : null}
-                    {sourceDeleted ? (
-                      <div style={{ color: '#ffb3b3', fontSize: 13, lineHeight: 1.35 }}>
-                        Source deleted (existing productions/publications still work).
-                      </div>
-                    ) : null}
-                    <div style={{ display: 'grid', gap: 6, marginTop: 4 }}>
-                      <div style={{ fontSize: 12, fontWeight: 750, letterSpacing: 0.6, textTransform: 'uppercase', opacity: 0.78 }}>
-                        Productions
-                      </div>
-                      {productions.length ? (
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          {productions.map((p) => {
-                            const name = (p.name || '').trim() || `Production #${p.id}`
-                            const status = (p.status || '').trim()
-                            const completed = p.completed_at ? formatDate(p.completed_at) : ''
-                            const subtitle = [status ? `Status: ${status}` : null, completed ? `Completed: ${completed}` : null].filter(Boolean).join(' • ')
-                            const publishHref = `/publish?production=${encodeURIComponent(String(p.id))}&from=${encodeURIComponent(fromHref)}`
-                            return (
-                              <a
-                                key={p.id}
-                                href={publishHref}
-                                style={{
-                                  textDecoration: 'none',
-                                  color: '#fff',
-                                  border: '1px solid rgba(255,255,255,0.14)',
-                                  background: 'rgba(255,255,255,0.04)',
-                                  borderRadius: 12,
-                                  padding: '10px 10px',
-                                  display: 'grid',
-                                  gap: 4,
-                                }}
-                              >
-                                <div style={{ fontWeight: 800, lineHeight: 1.2 }}>{name}</div>
-                                {subtitle ? <div style={{ color: '#cfcfcf', fontSize: 12, lineHeight: 1.25 }}>{subtitle}</div> : null}
-                              </a>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <div style={{ color: '#cfcfcf', fontSize: 13 }}>No productions yet.</div>
-                      )}
-                    </div>
+                  Create Video
+                </a>
+                <a
+                  href="/exports"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '10px 18px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    textDecoration: 'none',
+                    fontWeight: 600,
+                    background: 'rgba(255,255,255,0.06)',
+                  }}
+                >
+                  Exports
+                </a>
+              </>
+            ) : null}
+          </div>
+        </header>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
-                      {activeDraft ? (
-                        <>
-                          <a
-                            href={produceHref}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              padding: '8px 12px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(212,175,55,0.65)',
-                              background: 'rgba(212,175,55,0.10)',
-                              color: '#fff',
-                              textDecoration: 'none',
-                              fontWeight: 850,
-                            }}
-                          >
-                            Resume Production
-                          </a>
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              const ok = window.confirm('Discard this in-progress production draft and start over?')
-                              if (!ok) return
-                              try {
-                                const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                                const csrf = getCsrfToken()
-                                if (csrf) headers['x-csrf-token'] = csrf
-                                const res = await fetch(`/api/production-drafts/${encodeURIComponent(String(activeDraft.id))}/archive`, {
-                                  method: 'POST',
-                                  credentials: 'same-origin',
-                                  headers,
-                                  body: '{}',
-                                })
-                                const data = await res.json().catch(() => ({}))
-                                if (!res.ok) throw new Error(data?.error || 'Failed to discard draft')
-                                setDraftsByUploadId((prev) => {
-                                  const next = { ...prev }
-                                  delete next[upload.id]
-                                  return next
-                                })
-                                window.location.href = produceHref
-                              } catch (err: any) {
-                                setDeleteError(err?.message || 'Failed to discard draft')
-                              }
-                            }}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              padding: '8px 12px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              background: 'rgba(255,255,255,0.06)',
-                              color: '#fff',
-                              fontWeight: 750,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Start Over
-                          </button>
-                        </>
-                      ) : (
-                        <a
-                          href={produceHref}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '8px 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(212,175,55,0.65)',
-                            background: 'rgba(212,175,55,0.10)',
-                            color: '#fff',
-                            textDecoration: 'none',
-                            fontWeight: 850,
-                          }}
-                        >
-                          New Production
-                        </a>
-                      )}
-
-                      <a
-                        href={href}
+        {loading ? (
+          <div style={{ color: '#888', padding: '12px 0' }}>Loading…</div>
+        ) : error ? (
+          <div style={{ color: '#ff6b6b', padding: '12px 0' }}>{error}</div>
+        ) : deleteError ? (
+          <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{deleteError}</div>
+        ) : uploads.length === 0 ? (
+          <div style={{ color: '#bbb', padding: '12px 0' }}>
+            {kind === 'video'
+              ? 'No videos yet. Upload your first video.'
+              : kind === 'logo'
+                ? 'No logos yet.'
+                : 'No images yet.'}
+          </div>
+        ) : kind === 'video' ? (
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+            {uploads.map((upload) => {
+              const poster = pickPoster(upload)
+              const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
+              const description = upload.description && upload.description.trim().length > 0 ? upload.description.trim() : null
+              const date = formatDate(upload.created_at)
+              const size = formatBytes(upload.size_bytes)
+              const duration = formatDuration(upload.duration_seconds)
+              const aspectRatio = upload.width && upload.height ? `${upload.width} / ${upload.height}` : '9 / 16'
+              const meta = [date, size, duration].filter(Boolean).join(' · ')
+              return (
+                <div
+                  key={upload.id}
+                  style={{
+                    borderRadius: 16,
+                    border: '1px solid rgba(255,255,255,0.22)',
+                    background: 'rgba(255,255,255,0.03)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ width: '100%', position: 'relative', aspectRatio, background: '#111' }}>
+                    <VideoThumb
+                      uploadId={upload.id}
+                      fallbackSrc={poster}
+                      alt="poster"
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#111' }}
+                    />
+                  </div>
+                  <div style={{ padding: 12, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, lineHeight: 1.2, wordBreak: 'break-word' }}>{displayName}</div>
+                        {description ? (
+                          <div style={{ marginTop: 4, color: '#bbb', fontSize: 13, lineHeight: 1.35, whiteSpace: 'pre-wrap' }}>{description}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setEditError(null)
+                          setEditUpload(upload)
+                          setEditName((upload.modified_filename || upload.original_filename || '').trim())
+                          setEditDescription((upload.description || '').trim())
+                        }}
                         style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '8px 12px',
+                          flex: '0 0 auto',
+                          padding: '8px 10px',
                           borderRadius: 10,
                           border: '1px solid rgba(10,132,255,0.55)',
-                          background: 'rgba(10,132,255,0.12)',
+                          background: 'rgba(10,132,255,0.16)',
                           color: '#fff',
-                          textDecoration: 'none',
-                          fontWeight: 750,
+                          fontWeight: 800,
+                          cursor: 'pointer',
                         }}
                       >
-                        View Productions
-                      </a>
-
+                        Edit
+                      </button>
+                    </div>
+                    {meta ? <div style={{ color: '#9a9a9a', fontSize: 13 }}>{meta}</div> : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ background: '#080808', borderRadius: 16, border: '1px solid #161616', overflow: 'hidden' }}>
+            {uploads.map((upload) => {
+              const displayName = upload.modified_filename || upload.original_filename || `Upload ${upload.id}`
+              const description = upload.description && upload.description.trim().length > 0 ? upload.description.trim() : null
+              const date = formatDate(upload.created_at)
+              const size = formatBytes(upload.size_bytes)
+              const dimensions = upload.width && upload.height ? `${upload.width}×${upload.height}` : null
+              const metaLine = [date, size, dimensions].filter(Boolean).join(' / ')
+              const isDeleting = !!deleting[upload.id]
+              const fileHref = `/api/uploads/${encodeURIComponent(String(upload.id))}/file`
+              return (
+                <div
+                  key={upload.id}
+                  style={{
+                    display: 'flex',
+                    gap: 16,
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #191919',
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <div style={{ flex: '0 0 auto' }}>
+                    <img
+                      src={fileHref}
+                      alt={kind === 'logo' ? 'logo' : 'image'}
+                      style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, background: '#111' }}
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 240px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6, wordBreak: 'break-word' }}>
+                    <div style={{ color: '#fff', fontWeight: 800, lineHeight: 1.3 }}>{displayName}</div>
+                    {description ? <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>{description}</div> : null}
+                    {metaLine ? <div style={{ color: '#666', lineHeight: 1.35 }}>{metaLine}</div> : null}
+                    <div style={{ marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setEditError(null)
+                          setEditUpload(upload)
+                          setEditName((upload.modified_filename || upload.original_filename || '').trim())
+                          setEditDescription((upload.description || '').trim())
+                        }}
+                        style={{
+                          background: 'transparent',
+                          color: '#0a84ff',
+                          border: '1px solid rgba(10,132,255,0.55)',
+                          borderRadius: 10,
+                          padding: '6px 10px',
+                          fontWeight: 650,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Edit
+                      </button>
                       <button
                         type="button"
                         onClick={async (e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          if (sourceDeleted || isDeletingSource) return
-                          const ok = window.confirm(
-                            'Delete source video file?\n\nExisting productions and published videos will keep working, but you will NOT be able to create new productions from this upload.'
-                          )
+                          if (isDeleting) return
+                          const ok = window.confirm(kind === 'logo' ? 'Delete this logo? This cannot be undone.' : 'Delete this image? This cannot be undone.')
                           if (!ok) return
                           setDeleteError(null)
-                          setDeletingSource((prev) => ({ ...prev, [upload.id]: true }))
+                          setDeleting((prev) => ({ ...prev, [upload.id]: true }))
                           try {
-                            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                            const headers: Record<string, string> = {}
                             const csrf = getCsrfToken()
                             if (csrf) headers['x-csrf-token'] = csrf
-                            const res = await fetch(`/api/uploads/${upload.id}/delete-source`, {
-                              method: 'POST',
-                              credentials: 'same-origin',
-                              headers,
-                              body: '{}',
-                            })
+                            const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
                             const data = await res.json().catch(() => ({}))
-                            if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete source')
-                            window.location.href = productionHref
+                            if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                            setUploads((prev) => prev.filter((u) => u.id !== upload.id))
                           } catch (err: any) {
-                            setDeleteError(err?.message || 'Failed to delete source')
+                            setDeleteError(err?.message || 'Failed to delete')
                           } finally {
-                            setDeletingSource((prev) => {
+                            setDeleting((prev) => {
                               const next = { ...prev }
                               delete next[upload.id]
                               return next
@@ -650,320 +514,24 @@ const UploadsPage: React.FC = () => {
                           }
                         }}
                         style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '8px 12px',
+                          background: 'transparent',
+                          color: '#ff9b9b',
+                          border: '1px solid rgba(255,155,155,0.35)',
                           borderRadius: 10,
-                          border: sourceDeleted ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(255,155,155,0.35)',
-                          background: sourceDeleted ? 'rgba(255,255,255,0.04)' : 'rgba(255,155,155,0.08)',
-                          color: '#fff',
-                          fontWeight: 750,
-                          cursor: sourceDeleted || isDeletingSource ? 'default' : 'pointer',
-                          opacity: sourceDeleted || isDeletingSource ? 0.6 : 1,
+                          padding: '6px 10px',
+                          fontWeight: 650,
+                          cursor: isDeleting ? 'default' : 'pointer',
+                          opacity: isDeleting ? 0.6 : 1,
                         }}
-                        disabled={sourceDeleted || isDeletingSource}
                       >
-                        {sourceDeleted ? 'Source Deleted' : isDeletingSource ? 'Deleting…' : 'Delete Source'}
+                        {isDeleting ? 'Deleting…' : 'Delete'}
                       </button>
                     </div>
                   </div>
                 </div>
-              ) : null}
-            </div>
+              )
+            })}
           </div>
-        )
-      }
-
-      return (
-        <div
-          key={upload.id}
-          style={{
-            display: 'flex',
-            gap: 16,
-            padding: '16px 12px',
-            borderBottom: '1px solid #191919',
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-          }}
-        >
-          <div style={{ flex: '0 0 auto' }}>{image}</div>
-          <div
-            style={{
-              flex: '1 1 240px',
-              minWidth: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              wordBreak: 'break-word',
-            }}
-          >
-            <a
-              href={detailHref}
-              style={{ color: '#0a84ff', fontWeight: 600, textDecoration: 'none', lineHeight: 1.3 }}
-            >
-              {displayName}
-            </a>
-            {description && (
-              <div style={{ color: '#bbb', whiteSpace: 'pre-wrap', lineHeight: 1.35 }}>
-                {description}
-              </div>
-            )}
-            {metaLine && (
-              <div style={{ color: '#666', lineHeight: 1.35 }}>
-                {metaLine}
-              </div>
-            )}
-            {kind === 'logo' || kind === 'image' ? (
-              <div style={{ marginTop: 6 }}>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setEditError(null)
-                      setEditUpload(upload)
-                      setEditName((upload.modified_filename || upload.original_filename || '').trim())
-                      setEditDescription((upload.description || '').trim())
-                    }}
-                    style={{
-                      background: 'transparent',
-                      color: '#0a84ff',
-                      border: '1px solid rgba(10,132,255,0.55)',
-                      borderRadius: 10,
-                      padding: '6px 10px',
-                      fontWeight: 650,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async (e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    if (isDeleting) return
-                    const ok = window.confirm(kind === 'logo' ? 'Delete this logo? This cannot be undone.' : 'Delete this image? This cannot be undone.')
-                    if (!ok) return
-                    setDeleteError(null)
-                    setDeleting((prev) => ({ ...prev, [upload.id]: true }))
-                    try {
-                        const headers: Record<string, string> = {}
-                        const csrf = getCsrfToken()
-                        if (csrf) headers['x-csrf-token'] = csrf
-                        const res = await fetch(`/api/uploads/${upload.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
-                        const data = await res.json().catch(() => ({}))
-                        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
-                        setUploads((prev) => prev.filter((u) => u.id !== upload.id))
-                      } catch (err: any) {
-                        setDeleteError(err?.message || 'Failed to delete')
-                      } finally {
-                        setDeleting((prev) => {
-                          const next = { ...prev }
-                          delete next[upload.id]
-                          return next
-                        })
-                      }
-                    }}
-                    style={{
-                      background: 'transparent',
-                      color: '#ff9b9b',
-                      border: '1px solid rgba(255,155,155,0.35)',
-                      borderRadius: 10,
-                      padding: '6px 10px',
-                      fontWeight: 650,
-                      cursor: isDeleting ? 'default' : 'pointer',
-                      opacity: isDeleting ? 0.6 : 1,
-                    }}
-                  >
-                    {isDeleting ? 'Deleting…' : 'Delete'}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            {kind === 'video' && publicationLines.length > 0 && publicationLines}
-          </div>
-        </div>
-      )
-    })
-	}, [uploads, renderPublicationLines, kind, deleting, deletingSource, openUploadId, isNarrowScreen])
-
-  if (me === null) {
-    return (
-      <div style={{ color: '#fff', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-        <h2>Uploads</h2>
-        <p>
-          Please <a href="/login" style={{ color: '#0a84ff' }}>sign in</a> to view and publish your videos.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-		        <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
-		        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-		          {[
-		            { label: 'Videos', kind: 'video' },
-		            { label: 'Logos', kind: 'logo' },
-		            { label: 'Title Pages', kind: 'image', image_role: 'title_page' },
-		            { label: 'Lower Third Images', kind: 'image', image_role: 'lower_third' },
-		            { label: 'Overlay Images', kind: 'image', image_role: 'overlay' },
-		          ].map((t: any) => {
-		            const active = kind === t.kind && (t.kind !== 'image' || String(imageRole || '') === String(t.image_role || 'title_page'))
-		            const href =
-		              t.kind === 'video'
-		                ? '/uploads'
-		                : t.kind === 'image'
-		                  ? `/uploads?kind=image&image_role=${encodeURIComponent(String(t.image_role || 'title_page'))}`
-		                  : `/uploads?kind=${encodeURIComponent(String(t.kind))}`
-		            return (
-		              <a
-		                key={`${t.kind}:${t.image_role || ''}`}
-		                href={href}
-		                style={{
-		                  display: 'inline-flex',
-		                  alignItems: 'center',
-		                  justifyContent: 'center',
-		                  padding: '8px 12px',
-		                  borderRadius: 999,
-		                  border: active ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.16)',
-		                  background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
-		                  color: '#fff',
-		                  textDecoration: 'none',
-		                  fontWeight: 650,
-		                }}
-		              >
-		                {t.label}
-		              </a>
-		            )
-		          })}
-		        </div>
-
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <div>
-		            <h1 style={{ margin: 0, fontSize: 28 }}>
-		              {kind === 'video'
-		                ? 'My Videos'
-		                : kind === 'logo'
-		                  ? 'My Logos'
-		                  : imageRole === 'lower_third'
-		                    ? 'My Lower Third Images'
-		                    : imageRole === 'overlay'
-		                      ? 'My Overlay Images'
-		                      : 'My Title Pages'}
-		            </h1>
-	            <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>
-		              {kind === 'video'
-		                ? 'Upload new videos and manage where they’re published.'
-		                : kind === 'logo'
-		                  ? 'Upload logos to use as watermarks in future productions.'
-		                  : imageRole === 'lower_third'
-		                    ? 'Upload PNG lower third images to overlay on your productions.'
-		                    : imageRole === 'overlay'
-		                      ? 'Upload images to insert as full-screen overlays in the video editor.'
-		                      : 'Upload title page images to use as posters and optional intro holds.'}
-		            </p>
-		          </div>
-		          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <a
-              href={
-                kind === 'video'
-                  ? '/uploads/new'
-                  : kind === 'image'
-                    ? `/uploads/new?kind=image&imageRole=${encodeURIComponent(imageRole || 'title_page')}`
-                    : `/uploads/new?kind=${encodeURIComponent(kind)}`
-              }
-	              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '10px 18px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
-                textDecoration: 'none',
-                fontWeight: 600,
-                background: '#0a84ff',
-                boxShadow: '0 6px 16px rgba(10,132,255,0.35)',
-              }}
-            >
-              Upload
-            </a>
-            {kind === 'video' ? (
-              <a
-                href="/create-video"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '10px 18px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(212,175,55,0.65)',
-                  color: '#fff',
-                  textDecoration: 'none',
-                  fontWeight: 650,
-                  background: 'rgba(212,175,55,0.10)',
-                }}
-              >
-                Create Video
-              </a>
-            ) : null}
-            {kind === 'video' ? (
-              <a
-                href="/productions"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '10px 18px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  textDecoration: 'none',
-                  fontWeight: 600,
-                  background: 'rgba(255,255,255,0.06)',
-                }}
-              >
-                View Productions
-              </a>
-            ) : null}
-          </div>
-        </header>
-
-        {loading ? (
-          <div style={{ color: '#888', padding: '12px 0' }}>Loading uploads…</div>
-        ) : error ? (
-          <div style={{ color: '#ff6b6b', padding: '12px 0' }}>{error}</div>
-        ) : deleteError ? (
-          <div style={{ color: '#ff9b9b', padding: '12px 0' }}>{deleteError}</div>
-	        ) : uploads.length === 0 ? (
-	          <div style={{ color: '#bbb', padding: '12px 0' }}>
-	            {kind === 'video'
-	              ? 'No videos yet. Get started by uploading your first video.'
-	              : kind === 'logo'
-	                ? 'No logos yet. Upload a logo to use as a watermark in future productions.'
-	                : 'No title pages yet. Upload an image to use as a title page in productions.'}
-	          </div>
-	        ) : (
-	          kind === 'video' ? (
-	            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-	              {uploadCards}
-	            </div>
-          ) : (
-            <div
-              style={{
-                background: '#080808',
-                borderRadius: 16,
-                border: '1px solid #161616',
-                overflow: 'hidden',
-              }}
-            >
-              {uploadCards}
-            </div>
-          )
         )}
 
         {editUpload ? (
@@ -1040,35 +608,34 @@ const UploadsPage: React.FC = () => {
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    rows={6}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
+                      minHeight: 120,
                       borderRadius: 12,
                       border: '1px solid rgba(255,255,255,0.14)',
                       background: '#0c0c0c',
                       color: '#fff',
                       resize: 'vertical',
-                      lineHeight: 1.4,
                     }}
                     maxLength={2000}
                   />
                 </label>
 
-                {editError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{editError}</div> : null}
+                {editError ? <div style={{ color: '#ff9b9b' }}>{editError}</div> : null}
 
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => setEditUpload(null)}
                     disabled={editSaving}
+                    onClick={() => setEditUpload(null)}
                     style={{
                       padding: '10px 12px',
-                      borderRadius: 10,
+                      borderRadius: 12,
                       border: '1px solid rgba(255,255,255,0.18)',
                       background: '#0c0c0c',
                       color: '#fff',
-                      fontWeight: 700,
+                      fontWeight: 800,
                       cursor: editSaving ? 'default' : 'pointer',
                       opacity: editSaving ? 0.6 : 1,
                     }}
@@ -1077,43 +644,51 @@ const UploadsPage: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    disabled={editSaving}
                     onClick={async () => {
-                      if (!editUpload || editSaving) return
+                      if (!editUpload) return
+                      const name = editName.trim()
+                      if (!name) {
+                        setEditError('Name is required')
+                        return
+                      }
                       setEditSaving(true)
                       setEditError(null)
                       try {
                         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
                         const csrf = getCsrfToken()
                         if (csrf) headers['x-csrf-token'] = csrf
-                        const payload = {
-                          modified_filename: editName.trim().length ? editName.trim() : null,
-                          description: editDescription.trim().length ? editDescription.trim() : null,
-                        }
                         const res = await fetch(`/api/uploads/${editUpload.id}`, {
                           method: 'PATCH',
                           credentials: 'same-origin',
                           headers,
-                          body: JSON.stringify(payload),
+                          body: JSON.stringify({ name, description: editDescription }),
                         })
                         const data = await res.json().catch(() => ({}))
                         if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to save')
-                        setUploads((prev) => prev.map((u) => (u.id === editUpload.id ? (data as UploadListItem) : u)))
+                        setUploads((prev) =>
+                          prev.map((u) =>
+                            u.id === editUpload.id
+                              ? { ...u, modified_filename: name, description: editDescription }
+                              : u
+                          )
+                        )
                         setEditUpload(null)
                       } catch (err: any) {
-                        setEditError(err?.message || 'Failed to save')
+                        setEditError(err?.message || 'Failed to save changes')
                       } finally {
                         setEditSaving(false)
                       }
                     }}
                     style={{
                       padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(10,132,255,0.85)',
-                      background: 'rgba(10,132,255,0.30)',
+                      borderRadius: 12,
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      background: '#0a84ff',
                       color: '#fff',
-                      fontWeight: 800,
+                      fontWeight: 900,
                       cursor: editSaving ? 'default' : 'pointer',
-                      opacity: editSaving ? 0.6 : 1,
+                      opacity: editSaving ? 0.7 : 1,
                     }}
                   >
                     {editSaving ? 'Saving…' : 'Save'}
@@ -1129,3 +704,4 @@ const UploadsPage: React.FC = () => {
 }
 
 export default UploadsPage
+
