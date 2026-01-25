@@ -1,7 +1,7 @@
 import { DomainError, ForbiddenError, InvalidStateError, NotFoundError, ValidationError } from '../../core/errors'
 import * as repo from './repo'
 import { validateAndNormalizeCreateVideoTimeline } from './validate'
-import type { CreateVideoProjectDto, CreateVideoProjectRow, CreateVideoTimelineV1 } from './types'
+import type { CreateVideoProjectDto, CreateVideoProjectListItemDto, CreateVideoProjectRow, CreateVideoTimelineV1 } from './types'
 import { enqueueJob } from '../media-jobs/service'
 import * as mediaJobsRepo from '../media-jobs/repo'
 
@@ -32,10 +32,23 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
   }
   return {
     id: Number(row.id),
+    name: row.name == null ? null : String(row.name),
     status: row.status,
     timeline: timeline as CreateVideoTimelineV1,
     lastExportUploadId: row.last_export_upload_id == null ? null : Number(row.last_export_upload_id),
     lastExportJobId: row.last_export_job_id == null ? null : Number(row.last_export_job_id),
+    createdAt: String(row.created_at || ''),
+    updatedAt: String(row.updated_at || ''),
+    archivedAt: row.archived_at == null ? null : String(row.archived_at),
+  }
+}
+
+function mapRowListItem(row: CreateVideoProjectRow): CreateVideoProjectListItemDto {
+  return {
+    id: Number(row.id),
+    name: row.name == null ? null : String(row.name),
+    status: row.status,
+    lastExportUploadId: row.last_export_upload_id == null ? null : Number(row.last_export_upload_id),
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
     archivedAt: row.archived_at == null ? null : String(row.archived_at),
@@ -53,35 +66,30 @@ function ensureOwned(row: CreateVideoProjectRow, userId: number) {
   if (ownerId !== Number(userId)) throw new ForbiddenError()
 }
 
+function emptyTimelineJson(): string {
+  return JSON.stringify({
+    version: 'create_video_v1',
+    playheadSeconds: 0,
+    clips: [],
+    stills: [],
+    graphics: [],
+    guidelines: [],
+    logos: [],
+    lowerThirds: [],
+    screenTitles: [],
+    narration: [],
+    audioSegments: [],
+    audioTrack: null,
+  })
+}
+
 export async function createOrGetActiveProjectForUser(userId: number): Promise<{ created: boolean; project: CreateVideoProjectDto }> {
   if (!userId) throw new ForbiddenError()
   const existing = await repo.getActiveByUser(Number(userId))
   if (existing) return { created: false, project: mapRow(existing) }
 
-  try {
-    const created = await repo.create({
-      userId: Number(userId),
-      timelineJson: JSON.stringify({
-        version: 'create_video_v1',
-        playheadSeconds: 0,
-        clips: [],
-        stills: [],
-        graphics: [],
-        guidelines: [],
-        logos: [],
-        lowerThirds: [],
-        screenTitles: [],
-        narration: [],
-        audioSegments: [],
-        audioTrack: null,
-      }),
-    })
-    return { created: true, project: mapRow(created) }
-  } catch (err: any) {
-    const reloaded = await repo.getActiveByUser(Number(userId))
-    if (reloaded) return { created: false, project: mapRow(reloaded) }
-    throw err
-  }
+  const created = await repo.create({ userId: Number(userId), timelineJson: emptyTimelineJson() })
+  return { created: true, project: mapRow(created) }
 }
 
 export async function getActiveProjectForUser(userId: number): Promise<CreateVideoProjectDto> {
@@ -89,6 +97,54 @@ export async function getActiveProjectForUser(userId: number): Promise<CreateVid
   const row = await repo.getActiveByUser(Number(userId))
   if (!row) throw new NotFoundError('not_found')
   return mapRow(row)
+}
+
+export async function listProjectsForUser(userId: number): Promise<{ items: CreateVideoProjectListItemDto[] }> {
+  if (!userId) throw new ForbiddenError()
+  const rows = await repo.listByUser(Number(userId))
+  return { items: rows.map(mapRowListItem) }
+}
+
+export async function createProjectForUser(userId: number, input: { name?: string | null }): Promise<{ project: CreateVideoProjectDto }> {
+  if (!userId) throw new ForbiddenError()
+  const name = input.name == null ? null : String(input.name || '').trim()
+  if (name != null && name.length > 255) throw new ValidationError('invalid_name')
+  const created = await repo.create({ userId: Number(userId), name: name && name.length ? name : null, timelineJson: emptyTimelineJson() })
+  return { project: mapRow(created) }
+}
+
+export async function getProjectForUserById(userId: number, projectId: number): Promise<{ project: CreateVideoProjectDto }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  return { project: mapRow(row) }
+}
+
+export async function updateProjectNameForUser(userId: number, projectId: number, nameRaw: any): Promise<{ project: CreateVideoProjectDto }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  const name = nameRaw == null ? null : String(nameRaw || '').trim()
+  if (name != null && name.length > 255) throw new ValidationError('invalid_name')
+  const updated = await repo.updateName(Number(projectId), name && name.length ? name : null)
+  return { project: mapRow(updated) }
+}
+
+export async function updateProjectTimelineForUser(userId: number, projectId: number, timelineRaw: any): Promise<{ project: CreateVideoProjectDto }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  if (row.archived_at) throw new InvalidStateError('archived')
+
+  const timeline = normalizeTimeline(timelineRaw)
+  const normalized = await validateAndNormalizeCreateVideoTimeline(timeline, { userId: Number(userId) })
+  const json = JSON.stringify(normalized)
+  if (json.length > 512 * 1024) throw new DomainError('timeline_too_large', 'timeline_too_large', 413)
+  const updated = await repo.updateTimeline(Number(row.id), json)
+  return { project: mapRow(updated) }
 }
 
 export async function updateActiveProjectTimelineForUser(userId: number, timelineRaw: any): Promise<CreateVideoProjectDto> {
@@ -106,6 +162,15 @@ export async function updateActiveProjectTimelineForUser(userId: number, timelin
   return mapRow(updated)
 }
 
+export async function archiveProjectForUserById(userId: number, projectId: number): Promise<{ ok: true }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  await repo.archive(Number(projectId))
+  return { ok: true }
+}
+
 export async function archiveActiveProjectForUser(userId: number): Promise<{ ok: true }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getActiveByUser(Number(userId))
@@ -115,13 +180,25 @@ export async function archiveActiveProjectForUser(userId: number): Promise<{ ok:
   return { ok: true }
 }
 
+export async function exportProjectForUserById(userId: number, projectId: number): Promise<{ jobId: number }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  if (row.archived_at) throw new InvalidStateError('archived')
+  return exportRowAsJob(userId, row)
+}
+
 export async function exportActiveProjectForUser(userId: number): Promise<{ jobId: number }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getActiveByUser(Number(userId))
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
   if (row.archived_at) throw new InvalidStateError('archived')
+  return exportRowAsJob(userId, row)
+}
 
+async function exportRowAsJob(userId: number, row: CreateVideoProjectRow): Promise<{ jobId: number }> {
   let timelineRaw: any = (row as any).timeline_json
   if (typeof timelineRaw === 'string') {
     try {
@@ -149,12 +226,23 @@ export async function exportActiveProjectForUser(userId: number): Promise<{ jobI
   return { jobId: Number(jobId) }
 }
 
+export async function getExportStatusForUserByProjectId(userId: number, projectId: number): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+  return getExportStatusForRow(row)
+}
+
 export async function getExportStatusForUser(userId: number): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getActiveByUser(Number(userId))
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
+  return getExportStatusForRow(row)
+}
 
+async function getExportStatusForRow(row: CreateVideoProjectRow): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
   const jobId = row.last_export_job_id != null ? Number(row.last_export_job_id) : null
   if (!jobId) return { status: 'idle', jobId: null, resultUploadId: null }
   const job = await mediaJobsRepo.getById(jobId)

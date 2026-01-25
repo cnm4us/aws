@@ -8,11 +8,23 @@ export async function getActiveByUser(userId: number): Promise<CreateVideoProjec
        FROM create_video_projects
       WHERE user_id = ?
         AND archived_at IS NULL
-      ORDER BY id DESC
+      ORDER BY updated_at DESC, id DESC
       LIMIT 1`,
     [userId]
   )
   return (rows as any[])[0] || null
+}
+
+export async function listByUser(userId: number): Promise<CreateVideoProjectRow[]> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT *
+       FROM create_video_projects
+      WHERE user_id = ?
+      ORDER BY (archived_at IS NULL) DESC, updated_at DESC, id DESC`,
+    [userId]
+  )
+  return rows as any[]
 }
 
 export async function getById(id: number): Promise<CreateVideoProjectRow | null> {
@@ -21,16 +33,24 @@ export async function getById(id: number): Promise<CreateVideoProjectRow | null>
   return (rows as any[])[0] || null
 }
 
-export async function create(input: { userId: number; timelineJson: string }): Promise<CreateVideoProjectRow> {
+export async function create(input: { userId: number; name?: string | null; timelineJson: string }): Promise<CreateVideoProjectRow> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT INTO create_video_projects (user_id, status, timeline_json)
-     VALUES (?, 'active', ?)`,
-    [input.userId, input.timelineJson]
+    `INSERT INTO create_video_projects (user_id, name, status, timeline_json)
+     VALUES (?, ?, 'active', ?)`,
+    [input.userId, input.name ?? null, input.timelineJson]
   )
   const id = Number((result as any).insertId)
   const row = await getById(id)
   if (!row) throw new Error('failed_to_create_create_video_project')
+  return row
+}
+
+export async function updateName(id: number, name: string | null): Promise<CreateVideoProjectRow> {
+  const db = getPool()
+  await db.query(`UPDATE create_video_projects SET name = ? WHERE id = ?`, [name, id])
+  const row = await getById(id)
+  if (!row) throw new Error('not_found')
   return row
 }
 
@@ -65,4 +85,3 @@ export async function setLastExport(id: number, fields: { jobId?: number | null;
     [jobId, uploadId, id]
   )
 }
-

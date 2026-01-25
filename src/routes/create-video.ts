@@ -64,6 +64,95 @@ createVideoRouter.post('/api/create-video/project', requireAuth, async (req, res
   }
 })
 
+createVideoRouter.get('/api/create-video/projects', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const result = await createVideoSvc.listProjectsForUser(currentUserId)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.post('/api/create-video/projects', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const body = (req.body || {}) as any
+    const result = await createVideoSvc.createProjectForUser(currentUserId, { name: body.name })
+    res.status(201).json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.get('/api/create-video/projects/:id', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const result = await createVideoSvc.getProjectForUserById(currentUserId, projectId)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.patch('/api/create-video/projects/:id', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const body = (req.body || {}) as any
+    const result = await createVideoSvc.updateProjectNameForUser(currentUserId, projectId, body.name)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.patch('/api/create-video/projects/:id/timeline', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const timeline = (req.body || {}).timeline
+    const result = await createVideoSvc.updateProjectTimelineForUser(currentUserId, projectId, timeline)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.post('/api/create-video/projects/:id/archive', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const result = await createVideoSvc.archiveProjectForUserById(currentUserId, projectId)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.post('/api/create-video/projects/:id/export', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const result = await createVideoSvc.exportProjectForUserById(currentUserId, projectId)
+    res.status(202).json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.get('/api/create-video/projects/:id/export-status', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const result = await createVideoSvc.getExportStatusForUserByProjectId(currentUserId, projectId)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
 createVideoRouter.get('/api/create-video/project', requireAuth, async (req, res, next) => {
   try {
     const currentUserId = Number(req.user!.id)

@@ -46,7 +46,7 @@ Test log: `agents/implementation/tests/plan_68/step_01_schema.md`
 Checkpoint: Wait for approval before proceeding.
 
 ### 2) Backend: Multi-Project Create Video API (keep old endpoints working)
-Status: Pending
+Status: Completed
 
 Changes:
 - Add project-scoped endpoints (new):
@@ -74,6 +74,8 @@ Testing (canonical; record results):
 - `./scripts/auth_curl.sh --profile local get /api/create-video/projects` → `200 {items:[...]}`.
 - `./scripts/auth_curl.sh --profile local post /api/create-video/projects -d '{}'` → `201 {project:{id}}`.
 - `./scripts/auth_curl.sh --profile local patch /api/create-video/projects/<id> -d '{"name":"Test"}'` → `200`.
+
+Test log: `agents/implementation/tests/plan_68/step_02_backend_api.md`
 
 Checkpoint: Wait for approval before proceeding.
 

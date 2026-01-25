@@ -165,6 +165,7 @@ export type CreateVideoTimelineV1 = {
 export type CreateVideoProjectRow = {
   id: number
   user_id: number
+  name: string | null
   status: CreateVideoProjectStatus
   timeline_json: any
   last_export_upload_id: number | null
@@ -176,10 +177,21 @@ export type CreateVideoProjectRow = {
 
 export type CreateVideoProjectDto = {
   id: number
+  name: string | null
   status: CreateVideoProjectStatus
   timeline: CreateVideoTimelineV1
   lastExportUploadId: number | null
   lastExportJobId: number | null
+  createdAt: string
+  updatedAt: string
+  archivedAt: string | null
+}
+
+export type CreateVideoProjectListItemDto = {
+  id: number
+  name: string | null
+  status: CreateVideoProjectStatus
+  lastExportUploadId: number | null
   createdAt: string
   updatedAt: string
   archivedAt: string | null

@@ -918,7 +918,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       throw new ValidationError('invalid_audio_segments')
     } else {
       if (audioSegmentsRaw.length > MAX_AUDIO_SEGMENTS) throw new DomainError('too_many_audio_segments', 'too_many_audio_segments', 400)
-      if (!(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+      if (audioSegmentsRaw.length && !(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
       let commonUploadId: number | null = null
       let commonAudioConfigId: number | null = null
