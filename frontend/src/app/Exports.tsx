@@ -81,6 +81,13 @@ export default function Exports() {
   const [exportsList, setExportsList] = useState<UploadListItem[]>([])
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [sendingId, setSendingId] = useState<number | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewUploadId, setPreviewUploadId] = useState<number | null>(null)
+  const [previewTitle, setPreviewTitle] = useState<string>('')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewFallbackTried, setPreviewFallbackTried] = useState(false)
 
   const projectsById = useMemo(() => {
     const m = new Map<number, ProjectListItem>()
@@ -187,11 +194,50 @@ export default function Exports() {
                 }}
               >
                 <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#0b0b0b' }}>
-                  <img
-                    src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
-                    alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!me?.userId) return
+                      const uploadId = Number(u.id)
+                      setPreviewOpen(true)
+                      setPreviewUploadId(uploadId)
+                      setPreviewTitle(title)
+                      setPreviewUrl(null)
+                      setPreviewFallbackTried(false)
+                      setPreviewLoading(true)
+                      setPreviewError(null)
+                      try {
+                        const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
+                        const json: any = await res.json().catch(() => null)
+                        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
+                        const url = json?.url != null ? String(json.url) : ''
+                        if (!url) throw new Error('missing_url')
+                        setPreviewUrl(url)
+                      } catch (e: any) {
+                        setPreviewError(e?.message || 'Failed to load preview')
+                        setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
+                        setPreviewFallbackTried(true)
+                      } finally {
+                        setPreviewLoading(false)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      border: 'none',
+                      padding: 0,
+                      margin: 0,
+                      background: 'transparent',
+                      cursor: 'pointer',
+                    }}
+                    aria-label="Preview export"
+                  >
+                    <img
+                      src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  </button>
                 </div>
 
                 <div style={{ padding: 12 }}>
@@ -271,7 +317,93 @@ export default function Exports() {
           {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
         </div>
       </div>
+
+      {previewOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setPreviewOpen(false)
+            setPreviewUploadId(null)
+            setPreviewUrl(null)
+            setPreviewError(null)
+            setPreviewLoading(false)
+            setPreviewFallbackTried(false)
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 20000,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(960px, 100%)',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.16)',
+              background: '#0b0b0b',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: 12, alignItems: 'center' }}>
+              <div style={{ fontWeight: 900, lineHeight: 1.2, minWidth: 0, wordBreak: 'break-word' }}>{previewTitle || 'Preview'}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewOpen(false)
+                  setPreviewUploadId(null)
+                  setPreviewUrl(null)
+                  setPreviewError(null)
+                  setPreviewLoading(false)
+                  setPreviewFallbackTried(false)
+                }}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: 12 }}>
+              {previewLoading ? <div style={{ color: '#bbb', padding: '6px 0' }}>Loading preview…</div> : null}
+              {previewError ? <div style={{ color: '#ff9b9b', padding: '6px 0' }}>{previewError}</div> : null}
+              <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)', background: '#000' }}>
+                {previewUrl ? (
+                  <video
+                    key={`${previewUploadId || 'x'}:${previewUrl}`}
+                    src={previewUrl}
+                    playsInline
+                    controls
+                    preload="metadata"
+                    style={{ width: '100%', height: 'auto', display: 'block', background: '#000' }}
+                    onError={() => {
+                      if (!previewUploadId) return
+                      if (previewFallbackTried) return
+                      setPreviewUrl(`/api/uploads/${encodeURIComponent(String(previewUploadId))}/file`)
+                      setPreviewFallbackTried(true)
+                    }}
+                  />
+                ) : (
+                  <div style={{ padding: 18, color: '#bbb' }}>No preview available.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
-
