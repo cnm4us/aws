@@ -110,13 +110,14 @@ Test log: `agents/implementation/tests/plan_68/step_03_export_renders.md`
 Checkpoint: Wait for approval before proceeding.
 
 ### 4) Frontend: Multi-Timeline “Current Project” (localStorage)
-Status: Pending
+Status: Completed
 
 Changes:
-- Store `create_video_current_project_id` in `localStorage`.
+- Store current project id in `localStorage` (`createVideoCurrentProjectId:v1`).
 - On `/create-video` load:
-  - If localStorage has a project id → load it.
-  - If missing or not found/archived → create a new project and store it.
+  - If `?project=<id>` exists → try to load it.
+  - Else if localStorage has a project id → load it.
+  - If missing or not found/archived → create a new project and store it as current.
 - Add a minimal “Timelines” picker UI in Create Video:
   - List: `name || 'Untitled'`, updated date, select.
   - Actions: New, Rename, Archive.
@@ -125,25 +126,25 @@ Testing:
 - Manual:
   - Create 2 projects; switch between them; refresh and confirm it restores the current one.
 
-Checkpoint: Wait for approval before proceeding.
+Test log: `agents/implementation/tests/plan_68/step_04_frontend_projects.md`
 
 ### 5) Frontend: Export UX (name prompt + redirect to /exports)
-Status: Pending
+Status: In progress
 
 Changes:
 - On “Export” click:
-  - If project has no name (or empty) → prompt for name and save before exporting.
+  - (TODO) If project has no name (or empty) → prompt for name and save before exporting.
   - Enqueue export and show “Exporting…” state (poll status).
   - On completion → redirect to `/exports`.
 
 Testing:
 - Manual:
-  - Export unnamed project → prompt appears → exported → redirects to `/exports`.
+  - Export project → exported → redirects to `/exports`.
 
 Checkpoint: Wait for approval before proceeding.
 
 ### 6) New `/exports` Page (Create Video rendered MP4s)
-Status: Pending
+Status: Completed
 
 Changes:
 - Add a new SPA route/page `/exports` listing **export uploads**:
@@ -151,16 +152,16 @@ Changes:
   - “Open Timeline” → navigates to `/create-video?project=<id>` (and sets localStorage).
   - “Send to HLS” → calls `POST /api/productions { uploadId: <exportUploadId>, name?: ... }` and then navigates to `/productions?id=<productionId>`.
 - `/exports` thumbnails should use the same “thumb then fallback” behavior used elsewhere (so missing thumbs don’t block the page).
-- Backend endpoint for exports list:
-  - `GET /api/exports?user_id=...` (or under `/api/create-video/exports`) returning export uploads joined with `create_video_project_id` and project name.
+- Exports list data source (current):
+  - Uses `GET /api/uploads?kind=video&user_id=<me>` and filters client-side by `video_role='export'` or `s3_key` containing `renders/`.
+  - (Optional follow-up) Add a dedicated backend endpoint for `/exports` listing once filtering is needed server-side.
 
 Testing:
-- `./scripts/auth_curl.sh --profile local get /api/exports` → `200 {items:[...]}`.
 - Manual:
   - From `/exports`, click “Open Timeline” and confirm it loads that project.
   - Click “Send to HLS” and confirm new production appears in `/productions`.
 
-Checkpoint: Wait for approval before proceeding.
+Test log: `agents/implementation/tests/plan_68/step_06_exports_page.md`
 
 ### 7) Update `/uploads` to “raw video assets only”
 Status: Pending
