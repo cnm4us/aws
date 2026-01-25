@@ -56,6 +56,12 @@ export function buildUploadKey(
   return `${prefix}${root}/${dateFolder}/${uuid}/${leaf}${ext}`;
 }
 
+// Plan 68: Create Video export MP4 masters (ffmpeg output) live under renders/ as a stable discriminator.
+export function buildExportKey(basePrefix: string, dateFolder: string, uuid: string, ext = '.mp4'): string {
+  const prefix = basePrefix ? (basePrefix.endsWith('/') ? basePrefix : basePrefix + '/') : '';
+  return `${prefix}renders/${dateFolder}/${uuid}/video${ext}`;
+}
+
 export function baseFromS3Key(key: string, fallbackName = 'video'): string {
   const leaf = String(key || '').split('/').pop() || '';
   const i = leaf.lastIndexOf('.');

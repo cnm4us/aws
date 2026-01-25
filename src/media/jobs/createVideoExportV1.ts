@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
 import { getPool } from '../../db'
 import { MEDIA_CONVERT_NORMALIZE_AUDIO, UPLOAD_BUCKET, UPLOAD_PREFIX } from '../../config'
-import { buildUploadKey, nowDateYmd } from '../../utils/naming'
+import { buildExportKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 import * as audioConfigsSvc from '../../features/audio-configs/service'
@@ -831,6 +831,7 @@ async function renderStillSegmentMp4(opts: {
 
 async function insertGeneratedUpload(input: {
   userId: number
+  projectId: number
   bucket: string
   key: string
   sizeBytes: number
@@ -843,9 +844,9 @@ async function insertGeneratedUpload(input: {
   const db = getPool()
   // This environment has kind/user_id columns; keep the insert simple.
   const [result] = await db.query(
-    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, user_id)
-     VALUES (?, ?, 'video.mp4', NULL, NULL, 'video/mp4', ?, ?, ?, ?, ?, ?, 'uploaded', 'video', ?)`,
-    [input.bucket, input.key, input.sizeBytes, input.width, input.height, input.durationSeconds, input.assetUuid, input.dateYmd, input.userId]
+    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, user_id, video_role, create_video_project_id)
+     VALUES (?, ?, 'video.mp4', NULL, NULL, 'video/mp4', ?, ?, ?, ?, ?, ?, 'uploaded', 'video', ?, 'export', ?)`,
+    [input.bucket, input.key, input.sizeBytes, input.width, input.height, input.durationSeconds, input.assetUuid, input.dateYmd, input.userId, input.projectId]
   )
   return Number((result as any).insertId)
 }
@@ -1472,7 +1473,10 @@ export async function runCreateVideoExportV1Job(
       const row = byId.get(trackUploadId)
       if (!row) throw new Error('upload_not_found')
       if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
-      if (!Number(row.is_system || 0)) throw new Error('forbidden')
+      // Allow system audio for all creators; allow user audio only when owned by the project user.
+      const isSystem = Number(row.is_system || 0) === 1
+      const ownerId = Number(row.user_id || 0)
+      if (!isSystem && ownerId !== userId) throw new Error('forbidden')
       if (row.source_deleted_at) throw new Error('source_deleted')
       const st = String(row.status || '').toLowerCase()
       if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
@@ -1571,13 +1575,14 @@ export async function runCreateVideoExportV1Job(
     const durationSeconds = await probeDurationSeconds(finalOut)
     const { ymd, folder } = nowDateYmd()
     const assetUuid = randomUUID()
-    const key = buildUploadKey(String(UPLOAD_PREFIX || ''), folder, assetUuid, '.mp4', 'video')
+    const key = buildExportKey(String(UPLOAD_PREFIX || ''), folder, assetUuid, '.mp4')
     const bucket = String(UPLOAD_BUCKET || '')
     if (!bucket) throw new Error('missing_upload_bucket')
     await uploadFileToS3(bucket, key, finalOut, 'video/mp4')
 
     const uploadId = await insertGeneratedUpload({
       userId,
+      projectId: Number(input.projectId),
       bucket,
       key,
       sizeBytes: Number(stat.size || 0),
