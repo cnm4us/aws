@@ -5301,18 +5301,24 @@ export default function CreateVideo() {
     if (handledOpenAddStepRef.current) return
     if (!openAddStepFromUrl) return
     handledOpenAddStepRef.current = true
-    setPickOpen(true)
-    if (openAddStepFromUrl === 'screenTitle') {
-      setAddStep('screenTitle')
-      void ensureScreenTitlePresets()
-    }
     try {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('cvOpenAdd')
-      const next = `${url.pathname}${url.search}${url.hash || ''}`
-      window.history.replaceState({}, '', next)
-    } catch {}
-  }, [ensureScreenTitlePresets, openAddStepFromUrl])
+      const current = new URL(window.location.href)
+      current.searchParams.delete('cvOpenAdd')
+      const ret = `${current.pathname}${current.search}${current.hash || ''}`
+
+      const qp = new URLSearchParams(current.search)
+      const project = qp.get('project')
+
+      const path = openAddStepFromUrl === 'screenTitle' ? '/assets/screen-titles' : '/assets'
+      const u = new URL(path, window.location.origin)
+      u.searchParams.set('mode', 'pick')
+      u.searchParams.set('return', ret)
+      if (project) u.searchParams.set('project', String(project))
+      window.location.href = `${u.pathname}${u.search}`
+    } catch {
+      window.location.href = '/assets?mode=pick'
+    }
+  }, [openAddStepFromUrl])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
