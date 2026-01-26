@@ -185,7 +185,18 @@ export default function Timelines() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 'auto' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 10,
+                      flexWrap: 'nowrap',
+                      justifyContent: 'flex-end',
+                      alignItems: 'center',
+                      marginTop: 'auto',
+                      overflowX: 'auto',
+                      WebkitOverflowScrolling: 'touch',
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() => (window.location.href = `/create-video?project=${encodeURIComponent(String(p.id))}`)}
@@ -196,6 +207,7 @@ export default function Timelines() {
                         background: 'rgba(10,132,255,0.16)',
                         color: '#fff',
                         fontWeight: 900,
+                        whiteSpace: 'nowrap',
                         cursor: 'pointer',
                       }}
                     >
@@ -211,6 +223,7 @@ export default function Timelines() {
                         background: '#0c0c0c',
                         color: '#fff',
                         fontWeight: 900,
+                        whiteSpace: 'nowrap',
                         cursor: 'pointer',
                       }}
                     >
@@ -226,6 +239,7 @@ export default function Timelines() {
                         background: 'rgba(255,0,0,0.14)',
                         color: '#fff',
                         fontWeight: 900,
+                        whiteSpace: 'nowrap',
                         cursor: 'pointer',
                       }}
                     >
