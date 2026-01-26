@@ -5,12 +5,10 @@ import styles from '../../styles/menu.module.css'
 export default function MyAssets(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
   const items = [
-    { label: 'Uploads', href: '/uploads' },
-    { label: 'Logos', href: '/uploads?kind=logo' },
-    { label: 'Logo Configs', href: '/logo-configs' },
-    { label: 'Lower Thirds', href: '/lower-thirds' },
+    { label: 'Timelines', href: '/timelines' },
+    { label: 'Assets', href: '/assets' },
+    { label: 'Exports', href: '/exports' },
     { label: 'Productions', href: '/productions' },
-    { label: 'Publish', href: '/publish' },
   ]
   return (
     <div className={styles.list}>

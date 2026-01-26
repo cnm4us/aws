@@ -26,7 +26,7 @@ export default function ContextPicker(props: {
   return (
     <div className={styles.list}>
       {item('info', 'Info (Pages & Rules)')}
-      {item('assets', 'My Assets')}
+      {item('assets', 'Library')}
       {item('channel', 'Channel Changer')}
       {showSpaceAdminLink ? (
         <a href="/space/admin" className={styles.itemLink}>
