@@ -11206,21 +11206,20 @@ export default function CreateVideo() {
     [projectPickerItems, refreshProjectPicker]
   )
 
-  const archiveProjectFromPicker = useCallback(
+  const deleteProjectFromPicker = useCallback(
     async (projectId: number) => {
-      const ok = window.confirm('Archive this timeline?')
+      const ok = window.confirm('Delete this timeline? This cannot be undone.')
       if (!ok) return
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const headers: Record<string, string> = {}
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}/archive`, {
-        method: 'POST',
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}`, {
+        method: 'DELETE',
         credentials: 'same-origin',
         headers,
-        body: '{}',
       })
       const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_archive'))
+      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
       await refreshProjectPicker()
     },
     [refreshProjectPicker]
@@ -18524,8 +18523,7 @@ export default function CreateVideo() {
 
               <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
                 {projectPickerItems.map((p) => {
-                  const isActive = String(p.status || '') === 'active'
-                  const isCurrent = Number(project?.id || 0) === Number(p.id)
+	                  const isCurrent = Number(project?.id || 0) === Number(p.id)
                   return (
                     <div
                       key={p.id}
@@ -18541,9 +18539,9 @@ export default function CreateVideo() {
                           <div style={{ fontWeight: 900, color: isActive ? '#fff' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {p.name && String(p.name).trim() ? String(p.name) : `Untitled #${p.id}`}
                           </div>
-                          <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
-                            {String(p.updatedAt || p.createdAt || '').slice(0, 10)} {isActive ? '' : '· Archived'}
-                          </div>
+	                          <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
+	                            {String(p.updatedAt || p.createdAt || '').slice(0, 10)}
+	                          </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           <button
@@ -18576,22 +18574,21 @@ export default function CreateVideo() {
                           >
                             Rename
                           </button>
-                          <button
-                            type="button"
-                            disabled={!isActive}
-                            onClick={() => archiveProjectFromPicker(p.id)}
-                            style={{
-                              padding: '8px 10px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(255,155,155,0.40)',
-                              background: isActive ? 'rgba(255,0,0,0.14)' : 'rgba(255,255,255,0.06)',
-                              color: '#fff',
-                              fontWeight: 900,
-                              cursor: isActive ? 'pointer' : 'default',
-                            }}
-                          >
-                            Archive
-                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => deleteProjectFromPicker(p.id)}
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,155,155,0.40)',
+	                              background: 'rgba(255,0,0,0.14)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Delete
+	                          </button>
                         </div>
                       </div>
                     </div>
