@@ -18528,53 +18528,66 @@ export default function CreateVideo() {
 	                  return (
 	                    <div
 	                      key={p.id}
-                      style={{
-                        border: isCurrent ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
-                        background: 'rgba(255,255,255,0.04)',
-                        borderRadius: 12,
-                        padding: 12,
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, color: isActive ? '#fff' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {p.name && String(p.name).trim() ? String(p.name) : `Untitled #${p.id}`}
-                          </div>
-	                          <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
-	                            {String(p.updatedAt || p.createdAt || '').slice(0, 10)}
+	                      style={{
+	                        border: isCurrent ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
+	                        background: 'rgba(255,255,255,0.04)',
+	                        borderRadius: 12,
+	                        padding: 12,
+	                      }}
+	                    >
+	                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 92 }}>
+	                        <div style={{ minWidth: 0 }}>
+	                          <div style={{ fontWeight: 900, color: isActive ? '#fff' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+	                            {p.name && String(p.name).trim() ? String(p.name) : `Untitled #${p.id}`}
 	                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                          <button
-                            type="button"
-                            onClick={() => openProject(p.id)}
-                            style={{
-                              padding: '8px 10px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(10,132,255,0.55)',
-                              background: '#0a84ff',
-                              color: '#fff',
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => renameProjectFromPicker(p.id)}
-                            style={{
-                              padding: '8px 10px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              background: '#0c0c0c',
-                              color: '#fff',
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Rename
-                          </button>
+		                          <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
+		                            {String(p.updatedAt || p.createdAt || '').slice(0, 10)}
+		                          </div>
+	                        </div>
+	                        <div
+	                          style={{
+	                            display: 'flex',
+	                            gap: 8,
+	                            flexWrap: 'nowrap',
+	                            justifyContent: 'flex-end',
+	                            alignItems: 'center',
+	                            marginTop: 'auto',
+	                            overflowX: 'auto',
+	                            WebkitOverflowScrolling: 'touch',
+	                          }}
+	                        >
+	                          <button
+	                            type="button"
+	                            onClick={() => openProject(p.id)}
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(10,132,255,0.55)',
+	                              background: '#0a84ff',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              whiteSpace: 'nowrap',
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Open
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() => renameProjectFromPicker(p.id)}
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: '#0c0c0c',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              whiteSpace: 'nowrap',
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Rename
+	                          </button>
 	                          <button
 	                            type="button"
 	                            onClick={() => deleteProjectFromPicker(p.id)}
@@ -18585,17 +18598,18 @@ export default function CreateVideo() {
 	                              background: 'rgba(255,0,0,0.14)',
 	                              color: '#fff',
 	                              fontWeight: 900,
+	                              whiteSpace: 'nowrap',
 	                              cursor: 'pointer',
 	                            }}
 	                          >
 	                            Delete
 	                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+	                        </div>
+	                      </div>
+	                    </div>
+	                  )
+	                })}
+	              </div>
             </div>
           </div>
         ) : null}
