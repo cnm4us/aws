@@ -7210,16 +7210,26 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline]
   )
 
+  type GuidelineActionOpts = {
+    edgeIntent?: 'move' | 'start' | 'end'
+    guidelinesOverride?: number[]
+    noopIfNoCandidate?: boolean
+  }
+
   const applyClipGuidelineAction = useCallback(
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -7316,10 +7326,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(clipStartTimeline)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - clipStartTimeline) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7327,10 +7339,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(clipEndTimeline)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - clipEndTimeline) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7339,6 +7353,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(clipStartTimeline)
           const nE = nearestInclusive(clipEndTimeline)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -7346,6 +7361,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7361,6 +7377,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end' || action === 'contract_end') {
         const cand = action === 'expand_end' ? nextStrict(clipEndTimeline) : prevStrict(clipEndTimeline)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
           return
         }
@@ -7388,6 +7405,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start' || action === 'contract_start') {
         const cand = action === 'expand_start' ? prevStrict(clipStartTimeline) : nextStrict(clipStartTimeline)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
           return
         }
@@ -7397,6 +7415,7 @@ export default function CreateVideo() {
           // delta is negative here (moving right); use abs for source trim.
           const shift = roundToTenth(desiredStartTimeline - clipStartTimeline)
           if (!(shift > 0)) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7420,6 +7439,7 @@ export default function CreateVideo() {
         } else {
           // expand_start: move start left, keep end fixed by consuming earlier source.
           if (!(delta > 0)) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7457,7 +7477,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -7466,7 +7486,11 @@ export default function CreateVideo() {
       const idx = prevSegs.findIndex((n: any) => String(n?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -7557,10 +7581,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7569,10 +7595,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7582,6 +7610,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -7589,6 +7618,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7611,6 +7641,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end' || action === 'contract_end') {
         const cand = action === 'expand_end' ? nextStrict(end0) : prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
           return
         }
@@ -7636,6 +7667,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start' || action === 'contract_start') {
         const cand = action === 'expand_start' ? prevStrict(start0) : nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
           return
         }
@@ -7698,7 +7730,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -7707,7 +7739,11 @@ export default function CreateVideo() {
       const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -7798,10 +7834,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7810,10 +7848,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7823,6 +7863,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -7830,6 +7871,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -7852,6 +7894,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end' || action === 'contract_end') {
         const cand = action === 'expand_end' ? nextStrict(end0) : prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
           return
         }
@@ -7877,6 +7920,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start' || action === 'contract_start') {
         const cand = action === 'expand_start' ? prevStrict(start0) : nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
           return
         }
@@ -8133,7 +8177,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -8141,7 +8185,11 @@ export default function CreateVideo() {
       const idx = prevStills.findIndex((s: any) => String(s?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -8230,10 +8278,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8242,10 +8292,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8255,6 +8307,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -8262,6 +8315,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8284,6 +8338,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end' || action === 'contract_end') {
         const cand = action === 'expand_end' ? nextStrict(end0) : prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_end' ? 'No guideline after end.' : 'No guideline before end.')
           return
         }
@@ -8297,6 +8352,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start' || action === 'contract_start') {
         const cand = action === 'expand_start' ? prevStrict(start0) : nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage(action === 'expand_start' ? 'No guideline before start.' : 'No guideline after start.')
           return
         }
@@ -8359,7 +8415,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -8367,7 +8423,11 @@ export default function CreateVideo() {
       const idx = prevGraphics.findIndex((g: any) => String(g?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -8441,10 +8501,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8457,10 +8519,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8475,16 +8539,19 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
           const snapEdge = !nE || (nS && nS.dist <= nE.dist) ? ('start' as const) : ('end' as const)
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8503,6 +8570,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start') {
         const cand = prevStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before start.')
           return
         }
@@ -8515,6 +8583,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_start') {
         const cand = nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after start.')
           return
         }
@@ -8527,6 +8596,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end') {
         const cand = nextStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after end.')
           return
         }
@@ -8539,6 +8609,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_end') {
         const cand = prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before end.')
           return
         }
@@ -8690,7 +8761,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -8698,7 +8769,11 @@ export default function CreateVideo() {
       const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -8768,10 +8843,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8784,10 +8861,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8801,6 +8880,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -8808,6 +8888,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -8826,6 +8907,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start') {
         const cand = prevStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before start.')
           return
         }
@@ -8838,6 +8920,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_start') {
         const cand = nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after start.')
           return
         }
@@ -8850,6 +8933,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end') {
         const cand = nextStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after end.')
           return
         }
@@ -8862,6 +8946,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_end') {
         const cand = prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before end.')
           return
         }
@@ -9018,7 +9103,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -9026,7 +9111,11 @@ export default function CreateVideo() {
       const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -9096,10 +9185,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9112,10 +9203,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9129,6 +9222,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -9136,6 +9230,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9154,6 +9249,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start') {
         const cand = prevStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before start.')
           return
         }
@@ -9166,6 +9262,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_start') {
         const cand = nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after start.')
           return
         }
@@ -9178,6 +9275,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end') {
         const cand = nextStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after end.')
           return
         }
@@ -9190,6 +9288,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_end') {
         const cand = prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before end.')
           return
         }
@@ -9346,7 +9445,7 @@ export default function CreateVideo() {
     (
       id: string,
       action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
-      opts?: { edgeIntent?: 'move' | 'start' | 'end' }
+      opts?: GuidelineActionOpts
     ) => {
       const targetId = String(id || '')
       if (!targetId) return
@@ -9354,7 +9453,11 @@ export default function CreateVideo() {
       const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
       if (idx < 0) return
 
-      const gsRaw: any[] = Array.isArray((timeline as any).guidelines) ? ((timeline as any).guidelines as any[]) : []
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
       let gsSorted = Array.from(
         new Map(
           gsRaw
@@ -9424,10 +9527,12 @@ export default function CreateVideo() {
         if (edgeIntent === 'start') {
           const cand = prevStrict(start0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline before start.')
             return
           }
           if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9440,10 +9545,12 @@ export default function CreateVideo() {
         } else if (edgeIntent === 'end') {
           const cand = nextStrict(end0)
           if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guideline after end.')
             return
           }
           if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9457,6 +9564,7 @@ export default function CreateVideo() {
           const nS = nearestInclusive(start0)
           const nE = nearestInclusive(end0)
           if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('No guidelines available.')
             return
           }
@@ -9464,6 +9572,7 @@ export default function CreateVideo() {
           const nn = snapEdge === 'start' ? nS : nE
           if (!nn) return
           if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
             setTimelineMessage('Already aligned to guideline.')
             return
           }
@@ -9482,6 +9591,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_start') {
         const cand = prevStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before start.')
           return
         }
@@ -9494,6 +9604,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_start') {
         const cand = nextStrict(start0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after start.')
           return
         }
@@ -9506,6 +9617,7 @@ export default function CreateVideo() {
       } else if (action === 'expand_end') {
         const cand = nextStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline after end.')
           return
         }
@@ -9518,6 +9630,7 @@ export default function CreateVideo() {
       } else if (action === 'contract_end') {
         const cand = prevStrict(end0)
         if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
           setTimelineMessage('No guideline before end.')
           return
         }
@@ -18369,8 +18482,10 @@ export default function CreateVideo() {
 			                  const expandLabel = edgeIntent === 'start' ? 'Expand \u2190' : 'Expand \u2192'
 			                  const contractLabel = edgeIntent === 'start' ? 'Contract \u2192' : 'Contract \u2190'
 			                  const snapLabel = edgeIntent === 'start' ? 'Snap to \u2190' : 'Snap to \u2192'
+			                  const playheadGuidelinesOverride = [roundToTenth(playhead)]
 			                  return (
 			                    <>
+			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0' }}>Guidelines</div>
 			                      <button
 			                        type="button"
 					                        onClick={() => {
@@ -18388,7 +18503,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          border: '1px solid rgba(212,175,55,0.85)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18415,7 +18530,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          border: '1px solid rgba(212,175,55,0.85)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18442,7 +18557,95 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,255,255,0.18)',
+			                          border: '1px solid rgba(212,175,55,0.85)',
+			                          background: '#000',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {snapLabel}
+			                      </button>
+
+			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
+			                        Playhead
+			                      </div>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          const opts: GuidelineActionOpts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,59,48,0.85)',
+			                          background: '#000',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {expandLabel}
+			                      </button>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          const opts: GuidelineActionOpts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,59,48,0.85)',
+			                          background: '#000',
+			                          color: '#fff',
+			                          fontWeight: 900,
+			                          cursor: 'pointer',
+			                          textAlign: 'left',
+			                        }}
+			                      >
+			                        {contractLabel}
+			                      </button>
+			                      <button
+			                        type="button"
+			                        onClick={() => {
+			                          const opts: GuidelineActionOpts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
+			                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, 'snap', opts)
+			                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '1px solid rgba(255,59,48,0.85)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
