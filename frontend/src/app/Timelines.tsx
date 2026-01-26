@@ -42,7 +42,6 @@ export default function Timelines() {
   const [items, setItems] = useState<ProjectListItem[]>([])
 
   const activeItems = useMemo(() => items.filter((p) => p.archivedAt == null), [items])
-  const archivedItems = useMemo(() => items.filter((p) => p.archivedAt != null), [items])
 
   async function refresh() {
     setLoading(true)
@@ -108,24 +107,23 @@ export default function Timelines() {
     }
   }
 
-  async function archive(id: number) {
-    const ok = window.confirm('Archive this timeline?')
+  async function deleteTimeline(id: number) {
+    const ok = window.confirm('Delete this timeline? This cannot be undone.')
     if (!ok) return
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const headers: Record<string, string> = {}
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(id))}/archive`, {
-        method: 'POST',
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(id))}`, {
+        method: 'DELETE',
         credentials: 'same-origin',
         headers,
-        body: '{}',
       })
       const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_archive'))
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_delete'))
       await refresh()
     } catch (e: any) {
-      window.alert(e?.message || 'Failed to archive timeline')
+      window.alert(e?.message || 'Failed to delete timeline')
     }
   }
 
@@ -219,7 +217,7 @@ export default function Timelines() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => archive(p.id)}
+                      onClick={() => deleteTimeline(p.id)}
                       style={{
                         padding: '8px 10px',
                         borderRadius: 10,
@@ -230,7 +228,7 @@ export default function Timelines() {
                         cursor: 'pointer',
                       }}
                     >
-                      Archive
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -238,31 +236,7 @@ export default function Timelines() {
             )
           })}
         </div>
-
-        {archivedItems.length ? (
-          <div style={{ marginTop: 22 }}>
-            <div style={{ fontWeight: 900, marginBottom: 10 }}>Archived</div>
-            <div style={{ display: 'grid', gap: 12 }}>
-              {archivedItems.map((p) => (
-                <div
-                  key={p.id}
-                  style={{
-                    border: '1px solid rgba(255,255,255,0.10)',
-                    borderRadius: 16,
-                    background: 'rgba(255,255,255,0.02)',
-                    padding: 14,
-                    opacity: 0.8,
-                  }}
-                >
-                  <div style={{ fontWeight: 900, wordBreak: 'break-word' }}>{(p.name || '').trim() || `Timeline #${p.id}`}</div>
-                  <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>Archived: {fmtDate(p.archivedAt)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   )
 }
-

@@ -73,6 +73,22 @@ export async function archive(id: number): Promise<void> {
   )
 }
 
+export async function detachUploadsFromProject(userId: number, projectId: number): Promise<void> {
+  const db = getPool()
+  await db.query(
+    `UPDATE uploads
+        SET create_video_project_id = NULL
+      WHERE create_video_project_id = ?
+        AND user_id = ?`,
+    [projectId, userId]
+  )
+}
+
+export async function deleteForUserById(userId: number, projectId: number): Promise<void> {
+  const db = getPool()
+  await db.query(`DELETE FROM create_video_projects WHERE id = ? AND user_id = ?`, [projectId, userId])
+}
+
 export async function setLastExport(id: number, fields: { jobId?: number | null; uploadId?: number | null }): Promise<void> {
   const db = getPool()
   const jobId = fields.jobId !== undefined ? fields.jobId : null

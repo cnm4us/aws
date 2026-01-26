@@ -180,6 +180,17 @@ export async function archiveActiveProjectForUser(userId: number): Promise<{ ok:
   return { ok: true }
 }
 
+export async function deleteProjectForUserById(userId: number, projectId: number): Promise<{ ok: true }> {
+  if (!userId) throw new ForbiddenError()
+  const row = await repo.getById(Number(projectId))
+  if (!row) throw new NotFoundError('not_found')
+  ensureOwned(row, userId)
+
+  await repo.detachUploadsFromProject(Number(userId), Number(projectId))
+  await repo.deleteForUserById(Number(userId), Number(projectId))
+  return { ok: true }
+}
+
 export async function exportProjectForUserById(userId: number, projectId: number): Promise<{ jobId: number }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getById(Number(projectId))

@@ -120,6 +120,17 @@ createVideoRouter.patch('/api/create-video/projects/:id/timeline', requireAuth, 
   }
 })
 
+createVideoRouter.delete('/api/create-video/projects/:id', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const projectId = Number(req.params.id)
+    const result = await createVideoSvc.deleteProjectForUserById(currentUserId, projectId)
+    res.json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
 createVideoRouter.post('/api/create-video/projects/:id/archive', requireAuth, async (req, res, next) => {
   try {
     const currentUserId = Number(req.user!.id)
