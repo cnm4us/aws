@@ -18521,12 +18521,13 @@ export default function CreateVideo() {
 
               {projectPickerLoading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
 
-              <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
-                {projectPickerItems.map((p) => {
-	                  const isCurrent = Number(project?.id || 0) === Number(p.id)
-                  return (
-                    <div
-                      key={p.id}
+	              <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+	                {projectPickerItems.map((p) => {
+	                  const isActive = String((p as any)?.status || '') === 'active'
+		                  const isCurrent = Number(project?.id || 0) === Number(p.id)
+	                  return (
+	                    <div
+	                      key={p.id}
                       style={{
                         border: isCurrent ? '1px solid rgba(10,132,255,0.75)' : '1px solid rgba(255,255,255,0.14)',
                         background: 'rgba(255,255,255,0.04)',
