@@ -177,14 +177,15 @@ export default function Timelines() {
                   padding: 14,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 92 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 900, fontSize: 16, wordBreak: 'break-word' }}>{title}</div>
                     <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
                       Updated: {fmtDate(p.updatedAt)} • Created: {fmtDate(p.createdAt)}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 'auto' }}>
                     <button
                       type="button"
                       onClick={() => (window.location.href = `/create-video?project=${encodeURIComponent(String(p.id))}`)}
