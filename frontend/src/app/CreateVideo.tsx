@@ -10845,7 +10845,7 @@ export default function CreateVideo() {
             id: String((drag as any).graphicId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -10874,7 +10874,7 @@ export default function CreateVideo() {
             id: String((drag as any).logoId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -10903,7 +10903,7 @@ export default function CreateVideo() {
             id: String((drag as any).lowerThirdId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -10932,7 +10932,7 @@ export default function CreateVideo() {
             id: String((drag as any).screenTitleId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -10961,7 +10961,7 @@ export default function CreateVideo() {
             id: String((drag as any).clipId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -10990,7 +10990,7 @@ export default function CreateVideo() {
             id: String((drag as any).narrationId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -11019,7 +11019,7 @@ export default function CreateVideo() {
             id: String((drag as any).audioSegmentId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -11048,7 +11048,7 @@ export default function CreateVideo() {
             id: String((drag as any).stillId),
             x,
             y,
-            view: 'main',
+            view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -18017,7 +18017,7 @@ export default function CreateVideo() {
 		              left: timelineCtxMenu.x,
 		              top: timelineCtxMenu.y,
 		              width: 170,
-		              background: '#0756a6',
+		              background: (timelineCtxMenu.view || 'main') === 'guidelines' ? 'rgba(48,209,88,0.95)' : '#0756a6',
 		              border: '1px solid rgba(255,255,255,0.18)',
 		              borderRadius: 12,
 		              padding: 8,
@@ -18029,28 +18029,13 @@ export default function CreateVideo() {
 			          >
 			            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
 			              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-			                {(timelineCtxMenu.view || 'main') === 'guidelines' ? (
-			                  <button
-			                    type="button"
-			                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'main' } : prev))}
-			                    style={{
-			                      width: 28,
-			                      height: 28,
-			                      borderRadius: 10,
-			                      border: '1px solid rgba(255,255,255,0.18)',
-			                      background: '#000',
-			                      color: '#fff',
-			                      fontWeight: 900,
-			                      cursor: 'pointer',
-			                      lineHeight: '26px',
-			                      textAlign: 'center',
-			                    }}
-			                    aria-label="Back"
-			                  >
-			                    ←
-			                  </button>
-			                ) : null}
-			                <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb' }}>
+			                <div
+			                  style={{
+			                    fontSize: 13,
+			                    fontWeight: 900,
+			                    color: (timelineCtxMenu.view || 'main') === 'guidelines' ? '#0b0b0b' : '#bbb',
+			                  }}
+			                >
 					                  {(timelineCtxMenu.view || 'main') === 'guidelines'
 					                    ? 'Guidelines'
 					                    : timelineCtxMenu.kind === 'audioSegment'
@@ -18292,25 +18277,6 @@ export default function CreateVideo() {
                             Edit Style
                           </button>
                         ) : null}
-				                {(timelineCtxMenu.edgeIntent || 'move') !== 'move' ? (
-				                  <button
-				                    type="button"
-				                    onClick={() => setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'guidelines' } : prev))}
-				                    style={{
-			                      width: '100%',
-			                      padding: '10px 12px',
-			                      borderRadius: 10,
-			                      border: '1px solid rgba(255,255,255,0.18)',
-			                      background: '#000',
-			                      color: '#fff',
-			                      fontWeight: 900,
-			                      cursor: 'pointer',
-			                      textAlign: 'left',
-			                    }}
-			                  >
-			                    Guidelines…
-			                  </button>
-			                ) : null}
 			                <button
 			                  type="button"
 				                  onClick={() => {
