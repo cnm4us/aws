@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react'
+import ScreenTitlePresetsPage from './ScreenTitlePresets'
 
 type UploadListItem = {
   id: number
@@ -1624,9 +1625,12 @@ const NarrationAssetsPage: React.FC = () => {
 const ScreenTitleStylesAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
+  const returnHref = useMemo(() => getQueryParam('return'), [])
   const [items, setItems] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [deletingId, setDeletingId] = React.useState<number | null>(null)
+  const [deleteError, setDeleteError] = React.useState<string | null>(null)
 
   const backHref = useMemo(() => {
     if (mode !== 'pick') return '/assets'
@@ -1652,27 +1656,125 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
   }, [])
 
   if (mode !== 'pick') {
+    const makeHref = (base: string): string => {
+      const extras: Record<string, string> = {}
+      if (returnHref) extras.return = String(returnHref)
+      return Object.keys(extras).length ? withParams(base, extras) : base
+    }
     return (
       <PickListShell
-        title="Screen Titles"
+        title="Screen Title Styles"
         subtitle="Manage reusable screen title styles."
-        backHref="/assets"
+        backHref={returnHref ? String(returnHref) : '/assets'}
       >
-        <a
-          href="/screen-title-presets"
-          style={{
-            padding: '10px 14px',
-            borderRadius: 12,
-            border: '1px solid rgba(10,132,255,0.55)',
-            background: '#0a84ff',
-            color: '#fff',
-            fontWeight: 900,
-            textDecoration: 'none',
-            display: 'inline-flex',
-          }}
-        >
-          Manage Styles
-        </a>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>Create and edit reusable Screen Title styles.</div>
+          <a
+            href={makeHref('/assets/screen-titles/new')}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid rgba(10,132,255,0.55)',
+              background: '#0a84ff',
+              color: '#fff',
+              fontWeight: 900,
+              textDecoration: 'none',
+              display: 'inline-flex',
+            }}
+          >
+            New Style
+          </a>
+        </div>
+
+        {deleteError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{deleteError}</div> : null}
+        {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+        {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
+
+        <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+          {items.map((it) => {
+            const id = Number(it?.id || 0)
+            const name = String(it?.name || `Style ${id}`).trim()
+            const desc = String(it?.description || '').trim()
+            const isDeleting = deletingId === id
+            return (
+              <div
+                key={`st-style-${id}`}
+                style={{
+                  borderRadius: 16,
+                  border: '1px solid rgba(255,214,10,0.55)',
+                  background: 'rgba(0,0,0,0.35)',
+                  padding: 12,
+                  display: 'grid',
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>{name}</div>
+                {desc ? <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>{desc}</div> : null}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginTop: 6 }}>
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={async () => {
+                      const ok = window.confirm('Delete this style? This cannot be undone.')
+                      if (!ok) return
+                      setDeleteError(null)
+                      setDeletingId(id)
+                      try {
+                        const headers: Record<string, string> = {}
+                        const csrf = getCsrfToken()
+                        if (csrf) headers['x-csrf-token'] = csrf
+                        const res = await fetch(`/api/screen-title-presets/${encodeURIComponent(String(id))}`, {
+                          method: 'DELETE',
+                          credentials: 'same-origin',
+                          headers,
+                        })
+                        const j: any = await res.json().catch(() => ({}))
+                        if (!res.ok) throw new Error(String(j?.detail || j?.error || 'Failed to delete'))
+                        setItems((prev) => prev.filter((x) => Number((x as any)?.id || 0) !== id))
+                      } catch (e: any) {
+                        setDeleteError(e?.message || 'Failed to delete')
+                      } finally {
+                        setDeletingId(null)
+                      }
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,155,155,0.40)',
+                      background: 'rgba(128,0,0,1)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: isDeleting ? 'default' : 'pointer',
+                      opacity: isDeleting ? 0.7 : 1,
+                    }}
+                  >
+                    {isDeleting ? 'Deleting…' : 'Delete'}
+                  </button>
+
+                  <a
+                    href={makeHref(`/assets/screen-titles/${encodeURIComponent(String(id))}/edit`)}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      background: '#0c0c0c',
+                      color: '#fff',
+                      fontWeight: 900,
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    Edit
+                  </a>
+                </div>
+              </div>
+            )
+          })}
+          {!loading && !items.length ? <div style={{ color: '#bbb' }}>No styles yet.</div> : null}
+        </div>
       </PickListShell>
     )
   }
@@ -2292,23 +2394,29 @@ export default function Assets() {
   const mode = useMemo(() => parseMode(), [])
   const pathname = useMemo(() => String(window.location.pathname || ''), [])
   const pickPassthrough = useMemo(() => getPickPassthrough(), [])
-  const typePath = useMemo(() => {
+  const route = useMemo(() => {
     const p = pathname.replace(/\/+$/, '')
     if (p === '/assets') return null
     if (!p.startsWith('/assets/')) return null
     const seg = p.slice('/assets/'.length)
-    return seg ? seg : null
+    if (!seg) return null
+    const parts = seg.split('/').filter(Boolean)
+    if (!parts.length) return null
+    return { type: parts[0], rest: parts.slice(1) }
   }, [pathname])
 
-  if (typePath === 'logo-config') return <LogoConfigPickPage />
-  if (typePath === 'lower-third-config') return <LowerThirdConfigPickPage />
-  if (typePath === 'audio-config') return <AudioConfigPickPage />
+  if (route?.type === 'logo-config') return <LogoConfigPickPage />
+  if (route?.type === 'lower-third-config') return <LowerThirdConfigPickPage />
+  if (route?.type === 'audio-config') return <AudioConfigPickPage />
 
-  if (typePath === 'narration') return <NarrationAssetsPage />
-  if (typePath === 'audio') return <AudioMusicAssetsPage />
-  if (typePath === 'screen-titles') return <ScreenTitleStylesAssetsPage />
+  if (route?.type === 'narration') return <NarrationAssetsPage />
+  if (route?.type === 'audio') return <AudioMusicAssetsPage />
+  if (route?.type === 'screen-titles') {
+    if (route.rest.length === 0) return <ScreenTitleStylesAssetsPage />
+    return <ScreenTitlePresetsPage />
+  }
 
-  if (typePath === 'video') {
+  if (route?.type === 'video') {
     return (
       <AssetUploadsListPage
         title="Videos"
@@ -2330,7 +2438,7 @@ export default function Assets() {
     )
   }
 
-  if (typePath === 'graphic') {
+  if (route?.type === 'graphic') {
     return (
       <AssetUploadsListPage
         title="Graphics"
@@ -2351,7 +2459,7 @@ export default function Assets() {
     )
   }
 
-  if (typePath === 'logo') {
+  if (route?.type === 'logo') {
     return (
       <AssetUploadsListPage
         title="Logos"
@@ -2371,7 +2479,7 @@ export default function Assets() {
     )
   }
 
-  if (typePath === 'lower-third') {
+  if (route?.type === 'lower-third') {
     return (
       <AssetUploadsListPage
         title="Lower Thirds"
@@ -2392,7 +2500,7 @@ export default function Assets() {
     )
   }
 
-  if (typePath) {
+  if (route?.type) {
     return (
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
@@ -2400,12 +2508,12 @@ export default function Assets() {
             ← Assets
           </a>
           <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Coming Soon</h1>
-          <p style={{ margin: 0, color: '#bbb' }}>`/assets/{typePath}` isn’t wired yet.</p>
+          <p style={{ margin: 0, color: '#bbb' }}>`/assets/{route.type}` isn’t wired yet.</p>
           <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
             <a href="/create-video" style={{ color: '#0a84ff', textDecoration: 'none' }}>
               Create Video
             </a>
-            <a href="/screen-title-presets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
+            <a href="/assets/screen-titles" style={{ color: '#0a84ff', textDecoration: 'none' }}>
               Screen Title Styles
             </a>
           </div>

@@ -29,6 +29,12 @@ type ScreenTitleGradientsResponse = {
   }>
 }
 
+type RouteContext = {
+  base: 'legacy' | 'assets'
+  action: 'list' | 'new' | 'edit'
+  presetId: number | null
+}
+
 type FontSizeKey = 'x_small' | 'small' | 'medium' | 'large' | 'x_large'
 
 type ScreenTitleFontPresetsResponse = {
@@ -261,6 +267,34 @@ function parseReturnMode(): 'picker' | null {
   }
 }
 
+function parseReturnHref(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = String(params.get('return') || '').trim()
+    if (!raw) return null
+    if (raw.trim().toLowerCase() === 'picker') return null
+    const u = new URL(raw, window.location.origin)
+    if (!u.pathname.startsWith('/')) return null
+    return u.pathname + (u.search ? u.search : '') + (u.hash ? u.hash : '')
+  } catch {
+    return null
+  }
+}
+
+function parseRouteContext(): RouteContext {
+  const p = String(window.location.pathname || '').replace(/\/+$/, '')
+  if (p === '/assets/screen-titles' || p.startsWith('/assets/screen-titles/')) {
+    const rest = p.slice('/assets/screen-titles'.length).split('/').filter(Boolean)
+    if (rest[0] === 'new') return { base: 'assets', action: 'new', presetId: null }
+    if (rest.length >= 2 && rest[1] === 'edit') {
+      const n = Number(rest[0])
+      return { base: 'assets', action: 'edit', presetId: Number.isFinite(n) && n > 0 ? n : null }
+    }
+    return { base: 'assets', action: 'list', presetId: null }
+  }
+  return { base: 'legacy', action: 'list', presetId: null }
+}
+
 function buildBackToPickerHrefWithRefresh(
   returnMode: 'picker' | null,
   refreshPresetId?: number | null
@@ -281,16 +315,33 @@ function buildBackToPickerHrefWithRefresh(
 }
 
 export default function ScreenTitlePresetsPage() {
+  const routeCtx = useMemo(() => parseRouteContext(), [])
   const fromHref = useMemo(() => parseFromHref(), [])
   const editPresetId = useMemo(() => parseEditPresetId(), [])
   const openNewParam = useMemo(() => parseOpenNew(), [])
   const returnMode = useMemo(() => parseReturnMode(), [])
-  const backHref = fromHref || '/uploads'
+  const returnHref = useMemo(() => parseReturnHref(), [])
+  const effectiveEditPresetId = useMemo(() => (routeCtx.base === 'assets' ? routeCtx.presetId : editPresetId), [editPresetId, routeCtx.base, routeCtx.presetId])
+  const effectiveOpenNew = useMemo(() => (routeCtx.base === 'assets' ? routeCtx.action === 'new' : openNewParam), [openNewParam, routeCtx.action, routeCtx.base])
+  const assetsStylesHref = useMemo(() => {
+    if (routeCtx.base !== 'assets') return null
+    if (!returnHref) return '/assets/screen-titles'
+    try {
+      const url = new URL('/assets/screen-titles', window.location.origin)
+      url.searchParams.set('return', returnHref)
+      return url.pathname + url.search
+    } catch {
+      return `/assets/screen-titles?return=${encodeURIComponent(returnHref)}`
+    }
+  }, [returnHref, routeCtx.base])
+  const backHref = routeCtx.base === 'assets' ? (assetsStylesHref || '/assets/screen-titles') : (fromHref || '/uploads')
   const backLabel =
-    fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
-      : fromHref?.startsWith('/create-video') ? '← Back to Create Video'
-      : fromHref?.startsWith('/produce') ? '← Back to Produce'
-        : '← Back'
+    routeCtx.base === 'assets'
+      ? '← Styles'
+      : fromHref?.startsWith('/create-video') && fromHref.includes('cvScreenTitleId=') ? '← Screen Titles Properties'
+        : fromHref?.startsWith('/create-video') ? '← Back to Create Video'
+          : fromHref?.startsWith('/produce') ? '← Back to Produce'
+            : '← Back'
 
   const [me, setMe] = useState<MeResponse | null>(null)
   const [presets, setPresets] = useState<ScreenTitlePreset[]>([])
@@ -322,6 +373,15 @@ export default function ScreenTitlePresetsPage() {
     })()
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (routeCtx.base !== 'legacy') return
+    try {
+      // Debug-only route: we want this to be obvious in local testing.
+      // eslint-disable-next-line no-console
+      console.warn('[legacy] visited /screen-title-presets; use /assets/screen-titles instead')
+    } catch {}
+  }, [routeCtx.base])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -522,6 +582,27 @@ export default function ScreenTitlePresetsPage() {
       }
       await load()
       const refreshId = selectedId != null ? Number(selectedId) : createdId
+      if (routeCtx.base === 'assets') {
+        if (returnHref) {
+          const id = refreshId != null && Number.isFinite(Number(refreshId)) && Number(refreshId) > 0 ? Number(refreshId) : null
+          if (id != null) {
+            try {
+              const url = new URL(returnHref, window.location.origin)
+              url.searchParams.delete('cvScreenTitleId')
+              url.searchParams.set('cvRefreshScreenTitlePresetId', String(id))
+              window.location.href = `${url.pathname}${url.search}${url.hash || ''}`
+              return
+            } catch {
+              window.location.href = returnHref
+              return
+            }
+          }
+          window.location.href = returnHref
+          return
+        }
+        window.location.href = assetsStylesHref || '/assets/screen-titles'
+        return
+      }
       const href = buildBackToPickerHrefWithRefresh(returnMode, refreshId)
       if (href) {
         window.location.href = href
@@ -532,7 +613,7 @@ export default function ScreenTitlePresetsPage() {
     } finally {
       setSaving(false)
     }
-  }, [me?.userId, draft, selectedId, load, returnMode])
+  }, [assetsStylesHref, load, me?.userId, draft, returnHref, returnMode, routeCtx.base, selectedId])
 
   const deletePreset = useCallback(async (id: number) => {
     if (!id) return
@@ -610,21 +691,21 @@ export default function ScreenTitlePresetsPage() {
 
   useEffect(() => {
     if (handledDeepLinkRef.current) return
-    if (editPresetId != null) return
-    if (!openNewParam) return
+    if (effectiveEditPresetId != null) return
+    if (!effectiveOpenNew) return
     handledDeepLinkRef.current = true
     openNew()
-  }, [editPresetId, openNew, openNewParam])
+  }, [effectiveEditPresetId, effectiveOpenNew, openNew])
 
   useEffect(() => {
     if (handledDeepLinkRef.current) return
-    if (editPresetId == null) return
+    if (effectiveEditPresetId == null) return
     if (!presets.length) return
-    const p = presets.find((x) => Number(x.id) === Number(editPresetId)) || null
+    const p = presets.find((x) => Number(x.id) === Number(effectiveEditPresetId)) || null
     if (!p) return
     handledDeepLinkRef.current = true
     openEdit(p)
-  }, [editPresetId, openEdit, presets])
+  }, [effectiveEditPresetId, openEdit, presets])
 
   const backToPickerHref = useMemo(() => {
     if (returnMode !== 'picker') return null
@@ -638,10 +719,11 @@ export default function ScreenTitlePresetsPage() {
   }, [returnMode])
 
   const backToTimelineHref = useMemo(() => {
-    if (!fromHref) return null
-    if (!fromHref.startsWith('/create-video')) return null
+    const base = returnHref || fromHref
+    if (!base) return null
+    if (!base.startsWith('/create-video')) return null
     try {
-      const url = new URL(fromHref, window.location.origin)
+      const url = new URL(base, window.location.origin)
       // Returning from editing a style: go back to the timeline only (no modal reopen).
       url.searchParams.delete('cvScreenTitleId')
       if (selectedId != null && Number.isFinite(Number(selectedId)) && Number(selectedId) > 0) {
@@ -649,17 +731,21 @@ export default function ScreenTitlePresetsPage() {
       }
       return `${url.pathname}${url.search}${url.hash || ''}`
     } catch {
-      return fromHref
+      return base
     }
-  }, [fromHref, selectedId])
+  }, [fromHref, returnHref, selectedId])
 
   const goBackToStyles = useCallback(() => {
+    if (routeCtx.base === 'assets') {
+      window.location.href = assetsStylesHref || '/assets/screen-titles'
+      return
+    }
     if (backToPickerHref) {
       window.location.href = backToPickerHref
       return
     }
     window.location.href = backHref
-  }, [backHref, backToPickerHref])
+  }, [assetsStylesHref, backHref, backToPickerHref, routeCtx.base])
 
   const saveAndBackToTimeline = useCallback(async () => {
     if (!me?.userId) return
@@ -713,6 +799,27 @@ export default function ScreenTitlePresetsPage() {
       }}
     >
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
+        {routeCtx.base === 'legacy' ? (
+          <div
+            style={{
+              border: '1px solid rgba(255,214,10,0.65)',
+              background: 'rgba(88, 20, 24, 0.95)',
+              borderRadius: 14,
+              padding: 12,
+              marginBottom: 12,
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ fontWeight: 900, color: '#ffd60a' }}>Legacy debug route</div>
+            <a href="/assets/screen-titles" style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 900 }}>
+              Open `/assets/screen-titles`
+            </a>
+          </div>
+        ) : null}
         {view !== 'edit' ? (
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>{backLabel}</a>
         ) : null}

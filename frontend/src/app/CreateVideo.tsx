@@ -15927,7 +15927,12 @@ export default function CreateVideo() {
 		                  <button
 		                    type="button"
 		                    onClick={() => {
-		                      window.location.href = `/screen-title-presets?new=1&return=picker&from=${encodeURIComponent('/create-video')}`
+		                      try {
+		                        const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+		                        window.location.href = `/assets/screen-titles/new?return=${encodeURIComponent(ret)}`
+		                      } catch {
+		                        window.location.href = '/assets/screen-titles/new'
+		                      }
 		                    }}
 		                    style={{
 		                      padding: '10px 12px',
@@ -15999,7 +16004,12 @@ export default function CreateVideo() {
 		                              <button
 		                                type="button"
 		                                onClick={() => {
-		                                  window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(id))}&return=picker&from=${encodeURIComponent('/create-video')}`
+		                                  try {
+		                                    const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+		                                    window.location.href = `/assets/screen-titles/${encodeURIComponent(String(id))}/edit?return=${encodeURIComponent(ret)}`
+		                                  } catch {
+		                                    window.location.href = `/assets/screen-titles/${encodeURIComponent(String(id))}/edit`
+		                                  }
 		                                }}
 		                                style={{
 		                                  padding: '8px 10px',
@@ -17641,9 +17651,12 @@ export default function CreateVideo() {
 		                <button
 		                  type="button"
 		                  onClick={() => {
-		                    setPickOpen(true)
-		                    setAddStep('screenTitle')
-		                    void ensureScreenTitlePresets()
+		                    try {
+		                      const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+		                      window.location.href = `/assets/screen-titles?return=${encodeURIComponent(ret)}`
+		                    } catch {
+		                      window.location.href = '/assets/screen-titles'
+		                    }
 		                  }}
 		                  style={{
 		                    color: '#0a84ff',
@@ -18261,7 +18274,7 @@ export default function CreateVideo() {
                                 base.searchParams.set('cvScreenTitleId', String((st as any).id))
                                 base.searchParams.set('cvRefreshScreenTitlePresetId', String(presetId))
                                 const from = `${base.pathname}${base.search}${base.hash || ''}`
-                                window.location.href = `/screen-title-presets?editPresetId=${encodeURIComponent(String(presetId))}&from=${encodeURIComponent(from)}`
+                                window.location.href = `/assets/screen-titles/${encodeURIComponent(String(presetId))}/edit?return=${encodeURIComponent(from)}`
                               } catch {}
                             }}
                             style={{

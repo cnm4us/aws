@@ -2652,7 +2652,7 @@ export default function ProducePage() {
 
 	                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
 	                  <div style={{ color: '#bbb', fontWeight: 650 }}>Screen Title</div>
-	                  <a href={`/screen-title-presets?from=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage presets</a>
+	                  <a href={`/assets/screen-titles?return=${fromHere}`} style={{ color: '#9cf', textDecoration: 'none', fontSize: 13 }}>Manage styles</a>
 	                </div>
                 <div style={{ display: 'grid', gap: 8, padding: '8px 10px 10px', borderRadius: 12, border: '1px solid rgba(212,175,55,0.75)', background: 'rgba(255,255,255,0.03)', marginBottom: 14 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 12px', alignItems: 'baseline' }}>

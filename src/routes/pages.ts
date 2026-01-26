@@ -6746,6 +6746,9 @@ pagesRouter.get('/assets', (_req, res) => {
 pagesRouter.get('/assets/', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
+pagesRouter.get('/assets/:type/*', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
 pagesRouter.get('/assets/:type', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
@@ -6760,10 +6763,18 @@ pagesRouter.get('/logo-configs', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 
-pagesRouter.get('/screen-title-presets', (_req, res) => {
+pagesRouter.get('/screen-title-presets', (req: any, res) => {
+  try {
+    const uid = req?.user?.id ? Number(req.user.id) : null
+    console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
+  } catch {}
   serveHtml(res, path.join('app', 'index.html'));
 });
-pagesRouter.get('/screen-title-presets/', (_req, res) => {
+pagesRouter.get('/screen-title-presets/', (req: any, res) => {
+  try {
+    const uid = req?.user?.id ? Number(req.user.id) : null
+    console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
+  } catch {}
   serveHtml(res, path.join('app', 'index.html'));
 });
 
