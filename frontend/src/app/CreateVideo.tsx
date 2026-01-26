@@ -2618,6 +2618,7 @@ export default function CreateVideo() {
     if (audioEnvelopeByUploadId[id]) return
     const status = audioEnvelopeStatusByUploadId[id]
     if (status === 'pending') return
+    if (status === 'error') return
 
     setAudioEnvelopeStatusByUploadId((prev) => ({ ...prev, [id]: 'pending' }))
     setAudioEnvelopeErrorByUploadId((prev) => ({ ...prev, [id]: '' }))
@@ -2724,7 +2725,7 @@ export default function CreateVideo() {
     const uploadId = Number(seg.uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) return
     ensureAudioEnvelope(uploadId).catch(() => {})
-  }, [audioSegments, ensureAudioEnvelope, selectedAudioId])
+  }, [ensureAudioEnvelope, selectedAudioId])
 
   const stopNarrationPreview = useCallback(() => {
     const a = narrationPreviewRef.current

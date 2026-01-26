@@ -429,16 +429,17 @@ async function ensureAudioEnvelopeEnqueued(uploadRow: any, ctx: ServiceContext):
     if (sourceDeletedAt) return
 
     const kind = String(uploadRow?.kind || 'video').toLowerCase()
-    const isNarrationAudio = kind === 'audio' && String(uploadRow?.s3_key || '').includes('audio/narration/')
-    if (kind !== 'video' && !isNarrationAudio) return
+    const isAudio = kind === 'audio'
+    const isNarrationAudio = isAudio && String(uploadRow?.s3_key || '').includes('audio/narration/')
+    if (kind !== 'video' && !isAudio) return
 
     const userIdForJob = ownerId != null && Number.isFinite(ownerId) && ownerId > 0 ? ownerId : (ctx.userId != null ? Number(ctx.userId) : null)
     if (!userIdForJob) return
 
-    const proxyBucket = isNarrationAudio ? String(uploadRow?.s3_bucket || '') : String(UPLOAD_BUCKET)
-    const proxyKey = isNarrationAudio ? String(uploadRow?.s3_key || '') : buildUploadEditProxyKey(uploadId)
+    const proxyBucket = isAudio ? String(uploadRow?.s3_bucket || '') : String(UPLOAD_BUCKET)
+    const proxyKey = isAudio ? String(uploadRow?.s3_key || '') : buildUploadEditProxyKey(uploadId)
     if (!proxyBucket || !proxyKey) return
-    if (!isNarrationAudio) {
+    if (!isAudio) {
       // Require the edit proxy to exist before enqueuing (video only).
       try {
         await s3.send(new HeadObjectCommand({ Bucket: String(UPLOAD_BUCKET), Key: proxyKey }))
@@ -533,14 +534,17 @@ export async function getUploadAudioEnvelope(
   if (!row) throw new NotFoundError('not_found')
 
   const kind = String(row.kind || 'video').toLowerCase()
-  const isNarrationAudio = kind === 'audio' && String((row as any).s3_key || '').includes('audio/narration/')
-  if (kind !== 'video' && !isNarrationAudio) throw new NotFoundError('not_found')
+  const isAudio = kind === 'audio'
+  if (kind !== 'video' && !isAudio) throw new NotFoundError('not_found')
 
-  const ownerId = row.user_id != null ? Number(row.user_id) : null
-  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
-  const checker = await resolveChecker(Number(ctx.userId))
-  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
-  if (!isOwner && !isAdmin) throw new ForbiddenError()
+  const isSystem = Number((row as any).is_system || 0) === 1
+  if (!(isSystem && isAudio)) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
 
   const bucket = String(UPLOAD_BUCKET || '')
   const key = buildUploadAudioEnvelopeKey(uploadId)
