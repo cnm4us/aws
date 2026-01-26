@@ -1245,7 +1245,7 @@ export default function CreateVideo() {
   }, [])
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
-  const visualTotalSeconds = useMemo(() => Math.max(0, totalSeconds), [totalSeconds])
+  const visualTotalSeconds = useMemo(() => Math.max(10, totalSeconds), [totalSeconds])
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
   const RULER_H = 16
   const WAVEFORM_H = 34
@@ -5633,7 +5633,7 @@ export default function CreateVideo() {
   )
 
   const addLogoFromPick = useCallback(
-    (uploadIdRaw: number, configIdRaw: number) => {
+    (uploadIdRaw: number, configIdRaw: number, configsOverride?: LogoConfigItem[]) => {
       const uploadId = Number(uploadIdRaw)
       const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
@@ -5641,7 +5641,8 @@ export default function CreateVideo() {
         setLogoPickerError('Pick a logo configuration.')
         return
       }
-      const cfg = logoConfigs.find((c) => Number((c as any).id) === cfgId) || null
+      const cfgSource = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : logoConfigs
+      const cfg = cfgSource.find((c) => Number((c as any).id) === cfgId) || null
       if (!cfg) {
         setLogoPickerError('Logo configuration not found.')
         return
@@ -5786,7 +5787,7 @@ export default function CreateVideo() {
   )
 
   const addLowerThirdFromPick = useCallback(
-    (uploadIdRaw: number, configIdRaw: number) => {
+    (uploadIdRaw: number, configIdRaw: number, configsOverride?: LowerThirdConfigItem[]) => {
       const uploadId = Number(uploadIdRaw)
       const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
@@ -5794,7 +5795,8 @@ export default function CreateVideo() {
         setLowerThirdPickerError('Pick a lower third configuration.')
         return
       }
-      const cfg = lowerThirdConfigs.find((c: any) => Number((c as any).id) === cfgId) || null
+      const cfgSource = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : lowerThirdConfigs
+      const cfg = cfgSource.find((c: any) => Number((c as any).id) === cfgId) || null
       if (!cfg) {
         setLowerThirdPickerError('Lower third configuration not found.')
         return
@@ -6036,7 +6038,7 @@ export default function CreateVideo() {
   )
 
   const addAudioFromUploadWithConfig = useCallback(
-    (upload: SystemAudioItem, audioConfigIdRaw: number) => {
+    (upload: SystemAudioItem, audioConfigIdRaw: number, configsOverride?: AudioConfigItem[]) => {
       if (!(totalSeconds > 0)) {
         setAudioPickerError('Add at least one video or graphic first.')
         return
@@ -6051,7 +6053,7 @@ export default function CreateVideo() {
         setAudioPickerError('Pick an audio config.')
         return
       }
-      const cfgs = Array.isArray(audioConfigs) ? audioConfigs : []
+      const cfgs = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : Array.isArray(audioConfigs) ? audioConfigs : []
       if (!cfgs.some((c) => Number((c as any).id) === audioConfigId)) {
         setAudioPickerError('Audio config not found.')
         return
@@ -6342,16 +6344,16 @@ export default function CreateVideo() {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) await addNarrationFromUpload(up as any)
         } else if (t === 'logo' && pickFromAssets.uploadId && pickFromAssets.configId) {
-          await ensureLogoConfigs()
-          addLogoFromPick(pickFromAssets.uploadId, pickFromAssets.configId)
+          const cfgs = await ensureLogoConfigs()
+          addLogoFromPick(pickFromAssets.uploadId, pickFromAssets.configId, cfgs as any)
         } else if (t === 'lowerThird' && pickFromAssets.uploadId && pickFromAssets.configId) {
-          await ensureLowerThirdConfigs()
-          addLowerThirdFromPick(pickFromAssets.uploadId, pickFromAssets.configId)
+          const cfgs = await ensureLowerThirdConfigs()
+          addLowerThirdFromPick(pickFromAssets.uploadId, pickFromAssets.configId, cfgs as any)
         } else if (t === 'audio' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (!up) return
-          await ensureAudioConfigs()
-          if (pickFromAssets.audioConfigId) addAudioFromUploadWithConfig(up as any, pickFromAssets.audioConfigId)
+          const cfgs = await ensureAudioConfigs()
+          if (pickFromAssets.audioConfigId) addAudioFromUploadWithConfig(up as any, pickFromAssets.audioConfigId, cfgs as any)
           else addAudioFromUpload(up as any)
         } else if (t === 'screenTitle' && pickFromAssets.presetId) {
           const presets = await ensureScreenTitlePresets()
