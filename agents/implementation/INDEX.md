@@ -11,6 +11,7 @@ This file is a lightweight index for ongoing work and “what’s next”.
 - `agents/implementation/plan_64.md` — Create Video: Freeze Frames v1 (as `freeze_frame` image segments)
 - `agents/implementation/plan_65.md` — Create Video: Logo Track v1 (topmost overlay)
 - `agents/implementation/plan_68.md` — Timeline-first library (Uploads vs Exports vs Productions)
+- `agents/implementation/plan_70.md` — Screen Title Styles under `/assets/screen-titles`
 
 ## In Progress / Next Up
 - Roadmap: `agents/roadmaps/roadmap_create_video.md`
