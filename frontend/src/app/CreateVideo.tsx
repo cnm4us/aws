@@ -2717,6 +2717,15 @@ export default function CreateVideo() {
     ensureAudioEnvelope(uploadId).catch(() => {})
   }, [ensureAudioEnvelope, narration, selectedNarrationId])
 
+  useEffect(() => {
+    if (!selectedAudioId) return
+    const seg: any = audioSegments.find((a: any) => String(a?.id) === String(selectedAudioId))
+    if (!seg) return
+    const uploadId = Number(seg.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    ensureAudioEnvelope(uploadId).catch(() => {})
+  }, [audioSegments, ensureAudioEnvelope, selectedAudioId])
+
   const stopNarrationPreview = useCallback(() => {
     const a = narrationPreviewRef.current
     try { a?.pause?.() } catch {}
@@ -3407,7 +3416,7 @@ export default function CreateVideo() {
       }
     }
 
-    // Waveform (selected clip or narration segment)
+    // Waveform (selected clip / narration / audio segment)
     const waveformTop = rulerH + 2
     const waveformBottom = rulerH + waveformH - 2
     const waveformHeight = Math.max(4, waveformBottom - waveformTop)
@@ -3420,17 +3429,20 @@ export default function CreateVideo() {
 
     const selectedNarration: any =
       selectedNarrationId != null ? narration.find((n: any) => String(n?.id) === String(selectedNarrationId)) : null
+    const selectedAudioSeg: any =
+      selectedAudioId != null ? audioSegments.find((a: any) => String(a?.id) === String(selectedAudioId)) : null
     const clipIdx = selectedClipIndex
     const clip = clipIdx >= 0 ? timeline.clips[clipIdx] : null
-    const hasAnyTarget = Boolean(selectedNarration) || Boolean(clip)
+    const hasAnyTarget = Boolean(selectedNarration) || Boolean(selectedAudioSeg) || Boolean(clip)
     if (!hasAnyTarget) {
       ctx.fillStyle = 'rgba(255,255,255,0.55)'
       ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
       ctx.textBaseline = 'middle'
-      ctx.fillText('Select a clip or narration segment to see waveform', 10, rulerH + waveformH / 2)
+      ctx.fillText('Select a clip, narration, or audio segment to see waveform', 10, rulerH + waveformH / 2)
     } else {
-      const kind: 'narration' | 'clip' = selectedNarration ? 'narration' : 'clip'
-      const uploadId = kind === 'narration' ? Number(selectedNarration.uploadId) : Number((clip as any).uploadId)
+      const kind: 'narration' | 'audio' | 'clip' = selectedNarration ? 'narration' : selectedAudioSeg ? 'audio' : 'clip'
+      const uploadId =
+        kind === 'narration' ? Number(selectedNarration.uploadId) : kind === 'audio' ? Number(selectedAudioSeg.uploadId) : Number((clip as any).uploadId)
       const env = uploadId > 0 ? audioEnvelopeByUploadId[uploadId] : null
       const envStatus = uploadId > 0 ? (audioEnvelopeStatusByUploadId[uploadId] || 'idle') : 'idle'
       const hasAudio = env && typeof env === 'object' ? Boolean((env as any).hasAudio) : false
@@ -3446,6 +3458,14 @@ export default function CreateVideo() {
         sourceStart =
           selectedNarration.sourceStartSeconds != null && Number.isFinite(Number(selectedNarration.sourceStartSeconds))
             ? Math.max(0, roundToTenth(Number(selectedNarration.sourceStartSeconds)))
+            : 0
+        sourceEnd = Math.max(0, roundToTenth(sourceStart + Math.max(0, segEndT - segStartT)))
+      } else if (kind === 'audio') {
+        segStartT = roundToTenth(Number(selectedAudioSeg.startSeconds || 0))
+        segEndT = roundToTenth(Number(selectedAudioSeg.endSeconds || 0))
+        sourceStart =
+          selectedAudioSeg.sourceStartSeconds != null && Number.isFinite(Number(selectedAudioSeg.sourceStartSeconds))
+            ? Math.max(0, roundToTenth(Number(selectedAudioSeg.sourceStartSeconds)))
             : 0
         sourceEnd = Math.max(0, roundToTenth(sourceStart + Math.max(0, segEndT - segStartT)))
       } else {
