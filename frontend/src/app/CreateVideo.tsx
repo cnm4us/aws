@@ -132,28 +132,6 @@ type ScreenTitlePresetItem = {
   archivedAt?: string | null
 }
 
-type AddStep =
-  | 'type'
-  | 'video'
-  | 'graphic'
-  | 'graphic_new'
-  | 'graphic_edit'
-  | 'narration'
-  | 'narration_new'
-  | 'narration_edit'
-  | 'audio'
-  | 'audio_new'
-  | 'audio_edit'
-  | 'logo'
-  | 'logo_new'
-  | 'logo_edit'
-  | 'logoConfig'
-  | 'lowerThird'
-  | 'lowerThird_new'
-  | 'lowerThird_edit'
-  | 'lowerThirdConfig'
-  | 'screenTitle'
-
 const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
 const FREEZE_OPTIONS_SECONDS = [
@@ -498,11 +476,6 @@ export default function CreateVideo() {
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
-  const [pickOpen, setPickOpen] = useState(false)
-  const [addStep, setAddStep] = useState<AddStep>('type')
-  const [pickerLoading, setPickerLoading] = useState(false)
-  const [pickerError, setPickerError] = useState<string | null>(null)
-  const [pickerItems, setPickerItems] = useState<UploadListItem[]>([])
   const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
@@ -514,71 +487,12 @@ export default function CreateVideo() {
     if (!clipEditor) return
     setFreezeInsertSeconds(2)
   }, [clipEditor])
-  const [graphicPickerLoading, setGraphicPickerLoading] = useState(false)
-  const [graphicPickerError, setGraphicPickerError] = useState<string | null>(null)
-  const [graphicPickerItems, setGraphicPickerItems] = useState<UploadListItem[]>([])
-  const [graphicNewName, setGraphicNewName] = useState('')
-  const [graphicNewDescription, setGraphicNewDescription] = useState('')
-  const [graphicUploadBusy, setGraphicUploadBusy] = useState(false)
-  const [graphicUploadError, setGraphicUploadError] = useState<string | null>(null)
-  const [graphicEditId, setGraphicEditId] = useState<number | null>(null)
-  const [graphicEditName, setGraphicEditName] = useState('')
-  const [graphicEditDescription, setGraphicEditDescription] = useState('')
-  const [graphicEditSaving, setGraphicEditSaving] = useState(false)
-  const [graphicEditError, setGraphicEditError] = useState<string | null>(null)
-  const [graphicDescModal, setGraphicDescModal] = useState<{ title: string; description: string | null } | null>(null)
-  const [graphicPreviewModal, setGraphicPreviewModal] = useState<{ title: string; src: string } | null>(null)
-  const [graphicDeleteModal, setGraphicDeleteModal] = useState<{ id: number; title: string } | null>(null)
-  const [graphicDeleteError, setGraphicDeleteError] = useState<string | null>(null)
-  const [graphicDeleteBusy, setGraphicDeleteBusy] = useState(false)
-  const [graphicDeleteInUse, setGraphicDeleteInUse] = useState(false)
-  const graphicUploadInputRef = useRef<HTMLInputElement | null>(null)
-  const [logoPickerLoading, setLogoPickerLoading] = useState(false)
-  const [logoPickerError, setLogoPickerError] = useState<string | null>(null)
-  const [logoPickerItems, setLogoPickerItems] = useState<UploadListItem[]>([])
-  const [logoNewName, setLogoNewName] = useState('')
-  const [logoNewDescription, setLogoNewDescription] = useState('')
-  const [logoUploadBusy, setLogoUploadBusy] = useState(false)
-  const [logoUploadError, setLogoUploadError] = useState<string | null>(null)
-  const [logoEditId, setLogoEditId] = useState<number | null>(null)
-  const [logoEditName, setLogoEditName] = useState('')
-  const [logoEditDescription, setLogoEditDescription] = useState('')
-  const [logoEditSaving, setLogoEditSaving] = useState(false)
-  const [logoEditError, setLogoEditError] = useState<string | null>(null)
-  const [logoDescModal, setLogoDescModal] = useState<{ title: string; description: string | null } | null>(null)
-  const [logoPreviewModal, setLogoPreviewModal] = useState<{ title: string; src: string } | null>(null)
-  const [logoDeleteModal, setLogoDeleteModal] = useState<{ id: number; title: string } | null>(null)
-  const [logoDeleteError, setLogoDeleteError] = useState<string | null>(null)
-  const [logoDeleteBusy, setLogoDeleteBusy] = useState(false)
-  const [logoDeleteInUse, setLogoDeleteInUse] = useState(false)
-  const logoUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [logoConfigs, setLogoConfigs] = useState<LogoConfigItem[]>([])
   const [logoConfigsLoaded, setLogoConfigsLoaded] = useState(false)
   const [logoConfigsError, setLogoConfigsError] = useState<string | null>(null)
-  const [pendingLogoUploadId, setPendingLogoUploadId] = useState<number | null>(null)
-  const [lowerThirdPickerLoading, setLowerThirdPickerLoading] = useState(false)
-  const [lowerThirdPickerError, setLowerThirdPickerError] = useState<string | null>(null)
-  const [lowerThirdPickerItems, setLowerThirdPickerItems] = useState<UploadListItem[]>([])
-  const [lowerThirdNewName, setLowerThirdNewName] = useState('')
-  const [lowerThirdNewDescription, setLowerThirdNewDescription] = useState('')
-  const [lowerThirdUploadBusy, setLowerThirdUploadBusy] = useState(false)
-  const [lowerThirdUploadError, setLowerThirdUploadError] = useState<string | null>(null)
-  const [lowerThirdEditId, setLowerThirdEditId] = useState<number | null>(null)
-  const [lowerThirdEditName, setLowerThirdEditName] = useState('')
-  const [lowerThirdEditDescription, setLowerThirdEditDescription] = useState('')
-  const [lowerThirdEditSaving, setLowerThirdEditSaving] = useState(false)
-  const [lowerThirdEditError, setLowerThirdEditError] = useState<string | null>(null)
-  const [lowerThirdDescModal, setLowerThirdDescModal] = useState<{ title: string; description: string | null } | null>(null)
-  const [lowerThirdPreviewModal, setLowerThirdPreviewModal] = useState<{ title: string; src: string } | null>(null)
-  const [lowerThirdDeleteModal, setLowerThirdDeleteModal] = useState<{ id: number; title: string } | null>(null)
-  const [lowerThirdDeleteError, setLowerThirdDeleteError] = useState<string | null>(null)
-  const [lowerThirdDeleteBusy, setLowerThirdDeleteBusy] = useState(false)
-  const [lowerThirdDeleteInUse, setLowerThirdDeleteInUse] = useState(false)
-  const lowerThirdUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [lowerThirdConfigs, setLowerThirdConfigs] = useState<LowerThirdConfigItem[]>([])
   const [lowerThirdConfigsLoaded, setLowerThirdConfigsLoaded] = useState(false)
   const [lowerThirdConfigsError, setLowerThirdConfigsError] = useState<string | null>(null)
-  const [pendingLowerThirdUploadId, setPendingLowerThirdUploadId] = useState<number | null>(null)
   const [graphicEditor, setGraphicEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
@@ -590,46 +504,12 @@ export default function CreateVideo() {
   const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePresetItem[]>([])
   const [screenTitlePresetsLoaded, setScreenTitlePresetsLoaded] = useState(false)
   const [screenTitlePresetsError, setScreenTitlePresetsError] = useState<string | null>(null)
-  const [screenTitlePresetDeleteModal, setScreenTitlePresetDeleteModal] = useState<{ id: number; title: string } | null>(null)
-  const [screenTitlePresetDeleteBusy, setScreenTitlePresetDeleteBusy] = useState(false)
-  const [screenTitlePresetDeleteError, setScreenTitlePresetDeleteError] = useState<string | null>(null)
-  const [screenTitlePresetDeleteInUse, setScreenTitlePresetDeleteInUse] = useState(false)
   const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number; presetId: number | null; text: string } | null>(null)
   const [screenTitleEditorError, setScreenTitleEditorError] = useState<string | null>(null)
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
   const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
-  const [audioPickerLoading, setAudioPickerLoading] = useState(false)
-  const [audioPickerError, setAudioPickerError] = useState<string | null>(null)
-  const [audioPickerItems, setAudioPickerItems] = useState<any[]>([])
-  const [audioScope, setAudioScope] = useState<'system' | 'search' | 'user'>('system')
-  const [audioTags, setAudioTags] = useState<AudioTagsDto | null>(null)
-  const [audioTagsError, setAudioTagsError] = useState<string | null>(null)
-  const [audioSearchGenreIds, setAudioSearchGenreIds] = useState<number[]>([])
-  const [audioSearchMoodIds, setAudioSearchMoodIds] = useState<number[]>([])
-  const [audioSearchThemeIds, setAudioSearchThemeIds] = useState<number[]>([])
-  const [audioSearchInstrumentIds, setAudioSearchInstrumentIds] = useState<number[]>([])
-  const [audioSearchFavoritesOnly, setAudioSearchFavoritesOnly] = useState(false)
-  const [audioSearchGenresOpen, setAudioSearchGenresOpen] = useState(false)
-  const [audioSearchMoodsOpen, setAudioSearchMoodsOpen] = useState(false)
-  const [audioSearchThemesOpen, setAudioSearchThemesOpen] = useState(false)
-  const [audioSearchInstrumentsOpen, setAudioSearchInstrumentsOpen] = useState(false)
-  const [audioDescModal, setAudioDescModal] = useState<{ title: string; description: string | null } | null>(null)
-  const [audioNewName, setAudioNewName] = useState('')
-  const [audioNewDescription, setAudioNewDescription] = useState('')
-  const [audioUploadBusy, setAudioUploadBusy] = useState(false)
-  const [audioUploadError, setAudioUploadError] = useState<string | null>(null)
-  const [audioEditId, setAudioEditId] = useState<number | null>(null)
-  const [audioEditName, setAudioEditName] = useState('')
-  const [audioEditDescription, setAudioEditDescription] = useState('')
-  const [audioEditSaving, setAudioEditSaving] = useState(false)
-  const [audioEditError, setAudioEditError] = useState<string | null>(null)
-  const [audioDeleteModal, setAudioDeleteModal] = useState<{ id: number; title: string } | null>(null)
-  const [audioDeleteBusy, setAudioDeleteBusy] = useState(false)
-  const [audioDeleteError, setAudioDeleteError] = useState<string | null>(null)
-  const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
-  const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
   const musicPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [musicPreviewPlaying, setMusicPreviewPlaying] = useState(false)
   const musicPreviewSegRef = useRef<
@@ -656,6 +536,8 @@ export default function CreateVideo() {
     | null
   >(null)
   const narrationPreviewRafRef = useRef<number | null>(null)
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
+  const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
   const [audioConfigsError, setAudioConfigsError] = useState<string | null>(null)
@@ -663,9 +545,6 @@ export default function CreateVideo() {
   const [audioEditorError, setAudioEditorError] = useState<string | null>(null)
   const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; gainDb: number } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
-  const [narrationAddError, setNarrationAddError] = useState<string | null>(null)
-  const [narrationUploadBusy, setNarrationUploadBusy] = useState(false)
-  const narrationFileInputRef = useRef<HTMLInputElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [previewObjectFit, setPreviewObjectFit] = useState<'cover' | 'contain'>('cover')
   const [playing, setPlaying] = useState(false)
@@ -1477,7 +1356,11 @@ export default function CreateVideo() {
     return map
   }, [audioConfigs])
 
-  const probeAudioDurationSeconds = useCallback(async (file: File): Promise<number | null> => {
+  /*
+   * Legacy embedded asset management (upload/edit/delete) that used to live inside Create Video’s old full-screen picker.
+   * This has been migrated to `/assets/*` and is intentionally disabled here to keep the Create Video bundle smaller.
+   */
+  /* const probeAudioDurationSeconds = useCallback(async (file: File): Promise<number | null> => {
     try {
       const url = URL.createObjectURL(file)
       try {
@@ -1499,8 +1382,12 @@ export default function CreateVideo() {
     } catch {
       return null
     }
-  }, [])
+  }, []) */
 
+  /*
+   * Legacy embedded asset-management helpers (moved to `/assets/*`).
+   * This block is intentionally disabled to keep the Create Video bundle smaller.
+   *
   const probeImageFileDimensions = useCallback(async (file: File): Promise<{ width: number | null; height: number | null }> => {
     try {
       const url = URL.createObjectURL(file)
@@ -1971,6 +1858,7 @@ export default function CreateVideo() {
     },
     [logos]
   )
+  */
 
   const canUndo = undoDepth > 0
   const canRedo = redoDepth > 0
@@ -5140,84 +5028,6 @@ export default function CreateVideo() {
     gapPlaybackRef.current = { raf, target, nextClipIndex }
   }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds])
 
-  const openPicker = useCallback(async () => {
-    if (!me?.userId) return
-    setPickerLoading(true)
-    setPickerError(null)
-    try {
-      const params = new URLSearchParams({
-        kind: 'video',
-        status: 'uploaded,completed',
-        user_id: String(me.userId),
-        limit: '200',
-      })
-      const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      const isSourceVideoUpload = (u: UploadListItem): boolean => {
-        const role = u.video_role ? String(u.video_role) : ''
-        if (role === 'source') return true
-        if (role === 'export') return false
-        const key = u.s3_key ? String(u.s3_key) : ''
-        if (key.includes('/renders/') || key.startsWith('renders/')) return false
-        return true
-      }
-      setPickerItems(items.filter(isSourceVideoUpload))
-    } catch (e: any) {
-      setPickerError(e?.message || 'Failed to load videos')
-    } finally {
-      setPickerLoading(false)
-    }
-  }, [me?.userId])
-
-  const openGraphicPicker = useCallback(async () => {
-    if (!me?.userId) return
-    setGraphicPickerLoading(true)
-    setGraphicPickerError(null)
-    try {
-      const params = new URLSearchParams({
-        kind: 'image',
-        image_role: 'overlay',
-        status: 'uploaded,completed',
-        user_id: String(me.userId),
-        limit: '200',
-      })
-      const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      setGraphicPickerItems(items)
-    } catch (e: any) {
-      setGraphicPickerError(e?.message || 'Failed to load images')
-    } finally {
-      setGraphicPickerLoading(false)
-    }
-  }, [me?.userId])
-
-  const openLogoPicker = useCallback(async () => {
-    if (!me?.userId) return
-    setLogoPickerLoading(true)
-    setLogoPickerError(null)
-    try {
-      const params = new URLSearchParams({
-        kind: 'logo',
-        status: 'uploaded,completed',
-        user_id: String(me.userId),
-        limit: '200',
-      })
-      const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      setLogoPickerItems(items)
-    } catch (e: any) {
-      setLogoPickerError(e?.message || 'Failed to load logos')
-    } finally {
-      setLogoPickerLoading(false)
-    }
-  }, [me?.userId])
-
   const ensureLogoConfigs = useCallback(async (): Promise<LogoConfigItem[]> => {
     if (logoConfigsLoaded) return logoConfigs
     setLogoConfigsError(null)
@@ -5235,30 +5045,6 @@ export default function CreateVideo() {
       return []
     }
   }, [logoConfigs, logoConfigsLoaded])
-
-  const openLowerThirdPicker = useCallback(async () => {
-    if (!me?.userId) return
-    setLowerThirdPickerLoading(true)
-    setLowerThirdPickerError(null)
-    try {
-      const params = new URLSearchParams({
-        kind: 'image',
-        image_role: 'lower_third',
-        status: 'uploaded,completed',
-        user_id: String(me.userId),
-        limit: '200',
-      })
-      const res = await fetch(`/api/uploads?${params.toString()}`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: UploadListItem[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      setLowerThirdPickerItems(items)
-    } catch (e: any) {
-      setLowerThirdPickerError(e?.message || 'Failed to load lower third images')
-    } finally {
-      setLowerThirdPickerLoading(false)
-    }
-  }, [me?.userId])
 
   const ensureLowerThirdConfigs = useCallback(async (): Promise<LowerThirdConfigItem[]> => {
     if (lowerThirdConfigsLoaded) return lowerThirdConfigs
@@ -5338,90 +5124,6 @@ export default function CreateVideo() {
     }
   }, [audioConfigs, audioConfigsLoaded])
 
-  const ensureAudioTags = useCallback(async (): Promise<AudioTagsDto | null> => {
-    if (audioTags) return audioTags
-    setAudioTagsError(null)
-    try {
-      const res = await fetch(`/api/audio-tags`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-      const next: AudioTagsDto = {
-        genres: Array.isArray(json?.genres) ? json.genres : [],
-        moods: Array.isArray(json?.moods) ? json.moods : [],
-        themes: Array.isArray(json?.themes) ? json.themes : [],
-        instruments: Array.isArray(json?.instruments) ? json.instruments : [],
-      }
-      setAudioTags(next)
-      return next
-    } catch (e: any) {
-      setAudioTagsError(String(e?.message || 'Failed to load tags'))
-      return null
-    }
-  }, [audioTags])
-
-  const loadSystemAudioSearch = useCallback(async () => {
-    setAudioPickerError(null)
-    setAudioPickerLoading(true)
-    try {
-      await ensureAudioConfigs()
-      await ensureAudioTags()
-      const params = new URLSearchParams()
-      params.set('limit', '200')
-      if (audioSearchGenreIds.length) params.set('genreTagIds', audioSearchGenreIds.join(','))
-      if (audioSearchMoodIds.length) params.set('moodTagIds', audioSearchMoodIds.join(','))
-      if (audioSearchThemeIds.length) params.set('themeTagIds', audioSearchThemeIds.join(','))
-      if (audioSearchInstrumentIds.length) params.set('instrumentTagIds', audioSearchInstrumentIds.join(','))
-      if (audioSearchFavoritesOnly) params.set('favorite_only', '1')
-      const res = await fetch(`/api/system-audio/search?${params.toString()}`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-      const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-      setAudioPickerItems(items)
-    } catch (e: any) {
-      setAudioPickerItems([])
-      setAudioPickerError(String(e?.message || 'Failed to load audio'))
-    } finally {
-      setAudioPickerLoading(false)
-    }
-  }, [
-    audioSearchFavoritesOnly,
-    audioSearchGenreIds,
-    audioSearchInstrumentIds,
-    audioSearchMoodIds,
-    audioSearchThemeIds,
-    ensureAudioConfigs,
-    ensureAudioTags,
-  ])
-
-  const loadAudioLibrary = useCallback(
-    async (scope: 'system' | 'user') => {
-      setAudioPickerError(null)
-      setAudioPickerLoading(true)
-      try {
-        await ensureAudioConfigs()
-        if (scope === 'system') {
-          const res = await fetch(`/api/system-audio?limit=200`, { credentials: 'same-origin' })
-          const json: any = await res.json().catch(() => null)
-          if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-          const items: any[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
-          setAudioPickerItems(items)
-        } else {
-          const res = await fetch(`/api/create-video/audio/list`, { credentials: 'same-origin' })
-          const json: any = await res.json().catch(() => null)
-          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-          const items: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : []
-          setAudioPickerItems(items)
-        }
-      } catch (e: any) {
-        setAudioPickerItems([])
-        setAudioPickerError(String(e?.message || 'Failed to load audio'))
-      } finally {
-        setAudioPickerLoading(false)
-      }
-    },
-    [ensureAudioConfigs]
-  )
-
   // If a timeline already has an audio track (hydrated from a saved draft), prefetch audio configs
   // so labels render as "{audio_name} * {audioConfig_name}" without requiring opening the editor.
   useEffect(() => {
@@ -5454,41 +5156,11 @@ export default function CreateVideo() {
     void ensureScreenTitlePresets()
   }, [ensureScreenTitlePresets, screenTitlePresetsLoaded, screenTitles.length])
 
-  const openAudioPicker = useCallback(async () => {
-    if (!me?.userId) return
-    setAudioScope('system')
-    await loadAudioLibrary('system')
-  }, [loadAudioLibrary, me?.userId])
-
-  useEffect(() => {
-    if (pickOpen && addStep === 'audio') return
-    const a = audioPreviewRef.current
-    if (!a) return
-    try {
-      a.pause()
-      a.removeAttribute('src')
-      a.load()
-    } catch {}
-    setAudioPreviewPlayingId(null)
-  }, [addStep, pickOpen])
-
-  useEffect(() => {
-    if (!pickOpen) return
-    if (addStep !== 'audio') return
-    if (audioScope === 'search') {
-      const t = window.setTimeout(() => {
-        loadSystemAudioSearch().catch(() => {})
-      }, 250)
-      return () => window.clearTimeout(t)
-    }
-    void loadAudioLibrary(audioScope)
-  }, [addStep, audioScope, loadAudioLibrary, loadSystemAudioSearch, pickOpen])
-
   const addClipFromUpload = useCallback(
     (upload: UploadListItem) => {
       const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
       if (dur == null || !Number.isFinite(dur) || dur <= 0) {
-        setPickerError('That video is missing duration metadata. Please try a different video.')
+        setTimelineMessage('That video is missing duration metadata. Please try a different video.')
         return
       }
       setDurationsByUploadId((prev) => (prev[Number(upload.id)] ? prev : { ...prev, [Number(upload.id)]: Number(dur) }))
@@ -5515,8 +5187,6 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
       setSelectedAudioId(null)
-      setPickOpen(false)
-      setAddStep('type')
     },
     [setTimeline, snapshotUndo]
   )
@@ -5532,7 +5202,7 @@ export default function CreateVideo() {
       let start = clamp(roundToTenth(playhead), 0, cap != null ? cap : Number.POSITIVE_INFINITY)
       let end = roundToTenth(start + dur)
       if (cap != null && end > cap + 1e-6) {
-        setGraphicPickerError('Not enough room to add a 5s graphic within the video duration.')
+        setTimelineMessage('Not enough room to add a 5s graphic within the video duration.')
         return
       }
 
@@ -5549,7 +5219,7 @@ export default function CreateVideo() {
           end = roundToTenth(start + dur)
           i = -1
           if (cap != null && end > cap + 1e-6) {
-            setGraphicPickerError('No available slot for a 5s graphic without overlapping.')
+            setTimelineMessage('No available slot for a 5s graphic without overlapping.')
             return
           }
         }
@@ -5568,95 +5238,8 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
       setSelectedAudioId(null)
-      setPickOpen(false)
-      setAddStep('type')
     },
     [graphics, playhead, snapshotUndo, timeline.clips.length, totalSecondsVideo]
-  )
-
-  const chooseLogoUpload = useCallback(
-    async (upload: UploadListItem) => {
-      const id = Number(upload.id)
-      if (!Number.isFinite(id) || id <= 0) return
-      setPendingLogoUploadId(id)
-      const name = String(upload.modified_filename || upload.original_filename || `Logo ${upload.id}`)
-      setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
-      setAddStep('logoConfig')
-      ensureLogoConfigs().catch(() => {})
-    },
-    [ensureLogoConfigs]
-  )
-
-  const addLogoFromPending = useCallback(
-    (configIdRaw: number) => {
-      const uploadId = pendingLogoUploadId
-      if (!uploadId) return
-      const cfgId = Number(configIdRaw)
-      if (!Number.isFinite(cfgId) || cfgId <= 0) {
-        setLogoPickerError('Pick a logo configuration.')
-        return
-      }
-      const cfg = logoConfigs.find((c) => Number((c as any).id) === cfgId) || null
-      if (!cfg) {
-        setLogoPickerError('Logo configuration not found.')
-        return
-      }
-
-      const dur = 5.0
-      const id = `logo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
-      let start = start0
-      let end = roundToTenth(start + dur)
-      const cap = totalSeconds > 0 ? totalSeconds : end
-      if (end > cap + 1e-6) {
-        setLogoPickerError('Not enough room to add a 5s logo segment within the timeline.')
-        return
-      }
-
-      // Disallow overlaps: slide forward to the next available slot.
-      const existing = logos.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const l = existing[i] as any
-        const ls = Number(l.startSeconds)
-        const le = Number(l.endSeconds)
-        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
-        const overlaps = start < le - 1e-6 && end > ls + 1e-6
-        if (overlaps) {
-          start = roundToTenth(le)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (end > cap + 1e-6) {
-            setLogoPickerError('No available slot for a 5s logo segment without overlapping.')
-            return
-          }
-        }
-      }
-
-      const seg: Logo = {
-        id,
-        uploadId: Number(uploadId),
-        startSeconds: start,
-        endSeconds: end,
-        configId: cfgId,
-        configSnapshot: cfg as any,
-      }
-      snapshotUndo()
-      setTimeline((prev) => {
-        const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
-        const next = [...prevLogos, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-        return { ...prev, logos: next }
-      })
-      setSelectedClipId(null)
-      setSelectedGraphicId(null)
-      setSelectedStillId(null)
-      setSelectedAudioId(null)
-      setSelectedLogoId(id)
-      setSelectedLowerThirdId(null)
-      setPickOpen(false)
-      setAddStep('type')
-      setPendingLogoUploadId(null)
-    },
-    [logoConfigs, logos, pendingLogoUploadId, playhead, snapshotUndo, totalSeconds]
   )
 
   const addLogoFromPick = useCallback(
@@ -5665,13 +5248,13 @@ export default function CreateVideo() {
       const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
       if (!Number.isFinite(cfgId) || cfgId <= 0) {
-        setLogoPickerError('Pick a logo configuration.')
+        setTimelineMessage('Pick a logo configuration.')
         return
       }
       const cfgSource = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : logoConfigs
       const cfg = cfgSource.find((c) => Number((c as any).id) === cfgId) || null
       if (!cfg) {
-        setLogoPickerError('Logo configuration not found.')
+        setTimelineMessage('Logo configuration not found.')
         return
       }
 
@@ -5682,7 +5265,7 @@ export default function CreateVideo() {
       let end = roundToTenth(start + dur)
       const cap = totalSeconds > 0 ? totalSeconds : end
       if (end > cap + 1e-6) {
-        setLogoPickerError('Not enough room to add a 5s logo segment within the timeline.')
+        setTimelineMessage('Not enough room to add a 5s logo segment within the timeline.')
         return
       }
 
@@ -5698,7 +5281,7 @@ export default function CreateVideo() {
           end = roundToTenth(start + dur)
           i = -1
           if (end > cap + 1e-6) {
-            setLogoPickerError('No available slot for a 5s logo segment without overlapping.')
+            setTimelineMessage('No available slot for a 5s logo segment without overlapping.')
             return
           }
         }
@@ -5717,100 +5300,8 @@ export default function CreateVideo() {
       setSelectedAudioId(null)
       setSelectedLogoId(id)
       setSelectedLowerThirdId(null)
-      setPickOpen(false)
-      setAddStep('type')
     },
     [logoConfigs, logos, playhead, snapshotUndo, totalSeconds]
-  )
-
-  const chooseLowerThirdUpload = useCallback(
-    async (upload: UploadListItem) => {
-      const id = Number(upload.id)
-      if (!Number.isFinite(id) || id <= 0) return
-      setPendingLowerThirdUploadId(id)
-      const name = String(upload.modified_filename || upload.original_filename || `Lower third ${upload.id}`)
-      setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
-      const w = upload.width != null ? Number(upload.width) : null
-      const h = upload.height != null ? Number(upload.height) : null
-      if (w != null && h != null && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
-        setDimsByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: { width: Math.round(w), height: Math.round(h) } }))
-      }
-      setAddStep('lowerThirdConfig')
-      ensureLowerThirdConfigs().catch(() => {})
-    },
-    [ensureLowerThirdConfigs]
-  )
-
-  const addLowerThirdFromPending = useCallback(
-    (configIdRaw: number) => {
-      const uploadId = pendingLowerThirdUploadId
-      if (!uploadId) return
-      const cfgId = Number(configIdRaw)
-      if (!Number.isFinite(cfgId) || cfgId <= 0) {
-        setLowerThirdPickerError('Pick a lower third configuration.')
-        return
-      }
-      const cfg = lowerThirdConfigs.find((c: any) => Number((c as any).id) === cfgId) || null
-      if (!cfg) {
-        setLowerThirdPickerError('Lower third configuration not found.')
-        return
-      }
-
-      const dur = 10.0
-      const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
-      let start = start0
-      let end = roundToTenth(start + dur)
-      const cap = totalSeconds > 0 ? totalSeconds : end
-      if (end > cap + 1e-6) {
-        setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
-        return
-      }
-
-      // Disallow overlaps: slide forward to the next available slot.
-      const existing = lowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const lt = existing[i] as any
-        const ls = Number(lt.startSeconds)
-        const le = Number(lt.endSeconds)
-        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
-        const overlaps = start < le - 1e-6 && end > ls + 1e-6
-        if (overlaps) {
-          start = roundToTenth(le)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (end > cap + 1e-6) {
-            setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
-            return
-          }
-        }
-      }
-
-      const seg: LowerThird = {
-        id,
-        uploadId: Number(uploadId),
-        startSeconds: start,
-        endSeconds: end,
-        configId: cfgId,
-        configSnapshot: cfg as any,
-      }
-      snapshotUndo()
-      setTimeline((prev) => {
-        const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
-        const next = [...prevLts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-        return { ...prev, lowerThirds: next }
-      })
-      setSelectedClipId(null)
-      setSelectedGraphicId(null)
-      setSelectedLogoId(null)
-      setSelectedStillId(null)
-      setSelectedAudioId(null)
-      setSelectedLowerThirdId(id)
-      setPickOpen(false)
-      setAddStep('type')
-      setPendingLowerThirdUploadId(null)
-    },
-    [lowerThirdConfigs, lowerThirds, pendingLowerThirdUploadId, playhead, snapshotUndo, totalSeconds]
   )
 
   const addLowerThirdFromPick = useCallback(
@@ -5819,13 +5310,13 @@ export default function CreateVideo() {
       const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
       if (!Number.isFinite(cfgId) || cfgId <= 0) {
-        setLowerThirdPickerError('Pick a lower third configuration.')
+        setTimelineMessage('Pick a lower third configuration.')
         return
       }
       const cfgSource = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : lowerThirdConfigs
       const cfg = cfgSource.find((c: any) => Number((c as any).id) === cfgId) || null
       if (!cfg) {
-        setLowerThirdPickerError('Lower third configuration not found.')
+        setTimelineMessage('Lower third configuration not found.')
         return
       }
 
@@ -5836,7 +5327,7 @@ export default function CreateVideo() {
       let end = roundToTenth(start + dur)
       const cap = totalSeconds > 0 ? totalSeconds : end
       if (end > cap + 1e-6) {
-        setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
+        setTimelineMessage('Not enough room to add a 10s lower third segment within the timeline.')
         return
       }
 
@@ -5852,7 +5343,7 @@ export default function CreateVideo() {
           end = roundToTenth(start + dur)
           i = -1
           if (end > cap + 1e-6) {
-            setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
+            setTimelineMessage('No available slot for a 10s lower third segment without overlapping.')
             return
           }
         }
@@ -5872,8 +5363,6 @@ export default function CreateVideo() {
       setSelectedAudioId(null)
       setSelectedLowerThirdId(id)
       setSelectedScreenTitleId(null)
-      setPickOpen(false)
-      setAddStep('type')
     },
     [lowerThirdConfigs, lowerThirds, playhead, snapshotUndo, totalSeconds]
   )
@@ -5883,7 +5372,7 @@ export default function CreateVideo() {
       const presetId = Number((preset as any).id)
       if (!Number.isFinite(presetId) || presetId <= 0) return
       if (!(totalSeconds > 0)) {
-        setPickerError('Add a video or graphic first.')
+        setTimelineMessage('Add a video or graphic first.')
         return
       }
 
@@ -5893,7 +5382,7 @@ export default function CreateVideo() {
       let start = start0
       let end = roundToTenth(start + dur)
       if (end > totalSeconds + 1e-6) {
-        setPickerError('Not enough room to add a 5s screen title segment within the timeline.')
+        setTimelineMessage('Not enough room to add a 5s screen title segment within the timeline.')
         return
       }
 
@@ -5909,7 +5398,7 @@ export default function CreateVideo() {
           end = roundToTenth(start + dur)
           i = -1
           if (end > totalSeconds + 1e-6) {
-            setPickerError('No available slot for a 5s screen title segment without overlapping.')
+            setTimelineMessage('No available slot for a 5s screen title segment without overlapping.')
             return
           }
         }
@@ -5985,8 +5474,6 @@ export default function CreateVideo() {
       setSelectedScreenTitleId(id)
       setScreenTitleEditor({ id, start, end, presetId, text: '' })
       setScreenTitleEditorError(null)
-      setPickOpen(false)
-      setAddStep('type')
     },
     [playhead, screenTitles, snapshotUndo, totalSeconds]
   )
@@ -5994,12 +5481,12 @@ export default function CreateVideo() {
   const addAudioFromUpload = useCallback(
     (upload: SystemAudioItem) => {
       if (!(totalSeconds > 0)) {
-        setAudioPickerError('Add at least one video or graphic first.')
+        setTimelineMessage('Add at least one video or graphic first.')
         return
       }
       const id = Number(upload.id)
       if (!Number.isFinite(id) || id <= 0) {
-        setAudioPickerError('Invalid audio id')
+        setTimelineMessage('Invalid audio id')
         return
       }
       const name = String(upload.modified_filename || upload.original_filename || `Audio ${id}`)
@@ -6020,7 +5507,7 @@ export default function CreateVideo() {
       }
       const audioConfigId = pickDefault()
       if (!audioConfigId) {
-        setAudioPickerError('No audio configs available yet. Ask site_admin to create an audio config.')
+        setTimelineMessage('No audio configs available yet. Ask site_admin to create an audio config.')
         return
       }
 
@@ -6049,17 +5536,6 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
       setSelectedAudioId(segId)
-      setPickOpen(false)
-      setAddStep('type')
-      try {
-        const a = audioPreviewRef.current
-        if (a) {
-          a.pause()
-          a.removeAttribute('src')
-          a.load()
-        }
-      } catch {}
-      setAudioPreviewPlayingId(null)
     },
     [audioConfigs, audioSegments, snapshotUndo, totalSeconds]
   )
@@ -6067,22 +5543,22 @@ export default function CreateVideo() {
   const addAudioFromUploadWithConfig = useCallback(
     (upload: SystemAudioItem, audioConfigIdRaw: number, configsOverride?: AudioConfigItem[]) => {
       if (!(totalSeconds > 0)) {
-        setAudioPickerError('Add at least one video or graphic first.')
+        setTimelineMessage('Add at least one video or graphic first.')
         return
       }
       const id = Number((upload as any).id)
       if (!Number.isFinite(id) || id <= 0) {
-        setAudioPickerError('Invalid audio id')
+        setTimelineMessage('Invalid audio id')
         return
       }
       const audioConfigId = Number(audioConfigIdRaw)
       if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) {
-        setAudioPickerError('Pick an audio config.')
+        setTimelineMessage('Pick an audio config.')
         return
       }
       const cfgs = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : Array.isArray(audioConfigs) ? audioConfigs : []
       if (!cfgs.some((c) => Number((c as any).id) === audioConfigId)) {
-        setAudioPickerError('Audio config not found.')
+        setTimelineMessage('Audio config not found.')
         return
       }
 
@@ -6118,17 +5594,6 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(null)
       setSelectedStillId(null)
       setSelectedAudioId(segId)
-      setPickOpen(false)
-      setAddStep('type')
-      try {
-        const a = audioPreviewRef.current
-        if (a) {
-          a.pause()
-          a.removeAttribute('src')
-          a.load()
-        }
-      } catch {}
-      setAudioPreviewPlayingId(null)
     },
     [audioConfigs, snapshotUndo, totalSeconds]
   )
@@ -6163,6 +5628,10 @@ export default function CreateVideo() {
     return `${m}:${String(ss).padStart(2, '0')}`
   }, [])
 
+  /*
+   * Legacy narration library CRUD used by the old embedded picker.
+   * Narration uploads are now managed in `/assets/narration`.
+   *
   const [narrationLibrary, setNarrationLibrary] = useState<any[]>([])
   const [narrationLibraryLoading, setNarrationLibraryLoading] = useState(false)
   const [narrationLibraryError, setNarrationLibraryError] = useState<string | null>(null)
@@ -6247,6 +5716,7 @@ export default function CreateVideo() {
     },
     [timeline?.narration]
   )
+  */
 
   const addNarrationFromUpload = useCallback(
     async (item: any) => {
@@ -6257,14 +5727,14 @@ export default function CreateVideo() {
       const dur = item?.duration_seconds != null ? Number(item.duration_seconds) : null
       if (dur != null && Number.isFinite(dur) && dur > 0) setDurationsByUploadId((prev) => ({ ...prev, [uploadId]: dur }))
 
-      setNarrationAddError(null)
+      setTimelineMessage(null)
       const maxSeconds = 20 * 60
       const start0 = clamp(roundToTenth(playhead), 0, maxSeconds)
       const segDur = roundToTenth(Math.max(0.2, dur != null && Number.isFinite(dur) ? dur : 5.0))
       const start = start0
       const end = clamp(roundToTenth(start + segDur), 0, maxSeconds)
       if (!(end > start + 0.05)) {
-        setNarrationAddError('Narration clip is too short.')
+        setTimelineMessage('Narration clip is too short.')
         return
       }
 
@@ -6276,7 +5746,7 @@ export default function CreateVideo() {
         if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
         const overlaps = start < ne - 1e-6 && end > ns + 1e-6
         if (overlaps) {
-          setNarrationAddError('Narration overlaps an existing narration segment. Move the playhead or trim/delete the existing narration first.')
+          setTimelineMessage('Narration overlaps an existing narration segment. Move the playhead or trim/delete the existing narration first.')
           return
         }
       }
@@ -6302,9 +5772,6 @@ export default function CreateVideo() {
       setSelectedScreenTitleId(null)
       setSelectedStillId(null)
       setSelectedAudioId(null)
-
-      setPickOpen(false)
-      setAddStep('type')
     },
     [computeTotalSecondsForTimeline, narration, playhead, snapshotUndo]
   )
@@ -6409,7 +5876,7 @@ export default function CreateVideo() {
     project?.id,
   ])
 
-  const addNarrationFromFile = useCallback(
+  /* const addNarrationFromFile = useCallback(
     async (file: File) => {
       if (narrationUploadBusy) return
       setNarrationAddError(null)
@@ -6486,7 +5953,7 @@ export default function CreateVideo() {
       snapshotUndo,
       uploadNarrationFile,
     ]
-  )
+  ) */
 
   const openAudioEditor = useCallback(async () => {
     if (!selectedAudioSegment) return
@@ -10351,14 +9818,6 @@ export default function CreateVideo() {
     }
   }, [])
 
-  const closeAdd = useCallback(() => {
-    setPickOpen(false)
-    setAddStep('type')
-    setNarrationAddError(null)
-    setPendingLogoUploadId(null)
-    setPendingLowerThirdUploadId(null)
-  }, [])
-
   // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
   useEffect(() => {
 	    const onMove = (e: PointerEvent) => {
@@ -13340,7 +12799,7 @@ export default function CreateVideo() {
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
       </div>
 
-	      {pickOpen ? (
+	      {/* Legacy embedded Add Asset modal (deprecated; replaced by `/assets/*`).
 	        <div
 	          role="dialog"
 	          aria-modal="true"
@@ -17087,7 +16546,7 @@ export default function CreateVideo() {
 		            )}
 	          </div>
 	        </div>
-	      ) : null}
+	      */}
 
       {graphicEditor ? (
         <div
