@@ -5574,17 +5574,14 @@ export default function CreateVideo() {
         setLogoPickerError('Logo configuration not found.')
         return
       }
-      if (!(totalSeconds > 0)) {
-        setLogoPickerError('Add a video or graphic first.')
-        return
-      }
 
       const dur = 5.0
       const id = `logo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
       let start = start0
       let end = roundToTenth(start + dur)
-      if (end > totalSeconds + 1e-6) {
+      const cap = totalSeconds > 0 ? totalSeconds : end
+      if (end > cap + 1e-6) {
         setLogoPickerError('Not enough room to add a 5s logo segment within the timeline.')
         return
       }
@@ -5601,7 +5598,7 @@ export default function CreateVideo() {
           start = roundToTenth(le)
           end = roundToTenth(start + dur)
           i = -1
-          if (end > totalSeconds + 1e-6) {
+          if (end > cap + 1e-6) {
             setLogoPickerError('No available slot for a 5s logo segment without overlapping.')
             return
           }
@@ -5649,17 +5646,14 @@ export default function CreateVideo() {
         setLogoPickerError('Logo configuration not found.')
         return
       }
-      if (!(totalSeconds > 0)) {
-        setLogoPickerError('Add a video or graphic first.')
-        return
-      }
 
       const dur = 5.0
       const id = `logo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
       let start = start0
       let end = roundToTenth(start + dur)
-      if (end > totalSeconds + 1e-6) {
+      const cap = totalSeconds > 0 ? totalSeconds : end
+      if (end > cap + 1e-6) {
         setLogoPickerError('Not enough room to add a 5s logo segment within the timeline.')
         return
       }
@@ -5675,7 +5669,7 @@ export default function CreateVideo() {
           start = roundToTenth(le)
           end = roundToTenth(start + dur)
           i = -1
-          if (end > totalSeconds + 1e-6) {
+          if (end > cap + 1e-6) {
             setLogoPickerError('No available slot for a 5s logo segment without overlapping.')
             return
           }
@@ -5733,17 +5727,14 @@ export default function CreateVideo() {
         setLowerThirdPickerError('Lower third configuration not found.')
         return
       }
-      if (!(totalSeconds > 0)) {
-        setLowerThirdPickerError('Add a video or graphic first.')
-        return
-      }
 
       const dur = 10.0
       const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
       let start = start0
       let end = roundToTenth(start + dur)
-      if (end > totalSeconds + 1e-6) {
+      const cap = totalSeconds > 0 ? totalSeconds : end
+      if (end > cap + 1e-6) {
         setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
         return
       }
@@ -5760,7 +5751,7 @@ export default function CreateVideo() {
           start = roundToTenth(le)
           end = roundToTenth(start + dur)
           i = -1
-          if (end > totalSeconds + 1e-6) {
+          if (end > cap + 1e-6) {
             setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
             return
           }
@@ -5808,17 +5799,14 @@ export default function CreateVideo() {
         setLowerThirdPickerError('Lower third configuration not found.')
         return
       }
-      if (!(totalSeconds > 0)) {
-        setLowerThirdPickerError('Add a video or graphic first.')
-        return
-      }
 
       const dur = 10.0
       const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
       let start = start0
       let end = roundToTenth(start + dur)
-      if (end > totalSeconds + 1e-6) {
+      const cap = totalSeconds > 0 ? totalSeconds : end
+      if (end > cap + 1e-6) {
         setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
         return
       }
@@ -5834,7 +5822,7 @@ export default function CreateVideo() {
           start = roundToTenth(le)
           end = roundToTenth(start + dur)
           i = -1
-          if (end > totalSeconds + 1e-6) {
+          if (end > cap + 1e-6) {
             setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
             return
           }
