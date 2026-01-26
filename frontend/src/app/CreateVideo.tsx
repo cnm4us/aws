@@ -11569,8 +11569,7 @@ export default function CreateVideo() {
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to Uploads</a>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
             <button
               type="button"
               onClick={openProjectPicker}
@@ -11585,21 +11584,6 @@ export default function CreateVideo() {
               }}
             >
               Timelines
-            </button>
-            <button
-              type="button"
-              onClick={openAdd}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(212,175,55,0.65)',
-                background: 'rgba(212,175,55,0.12)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-            >
-              Add
             </button>
             <button
               type="button"
