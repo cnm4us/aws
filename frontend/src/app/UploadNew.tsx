@@ -96,6 +96,18 @@ function getCsrfToken(): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+function getReturnHref(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('return')
+    if (!raw) return null
+    const u = new URL(raw, window.location.origin)
+    return u.pathname + (u.search ? u.search : '') + (u.hash ? u.hash : '')
+  } catch {
+    return null
+  }
+}
+
 function extLower(name: string): string {
   const base = String(name || '')
   const m = base.match(/(\.[^.]+)$/)
@@ -150,6 +162,7 @@ const UploadNewPage: React.FC = () => {
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const returnHref = getReturnHref()
   const kind = (() => {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('kind') || '').toLowerCase()
@@ -420,7 +433,10 @@ const UploadNewPage: React.FC = () => {
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>Choose a file, add a friendly title, and describe it for your team.</p>
           </div>
           <a
-            href={kind === 'audio' && me?.isSiteAdmin ? '/admin/audio' : kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(kind)}`}
+            href={
+              returnHref ||
+              (kind === 'audio' && me?.isSiteAdmin ? '/admin/audio' : kind === 'video' ? '/uploads' : `/uploads?kind=${encodeURIComponent(kind)}`)
+            }
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -434,7 +450,7 @@ const UploadNewPage: React.FC = () => {
               background: 'rgba(255,255,255,0.06)',
             }}
           >
-            Back to Uploads
+            {returnHref ? 'Cancel' : 'Back to Uploads'}
           </a>
         </header>
 
