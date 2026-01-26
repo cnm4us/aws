@@ -5635,6 +5635,72 @@ export default function CreateVideo() {
     [logoConfigs, logos, pendingLogoUploadId, playhead, snapshotUndo, totalSeconds]
   )
 
+  const addLogoFromPick = useCallback(
+    (uploadIdRaw: number, configIdRaw: number) => {
+      const uploadId = Number(uploadIdRaw)
+      const cfgId = Number(configIdRaw)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) return
+      if (!Number.isFinite(cfgId) || cfgId <= 0) {
+        setLogoPickerError('Pick a logo configuration.')
+        return
+      }
+      const cfg = logoConfigs.find((c) => Number((c as any).id) === cfgId) || null
+      if (!cfg) {
+        setLogoPickerError('Logo configuration not found.')
+        return
+      }
+      if (!(totalSeconds > 0)) {
+        setLogoPickerError('Add a video or graphic first.')
+        return
+      }
+
+      const dur = 5.0
+      const id = `logo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      let start = start0
+      let end = roundToTenth(start + dur)
+      if (end > totalSeconds + 1e-6) {
+        setLogoPickerError('Not enough room to add a 5s logo segment within the timeline.')
+        return
+      }
+
+      const existing = logos.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      for (let i = 0; i < existing.length; i++) {
+        const l = existing[i] as any
+        const ls = Number(l.startSeconds)
+        const le = Number(l.endSeconds)
+        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
+        const overlaps = start < le - 1e-6 && end > ls + 1e-6
+        if (overlaps) {
+          start = roundToTenth(le)
+          end = roundToTenth(start + dur)
+          i = -1
+          if (end > totalSeconds + 1e-6) {
+            setLogoPickerError('No available slot for a 5s logo segment without overlapping.')
+            return
+          }
+        }
+      }
+
+      const seg: Logo = { id, uploadId, startSeconds: start, endSeconds: end, configId: cfgId, configSnapshot: cfg as any }
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
+        const next = [...prevLogos, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+        return { ...prev, logos: next }
+      })
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+      setSelectedLogoId(id)
+      setSelectedLowerThirdId(null)
+      setPickOpen(false)
+      setAddStep('type')
+    },
+    [logoConfigs, logos, playhead, snapshotUndo, totalSeconds]
+  )
+
   const chooseLowerThirdUpload = useCallback(
     async (upload: UploadListItem) => {
       const id = Number(upload.id)
@@ -5726,6 +5792,73 @@ export default function CreateVideo() {
       setPendingLowerThirdUploadId(null)
     },
     [lowerThirdConfigs, lowerThirds, pendingLowerThirdUploadId, playhead, snapshotUndo, totalSeconds]
+  )
+
+  const addLowerThirdFromPick = useCallback(
+    (uploadIdRaw: number, configIdRaw: number) => {
+      const uploadId = Number(uploadIdRaw)
+      const cfgId = Number(configIdRaw)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) return
+      if (!Number.isFinite(cfgId) || cfgId <= 0) {
+        setLowerThirdPickerError('Pick a lower third configuration.')
+        return
+      }
+      const cfg = lowerThirdConfigs.find((c: any) => Number((c as any).id) === cfgId) || null
+      if (!cfg) {
+        setLowerThirdPickerError('Lower third configuration not found.')
+        return
+      }
+      if (!(totalSeconds > 0)) {
+        setLowerThirdPickerError('Add a video or graphic first.')
+        return
+      }
+
+      const dur = 10.0
+      const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      let start = start0
+      let end = roundToTenth(start + dur)
+      if (end > totalSeconds + 1e-6) {
+        setLowerThirdPickerError('Not enough room to add a 10s lower third segment within the timeline.')
+        return
+      }
+
+      const existing = lowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      for (let i = 0; i < existing.length; i++) {
+        const lt = existing[i] as any
+        const ls = Number(lt.startSeconds)
+        const le = Number(lt.endSeconds)
+        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
+        const overlaps = start < le - 1e-6 && end > ls + 1e-6
+        if (overlaps) {
+          start = roundToTenth(le)
+          end = roundToTenth(start + dur)
+          i = -1
+          if (end > totalSeconds + 1e-6) {
+            setLowerThirdPickerError('No available slot for a 10s lower third segment without overlapping.')
+            return
+          }
+        }
+      }
+
+      const seg: LowerThird = { id, uploadId, startSeconds: start, endSeconds: end, configId: cfgId, configSnapshot: cfg as any }
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
+        const next = [...prevLts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { ...prev, lowerThirds: next }
+      })
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+      setSelectedLowerThirdId(id)
+      setSelectedScreenTitleId(null)
+      setPickOpen(false)
+      setAddStep('type')
+    },
+    [lowerThirdConfigs, lowerThirds, playhead, snapshotUndo, totalSeconds]
   )
 
   const addScreenTitleFromPreset = useCallback(
@@ -5914,6 +6047,75 @@ export default function CreateVideo() {
     [audioConfigs, audioSegments, snapshotUndo, totalSeconds]
   )
 
+  const addAudioFromUploadWithConfig = useCallback(
+    (upload: SystemAudioItem, audioConfigIdRaw: number) => {
+      if (!(totalSeconds > 0)) {
+        setAudioPickerError('Add at least one video or graphic first.')
+        return
+      }
+      const id = Number((upload as any).id)
+      if (!Number.isFinite(id) || id <= 0) {
+        setAudioPickerError('Invalid audio id')
+        return
+      }
+      const audioConfigId = Number(audioConfigIdRaw)
+      if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) {
+        setAudioPickerError('Pick an audio config.')
+        return
+      }
+      const cfgs = Array.isArray(audioConfigs) ? audioConfigs : []
+      if (!cfgs.some((c) => Number((c as any).id) === audioConfigId)) {
+        setAudioPickerError('Audio config not found.')
+        return
+      }
+
+      const name = String((upload as any).modified_filename || (upload as any).original_filename || `Audio ${id}`)
+      setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
+      const dur = (upload as any).duration_seconds != null ? Number((upload as any).duration_seconds) : null
+      if (dur != null && Number.isFinite(dur) && dur > 0) {
+        setDurationsByUploadId((prev) => ({ ...prev, [id]: dur }))
+      }
+
+      const end = roundToTenth(
+        Math.max(0, dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(totalSeconds, dur) : Math.max(0, totalSeconds))
+      )
+      snapshotUndo()
+      const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      setTimeline((prev) => ({
+        ...(prev as any),
+        audioTrack: null,
+        audioSegments: [
+          {
+            id: segId,
+            uploadId: id,
+            audioConfigId,
+            startSeconds: 0,
+            endSeconds: end,
+            sourceStartSeconds: 0,
+          },
+        ],
+      }))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(segId)
+      setPickOpen(false)
+      setAddStep('type')
+      try {
+        const a = audioPreviewRef.current
+        if (a) {
+          a.pause()
+          a.removeAttribute('src')
+          a.load()
+        }
+      } catch {}
+      setAudioPreviewPlayingId(null)
+    },
+    [audioConfigs, snapshotUndo, totalSeconds]
+  )
+
   const fmtSize = useCallback((bytes: any): string => {
     const n = Number(bytes)
     if (!Number.isFinite(n) || n <= 0) return '—'
@@ -6089,6 +6291,106 @@ export default function CreateVideo() {
     },
     [computeTotalSecondsForTimeline, narration, playhead, snapshotUndo]
   )
+
+  const pickFromAssets = useMemo(() => {
+    try {
+      const qp = new URLSearchParams(window.location.search)
+      const type = String(qp.get('cvPickType') || '').trim()
+      if (!type) return null
+      const uploadId = Number(String(qp.get('cvPickUploadId') || '0'))
+      const configId = Number(String(qp.get('cvPickConfigId') || '0'))
+      const audioConfigId = Number(String(qp.get('cvPickAudioConfigId') || '0'))
+      const presetId = Number(String(qp.get('cvPickPresetId') || '0'))
+      return {
+        type,
+        uploadId: Number.isFinite(uploadId) && uploadId > 0 ? uploadId : null,
+        configId: Number.isFinite(configId) && configId > 0 ? configId : null,
+        audioConfigId: Number.isFinite(audioConfigId) && audioConfigId > 0 ? audioConfigId : null,
+        presetId: Number.isFinite(presetId) && presetId > 0 ? presetId : null,
+      }
+    } catch {
+      return null
+    }
+  }, [])
+
+  const handledPickFromAssetsRef = useRef(false)
+  useEffect(() => {
+    if (handledPickFromAssetsRef.current) return
+    if (!pickFromAssets) return
+    if (loading) return
+    if (!project?.id) return
+    handledPickFromAssetsRef.current = true
+
+    const cleanUrl = () => {
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('cvPickType')
+        url.searchParams.delete('cvPickUploadId')
+        url.searchParams.delete('cvPickConfigId')
+        url.searchParams.delete('cvPickAudioConfigId')
+        url.searchParams.delete('cvPickPresetId')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash || ''}`)
+      } catch {}
+    }
+
+    const fetchUpload = async (id: number): Promise<any | null> => {
+      const res = await fetch(`/api/uploads/${encodeURIComponent(String(id))}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) return null
+      const up = json?.upload && typeof json.upload === 'object' ? json.upload : json
+      return up && typeof up === 'object' ? up : null
+    }
+
+    ;(async () => {
+      try {
+        const t = String(pickFromAssets.type || '')
+        if (t === 'video' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (up) addClipFromUpload(up as any)
+        } else if (t === 'graphic' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (up) addGraphicFromUpload(up as any)
+        } else if (t === 'narration' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (up) await addNarrationFromUpload(up as any)
+        } else if (t === 'logo' && pickFromAssets.uploadId && pickFromAssets.configId) {
+          await ensureLogoConfigs()
+          addLogoFromPick(pickFromAssets.uploadId, pickFromAssets.configId)
+        } else if (t === 'lowerThird' && pickFromAssets.uploadId && pickFromAssets.configId) {
+          await ensureLowerThirdConfigs()
+          addLowerThirdFromPick(pickFromAssets.uploadId, pickFromAssets.configId)
+        } else if (t === 'audio' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (!up) return
+          await ensureAudioConfigs()
+          if (pickFromAssets.audioConfigId) addAudioFromUploadWithConfig(up as any, pickFromAssets.audioConfigId)
+          else addAudioFromUpload(up as any)
+        } else if (t === 'screenTitle' && pickFromAssets.presetId) {
+          const presets = await ensureScreenTitlePresets()
+          const preset = presets.find((p: any) => Number((p as any).id) === Number(pickFromAssets.presetId)) as any
+          if (preset) addScreenTitleFromPreset(preset as any)
+        }
+      } finally {
+        cleanUrl()
+      }
+    })()
+  }, [
+    addAudioFromUpload,
+    addAudioFromUploadWithConfig,
+    addClipFromUpload,
+    addGraphicFromUpload,
+    addLogoFromPick,
+    addLowerThirdFromPick,
+    addNarrationFromUpload,
+    addScreenTitleFromPreset,
+    ensureAudioConfigs,
+    ensureLogoConfigs,
+    ensureLowerThirdConfigs,
+    ensureScreenTitlePresets,
+    loading,
+    pickFromAssets,
+    project?.id,
+  ])
 
   const addNarrationFromFile = useCallback(
     async (file: File) => {
@@ -9905,19 +10207,18 @@ export default function CreateVideo() {
   }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitleEditor, screenTitlePresets, snapshotUndo])
 
   const openAdd = useCallback(() => {
-    setPickOpen(true)
-    setAddStep('type')
-    setPickerError(null)
-    setGraphicPickerError(null)
-    setLogoPickerError(null)
-    setLowerThirdPickerError(null)
-    setAudioPickerError(null)
-    setNarrationAddError(null)
-    setAudioConfigsError(null)
-    setLogoConfigsError(null)
-    setLowerThirdConfigsError(null)
-    setPendingLogoUploadId(null)
-    setPendingLowerThirdUploadId(null)
+    try {
+      const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+      const u = new URL('/assets', window.location.origin)
+      u.searchParams.set('mode', 'pick')
+      u.searchParams.set('return', ret)
+      const qp = new URLSearchParams(window.location.search)
+      const project = qp.get('project')
+      if (project) u.searchParams.set('project', String(project))
+      window.location.href = `${u.pathname}${u.search}`
+    } catch {
+      window.location.href = '/assets?mode=pick'
+    }
   }, [])
 
   const closeAdd = useCallback(() => {
