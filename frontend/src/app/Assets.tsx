@@ -500,13 +500,16 @@ const AssetUploadsListPage: React.FC<{
 	        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
 	          {items.map((u) => {
 	            const name = (u.modified_filename || u.original_filename || `Upload ${u.id}`).trim()
+	            const originalName = (u.original_filename || '').trim()
 	            const date = formatDate(u.created_at)
 	            const size = formatBytes(u.size_bytes)
 	            const dur = showDuration ? formatDuration(u.duration_seconds) : ''
+	            const dims = u.width && u.height ? `${u.width}px × ${u.height}px` : ''
 	            const meta = [date, size, dur].filter(Boolean).join(kind === 'logo' ? ' * ' : ' · ')
 	            const isDeleting = !!deleting[u.id]
 	            const desc = (u.description || '').trim()
 	            const thumbSrc = thumbOrFile(u)
+	            const isImageLike = kind === 'logo' || kind === 'image'
 	            return (
 	              <div
 	                key={u.id}
@@ -538,7 +541,15 @@ const AssetUploadsListPage: React.FC<{
 	                  >
 	                    {name}
 	                  </button>
-	                  {meta ? <div style={{ color: '#9a9a9a', fontSize: 13 }}>{meta}</div> : null}
+	                  {isImageLike ? (
+	                    <div style={{ display: 'grid', gap: 4 }}>
+	                      {originalName ? <div style={{ color: '#9a9a9a', fontSize: 13 }}>File Name: {originalName}</div> : null}
+	                      {date ? <div style={{ color: '#9a9a9a', fontSize: 13 }}>Date: {date}</div> : null}
+	                      {dims ? <div style={{ color: '#9a9a9a', fontSize: 13 }}>Size: {dims}</div> : null}
+	                    </div>
+	                  ) : meta ? (
+	                    <div style={{ color: '#9a9a9a', fontSize: 13 }}>{meta}</div>
+	                  ) : null}
 
 	                  <button
 	                    type="button"
