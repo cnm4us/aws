@@ -6768,14 +6768,14 @@ pagesRouter.get('/screen-title-presets', (req: any, res) => {
     const uid = req?.user?.id ? Number(req.user.id) : null
     console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
   } catch {}
-  serveHtml(res, path.join('app', 'index.html'));
+  res.status(404).type('text/plain').send('Not found')
 });
 pagesRouter.get('/screen-title-presets/', (req: any, res) => {
   try {
     const uid = req?.user?.id ? Number(req.user.id) : null
     console.warn('legacy_route_screen_title_presets', { userId: uid, ip: req?.ip, ua: String(req?.headers?.['user-agent'] || '') })
   } catch {}
-  serveHtml(res, path.join('app', 'index.html'));
+  res.status(404).type('text/plain').send('Not found')
 });
 
 pagesRouter.get('/lower-thirds', (_req, res) => {
