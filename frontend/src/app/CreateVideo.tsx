@@ -18150,7 +18150,7 @@ export default function CreateVideo() {
 			                  }}
 			                >
 					                  {(timelineCtxMenu.view || 'main') === 'guidelines'
-					                    ? 'Guidelines'
+					                    ? 'Actions'
 					                    : timelineCtxMenu.kind === 'audioSegment'
 					                      ? 'Audio'
 					                    : timelineCtxMenu.kind === 'still'
@@ -18503,7 +18503,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(212,175,55,0.85)',
+			                          border: '2px solid rgba(212,175,55,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18530,7 +18530,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(212,175,55,0.85)',
+			                          border: '2px solid rgba(212,175,55,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18557,7 +18557,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(212,175,55,0.85)',
+			                          border: '2px solid rgba(212,175,55,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18589,7 +18589,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,59,48,0.85)',
+			                          border: '2px solid rgba(255,59,48,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18617,7 +18617,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,59,48,0.85)',
+			                          border: '2px solid rgba(255,59,48,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
@@ -18645,7 +18645,7 @@ export default function CreateVideo() {
 			                          width: '100%',
 			                          padding: '10px 12px',
 			                          borderRadius: 10,
-			                          border: '1px solid rgba(255,59,48,0.85)',
+			                          border: '2px solid rgba(255,59,48,0.92)',
 			                          background: '#000',
 			                          color: '#fff',
 			                          fontWeight: 900,
