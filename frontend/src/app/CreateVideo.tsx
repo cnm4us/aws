@@ -4802,8 +4802,8 @@ export default function CreateVideo() {
     [logoConfigs, logos, playhead, snapshotUndo, totalSeconds]
   )
 
-  const addLowerThirdFromPick = useCallback(
-    (uploadIdRaw: number, configIdRaw: number, configsOverride?: LowerThirdConfigItem[]) => {
+	  const addLowerThirdFromPick = useCallback(
+	    (uploadIdRaw: number, configIdRaw: number, configsOverride?: LowerThirdConfigItem[]) => {
       const uploadId = Number(uploadIdRaw)
       const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
@@ -4818,16 +4818,19 @@ export default function CreateVideo() {
         return
       }
 
-      const dur = 10.0
-      const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
-      let start = start0
-      let end = roundToTenth(start + dur)
-      const cap = totalSeconds > 0 ? totalSeconds : end
-      if (end > cap + 1e-6) {
-        setTimelineMessage('Not enough room to add a 10s lower third segment within the timeline.')
-        return
-      }
+	      const dur = 10.0
+	      const id = `lt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+	      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+	      let start = start0
+	      let end = roundToTenth(start + dur)
+	      // When there is no base timeline (no clips/graphics/stills), allow lower-thirds to extend the timeline
+	      // even if a short logo segment already exists (logos shouldn't "cap" the timeline).
+	      const baseSeconds = Math.max(0, roundToTenth(Math.max(totalSecondsVideo, totalSecondsGraphics, totalSecondsStills)))
+	      const cap = baseSeconds > 0 ? baseSeconds : Math.max(totalSeconds, end)
+	      if (end > cap + 1e-6) {
+	        setTimelineMessage('Not enough room to add a 10s lower third segment within the timeline.')
+	        return
+	      }
 
       const existing = lowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
       for (let i = 0; i < existing.length; i++) {
@@ -4861,9 +4864,9 @@ export default function CreateVideo() {
       setSelectedAudioId(null)
       setSelectedLowerThirdId(id)
       setSelectedScreenTitleId(null)
-    },
-    [lowerThirdConfigs, lowerThirds, playhead, snapshotUndo, totalSeconds]
-  )
+	    },
+	    [lowerThirdConfigs, lowerThirds, playhead, snapshotUndo, totalSeconds, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo]
+	  )
 
   const addScreenTitleFromPreset = useCallback(
     (preset: ScreenTitlePresetItem) => {
