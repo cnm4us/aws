@@ -2176,6 +2176,32 @@ export default function CreateVideo() {
     return { style, label: name, thumbUrl }
   }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
 
+  const baseUnderlayPoster = useMemo(() => {
+    if (videoPreviewMode !== 'overlay') return null
+    if (!timeline.clips.length) return null
+    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    if (idx < 0) return null
+    const clip = timeline.clips[idx]
+    const uploadId = Number(clip?.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return null
+    return posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+  }, [clipStarts, playhead, posterByUploadId, timeline.clips, videoPreviewMode])
+
+  const baseUnderlayObjectFit = useMemo(() => {
+    if (videoPreviewMode !== 'overlay') return previewObjectFit
+    if (!timeline.clips.length) return 'cover' as const
+    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    if (idx < 0) return 'cover' as const
+    const clip = timeline.clips[idx]
+    const uploadId = Number(clip?.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return 'cover' as const
+    const dims = dimsByUploadId[uploadId]
+    const w = Number(dims?.width || 0)
+    const h = Number(dims?.height || 0)
+    if (w > 0 && h > 0) return w > h ? ('contain' as const) : ('cover' as const)
+    return 'cover' as const
+  }, [clipStarts, dimsByUploadId, playhead, previewObjectFit, timeline.clips, videoPreviewMode])
+
   const previewVideoStyle = useMemo<React.CSSProperties>(() => {
     if (videoPreviewMode === 'overlay') {
       if (!activeVideoOverlayPlaceholder) return { display: 'none' }
@@ -11536,6 +11562,13 @@ export default function CreateVideo() {
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
           <div style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative' }}>
+            {videoPreviewMode === 'overlay' && baseUnderlayPoster ? (
+              <img
+                src={baseUnderlayPoster}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: baseUnderlayObjectFit, pointerEvents: 'none', opacity: 0.98 }}
+              />
+            ) : null}
             <video
               ref={videoRef}
               playsInline
@@ -11543,14 +11576,14 @@ export default function CreateVideo() {
               poster={activePoster || undefined}
               style={previewVideoStyle}
             />
-            {videoPreviewMode === 'base' && activeStillUrl ? (
+            {activeStillUrl ? (
               <img
                 src={activeStillUrl}
                 alt=""
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
               />
             ) : null}
-	            {videoPreviewMode === 'base' && activeGraphicUrl ? (
+	            {activeGraphicUrl ? (
 	              <img
 	                src={activeGraphicUrl}
 	                alt=""
@@ -11586,21 +11619,21 @@ export default function CreateVideo() {
 	                </div>
 	              </div>
 	            ) : null}
-	              {videoPreviewMode === 'base' && activeScreenTitlePreview ? (
+	              {activeScreenTitlePreview ? (
 	                <img
 	                  src={activeScreenTitlePreview.url}
 	                  alt=""
 	                  style={activeScreenTitlePreview.style}
                 />
               ) : null}
-	            {videoPreviewMode === 'base' && activeLowerThirdPreview ? (
+	            {activeLowerThirdPreview ? (
 	              <img
 	                src={activeLowerThirdPreview.url}
 	                alt=""
 	                style={activeLowerThirdPreview.style}
 	              />
 	            ) : null}
-	            {videoPreviewMode === 'base' && activeLogoPreview ? (
+	            {activeLogoPreview ? (
 	              <img
 	                src={activeLogoPreview.url}
 	                alt=""
