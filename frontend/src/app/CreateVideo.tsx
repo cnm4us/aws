@@ -495,11 +495,6 @@ export default function CreateVideo() {
   const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null)
 
   const playPauseGlyph = (isPlaying: boolean) => (isPlaying ? '||' : '▶')
-  const [videoPreviewMode, setVideoPreviewMode] = useState<'base' | 'overlay'>('base')
-  const videoPreviewModeRef = useRef<'base' | 'overlay'>('base')
-  useEffect(() => {
-    videoPreviewModeRef.current = videoPreviewMode
-  }, [videoPreviewMode])
 
   const activeVideoOverlayIndexRef = useRef(0)
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
@@ -577,9 +572,12 @@ export default function CreateVideo() {
   const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; gainDb: number } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const overlayVideoRef = useRef<HTMLVideoElement | null>(null)
   const [previewObjectFit, setPreviewObjectFit] = useState<'cover' | 'contain'>('cover')
   const [playing, setPlaying] = useState(false)
   const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
+  const [overlayActiveUploadId, setOverlayActiveUploadId] = useState<number | null>(null)
+  const playbackClockRef = useRef<'base' | 'overlay' | 'synthetic'>('base')
   const playheadRef = useRef(0)
   const playingRef = useRef(false)
   const activeClipIndexRef = useRef(0)
@@ -657,6 +655,7 @@ export default function CreateVideo() {
   const ignoreScrollRef = useRef(false)
   const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
   const primedFrameSrcRef = useRef<string>('')
+  const primedOverlayFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
   const [graphicFileUrlByUploadId, setGraphicFileUrlByUploadId] = useState<Record<number, string>>({})
   const [audioEnvelopeByUploadId, setAudioEnvelopeByUploadId] = useState<Record<number, any>>({})
@@ -1020,20 +1019,20 @@ export default function CreateVideo() {
     } catch {}
   }, [])
 
-	  const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement): Promise<boolean> => {
-	    const tryPlay = async (): Promise<boolean> => {
-	      try {
-	        const p = v.play()
-	        if (p && typeof (p as any).then === 'function') {
-	          let ok = true
-	          await p.catch(() => { ok = false })
-	          return ok
-	        }
-	        return true
-	      } catch {
-	        return false
-	      }
-	    }
+		  const playWithAutoplayFallback = useCallback(async (v: HTMLVideoElement, opts?: { unmuteAfterPlay?: boolean }): Promise<boolean> => {
+		    const tryPlay = async (): Promise<boolean> => {
+		      try {
+		        const p = v.play()
+		        if (p && typeof (p as any).then === 'function') {
+		          let ok = true
+		          await p.catch(() => { ok = false })
+		          return ok
+		        }
+		        return true
+		      } catch {
+		        return false
+		      }
+		    }
 
     // First attempt: play with current mute state.
     if (await tryPlay()) return true
@@ -1041,17 +1040,19 @@ export default function CreateVideo() {
     // Fallback: autoplay policies (esp iOS Safari) may block non-gesture play with audio.
     // Try muted autoplay, then unmute once playback starts.
     try { v.muted = true } catch {}
-    if (await tryPlay()) {
-      window.setTimeout(() => {
-        try {
-          v.muted = false
-          v.volume = 1
-        } catch {}
-      }, 0)
-      return true
-    }
-    return false
-	  }, [])
+	    if (await tryPlay()) {
+	      if (opts?.unmuteAfterPlay !== false) {
+	        window.setTimeout(() => {
+	          try {
+	            v.muted = false
+	            v.volume = 1
+	          } catch {}
+	        }, 0)
+	      }
+	      return true
+	    }
+	    return false
+		  }, [])
 
 	  const videoOverlays = useMemo(
 	    () => (Array.isArray((timeline as any).videoOverlays) ? ((timeline as any).videoOverlays as VideoOverlay[]) : []),
@@ -2150,7 +2151,7 @@ export default function CreateVideo() {
     return { url, style }
   }, [activeScreenTitleAtPlayhead, activeScreenTitleUrl, playhead, previewObjectFit])
 
-  const activeVideoOverlayPlaceholder = useMemo(() => {
+  const activeVideoOverlayPreview = useMemo(() => {
     const o: any = activeVideoOverlayAtPlayhead as any
     if (!o) return null
     const uploadId = Number(o.uploadId)
@@ -2166,18 +2167,13 @@ export default function CreateVideo() {
       position: 'absolute',
       width: `${sizePctWidth}%`,
       aspectRatio,
-      borderRadius: 10,
-      border: '2px dashed rgba(255,159,10,0.95)',
-      background: 'rgba(255,159,10,0.12)',
-      color: '#fff',
-      fontSize: 11,
-      fontWeight: 900,
-      letterSpacing: 0.4,
-      textTransform: 'uppercase',
-      display: 'grid',
-      placeItems: 'center',
+      overflow: 'hidden',
+      objectFit: 'contain',
       pointerEvents: 'none',
       zIndex: 25,
+      background: 'rgba(0,0,0,0.25)',
+      border: '2px dashed rgba(255,214,170,0.75)',
+      borderRadius: 10,
     }
     const pos = String(o.position || 'bottom_right')
     if (pos === 'top_left') {
@@ -2213,61 +2209,32 @@ export default function CreateVideo() {
       style.right = inset
       style.bottom = inset
     }
-    const name = (namesByUploadId[uploadId] || `Overlay ${uploadId}`).toString()
+    const label = (namesByUploadId[uploadId] || `Overlay ${uploadId}`).toString()
     const thumbUrl = posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
-    return { style, label: name, thumbUrl }
+    return { uploadId, style: style as React.CSSProperties, label, thumbUrl }
   }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
 
-  const baseUnderlayPoster = useMemo(() => {
-    if (videoPreviewMode !== 'overlay') return null
-    if (!timeline.clips.length) return null
-    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
-    if (idx < 0) return null
-    const clip = timeline.clips[idx]
-    const uploadId = Number(clip?.uploadId)
-    if (!Number.isFinite(uploadId) || uploadId <= 0) return null
-    return posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
-  }, [clipStarts, playhead, posterByUploadId, timeline.clips, videoPreviewMode])
-
-  const baseUnderlayObjectFit = useMemo(() => {
-    if (videoPreviewMode !== 'overlay') return previewObjectFit
-    if (!timeline.clips.length) return 'cover' as const
-    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
-    if (idx < 0) return 'cover' as const
-    const clip = timeline.clips[idx]
-    const uploadId = Number(clip?.uploadId)
-    if (!Number.isFinite(uploadId) || uploadId <= 0) return 'cover' as const
-    const dims = dimsByUploadId[uploadId]
-    const w = Number(dims?.width || 0)
-    const h = Number(dims?.height || 0)
-    if (w > 0 && h > 0) return w > h ? ('contain' as const) : ('cover' as const)
-    return 'cover' as const
-  }, [clipStarts, dimsByUploadId, playhead, previewObjectFit, timeline.clips, videoPreviewMode])
-
-  const previewVideoStyle = useMemo<React.CSSProperties>(() => {
-    if (videoPreviewMode === 'overlay') {
-      if (!activeVideoOverlayPlaceholder) return { display: 'none' }
-      const s: any = activeVideoOverlayPlaceholder.style as any
-      const style: React.CSSProperties = {
-        position: 'absolute',
-        pointerEvents: 'none',
-        zIndex: 26,
-        borderRadius: 0,
-        border: '2px dashed rgba(255,159,10,0.95)',
-        background: 'rgba(0,0,0,0.25)',
-        overflow: 'hidden',
-        objectFit: 'contain',
-      }
-      // Copy only positioning-related CSS from the placeholder.
-      for (const k of ['left', 'right', 'top', 'bottom', 'transform', 'width', 'aspectRatio'] as const) {
-        if (s && s[k] != null) (style as any)[k] = s[k]
-      }
-      ;(style as any).height = 'auto'
-      ;(style as any).maxHeight = '100%'
-      return style
+  const previewBaseVideoStyle = useMemo<React.CSSProperties>(() => {
+    return {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: previewObjectFit,
+      pointerEvents: 'none',
+      display: activeUploadId != null ? 'block' : 'none',
+      zIndex: 5,
     }
-    return { width: '100%', height: '100%', objectFit: previewObjectFit, display: activeUploadId != null ? 'block' : 'none' }
-  }, [activeUploadId, activeVideoOverlayPlaceholder, previewObjectFit, videoPreviewMode])
+  }, [activeUploadId, previewObjectFit])
+
+  const previewOverlayVideoStyle = useMemo<React.CSSProperties>(() => {
+    if (!activeVideoOverlayPreview) return { display: 'none' }
+    return {
+      ...(activeVideoOverlayPreview.style as any),
+      display: 'block',
+      zIndex: 30,
+    }
+  }, [activeVideoOverlayPreview])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -4462,6 +4429,7 @@ export default function CreateVideo() {
       activeClipIndexRef.current = idx
       const clip = timeline.clips[idx]
       if (!clip) return
+      const desiredMuted = (clip as any).audioEnabled === false
       const startTimeline = Number(clipStarts[idx] || 0)
       const within = Math.max(0, tClamped - startTimeline)
       const srcDur = clipSourceDurationSeconds(clip)
@@ -4477,6 +4445,7 @@ export default function CreateVideo() {
         v.load()
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
+          try { v.muted = desiredMuted } catch {}
           try {
             const w = Number(v.videoWidth || 0)
             const h = Number(v.videoHeight || 0)
@@ -4490,17 +4459,18 @@ export default function CreateVideo() {
           }
           if (opts?.autoPlay) {
             void (async () => {
-              const ok = await playWithAutoplayFallback(v)
+              const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
               if (!ok) setPlaying(false)
             })()
           }
         }
         v.addEventListener('loadedmetadata', onMeta)
       } else {
+        try { v.muted = desiredMuted } catch {}
         try { v.currentTime = Math.max(0, sourceTime) } catch {}
         if (opts?.autoPlay) {
           void (async () => {
-            const ok = await playWithAutoplayFallback(v)
+            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
             if (!ok) setPlaying(false)
           })()
         }
@@ -4509,26 +4479,26 @@ export default function CreateVideo() {
     [activeUploadId, clipStarts, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
   )
 
-  const seekVideoOverlay = useCallback(
-    async (t: number, opts?: { autoPlay?: boolean }) => {
-      const v = videoRef.current
-      if (!v) return
+	  const seekOverlay = useCallback(
+	    async (t: number, opts?: { autoPlay?: boolean }) => {
+	      const v = overlayVideoRef.current
+	      if (!v) return
       const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
       if (!videoOverlays.length) {
         try { v.pause() } catch {}
-        setActiveUploadId(null)
+        setOverlayActiveUploadId(null)
         return
       }
       const idx = findClipIndexAtTime(tClamped, videoOverlays as any, videoOverlayStarts as any)
       if (idx < 0) {
         activeVideoOverlayIndexRef.current = Math.max(0, videoOverlayStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
         try { v.pause() } catch {}
-        setActiveUploadId(null)
         return
       }
       activeVideoOverlayIndexRef.current = idx
       const o: any = (videoOverlays as any)[idx]
       if (!o) return
+      const desiredMuted = !Boolean((o as any).audioEnabled)
       const startTimeline = Number((videoOverlayStarts as any)[idx] || 0)
       const within = Math.max(0, tClamped - startTimeline)
       const srcDur = clipSourceDurationSeconds(o as any)
@@ -4537,56 +4507,55 @@ export default function CreateVideo() {
       const nextUploadId = Number(o.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
 
-      if (activeUploadId !== nextUploadId) {
-        setActiveUploadId(nextUploadId)
-        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
-        v.load()
-        const onMeta = () => {
-          v.removeEventListener('loadedmetadata', onMeta)
-          try {
-            const w = Number(v.videoWidth || 0)
-            const h = Number(v.videoHeight || 0)
-            if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
-          } catch {}
-          try { v.currentTime = Math.max(0, sourceTime) } catch {}
-          const srcKey = String(v.currentSrc || v.src || '')
-          if (!opts?.autoPlay && srcKey && primedFrameSrcRef.current !== srcKey) {
-            primedFrameSrcRef.current = srcKey
-            void primePausedFrame(v)
-          }
-          if (opts?.autoPlay) {
-            void (async () => {
-              const ok = await playWithAutoplayFallback(v)
-              if (!ok) setPlaying(false)
-            })()
-          }
-        }
-        v.addEventListener('loadedmetadata', onMeta)
-      } else {
-        try { v.currentTime = Math.max(0, sourceTime) } catch {}
-        if (opts?.autoPlay) {
-          void (async () => {
-            const ok = await playWithAutoplayFallback(v)
-            if (!ok) setPlaying(false)
-          })()
-        }
-      }
-    },
-    [activeUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays]
+	      if (overlayActiveUploadId !== nextUploadId) {
+	        setOverlayActiveUploadId(nextUploadId)
+	        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
+	        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+	        v.load()
+	        const onMeta = () => {
+	          v.removeEventListener('loadedmetadata', onMeta)
+	          try { v.muted = desiredMuted } catch {}
+	          try { v.currentTime = Math.max(0, sourceTime) } catch {}
+	          if (!opts?.autoPlay) {
+	            try { v.pause() } catch {}
+	          }
+	          const srcKey = String(v.currentSrc || v.src || '')
+	          if (!opts?.autoPlay && srcKey && primedOverlayFrameSrcRef.current !== srcKey) {
+	            primedOverlayFrameSrcRef.current = srcKey
+	            void primePausedFrame(v)
+	          }
+	          if (opts?.autoPlay) {
+	            void (async () => {
+	              const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+	              if (!ok) setPlaying(false)
+	            })()
+	          }
+	        }
+	        v.addEventListener('loadedmetadata', onMeta)
+	      } else {
+	        try { v.muted = desiredMuted } catch {}
+	        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+	        if (!opts?.autoPlay) {
+	          try { v.pause() } catch {}
+	        }
+	        if (opts?.autoPlay) {
+	          void (async () => {
+	            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+	            if (!ok) setPlaying(false)
+	          })()
+	        }
+	      }
+	    },
+    [overlayActiveUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays]
   )
 
   // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
   // Without this, `playhead` may not change during hydration, so the normal playhead-driven sync won't run.
   useEffect(() => {
-    if (activeUploadId != null) return
-    if (videoPreviewModeRef.current === 'overlay') {
-      void seekVideoOverlay(playhead)
-      return
-    }
-    if (!timeline.clips.length) return
+    if (activeUploadId != null || overlayActiveUploadId != null) return
     void seek(playhead)
-  }, [activeUploadId, playhead, seek, seekVideoOverlay, timeline.clips.length])
+    void seekOverlay(playhead)
+  }, [activeUploadId, overlayActiveUploadId, playhead, seek, seekOverlay])
 
   // Keep a stable poster image for iOS Safari (initial paused frame often won’t paint reliably).
   useEffect(() => {
@@ -4668,33 +4637,23 @@ export default function CreateVideo() {
       playheadFromVideoRef.current = false
       return
     }
-    if (videoPreviewModeRef.current === 'base' && !timeline.clips.length) return
     // If user scrubs while playing, pause for predictable behavior.
     if (playing) {
       try { videoRef.current?.pause?.() } catch {}
+      try { overlayVideoRef.current?.pause?.() } catch {}
       setPlaying(false)
     }
-    if (videoPreviewModeRef.current === 'overlay') {
-      void seekVideoOverlay(playhead)
-    } else {
-      void seek(playhead)
-    }
+    void seek(playhead)
+    void seekOverlay(playhead)
   }, [playhead]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When the timeline becomes empty, clear the preview video so we don't leave stale frames on screen.
+  // When the base video lane becomes empty, clear the base preview video so we don't leave stale frames on screen.
   useEffect(() => {
     if (timeline.clips.length) return
     const v = videoRef.current
     try { v?.pause?.() } catch {}
-    setPlaying(false)
     setActiveUploadId(null)
     setSelectedClipId(null)
-    setSelectedGraphicId(null)
-    setSelectedStillId(null)
-    setSelectedLogoId(null)
-    setSelectedLowerThirdId(null)
-    setSelectedScreenTitleId(null)
-    setSelectedAudioId(null)
     setClipEditor(null)
     setClipEditorError(null)
     setPreviewObjectFit('cover')
@@ -4711,27 +4670,9 @@ export default function CreateVideo() {
   }, [timeline.clips.length])
 
   const togglePlay = useCallback(() => {
-    if (videoPreviewModeRef.current !== 'base') {
-      videoPreviewModeRef.current = 'base'
-      setVideoPreviewMode('base')
-    }
-    const v = videoRef.current
     if (!(totalSeconds > 0)) return
     if (narrationPreviewPlaying) stopNarrationPreview()
     if (musicPreviewPlaying) stopMusicPreview()
-
-    // Graphics-only playback uses a synthetic clock.
-    if (!timeline.clips.length) {
-      if (playing) {
-        setPlaying(false)
-        return
-      }
-      if (playhead >= totalSeconds - 0.05) {
-        setTimeline((prev) => ({ ...prev, playheadSeconds: 0 }))
-      }
-      setPlaying(true)
-      return
-    }
 
     if (playing) {
       setPlaying(false)
@@ -4740,26 +4681,41 @@ export default function CreateVideo() {
         window.cancelAnimationFrame(curGap.raf)
         gapPlaybackRef.current = null
       }
-      try { v?.pause?.() } catch {}
+      try { videoRef.current?.pause?.() } catch {}
+      try { overlayVideoRef.current?.pause?.() } catch {}
       return
     }
 
-    if (!v) return
-    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
-    if (idx < 0) {
-      // Start gap playback (or trailing playback) even when no clip is active at the playhead.
-      setPlaying(true)
-      return
+    const t0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+    if (t0 >= totalSeconds - 0.05) {
+      playheadFromVideoRef.current = true
+      playheadRef.current = 0
+      setTimeline((prev) => ({ ...prev, playheadSeconds: 0 }))
     }
 
-    if (v.paused) {
-      try {
-        v.muted = false
-        v.volume = 1
-      } catch {}
-      void seek(playhead, { autoPlay: true })
+    const baseIdx = timeline.clips.length ? findClipIndexAtTime(t0, timeline.clips, clipStarts) : -1
+    const overlayIdx = videoOverlays.length ? findClipIndexAtTime(t0, videoOverlays as any, videoOverlayStarts as any) : -1
+
+    // Choose which element drives the playhead. Base clip wins when present; otherwise overlay; otherwise synthetic (graphics-only).
+    if (baseIdx >= 0) playbackClockRef.current = 'base'
+    else if (overlayIdx >= 0) playbackClockRef.current = 'overlay'
+    else if (timeline.clips.length) playbackClockRef.current = 'base'
+    else if (videoOverlays.length) playbackClockRef.current = 'overlay'
+    else playbackClockRef.current = 'synthetic'
+
+    setPlaying(true)
+
+    if (baseIdx >= 0) {
+      void seek(t0, { autoPlay: true })
     } else {
-      try { v.pause() } catch {}
+      try { videoRef.current?.pause?.() } catch {}
+      setActiveUploadId(null)
+    }
+
+    if (overlayIdx >= 0) {
+      void seekOverlay(t0, { autoPlay: true })
+    } else {
+      try { overlayVideoRef.current?.pause?.() } catch {}
     }
   }, [
     clipStarts,
@@ -4767,81 +4723,11 @@ export default function CreateVideo() {
     narrationPreviewPlaying,
     playhead,
     playing,
-    primeAutoplayUnlock,
     seek,
-    setVideoPreviewMode,
+    seekOverlay,
     stopMusicPreview,
     stopNarrationPreview,
     timeline.clips,
-    totalSeconds,
-  ])
-
-  const toggleVideoOverlayPlay = useCallback(() => {
-    const v = videoRef.current
-    if (!(totalSeconds > 0)) return
-    if (!videoOverlays.length) return
-
-    if (narrationPreviewPlaying) stopNarrationPreview()
-    if (musicPreviewPlaying) stopMusicPreview()
-
-    if (videoPreviewModeRef.current !== 'overlay') {
-      videoPreviewModeRef.current = 'overlay'
-      setVideoPreviewMode('overlay')
-    }
-
-    const curGap = gapPlaybackRef.current
-    if (curGap) {
-      window.cancelAnimationFrame(curGap.raf)
-      gapPlaybackRef.current = null
-    }
-
-    if (playing) {
-      setPlaying(false)
-      try { v?.pause?.() } catch {}
-      return
-    }
-
-    let startAt = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
-    const idx = findClipIndexAtTime(startAt, videoOverlays as any, videoOverlayStarts as any)
-    if (idx < 0) {
-      let best: number | null = null
-      for (let i = 0; i < videoOverlayStarts.length; i++) {
-        const s = roundToTenth(Number(videoOverlayStarts[i] || 0))
-        if (!Number.isFinite(s)) continue
-        if (s > startAt + 1e-6 && (best == null || s < best)) best = s
-      }
-      if (best == null) {
-        // If we're beyond the last overlay, wrap to the first.
-        for (let i = 0; i < videoOverlayStarts.length; i++) {
-          const s = roundToTenth(Number(videoOverlayStarts[i] || 0))
-          if (!Number.isFinite(s)) continue
-          if (best == null || s < best) best = s
-        }
-      }
-      if (best == null) return
-      startAt = best
-      playheadFromVideoRef.current = true
-      playheadRef.current = startAt
-      setTimeline((prev) => ({ ...prev, playheadSeconds: startAt }))
-    }
-
-    if (v?.paused) {
-      try {
-        v.muted = false
-        v.volume = 1
-      } catch {}
-      void seekVideoOverlay(startAt, { autoPlay: true })
-    } else {
-      try { v.pause() } catch {}
-    }
-  }, [
-    musicPreviewPlaying,
-    narrationPreviewPlaying,
-    playhead,
-    playing,
-    seekVideoOverlay,
-    stopMusicPreview,
-    stopNarrationPreview,
     totalSeconds,
     videoOverlayStarts,
     videoOverlays,
@@ -4849,8 +4735,9 @@ export default function CreateVideo() {
 
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
-    if (videoPreviewModeRef.current !== 'base') return
     if (timeline.clips.length) return
+    if (videoOverlays.length) return
+    if (playbackClockRef.current !== 'synthetic') return
     if (!playing) return
     if (!(totalSeconds > 0)) {
       setPlaying(false)
@@ -4877,128 +4764,268 @@ export default function CreateVideo() {
     return () => {
       window.cancelAnimationFrame(raf)
     }
-  }, [playing, timeline.clips.length, totalSeconds])
+  }, [playing, timeline.clips.length, totalSeconds, videoOverlays.length])
 
-  // Drive playhead from video time while playing.
+  // Drive playhead from the active clock video element while playing.
+  // Best-effort sync: the non-clock video is periodically nudged to match the timeline time.
   useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    const onPlay = () => setPlaying(true)
-    const onPause = () => {
+    const base = videoRef.current
+    const overlay = overlayVideoRef.current
+    if (!base && !overlay) return
+
+    const safePause = (v: HTMLVideoElement | null) => {
+      try { v?.pause?.() } catch {}
+    }
+
+    const syncOverlayToTimeline = (t: number) => {
+      if (!overlay || !videoOverlays.length) return
+      const idx = findClipIndexAtTime(t, videoOverlays as any, videoOverlayStarts as any)
+      if (idx < 0) {
+        safePause(overlay)
+        return
+      }
+      const seg: any = (videoOverlays as any)[idx]
+      if (!seg) return
+      const uploadId = Number(seg.uploadId)
+      const startTimeline = Number((videoOverlayStarts as any)[idx] || 0)
+      const within = Math.max(0, t - startTimeline)
+      const srcDur = clipSourceDurationSeconds(seg as any)
+      const withinMoving = clamp(roundToTenth(within), 0, Math.max(0, srcDur))
+      const sourceTime = Number(seg.sourceStartSeconds || 0) + withinMoving
+      const desiredMuted = !Boolean((seg as any).audioEnabled)
+      try { overlay.muted = desiredMuted } catch {}
+
+      if (overlayActiveUploadId !== uploadId) {
+        void seekOverlay(t, { autoPlay: playingRef.current })
+        return
+      }
+      if (Number.isFinite(sourceTime) && Math.abs((overlay.currentTime || 0) - sourceTime) > 0.25) {
+        try { overlay.currentTime = Math.max(0, sourceTime) } catch {}
+      }
+      if (playingRef.current && overlay.paused) {
+        void (async () => {
+          const ok = await playWithAutoplayFallback(overlay, { unmuteAfterPlay: !desiredMuted })
+          if (!ok && playbackClockRef.current === 'overlay') setPlaying(false)
+        })()
+      }
+    }
+
+    const syncBaseToTimeline = (t: number) => {
+      if (!base || !timeline.clips.length) return
+      const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
+      if (idx < 0) {
+        safePause(base)
+        return
+      }
+      const clip = timeline.clips[idx]
+      if (!clip) return
+      const desiredMuted = (clip as any).audioEnabled === false
+      try { base.muted = desiredMuted } catch {}
+      if (activeUploadId !== Number(clip.uploadId)) {
+        void seek(t, { autoPlay: playingRef.current })
+        return
+      }
+      const startTimeline = Number(clipStarts[idx] || 0)
+      const within = Math.max(0, t - startTimeline)
+      const srcDur = clipSourceDurationSeconds(clip)
+      const withinMoving = clamp(roundToTenth(within), 0, Math.max(0, srcDur))
+      const sourceTime = Number(clip.sourceStartSeconds) + withinMoving
+      if (Number.isFinite(sourceTime) && Math.abs((base.currentTime || 0) - sourceTime) > 0.25) {
+        try { base.currentTime = Math.max(0, sourceTime) } catch {}
+      }
+      if (playingRef.current && base.paused) {
+        void (async () => {
+          const ok = await playWithAutoplayFallback(base, { unmuteAfterPlay: !desiredMuted })
+          if (!ok && playbackClockRef.current === 'base') setPlaying(false)
+        })()
+      }
+    }
+
+    const onPlayBase = () => {
+      if (playbackClockRef.current === 'base') setPlaying(true)
+    }
+    const onPauseBase = () => {
       if (suppressNextVideoPauseRef.current) {
         suppressNextVideoPauseRef.current = false
         return
       }
-      setPlaying(false)
+      if (playbackClockRef.current === 'base') setPlaying(false)
     }
-    const onTime = () => {
-      if (!playing) return
-      const mode = videoPreviewModeRef.current
-      if (mode === 'overlay') {
-        if (!videoOverlays.length) return
-        if (v.paused) return
-        const overlayIndex = Math.max(0, Math.min(activeVideoOverlayIndexRef.current, videoOverlays.length - 1))
-        const o: any = (videoOverlays as any)[overlayIndex]
-        if (!o) return
-        const startTimeline = Number((videoOverlayStarts as any)[overlayIndex] || 0)
-        const withinNow = Math.max(0, (v.currentTime || 0) - Number(o.sourceStartSeconds || 0))
-        const srcDur = clipSourceDurationSeconds(o as any)
-
-        const nextPlayhead = startTimeline + withinNow
-        const next = clamp(roundToTenth(nextPlayhead), 0, Math.max(0, totalSeconds))
-        if (Math.abs(next - playhead) >= 0.1) {
-          playheadFromVideoRef.current = true
-          setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
-        }
-
-        const clipLen = clipDurationSeconds(o as any)
-        const endTimeline = roundToTenth(startTimeline + clipLen)
-        if (withinNow >= srcDur - 0.12 && overlayIndex < videoOverlays.length - 1) {
-          const nextStart = roundToTenth(Number((videoOverlayStarts as any)[overlayIndex + 1] || 0))
-          if (nextStart > endTimeline + 0.05) {
-            try { v.pause() } catch {}
-            setPlaying(false)
-            return
-          }
-          activeVideoOverlayIndexRef.current = overlayIndex + 1
-          playheadFromVideoRef.current = true
-          setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
-          void seekVideoOverlay(nextStart, { autoPlay: true })
-          return
-        }
-        if (withinNow >= srcDur - 0.05 && overlayIndex === videoOverlays.length - 1) {
-          try { v.pause() } catch {}
-          setPlaying(false)
-        }
-        return
-      }
-
+    const onTimeBase = () => {
+      if (!playingRef.current) return
+      if (playbackClockRef.current !== 'base') return
+      if (!base || base.paused) return
       if (!timeline.clips.length) return
-      // `timeupdate` can fire during seeks/pauses; while paused we drive the playhead via gap playback.
-      if (v.paused) return
+
       const clipIndex = Math.max(0, Math.min(activeClipIndexRef.current, timeline.clips.length - 1))
       const clip = timeline.clips[clipIndex]
       if (!clip) return
-      const startTimeline = clipStarts[clipIndex] || 0
-      const withinNow = Math.max(0, (v.currentTime || 0) - clip.sourceStartSeconds)
+      const startTimeline = Number(clipStarts[clipIndex] || 0)
+      const withinNow = Math.max(0, (base.currentTime || 0) - Number(clip.sourceStartSeconds))
       const srcDur = clipSourceDurationSeconds(clip)
 
-      // Map video time to timeline time.
       const nextPlayhead = startTimeline + withinNow
       const next = clamp(roundToTenth(nextPlayhead), 0, Math.max(0, totalSeconds))
-      if (Math.abs(next - playhead) >= 0.1) {
+      if (Math.abs(next - Number(playheadRef.current || 0)) >= 0.1) {
         playheadFromVideoRef.current = true
+        playheadRef.current = next
         setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
       }
+
+      syncOverlayToTimeline(next)
 
       const clipLen = clipDurationSeconds(clip)
       const endTimeline = roundToTenth(startTimeline + clipLen)
       if (withinNow >= srcDur - 0.12 && clipIndex < timeline.clips.length - 1) {
         const nextStart = roundToTenth(Number(clipStarts[clipIndex + 1] || 0))
         if (nextStart > endTimeline + 0.05) {
-          // Enter a black-gap segment; the gap playback loop will advance to nextStart.
           suppressNextVideoPauseRef.current = true
-          try { v.pause() } catch {}
+          safePause(base)
           setActiveUploadId(null)
           playheadFromVideoRef.current = true
+          playheadRef.current = endTimeline
           setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
+          return
+        }
+        const nextClip = timeline.clips[clipIndex + 1]
+        const sameUpload = nextClip && Number(nextClip.uploadId) === Number(clip.uploadId)
+        if (!sameUpload) {
+          safePause(base)
+          setPlaying(false)
+          playheadFromVideoRef.current = true
+          playheadRef.current = nextStart
+          setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
+          void seek(nextStart)
           return
         }
         activeClipIndexRef.current = clipIndex + 1
         playheadFromVideoRef.current = true
+        playheadRef.current = nextStart
         setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
         void seek(nextStart, { autoPlay: true })
       } else if (withinNow >= srcDur - 0.05 && clipIndex === timeline.clips.length - 1) {
         if (totalSeconds > endTimeline + 0.05) {
-          // Allow trailing black/graphics to play out to totalSeconds.
           suppressNextVideoPauseRef.current = true
-          try { v.pause() } catch {}
+          safePause(base)
           setActiveUploadId(null)
           playheadFromVideoRef.current = true
+          playheadRef.current = endTimeline
           setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
           return
         }
-        try { v.pause() } catch {}
+        safePause(base)
         setPlaying(false)
       }
     }
-    v.addEventListener('play', onPlay)
-    v.addEventListener('pause', onPause)
-    v.addEventListener('timeupdate', onTime)
-    return () => {
-      v.removeEventListener('play', onPlay)
-      v.removeEventListener('pause', onPause)
-      v.removeEventListener('timeupdate', onTime)
-    }
-  }, [clipStarts, playhead, playing, seek, seekVideoOverlay, timeline.clips, totalSeconds, videoOverlayStarts, videoOverlays])
 
-  // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
-	  useEffect(() => {
-      if (videoPreviewModeRef.current !== 'base') return
-	    if (!timeline.clips.length) return
-	    if (!playing) {
-	      const cur = gapPlaybackRef.current
-	      if (cur) {
+    const onPlayOverlay = () => {
+      if (playbackClockRef.current === 'overlay') setPlaying(true)
+    }
+    const onPauseOverlay = () => {
+      if (suppressNextVideoPauseRef.current) {
+        suppressNextVideoPauseRef.current = false
+        return
+      }
+      if (playbackClockRef.current === 'overlay') setPlaying(false)
+    }
+    const onTimeOverlay = () => {
+      if (!playingRef.current) return
+      if (playbackClockRef.current !== 'overlay') return
+      if (!overlay || overlay.paused) return
+      if (!videoOverlays.length) return
+
+      const overlayIndex = Math.max(0, Math.min(activeVideoOverlayIndexRef.current, videoOverlays.length - 1))
+      const o: any = (videoOverlays as any)[overlayIndex]
+      if (!o) return
+      const startTimeline = Number((videoOverlayStarts as any)[overlayIndex] || 0)
+      const withinNow = Math.max(0, (overlay.currentTime || 0) - Number(o.sourceStartSeconds || 0))
+      const srcDur = clipSourceDurationSeconds(o as any)
+
+      const nextPlayhead = startTimeline + withinNow
+      const next = clamp(roundToTenth(nextPlayhead), 0, Math.max(0, totalSeconds))
+      if (Math.abs(next - Number(playheadRef.current || 0)) >= 0.1) {
+        playheadFromVideoRef.current = true
+        playheadRef.current = next
+        setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
+      }
+
+      syncBaseToTimeline(next)
+
+      const clipLen = clipDurationSeconds(o as any)
+      const endTimeline = roundToTenth(startTimeline + clipLen)
+      if (withinNow >= srcDur - 0.12 && overlayIndex < videoOverlays.length - 1) {
+        const nextStart = roundToTenth(Number((videoOverlayStarts as any)[overlayIndex + 1] || 0))
+        if (nextStart > endTimeline + 0.05) {
+          safePause(overlay)
+          setPlaying(false)
+          return
+        }
+        const nextO: any = (videoOverlays as any)[overlayIndex + 1]
+        const sameUpload = nextO && Number(nextO.uploadId) === Number(o.uploadId)
+        if (!sameUpload) {
+          safePause(overlay)
+          setPlaying(false)
+          playheadFromVideoRef.current = true
+          playheadRef.current = nextStart
+          setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
+          void seekOverlay(nextStart)
+          return
+        }
+        activeVideoOverlayIndexRef.current = overlayIndex + 1
+        playheadFromVideoRef.current = true
+        playheadRef.current = nextStart
+        setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
+        void seekOverlay(nextStart, { autoPlay: true })
+        return
+      }
+      if (withinNow >= srcDur - 0.05 && overlayIndex === videoOverlays.length - 1) {
+        safePause(overlay)
+        setPlaying(false)
+      }
+    }
+
+    if (base) {
+      base.addEventListener('play', onPlayBase)
+      base.addEventListener('pause', onPauseBase)
+      base.addEventListener('timeupdate', onTimeBase)
+    }
+    if (overlay) {
+      overlay.addEventListener('play', onPlayOverlay)
+      overlay.addEventListener('pause', onPauseOverlay)
+      overlay.addEventListener('timeupdate', onTimeOverlay)
+    }
+    return () => {
+      if (base) {
+        base.removeEventListener('play', onPlayBase)
+        base.removeEventListener('pause', onPauseBase)
+        base.removeEventListener('timeupdate', onTimeBase)
+      }
+      if (overlay) {
+        overlay.removeEventListener('play', onPlayOverlay)
+        overlay.removeEventListener('pause', onPauseOverlay)
+        overlay.removeEventListener('timeupdate', onTimeOverlay)
+      }
+    }
+  }, [
+    activeUploadId,
+    clipStarts,
+    overlayActiveUploadId,
+    playWithAutoplayFallback,
+    seek,
+    seekOverlay,
+    timeline.clips,
+    totalSeconds,
+    videoOverlayStarts,
+    videoOverlays,
+  ])
+
+	  // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
+		  useEffect(() => {
+	      if (playbackClockRef.current !== 'base') return
+		    if (!timeline.clips.length) return
+		    if (!playing) {
+		      const cur = gapPlaybackRef.current
+		      if (cur) {
 	        window.cancelAnimationFrame(cur.raf)
 	        gapPlaybackRef.current = null
 	      }
@@ -5105,7 +5132,7 @@ export default function CreateVideo() {
     }
     const raf = window.requestAnimationFrame(tick)
     gapPlaybackRef.current = { raf, target, nextClipIndex }
-  }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds, videoPreviewMode])
+	  }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds])
 
   const ensureLogoConfigs = useCallback(async (): Promise<LogoConfigItem[]> => {
     if (logoConfigsLoaded) return logoConfigs
@@ -5235,13 +5262,13 @@ export default function CreateVideo() {
     void ensureScreenTitlePresets()
   }, [ensureScreenTitlePresets, screenTitlePresetsLoaded, screenTitles.length])
 
-  const addClipFromUpload = useCallback(
-    (upload: UploadListItem) => {
-      const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
-      if (dur == null || !Number.isFinite(dur) || dur <= 0) {
-        setTimelineMessage('That video is missing duration metadata. Please try a different video.')
-        return
-      }
+	  const addClipFromUpload = useCallback(
+	    (upload: UploadListItem) => {
+	      const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
+	      if (dur == null || !Number.isFinite(dur) || dur <= 0) {
+	        setTimelineMessage('That video is missing duration metadata. Please try a different video.')
+	        return
+	      }
       setDurationsByUploadId((prev) => (prev[Number(upload.id)] ? prev : { ...prev, [Number(upload.id)]: Number(dur) }))
       try {
         const w = upload.width != null ? Number(upload.width) : null
@@ -5251,17 +5278,18 @@ export default function CreateVideo() {
           setDimsByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: { width: Math.round(w), height: Math.round(h) } }))
         }
       } catch {}
-      const id = `clip_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const newClip: Clip = {
-        id,
-        uploadId: Number(upload.id),
-        sourceStartSeconds: 0,
-        sourceEndSeconds: roundToTenth(dur),
-      }
-      snapshotUndo()
-      setTimeline((prev) => insertClipAtPlayhead(prev, newClip))
-      setSelectedClipId(id)
-      setSelectedVideoOverlayId(null)
+	      const id = `clip_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+	      const newClip: Clip = {
+	        id,
+	        uploadId: Number(upload.id),
+	        sourceStartSeconds: 0,
+	        sourceEndSeconds: roundToTenth(dur),
+	        audioEnabled: true,
+	      }
+	      snapshotUndo()
+	      setTimeline((prev) => insertClipAtPlayhead(prev, newClip))
+	      setSelectedClipId(id)
+	      setSelectedVideoOverlayId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
@@ -11605,68 +11633,39 @@ export default function CreateVideo() {
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
           <div style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative' }}>
-            {videoPreviewMode === 'overlay' && baseUnderlayPoster ? (
-              <img
-                src={baseUnderlayPoster}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: baseUnderlayObjectFit, pointerEvents: 'none', opacity: 0.98 }}
-              />
-            ) : null}
             <video
               ref={videoRef}
               playsInline
               preload="metadata"
               poster={activePoster || undefined}
-              style={previewVideoStyle}
+              style={previewBaseVideoStyle}
             />
             {activeStillUrl ? (
               <img
                 src={activeStillUrl}
                 alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 10 }}
               />
             ) : null}
-	            {activeGraphicUrl ? (
-	              <img
-	                src={activeGraphicUrl}
-	                alt=""
-	                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-	              />
-	            ) : null}
-	            {videoPreviewMode === 'base' && activeVideoOverlayPlaceholder ? (
-	              <div style={activeVideoOverlayPlaceholder.style}>
-	                <img
-	                  src={activeVideoOverlayPlaceholder.thumbUrl}
-	                  alt=""
-	                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: 0.92 }}
-	                />
-	                <div
-	                  style={{
-	                    position: 'absolute',
-	                    left: 0,
-	                    right: 0,
-	                    bottom: 0,
-	                    padding: '6px 8px',
-	                    background: 'rgba(0,0,0,0.55)',
-	                    color: '#fff',
-	                    fontSize: 11,
-	                    fontWeight: 900,
-	                    letterSpacing: 0.4,
-	                    textTransform: 'uppercase',
-	                    whiteSpace: 'nowrap',
-	                    overflow: 'hidden',
-	                    textOverflow: 'ellipsis',
-	                  }}
-	                >
-	                  {activeVideoOverlayPlaceholder.label}
-	                </div>
-	              </div>
-	            ) : null}
-	              {activeScreenTitlePreview ? (
-	                <img
-	                  src={activeScreenTitlePreview.url}
-	                  alt=""
-	                  style={activeScreenTitlePreview.style}
+            {activeGraphicUrl ? (
+              <img
+                src={activeGraphicUrl}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }}
+              />
+            ) : null}
+            <video
+              ref={overlayVideoRef}
+              playsInline
+              preload="metadata"
+              poster={activeVideoOverlayPreview?.thumbUrl || undefined}
+              style={previewOverlayVideoStyle}
+            />
+              {activeScreenTitlePreview ? (
+                <img
+                  src={activeScreenTitlePreview.url}
+                  alt=""
+                  style={activeScreenTitlePreview.style}
                 />
               ) : null}
 	            {activeLowerThirdPreview ? (
@@ -13432,56 +13431,31 @@ export default function CreateVideo() {
 		                </button>
 		              </div>
 
-		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-		                <button
-		                  type="button"
-		                  onClick={togglePlay}
-		                  disabled={totalSeconds <= 0}
-		                  style={{
-		                    padding: '10px 12px',
-		                    borderRadius: 10,
-		                    border: '1px solid rgba(10,132,255,0.55)',
-		                    background: playing && videoPreviewMode === 'base' ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-		                    color: '#fff',
-		                    fontWeight: 900,
-		                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-		                    flex: '0 0 auto',
-		                    minWidth: 44,
-		                    lineHeight: 1,
-		                  }}
-		                  title="Play/Pause base video"
-		                  aria-label={playing && videoPreviewMode === 'base' ? 'Pause base video' : 'Play base video'}
-		                >
-		                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-		                    {playPauseGlyph(playing && videoPreviewMode === 'base')}
-		                  </span>
-		                </button>
-
-		                {videoOverlays.length ? (
-		                  <button
-		                    type="button"
-		                    onClick={toggleVideoOverlayPlay}
-		                    style={{
-		                      padding: '10px 12px',
-		                      borderRadius: 10,
-		                      border: '1px solid rgba(255,214,170,0.60)',
-		                      background: playing && videoPreviewMode === 'overlay' ? 'rgba(255,214,170,0.22)' : 'rgba(255,214,170,0.10)',
-		                      color: '#fff',
-		                      fontWeight: 900,
-		                      cursor: 'pointer',
-		                      flex: '0 0 auto',
-		                      minWidth: 44,
-		                      lineHeight: 1,
-		                    }}
-		                    title="Play/Pause video overlay preview"
-		                    aria-label={playing && videoPreviewMode === 'overlay' ? 'Pause overlay preview' : 'Play overlay preview'}
-		                  >
-		                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-		                      {playPauseGlyph(playing && videoPreviewMode === 'overlay')}
-		                    </span>
-		                  </button>
-		                ) : null}
-		              </div>
+			              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+			                <button
+			                  type="button"
+			                  onClick={togglePlay}
+			                  disabled={totalSeconds <= 0}
+			                  style={{
+			                    padding: '10px 12px',
+			                    borderRadius: 10,
+			                    border: '1px solid rgba(10,132,255,0.55)',
+			                    background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+			                    color: '#fff',
+			                    fontWeight: 900,
+			                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+			                    flex: '0 0 auto',
+			                    minWidth: 44,
+			                    lineHeight: 1,
+			                  }}
+			                  title="Play/Pause"
+			                  aria-label={playing ? 'Pause' : 'Play'}
+			                >
+			                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+			                    {playPauseGlyph(playing)}
+			                  </span>
+			                </button>
+			              </div>
 
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' }}>
 		                <button
@@ -14478,13 +14452,13 @@ export default function CreateVideo() {
         </div>
       ) : null}
 
-	      {clipEditor ? (
-	        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
-          onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }}
-        >
+		      {clipEditor ? (
+		        <div
+	          role="dialog"
+	          aria-modal="true"
+	          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+	          onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }}
+	        >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(212,175,55,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
@@ -14512,9 +14486,9 @@ export default function CreateVideo() {
                   minWidth: 0,
                 }
 
-                return (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+	                return (
+	                  <>
+	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                       <div style={statBox}>
                         <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
                         <div style={{ fontSize: 14, fontWeight: 900 }}>{`${start.toFixed(1)}s`}</div>
@@ -14532,13 +14506,34 @@ export default function CreateVideo() {
                         <div style={{ fontSize: 14, fontWeight: 900 }}>{`${end.toFixed(1)}s`}</div>
                         <div style={{ height: 1, background: 'rgba(255,255,255,0.14)', margin: '6px 0' }} />
                         <div style={{ fontSize: 12, fontWeight: 900, color: '#bbb' }}>{safeMax != null ? `${safeMax.toFixed(1)}s` : '—'}</div>
-                      </div>
-                    </div>
+	                      </div>
+	                    </div>
 
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
+	                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+	                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Clip audio</div>
+	                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+	                        <input
+	                          type="checkbox"
+	                          checked={clip ? (clip as any).audioEnabled !== false : true}
+	                          disabled={!clip}
+	                          onChange={(e) => {
+	                            if (!clip) return
+	                            const nextEnabled = Boolean(e.target.checked)
+	                            snapshotUndo()
+	                            setTimeline((prev) => ({
+	                              ...prev,
+	                              clips: prev.clips.map((c) => (c.id === clipEditor.id ? ({ ...c, audioEnabled: nextEnabled } as any) : c)),
+	                            }))
+	                          }}
+	                        />
+	                        <span style={{ color: '#fff', fontWeight: 900 }}>{clip && (clip as any).audioEnabled === false ? 'Muted' : 'Enabled'}</span>
+	                      </label>
+	                    </div>
+
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+	                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
                           <button
                             type="button"
                             disabled={freezeInsertBusy}
