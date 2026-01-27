@@ -13902,14 +13902,25 @@ export default function CreateVideo() {
                 <div
                   role="dialog"
                   aria-modal="true"
-                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 5300, padding: 16 }}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.6)',
+                    zIndex: 5300,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+                    paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)',
+                    paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+                    paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
+                  }}
                   onClick={() => setProjectCreateOpen(false)}
                 >
                   <div
                     style={{
                       width: '100%',
                       maxWidth: 520,
-                      margin: '0 auto',
                       borderRadius: 16,
                       border: '1px solid rgba(255,255,255,0.18)',
                       background: '#0b0b0b',
@@ -14014,14 +14025,25 @@ export default function CreateVideo() {
                 <div
                   role="dialog"
                   aria-modal="true"
-                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 5300, padding: 16 }}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.6)',
+                    zIndex: 5300,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+                    paddingRight: 'calc(env(safe-area-inset-right, 0px) + 16px)',
+                    paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+                    paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 16px)',
+                  }}
                   onClick={() => setProjectEditOpen(false)}
                 >
                   <div
                     style={{
                       width: '100%',
                       maxWidth: 520,
-                      margin: '0 auto',
                       borderRadius: 16,
                       border: '1px solid rgba(255,255,255,0.18)',
                       background: '#0b0b0b',
