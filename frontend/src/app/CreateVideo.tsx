@@ -13763,7 +13763,15 @@ export default function CreateVideo() {
           <div
             role="dialog"
             aria-modal="true"
-            style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 5200, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: '#000',
+              zIndex: 5200,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
+            }}
             onClick={() => setProjectPickerOpen(false)}
           >
             <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }} onClick={(e) => e.stopPropagation()}>
