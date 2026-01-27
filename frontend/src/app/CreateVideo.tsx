@@ -2176,6 +2176,31 @@ export default function CreateVideo() {
     return { style, label: name, thumbUrl }
   }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
 
+  const previewVideoStyle = useMemo<React.CSSProperties>(() => {
+    if (videoPreviewMode === 'overlay') {
+      if (!activeVideoOverlayPlaceholder) return { display: 'none' }
+      const s: any = activeVideoOverlayPlaceholder.style as any
+      const style: React.CSSProperties = {
+        position: 'absolute',
+        pointerEvents: 'none',
+        zIndex: 26,
+        borderRadius: 0,
+        border: '2px dashed rgba(255,159,10,0.95)',
+        background: 'rgba(0,0,0,0.25)',
+        overflow: 'hidden',
+        objectFit: 'contain',
+      }
+      // Copy only positioning-related CSS from the placeholder.
+      for (const k of ['left', 'right', 'top', 'bottom', 'transform', 'width', 'aspectRatio'] as const) {
+        if (s && s[k] != null) (style as any)[k] = s[k]
+      }
+      ;(style as any).height = 'auto'
+      ;(style as any).maxHeight = '100%'
+      return style
+    }
+    return { width: '100%', height: '100%', objectFit: previewObjectFit, display: activeUploadId != null ? 'block' : 'none' }
+  }, [activeUploadId, activeVideoOverlayPlaceholder, previewObjectFit, videoPreviewMode])
+
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
     if (!Number.isFinite(id) || id <= 0) return
@@ -11516,7 +11541,7 @@ export default function CreateVideo() {
               playsInline
               preload="metadata"
               poster={activePoster || undefined}
-              style={{ width: '100%', height: '100%', objectFit: previewObjectFit, display: activeUploadId != null ? 'block' : 'none' }}
+              style={previewVideoStyle}
             />
             {videoPreviewMode === 'base' && activeStillUrl ? (
               <img
