@@ -495,6 +495,13 @@ export default function CreateVideo() {
   const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null)
 
   const playPauseGlyph = (isPlaying: boolean) => (isPlaying ? '||' : '▶')
+  const [videoPreviewMode, setVideoPreviewMode] = useState<'base' | 'overlay'>('base')
+  const videoPreviewModeRef = useRef<'base' | 'overlay'>('base')
+  useEffect(() => {
+    videoPreviewModeRef.current = videoPreviewMode
+  }, [videoPreviewMode])
+
+  const activeVideoOverlayIndexRef = useRef(0)
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
@@ -4408,13 +4415,84 @@ export default function CreateVideo() {
     [activeUploadId, clipStarts, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
   )
 
+  const seekVideoOverlay = useCallback(
+    async (t: number, opts?: { autoPlay?: boolean }) => {
+      const v = videoRef.current
+      if (!v) return
+      const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
+      if (!videoOverlays.length) {
+        try { v.pause() } catch {}
+        setActiveUploadId(null)
+        return
+      }
+      const idx = findClipIndexAtTime(tClamped, videoOverlays as any, videoOverlayStarts as any)
+      if (idx < 0) {
+        activeVideoOverlayIndexRef.current = Math.max(0, videoOverlayStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
+        try { v.pause() } catch {}
+        setActiveUploadId(null)
+        return
+      }
+      activeVideoOverlayIndexRef.current = idx
+      const o: any = (videoOverlays as any)[idx]
+      if (!o) return
+      const startTimeline = Number((videoOverlayStarts as any)[idx] || 0)
+      const within = Math.max(0, tClamped - startTimeline)
+      const srcDur = clipSourceDurationSeconds(o as any)
+      const withinMoving = clamp(roundToTenth(within), 0, Math.max(0, srcDur))
+      const sourceTime = Number(o.sourceStartSeconds || 0) + withinMoving
+      const nextUploadId = Number(o.uploadId)
+      if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
+
+      if (activeUploadId !== nextUploadId) {
+        setActiveUploadId(nextUploadId)
+        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
+        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        v.load()
+        const onMeta = () => {
+          v.removeEventListener('loadedmetadata', onMeta)
+          try {
+            const w = Number(v.videoWidth || 0)
+            const h = Number(v.videoHeight || 0)
+            if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
+          } catch {}
+          try { v.currentTime = Math.max(0, sourceTime) } catch {}
+          const srcKey = String(v.currentSrc || v.src || '')
+          if (!opts?.autoPlay && srcKey && primedFrameSrcRef.current !== srcKey) {
+            primedFrameSrcRef.current = srcKey
+            void primePausedFrame(v)
+          }
+          if (opts?.autoPlay) {
+            void (async () => {
+              const ok = await playWithAutoplayFallback(v)
+              if (!ok) setPlaying(false)
+            })()
+          }
+        }
+        v.addEventListener('loadedmetadata', onMeta)
+      } else {
+        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (opts?.autoPlay) {
+          void (async () => {
+            const ok = await playWithAutoplayFallback(v)
+            if (!ok) setPlaying(false)
+          })()
+        }
+      }
+    },
+    [activeUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays]
+  )
+
   // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
   // Without this, `playhead` may not change during hydration, so the normal playhead-driven sync won't run.
   useEffect(() => {
-    if (!timeline.clips.length) return
     if (activeUploadId != null) return
+    if (videoPreviewModeRef.current === 'overlay') {
+      void seekVideoOverlay(playhead)
+      return
+    }
+    if (!timeline.clips.length) return
     void seek(playhead)
-  }, [activeUploadId, playhead, seek, timeline.clips.length])
+  }, [activeUploadId, playhead, seek, seekVideoOverlay, timeline.clips.length])
 
   // Keep a stable poster image for iOS Safari (initial paused frame often won’t paint reliably).
   useEffect(() => {
@@ -4492,17 +4570,21 @@ export default function CreateVideo() {
 
   // Keep video position synced when playhead changes by UI
   useEffect(() => {
-    if (!timeline.clips.length) return
     if (playheadFromVideoRef.current) {
       playheadFromVideoRef.current = false
       return
     }
+    if (videoPreviewModeRef.current === 'base' && !timeline.clips.length) return
     // If user scrubs while playing, pause for predictable behavior.
     if (playing) {
       try { videoRef.current?.pause?.() } catch {}
       setPlaying(false)
     }
-    void seek(playhead)
+    if (videoPreviewModeRef.current === 'overlay') {
+      void seekVideoOverlay(playhead)
+    } else {
+      void seek(playhead)
+    }
   }, [playhead]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When the timeline becomes empty, clear the preview video so we don't leave stale frames on screen.
@@ -4535,6 +4617,10 @@ export default function CreateVideo() {
   }, [timeline.clips.length])
 
   const togglePlay = useCallback(() => {
+    if (videoPreviewModeRef.current !== 'base') {
+      videoPreviewModeRef.current = 'base'
+      setVideoPreviewMode('base')
+    }
     const v = videoRef.current
     if (!(totalSeconds > 0)) return
     if (narrationPreviewPlaying) stopNarrationPreview()
@@ -4589,14 +4675,87 @@ export default function CreateVideo() {
     playing,
     primeAutoplayUnlock,
     seek,
+    setVideoPreviewMode,
     stopMusicPreview,
     stopNarrationPreview,
     timeline.clips,
     totalSeconds,
   ])
 
+  const toggleVideoOverlayPlay = useCallback(() => {
+    const v = videoRef.current
+    if (!(totalSeconds > 0)) return
+    if (!videoOverlays.length) return
+
+    if (narrationPreviewPlaying) stopNarrationPreview()
+    if (musicPreviewPlaying) stopMusicPreview()
+
+    if (videoPreviewModeRef.current !== 'overlay') {
+      videoPreviewModeRef.current = 'overlay'
+      setVideoPreviewMode('overlay')
+    }
+
+    const curGap = gapPlaybackRef.current
+    if (curGap) {
+      window.cancelAnimationFrame(curGap.raf)
+      gapPlaybackRef.current = null
+    }
+
+    if (playing) {
+      setPlaying(false)
+      try { v?.pause?.() } catch {}
+      return
+    }
+
+    let startAt = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+    const idx = findClipIndexAtTime(startAt, videoOverlays as any, videoOverlayStarts as any)
+    if (idx < 0) {
+      let best: number | null = null
+      for (let i = 0; i < videoOverlayStarts.length; i++) {
+        const s = roundToTenth(Number(videoOverlayStarts[i] || 0))
+        if (!Number.isFinite(s)) continue
+        if (s > startAt + 1e-6 && (best == null || s < best)) best = s
+      }
+      if (best == null) {
+        // If we're beyond the last overlay, wrap to the first.
+        for (let i = 0; i < videoOverlayStarts.length; i++) {
+          const s = roundToTenth(Number(videoOverlayStarts[i] || 0))
+          if (!Number.isFinite(s)) continue
+          if (best == null || s < best) best = s
+        }
+      }
+      if (best == null) return
+      startAt = best
+      playheadFromVideoRef.current = true
+      playheadRef.current = startAt
+      setTimeline((prev) => ({ ...prev, playheadSeconds: startAt }))
+    }
+
+    if (v?.paused) {
+      try {
+        v.muted = false
+        v.volume = 1
+      } catch {}
+      void seekVideoOverlay(startAt, { autoPlay: true })
+    } else {
+      try { v.pause() } catch {}
+    }
+  }, [
+    musicPreviewPlaying,
+    narrationPreviewPlaying,
+    playhead,
+    playing,
+    seekVideoOverlay,
+    stopMusicPreview,
+    stopNarrationPreview,
+    totalSeconds,
+    videoOverlayStarts,
+    videoOverlays,
+  ])
+
   // Synthetic playback for graphics-only projects.
   useEffect(() => {
+    if (videoPreviewModeRef.current !== 'base') return
     if (timeline.clips.length) return
     if (!playing) return
     if (!(totalSeconds > 0)) {
@@ -4640,6 +4799,46 @@ export default function CreateVideo() {
     }
     const onTime = () => {
       if (!playing) return
+      const mode = videoPreviewModeRef.current
+      if (mode === 'overlay') {
+        if (!videoOverlays.length) return
+        if (v.paused) return
+        const overlayIndex = Math.max(0, Math.min(activeVideoOverlayIndexRef.current, videoOverlays.length - 1))
+        const o: any = (videoOverlays as any)[overlayIndex]
+        if (!o) return
+        const startTimeline = Number((videoOverlayStarts as any)[overlayIndex] || 0)
+        const withinNow = Math.max(0, (v.currentTime || 0) - Number(o.sourceStartSeconds || 0))
+        const srcDur = clipSourceDurationSeconds(o as any)
+
+        const nextPlayhead = startTimeline + withinNow
+        const next = clamp(roundToTenth(nextPlayhead), 0, Math.max(0, totalSeconds))
+        if (Math.abs(next - playhead) >= 0.1) {
+          playheadFromVideoRef.current = true
+          setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
+        }
+
+        const clipLen = clipDurationSeconds(o as any)
+        const endTimeline = roundToTenth(startTimeline + clipLen)
+        if (withinNow >= srcDur - 0.12 && overlayIndex < videoOverlays.length - 1) {
+          const nextStart = roundToTenth(Number((videoOverlayStarts as any)[overlayIndex + 1] || 0))
+          if (nextStart > endTimeline + 0.05) {
+            try { v.pause() } catch {}
+            setPlaying(false)
+            return
+          }
+          activeVideoOverlayIndexRef.current = overlayIndex + 1
+          playheadFromVideoRef.current = true
+          setTimeline((prev) => ({ ...prev, playheadSeconds: nextStart }))
+          void seekVideoOverlay(nextStart, { autoPlay: true })
+          return
+        }
+        if (withinNow >= srcDur - 0.05 && overlayIndex === videoOverlays.length - 1) {
+          try { v.pause() } catch {}
+          setPlaying(false)
+        }
+        return
+      }
+
       if (!timeline.clips.length) return
       // `timeupdate` can fire during seeks/pauses; while paused we drive the playhead via gap playback.
       if (v.paused) return
@@ -4697,10 +4896,11 @@ export default function CreateVideo() {
       v.removeEventListener('pause', onPause)
       v.removeEventListener('timeupdate', onTime)
     }
-  }, [clipStarts, playhead, playing, seek, timeline.clips, totalSeconds])
+  }, [clipStarts, playhead, playing, seek, seekVideoOverlay, timeline.clips, totalSeconds, videoOverlayStarts, videoOverlays])
 
   // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
 	  useEffect(() => {
+      if (videoPreviewModeRef.current !== 'base') return
 	    if (!timeline.clips.length) return
 	    if (!playing) {
 	      const cur = gapPlaybackRef.current
@@ -4811,7 +5011,7 @@ export default function CreateVideo() {
     }
     const raf = window.requestAnimationFrame(tick)
     gapPlaybackRef.current = { raf, target, nextClipIndex }
-  }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds])
+  }, [clipStarts, playhead, playing, seek, timeline.clips.length, totalSeconds, videoPreviewMode])
 
   const ensureLogoConfigs = useCallback(async (): Promise<LogoConfigItem[]> => {
     if (logoConfigsLoaded) return logoConfigs
@@ -11318,21 +11518,21 @@ export default function CreateVideo() {
               poster={activePoster || undefined}
               style={{ width: '100%', height: '100%', objectFit: previewObjectFit, display: activeUploadId != null ? 'block' : 'none' }}
             />
-            {activeStillUrl ? (
+            {videoPreviewMode === 'base' && activeStillUrl ? (
               <img
                 src={activeStillUrl}
                 alt=""
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
               />
             ) : null}
-	            {activeGraphicUrl ? (
+	            {videoPreviewMode === 'base' && activeGraphicUrl ? (
 	              <img
 	                src={activeGraphicUrl}
 	                alt=""
 	                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
 	              />
 	            ) : null}
-	            {activeVideoOverlayPlaceholder ? (
+	            {videoPreviewMode === 'base' && activeVideoOverlayPlaceholder ? (
 	              <div style={activeVideoOverlayPlaceholder.style}>
 	                <img
 	                  src={activeVideoOverlayPlaceholder.thumbUrl}
@@ -11361,21 +11561,21 @@ export default function CreateVideo() {
 	                </div>
 	              </div>
 	            ) : null}
-	              {activeScreenTitlePreview ? (
+	              {videoPreviewMode === 'base' && activeScreenTitlePreview ? (
 	                <img
 	                  src={activeScreenTitlePreview.url}
 	                  alt=""
 	                  style={activeScreenTitlePreview.style}
                 />
               ) : null}
-	            {activeLowerThirdPreview ? (
+	            {videoPreviewMode === 'base' && activeLowerThirdPreview ? (
 	              <img
 	                src={activeLowerThirdPreview.url}
 	                alt=""
 	                style={activeLowerThirdPreview.style}
 	              />
 	            ) : null}
-	            {activeLogoPreview ? (
+	            {videoPreviewMode === 'base' && activeLogoPreview ? (
 	              <img
 	                src={activeLogoPreview.url}
 	                alt=""
@@ -13131,29 +13331,56 @@ export default function CreateVideo() {
 		                </button>
 		              </div>
 
-		              <button
-		                type="button"
-		                onClick={togglePlay}
-		                disabled={totalSeconds <= 0}
-		                style={{
-		                  padding: '10px 12px',
-		                  borderRadius: 10,
-		                  border: '1px solid rgba(10,132,255,0.55)',
-		                  background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-		                  color: '#fff',
-		                  fontWeight: 900,
-		                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-		                  flex: '0 0 auto',
-		                  minWidth: 44,
-		                  lineHeight: 1,
-		                }}
-		                title="Play/Pause"
-		                aria-label={playing ? 'Pause' : 'Play'}
-		              >
-		                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-		                  {playPauseGlyph(playing)}
-		                </span>
-		              </button>
+		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+		                <button
+		                  type="button"
+		                  onClick={togglePlay}
+		                  disabled={totalSeconds <= 0}
+		                  style={{
+		                    padding: '10px 12px',
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(10,132,255,0.55)',
+		                    background: playing && videoPreviewMode === 'base' ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+		                    color: '#fff',
+		                    fontWeight: 900,
+		                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+		                    flex: '0 0 auto',
+		                    minWidth: 44,
+		                    lineHeight: 1,
+		                  }}
+		                  title="Play/Pause base video"
+		                  aria-label={playing && videoPreviewMode === 'base' ? 'Pause base video' : 'Play base video'}
+		                >
+		                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+		                    {playPauseGlyph(playing && videoPreviewMode === 'base')}
+		                  </span>
+		                </button>
+
+		                {videoOverlays.length ? (
+		                  <button
+		                    type="button"
+		                    onClick={toggleVideoOverlayPlay}
+		                    style={{
+		                      padding: '10px 12px',
+		                      borderRadius: 10,
+		                      border: '1px solid rgba(255,214,170,0.60)',
+		                      background: playing && videoPreviewMode === 'overlay' ? 'rgba(255,214,170,0.22)' : 'rgba(255,214,170,0.10)',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                      flex: '0 0 auto',
+		                      minWidth: 44,
+		                      lineHeight: 1,
+		                    }}
+		                    title="Play/Pause video overlay preview"
+		                    aria-label={playing && videoPreviewMode === 'overlay' ? 'Pause overlay preview' : 'Play overlay preview'}
+		                  >
+		                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+		                      {playPauseGlyph(playing && videoPreviewMode === 'overlay')}
+		                    </span>
+		                  </button>
+		                ) : null}
+		              </div>
 
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' }}>
 		                <button
