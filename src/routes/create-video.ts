@@ -78,7 +78,7 @@ createVideoRouter.post('/api/create-video/projects', requireAuth, async (req, re
   try {
     const currentUserId = Number(req.user!.id)
     const body = (req.body || {}) as any
-    const result = await createVideoSvc.createProjectForUser(currentUserId, { name: body.name })
+    const result = await createVideoSvc.createProjectForUser(currentUserId, { name: body.name, description: body.description })
     res.status(201).json(result)
   } catch (err: any) {
     next(err)
@@ -101,7 +101,7 @@ createVideoRouter.patch('/api/create-video/projects/:id', requireAuth, async (re
     const currentUserId = Number(req.user!.id)
     const projectId = Number(req.params.id)
     const body = (req.body || {}) as any
-    const result = await createVideoSvc.updateProjectNameForUser(currentUserId, projectId, body.name)
+    const result = await createVideoSvc.updateProjectMetaForUser(currentUserId, projectId, { name: body.name, description: body.description })
     res.json(result)
   } catch (err: any) {
     next(err)

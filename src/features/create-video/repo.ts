@@ -33,12 +33,12 @@ export async function getById(id: number): Promise<CreateVideoProjectRow | null>
   return (rows as any[])[0] || null
 }
 
-export async function create(input: { userId: number; name?: string | null; timelineJson: string }): Promise<CreateVideoProjectRow> {
+export async function create(input: { userId: number; name?: string | null; description?: string | null; timelineJson: string }): Promise<CreateVideoProjectRow> {
   const db = getPool()
   const [result] = await db.query(
-    `INSERT INTO create_video_projects (user_id, name, status, timeline_json)
-     VALUES (?, ?, 'active', ?)`,
-    [input.userId, input.name ?? null, input.timelineJson]
+    `INSERT INTO create_video_projects (user_id, name, description, status, timeline_json)
+     VALUES (?, ?, ?, 'active', ?)`,
+    [input.userId, input.name ?? null, input.description ?? null, input.timelineJson]
   )
   const id = Number((result as any).insertId)
   const row = await getById(id)
@@ -46,9 +46,18 @@ export async function create(input: { userId: number; name?: string | null; time
   return row
 }
 
-export async function updateName(id: number, name: string | null): Promise<CreateVideoProjectRow> {
+export async function updateMeta(id: number, fields: { name?: string | null; description?: string | null }): Promise<CreateVideoProjectRow> {
   const db = getPool()
-  await db.query(`UPDATE create_video_projects SET name = ? WHERE id = ?`, [name, id])
+  const nextName = fields.name !== undefined ? fields.name : undefined
+  const nextDescription = fields.description !== undefined ? fields.description : undefined
+
+  if (nextName !== undefined && nextDescription !== undefined) {
+    await db.query(`UPDATE create_video_projects SET name = ?, description = ? WHERE id = ?`, [nextName, nextDescription, id])
+  } else if (nextName !== undefined) {
+    await db.query(`UPDATE create_video_projects SET name = ? WHERE id = ?`, [nextName, id])
+  } else if (nextDescription !== undefined) {
+    await db.query(`UPDATE create_video_projects SET description = ? WHERE id = ?`, [nextDescription, id])
+  }
   const row = await getById(id)
   if (!row) throw new Error('not_found')
   return row

@@ -704,13 +704,14 @@ export async function ensureSchema(db: DB) {
   await db.query(`ALTER TABLE production_drafts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
   try { await db.query(`CREATE INDEX IF NOT EXISTS idx_production_drafts_user_upload ON production_drafts (user_id, upload_id, id)`); } catch {}
 
-  // --- Create Video projects (Plan 62) ---
-  // Timeline-first composer projects (separate from production drafts).
+	  // --- Create Video projects (Plan 62) ---
+	  // Timeline-first composer projects (separate from production drafts).
 	  await db.query(`
 	    CREATE TABLE IF NOT EXISTS create_video_projects (
 	      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 	      user_id BIGINT UNSIGNED NOT NULL,
 	      name VARCHAR(255) NULL,
+	      description TEXT NULL,
 	      status ENUM('active','archived') NOT NULL DEFAULT 'active',
 	      timeline_json JSON NOT NULL,
 	      last_export_upload_id BIGINT UNSIGNED NULL,
@@ -724,6 +725,7 @@ export async function ensureSchema(db: DB) {
 	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 	  `);
 	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS name VARCHAR(255) NULL`);
+	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS description TEXT NULL`);
 	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS status ENUM('active','archived') NOT NULL DEFAULT 'active'`);
 	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL DEFAULT NULL`);
 	  await db.query(`ALTER TABLE create_video_projects ADD COLUMN IF NOT EXISTS last_export_upload_id BIGINT UNSIGNED NULL`);

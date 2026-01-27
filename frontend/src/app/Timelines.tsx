@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 type ProjectListItem = {
   id: number
   name: string | null
+  description: string | null
   status: string
   lastExportUploadId: number | null
   createdAt: string
@@ -36,12 +37,28 @@ function fmtDate(s: string | null | undefined): string {
   return d.toISOString().slice(0, 10)
 }
 
+function fmtDefaultTimelineName(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(
+    now.getSeconds()
+  )}`
+}
+
 export default function Timelines() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<ProjectListItem[]>([])
 
   const activeItems = useMemo(() => items.filter((p) => p.archivedAt == null), [items])
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createDefaultName, setCreateDefaultName] = useState(() => fmtDefaultTimelineName())
+  const [createName, setCreateName] = useState(() => fmtDefaultTimelineName())
+  const [createDescription, setCreateDescription] = useState('')
+  const [editOpen, setEditOpen] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   async function refresh() {
     setLoading(true)
@@ -63,12 +80,37 @@ export default function Timelines() {
     void refresh()
   }, [])
 
+  function openCreate() {
+    const nextDefault = fmtDefaultTimelineName()
+    setCreateDefaultName(nextDefault)
+    setCreateName(nextDefault)
+    setCreateDescription('')
+    setCreateOpen(true)
+  }
+
+  function openEdit(id: number) {
+    const current = items.find((p) => Number(p.id) === Number(id))
+    if (!current) return
+    setEditId(Number(current.id))
+    setEditName((current.name || '').trim() || `Timeline #${current.id}`)
+    setEditDescription((current.description || '').trim())
+    setEditOpen(true)
+  }
+
   async function createNew() {
     try {
+      const nameRaw = String(createName || '').trim()
+      const descriptionRaw = String(createDescription || '').trim()
+      const name = nameRaw || createDefaultName
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch('/api/create-video/projects', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
+      const res = await fetch('/api/create-video/projects', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ name, description: descriptionRaw || null }),
+      })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_create'))
       const id = Number(json?.project?.id)
@@ -82,28 +124,32 @@ export default function Timelines() {
     }
   }
 
-  async function rename(id: number) {
-    const current = items.find((p) => Number(p.id) === Number(id))
-    const currentName = current?.name ? String(current.name) : ''
-    const next = window.prompt('Timeline name:', currentName || 'Untitled')
-    if (next == null) return
-    const name = String(next).trim()
-    if (!name) return
+  async function saveEdit() {
+    if (!editId) return
     try {
+      const name = String(editName || '').trim()
+      const description = String(editDescription || '').trim()
+      if (!name) {
+        window.alert('Name is required')
+        return
+      }
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(id))}`, {
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(editId))}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers,
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, description: description || null }),
       })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_rename'))
-      setItems((prev) => prev.map((p) => (Number(p.id) === Number(id) ? { ...p, name } : p)))
+      setItems((prev) =>
+        prev.map((p) => (Number(p.id) === Number(editId) ? { ...p, name, description: description || null } : p))
+      )
+      setEditOpen(false)
     } catch (e: any) {
-      window.alert(e?.message || 'Failed to rename timeline')
+      window.alert(e?.message || 'Failed to save timeline')
     }
   }
 
@@ -146,7 +192,7 @@ export default function Timelines() {
           </div>
           <button
             type="button"
-            onClick={createNew}
+            onClick={openCreate}
             style={{
               padding: '10px 14px',
               borderRadius: 12,
@@ -215,7 +261,7 @@ export default function Timelines() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => rename(p.id)}
+                      onClick={() => openEdit(p.id)}
                       style={{
                         padding: '8px 10px',
                         borderRadius: 10,
@@ -227,7 +273,7 @@ export default function Timelines() {
                         cursor: 'pointer',
                       }}
                     >
-                      Rename
+                      Edit
                     </button>
                     <button
                       type="button"
@@ -252,6 +298,227 @@ export default function Timelines() {
           })}
         </div>
       </div>
+
+      {createOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 50,
+          }}
+          onClick={() => setCreateOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              padding: 14,
+              color: '#fff',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ fontWeight: 900, fontSize: 18 }}>New Timeline</div>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Name</div>
+                <input
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  onFocus={() => {
+                    if (createName === createDefaultName) setCreateName('')
+                  }}
+                  onBlur={() => {
+                    if (!String(createName || '').trim()) setCreateName(createDefaultName)
+                  }}
+                  placeholder={createDefaultName}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    background: '#050505',
+                    color: '#fff',
+                    fontWeight: 800,
+                  }}
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Description (optional)</div>
+                <textarea
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  placeholder="Description…"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    background: '#050505',
+                    color: '#fff',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => void createNew()}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(10,132,255,0.55)',
+                  background: '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 50,
+          }}
+          onClick={() => setEditOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              padding: 14,
+              color: '#fff',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ fontWeight: 900, fontSize: 18 }}>Edit Timeline</div>
+              <button
+                type="button"
+                onClick={() => setEditOpen(false)}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Name</div>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    background: '#050505',
+                    color: '#fff',
+                    fontWeight: 800,
+                  }}
+                />
+              </div>
+
+              <div>
+                <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Description (optional)</div>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Description…"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.16)',
+                    background: '#050505',
+                    color: '#fff',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => void saveEdit()}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(10,132,255,0.55)',
+                  background: '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

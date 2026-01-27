@@ -66,6 +66,7 @@ type UploadSummary = { id: number; original_filename: string; modified_filename:
 type Project = {
   id: number
   name?: string | null
+  description?: string | null
   status: string
   timeline: Timeline
   lastExportJobId?: number | null
@@ -75,6 +76,7 @@ type Project = {
 type ProjectListItem = {
   id: number
   name: string | null
+  description: string | null
   status: string
   lastExportUploadId: number | null
   createdAt: string
@@ -183,6 +185,13 @@ function getCsrfToken(): string | null {
   } catch {
     return null
   }
+}
+
+function fmtDefaultTimelineName(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(
+    now.getSeconds()
+  )}`
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -450,6 +459,14 @@ export default function CreateVideo() {
   const [projectPickerLoading, setProjectPickerLoading] = useState(false)
   const [projectPickerError, setProjectPickerError] = useState<string | null>(null)
   const [projectPickerItems, setProjectPickerItems] = useState<ProjectListItem[]>([])
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false)
+  const [projectCreateDefaultName, setProjectCreateDefaultName] = useState(() => fmtDefaultTimelineName())
+  const [projectCreateName, setProjectCreateName] = useState(() => fmtDefaultTimelineName())
+  const [projectCreateDescription, setProjectCreateDescription] = useState('')
+  const [projectEditOpen, setProjectEditOpen] = useState(false)
+  const [projectEditId, setProjectEditId] = useState<number | null>(null)
+  const [projectEditName, setProjectEditName] = useState('')
+  const [projectEditDescription, setProjectEditDescription] = useState('')
   const [timeline, setTimeline] = useState<Timeline>({
     version: 'create_video_v1',
     playheadSeconds: 0,
@@ -10069,12 +10086,27 @@ export default function CreateVideo() {
     }
   }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
 
-  const createNewProjectAndReload = useCallback(async () => {
+  const openCreateProject = useCallback(() => {
+    const nextDefault = fmtDefaultTimelineName()
+    setProjectCreateDefaultName(nextDefault)
+    setProjectCreateName(nextDefault)
+    setProjectCreateDescription('')
+    setProjectCreateOpen(true)
+  }, [])
+
+  const createNewProjectAndReload = useCallback(async (meta?: { name?: string; description?: string | null }) => {
     try {
+      const name = String(meta?.name || '').trim() || fmtDefaultTimelineName()
+      const description = meta?.description == null ? null : String(meta.description || '').trim() || null
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch('/api/create-video/projects', { method: 'POST', credentials: 'same-origin', headers, body: '{}' })
+      const res = await fetch('/api/create-video/projects', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({ name, description }),
+      })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_create'))
       const id = Number(json?.project?.id)
@@ -10115,27 +10147,37 @@ export default function CreateVideo() {
     await refreshProjectPicker()
   }, [refreshProjectPicker])
 
-  const renameProjectFromPicker = useCallback(
-    async (projectId: number) => {
+  const openEditProjectFromPicker = useCallback(
+    (projectId: number) => {
       const cur = projectPickerItems.find((p) => Number(p.id) === Number(projectId))
-      const initial = cur?.name ? String(cur.name) : ''
-      const next = window.prompt('Rename timeline', initial)
-      if (next == null) return
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const csrf = getCsrfToken()
-      if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}`, {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ name: next }),
-      })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_rename'))
-      await refreshProjectPicker()
+      if (!cur) return
+      setProjectEditId(Number(cur.id))
+      setProjectEditName((cur.name || '').trim() || `Timeline #${cur.id}`)
+      setProjectEditDescription((cur.description || '').trim())
+      setProjectEditOpen(true)
     },
-    [projectPickerItems, refreshProjectPicker]
+    [projectPickerItems]
   )
+
+  const saveEditProjectFromPicker = useCallback(async () => {
+    if (!projectEditId) return
+    const name = String(projectEditName || '').trim()
+    const description = String(projectEditDescription || '').trim()
+    if (!name) return
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const csrf = getCsrfToken()
+    if (csrf) headers['x-csrf-token'] = csrf
+    const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectEditId))}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({ name, description: description || null }),
+    })
+    const json: any = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_save'))
+    setProjectEditOpen(false)
+    await refreshProjectPicker()
+  }, [projectEditDescription, projectEditId, projectEditName, refreshProjectPicker])
 
   const deleteProjectFromPicker = useCallback(
     async (projectId: number) => {
@@ -13736,7 +13778,7 @@ export default function CreateVideo() {
                   </button>
                   <button
                     type="button"
-                    onClick={createNewProjectAndReload}
+                    onClick={openCreateProject}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 10,
@@ -13809,7 +13851,7 @@ export default function CreateVideo() {
 	                          </button>
 	                          <button
 	                            type="button"
-	                            onClick={() => renameProjectFromPicker(p.id)}
+	                            onClick={() => openEditProjectFromPicker(p.id)}
 	                            style={{
 	                              padding: '8px 10px',
 	                              borderRadius: 10,
@@ -13821,7 +13863,7 @@ export default function CreateVideo() {
 	                              cursor: 'pointer',
 	                            }}
 	                          >
-	                            Rename
+	                            Edit
 	                          </button>
 	                          <button
 	                            type="button"
@@ -13845,6 +13887,217 @@ export default function CreateVideo() {
 	                  )
 	                })}
 	              </div>
+
+              {projectCreateOpen ? (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 5300, padding: 16 }}
+                  onClick={() => setProjectCreateOpen(false)}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      maxWidth: 520,
+                      margin: '0 auto',
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
+                      padding: 14,
+                      color: '#fff',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                      <div style={{ fontWeight: 900, fontSize: 18 }}>New Timeline</div>
+                      <button
+                        type="button"
+                        onClick={() => setProjectCreateOpen(false)}
+                        style={{
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: '#fff',
+                          borderRadius: 10,
+                          padding: '6px 10px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Name</div>
+                        <input
+                          value={projectCreateName}
+                          onChange={(e) => setProjectCreateName(e.target.value)}
+                          onFocus={() => {
+                            if (projectCreateName === projectCreateDefaultName) setProjectCreateName('')
+                          }}
+                          onBlur={() => {
+                            if (!String(projectCreateName || '').trim()) setProjectCreateName(projectCreateDefaultName)
+                          }}
+                          placeholder={projectCreateDefaultName}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#050505',
+                            color: '#fff',
+                            fontWeight: 800,
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Description (optional)</div>
+                        <textarea
+                          value={projectCreateDescription}
+                          onChange={(e) => setProjectCreateDescription(e.target.value)}
+                          placeholder="Description…"
+                          rows={4}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#050505',
+                            color: '#fff',
+                            resize: 'vertical',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nameRaw = String(projectCreateName || '').trim()
+                          const descriptionRaw = String(projectCreateDescription || '').trim()
+                          const name = nameRaw || projectCreateDefaultName
+                          setProjectCreateOpen(false)
+                          void createNewProjectAndReload({ name, description: descriptionRaw || null })
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: '1px solid rgba(10,132,255,0.55)',
+                          background: '#0a84ff',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Create
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {projectEditOpen ? (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 5300, padding: 16 }}
+                  onClick={() => setProjectEditOpen(false)}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      maxWidth: 520,
+                      margin: '0 auto',
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
+                      padding: 14,
+                      color: '#fff',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                      <div style={{ fontWeight: 900, fontSize: 18 }}>Edit Timeline</div>
+                      <button
+                        type="button"
+                        onClick={() => setProjectEditOpen(false)}
+                        style={{
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: '#fff',
+                          borderRadius: 10,
+                          padding: '6px 10px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Name</div>
+                        <input
+                          value={projectEditName}
+                          onChange={(e) => setProjectEditName(e.target.value)}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#050505',
+                            color: '#fff',
+                            fontWeight: 800,
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: 13, color: '#bbb', marginBottom: 6 }}>Description (optional)</div>
+                        <textarea
+                          value={projectEditDescription}
+                          onChange={(e) => setProjectEditDescription(e.target.value)}
+                          placeholder="Description…"
+                          rows={4}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#050505',
+                            color: '#fff',
+                            resize: 'vertical',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => void saveEditProjectFromPicker()}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: '1px solid rgba(10,132,255,0.55)',
+                          background: '#0a84ff',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

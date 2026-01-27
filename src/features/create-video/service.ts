@@ -33,6 +33,7 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
   return {
     id: Number(row.id),
     name: row.name == null ? null : String(row.name),
+    description: row.description == null ? null : String(row.description),
     status: row.status,
     timeline: timeline as CreateVideoTimelineV1,
     lastExportUploadId: row.last_export_upload_id == null ? null : Number(row.last_export_upload_id),
@@ -47,6 +48,7 @@ function mapRowListItem(row: CreateVideoProjectRow): CreateVideoProjectListItemD
   return {
     id: Number(row.id),
     name: row.name == null ? null : String(row.name),
+    description: row.description == null ? null : String(row.description),
     status: row.status,
     lastExportUploadId: row.last_export_upload_id == null ? null : Number(row.last_export_upload_id),
     createdAt: String(row.created_at || ''),
@@ -105,11 +107,21 @@ export async function listProjectsForUser(userId: number): Promise<{ items: Crea
   return { items: rows.map(mapRowListItem) }
 }
 
-export async function createProjectForUser(userId: number, input: { name?: string | null }): Promise<{ project: CreateVideoProjectDto }> {
+export async function createProjectForUser(
+  userId: number,
+  input: { name?: string | null; description?: string | null }
+): Promise<{ project: CreateVideoProjectDto }> {
   if (!userId) throw new ForbiddenError()
   const name = input.name == null ? null : String(input.name || '').trim()
   if (name != null && name.length > 255) throw new ValidationError('invalid_name')
-  const created = await repo.create({ userId: Number(userId), name: name && name.length ? name : null, timelineJson: emptyTimelineJson() })
+  const description = input.description == null ? null : String(input.description || '').trim()
+  if (description != null && description.length > 2000) throw new ValidationError('invalid_description')
+  const created = await repo.create({
+    userId: Number(userId),
+    name: name && name.length ? name : null,
+    description: description && description.length ? description : null,
+    timelineJson: emptyTimelineJson(),
+  })
   return { project: mapRow(created) }
 }
 
@@ -121,14 +133,23 @@ export async function getProjectForUserById(userId: number, projectId: number): 
   return { project: mapRow(row) }
 }
 
-export async function updateProjectNameForUser(userId: number, projectId: number, nameRaw: any): Promise<{ project: CreateVideoProjectDto }> {
+export async function updateProjectMetaForUser(
+  userId: number,
+  projectId: number,
+  input: { name?: any; description?: any }
+): Promise<{ project: CreateVideoProjectDto }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getById(Number(projectId))
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
-  const name = nameRaw == null ? null : String(nameRaw || '').trim()
-  if (name != null && name.length > 255) throw new ValidationError('invalid_name')
-  const updated = await repo.updateName(Number(projectId), name && name.length ? name : null)
+  const name = input.name == null ? undefined : String(input.name || '').trim()
+  if (name !== undefined && name.length > 255) throw new ValidationError('invalid_name')
+  const description = input.description == null ? undefined : String(input.description || '').trim()
+  if (description !== undefined && description.length > 2000) throw new ValidationError('invalid_description')
+  const updated = await repo.updateMeta(Number(projectId), {
+    name: name === undefined ? undefined : name && name.length ? name : null,
+    description: description === undefined ? undefined : description && description.length ? description : null,
+  })
   return { project: mapRow(updated) }
 }
 
