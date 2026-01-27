@@ -13923,7 +13923,7 @@ export default function CreateVideo() {
                       maxWidth: 520,
                       borderRadius: 16,
                       border: '1px solid rgba(255,255,255,0.18)',
-                      background: 'linear-gradient(180deg, rgba(255,191,0,0.16) 0%, rgba(255,191,0,0.06) 100%), #0b0b0b',
+                      background: 'linear-gradient(180deg, rgba(64,200,255,0.14) 0%, rgba(64,200,255,0.06) 100%), #0b0b0b',
                       padding: 14,
                       color: '#fff',
                     }}
