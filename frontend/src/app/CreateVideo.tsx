@@ -13776,6 +13776,9 @@ export default function CreateVideo() {
                   >
                     ← Close
                   </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+                  <h2 style={{ margin: 0, fontSize: 22 }}>Timelines</h2>
                   <button
                     type="button"
                     onClick={openCreateProject}
@@ -13792,7 +13795,6 @@ export default function CreateVideo() {
                     New
                   </button>
                 </div>
-                <h2 style={{ margin: '10px 0 0', fontSize: 22 }}>Timelines</h2>
                 {projectPickerError ? <div style={{ color: '#ff9b9b', marginTop: 8 }}>{projectPickerError}</div> : null}
               </div>
 
