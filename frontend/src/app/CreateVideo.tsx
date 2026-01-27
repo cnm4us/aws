@@ -1547,6 +1547,46 @@ export default function CreateVideo() {
 	      }
 	    }
 
+      if (drag.kind === 'videoOverlay') {
+        const id = String((drag as any).videoOverlayId || '')
+        const idx = videoOverlays.findIndex((o: any) => String((o as any)?.id) === id)
+        if (idx < 0) return null
+        const o: any = (videoOverlays as any)[idx]
+        if (!o) return null
+        const name = namesByUploadId[Number(o.uploadId)] || `Overlay ${o.uploadId}`
+        const start = roundToTenth(Number((videoOverlayStarts as any)[idx] || 0))
+        const len = Math.max(0, roundToTenth(clipDurationSeconds(o as any)))
+        const end = roundToTenth(start + len)
+
+        const maxDurRaw =
+          drag.maxDurationSeconds != null && Number.isFinite(Number(drag.maxDurationSeconds)) && Number(drag.maxDurationSeconds) !== Number.POSITIVE_INFINITY
+            ? Number(drag.maxDurationSeconds)
+            : undefined
+        const totalNoOffsetSecondsRaw = maxDurRaw != null ? maxDurRaw : durationsByUploadId[Number(o.uploadId)] ?? o.sourceEndSeconds
+        const totalNoOffsetSeconds = roundToTenth(Math.max(0, Number(totalNoOffsetSecondsRaw) || 0))
+        const startWithOffsetSeconds = roundToTenth(Math.max(0, Number(o.sourceStartSeconds || 0)))
+        const endWithOffsetSeconds = roundToTenth(Math.max(0, Number(o.sourceEndSeconds || 0)))
+        const durationWithOffsetsSeconds = roundToTenth(Math.max(0, endWithOffsetSeconds - startWithOffsetSeconds))
+
+        return {
+          kindLabel: 'Overlay video',
+          actionLabel,
+          name,
+          start,
+          end,
+          len,
+          trimOffsets: {
+            startWithOffsetSeconds,
+            startNoOffsetSeconds: 0,
+            endWithOffsetSeconds,
+            durationWithOffsetsSeconds,
+            durationNoOffsetsSeconds: totalNoOffsetSeconds,
+            endNoOffsetSeconds: totalNoOffsetSeconds,
+          },
+          edge: drag.edge,
+        }
+      }
+
 	    if (drag.kind === 'narration') {
 	      const ns: any[] = Array.isArray((timeline as any).narration) ? (timeline as any).narration : []
 	      const n = ns.find((x: any) => String(x?.id) === String((drag as any).narrationId)) as any
@@ -1693,6 +1733,8 @@ export default function CreateVideo() {
 	    namesByUploadId,
 	    durationsByUploadId,
 	    timeline.clips,
+      videoOverlayStarts,
+      videoOverlays,
 	    trimDragging,
 	  ])
 
@@ -3489,7 +3531,7 @@ export default function CreateVideo() {
           const fullDur =
             fullDurRaw != null && Number.isFinite(Number(fullDurRaw)) && Number(fullDurRaw) > 0 ? roundToTenth(Number(fullDurRaw)) : null
           const srcEnd = o.sourceEndSeconds != null && Number.isFinite(Number(o.sourceEndSeconds)) ? Number(o.sourceEndSeconds) : srcStart + dur
-          const rightIsGreen = fullDur != null ? srcEnd >= fullDur - 0.05 : true
+          const rightIsGreen = fullDur != null && nearEqual(srcEnd, fullDur)
           const hs = handleSize
           const hy = videoOverlayY + Math.floor((pillH - handleSize) / 2)
           const hxL = x + 6
@@ -4348,6 +4390,7 @@ export default function CreateVideo() {
   // Fetch upload names for clip pills
 		  useEffect(() => {
 		    const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+        const videoOverlayIds = videoOverlays.map((o: any) => Number((o as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const lowerThirdIds = lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
@@ -4356,9 +4399,9 @@ export default function CreateVideo() {
 		      .map((s) => Number(s?.uploadId))
 		      .filter((n) => Number.isFinite(n) && n > 0)
 		    const audioIds = audioSegments.map((a: any) => Number((a as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-		    const ids = Array.from(new Set([...clipIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
+		    const ids = Array.from(new Set([...clipIds, ...videoOverlayIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
 		    if (!ids.length) return
-		    const durationNeeded = new Set<number>([...clipIds, ...narrationIds, ...audioIds])
+		    const durationNeeded = new Set<number>([...clipIds, ...videoOverlayIds, ...narrationIds, ...audioIds])
 		    const missing = ids.filter((id) => !namesByUploadId[id] || (durationNeeded.has(id) && !durationsByUploadId[id]))
 	    if (!missing.length) return
 	    let alive = true
@@ -4395,7 +4438,7 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-	  }, [audioSegments, durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, narration, timeline.clips, timeline.stills])
+	  }, [audioSegments, durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, narration, timeline.clips, timeline.stills, videoOverlays])
 
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
