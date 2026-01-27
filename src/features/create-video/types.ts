@@ -7,6 +7,7 @@ export type CreateVideoClipV1 = {
   startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
+  audioEnabled?: boolean
   // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
   // Kept temporarily for backward compatibility with existing projects.
   freezeStartSeconds?: number
@@ -20,6 +21,27 @@ export type CreateVideoGraphicV1 = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+}
+
+export type CreateVideoVideoOverlayV1 = {
+  id: string
+  uploadId: number
+  // Absolute placement on the timeline; when omitted, defaults to sequential placement after the previous overlay.
+  startSeconds?: number
+  sourceStartSeconds: number
+  sourceEndSeconds: number
+  sizePctWidth: number
+  position:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  audioEnabled?: boolean
 }
 
 export type CreateVideoLogoConfigSnapshotV1 = {
@@ -151,6 +173,7 @@ export type CreateVideoTimelineV1 = {
   playheadSeconds?: number
   clips: CreateVideoClipV1[]
   stills?: CreateVideoStillV1[]
+  videoOverlays?: CreateVideoVideoOverlayV1[]
   graphics?: CreateVideoGraphicV1[]
   guidelines?: number[]
   logos?: CreateVideoLogoV1[]

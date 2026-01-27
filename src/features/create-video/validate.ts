@@ -13,6 +13,7 @@ const MAX_LOGOS = 200
 const MAX_LOWER_THIRDS = 200
 const MAX_SCREEN_TITLES = 200
 const MAX_NARRATION = 200
+const MAX_VIDEO_OVERLAYS = 200
 const MAX_SECONDS = 20 * 60
 
 function roundToTenth(n: number): number {
@@ -42,10 +43,14 @@ function normalizeId(raw: any): string {
   return s
 }
 
-async function loadUploadMetaForUser(uploadId: number, userId: number): Promise<{ id: number; durationSeconds: number | null }> {
+async function loadUploadMetaForUser(
+  uploadId: number,
+  userId: number,
+  opts?: { requireVideoRole?: 'source' | 'export' }
+): Promise<{ id: number; durationSeconds: number | null }> {
   const db = getPool()
   const [rows] = await db.query(
-    `SELECT id, user_id, kind, status, duration_seconds, source_deleted_at
+    `SELECT id, user_id, kind, status, duration_seconds, source_deleted_at, video_role, s3_key
        FROM uploads
       WHERE id = ?
       LIMIT 1`,
@@ -65,6 +70,19 @@ async function loadUploadMetaForUser(uploadId: number, userId: number): Promise<
   if (!isOwner && !isSystem) throw new ForbiddenError()
 
   const durationSeconds = row.duration_seconds != null && Number.isFinite(Number(row.duration_seconds)) ? Number(row.duration_seconds) : null
+
+  if (opts?.requireVideoRole) {
+    const roleRaw = row.video_role != null ? String(row.video_role).trim().toLowerCase() : ''
+    const keyRaw = row.s3_key != null ? String(row.s3_key) : ''
+    const inferred =
+      roleRaw === 'source' || roleRaw === 'export'
+        ? roleRaw
+        : /(^|\/)renders\//.test(keyRaw)
+          ? 'export'
+          : 'source'
+    if (inferred !== opts.requireVideoRole) throw new DomainError('invalid_video_role', 'invalid_video_role', 400)
+  }
+
   return { id: Number(row.id), durationSeconds }
 }
 
@@ -498,6 +516,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     startSeconds: number
     sourceStartSeconds: number
     sourceEndSeconds: number
+    audioEnabled: boolean
     metaId: number
     legacyFreezeSeconds: number
     legacyEndSeconds: number
@@ -522,6 +541,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const sourceStartSeconds = normalizeSeconds((c as any).sourceStartSeconds ?? 0)
     const sourceEndSeconds = normalizeSeconds((c as any).sourceEndSeconds)
     if (!(sourceEndSeconds > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
+
+    const audioEnabledRaw = (c as any).audioEnabled
+    const audioEnabled = audioEnabledRaw == null ? true : Boolean(audioEnabledRaw)
 
     // Legacy clip freeze: accept but treat as deprecated. Clamp to 0..5 for safety.
     const freezeStartRaw = (c as any).freezeStartSeconds
@@ -552,6 +574,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       startSeconds,
       sourceStartSeconds,
       sourceEndSeconds: end,
+      audioEnabled,
       metaId: meta.id,
       legacyFreezeSeconds,
       legacyEndSeconds,
@@ -598,6 +621,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     startSeconds: legacyCumulative.length ? legacyMapTime(c.startSeconds) : c.startSeconds,
     sourceStartSeconds: c.sourceStartSeconds,
     sourceEndSeconds: c.sourceEndSeconds,
+    audioEnabled: c.audioEnabled,
     freezeStartSeconds: 0,
     freezeEndSeconds: 0,
   }))
@@ -697,6 +721,99 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
   const stillsTotalSeconds = stills.length ? Number(stills[stills.length - 1].endSeconds) : 0
+
+  const videoOverlaysRaw0 = Array.isArray((raw as any).videoOverlays) ? ((raw as any).videoOverlays as any[]) : []
+  const videoOverlaysRaw = legacyCumulative.length
+    ? videoOverlaysRaw0.map((o) => ({
+        ...(o as any),
+        startSeconds: legacyMapMaybe((o as any).startSeconds),
+      }))
+    : videoOverlaysRaw0
+  if (videoOverlaysRaw.length > MAX_VIDEO_OVERLAYS) throw new DomainError('too_many_video_overlays', 'too_many_video_overlays', 400)
+  const allowedOverlaySizes = new Set([25, 33, 40, 50, 70, 90])
+  const allowedOverlayPositions = new Set([
+    'top_left',
+    'top_center',
+    'top_right',
+    'middle_left',
+    'middle_center',
+    'middle_right',
+    'bottom_left',
+    'bottom_center',
+    'bottom_right',
+  ])
+  const videoOverlays: any[] = []
+  let overlayCursorSeconds = 0
+  for (const o of videoOverlaysRaw) {
+    if (!o || typeof o !== 'object') continue
+    const id = normalizeId((o as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((o as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+
+    const startSecondsRaw = (o as any).startSeconds
+    const startSeconds =
+      startSecondsRaw != null ? normalizeSeconds(startSecondsRaw) : roundToTenth(Math.max(0, overlayCursorSeconds))
+
+    const sourceStartSeconds = normalizeSeconds((o as any).sourceStartSeconds ?? 0)
+    const sourceEndSeconds = normalizeSeconds((o as any).sourceEndSeconds)
+    if (!(sourceEndSeconds > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
+
+    const sizePctWidthRaw = Number((o as any).sizePctWidth)
+    const sizePctWidth = Number.isFinite(sizePctWidthRaw) ? Math.round(sizePctWidthRaw) : NaN
+    if (!(Number.isFinite(sizePctWidth) && allowedOverlaySizes.has(sizePctWidth))) throw new ValidationError('invalid_overlay_size')
+
+    const position = String((o as any).position || '').trim().toLowerCase()
+    if (!allowedOverlayPositions.has(position)) throw new ValidationError('invalid_overlay_position')
+
+    const audioEnabledRaw = (o as any).audioEnabled
+    const audioEnabled = audioEnabledRaw == null ? false : Boolean(audioEnabledRaw)
+
+    const meta = await loadUploadMetaForUser(uploadId, ctx.userId, { requireVideoRole: 'source' })
+    let end = sourceEndSeconds
+    if (meta.durationSeconds != null) {
+      end = Math.min(end, roundToTenth(Math.max(0, meta.durationSeconds)))
+      if (!(end > sourceStartSeconds)) throw new ValidationError('invalid_source_range')
+    }
+
+    const dur = roundToTenth(Math.max(0, end - sourceStartSeconds))
+    const endSeconds = roundToTenth(startSeconds + dur)
+    overlayCursorSeconds = Math.max(overlayCursorSeconds, endSeconds)
+    if (overlayCursorSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+
+    videoOverlays.push({
+      id,
+      uploadId: meta.id,
+      startSeconds,
+      sourceStartSeconds,
+      sourceEndSeconds: end,
+      sizePctWidth,
+      position,
+      audioEnabled,
+    })
+  }
+
+  videoOverlays.sort(
+    (a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+  )
+  let videoOverlaysTotalSeconds = 0
+  for (let i = 0; i < videoOverlays.length; i++) {
+    const o = videoOverlays[i] as any
+    const start = Number(o.startSeconds || 0)
+    const dur = Math.max(0, Number(o.sourceEndSeconds) - Number(o.sourceStartSeconds))
+    const end = roundToTenth(start + dur)
+    videoOverlaysTotalSeconds = Math.max(videoOverlaysTotalSeconds, end)
+    if (i > 0) {
+      const prev = videoOverlays[i - 1] as any
+      const prevStart = Number(prev.startSeconds || 0)
+      const prevDur = Math.max(0, Number(prev.sourceEndSeconds) - Number(prev.sourceStartSeconds))
+      const prevEnd = roundToTenth(prevStart + prevDur)
+      if (start < prevEnd - 1e-6) throw new DomainError('video_overlay_overlap', 'video_overlay_overlap', 400)
+    }
+  }
+
   const logosRaw0 = Array.isArray((raw as any).logos) ? ((raw as any).logos as any[]) : []
   const logosRaw = legacyCumulative.length
     ? logosRaw0.map((l) => ({
@@ -898,6 +1015,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       videoTotalSeconds,
       graphicsTotalSeconds,
       stillsTotalSeconds,
+      videoOverlaysTotalSeconds,
       logosTotalSeconds,
       lowerThirdsTotalSeconds,
       screenTitlesTotalSeconds,
@@ -1011,6 +1129,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     playheadSeconds: safePlayheadSeconds,
     clips,
     stills,
+    videoOverlays,
     graphics,
     guidelines,
     logos,

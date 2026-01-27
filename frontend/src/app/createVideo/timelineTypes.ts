@@ -4,6 +4,7 @@ export type Clip = {
   startSeconds?: number
   sourceStartSeconds: number
   sourceEndSeconds: number
+  audioEnabled?: boolean
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
@@ -21,6 +22,26 @@ export type Graphic = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+}
+
+export type VideoOverlay = {
+  id: string
+  uploadId: number
+  startSeconds?: number
+  sourceStartSeconds: number
+  sourceEndSeconds: number
+  sizePctWidth: number
+  position:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  audioEnabled?: boolean
 }
 
 export type LogoConfigSnapshot = {
@@ -141,6 +162,7 @@ export type Timeline = {
   playheadSeconds: number
   clips: Clip[]
   stills?: Still[]
+  videoOverlays?: VideoOverlay[]
   graphics: Graphic[]
   guidelines?: number[]
   logos?: Logo[]
@@ -164,6 +186,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
       startSeconds: (c as any).startSeconds != null ? Number((c as any).startSeconds) : undefined,
       sourceStartSeconds: Number(c.sourceStartSeconds),
       sourceEndSeconds: Number(c.sourceEndSeconds),
+      audioEnabled: (c as any).audioEnabled == null ? true : Boolean((c as any).audioEnabled),
       freezeStartSeconds: (c as any).freezeStartSeconds != null ? Number((c as any).freezeStartSeconds) : undefined,
       freezeEndSeconds: (c as any).freezeEndSeconds != null ? Number((c as any).freezeEndSeconds) : undefined,
     })),
@@ -174,6 +197,18 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           startSeconds: Number(s.startSeconds),
           endSeconds: Number(s.endSeconds),
           sourceClipId: s.sourceClipId != null ? String(s.sourceClipId) : undefined,
+        }))
+      : [],
+    videoOverlays: Array.isArray((timeline as any).videoOverlays)
+      ? (timeline as any).videoOverlays.map((o: any) => ({
+          id: String(o.id),
+          uploadId: Number(o.uploadId),
+          startSeconds: o.startSeconds != null ? Number(o.startSeconds) : undefined,
+          sourceStartSeconds: Number(o.sourceStartSeconds ?? 0),
+          sourceEndSeconds: Number(o.sourceEndSeconds ?? 0),
+          sizePctWidth: Number(o.sizePctWidth ?? 40),
+          position: String(o.position || 'bottom_right') as any,
+          audioEnabled: o.audioEnabled == null ? false : Boolean(o.audioEnabled),
         }))
       : [],
     graphics: Array.isArray((timeline as any).graphics)

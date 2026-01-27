@@ -1,4 +1,4 @@
-import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline } from './timelineTypes'
+import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline, VideoOverlay } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -33,6 +33,39 @@ export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
   return { ...timeline, clips: nextClips }
 }
 
+export function insertVideoOverlayAtPlayhead(timeline: Timeline, overlay: VideoOverlay): Timeline {
+  const existing: VideoOverlay[] = Array.isArray((timeline as any).videoOverlays) ? ((timeline as any).videoOverlays as any) : []
+  const starts = computeClipStarts(existing as any)
+  const endSeconds = computeTimelineEndSecondsFromClips(existing as any, starts)
+  const t = clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, endSeconds))
+  const dur = clipDurationSeconds(overlay as any)
+
+  const normalizedExisting: VideoOverlay[] = existing.map((c, i) => ({
+    ...(c as any),
+    startSeconds: roundToTenth(starts[i] || 0),
+  }))
+
+  const existingRanges = normalizedExisting
+    .map((c) => {
+      const s = Number((c as any).startSeconds || 0)
+      const e = roundToTenth(s + clipDurationSeconds(c as any))
+      return { id: String((c as any).id), start: s, end: e }
+    })
+    .sort((a, b) => a.start - b.start)
+
+  let startSeconds = roundToTenth(t)
+  for (const r of existingRanges) {
+    const overlaps = startSeconds < r.end - 1e-6 && (startSeconds + dur) > r.start + 1e-6
+    if (overlaps) startSeconds = roundToTenth(r.end)
+  }
+
+  const placed: VideoOverlay = { ...(overlay as any), startSeconds }
+  const next = [...normalizedExisting, placed].sort(
+    (a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String((a as any).id).localeCompare(String((b as any).id))
+  )
+  return { ...(timeline as any), videoOverlays: next } as any
+}
+
 export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string | null): { timeline: Timeline; selectedClipId: string | null } {
   if (!selectedClipId) return { timeline, selectedClipId }
   const t = roundToTenth(Number(timeline.playheadSeconds || 0))
@@ -59,6 +92,48 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   const next = [...normalizedExisting.slice(0, idx), left, right, ...normalizedExisting.slice(idx + 1)]
   next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0))
   return { timeline: { ...timeline, clips: next }, selectedClipId: right.id }
+}
+
+export function splitVideoOverlayAtPlayhead(
+  timeline: Timeline,
+  selectedVideoOverlayId: string | null
+): { timeline: Timeline; selectedVideoOverlayId: string | null } {
+  if (!selectedVideoOverlayId) return { timeline, selectedVideoOverlayId }
+  const overlays: VideoOverlay[] = Array.isArray((timeline as any).videoOverlays) ? ((timeline as any).videoOverlays as any) : []
+  if (!overlays.length) return { timeline, selectedVideoOverlayId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const starts = computeClipStarts(overlays as any)
+  const { clipIndex, within } = locate(t, overlays as any)
+  if (clipIndex < 0) return { timeline, selectedVideoOverlayId }
+  const overlay = overlays[clipIndex] as any
+  if (!overlay || String(overlay.id) !== String(selectedVideoOverlayId)) return { timeline, selectedVideoOverlayId }
+
+  const cut = roundToTenth(Number(overlay.sourceStartSeconds) + within)
+  const minLen = 0.2
+  if (cut <= Number(overlay.sourceStartSeconds) + minLen || cut >= Number(overlay.sourceEndSeconds) - minLen) return { timeline, selectedVideoOverlayId }
+
+  const startSeconds = roundToTenth(starts[clipIndex] || 0)
+  const left: VideoOverlay = { ...(overlay as any), id: `${String(overlay.id)}_a`, startSeconds, sourceEndSeconds: cut }
+  const leftDur = roundToTenth(cut - Number(overlay.sourceStartSeconds))
+  const right: VideoOverlay = {
+    ...(overlay as any),
+    id: `${String(overlay.id)}_b`,
+    startSeconds: roundToTenth(startSeconds + leftDur),
+    sourceStartSeconds: cut,
+  }
+
+  const idx = overlays.findIndex((c: any) => String(c.id) === String(overlay.id))
+  if (idx < 0) return { timeline, selectedVideoOverlayId }
+  const normalizedExisting: VideoOverlay[] = overlays.map((c: any, i: number) => ({
+    ...(c as any),
+    startSeconds: roundToTenth(starts[i] || 0),
+  }))
+  const next = [...normalizedExisting.slice(0, idx), left, right, ...normalizedExisting.slice(idx + 1)]
+  next.sort(
+    (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+  )
+  return { timeline: { ...(timeline as any), videoOverlays: next } as any, selectedVideoOverlayId: String((right as any).id) }
 }
 
 export function splitGraphicAtPlayhead(

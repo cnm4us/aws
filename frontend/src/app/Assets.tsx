@@ -2416,6 +2416,28 @@ export default function Assets() {
     return <ScreenTitlePresetsPage />
   }
 
+  if (route?.type === 'video-overlay') {
+    return (
+      <AssetUploadsListPage
+        title="Video Overlays"
+        subtitle="Picture-in-picture overlay videos (source clips only)."
+        kind="video"
+        uploadHref="/uploads/new?kind=video"
+        showDuration
+        allowDelete={false}
+        filterFn={(u) => isSourceVideoUpload(u) && !u.source_deleted_at}
+        onPick={
+          mode === 'pick'
+            ? (u) => {
+                const href = buildReturnHref({ cvPickType: 'videoOverlay', cvPickUploadId: String(u.id) })
+                if (href) window.location.href = href
+              }
+            : undefined
+        }
+      />
+    )
+  }
+
   if (route?.type === 'video') {
     return (
       <AssetUploadsListPage
@@ -2541,11 +2563,12 @@ export default function Assets() {
 
   const types: AssetType[] = useMemo(() => {
     const base: AssetType[] = [
-      { key: 'video', label: 'Videos', description: 'Raw uploaded videos (source clips).', href: '/assets/video' },
-      { key: 'graphic', label: 'Graphics', description: 'Full-screen images for overlays and cutaways.', href: '/assets/graphic' },
       { key: 'logo', label: 'Logos', description: 'Watermark logos to place above everything.', href: '/assets/logo' },
       { key: 'lower_third', label: 'Lower Thirds', description: 'Lower third images and configs.', href: '/assets/lower-third' },
       { key: 'screen_title', label: 'Screen Titles', description: 'Screen title styles and presets.', href: '/assets/screen-titles' },
+      { key: 'video_overlay', label: 'Video Overlays', description: 'Picture-in-picture videos (source clips).', href: '/assets/video-overlay' },
+      { key: 'graphic', label: 'Graphics', description: 'Full-screen images for overlays and cutaways.', href: '/assets/graphic' },
+      { key: 'video', label: 'Videos', description: 'Raw uploaded videos (source clips).', href: '/assets/video' },
       { key: 'narration', label: 'Narration', description: 'Voice clips for narration track.', href: '/assets/narration' },
       { key: 'audio', label: 'Audio/Music', description: 'System + user music tracks.', href: '/assets/audio' },
     ]
