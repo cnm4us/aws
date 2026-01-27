@@ -2165,8 +2165,9 @@ export default function CreateVideo() {
       style.bottom = inset
     }
     const name = (namesByUploadId[uploadId] || `Overlay ${uploadId}`).toString()
-    return { style, label: name }
-  }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId])
+    const thumbUrl = posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+    return { style, label: name, thumbUrl }
+  }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -4430,6 +4431,25 @@ export default function CreateVideo() {
       alive = false
     }
   }, [activeUploadId, posterByUploadId])
+
+  // Prefetch thumbnails for the active video overlay (used for preview placeholders).
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const o: any = activeVideoOverlayAtPlayhead as any
+      if (!o) return
+      const uploadId = Number(o.uploadId)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) return
+      if (posterByUploadId[uploadId]) return
+      const cdn = await getUploadCdnUrl(uploadId, { kind: 'thumb' })
+      const url = cdn || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+      if (!alive) return
+      setPosterByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
+    })()
+    return () => {
+      alive = false
+    }
+  }, [activeVideoOverlayAtPlayhead, posterByUploadId])
 
   // Prefetch CloudFront-signed file URLs for image assets (graphics + logos + freeze-frame stills) so playback doesn't stall.
   useEffect(() => {
@@ -11305,15 +11325,41 @@ export default function CreateVideo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
               />
             ) : null}
-		            {activeGraphicUrl ? (
-		              <img
-		                src={activeGraphicUrl}
-		                alt=""
-		                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-		              />
-		            ) : null}
+	            {activeGraphicUrl ? (
+	              <img
+	                src={activeGraphicUrl}
+	                alt=""
+	                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+	              />
+	            ) : null}
 	            {activeVideoOverlayPlaceholder ? (
-	              <div style={activeVideoOverlayPlaceholder.style}>{activeVideoOverlayPlaceholder.label}</div>
+	              <div style={activeVideoOverlayPlaceholder.style}>
+	                <img
+	                  src={activeVideoOverlayPlaceholder.thumbUrl}
+	                  alt=""
+	                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: 0.92 }}
+	                />
+	                <div
+	                  style={{
+	                    position: 'absolute',
+	                    left: 0,
+	                    right: 0,
+	                    bottom: 0,
+	                    padding: '6px 8px',
+	                    background: 'rgba(0,0,0,0.55)',
+	                    color: '#fff',
+	                    fontSize: 11,
+	                    fontWeight: 900,
+	                    letterSpacing: 0.4,
+	                    textTransform: 'uppercase',
+	                    whiteSpace: 'nowrap',
+	                    overflow: 'hidden',
+	                    textOverflow: 'ellipsis',
+	                  }}
+	                >
+	                  {activeVideoOverlayPlaceholder.label}
+	                </div>
+	              </div>
 	            ) : null}
 	              {activeScreenTitlePreview ? (
 	                <img
