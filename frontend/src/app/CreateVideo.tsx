@@ -1381,20 +1381,33 @@ export default function CreateVideo() {
     }
   }, [timeline])
 
-  const audioSegments = useMemo(() => {
-    const raw = (timeline as any).audioSegments
-    if (Array.isArray(raw)) {
-      return (raw as any[]).map((s: any) => ({
-        id: String(s?.id || ''),
-        uploadId: Number(s?.uploadId),
-        audioConfigId: Number(s?.audioConfigId),
-        startSeconds: roundToTenth(Math.max(0, Number(s?.startSeconds || 0))),
-        endSeconds: roundToTenth(Math.max(0, Number(s?.endSeconds || 0))),
-        sourceStartSeconds: s?.sourceStartSeconds == null ? 0 : roundToTenth(Math.max(0, Number(s?.sourceStartSeconds || 0))),
-      }))
-    }
-    if (audioTrack) {
-      return [
+	  const audioSegments = useMemo(() => {
+	    const raw = (timeline as any).audioSegments
+	    if (Array.isArray(raw)) {
+	      return (raw as any[]).map((s: any, i: number) => {
+	        const audioConfigIdRaw = s?.audioConfigId
+	        const audioConfigId =
+	          audioConfigIdRaw == null ? null : (Number.isFinite(Number(audioConfigIdRaw)) ? Number(audioConfigIdRaw) : null)
+	        const musicModeRaw = s?.musicMode == null ? null : String(s.musicMode)
+	        const musicLevelRaw = s?.musicLevel == null ? null : String(s.musicLevel)
+	        const duckRaw = s?.duckingIntensity == null ? null : String(s.duckingIntensity)
+	        return {
+	          ...(s as any),
+	          id: String(s?.id || '') || `aud_legacy_${i + 1}`,
+	          uploadId: Number(s?.uploadId),
+	          ...(audioConfigId != null && audioConfigId > 0 ? { audioConfigId } : {}),
+	          startSeconds: roundToTenth(Math.max(0, Number(s?.startSeconds || 0))),
+	          endSeconds: roundToTenth(Math.max(0, Number(s?.endSeconds || 0))),
+	          sourceStartSeconds: s?.sourceStartSeconds == null ? 0 : roundToTenth(Math.max(0, Number(s?.sourceStartSeconds || 0))),
+	          audioEnabled: s?.audioEnabled == null ? true : Boolean(s?.audioEnabled),
+	          ...(musicModeRaw ? { musicMode: musicModeRaw } : {}),
+	          ...(musicLevelRaw ? { musicLevel: musicLevelRaw } : {}),
+	          ...(duckRaw ? { duckingIntensity: duckRaw } : {}),
+	        } as any
+	      })
+	    }
+	    if (audioTrack) {
+	      return [
         {
           id: 'audio_track_legacy',
           uploadId: audioTrack.uploadId,
