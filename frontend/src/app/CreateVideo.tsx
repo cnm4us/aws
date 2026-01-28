@@ -5981,14 +5981,14 @@ export default function CreateVideo() {
     })
   }, [ensureAudioConfigs, selectedAudioSegment])
 
-  const saveAudioEditor = useCallback(() => {
-    if (!audioEditor) return
-    const start = roundToTenth(Number(audioEditor.start))
-    const end = roundToTenth(Number(audioEditor.end))
-    const audioConfigId = Number(audioEditor.audioConfigId)
-    const musicMode = String(audioEditor.musicMode || '').trim()
-    const musicLevel = String(audioEditor.musicLevel || '').trim()
-    const duckingIntensity = String(audioEditor.duckingIntensity || '').trim()
+	  const saveAudioEditor = useCallback(() => {
+	    if (!audioEditor) return
+	    const start = roundToTenth(Number(audioEditor.start))
+	    const end = roundToTenth(Number(audioEditor.end))
+	    const audioConfigId = Number(audioEditor.audioConfigId)
+	    const musicMode = String(audioEditor.musicMode || '').trim()
+	    const musicLevel = String(audioEditor.musicLevel || '').trim()
+	    const duckingIntensity = String(audioEditor.duckingIntensity || '').trim()
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setAudioEditorError('End must be after start.')
       return
@@ -6009,38 +6009,41 @@ export default function CreateVideo() {
       setAudioEditorError(`End exceeds timeline (${totalSeconds.toFixed(1)}s).`)
       return
     }
-    for (const other of audioSegments) {
-      if (String((other as any).id) === String(audioEditor.id)) continue
-      const os = roundToTenth(Number((other as any).startSeconds || 0))
-      const oe = roundToTenth(Number((other as any).endSeconds || 0))
-      if (start < oe - 1e-6 && end > os + 1e-6) {
-        setAudioEditorError('Audio cannot overlap in time.')
-        return
-      }
-    }
-    snapshotUndo()
-    setTimeline((prev) => {
-      const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
-      const idx = prevSegs.findIndex((s: any) => String(s?.id) === String(audioEditor.id))
-      if (idx < 0) return prev
-      const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
-      const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, totalSeconds))
-      const nextSegs = prevSegs.slice()
-      nextSegs[idx] = {
-        ...(prevSegs[idx] as any),
-        startSeconds: safeStart,
-        endSeconds: safeEnd,
-        ...(Number.isFinite(audioConfigId) && audioConfigId > 0 ? { audioConfigId } : {}),
-        musicMode,
-        musicLevel,
-        ...(musicMode === 'mix_duck' ? { duckingIntensity: duckingIntensity || 'medium' } : {}),
-      }
-      nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-      return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
-    })
-    setAudioEditor(null)
-    setAudioEditorError(null)
-  }, [audioEditor, audioSegments, snapshotUndo, totalSeconds])
+	    for (const other of audioSegments) {
+	      if (String((other as any).id) === String(audioEditor.id)) continue
+	      const os = roundToTenth(Number((other as any).startSeconds || 0))
+	      const oe = roundToTenth(Number((other as any).endSeconds || 0))
+	      if (start < oe - 1e-6 && end > os + 1e-6) {
+	        setAudioEditorError('Audio cannot overlap in time.')
+	        return
+	      }
+	    }
+	    snapshotUndo()
+	    const prevSegs: any[] = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
+	    const idx = prevSegs.findIndex((s: any) => String(s?.id) === String(audioEditor.id))
+	    if (idx < 0) {
+	      setAudioEditorError('Audio segment not found.')
+	      return
+	    }
+	    const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
+	    const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, totalSeconds))
+	    const nextSegs = prevSegs.slice()
+	    nextSegs[idx] = {
+	      ...(prevSegs[idx] as any),
+	      startSeconds: safeStart,
+	      endSeconds: safeEnd,
+	      ...(Number.isFinite(audioConfigId) && audioConfigId > 0 ? { audioConfigId } : {}),
+	      musicMode,
+	      musicLevel,
+	      ...(musicMode === 'mix_duck' ? { duckingIntensity: duckingIntensity || 'medium' } : {}),
+	    }
+	    nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+	    const nextTimeline = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
+	    setTimeline(nextTimeline as any)
+	    void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+	    setAudioEditor(null)
+	    setAudioEditorError(null)
+	  }, [audioEditor, audioSegments, playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds])
 
 		  const saveNarrationEditor = useCallback(() => {
 		    if (!narrationEditor) return
