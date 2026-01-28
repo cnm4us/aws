@@ -4515,6 +4515,13 @@ export default function CreateVideo() {
 	        const onMeta = () => {
 	          v.removeEventListener('loadedmetadata', onMeta)
 	          try { v.muted = desiredMuted } catch {}
+	          try {
+	            const w = Number(v.videoWidth || 0)
+	            const h = Number(v.videoHeight || 0)
+	            if (w > 0 && h > 0) {
+	              setDimsByUploadId((prev) => (prev[nextUploadId] ? prev : { ...prev, [nextUploadId]: { width: Math.round(w), height: Math.round(h) } }))
+	            }
+	          } catch {}
 	          try { v.currentTime = Math.max(0, sourceTime) } catch {}
 	          if (!opts?.autoPlay) {
 	            try { v.pause() } catch {}
