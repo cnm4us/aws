@@ -745,7 +745,7 @@ async function overlayVideoOverlays(opts: {
     const { x, y } = overlayXYForPosition(o.position)
 
     filters.push(
-      `[${inIdx}:v]trim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},setpts=PTS-STARTPTS,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
+      `[${inIdx}:v]trim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},setpts=PTS-STARTPTS+${start.toFixed(3)}/TB,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
     )
     const nextV = `[vov${i + 1}]`
     filters.push(
