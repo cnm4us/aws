@@ -5064,12 +5064,13 @@ export default function CreateVideo() {
   ])
 
 	  // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
-		  useEffect(() => {
-	      if (playbackClockRef.current !== 'base') return
-		    if (!timeline.clips.length) return
-		    if (!playing) {
-		      const cur = gapPlaybackRef.current
-		      if (cur) {
+	  useEffect(() => {
+	    if (playbackClockRef.current !== 'base') return
+	    if (!timeline.clips.length) return
+
+	    if (!playing) {
+	      const cur = gapPlaybackRef.current
+	      if (cur) {
 	        window.cancelAnimationFrame(cur.raf)
 	        gapPlaybackRef.current = null
 	      }
@@ -5086,15 +5087,35 @@ export default function CreateVideo() {
 	      return
 	    }
 
+	    // If an overlay segment starts exactly at (or has already reached) the current playhead while
+	    // the base lane is in a gap (e.g. during an intro freeze still), stop and wait for a user
+	    // Play gesture. This ensures we don't "run through" the overlay start without actually
+	    // starting overlay playback.
+	    if (videoOverlays.length) {
+	      const overlayIdxNow = findClipIndexAtTime(playhead, videoOverlays as any, videoOverlayStarts as any)
+	      if (overlayIdxNow >= 0) {
+	        const cur = gapPlaybackRef.current
+	        if (cur) {
+	          window.cancelAnimationFrame(cur.raf)
+	          gapPlaybackRef.current = null
+	        }
+	        setPlaying(false)
+	        void seek(playhead)
+	        void seekOverlay(playhead)
+	        return
+	      }
+	    }
+
 	    const eps = 0.05
 	    let nextClipIndex: number | null = null
 	    for (let i = 0; i < clipStarts.length; i++) {
 	      const s = Number(clipStarts[i] || 0)
-      if (s > playhead + eps) {
-        nextClipIndex = i
-        break
-      }
-    }
+	      if (s > playhead + eps) {
+	        nextClipIndex = i
+	        break
+	      }
+	    }
+
 	    let nextOverlayIndex: number | null = null
 	    if (videoOverlays.length) {
 	      for (let i = 0; i < videoOverlayStarts.length; i++) {
@@ -5106,48 +5127,53 @@ export default function CreateVideo() {
 	      }
 	    }
 
-    const nextClipStart = nextClipIndex != null ? roundToTenth(Number(clipStarts[nextClipIndex] || 0)) : Number.POSITIVE_INFINITY
-    const nextOverlayStart =
-      nextOverlayIndex != null ? roundToTenth(Number((videoOverlayStarts as any)[nextOverlayIndex] || 0)) : Number.POSITIVE_INFINITY
-    const target0 = Math.min(nextClipStart, nextOverlayStart, roundToTenth(totalSeconds))
-    const target = Number.isFinite(target0) ? target0 : roundToTenth(totalSeconds)
-    if (!(target > playhead + 0.01)) {
-      setPlaying(false)
-      return
-    }
+	    const nextClipStart = nextClipIndex != null ? roundToTenth(Number(clipStarts[nextClipIndex] || 0)) : Number.POSITIVE_INFINITY
+	    const nextOverlayStart =
+	      nextOverlayIndex != null ? roundToTenth(Number((videoOverlayStarts as any)[nextOverlayIndex] || 0)) : Number.POSITIVE_INFINITY
+	    const target0 = Math.min(nextClipStart, nextOverlayStart, roundToTenth(totalSeconds))
+	    const target = Number.isFinite(target0) ? target0 : roundToTenth(totalSeconds)
+	    if (!(target > playhead + 0.01)) {
+	      setPlaying(false)
+	      return
+	    }
 
-    const existing = gapPlaybackRef.current
-    if (existing && Math.abs(existing.target - target) < 0.05) return
-    if (existing) {
-      window.cancelAnimationFrame(existing.raf)
-      gapPlaybackRef.current = null
-    }
+	    const existing = gapPlaybackRef.current
+	    if (existing && Math.abs(existing.target - target) < 0.05) return
+	    if (existing) {
+	      window.cancelAnimationFrame(existing.raf)
+	      gapPlaybackRef.current = null
+	    }
 
-    let last = performance.now()
-    const tick = (now: number) => {
-      const curState = gapPlaybackRef.current
-      if (!curState) return
-      const dt = Math.max(0, (now - last) / 1000)
-      last = now
-      const cur = Number(playheadRef.current || 0)
-      let next = cur + dt
-      if (next >= target - 0.001) next = target
-      playheadFromVideoRef.current = true
-      playheadRef.current = next
-      setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(next) }))
-      if (next >= target - 0.001) {
-        gapPlaybackRef.current = null
-        setPlaying(false)
-        // Prime the next boundary frame (base and overlay) without attempting autoplay.
-        void seek(target)
-        void seekOverlay(target)
-        return
-      }
-      const raf = window.requestAnimationFrame(tick)
-      gapPlaybackRef.current = { raf, target, nextClipIndex }
-    }
-    const raf = window.requestAnimationFrame(tick)
-    gapPlaybackRef.current = { raf, target, nextClipIndex }
+	    let last = performance.now()
+	    const tick = (now: number) => {
+	      const curState = gapPlaybackRef.current
+	      if (!curState) return
+
+	      const dt = Math.max(0, (now - last) / 1000)
+	      last = now
+	      const cur = Number(playheadRef.current || 0)
+	      let next = cur + dt
+	      if (next >= target - 0.001) next = target
+
+	      playheadFromVideoRef.current = true
+	      playheadRef.current = next
+	      setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(next) }))
+
+	      if (next >= target - 0.001) {
+	        gapPlaybackRef.current = null
+	        setPlaying(false)
+	        // Prime the next boundary frame (base and overlay) without attempting autoplay.
+	        void seek(target)
+	        void seekOverlay(target)
+	        return
+	      }
+
+	      const raf = window.requestAnimationFrame(tick)
+	      gapPlaybackRef.current = { raf, target, nextClipIndex }
+	    }
+
+	    const raf = window.requestAnimationFrame(tick)
+	    gapPlaybackRef.current = { raf, target, nextClipIndex }
 	  }, [clipStarts, playhead, playing, seek, seekOverlay, timeline.clips.length, totalSeconds, videoOverlayStarts, videoOverlays.length])
 
   const ensureLogoConfigs = useCallback(async (): Promise<LogoConfigItem[]> => {
