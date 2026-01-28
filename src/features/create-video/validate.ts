@@ -517,6 +517,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     sourceStartSeconds: number
     sourceEndSeconds: number
     audioEnabled: boolean
+    boostDb: number
     metaId: number
     legacyFreezeSeconds: number
     legacyEndSeconds: number
@@ -544,6 +545,10 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const audioEnabledRaw = (c as any).audioEnabled
     const audioEnabled = audioEnabledRaw == null ? true : Boolean(audioEnabledRaw)
+    const boostRaw = (c as any).boostDb
+    const boostDb = boostRaw == null ? 0 : Number(boostRaw)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    if (!Number.isFinite(boostDb) || !boostAllowed.has(Math.round(boostDb))) throw new ValidationError('invalid_boost_db')
 
     // Legacy clip freeze: accept but treat as deprecated. Clamp to 0..5 for safety.
     const freezeStartRaw = (c as any).freezeStartSeconds
@@ -575,6 +580,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       sourceStartSeconds,
       sourceEndSeconds: end,
       audioEnabled,
+      boostDb: Math.round(boostDb),
       metaId: meta.id,
       legacyFreezeSeconds,
       legacyEndSeconds,
@@ -622,6 +628,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     sourceStartSeconds: c.sourceStartSeconds,
     sourceEndSeconds: c.sourceEndSeconds,
     audioEnabled: c.audioEnabled,
+    boostDb: c.boostDb,
     freezeStartSeconds: 0,
     freezeEndSeconds: 0,
   }))
@@ -770,6 +777,10 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const audioEnabledRaw = (o as any).audioEnabled
     const audioEnabled = audioEnabledRaw == null ? false : Boolean(audioEnabledRaw)
+    const boostRaw = (o as any).boostDb
+    const boostDb = boostRaw == null ? 0 : Number(boostRaw)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    if (!Number.isFinite(boostDb) || !boostAllowed.has(Math.round(boostDb))) throw new ValidationError('invalid_boost_db')
 
     const meta = await loadUploadMetaForUser(uploadId, ctx.userId, { requireVideoRole: 'source' })
     let end = sourceEndSeconds
@@ -792,6 +803,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       sizePctWidth,
       position,
       audioEnabled,
+      boostDb: Math.round(boostDb),
     })
   }
 
@@ -995,9 +1007,23 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const gainRaw = (seg as any).gainDb
     const gainDb = gainRaw == null ? 0 : Number(gainRaw)
     if (!Number.isFinite(gainDb) || gainDb < -12 || gainDb > 12) throw new ValidationError('invalid_narration_gain')
+    const audioEnabled = (seg as any).audioEnabled == null ? true : Boolean((seg as any).audioEnabled)
+    const boostRaw = (seg as any).boostDb
+    const boostDb = boostRaw == null ? null : Number(boostRaw)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    if (boostDb != null && !(Number.isFinite(boostDb) && boostAllowed.has(Math.round(boostDb)))) throw new ValidationError('invalid_boost_db')
 
     const meta = await loadNarrationAudioMetaForUser(uploadId, ctx.userId)
-    narration.push({ id, uploadId: meta.id, startSeconds, endSeconds, sourceStartSeconds, gainDb })
+    narration.push({
+      id,
+      uploadId: meta.id,
+      startSeconds,
+      endSeconds,
+      sourceStartSeconds,
+      gainDb,
+      audioEnabled,
+      ...(boostDb != null ? { boostDb: Math.round(boostDb) } : {}),
+    })
   }
   narration.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < narration.length; i++) {
@@ -1039,7 +1065,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (audioSegmentsRaw.length && !(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
       let commonUploadId: number | null = null
-      let commonAudioConfigId: number | null = null
       for (let i = 0; i < audioSegmentsRaw.length; i++) {
         const seg = audioSegmentsRaw[i]
         if (!seg || typeof seg !== 'object') continue
@@ -1048,18 +1073,19 @@ export async function validateAndNormalizeCreateVideoTimeline(
         seen.add(id)
 
         const uploadId = Number((seg as any).uploadId)
-        const audioConfigId = Number((seg as any).audioConfigId)
+        const audioConfigIdRaw = (seg as any).audioConfigId
+        const audioConfigId =
+          audioConfigIdRaw == null ? null : (Number.isFinite(Number(audioConfigIdRaw)) ? Number(audioConfigIdRaw) : NaN)
+        const audioEnabled = (seg as any).audioEnabled == null ? true : Boolean((seg as any).audioEnabled)
+        const musicModeRaw = (seg as any).musicMode == null ? null : String((seg as any).musicMode)
+        const musicLevelRaw = (seg as any).musicLevel == null ? null : String((seg as any).musicLevel)
+        const duckingIntensityRaw = (seg as any).duckingIntensity == null ? null : String((seg as any).duckingIntensity)
         if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
-        if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
 
         if (commonUploadId == null) commonUploadId = uploadId
-        if (commonAudioConfigId == null) commonAudioConfigId = audioConfigId
         if (commonUploadId != null && uploadId !== commonUploadId) throw new DomainError('multiple_audio_tracks_not_supported', 'multiple_audio_tracks_not_supported', 400)
-        if (commonAudioConfigId != null && audioConfigId !== commonAudioConfigId) throw new DomainError('multiple_audio_configs_not_supported', 'multiple_audio_configs_not_supported', 400)
 
         const meta = await loadBackgroundMusicAudioMetaForUser(uploadId, ctx.userId)
-        // Validate audio config exists and is not archived.
-        await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
 
         const startSeconds = normalizeSeconds((seg as any).startSeconds ?? 0)
         const endSecondsRaw = (seg as any).endSeconds
@@ -1069,7 +1095,18 @@ export async function validateAndNormalizeCreateVideoTimeline(
         if (!(end > start)) throw new ValidationError('invalid_seconds')
         const sourceStartRaw = (seg as any).sourceStartSeconds
         const sourceStartSeconds = sourceStartRaw == null ? 0 : normalizeSeconds(sourceStartRaw)
-        audioSegments.push({ id, uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end, sourceStartSeconds })
+        audioSegments.push({
+          id,
+          uploadId: meta.id,
+          ...(audioConfigId != null && Number.isFinite(audioConfigId) && audioConfigId > 0 ? { audioConfigId } : {}),
+          audioEnabled,
+          ...(musicModeRaw ? { musicMode: musicModeRaw } : {}),
+          ...(musicLevelRaw ? { musicLevel: musicLevelRaw } : {}),
+          ...(duckingIntensityRaw ? { duckingIntensity: duckingIntensityRaw } : {}),
+          startSeconds: start,
+          endSeconds: end,
+          sourceStartSeconds,
+        })
       }
     }
   }
@@ -1093,14 +1130,23 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
       if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new ValidationError('invalid_audio_config_id')
       const meta = await loadBackgroundMusicAudioMetaForUser(uploadId, ctx.userId)
-      await audioConfigsSvc.getActiveForUser(audioConfigId, Number(ctx.userId))
 
       const startSeconds = normalizeSeconds((audioTrackRaw as any).startSeconds ?? 0)
       const endSecondsRaw = (audioTrackRaw as any).endSeconds
       const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
       const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
       const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
-      if (end > start) audioSegments.push({ id: 'audio_track_legacy', uploadId: meta.id, audioConfigId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0 })
+      if (end > start) {
+        audioSegments.push({
+          id: 'audio_track_legacy',
+          uploadId: meta.id,
+          audioConfigId,
+          audioEnabled: true,
+          startSeconds: start,
+          endSeconds: end,
+          sourceStartSeconds: 0,
+        })
+      }
     }
   }
 

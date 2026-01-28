@@ -8,7 +8,6 @@ import { CREATE_VIDEO_BG_COLOR, MEDIA_CONVERT_NORMALIZE_AUDIO, UPLOAD_BUCKET, UP
 import { buildExportKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
-import * as audioConfigsSvc from '../../features/audio-configs/service'
 
 type Clip = {
   id: string
@@ -17,6 +16,7 @@ type Clip = {
   sourceStartSeconds: number
   sourceEndSeconds: number
   audioEnabled?: boolean
+  boostDb?: number
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
@@ -41,13 +41,126 @@ type VideoOverlay = {
     | 'bottom_center'
     | 'bottom_right'
   audioEnabled?: boolean
+  boostDb?: number
 }
 type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type ScreenTitle = { id: string; startSeconds: number; endSeconds: number; presetId: number | null; presetSnapshot: any | null; text?: string; renderUploadId: number | null }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
-type AudioSegment = { id: string; uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number; sourceStartSeconds?: number }
-type Narration = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceStartSeconds?: number; gainDb?: number }
+type MusicMode = 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
+type MusicLevel = 'quiet' | 'medium' | 'loud'
+type DuckingIntensity = 'min' | 'medium' | 'max'
+type AudioSegment = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  sourceStartSeconds?: number
+  audioEnabled?: boolean
+  musicMode?: MusicMode
+  musicLevel?: MusicLevel
+  duckingIntensity?: DuckingIntensity
+  // Legacy only; ignored by Create Video export audio logic.
+  audioConfigId?: number
+}
+type Narration = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  sourceStartSeconds?: number
+  audioEnabled?: boolean
+  boostDb?: number
+  // Legacy only; ignored when boostDb is present.
+  gainDb?: number
+}
+
+function normalizeBoostDb(raw: unknown): number {
+  const boostAllowed = new Set([0, 3, 6, 9])
+  const n = raw == null ? 0 : Number(raw)
+  const rounded = Number.isFinite(n) ? Math.round(n) : 0
+  return boostAllowed.has(rounded) ? rounded : 0
+}
+
+function musicGainDbForLevel(level: MusicLevel): number {
+  // Initial guess; adjust after real-world testing.
+  switch (level) {
+    case 'quiet':
+      return -24
+    case 'loud':
+      return -12
+    case 'medium':
+    default:
+      return -18
+  }
+}
+
+function duckingAmountDbForIntensity(intensity: DuckingIntensity): number {
+  // Initial guess; adjust after real-world testing.
+  switch (intensity) {
+    case 'min':
+      return 6
+    case 'max':
+      return 18
+    case 'medium':
+    default:
+      return 12
+  }
+}
+
+function buildMusicAudioConfig(input: { mode: MusicMode; level: MusicLevel; duckingIntensity?: DuckingIntensity }): any {
+  const musicGainDb = musicGainDbForLevel(input.level)
+  if (input.mode === 'replace') {
+    return {
+      mode: 'replace',
+      videoGainDb: 0,
+      musicGainDb,
+      duckingEnabled: false,
+      duckingMode: 'none',
+      duckingGate: 'normal',
+      duckingAmountDb: 12,
+      audioFadeEnabled: true,
+    }
+  }
+  if (input.mode === 'mix') {
+    return {
+      mode: 'mix',
+      videoGainDb: 0,
+      musicGainDb,
+      duckingEnabled: false,
+      duckingMode: 'none',
+      duckingGate: 'normal',
+      duckingAmountDb: 12,
+      audioFadeEnabled: true,
+    }
+  }
+  if (input.mode === 'mix_duck') {
+    const intensity = input.duckingIntensity || 'medium'
+    return {
+      mode: 'mix',
+      videoGainDb: 0,
+      musicGainDb,
+      duckingEnabled: true,
+      duckingMode: 'rolling',
+      duckingGate: 'normal',
+      duckingAmountDb: duckingAmountDbForIntensity(intensity as DuckingIntensity),
+      audioFadeEnabled: true,
+    }
+  }
+  // opener_cutoff: abrupt cut when any ON voice is detected (base/overlay/narration) in the already-mixed timeline audio.
+  return {
+    mode: 'mix',
+    videoGainDb: 0,
+    musicGainDb,
+    duckingEnabled: true,
+    duckingMode: 'abrupt',
+    duckingGate: 'normal',
+    duckingAmountDb: 12,
+    openerCutFadeBeforeSeconds: 1,
+    openerCutFadeAfterSeconds: 1,
+    audioFadeEnabled: true,
+  }
+}
 
 export type CreateVideoExportV1Input = {
   projectId: number
@@ -699,6 +812,7 @@ async function overlayVideoOverlays(opts: {
     sizePctWidth: number
     position: string
     audioEnabled: boolean
+    boostDb?: number
   }>
   targetW: number
   targetH: number
@@ -758,9 +872,13 @@ async function overlayVideoOverlays(opts: {
       if (hasAudio) {
         const delayMs = Math.max(0, Math.round(start * 1000))
         const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
+        const boostRaw = o.boostDb == null ? 0 : Number(o.boostDb)
+        const boostAllowed = new Set([0, 3, 6, 9])
+        const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+        const boostFilter = boostDb !== 0 ? `,volume=${boostDb}dB` : ''
         const label = `ova${i}`
         filters.push(
-          `[${inIdx}:a]atrim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},asetpts=N/SR/TB${delay},apad[${label}]`
+          `[${inIdx}:a]atrim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},asetpts=N/SR/TB${delay}${boostFilter},apad[${label}]`
         )
         audioLabels.push(`[${label}]`)
       }
@@ -892,6 +1010,7 @@ async function renderSegmentMp4(opts: {
   startSeconds: number
   endSeconds: number
   audioEnabled?: boolean
+  boostDb?: number
   freezeStartSeconds?: number
   freezeEndSeconds?: number
   targetW: number
@@ -918,8 +1037,12 @@ async function renderSegmentMp4(opts: {
 
   const delayMs = Math.max(0, Math.round(freezeStart * 1000))
   const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
+  const boostRaw = opts.boostDb == null ? 0 : Number(opts.boostDb)
+  const boostAllowed = new Set([0, 3, 6, 9])
+  const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+  const boostFilter = boostDb !== 0 ? `,volume=${boostDb}dB` : ''
   const a = hasAudio && audioEnabled
-    ? `atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS${delay},apad,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB`
+    ? `atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS${delay}${boostFilter},apad,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB`
     : `anullsrc=r=48000:cl=stereo,atrim=0:${totalDur.toFixed(3)},asetpts=PTS-STARTPTS`
 
   await runFfmpeg(
@@ -1054,6 +1177,7 @@ export async function runCreateVideoExportV1Job(
       sizePctWidth: Number((o as any).sizePctWidth),
       position: String((o as any).position || 'bottom_right') as any,
       audioEnabled: (o as any).audioEnabled == null ? undefined : Boolean((o as any).audioEnabled),
+      boostDb: (o as any).boostDb == null ? undefined : Number((o as any).boostDb),
     }))
     .filter(
       (o) =>
@@ -1076,6 +1200,8 @@ export async function runCreateVideoExportV1Job(
       startSeconds: Number((n as any).startSeconds),
       endSeconds: Number((n as any).endSeconds),
       sourceStartSeconds: (n as any).sourceStartSeconds == null ? undefined : Number((n as any).sourceStartSeconds),
+      audioEnabled: (n as any).audioEnabled == null ? undefined : Boolean((n as any).audioEnabled),
+      boostDb: (n as any).boostDb == null ? undefined : Number((n as any).boostDb),
       gainDb: (n as any).gainDb == null ? undefined : Number((n as any).gainDb),
     }))
     .filter((n) => n.id && Number.isFinite(n.uploadId) && n.uploadId > 0 && Number.isFinite(n.startSeconds) && Number.isFinite(n.endSeconds))
@@ -1085,10 +1211,14 @@ export async function runCreateVideoExportV1Job(
         .map((s) => ({
           id: String((s as any).id || ''),
           uploadId: Number((s as any).uploadId),
-          audioConfigId: Number((s as any).audioConfigId),
           startSeconds: Number((s as any).startSeconds),
           endSeconds: Number((s as any).endSeconds),
           sourceStartSeconds: (s as any).sourceStartSeconds == null ? undefined : Number((s as any).sourceStartSeconds),
+          audioEnabled: (s as any).audioEnabled == null ? undefined : Boolean((s as any).audioEnabled),
+          musicMode: (s as any).musicMode == null ? undefined : (String((s as any).musicMode) as any),
+          musicLevel: (s as any).musicLevel == null ? undefined : (String((s as any).musicLevel) as any),
+          duckingIntensity: (s as any).duckingIntensity == null ? undefined : (String((s as any).duckingIntensity) as any),
+          audioConfigId: (s as any).audioConfigId == null ? undefined : Number((s as any).audioConfigId),
         }))
         .filter((s) => s.id && Number.isFinite(s.uploadId) && s.uploadId > 0 && Number.isFinite(s.startSeconds) && Number.isFinite(s.endSeconds))
     : []
@@ -1304,17 +1434,18 @@ export async function runCreateVideoExportV1Job(
           }
 
           const outPath = path.join(tmpDir, `seg_clip_${String(i).padStart(3, '0')}.mp4`)
-	          await renderSegmentMp4({
-	            inPath,
-	            outPath,
-	            startSeconds: Number(c.sourceStartSeconds || 0),
-	            endSeconds: Number(c.sourceEndSeconds || 0),
-	            audioEnabled: (c as any).audioEnabled !== false,
-	            freezeStartSeconds: Number((c as any).freezeStartSeconds || 0),
-	            freezeEndSeconds: Number((c as any).freezeEndSeconds || 0),
-	            targetW: target.w,
-	            targetH: target.h,
-	            fps,
+          await renderSegmentMp4({
+            inPath,
+            outPath,
+            startSeconds: Number(c.sourceStartSeconds || 0),
+            endSeconds: Number(c.sourceEndSeconds || 0),
+            audioEnabled: (c as any).audioEnabled !== false,
+            boostDb: (c as any).boostDb,
+            freezeStartSeconds: Number((c as any).freezeStartSeconds || 0),
+            freezeEndSeconds: Number((c as any).freezeEndSeconds || 0),
+            targetW: target.w,
+            targetH: target.h,
+            fps,
             logPaths,
           })
           segPaths.push(outPath)
@@ -1467,6 +1598,7 @@ export async function runCreateVideoExportV1Job(
         sizePctWidth: number
         position: string
         audioEnabled: boolean
+        boostDb?: number
       }> = []
       for (let i = 0; i < sorted.length; i++) {
         const o: any = sorted[i]
@@ -1499,6 +1631,7 @@ export async function runCreateVideoExportV1Job(
           sizePctWidth: Number(o.sizePctWidth || 40),
           position: String(o.position || 'bottom_right'),
           audioEnabled: Boolean(o.audioEnabled),
+          boostDb: (o as any).boostDb == null ? 0 : Number((o as any).boostDb),
         })
       }
 
@@ -1773,55 +1906,8 @@ export async function runCreateVideoExportV1Job(
       }
     }
 
-    if (audioSegments.length) {
-      const firstSeg = audioSegments[0]
-      const trackUploadId = Number((firstSeg as any).uploadId)
-      if (!Number.isFinite(trackUploadId) || trackUploadId <= 0) throw new Error('upload_not_found')
-
-      const row = byId.get(trackUploadId)
-      if (!row) throw new Error('upload_not_found')
-      if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
-      // Allow system audio for all creators; allow user audio only when owned by the project user.
-      const isSystem = Number(row.is_system || 0) === 1
-      const ownerId = Number(row.user_id || 0)
-      if (!isSystem && ownerId !== userId) throw new Error('forbidden')
-      if (row.source_deleted_at) throw new Error('source_deleted')
-      const st = String(row.status || '').toLowerCase()
-      if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
-
-      const audioConfigId = Number((firstSeg as any).audioConfigId)
-      if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) throw new Error('invalid_audio_config_id')
-      const cfg = await audioConfigsSvc.getActiveForUser(audioConfigId, userId)
-
-      const audioPath = path.join(tmpDir, `audio_${trackUploadId}`)
-      await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
-
-      const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
-      const clampedSegments = audioSegments
-        .slice()
-        .map((s) => ({
-          startSeconds: clamp(roundToTenth(Number((s as any).startSeconds || 0)), 0, Math.max(0, videoDur)),
-          endSeconds: clamp(roundToTenth(Number((s as any).endSeconds || 0)), 0, Math.max(0, videoDur)),
-          sourceStartSeconds: roundToTenth(Math.max(0, Number((s as any).sourceStartSeconds || 0))),
-        }))
-        .filter((s) => s.endSeconds > s.startSeconds + 0.05)
-        .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || Number(a.endSeconds) - Number(b.endSeconds))
-
-      if (clampedSegments.length) {
-        const outWithAudio = path.join(tmpDir, 'out_audio.mp4')
-        await applyAudioSegmentsToMp4({
-          inMp4Path: finalOut,
-          outMp4Path: outWithAudio,
-          audioPath,
-          audioConfig: cfg,
-          segments: clampedSegments,
-          normalizeAudio: narration.length ? false : undefined,
-          logPaths,
-        })
-        finalOut = outWithAudio
-      }
-    }
-
+    // Apply narration first so that Opener Cutoff can detect speech from narration (and any overlay audio already present in the timeline).
+    let narrationMixed = false
     if (narration.length) {
       const sorted = narration
         .slice()
@@ -1830,9 +1916,11 @@ export async function runCreateVideoExportV1Job(
           startSeconds: roundToTenth(Math.max(0, Number((n as any).startSeconds || 0))),
           endSeconds: roundToTenth(Math.max(0, Number((n as any).endSeconds || 0))),
           sourceStartSeconds: roundToTenth(Math.max(0, Number((n as any).sourceStartSeconds || 0))),
+          audioEnabled: (n as any).audioEnabled == null ? true : Boolean((n as any).audioEnabled),
+          boostDb: normalizeBoostDb((n as any).boostDb),
           gainDb: Number.isFinite(Number((n as any).gainDb)) ? Number((n as any).gainDb) : 0,
         }))
-        .filter((n) => Number(n.endSeconds) > Number(n.startSeconds))
+        .filter((n) => n.audioEnabled !== false && Number(n.endSeconds) > Number(n.startSeconds))
         .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
 
       const narrationDownloads = new Map<number, string>()
@@ -1863,7 +1951,7 @@ export async function runCreateVideoExportV1Job(
         const endSeconds = clamp(roundToTenth(Number(seg.endSeconds || 0)), 0, Math.max(0, videoDur))
         if (!(endSeconds > startSeconds + 0.05)) continue
         const sourceStartSeconds = clamp(roundToTenth(Number((seg as any).sourceStartSeconds || 0)), 0, 20 * 60)
-        const gainDb = clamp(Number(seg.gainDb || 0), -12, 12)
+        const gainDb = clamp(Number((seg as any).boostDb != null ? (seg as any).boostDb : seg.gainDb || 0), -12, 12)
         segmentsForMix.push({ audioPath, startSeconds, endSeconds, sourceStartSeconds, gainDb })
       }
 
@@ -1876,6 +1964,104 @@ export async function runCreateVideoExportV1Job(
           logPaths,
         })
         finalOut = outWithNarration
+        narrationMixed = true
+      }
+    }
+
+    if (audioSegments.length) {
+      const enabledSegments = audioSegments.filter((s) => (s as any).audioEnabled !== false)
+      if (enabledSegments.length) {
+        const firstSeg = enabledSegments[0]
+        const trackUploadId = Number((firstSeg as any).uploadId)
+        if (!Number.isFinite(trackUploadId) || trackUploadId <= 0) throw new Error('upload_not_found')
+
+        // Ensure all enabled segments reference the same upload.
+        for (const s of enabledSegments) {
+          const uid = Number((s as any).uploadId)
+          if (!(Number.isFinite(uid) && uid > 0 && uid === trackUploadId)) throw new Error('multiple_audio_tracks_not_supported')
+        }
+
+        const row = byId.get(trackUploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
+        // Allow system audio for all creators; allow user audio only when owned by the project user.
+        const isSystem = Number(row.is_system || 0) === 1
+        const ownerId = Number(row.user_id || 0)
+        if (!isSystem && ownerId !== userId) throw new Error('forbidden')
+        if (row.source_deleted_at) throw new Error('source_deleted')
+        const st = String(row.status || '').toLowerCase()
+        if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+
+        const audioPath = path.join(tmpDir, `audio_${trackUploadId}`)
+        await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
+
+        const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
+
+        const segmentsWithCfg = enabledSegments.map((s) => ({
+          seg: s,
+          musicMode: String((s as any).musicMode || '').toLowerCase(),
+          musicLevel: String((s as any).musicLevel || '').toLowerCase(),
+          duckingIntensity: (s as any).duckingIntensity == null ? null : String((s as any).duckingIntensity || '').toLowerCase(),
+        }))
+
+        for (const { musicMode, musicLevel, duckingIntensity } of segmentsWithCfg) {
+          if (!musicMode || !musicLevel) throw new Error('music_config_required')
+          if (!['opener_cutoff', 'replace', 'mix', 'mix_duck'].includes(musicMode)) throw new Error('music_config_required')
+          if (!['quiet', 'medium', 'loud'].includes(musicLevel)) throw new Error('music_config_required')
+          if (musicMode === 'mix_duck' && !duckingIntensity) throw new Error('music_config_required')
+          if (musicMode === 'mix_duck' && !['min', 'medium', 'max'].includes(String(duckingIntensity))) throw new Error('music_config_required')
+        }
+
+        const hasOpener = segmentsWithCfg.some((x) => x.musicMode === 'opener_cutoff')
+        if (hasOpener && enabledSegments.length !== 1) throw new Error('opener_cutoff_requires_single_segment')
+
+        const groups = new Map<string, { mode: MusicMode; level: MusicLevel; duckingIntensity?: DuckingIntensity; segs: any[] }>()
+        for (const x of segmentsWithCfg) {
+          const mode = x.musicMode as MusicMode
+          const level = x.musicLevel as MusicLevel
+          const intensity = x.duckingIntensity ? (x.duckingIntensity as DuckingIntensity) : undefined
+          const key = `${mode}|${level}|${intensity || ''}`
+          const g = groups.get(key) || { mode, level, duckingIntensity: intensity, segs: [] as any[] }
+          g.segs.push(x.seg)
+          groups.set(key, g)
+        }
+
+        const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+          const aMin = Math.min(...a.segs.map((s) => Number((s as any).startSeconds || 0)))
+          const bMin = Math.min(...b.segs.map((s) => Number((s as any).startSeconds || 0)))
+          return aMin - bMin
+        })
+
+        for (let gi = 0; gi < sortedGroups.length; gi++) {
+          const g = sortedGroups[gi]
+          const cfg = buildMusicAudioConfig({ mode: g.mode, level: g.level, duckingIntensity: g.duckingIntensity })
+
+          const clampedSegments = g.segs
+            .slice()
+            .map((s) => ({
+              startSeconds: clamp(roundToTenth(Number((s as any).startSeconds || 0)), 0, Math.max(0, videoDur)),
+              endSeconds: clamp(roundToTenth(Number((s as any).endSeconds || 0)), 0, Math.max(0, videoDur)),
+              sourceStartSeconds: roundToTenth(Math.max(0, Number((s as any).sourceStartSeconds || 0))),
+            }))
+            .filter((s) => s.endSeconds > s.startSeconds + 0.05)
+            .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || Number(a.endSeconds) - Number(b.endSeconds))
+
+          if (!clampedSegments.length) continue
+
+          const outWithAudio = path.join(tmpDir, `out_audio_${String(gi).padStart(2, '0')}.mp4`)
+          // If narration was mixed in, it already normalized voice; don't normalize again while adding music.
+          const normalizeThisPass = narrationMixed ? false : gi === sortedGroups.length - 1
+          await applyAudioSegmentsToMp4({
+            inMp4Path: finalOut,
+            outMp4Path: outWithAudio,
+            audioPath,
+            audioConfig: cfg,
+            segments: clampedSegments,
+            normalizeAudio: normalizeThisPass ? undefined : false,
+            logPaths,
+          })
+          finalOut = outWithAudio
+        }
       }
     }
 

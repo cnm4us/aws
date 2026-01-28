@@ -500,7 +500,7 @@ export default function CreateVideo() {
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
-  const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number } | null>(null)
+  const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number; boostDb: number } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
   const [freezeInsertBusy, setFreezeInsertBusy] = useState(false)
@@ -523,7 +523,13 @@ export default function CreateVideo() {
   const [stillEditorError, setStillEditorError] = useState<string | null>(null)
   const [logoEditor, setLogoEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
   const [logoEditorError, setLogoEditorError] = useState<string | null>(null)
-  const [videoOverlayEditor, setVideoOverlayEditor] = useState<{ id: string; sizePctWidth: number; position: VideoOverlay['position']; audioEnabled: boolean } | null>(null)
+  const [videoOverlayEditor, setVideoOverlayEditor] = useState<{
+    id: string
+    sizePctWidth: number
+    position: VideoOverlay['position']
+    audioEnabled: boolean
+    boostDb: number
+  } | null>(null)
   const [videoOverlayEditorError, setVideoOverlayEditorError] = useState<string | null>(null)
   const [lowerThirdEditor, setLowerThirdEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
   const [lowerThirdEditorError, setLowerThirdEditorError] = useState<string | null>(null)
@@ -567,9 +573,17 @@ export default function CreateVideo() {
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
   const [audioConfigsError, setAudioConfigsError] = useState<string | null>(null)
-  const [audioEditor, setAudioEditor] = useState<{ id: string; start: number; end: number; audioConfigId: number } | null>(null)
+  const [audioEditor, setAudioEditor] = useState<{
+    id: string
+    start: number
+    end: number
+    audioConfigId: number
+    musicMode: '' | 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
+    musicLevel: '' | 'quiet' | 'medium' | 'loud'
+    duckingIntensity: '' | 'min' | 'medium' | 'max'
+  } | null>(null)
   const [audioEditorError, setAudioEditorError] = useState<string | null>(null)
-  const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; gainDb: number } | null>(null)
+  const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; boostDb: number } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const overlayVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -3770,9 +3784,10 @@ export default function CreateVideo() {
 
       const uploadId = Number((n as any).uploadId)
       const baseName = namesByUploadId[uploadId] || `Narration ${uploadId}`
-      const gainDb = (n as any).gainDb == null ? 0 : Number((n as any).gainDb)
-      const gainLabel = Number.isFinite(gainDb) && Math.abs(gainDb) > 0.05 ? `${gainDb > 0 ? '+' : ''}${gainDb.toFixed(0)}dB` : '0dB'
-      const label = `${baseName} • ${gainLabel}`
+      const boostDbRaw = (n as any).boostDb != null ? Number((n as any).boostDb) : ((n as any).gainDb == null ? 0 : Number((n as any).gainDb))
+      const boostDb = Number.isFinite(boostDbRaw) ? boostDbRaw : 0
+      const boostLabel = Math.abs(boostDb) > 0.05 ? `${boostDb > 0 ? '+' : ''}${boostDb.toFixed(0)}dB` : '0dB'
+      const label = `${baseName} • ${boostLabel}`
       ctx.fillStyle = '#fff'
       const padLeft = showHandles ? 6 + handleSize + 10 : 12
       const padRight = showHandles ? 6 + handleSize + 10 : 12
@@ -4016,16 +4031,25 @@ export default function CreateVideo() {
 		          lowerThirds: Array.isArray(tlRaw?.lowerThirds) ? (tlRaw.lowerThirds as any) : [],
 		          screenTitles: Array.isArray(tlRaw?.screenTitles) ? (tlRaw.screenTitles as any) : [],
 		          narration: Array.isArray(tlRaw?.narration)
-		            ? (tlRaw.narration as any[]).map((n: any) => ({
-	                ...n,
-	                id: String(n?.id || ''),
-	                uploadId: Number(n?.uploadId),
-	                startSeconds: roundToTenth(Number(n?.startSeconds || 0)),
-	                endSeconds: roundToTenth(Number(n?.endSeconds || 0)),
-	                sourceStartSeconds: n?.sourceStartSeconds == null ? 0 : roundToTenth(Number(n?.sourceStartSeconds || 0)),
-	                gainDb: n?.gainDb == null ? 0 : Number(n?.gainDb),
-	              }))
-	            : [],
+		            ? (tlRaw.narration as any[]).map((n: any) => {
+		                const gainDbRaw = n?.gainDb == null ? 0 : Number(n?.gainDb)
+		                const boostDbRaw = n?.boostDb == null ? gainDbRaw : Number(n?.boostDb)
+		                const boostAllowed = new Set([0, 3, 6, 9])
+		                const boostDb =
+		                  Number.isFinite(boostDbRaw) && boostAllowed.has(Math.round(boostDbRaw)) ? Math.round(boostDbRaw) : 0
+		                return {
+		                  ...n,
+		                  id: String(n?.id || ''),
+		                  uploadId: Number(n?.uploadId),
+		                  startSeconds: roundToTenth(Number(n?.startSeconds || 0)),
+		                  endSeconds: roundToTenth(Number(n?.endSeconds || 0)),
+		                  sourceStartSeconds: n?.sourceStartSeconds == null ? 0 : roundToTenth(Number(n?.sourceStartSeconds || 0)),
+		                  gainDb: Number.isFinite(gainDbRaw) ? gainDbRaw : 0,
+		                  audioEnabled: n?.audioEnabled == null ? true : Boolean(n?.audioEnabled),
+		                  boostDb,
+		                }
+		              })
+		            : [],
 	          audioSegments: Array.isArray((tlRaw as any)?.audioSegments)
 	            ? ((tlRaw as any).audioSegments as any[]).map((s: any, i: number) => ({
 	                ...s,
@@ -5666,10 +5690,6 @@ export default function CreateVideo() {
         return v != null && Number.isFinite(v) && v > 0 ? v : null
       }
       const audioConfigId = pickDefault()
-      if (!audioConfigId) {
-        setTimelineMessage('No audio configs available yet. Ask site_admin to create an audio config.')
-        return
-      }
 
       const end = roundToTenth(
         Math.max(0, dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(totalSeconds, dur) : Math.max(0, totalSeconds))
@@ -5683,7 +5703,7 @@ export default function CreateVideo() {
           {
             id: segId,
             uploadId: id,
-            audioConfigId,
+            ...(audioConfigId ? { audioConfigId } : {}),
             startSeconds: 0,
             endSeconds: end,
             sourceStartSeconds: 0,
@@ -5712,15 +5732,9 @@ export default function CreateVideo() {
         return
       }
       const audioConfigId = Number(audioConfigIdRaw)
-      if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) {
-        setTimelineMessage('Pick an audio config.')
-        return
-      }
       const cfgs = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : Array.isArray(audioConfigs) ? audioConfigs : []
-      if (!cfgs.some((c) => Number((c as any).id) === audioConfigId)) {
-        setTimelineMessage('Audio config not found.')
-        return
-      }
+      const audioConfigIdOk =
+        Number.isFinite(audioConfigId) && audioConfigId > 0 && cfgs.some((c) => Number((c as any).id) === audioConfigId) ? audioConfigId : null
 
       const name = String((upload as any).modified_filename || (upload as any).original_filename || `Audio ${id}`)
       setNamesByUploadId((prev) => (prev[id] ? prev : { ...prev, [id]: name }))
@@ -5741,7 +5755,7 @@ export default function CreateVideo() {
           {
             id: segId,
             uploadId: id,
-            audioConfigId,
+            ...(audioConfigIdOk ? { audioConfigId: audioConfigIdOk } : {}),
             startSeconds: 0,
             endSeconds: end,
             sourceStartSeconds: 0,
@@ -5822,7 +5836,7 @@ export default function CreateVideo() {
       }
 
       const id = `nar_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, gainDb: 0 }
+	      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, boostDb: 0 }
       snapshotUndo()
       setTimeline((prev) => {
         const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
@@ -5960,7 +5974,10 @@ export default function CreateVideo() {
       id: String(selectedAudioSegment.id),
       start: Number(selectedAudioSegment.startSeconds),
       end: Number(selectedAudioSegment.endSeconds),
-      audioConfigId: Number(selectedAudioSegment.audioConfigId),
+      audioConfigId: (selectedAudioSegment as any).audioConfigId == null ? 0 : Number((selectedAudioSegment as any).audioConfigId),
+      musicMode: (selectedAudioSegment as any).musicMode == null ? '' : (String((selectedAudioSegment as any).musicMode) as any),
+      musicLevel: (selectedAudioSegment as any).musicLevel == null ? '' : (String((selectedAudioSegment as any).musicLevel) as any),
+      duckingIntensity: (selectedAudioSegment as any).duckingIntensity == null ? '' : (String((selectedAudioSegment as any).duckingIntensity) as any),
     })
   }, [ensureAudioConfigs, selectedAudioSegment])
 
@@ -5969,12 +5986,19 @@ export default function CreateVideo() {
     const start = roundToTenth(Number(audioEditor.start))
     const end = roundToTenth(Number(audioEditor.end))
     const audioConfigId = Number(audioEditor.audioConfigId)
+    const musicMode = String(audioEditor.musicMode || '').trim()
+    const musicLevel = String(audioEditor.musicLevel || '').trim()
+    const duckingIntensity = String(audioEditor.duckingIntensity || '').trim()
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setAudioEditorError('End must be after start.')
       return
     }
-    if (!Number.isFinite(audioConfigId) || audioConfigId <= 0) {
-      setAudioEditorError('Invalid audio config.')
+    if (!musicMode || !musicLevel) {
+      setAudioEditorError('Music configuration is required.')
+      return
+    }
+    if (musicMode === 'mix_duck' && !duckingIntensity) {
+      setAudioEditorError('Select a ducking intensity.')
       return
     }
     if (!(totalSeconds > 0)) {
@@ -6002,7 +6026,15 @@ export default function CreateVideo() {
       const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
       const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, totalSeconds))
       const nextSegs = prevSegs.slice()
-      nextSegs[idx] = { ...(prevSegs[idx] as any), startSeconds: safeStart, endSeconds: safeEnd, audioConfigId }
+      nextSegs[idx] = {
+        ...(prevSegs[idx] as any),
+        startSeconds: safeStart,
+        endSeconds: safeEnd,
+        ...(Number.isFinite(audioConfigId) && audioConfigId > 0 ? { audioConfigId } : {}),
+        musicMode,
+        musicLevel,
+        ...(musicMode === 'mix_duck' ? { duckingIntensity: duckingIntensity || 'medium' } : {}),
+      }
       nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
       return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
     })
@@ -6010,24 +6042,22 @@ export default function CreateVideo() {
     setAudioEditorError(null)
   }, [audioEditor, audioSegments, snapshotUndo, totalSeconds])
 
-	  const saveNarrationEditor = useCallback(() => {
-	    if (!narrationEditor) return
-	    const start = roundToTenth(Number(narrationEditor.start))
-	    const end = roundToTenth(Number(narrationEditor.end))
-	    const gainDb = Number(narrationEditor.gainDb)
-	    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
-	      setNarrationEditorError('End must be after start.')
-	      return
-	    }
-    if (!Number.isFinite(gainDb) || gainDb < -12 || gainDb > 12) {
-      setNarrationEditorError('Gain must be between -12 and +12 dB.')
-      return
-    }
-    const cap = 20 * 60
-	    if (end > cap + 1e-6) {
-	      setNarrationEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
-	      return
-	    }
+		  const saveNarrationEditor = useCallback(() => {
+		    if (!narrationEditor) return
+		    const start = roundToTenth(Number(narrationEditor.start))
+		    const end = roundToTenth(Number(narrationEditor.end))
+		    const boostRaw = Number((narrationEditor as any).boostDb)
+		    const boostAllowed = new Set([0, 3, 6, 9])
+		    const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+		    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+		      setNarrationEditorError('End must be after start.')
+		      return
+		    }
+	    const cap = 20 * 60
+		    if (end > cap + 1e-6) {
+		      setNarrationEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
+		      return
+		    }
 
 	    const seg = narration.find((n: any) => String((n as any).id) === String(narrationEditor.id)) as any
 	    if (seg) {
@@ -6058,14 +6088,21 @@ export default function CreateVideo() {
       }
     }
 
-    snapshotUndo()
-    setTimeline((prev) => {
-      const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
-      const idx = prevNs.findIndex((n: any) => String(n?.id) === String(narrationEditor.id))
-      if (idx < 0) return prev
-      const updated: Narration = { ...(prevNs[idx] as any), startSeconds: Math.max(0, start), endSeconds: Math.max(0, end), gainDb }
-      const next = prevNs.slice()
-      next[idx] = updated
+	    snapshotUndo()
+	    setTimeline((prev) => {
+	      const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
+	      const idx = prevNs.findIndex((n: any) => String(n?.id) === String(narrationEditor.id))
+	      if (idx < 0) return prev
+	      const updated: Narration = {
+	        ...(prevNs[idx] as any),
+	        startSeconds: Math.max(0, start),
+	        endSeconds: Math.max(0, end),
+	        boostDb,
+	        // Keep legacy field in sync for back-compat.
+	        gainDb: boostDb,
+	      }
+	      const next = prevNs.slice()
+	      next[idx] = updated
       next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
       const nextTimeline: any = { ...(prev as any), narration: next }
       const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
@@ -9527,6 +9564,9 @@ export default function CreateVideo() {
     if (!clipEditor) return
     const start = roundToTenth(Number(clipEditor.start))
     const end = roundToTenth(Number(clipEditor.end))
+    const boostRaw = Number((clipEditor as any).boostDb)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setClipEditorError('End must be after start.')
       return
@@ -9577,6 +9617,7 @@ export default function CreateVideo() {
         ...clip,
         sourceStartSeconds: safeStart,
         sourceEndSeconds: safeEnd,
+        boostDb,
       }
       const next = normalized.slice()
       next[idx] = updated
@@ -9888,6 +9929,9 @@ export default function CreateVideo() {
     const sizePctWidth = Number(videoOverlayEditor.sizePctWidth)
     const position = String(videoOverlayEditor.position || '') as any
     const audioEnabled = Boolean(videoOverlayEditor.audioEnabled)
+    const boostRaw = Number((videoOverlayEditor as any).boostDb)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
     const allowedSizes = new Set([25, 33, 40, 50, 70, 90])
     const allowedPositions = new Set([
       'top_left',
@@ -9919,6 +9963,7 @@ export default function CreateVideo() {
         sizePctWidth,
         position,
         audioEnabled,
+        boostDb,
       }
       const next = prevOverlays.slice()
       next[idx] = updated
@@ -11479,6 +11524,28 @@ export default function CreateVideo() {
   const exportNow = useCallback(async () => {
     if (!(totalSeconds > 0)) return
     if (!project?.id) return
+    const enabledMusicSegments: any[] = Array.isArray(audioSegments)
+      ? (audioSegments as any[]).filter((s) => (s as any).audioEnabled !== false)
+      : []
+    if (enabledMusicSegments.length) {
+      const missingCfg = enabledMusicSegments.some((s) => {
+        const mode = String((s as any).musicMode || '').trim()
+        const level = String((s as any).musicLevel || '').trim()
+        const duck = String((s as any).duckingIntensity || '').trim()
+        if (!mode || !level) return true
+        if (mode === 'mix_duck' && !duck) return true
+        return false
+      })
+      if (missingCfg) {
+        setExportError('Music configuration is required. Open each music segment Properties and choose a Music Mode and Level.')
+        return
+      }
+      const hasOpener = enabledMusicSegments.some((s) => String((s as any).musicMode || '') === 'opener_cutoff')
+      if (hasOpener && enabledMusicSegments.length !== 1) {
+        setExportError('Opener mode requires exactly one music segment.')
+        return
+      }
+    }
     const existingName = String(project?.name || '').trim()
     if (!existingName) {
       const suggested = `Timeline ${new Date().toISOString().slice(0, 10)}`
@@ -11528,7 +11595,7 @@ export default function CreateVideo() {
       setExportStatus(null)
       setExporting(false)
     }
-  }, [project?.id, totalSeconds])
+  }, [audioSegments, project?.id, project?.name, totalSeconds])
 
   useEffect(() => {
     if (!exporting) return
@@ -13837,11 +13904,17 @@ export default function CreateVideo() {
               const seg: any = audioSegments.find((s: any) => String(s?.id) === String(audioEditor.id))
               if (!seg) return null
               const uploadId = Number(seg.uploadId)
-              const audioConfigId = Number(seg.audioConfigId)
+              const audioConfigId = seg.audioConfigId == null ? null : Number(seg.audioConfigId)
+              const mode = seg.musicMode ? String(seg.musicMode) : ''
+              const level = seg.musicLevel ? String(seg.musicLevel) : ''
               return (
                 <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ color: '#fff', fontWeight: 900 }}>
-                    {(namesByUploadId[uploadId] || `Audio ${uploadId}`) + ' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}
+                    {namesByUploadId[uploadId] || `Audio ${uploadId}`}
+                    {audioConfigId && (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`) ? (
+                      <span style={{ color: '#bbb', fontWeight: 800 }}>{' * ' + (audioConfigNameById[audioConfigId] || `Config ${audioConfigId}`)}</span>
+                    ) : null}
+                    {mode && level ? <span style={{ color: '#bbb', fontWeight: 800 }}>{' * ' + mode + ' ' + level}</span> : null}
                   </div>
                   <button
                     type="button"
@@ -13863,13 +13936,75 @@ export default function CreateVideo() {
             })()}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Music Mode</div>
+                  <select
+                    value={String(audioEditor.musicMode)}
+                    onChange={(e) => {
+                      setAudioEditorError(null)
+                      const next = String(e.target.value || '')
+                      setAudioEditor((p) =>
+                        p
+                          ? ({
+                              ...p,
+                              musicMode: next as any,
+                              ...(next !== 'mix_duck' ? { duckingIntensity: '' } : {}),
+                            } as any)
+                          : p
+                      )
+                    }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  >
+                    <option value="">Select…</option>
+                    <option value="opener_cutoff">Opener (auto-cut on speech)</option>
+                    <option value="replace">Replace</option>
+                    <option value="mix">Mix (no ducking)</option>
+                    <option value="mix_duck">Mix + Ducking</option>
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Music Level</div>
+                  <select
+                    value={String(audioEditor.musicLevel)}
+                    onChange={(e) => {
+                      setAudioEditorError(null)
+                      setAudioEditor((p) => (p ? ({ ...p, musicLevel: String(e.target.value || '') as any } as any) : p))
+                    }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  >
+                    <option value="">Select…</option>
+                    <option value="quiet">Quiet</option>
+                    <option value="medium">Medium</option>
+                    <option value="loud">Loud</option>
+                  </select>
+                </label>
+              </div>
+
+              {String(audioEditor.musicMode) === 'mix_duck' ? (
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Ducking</div>
+                  <select
+                    value={String(audioEditor.duckingIntensity)}
+                    onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => (p ? ({ ...p, duckingIntensity: String(e.target.value || '') as any } as any) : p)) }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  >
+                    <option value="">Select…</option>
+                    <option value="min">Min</option>
+                    <option value="medium">Medium</option>
+                    <option value="max">Max</option>
+                  </select>
+                </label>
+              ) : null}
+
               <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Audio Config</div>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Legacy Audio Config (ignored for exports)</div>
                 <select
                   value={String(audioEditor.audioConfigId)}
                   onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => p ? ({ ...p, audioConfigId: Number(e.target.value) }) : p) }}
                   style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
                 >
+                  <option value="0">None</option>
                   {audioConfigs.map((c) => (
                     <option key={`cfg-${c.id}`} value={String(c.id)}>{c.name}</option>
                   ))}
@@ -14195,6 +14330,20 @@ export default function CreateVideo() {
                 <span style={{ color: '#fff', fontWeight: 800 }}>Enable overlay audio</span>
               </label>
 
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
+                <select
+                  value={String(videoOverlayEditor.boostDb)}
+                  onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                >
+                  <option value="0">None</option>
+                  <option value="3">+3 dB</option>
+                  <option value="6">+6 dB</option>
+                  <option value="9">+9 dB</option>
+                </select>
+              </label>
+
               {videoOverlayEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{videoOverlayEditorError}</div> : null}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
@@ -14516,10 +14665,10 @@ export default function CreateVideo() {
 	                      </div>
 	                    </div>
 
-	                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-	                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Clip audio</div>
-	                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-	                        <input
+		                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+		                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Clip audio</div>
+		                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+		                        <input
 	                          type="checkbox"
 	                          checked={clip ? (clip as any).audioEnabled !== false : true}
 	                          disabled={!clip}
@@ -14533,13 +14682,27 @@ export default function CreateVideo() {
 	                            }))
 	                          }}
 	                        />
-	                        <span style={{ color: '#fff', fontWeight: 900 }}>{clip && (clip as any).audioEnabled === false ? 'Muted' : 'Enabled'}</span>
-	                      </label>
-	                    </div>
+		                        <span style={{ color: '#fff', fontWeight: 900 }}>{clip && (clip as any).audioEnabled === false ? 'Muted' : 'Enabled'}</span>
+		                      </label>
+		                    </div>
 
-	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-	                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
-	                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+		                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+		                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Boost</div>
+		                      <select
+		                        value={String(clipEditor.boostDb)}
+		                        onChange={(e) => setClipEditor((p) => (p ? ({ ...p, boostDb: Number(e.target.value) } as any) : p))}
+		                        style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 10px', fontSize: 14 }}
+		                      >
+		                        <option value="0">None</option>
+		                        <option value="3">+3 dB</option>
+		                        <option value="6">+6 dB</option>
+		                        <option value="9">+9 dB</option>
+		                      </select>
+		                    </div>
+
+		                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+		                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
+		                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
 	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
                           <button
                             type="button"
@@ -14665,20 +14828,19 @@ export default function CreateVideo() {
 	                />
 	              </label>
 
-	              <label style={{ display: 'grid', gap: 6 }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>Gain (dB)</div>
-	                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
-	                  <input
-	                    type="range"
-	                    min={-12}
-	                    max={12}
-	                    step={1}
-	                    value={String(narrationEditor.gainDb)}
-	                    onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, gainDb: Number(e.target.value) }) : p) }}
-	                  />
-	                  <div style={{ fontWeight: 900, color: '#fff', width: 64, textAlign: 'right' }}>{Number(narrationEditor.gainDb).toFixed(0)} dB</div>
-	                </div>
-	              </label>
+		              <label style={{ display: 'grid', gap: 6 }}>
+		                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
+		                <select
+		                  value={String((narrationEditor as any).boostDb)}
+		                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
+		                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+		                >
+		                  <option value="0">None</option>
+		                  <option value="3">+3 dB</option>
+		                  <option value="6">+6 dB</option>
+		                  <option value="9">+9 dB</option>
+		                </select>
+		              </label>
 
 	              {narrationEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{narrationEditorError}</div> : null}
 	              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -14857,21 +15019,22 @@ export default function CreateVideo() {
 				                    } else if (timelineCtxMenu.kind === 'videoOverlay') {
 				                      const o = videoOverlays.find((oo: any) => String((oo as any).id) === String(timelineCtxMenu.id)) as any
 				                      if (o) {
-				                        const sizePctWidth = Number((o as any).sizePctWidth || 33)
-				                        const position = String((o as any).position || 'top_right') as any
-				                        const audioEnabled = Boolean((o as any).audioEnabled)
-				                        setSelectedVideoOverlayId(String((o as any).id))
-				                        setSelectedClipId(null)
-				                        setSelectedGraphicId(null)
+					                        const sizePctWidth = Number((o as any).sizePctWidth || 33)
+					                        const position = String((o as any).position || 'top_right') as any
+					                        const audioEnabled = Boolean((o as any).audioEnabled)
+					                        const boostDb = (o as any).boostDb == null ? 0 : Number((o as any).boostDb)
+					                        setSelectedVideoOverlayId(String((o as any).id))
+					                        setSelectedClipId(null)
+					                        setSelectedGraphicId(null)
 				                        setSelectedLogoId(null)
 				                        setSelectedLowerThirdId(null)
 				                        setSelectedScreenTitleId(null)
-				                        setSelectedNarrationId(null)
-				                        setSelectedStillId(null)
-				                        setSelectedAudioId(null)
-				                        setVideoOverlayEditor({ id: String((o as any).id), sizePctWidth, position, audioEnabled })
-				                        setVideoOverlayEditorError(null)
-				                      }
+					                        setSelectedNarrationId(null)
+					                        setSelectedStillId(null)
+					                        setSelectedAudioId(null)
+					                        setVideoOverlayEditor({ id: String((o as any).id), sizePctWidth, position, audioEnabled, boostDb })
+					                        setVideoOverlayEditorError(null)
+					                      }
 				                    } else if (timelineCtxMenu.kind === 'still') {
 				                      const s0 = stills.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
 				                      if (s0) {
@@ -14901,7 +15064,12 @@ export default function CreateVideo() {
 				                        setSelectedNarrationId(null)
 				                        setSelectedStillId(null)
 				                        setSelectedAudioId(null)
-				                        setClipEditor({ id: clip.id, start: clip.sourceStartSeconds, end: clip.sourceEndSeconds })
+					                        setClipEditor({
+					                          id: clip.id,
+					                          start: clip.sourceStartSeconds,
+					                          end: clip.sourceEndSeconds,
+					                          boostDb: (clip as any).boostDb == null ? 0 : Number((clip as any).boostDb),
+					                        })
 				                        setClipEditorError(null)
 				                        setFreezeInsertError(null)
 				                      }
@@ -14918,12 +15086,17 @@ export default function CreateVideo() {
 				                        setSelectedScreenTitleId(null)
 				                        setSelectedStillId(null)
 				                        setSelectedAudioId(null)
-				                        setNarrationEditor({
-				                          id: String((n as any).id),
-				                          start: s,
-				                          end: e2,
-				                          gainDb: (n as any).gainDb == null ? 0 : Number((n as any).gainDb),
-				                        })
+					                        setNarrationEditor({
+					                          id: String((n as any).id),
+					                          start: s,
+					                          end: e2,
+					                          boostDb:
+					                            (n as any).boostDb != null && Number.isFinite(Number((n as any).boostDb))
+					                              ? Number((n as any).boostDb)
+					                              : (n as any).gainDb == null
+					                                ? 0
+					                                : Number((n as any).gainDb),
+					                        })
 					                        setNarrationEditorError(null)
 					                      }
 					                    } else if (timelineCtxMenu.kind === 'audioSegment') {
@@ -14945,16 +15118,19 @@ export default function CreateVideo() {
 					                            await ensureAudioConfigs()
 					                          } catch {}
 					                        })()
-					                        setAudioEditor({
-					                          id: String((seg as any).id),
-					                          start: s,
-					                          end: e2,
-					                          audioConfigId: Number((seg as any).audioConfigId),
-					                        })
-					                      }
-					                    }
-					                    setTimelineCtxMenu(null)
-					                  }}
+						                        setAudioEditor({
+						                          id: String((seg as any).id),
+						                          start: s,
+						                          end: e2,
+						                          audioConfigId: (seg as any).audioConfigId == null ? 0 : Number((seg as any).audioConfigId),
+						                          musicMode: (seg as any).musicMode == null ? '' : (String((seg as any).musicMode) as any),
+						                          musicLevel: (seg as any).musicLevel == null ? '' : (String((seg as any).musicLevel) as any),
+						                          duckingIntensity: (seg as any).duckingIntensity == null ? '' : (String((seg as any).duckingIntensity) as any),
+						                        })
+						                      }
+						                    }
+						                    setTimelineCtxMenu(null)
+						                  }}
 			                  style={{
 			                    width: '100%',
 			                    padding: '10px 12px',
@@ -14966,9 +15142,78 @@ export default function CreateVideo() {
 			                    cursor: 'pointer',
 			                    textAlign: 'left',
 			                  }}
-				                >
-				                  Properties
-				                </button>
+					                >
+					                  Properties
+					                </button>
+                        {timelineCtxMenu.kind === 'clip' || timelineCtxMenu.kind === 'videoOverlay' || timelineCtxMenu.kind === 'narration' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              snapshotUndo()
+                              setTimeline((prev) => {
+                                if (timelineCtxMenu.kind === 'clip') {
+                                  const prevClips: any[] = Array.isArray((prev as any).clips) ? ((prev as any).clips as any[]) : []
+                                  const idx = prevClips.findIndex((c: any) => String(c?.id) === String(timelineCtxMenu.id))
+                                  if (idx < 0) return prev
+                                  const cur = prevClips[idx]
+                                  const nextEnabled = cur?.audioEnabled === false
+                                  const nextClips = prevClips.slice()
+                                  nextClips[idx] = { ...(cur as any), audioEnabled: nextEnabled }
+                                  return { ...(prev as any), clips: nextClips } as any
+                                }
+                                if (timelineCtxMenu.kind === 'videoOverlay') {
+                                  const prevVos: any[] = Array.isArray((prev as any).videoOverlays) ? ((prev as any).videoOverlays as any[]) : []
+                                  const idx = prevVos.findIndex((o: any) => String(o?.id) === String(timelineCtxMenu.id))
+                                  if (idx < 0) return prev
+                                  const cur = prevVos[idx]
+                                  const nextEnabled = !(cur?.audioEnabled === true)
+                                  const next = prevVos.slice()
+                                  next[idx] = { ...(cur as any), audioEnabled: nextEnabled }
+                                  return { ...(prev as any), videoOverlays: next } as any
+                                }
+                                if (timelineCtxMenu.kind === 'narration') {
+                                  const prevNs: any[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any[]) : []
+                                  const idx = prevNs.findIndex((n: any) => String(n?.id) === String(timelineCtxMenu.id))
+                                  if (idx < 0) return prev
+                                  const cur = prevNs[idx]
+                                  const nextEnabled = cur?.audioEnabled === false
+                                  const next = prevNs.slice()
+                                  next[idx] = { ...(cur as any), audioEnabled: nextEnabled }
+                                  return { ...(prev as any), narration: next } as any
+                                }
+                                return prev
+                              })
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#000',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            {(() => {
+                              const enabled =
+                                timelineCtxMenu.kind === 'clip'
+                                  ? (timeline.clips.find((c) => String((c as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled !== false
+                                  : timelineCtxMenu.kind === 'videoOverlay'
+                                    ? Boolean(
+                                        (videoOverlays.find((o: any) => String((o as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled
+                                      )
+                                    : (narration.find((n: any) => String((n as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled !== false
+                              return (
+                                <>
+                                  <span style={{ color: '#bbb', fontWeight: 900 }}>Audio: </span>
+                                  <span style={{ color: enabled ? '#30d158' : '#ff453a', fontWeight: 900 }}>{enabled ? 'On' : 'Off'}</span>
+                                </>
+                              )
+                            })()}
+                          </button>
+                        ) : null}
                         {timelineCtxMenu.kind === 'screenTitle' ? (
                           <button
                             type="button"

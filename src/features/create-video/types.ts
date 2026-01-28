@@ -8,6 +8,8 @@ export type CreateVideoClipV1 = {
   sourceStartSeconds: number
   sourceEndSeconds: number
   audioEnabled?: boolean
+  // Optional per-clip loudness adjustment (MVP: 0/+3/+6/+9).
+  boostDb?: number
   // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
   // Kept temporarily for backward compatibility with existing projects.
   freezeStartSeconds?: number
@@ -38,10 +40,12 @@ export type CreateVideoVideoOverlayV1 = {
     | 'middle_left'
     | 'middle_center'
     | 'middle_right'
-    | 'bottom_left'
-    | 'bottom_center'
-    | 'bottom_right'
+  | 'bottom_left'
+  | 'bottom_center'
+  | 'bottom_right'
   audioEnabled?: boolean
+  // Optional per-overlay loudness adjustment (MVP: 0/+3/+6/+9).
+  boostDb?: number
 }
 
 export type CreateVideoLogoConfigSnapshotV1 = {
@@ -151,12 +155,19 @@ export type CreateVideoAudioTrackV1 = {
 export type CreateVideoAudioSegmentV1 = {
   id: string
   uploadId: number
-  audioConfigId: number
+  // Deprecated legacy audio config reference; Create Video MVP uses per-segment musicMode/musicLevel instead.
+  audioConfigId?: number
   startSeconds: number
   endSeconds: number
   // Offset into the audio file for where this segment begins (in seconds).
   // This enables split/trim to play the continuation instead of restarting at 0.
   sourceStartSeconds?: number
+  // If false, this segment contributes no audio (explicit mute).
+  audioEnabled?: boolean
+  // Object-centric music config (required for export when any music segments exist).
+  musicMode?: 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
+  musicLevel?: 'quiet' | 'medium' | 'loud'
+  duckingIntensity?: 'min' | 'medium' | 'max'
 }
 
 export type CreateVideoNarrationSegmentV1 = {
@@ -165,7 +176,12 @@ export type CreateVideoNarrationSegmentV1 = {
   startSeconds: number
   endSeconds: number
   sourceStartSeconds?: number
+  // Legacy continuous gain slider (may still exist in older projects).
   gainDb?: number
+  // If false, narration is explicitly muted.
+  audioEnabled?: boolean
+  // Optional per-segment loudness adjustment (MVP: 0/+3/+6/+9). If present, overrides gainDb for export.
+  boostDb?: number
 }
 
 export type CreateVideoTimelineV1 = {

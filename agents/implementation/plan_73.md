@@ -15,11 +15,21 @@ This plan implements `agents/features/feature_12.md` (object-centric audio MVP):
 - UI + persistence for:
   - Video / VideoOverlay / Narration: `audioEnabled` toggle (quick toggle in context menu)
   - Video / VideoOverlay / Narration: `boostDb` (0/+3/+6/+9) in Properties modal
-  - Music: per-segment “Audio Config” UI and persistence (mode + knobs)
+- Music: per-segment “Audio Config” UI and persistence (mode + knobs)
 - Enforce: **cannot export** when music segments exist but are not configured
 - Render pipeline changes in `create_video_export_v1` to apply:
   - voice `boostDb`
   - music mode + level + ducking intensity + opener cutoff (speech detection from any ON voice source)
+
+### Existing Audio Configs (Important constraint for implementation/testing)
+We already have legacy/admin `audioConfigs` used elsewhere (e.g. older Produce flow, system audio presets, etc.). For Create Video MVP audio:
+- We **do not remove** audioConfigs from the codebase/UI globally.
+- We **bypass** audioConfigs for Create Video music segments so they do not confound behavior while testing.
+- Concretely:
+  - Create Video music segments should use the new per-segment fields (`musicMode`, `musicLevel`, `duckingIntensity`) and **ignore `audioConfigId`** if present.
+  - If the existing UI currently sets `audioConfigId` on create-video music segments, we should leave it in place for now but treat it as deprecated/ignored in Create Video export.
+  - If a segment has both `audioConfigId` and `musicMode`, `musicMode` wins.
+  - If a segment has neither, export is blocked (music config required).
 
 ### Out of scope (defer)
 - Automatic per-clip loudness matching (“auto”)
@@ -173,4 +183,3 @@ Keep existing final normalization + limiter on the combined output (as today).
 - Updated validation + types for Create Video timeline JSON.
 - Create Video UI: quick audio toggle + boost + music config modal.
 - Export job: correct mixing rules + music modes + hard export gating when music config missing.
-
