@@ -20,7 +20,27 @@ type Clip = {
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
-type Graphic = { id: string; uploadId: number; startSeconds: number; endSeconds: number }
+type Graphic = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  // Optional placement fields. When absent, the graphic is treated as legacy full-frame cover.
+  fitMode?: 'cover_full' | 'contain_transparent'
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  insetXPx?: number
+  insetYPx?: number
+}
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
 type VideoOverlay = {
   id: string
@@ -714,10 +734,45 @@ async function renderBlackBaseMp4(opts: {
   )
 }
 
-async function overlayFullFrameGraphics(opts: {
+function overlayXYForPositionPx(position: string, insetXPx: number, insetYPx: number): { x: string; y: string } {
+  const insetX = String(Math.max(0, Math.round(Number(insetXPx) || 0)))
+  const insetY = String(Math.max(0, Math.round(Number(insetYPx) || 0)))
+  switch (String(position || 'middle_center')) {
+    case 'top_left':
+      return { x: insetX, y: insetY }
+    case 'top_center':
+      return { x: '(main_w-overlay_w)/2', y: insetY }
+    case 'top_right':
+      return { x: `main_w-overlay_w-${insetX}`, y: insetY }
+    case 'middle_left':
+      return { x: insetX, y: '(main_h-overlay_h)/2' }
+    case 'middle_center':
+      return { x: '(main_w-overlay_w)/2', y: '(main_h-overlay_h)/2' }
+    case 'middle_right':
+      return { x: `main_w-overlay_w-${insetX}`, y: '(main_h-overlay_h)/2' }
+    case 'bottom_left':
+      return { x: insetX, y: `main_h-overlay_h-${insetY}` }
+    case 'bottom_center':
+      return { x: '(main_w-overlay_w)/2', y: `main_h-overlay_h-${insetY}` }
+    case 'bottom_right':
+    default:
+      return { x: `main_w-overlay_w-${insetX}`, y: `main_h-overlay_h-${insetY}` }
+  }
+}
+
+async function overlayGraphics(opts: {
   baseMp4Path: string
   outPath: string
-  graphics: Array<{ startSeconds: number; endSeconds: number; imagePath: string }>
+  graphics: Array<{
+    startSeconds: number
+    endSeconds: number
+    imagePath: string
+    fitMode?: 'cover_full' | 'contain_transparent'
+    sizePctWidth?: number
+    position?: string
+    insetXPx?: number
+    insetYPx?: number
+  }>
   targetW: number
   targetH: number
   durationSeconds: number
@@ -733,10 +788,22 @@ async function overlayFullFrameGraphics(opts: {
 
   const filters: string[] = []
   for (let i = 0; i < opts.graphics.length; i++) {
+    const g = opts.graphics[i]
     const inIdx = i + 1
-    filters.push(
-      `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba[img${i}]`
-    )
+    const fitMode = g.fitMode || 'cover_full'
+    if (fitMode === 'contain_transparent') {
+      const sizePctWidth = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
+      const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
+      const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
+      const desiredW = Math.round((opts.targetW * sizePctWidth) / 100)
+      const wExpr = `min(${desiredW},${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih)`
+      filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba[img${i}]`)
+    } else {
+      // Legacy full-frame cover.
+      filters.push(
+        `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba[img${i}]`
+      )
+    }
   }
 
   let current = '[0:v]'
@@ -745,7 +812,16 @@ async function overlayFullFrameGraphics(opts: {
     const s = roundToTenth(Number(g.startSeconds))
     const e = roundToTenth(Number(g.endSeconds))
     const next = `[v${i + 1}]`
-    filters.push(`${current}[img${i}]overlay=0:0:enable='between(t,${s},${e})'${next}`)
+    const fitMode = g.fitMode || 'cover_full'
+    if (fitMode === 'contain_transparent') {
+      const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
+      const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
+      const pos = String(g.position || 'middle_center')
+      const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
+      filters.push(`${current}[img${i}]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
+    } else {
+      filters.push(`${current}[img${i}]overlay=0:0:enable='between(t,${s},${e})'${next}`)
+    }
     current = next
   }
 
@@ -1558,7 +1634,16 @@ export async function runCreateVideoExportV1Job(
     if (graphics.length) {
       const imageDownloads = new Map<number, string>()
       const sorted = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
-      const overlays: Array<{ startSeconds: number; endSeconds: number; imagePath: string }> = []
+      const overlays: Array<{
+        startSeconds: number
+        endSeconds: number
+        imagePath: string
+        fitMode?: 'cover_full' | 'contain_transparent'
+        sizePctWidth?: number
+        position?: string
+        insetXPx?: number
+        insetYPx?: number
+      }> = []
       for (let i = 0; i < sorted.length; i++) {
         const g = sorted[i]
         const uploadId = Number(g.uploadId)
@@ -1572,10 +1657,19 @@ export async function runCreateVideoExportV1Job(
           await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
           imageDownloads.set(uploadId, inPath)
         }
-        overlays.push({ startSeconds: Number(g.startSeconds), endSeconds: Number(g.endSeconds), imagePath: inPath })
+        overlays.push({
+          startSeconds: Number(g.startSeconds),
+          endSeconds: Number(g.endSeconds),
+          imagePath: inPath,
+          fitMode: (g as any).fitMode != null ? String((g as any).fitMode) as any : undefined,
+          sizePctWidth: (g as any).sizePctWidth != null ? Number((g as any).sizePctWidth) : undefined,
+          position: (g as any).position != null ? String((g as any).position) : undefined,
+          insetXPx: (g as any).insetXPx != null ? Number((g as any).insetXPx) : undefined,
+          insetYPx: (g as any).insetYPx != null ? Number((g as any).insetYPx) : undefined,
+        })
       }
       const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
-      await overlayFullFrameGraphics({
+      await overlayGraphics({
         baseMp4Path: baseOut,
         outPath: overlayOut,
         graphics: overlays,

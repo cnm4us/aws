@@ -517,7 +517,25 @@ export default function CreateVideo() {
   const [lowerThirdConfigs, setLowerThirdConfigs] = useState<LowerThirdConfigItem[]>([])
   const [lowerThirdConfigsLoaded, setLowerThirdConfigsLoaded] = useState(false)
   const [lowerThirdConfigsError, setLowerThirdConfigsError] = useState<string | null>(null)
-  const [graphicEditor, setGraphicEditor] = useState<{ id: string; start: number; end: number } | null>(null)
+  const [graphicEditor, setGraphicEditor] = useState<{
+    id: string
+    start: number
+    end: number
+    fitMode: 'cover_full' | 'contain_transparent'
+    sizePctWidth: number
+    position:
+      | 'top_left'
+      | 'top_center'
+      | 'top_right'
+      | 'middle_left'
+      | 'middle_center'
+      | 'middle_right'
+      | 'bottom_left'
+      | 'bottom_center'
+      | 'bottom_right'
+    insetXPx: number
+    insetYPx: number
+  } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [stillEditorError, setStillEditorError] = useState<string | null>(null)
@@ -613,6 +631,7 @@ export default function CreateVideo() {
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
   const previewToolbarRef = useRef<HTMLDivElement | null>(null)
   const previewMiniTimelineRef = useRef<HTMLCanvasElement | null>(null)
+  const [previewBoxSize, setPreviewBoxSize] = useState<{ w: number; h: number }>({ w: 1080, h: 1920 })
   const [showPreviewToolbar, setShowPreviewToolbar] = useState<boolean>(() => {
     try {
       const raw = window.localStorage.getItem('cv_preview_toolbar_v1')
@@ -952,6 +971,29 @@ export default function CreateVideo() {
   >(null)
 
   // (hasPlayablePreview + related effects are defined later, after totalSeconds is initialized)
+
+  useEffect(() => {
+    const el = previewWrapRef.current
+    if (!el) return
+    let ro: ResizeObserver | null = null
+    try {
+      ro = new ResizeObserver(() => {
+        try {
+          const r = el.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) setPreviewBoxSize({ w: r.width, h: r.height })
+        } catch {}
+      })
+      ro.observe(el)
+    } catch {}
+    // Initialize once.
+    try {
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.height > 0) setPreviewBoxSize({ w: r.width, h: r.height })
+    } catch {}
+    return () => {
+      try { ro?.disconnect?.() } catch {}
+    }
+  }, [])
 
   useEffect(() => {
     if (!previewToolbarDragging) return
@@ -2244,6 +2286,79 @@ export default function CreateVideo() {
     if (!activeGraphicUploadId) return null
     return graphicFileUrlByUploadId[activeGraphicUploadId] || `/api/uploads/${encodeURIComponent(String(activeGraphicUploadId))}/file`
   }, [activeGraphicUploadId, graphicFileUrlByUploadId])
+
+  const activeGraphicPreviewStyle = useMemo<React.CSSProperties | null>(() => {
+    const g: any = activeGraphicAtPlayhead as any
+    if (!g) return null
+    const fitMode = g.fitMode != null ? String(g.fitMode) : ''
+    // Legacy behavior: full-frame cover when placement fields are absent.
+    if (!fitMode) {
+      return { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }
+    }
+    if (fitMode !== 'contain_transparent') {
+      return { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }
+    }
+
+    const sizePct = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
+    const insetXPx = clamp(Number(g.insetXPx ?? 24), 0, 300)
+    const insetYPx = clamp(Number(g.insetYPx ?? 24), 0, 300)
+    const scale = previewBoxSize.w > 0 ? previewBoxSize.w / 1080 : 1
+    const insetX = Math.round(insetXPx * scale)
+    const insetY = Math.round(insetYPx * scale)
+    const desiredW = Math.round((previewBoxSize.w * sizePct) / 100)
+    const maxW = Math.max(0, Math.round(previewBoxSize.w - insetX * 2))
+    const maxH = Math.max(0, Math.round(previewBoxSize.h - insetY * 2))
+    const widthPx = Math.max(1, Math.min(desiredW, maxW))
+
+    const posRaw = String(g.position || 'middle_center')
+    const pos = normalizeLegacyPosition(posRaw)
+    const style: any = {
+      position: 'absolute',
+      width: widthPx,
+      height: 'auto',
+      maxWidth: maxW,
+      maxHeight: maxH,
+      objectFit: 'contain',
+      pointerEvents: 'none',
+      zIndex: 20,
+    }
+    const insetXStr = `${insetX}px`
+    const insetYStr = `${insetY}px`
+    if (pos === 'top_left') {
+      style.left = insetXStr
+      style.top = insetYStr
+    } else if (pos === 'top_center') {
+      style.left = '50%'
+      style.top = insetYStr
+      style.transform = 'translateX(-50%)'
+    } else if (pos === 'top_right') {
+      style.right = insetXStr
+      style.top = insetYStr
+    } else if (pos === 'middle_left') {
+      style.left = insetXStr
+      style.top = '50%'
+      style.transform = 'translateY(-50%)'
+    } else if (pos === 'middle_center') {
+      style.left = '50%'
+      style.top = '50%'
+      style.transform = 'translate(-50%, -50%)'
+    } else if (pos === 'middle_right') {
+      style.right = insetXStr
+      style.top = '50%'
+      style.transform = 'translateY(-50%)'
+    } else if (pos === 'bottom_left') {
+      style.left = insetXStr
+      style.bottom = insetYStr
+    } else if (pos === 'bottom_center') {
+      style.left = '50%'
+      style.bottom = insetYStr
+      style.transform = 'translateX(-50%)'
+    } else {
+      style.right = insetXStr
+      style.bottom = insetYStr
+    }
+    return style as React.CSSProperties
+  }, [activeGraphicAtPlayhead, previewBoxSize.h, previewBoxSize.w])
 
   const activeStillUrl = useMemo(() => {
     if (!activeStillUploadId) return null
@@ -5674,7 +5789,17 @@ export default function CreateVideo() {
         }
       }
 
-      const newGraphic: Graphic = { id, uploadId: Number(upload.id), startSeconds: start, endSeconds: end }
+      const newGraphic: Graphic = {
+        id,
+        uploadId: Number(upload.id),
+        startSeconds: start,
+        endSeconds: end,
+        fitMode: 'contain_transparent',
+        sizePctWidth: 70,
+        position: 'middle_center',
+        insetXPx: 24,
+        insetYPx: 24,
+      }
       snapshotUndo()
       setTimeline((prev) => {
         const next = [...(Array.isArray((prev as any).graphics) ? (prev as any).graphics : []), newGraphic]
@@ -10067,7 +10192,42 @@ export default function CreateVideo() {
       const prevGraphics: Graphic[] = Array.isArray((prev as any).graphics) ? ((prev as any).graphics as any) : []
       const idx = prevGraphics.findIndex((g) => String((g as any).id) === String(graphicEditor.id))
       if (idx < 0) return prev
-      const updated: Graphic = { ...prevGraphics[idx], startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
+      const current = prevGraphics[idx] as any
+      const currentHasPlacement =
+        current?.fitMode != null || current?.sizePctWidth != null || current?.position != null || current?.insetXPx != null || current?.insetYPx != null
+
+      const nextBase: any = { ...current, startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
+      const wantsPlacement = graphicEditor.fitMode === 'contain_transparent'
+      const placement = {
+        fitMode: graphicEditor.fitMode,
+        sizePctWidth: Math.round(clamp(Number(graphicEditor.sizePctWidth), 10, 100)),
+        position: graphicEditor.position,
+        insetXPx: Math.round(clamp(Number(graphicEditor.insetXPx), 0, 300)),
+        insetYPx: Math.round(clamp(Number(graphicEditor.insetYPx), 0, 300)),
+      }
+
+      // Backward compatibility:
+      // - If the graphic has never had placement fields and the user keeps it as "Full Frame" (cover),
+      //   avoid introducing new placement fields implicitly when they only adjust timing.
+      let updated: Graphic
+      if (!currentHasPlacement && !wantsPlacement) {
+        delete (nextBase as any).fitMode
+        delete (nextBase as any).sizePctWidth
+        delete (nextBase as any).position
+        delete (nextBase as any).insetXPx
+        delete (nextBase as any).insetYPx
+        updated = nextBase as Graphic
+      } else {
+        if (wantsPlacement) {
+          updated = { ...(nextBase as any), ...placement } as Graphic
+        } else {
+          delete (nextBase as any).sizePctWidth
+          delete (nextBase as any).position
+          delete (nextBase as any).insetXPx
+          delete (nextBase as any).insetYPx
+          updated = { ...(nextBase as any), fitMode: 'cover_full' } as Graphic
+        }
+      }
       const nextGraphics = prevGraphics.slice()
       nextGraphics[idx] = updated
       nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
@@ -11993,13 +12153,9 @@ export default function CreateVideo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 10 }}
               />
             ) : null}
-            {activeGraphicUrl ? (
-              <img
-                src={activeGraphicUrl}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }}
-              />
-            ) : null}
+	            {activeGraphicUrl && activeGraphicPreviewStyle ? (
+	              <img src={activeGraphicUrl} alt="" style={activeGraphicPreviewStyle} />
+	            ) : null}
 	            <video
 	              ref={overlayVideoRef}
 	              playsInline
@@ -15084,6 +15240,199 @@ export default function CreateVideo() {
 	                        </div>
 	                      </div>
 	                    </div>
+
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
+	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	                          <button
+	                            type="button"
+	                            onClick={() =>
+	                              setGraphicEditor((p) =>
+	                                p
+	                                  ? {
+	                                      ...p,
+	                                      fitMode: 'cover_full',
+	                                    }
+	                                  : p
+	                              )
+	                            }
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Full Frame
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() =>
+	                              setGraphicEditor((p) =>
+	                                p
+	                                  ? {
+	                                      ...p,
+	                                      fitMode: 'contain_transparent',
+	                                    }
+	                                  : p
+	                              )
+	                            }
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(10,132,255,0.45)',
+	                              background:
+	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(10,132,255,0.16)' : 'rgba(10,132,255,0.08)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Positioned
+	                          </button>
+	                        </div>
+	                      </div>
+
+	                      {graphicEditor.fitMode === 'contain_transparent' ? (
+	                        <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
+	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+	                            <div>
+	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
+	                              <select
+	                                value={String(graphicEditor.sizePctWidth)}
+	                                onChange={(e) => {
+	                                  const v = Math.round(Number(e.target.value))
+	                                  setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
+	                                }}
+	                                style={{
+	                                  width: '100%',
+	                                  padding: '10px 12px',
+	                                  borderRadius: 12,
+	                                  border: '1px solid rgba(255,255,255,0.16)',
+	                                  background: '#0c0c0c',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                }}
+	                              >
+	                                {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+	                                  <option key={n} value={String(n)}>
+	                                    {n}%
+	                                  </option>
+	                                ))}
+	                              </select>
+	                            </div>
+	                            <div>
+	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
+	                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+	                                <input
+	                                  type="number"
+	                                  inputMode="numeric"
+	                                  value={String(graphicEditor.insetXPx)}
+	                                  onChange={(e) => {
+	                                    const v = Math.round(Number(e.target.value))
+	                                    setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
+	                                  }}
+	                                  style={{
+	                                    width: '100%',
+	                                    padding: '10px 12px',
+	                                    borderRadius: 12,
+	                                    border: '1px solid rgba(255,255,255,0.16)',
+	                                    background: '#0c0c0c',
+	                                    color: '#fff',
+	                                    fontWeight: 900,
+	                                  }}
+	                                  aria-label="Horizontal inset px"
+	                                  title="Horizontal inset (px)"
+	                                />
+	                                <input
+	                                  type="number"
+	                                  inputMode="numeric"
+	                                  value={String(graphicEditor.insetYPx)}
+	                                  onChange={(e) => {
+	                                    const v = Math.round(Number(e.target.value))
+	                                    setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
+	                                  }}
+	                                  style={{
+	                                    width: '100%',
+	                                    padding: '10px 12px',
+	                                    borderRadius: 12,
+	                                    border: '1px solid rgba(255,255,255,0.16)',
+	                                    background: '#0c0c0c',
+	                                    color: '#fff',
+	                                    fontWeight: 900,
+	                                  }}
+	                                  aria-label="Vertical inset px"
+	                                  title="Vertical inset (px)"
+	                                />
+	                              </div>
+	                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Left/Right · Top/Bottom</div>
+	                            </div>
+	                          </div>
+
+	                          <div>
+	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Position</div>
+	                            {(() => {
+	                              const cells: Array<{ key: any; label: string }> = [
+	                                { key: 'top_left', label: '↖' },
+	                                { key: 'top_center', label: '↑' },
+	                                { key: 'top_right', label: '↗' },
+	                                { key: 'middle_left', label: '←' },
+	                                { key: 'middle_center', label: '•' },
+	                                { key: 'middle_right', label: '→' },
+	                                { key: 'bottom_left', label: '↙' },
+	                                { key: 'bottom_center', label: '↓' },
+	                                { key: 'bottom_right', label: '↘' },
+	                              ]
+	                              return (
+	                                <div
+	                                  style={{
+	                                    display: 'grid',
+	                                    gridTemplateColumns: 'repeat(3, 1fr)',
+	                                    gap: 8,
+	                                    maxWidth: 240,
+	                                  }}
+	                                >
+	                                  {cells.map((c) => {
+	                                    const selected = String(graphicEditor.position) === String(c.key)
+	                                    return (
+	                                      <button
+	                                        key={String(c.key)}
+	                                        type="button"
+	                                        onClick={() => setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))}
+	                                        style={{
+	                                          height: 44,
+	                                          borderRadius: 12,
+	                                          border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                                          background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+	                                          color: '#fff',
+	                                          fontWeight: 900,
+	                                          cursor: 'pointer',
+	                                          display: 'flex',
+	                                          alignItems: 'center',
+	                                          justifyContent: 'center',
+	                                          fontSize: 18,
+	                                        }}
+	                                        aria-label={`Position ${String(c.key)}`}
+	                                      >
+	                                        {c.label}
+	                                      </button>
+	                                    )
+	                                  })}
+	                                </div>
+	                              )
+	                            })()}
+	                          </div>
+	                        </div>
+	                      ) : (
+	                        <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
+	                          Full-frame graphics fill the canvas and may crop to cover.
+	                        </div>
+	                      )}
+	                    </div>
 	                  </>
 	                )
 	              })()}
@@ -15558,23 +15907,58 @@ export default function CreateVideo() {
 			                <button
 			                  type="button"
 			                  onClick={() => {
-			                    if (timelineCtxMenu.kind === 'graphic') {
-			                      const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
-			                      if (g) {
-			                        const s = roundToTenth(Number((g as any).startSeconds || 0))
-			                        const e2 = roundToTenth(Number((g as any).endSeconds || 0))
-			                        setSelectedGraphicId(String((g as any).id))
-			                        setSelectedClipId(null)
-			                        setSelectedLogoId(null)
-			                        setSelectedLowerThirdId(null)
-			                        setSelectedScreenTitleId(null)
-			                        setSelectedNarrationId(null)
-			                        setSelectedStillId(null)
-			                        setSelectedAudioId(null)
-			                        setGraphicEditor({ id: String((g as any).id), start: s, end: e2 })
-			                        setGraphicEditorError(null)
-			                      }
-			                    } else if (timelineCtxMenu.kind === 'logo') {
+				                    if (timelineCtxMenu.kind === 'graphic') {
+				                      const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
+				                      if (g) {
+				                        const s = roundToTenth(Number((g as any).startSeconds || 0))
+				                        const e2 = roundToTenth(Number((g as any).endSeconds || 0))
+				                        const fitModeRaw = (g as any).fitMode != null ? String((g as any).fitMode) : ''
+				                        const fitMode: 'cover_full' | 'contain_transparent' =
+				                          fitModeRaw === 'contain_transparent' ? 'contain_transparent' : 'cover_full'
+				                        const sizePctWidthRaw = Number((g as any).sizePctWidth)
+				                        const sizePctWidth = Number.isFinite(sizePctWidthRaw)
+				                          ? Math.round(clamp(sizePctWidthRaw, 10, 100))
+				                          : fitMode === 'cover_full'
+				                            ? 100
+				                            : 70
+				                        const posRaw = String((g as any).position || 'middle_center')
+				                        const allowedPos = new Set([
+				                          'top_left',
+				                          'top_center',
+				                          'top_right',
+				                          'middle_left',
+				                          'middle_center',
+				                          'middle_right',
+				                          'bottom_left',
+				                          'bottom_center',
+				                          'bottom_right',
+				                        ])
+				                        const position = (allowedPos.has(posRaw) ? posRaw : 'middle_center') as any
+				                        const insetXPxRaw = Number((g as any).insetXPx)
+				                        const insetYPxRaw = Number((g as any).insetYPx)
+				                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+				                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+				                        setSelectedGraphicId(String((g as any).id))
+				                        setSelectedClipId(null)
+				                        setSelectedLogoId(null)
+				                        setSelectedLowerThirdId(null)
+				                        setSelectedScreenTitleId(null)
+				                        setSelectedNarrationId(null)
+				                        setSelectedStillId(null)
+				                        setSelectedAudioId(null)
+				                        setGraphicEditor({
+				                          id: String((g as any).id),
+				                          start: s,
+				                          end: e2,
+				                          fitMode,
+				                          sizePctWidth,
+				                          position,
+				                          insetXPx,
+				                          insetYPx,
+				                        })
+				                        setGraphicEditorError(null)
+				                      }
+				                    } else if (timelineCtxMenu.kind === 'logo') {
 			                      const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
 			                      if (l) {
 			                        const s = roundToTenth(Number((l as any).startSeconds || 0))

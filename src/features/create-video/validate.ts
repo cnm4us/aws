@@ -20,6 +20,11 @@ function roundToTenth(n: number): number {
   return Math.round(n * 10) / 10
 }
 
+function clamp(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min
+  return Math.max(min, Math.min(max, n))
+}
+
 function normalizeSeconds(n: any): number {
   const v = Number(n)
   if (!Number.isFinite(v)) throw new ValidationError('invalid_seconds')
@@ -699,6 +704,17 @@ export async function validateAndNormalizeCreateVideoTimeline(
     : graphicsRaw0
   if (graphicsRaw.length > MAX_GRAPHICS) throw new DomainError('too_many_graphics', 'too_many_graphics', 400)
   const graphics: any[] = []
+  const allowedGraphicPositions = new Set([
+    'top_left',
+    'top_center',
+    'top_right',
+    'middle_left',
+    'middle_center',
+    'middle_right',
+    'bottom_left',
+    'bottom_center',
+    'bottom_right',
+  ])
   for (const g of graphicsRaw) {
     if (!g || typeof g !== 'object') continue
     const id = normalizeId((g as any).id)
@@ -712,7 +728,37 @@ export async function validateAndNormalizeCreateVideoTimeline(
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
 
     const meta = await loadOverlayImageMetaForUser(uploadId, ctx.userId)
-    graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds })
+
+    // New placement fields (optional). For backward compatibility, legacy graphics that do not
+    // include any placement fields continue to render full-frame (cover) as before.
+    const hasPlacementFields =
+      (g as any).fitMode != null ||
+      (g as any).sizePctWidth != null ||
+      (g as any).position != null ||
+      (g as any).insetXPx != null ||
+      (g as any).insetYPx != null
+
+    if (!hasPlacementFields) {
+      graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds })
+      continue
+    }
+
+    const fitModeRaw = String((g as any).fitMode || 'contain_transparent').trim().toLowerCase()
+    const fitMode = fitModeRaw === 'cover_full' ? 'cover_full' : 'contain_transparent'
+
+    const sizePctWidthRaw = Number((g as any).sizePctWidth)
+    const sizePctWidthNum = Number.isFinite(sizePctWidthRaw) ? sizePctWidthRaw : (fitMode === 'cover_full' ? 100 : 70)
+    const sizePctWidth = Math.round(clamp(sizePctWidthNum, 10, 100))
+
+    const positionRaw = String((g as any).position || 'middle_center').trim().toLowerCase()
+    const position = allowedGraphicPositions.has(positionRaw) ? positionRaw : 'middle_center'
+
+    const insetXPxRaw = Number((g as any).insetXPx)
+    const insetYPxRaw = Number((g as any).insetYPx)
+    const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+    const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+
+    graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds, fitMode, sizePctWidth, position, insetXPx, insetYPx })
   }
 
   // Sort by time for overlap validation and deterministic export.

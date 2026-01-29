@@ -22,6 +22,21 @@ export type Graphic = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+  // Optional placement fields. When absent, graphics render full-frame (legacy).
+  fitMode?: 'cover_full' | 'contain_transparent'
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  insetXPx?: number
+  insetYPx?: number
 }
 
 export type VideoOverlay = {
@@ -217,6 +232,11 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(g.uploadId),
           startSeconds: Number(g.startSeconds),
           endSeconds: Number(g.endSeconds),
+          fitMode: g.fitMode != null ? (String(g.fitMode) as any) : undefined,
+          sizePctWidth: g.sizePctWidth != null ? Number(g.sizePctWidth) : undefined,
+          position: g.position != null ? (String(g.position) as any) : undefined,
+          insetXPx: g.insetXPx != null ? Number(g.insetXPx) : undefined,
+          insetYPx: g.insetYPx != null ? Number(g.insetYPx) : undefined,
         }))
       : [],
     guidelines: Array.isArray((timeline as any).guidelines)
