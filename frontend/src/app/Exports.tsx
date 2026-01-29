@@ -81,6 +81,7 @@ export default function Exports() {
   const [exportsList, setExportsList] = useState<UploadListItem[]>([])
   const [projects, setProjects] = useState<ProjectListItem[]>([])
   const [sendingId, setSendingId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewUploadId, setPreviewUploadId] = useState<number | null>(null)
   const [previewTitle, setPreviewTitle] = useState<string>('')
@@ -179,13 +180,14 @@ export default function Exports() {
         <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Send to HLS when ready.</p>
 
         <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
-          {exportsList.map((u) => {
-            const projectId = u.create_video_project_id != null ? Number(u.create_video_project_id) : null
-            const project = projectId != null ? projectsById.get(projectId) : undefined
-            const title = u.modified_filename && String(u.modified_filename).trim() ? String(u.modified_filename) : project?.name ? String(project.name) : `Export #${u.id}`
-            return (
-              <div
-                key={u.id}
+	          {exportsList.map((u) => {
+	            const projectId = u.create_video_project_id != null ? Number(u.create_video_project_id) : null
+	            const project = projectId != null ? projectsById.get(projectId) : undefined
+	            const title = u.modified_filename && String(u.modified_filename).trim() ? String(u.modified_filename) : project?.name ? String(project.name) : `Export #${u.id}`
+	            const timelineLabel = projectId ? `Timeline #${projectId}` : ''
+	            return (
+	              <div
+	                key={u.id}
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
                   background: 'rgba(255,255,255,0.04)',
@@ -240,18 +242,56 @@ export default function Exports() {
                   </button>
                 </div>
 
-                <div style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
-                  <div style={{ color: '#9a9a9a', fontSize: 13 }}>
-                    {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
-                  </div>
+	                <div style={{ padding: 12 }}>
+	                  <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
+	                  <div style={{ color: '#9a9a9a', fontSize: 13 }}>
+	                    {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
+	                    {timelineLabel ? ` · ${timelineLabel}` : ''}
+	                  </div>
 
-                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <div style={{ color: '#9a9a9a', fontSize: 13 }}>{projectId ? `Timeline #${projectId}` : ''}</div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        disabled={!projectId}
+	                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+	                    <button
+	                      type="button"
+	                      disabled={deletingId === u.id}
+	                      onClick={async () => {
+	                        if (!me?.userId) return
+	                        if (!window.confirm('Delete this export? This cannot be undone.')) return
+	                        setDeletingId(u.id)
+	                        try {
+	                          const headers: Record<string, string> = {}
+	                          const csrf = getCsrfToken()
+	                          if (csrf) headers['x-csrf-token'] = csrf
+	                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(u.id))}`, {
+	                            method: 'DELETE',
+	                            credentials: 'same-origin',
+	                            headers,
+	                          })
+	                          const json: any = await res.json().catch(() => null)
+	                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
+	                          setExportsList((prev) => prev.filter((x) => Number(x.id) !== Number(u.id)))
+	                        } catch (e: any) {
+	                          window.alert(e?.message || 'Failed to delete export')
+	                        } finally {
+	                          setDeletingId(null)
+	                        }
+	                      }}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: deletingId === u.id ? 'rgba(128,0,32,0.55)' : '#800020',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: deletingId === u.id ? 'default' : 'pointer',
+	                        opacity: deletingId === u.id ? 0.85 : 1,
+	                      }}
+	                    >
+	                      Delete
+	                    </button>
+	                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	                      <button
+	                        type="button"
+	                        disabled={!projectId}
                         onClick={() => {
                           if (!projectId) return
                           window.location.href = `/create-video?project=${encodeURIComponent(String(projectId))}`
@@ -269,9 +309,9 @@ export default function Exports() {
                       >
                         Open Timeline
                       </button>
-                      <button
-                        type="button"
-                        disabled={sendingId === u.id}
+	                      <button
+	                        type="button"
+	                        disabled={sendingId === u.id}
                         onClick={async () => {
                           if (!me?.userId) return
                           setSendingId(u.id)
@@ -305,15 +345,15 @@ export default function Exports() {
                           cursor: 'pointer',
                           opacity: sendingId === u.id ? 0.7 : 1,
                         }}
-                      >
-                        Send to HLS
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+	                      >
+	                        Send to HLS
+	                      </button>
+	                    </div>
+	                  </div>
+	                </div>
+	              </div>
+	            )
+	          })}
           {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
         </div>
       </div>
