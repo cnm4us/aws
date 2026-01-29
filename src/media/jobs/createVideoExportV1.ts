@@ -783,8 +783,10 @@ async function overlayGraphics(opts: {
 
   const args: string[] = ['-i', opts.baseMp4Path]
   for (const g of opts.graphics) {
-    // Force image demuxer so we can loop a single still reliably across formats.
-    args.push('-f', 'image2', '-loop', '1', '-t', String(baseDur), '-i', g.imagePath)
+    // Loop a *single* still image for the duration of the base video.
+    // Important: file names like "img_84_000.png" cause the image2 demuxer to treat them as a numbered sequence unless we force pattern_type=none.
+    // Also set an explicit framerate so the still produces frames consistently.
+    args.push('-loop', '1', '-framerate', '30', '-pattern_type', 'none', '-t', String(baseDur), '-i', g.imagePath)
   }
 
   const filters: string[] = []
@@ -797,7 +799,11 @@ async function overlayGraphics(opts: {
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
       const desiredW = Math.round((opts.targetW * sizePctWidth) / 100)
-      const wExpr = `min(${desiredW},${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih)`
+      // ffmpeg expressions only support min(a,b) (2 args), so nest to clamp to all constraints:
+      // - requested pct width
+      // - available width after X insets
+      // - available height after Y insets (converted to width by aspect)
+      const wExpr = `min(${desiredW},min(${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih))`
       filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba[img${i}]`)
     } else {
       // Legacy full-frame cover.
