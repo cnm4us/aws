@@ -591,6 +591,11 @@ export default function CreateVideo() {
   const [playing, setPlaying] = useState(false)
   const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
   const [overlayActiveUploadId, setOverlayActiveUploadId] = useState<number | null>(null)
+  // Tracks which upload ID is currently loaded into each <video> element's src, even if we temporarily
+  // hide it by setting activeUploadId=null (e.g. while showing a freeze-frame still overlay).
+  // This helps iOS Safari: if we can avoid an async src swap, we can seek + play within the user gesture.
+  const baseLoadedUploadIdRef = useRef<number | null>(null)
+  const overlayLoadedUploadIdRef = useRef<number | null>(null)
   const playbackClockRef = useRef<'base' | 'overlay' | 'synthetic'>('base')
   const playheadRef = useRef(0)
   const playingRef = useRef(false)
@@ -4475,10 +4480,31 @@ export default function CreateVideo() {
       const nextUploadId = Number(clip.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
 
+      // Fast-path: the correct upload is already loaded into the element's src (even if activeUploadId is null,
+      // e.g. while showing a freeze-frame still). Avoid async src swap so play stays within the user gesture on iOS.
+      if (baseLoadedUploadIdRef.current === nextUploadId) {
+        if (activeUploadId !== nextUploadId) setActiveUploadId(nextUploadId)
+        try { v.muted = desiredMuted } catch {}
+        try {
+          const w = Number(v.videoWidth || 0)
+          const h = Number(v.videoHeight || 0)
+          if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
+        } catch {}
+        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (opts?.autoPlay) {
+          void (async () => {
+            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+            if (!ok) setPlaying(false)
+          })()
+        }
+        return
+      }
+
       if (activeUploadId !== nextUploadId) {
         setActiveUploadId(nextUploadId)
         const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
         v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        baseLoadedUploadIdRef.current = nextUploadId
         v.load()
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
@@ -4503,6 +4529,7 @@ export default function CreateVideo() {
         }
         v.addEventListener('loadedmetadata', onMeta)
       } else {
+        baseLoadedUploadIdRef.current = nextUploadId
         try { v.muted = desiredMuted } catch {}
         try { v.currentTime = Math.max(0, sourceTime) } catch {}
         if (opts?.autoPlay) {
@@ -4524,6 +4551,7 @@ export default function CreateVideo() {
       if (!videoOverlays.length) {
         try { v.pause() } catch {}
         setOverlayActiveUploadId(null)
+        overlayLoadedUploadIdRef.current = null
         return
       }
       const idx = findClipIndexAtTime(tClamped, videoOverlays as any, videoOverlayStarts as any)
@@ -4544,14 +4572,40 @@ export default function CreateVideo() {
       const nextUploadId = Number(o.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
 
-	      if (overlayActiveUploadId !== nextUploadId) {
-	        setOverlayActiveUploadId(nextUploadId)
-	        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-	        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
-	        v.load()
-	        const onMeta = () => {
-	          v.removeEventListener('loadedmetadata', onMeta)
-	          try { v.muted = desiredMuted } catch {}
+      // Fast-path: the correct upload is already loaded into the overlay element's src.
+      if (overlayLoadedUploadIdRef.current === nextUploadId) {
+        if (overlayActiveUploadId !== nextUploadId) setOverlayActiveUploadId(nextUploadId)
+        try { v.muted = desiredMuted } catch {}
+        try {
+          const w = Number(v.videoWidth || 0)
+          const h = Number(v.videoHeight || 0)
+          if (w > 0 && h > 0) {
+            setDimsByUploadId((prev) =>
+              prev[nextUploadId] ? prev : { ...prev, [nextUploadId]: { width: Math.round(w), height: Math.round(h) } }
+            )
+          }
+        } catch {}
+        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (!opts?.autoPlay) {
+          try { v.pause() } catch {}
+        } else {
+          void (async () => {
+            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+            if (!ok) setPlaying(false)
+          })()
+        }
+        return
+      }
+
+      if (overlayActiveUploadId !== nextUploadId) {
+        setOverlayActiveUploadId(nextUploadId)
+        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
+        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        overlayLoadedUploadIdRef.current = nextUploadId
+        v.load()
+        const onMeta = () => {
+          v.removeEventListener('loadedmetadata', onMeta)
+          try { v.muted = desiredMuted } catch {}
 	          try {
 	            const w = Number(v.videoWidth || 0)
 	            const h = Number(v.videoHeight || 0)
@@ -4575,13 +4629,14 @@ export default function CreateVideo() {
 	            })()
 	          }
 	        }
-	        v.addEventListener('loadedmetadata', onMeta)
-	      } else {
-	        try { v.muted = desiredMuted } catch {}
-	        try { v.currentTime = Math.max(0, sourceTime) } catch {}
-	        if (!opts?.autoPlay) {
-	          try { v.pause() } catch {}
-	        }
+        v.addEventListener('loadedmetadata', onMeta)
+      } else {
+        overlayLoadedUploadIdRef.current = nextUploadId
+        try { v.muted = desiredMuted } catch {}
+        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (!opts?.autoPlay) {
+          try { v.pause() } catch {}
+        }
 	        if (opts?.autoPlay) {
 	          void (async () => {
 	            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
@@ -4705,6 +4760,7 @@ export default function CreateVideo() {
     playheadFromVideoRef.current = false
     playheadFromScrollRef.current = false
     primedFrameSrcRef.current = ''
+    baseLoadedUploadIdRef.current = null
     if (v) {
       try {
         v.removeAttribute('src')
