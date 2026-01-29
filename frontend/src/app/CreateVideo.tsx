@@ -14571,8 +14571,8 @@ export default function CreateVideo() {
 
 	                      {graphicEditor.fitMode === 'contain_transparent' ? (
 	                          <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
-	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'start' }}>
-	                            <div>
+	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
+	                            <div style={{ minWidth: 0 }}>
 	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
 	                              <select
 	                                value={String(graphicEditor.sizePctWidth)}
@@ -14597,9 +14597,9 @@ export default function CreateVideo() {
 	                                ))}
 	                              </select>
 	                            </div>
-	                            <div>
+	                            <div style={{ minWidth: 0 }}>
 	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
-	                              <div style={{ display: 'grid', gridTemplateColumns: '50px 50px', gap: 8, justifyContent: 'end' }}>
+	                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
 	                                <input
 	                                  type="number"
 	                                  inputMode="numeric"
