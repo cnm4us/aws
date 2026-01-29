@@ -2305,12 +2305,14 @@ export default function CreateVideo() {
     const insetYPxRaw = Number(g.insetYPx)
     const insetXPx = clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300)
     const insetYPx = clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300)
-    const scale = previewBoxSize.w > 0 ? previewBoxSize.w / 1080 : 1
+    const previewW = Number.isFinite(previewBoxSize.w) && previewBoxSize.w > 0 ? previewBoxSize.w : 1080
+    const previewH = Number.isFinite(previewBoxSize.h) && previewBoxSize.h > 0 ? previewBoxSize.h : 1920
+    const scale = previewW > 0 ? previewW / 1080 : 1
     const insetX = Math.round(insetXPx * scale)
     const insetY = Math.round(insetYPx * scale)
-    const desiredW = Math.round((previewBoxSize.w * sizePct) / 100)
-    const maxW = Math.max(0, Math.round(previewBoxSize.w - insetX * 2))
-    const maxH = Math.max(0, Math.round(previewBoxSize.h - insetY * 2))
+    const desiredW = Math.round((previewW * sizePct) / 100)
+    const maxW = Math.max(0, Math.round(previewW - insetX * 2))
+    const maxH = Math.max(0, Math.round(previewH - insetY * 2))
     const widthPxRaw = Math.min(desiredW, maxW)
     const widthPx = Number.isFinite(widthPxRaw) ? Math.max(1, widthPxRaw) : 1
 
@@ -2318,10 +2320,10 @@ export default function CreateVideo() {
     const pos = normalizeLegacyPosition(posRaw)
     const style: any = {
       position: 'absolute',
-      width: widthPx,
+      width: `${widthPx}px`,
       height: 'auto',
-      maxWidth: maxW,
-      maxHeight: maxH,
+      maxWidth: `${Number.isFinite(maxW) ? maxW : 0}px`,
+      maxHeight: `${Number.isFinite(maxH) ? maxH : 0}px`,
       objectFit: 'contain',
       pointerEvents: 'none',
       zIndex: 20,
@@ -12142,7 +12144,7 @@ export default function CreateVideo() {
         </div>
 
 	        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
-	          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative' }}>
+	          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative', overflow: 'hidden' }}>
 	            <video
 	              ref={videoRef}
 	              playsInline
