@@ -784,9 +784,9 @@ async function overlayGraphics(opts: {
   const args: string[] = ['-i', opts.baseMp4Path]
   for (const g of opts.graphics) {
     // Loop a *single* still image for the duration of the base video.
-    // Important: file names like "img_84_000.png" cause the image2 demuxer to treat them as a numbered sequence unless we force pattern_type=none.
     // Also set an explicit framerate so the still produces frames consistently.
-    args.push('-loop', '1', '-framerate', '30', '-pattern_type', 'none', '-t', String(baseDur), '-i', g.imagePath)
+    // Note: Some ffmpeg builds don't support image2's `-pattern_type` option, so we avoid numbered filenames instead.
+    args.push('-loop', '1', '-framerate', '30', '-t', String(baseDur), '-i', g.imagePath)
   }
 
   const filters: string[] = []
@@ -1660,7 +1660,8 @@ export async function runCreateVideoExportV1Job(
         const oid = row.user_id != null ? Number(row.user_id) : null
         if (!(oid === userId || oid == null)) throw new Error('forbidden')
         const ext = path.extname(String(row.s3_key || '')).toLowerCase() || '.img'
-        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_${String(i).padStart(3, '0')}${ext}`)
+        // Avoid filenames ending in digits (e.g. img_84_000.jpg), because the image2 demuxer can interpret them as a numbered sequence.
+        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_still${ext}`)
         if (!imageDownloads.has(uploadId)) {
           await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
           imageDownloads.set(uploadId, inPath)
