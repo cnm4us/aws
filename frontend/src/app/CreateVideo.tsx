@@ -5000,8 +5000,17 @@ export default function CreateVideo() {
       if (withinNow >= srcDur - 0.12 && overlayIndex < videoOverlays.length - 1) {
         const nextStart = roundToTenth(Number((videoOverlayStarts as any)[overlayIndex + 1] || 0))
         if (nextStart > endTimeline + 0.05) {
+          // There's a gap before the next overlay segment. Pause the overlay and keep advancing the
+          // playhead via base "gap playback" until the next boundary (or end). We must not autoplay
+          // into the next overlay segment due to iOS gesture requirements.
+          playbackClockRef.current = 'base'
+          suppressNextVideoPauseRef.current = true
           safePause(overlay)
-          setPlaying(false)
+          playheadFromVideoRef.current = true
+          playheadRef.current = endTimeline
+          setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
+          void seek(endTimeline)
+          void seekOverlay(endTimeline)
           return
         }
         const nextO: any = (videoOverlays as any)[overlayIndex + 1]
@@ -5023,8 +5032,25 @@ export default function CreateVideo() {
         return
       }
       if (withinNow >= srcDur - 0.05 && overlayIndex === videoOverlays.length - 1) {
+        // Overlay ended. If we're landing on a base clip, stop and wait for a user Play gesture.
+        // If we're landing on a gap/freeze, continue advancing the playhead via base "gap playback".
+        playbackClockRef.current = 'base'
+        suppressNextVideoPauseRef.current = true
         safePause(overlay)
-        setPlaying(false)
+        playheadFromVideoRef.current = true
+        playheadRef.current = endTimeline
+        setTimeline((prev) => ({ ...prev, playheadSeconds: endTimeline }))
+        void seek(endTimeline)
+        void seekOverlay(endTimeline)
+
+        const baseIdxAtEnd = findClipIndexAtTime(endTimeline, timeline.clips, clipStarts)
+        if (baseIdxAtEnd >= 0) {
+          setPlaying(false)
+          return
+        }
+        if (totalSeconds <= endTimeline + 0.05) {
+          setPlaying(false)
+        }
       }
     }
 
