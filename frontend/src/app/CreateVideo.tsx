@@ -2320,7 +2320,9 @@ export default function CreateVideo() {
     const pos = normalizeLegacyPosition(posRaw)
     const style: any = {
       position: 'absolute',
-      width: `${widthPx}px`,
+      // Use % for width to avoid any chance of px math drifting from the actual preview box size.
+      // maxWidth still clamps it if insets would make it too large.
+      width: `${sizePct}%`,
       height: 'auto',
       maxWidth: `${Number.isFinite(maxW) ? maxW : 0}px`,
       maxHeight: `${Number.isFinite(maxH) ? maxH : 0}px`,
