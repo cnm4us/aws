@@ -15221,26 +15221,6 @@ export default function CreateVideo() {
 	                      </div>
 	                    </div>
 
-	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-	                        <div>
-	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
-	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-	                            <button type="button" disabled={!canStartDec01} onClick={() => setStart(start - 0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
-	                            <button type="button" disabled={!canStartInc01} onClick={() => setStart(start + 0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
-	                          </div>
-	                        </div>
-	                        <div>
-	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
-	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-	                            <button type="button" disabled={!canEndDec01} onClick={() => setEnd(end - 0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
-	                            <button type="button" disabled={!canEndInc01} onClick={() => setEnd(end + 0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
-	                          </div>
-	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
-	                        </div>
-	                      </div>
-	                    </div>
-
 	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
 	                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 	                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
@@ -15432,6 +15412,26 @@ export default function CreateVideo() {
 	                          Full-frame graphics fill the canvas and may crop to cover.
 	                        </div>
 	                      )}
+	                    </div>
+
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                            <button type="button" disabled={!canStartDec01} onClick={() => setStart(start - 0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
+	                            <button type="button" disabled={!canStartInc01} onClick={() => setStart(start + 0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
+	                          </div>
+	                        </div>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
+	                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+	                            <button type="button" disabled={!canEndDec01} onClick={() => setEnd(end - 0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
+	                            <button type="button" disabled={!canEndInc01} onClick={() => setEnd(end + 0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
+	                          </div>
+	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
+	                        </div>
+	                      </div>
 	                    </div>
 	                  </>
 	                )
