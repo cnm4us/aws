@@ -733,64 +733,6 @@ export default function CreateVideo() {
     return (h >>> 0).toString(16)
   }, [])
 
-  useEffect(() => {
-    const c = previewMiniTimelineRef.current
-    if (!c) return
-    if (!showPreviewToolbar) return
-    if (!hasPlayablePreview) return
-
-    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
-    const parent = c.parentElement
-    const wCss = Math.max(120, Math.floor(parent?.getBoundingClientRect?.().width || 0))
-    const hCss = 32
-    c.width = Math.floor(wCss * dpr)
-    c.height = Math.floor(hCss * dpr)
-    c.style.width = `${wCss}px`
-    c.style.height = `${hCss}px`
-
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, wCss, hCss)
-
-    // Background
-    ctx.fillStyle = 'rgba(0,0,0,0.18)'
-    ctx.fillRect(0, 0, wCss, hCss)
-
-    const centerX = Math.floor(wCss / 2)
-    const rangeSeconds = wCss / pxPerSecond
-    const leftT = clamp(playhead - rangeSeconds / 2, 0, Math.max(0, totalSeconds))
-    const rightT = clamp(playhead + rangeSeconds / 2, 0, Math.max(0, totalSeconds))
-
-    // 0.1s ticks (faint) + 1.0s ticks (bold)
-    const tStart = Math.floor(leftT * 10) / 10
-    const tEnd = Math.ceil(rightT * 10) / 10
-    for (let t = tStart; t <= tEnd + 1e-6; t = roundToTenth(t + 0.1)) {
-      if (t < 0 || t > totalSeconds + 1e-6) continue
-      const dx = (t - playhead) * pxPerSecond
-      const x = Math.round(centerX + dx)
-      if (x < -2 || x > wCss + 2) continue
-
-      const isSecond = Math.abs(t - Math.round(t)) < 1e-6
-      ctx.beginPath()
-      ctx.strokeStyle = isSecond ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.22)'
-      ctx.lineWidth = 1
-      const y0 = 0
-      const y1 = isSecond ? hCss : Math.round(hCss * 0.62)
-      ctx.moveTo(x + 0.5, y0)
-      ctx.lineTo(x + 0.5, y1)
-      ctx.stroke()
-    }
-
-    // Playhead line (thin red, center)
-    ctx.beginPath()
-    ctx.strokeStyle = '#ff3b30'
-    ctx.lineWidth = 1
-    ctx.moveTo(centerX + 0.5, 0)
-    ctx.lineTo(centerX + 0.5, hCss)
-    ctx.stroke()
-  }, [hasPlayablePreview, playhead, pxPerSecond, showPreviewToolbar, totalSeconds])
-
   const computeTimelineHash = useCallback(
     (tl: Timeline): string => {
       try {
@@ -1396,6 +1338,62 @@ export default function CreateVideo() {
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 18
   const TIMELINE_H = TRACKS_TOP + TRACK_H * 8
+
+  // Draw the mini timeline shown in the floating preview toolbar.
+  useEffect(() => {
+    const c = previewMiniTimelineRef.current
+    if (!c) return
+    if (!showPreviewToolbar) return
+    if (!hasPlayablePreview) return
+
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
+    const parent = c.parentElement
+    const wCss = Math.max(120, Math.floor(parent?.getBoundingClientRect?.().width || 0))
+    const hCss = 32
+    c.width = Math.floor(wCss * dpr)
+    c.height = Math.floor(hCss * dpr)
+    c.style.width = `${wCss}px`
+    c.style.height = `${hCss}px`
+
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, wCss, hCss)
+
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'
+    ctx.fillRect(0, 0, wCss, hCss)
+
+    const centerX = Math.floor(wCss / 2)
+    const rangeSeconds = wCss / pxPerSecond
+    const leftT = clamp(playhead - rangeSeconds / 2, 0, Math.max(0, totalSeconds))
+    const rightT = clamp(playhead + rangeSeconds / 2, 0, Math.max(0, totalSeconds))
+
+    const tStart = Math.floor(leftT * 10) / 10
+    const tEnd = Math.ceil(rightT * 10) / 10
+    for (let t = tStart; t <= tEnd + 1e-6; t = roundToTenth(t + 0.1)) {
+      if (t < 0 || t > totalSeconds + 1e-6) continue
+      const dx = (t - playhead) * pxPerSecond
+      const x = Math.round(centerX + dx)
+      if (x < -2 || x > wCss + 2) continue
+
+      const isSecond = Math.abs(t - Math.round(t)) < 1e-6
+      ctx.beginPath()
+      ctx.strokeStyle = isSecond ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.22)'
+      ctx.lineWidth = 1
+      const y0 = 0
+      const y1 = isSecond ? hCss : Math.round(hCss * 0.62)
+      ctx.moveTo(x + 0.5, y0)
+      ctx.lineTo(x + 0.5, y1)
+      ctx.stroke()
+    }
+
+    ctx.beginPath()
+    ctx.strokeStyle = '#ff3b30'
+    ctx.lineWidth = 1
+    ctx.moveTo(centerX + 0.5, 0)
+    ctx.lineTo(centerX + 0.5, hCss)
+    ctx.stroke()
+  }, [hasPlayablePreview, playhead, pxPerSecond, showPreviewToolbar, totalSeconds])
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
