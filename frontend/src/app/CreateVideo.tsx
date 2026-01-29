@@ -14599,7 +14599,7 @@ export default function CreateVideo() {
 	                            </div>
 	                            <div>
 	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
-	                              <div style={{ display: 'grid', gridTemplateColumns: '90px 90px', gap: 8, justifyContent: 'end' }}>
+	                              <div style={{ display: 'grid', gridTemplateColumns: '50px 50px', gap: 8, justifyContent: 'end' }}>
 	                                <input
 	                                  type="number"
 	                                  inputMode="numeric"
@@ -14609,7 +14609,7 @@ export default function CreateVideo() {
 	                                    setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
 	                                  }}
 	                                  style={{
-	                                    width: '90px',
+	                                    width: '50px',
 	                                    padding: '10px 12px',
 	                                    borderRadius: 12,
 	                                    border: '1px solid rgba(255,255,255,0.16)',
@@ -14629,7 +14629,7 @@ export default function CreateVideo() {
 	                                    setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
 	                                  }}
 	                                  style={{
-	                                    width: '90px',
+	                                    width: '50px',
 	                                    padding: '10px 12px',
 	                                    borderRadius: 12,
 	                                    border: '1px solid rgba(255,255,255,0.16)',
