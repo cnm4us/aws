@@ -12228,12 +12228,22 @@ export default function CreateVideo() {
 	                    </button>
 	                  </div>
 	                  <div style={{ padding: '0 10px 10px' }}>
-	                    <div
-	                      style={{ position: 'relative', height: 32, borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}
-	                      onPointerDown={(e) => {
-	                        if (e.button != null && e.button !== 0) return
-	                        if (!(totalSeconds > 0)) return
-	                        e.preventDefault()
+		                    <div
+		                      style={{
+		                        position: 'relative',
+		                        height: 32,
+		                        borderRadius: 10,
+		                        overflow: 'hidden',
+		                        border: '1px solid rgba(255,255,255,0.12)',
+		                        touchAction: 'none',
+		                        userSelect: 'none',
+		                        WebkitUserSelect: 'none',
+		                        WebkitTouchCallout: 'none',
+		                      }}
+		                      onPointerDown={(e) => {
+		                        if (e.button != null && e.button !== 0) return
+		                        if (!(totalSeconds > 0)) return
+		                        e.preventDefault()
 	                        e.stopPropagation()
 	                        try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
 	                        previewMiniDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startPlayhead: Number(playheadRef.current || 0) }
@@ -12255,18 +12265,12 @@ export default function CreateVideo() {
 	                        if (e.pointerId !== cur.pointerId) return
 	                        previewMiniDragRef.current = null
 	                      }}
-	                      onPointerCancel={() => {
-	                        previewMiniDragRef.current = null
-	                      }}
-	                      style={{
-	                        touchAction: 'none',
-	                        userSelect: 'none',
-	                        WebkitUserSelect: 'none',
-	                        WebkitTouchCallout: 'none',
-	                      }}
-	                      title="Scrub timeline"
-	                      aria-label="Scrub timeline"
-	                    >
+		                      onPointerCancel={() => {
+		                        previewMiniDragRef.current = null
+		                      }}
+		                      title="Scrub timeline"
+		                      aria-label="Scrub timeline"
+		                    >
 	                      <canvas ref={previewMiniTimelineRef} style={{ display: 'block', width: '100%', height: '100%' }} />
 	                      <div
 	                        style={{
