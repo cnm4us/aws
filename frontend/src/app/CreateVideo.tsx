@@ -612,6 +612,7 @@ export default function CreateVideo() {
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
   const previewToolbarRef = useRef<HTMLDivElement | null>(null)
+  const previewMiniTimelineRef = useRef<HTMLCanvasElement | null>(null)
   const [showPreviewToolbar, setShowPreviewToolbar] = useState<boolean>(() => {
     try {
       const raw = window.localStorage.getItem('cv_preview_toolbar_v1')
@@ -636,6 +637,7 @@ export default function CreateVideo() {
   })
   const previewToolbarDragRef = useRef<null | { pointerId: number; startY: number; startBottom: number }>(null)
   const [previewToolbarDragging, setPreviewToolbarDragging] = useState(false)
+  const previewMiniDragRef = useRef<null | { pointerId: number; startX: number; startPlayhead: number }>(null)
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
@@ -730,6 +732,64 @@ export default function CreateVideo() {
     }
     return (h >>> 0).toString(16)
   }, [])
+
+  useEffect(() => {
+    const c = previewMiniTimelineRef.current
+    if (!c) return
+    if (!showPreviewToolbar) return
+    if (!hasPlayablePreview) return
+
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
+    const parent = c.parentElement
+    const wCss = Math.max(120, Math.floor(parent?.getBoundingClientRect?.().width || 0))
+    const hCss = 32
+    c.width = Math.floor(wCss * dpr)
+    c.height = Math.floor(hCss * dpr)
+    c.style.width = `${wCss}px`
+    c.style.height = `${hCss}px`
+
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, wCss, hCss)
+
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'
+    ctx.fillRect(0, 0, wCss, hCss)
+
+    const centerX = Math.floor(wCss / 2)
+    const rangeSeconds = wCss / pxPerSecond
+    const leftT = clamp(playhead - rangeSeconds / 2, 0, Math.max(0, totalSeconds))
+    const rightT = clamp(playhead + rangeSeconds / 2, 0, Math.max(0, totalSeconds))
+
+    // 0.1s ticks (faint) + 1.0s ticks (bold)
+    const tStart = Math.floor(leftT * 10) / 10
+    const tEnd = Math.ceil(rightT * 10) / 10
+    for (let t = tStart; t <= tEnd + 1e-6; t = roundToTenth(t + 0.1)) {
+      if (t < 0 || t > totalSeconds + 1e-6) continue
+      const dx = (t - playhead) * pxPerSecond
+      const x = Math.round(centerX + dx)
+      if (x < -2 || x > wCss + 2) continue
+
+      const isSecond = Math.abs(t - Math.round(t)) < 1e-6
+      ctx.beginPath()
+      ctx.strokeStyle = isSecond ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.22)'
+      ctx.lineWidth = 1
+      const y0 = 0
+      const y1 = isSecond ? hCss : Math.round(hCss * 0.62)
+      ctx.moveTo(x + 0.5, y0)
+      ctx.lineTo(x + 0.5, y1)
+      ctx.stroke()
+    }
+
+    // Playhead line (thin red, center)
+    ctx.beginPath()
+    ctx.strokeStyle = '#ff3b30'
+    ctx.lineWidth = 1
+    ctx.moveTo(centerX + 0.5, 0)
+    ctx.lineTo(centerX + 0.5, hCss)
+    ctx.stroke()
+  }, [hasPlayablePreview, playhead, pxPerSecond, showPreviewToolbar, totalSeconds])
 
   const computeTimelineHash = useCallback(
     (tl: Timeline): string => {
@@ -11980,7 +12040,7 @@ export default function CreateVideo() {
 	                  >
 	                    <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
 	                  </div>
-	                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10 }}>
+	                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10 }}>
 	                    <button
 	                      type="button"
 	                      onClick={jumpPrevBoundary}
@@ -12168,6 +12228,68 @@ export default function CreateVideo() {
 	                    >
 	                      »
 	                    </button>
+	                  </div>
+	                  <div style={{ padding: '0 10px 10px' }}>
+	                    <div
+	                      style={{ position: 'relative', height: 32, borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.12)' }}
+	                      onPointerDown={(e) => {
+	                        if (e.button != null && e.button !== 0) return
+	                        if (!(totalSeconds > 0)) return
+	                        e.preventDefault()
+	                        e.stopPropagation()
+	                        try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+	                        previewMiniDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startPlayhead: Number(playheadRef.current || 0) }
+	                      }}
+	                      onPointerMove={(e) => {
+	                        const cur = previewMiniDragRef.current
+	                        if (!cur) return
+	                        if (e.pointerId !== cur.pointerId) return
+	                        const dx = e.clientX - cur.startX
+	                        const deltaSeconds = -dx / pxPerSecond
+	                        const next = clamp(roundToTenth(cur.startPlayhead + deltaSeconds), 0, Math.max(0, totalSeconds))
+	                        playheadFromVideoRef.current = true
+	                        playheadRef.current = next
+	                        setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
+	                      }}
+	                      onPointerUp={(e) => {
+	                        const cur = previewMiniDragRef.current
+	                        if (!cur) return
+	                        if (e.pointerId !== cur.pointerId) return
+	                        previewMiniDragRef.current = null
+	                      }}
+	                      onPointerCancel={() => {
+	                        previewMiniDragRef.current = null
+	                      }}
+	                      style={{
+	                        touchAction: 'none',
+	                        userSelect: 'none',
+	                        WebkitUserSelect: 'none',
+	                        WebkitTouchCallout: 'none',
+	                      }}
+	                      title="Scrub timeline"
+	                      aria-label="Scrub timeline"
+	                    >
+	                      <canvas ref={previewMiniTimelineRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+	                      <div
+	                        style={{
+	                          position: 'absolute',
+	                          left: '50%',
+	                          top: 0,
+	                          transform: 'translateX(-50%)',
+	                          color: '#ddd',
+	                          fontSize: 12,
+	                          fontWeight: 900,
+	                          fontVariantNumeric: 'tabular-nums',
+	                          padding: '2px 6px',
+	                          borderRadius: 999,
+	                          background: 'rgba(0,0,0,0.35)',
+	                          border: '1px solid rgba(255,255,255,0.10)',
+	                          pointerEvents: 'none',
+	                        }}
+	                      >
+	                        {playhead.toFixed(1)}s
+	                      </div>
+	                    </div>
 	                  </div>
 	                </div>
 	              </div>
