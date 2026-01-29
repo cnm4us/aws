@@ -2170,6 +2170,21 @@ export default function CreateVideo() {
   const activeVideoOverlayAtPlayhead = useMemo(() => findVideoOverlayAtTime(playhead), [findVideoOverlayAtTime, playhead])
   const activeStillAtPlayhead = useMemo(() => findStillAtTime(playhead), [findStillAtTime, playhead])
 
+  // UX: when playback stops exactly at the end of a freeze-frame still (waiting for a user Play gesture
+  // to start the next video segment), keep the still visible instead of flashing to black.
+  const previewStillAtPlayhead = useMemo(() => {
+    if (activeStillAtPlayhead) return activeStillAtPlayhead
+    if (playing) return null
+    const t = roundToTenth(Number(playhead) || 0)
+    const endedStill = stills.find((s: any) => {
+      const a = roundToTenth(Number((s as any).startSeconds || 0))
+      const b = roundToTenth(Number((s as any).endSeconds || 0))
+      if (!(b > a)) return false
+      return Math.abs(b - t) < 0.05
+    })
+    return (endedStill as any) || null
+  }, [activeStillAtPlayhead, playhead, playing, stills])
+
   // Safety: when a freeze-frame still finishes during playback, ensure we leave "playing" state.
   // (Some browsers can leave us in a "playing" UI state even though no video can autoplay-start.)
   useEffect(() => {
@@ -2199,11 +2214,11 @@ export default function CreateVideo() {
   }, [activeGraphicAtPlayhead])
 
   const activeStillUploadId = useMemo(() => {
-    const s = activeStillAtPlayhead
+    const s = previewStillAtPlayhead
     if (!s) return null
     const id = Number((s as any).uploadId)
     return Number.isFinite(id) && id > 0 ? id : null
-  }, [activeStillAtPlayhead])
+  }, [previewStillAtPlayhead])
 
   const activeLogoUploadId = useMemo(() => {
     const l = activeLogoAtPlayhead
