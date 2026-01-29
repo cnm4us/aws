@@ -12001,10 +12001,11 @@ export default function CreateVideo() {
 	                  transform: 'translateX(-50%)',
 	                  bottom: previewToolbarBottomPx,
 	                  zIndex: 70,
-	                  maxWidth: '94%',
+	                  width: 'min(94vw, 560px)',
 	                  userSelect: 'none',
 	                  WebkitUserSelect: 'none',
 	                  WebkitTouchCallout: 'none',
+	                  boxSizing: 'border-box',
 	                }}
 	              >
 	                <div
@@ -12015,6 +12016,8 @@ export default function CreateVideo() {
 	                    border: '1px solid rgba(255,255,255,0.18)',
 	                    background: 'rgba(0,0,0,0.55)',
 	                    backdropFilter: 'blur(6px)',
+	                    width: '100%',
+	                    boxSizing: 'border-box',
 	                  }}
 	                >
 	                  <div
@@ -12228,18 +12231,20 @@ export default function CreateVideo() {
 	                    </button>
 	                  </div>
 	                  <div style={{ padding: '0 10px 10px' }}>
-		                    <div
-		                      style={{
-		                        position: 'relative',
-		                        height: 32,
-		                        borderRadius: 10,
-		                        overflow: 'hidden',
-		                        border: '1px solid rgba(255,255,255,0.12)',
-		                        touchAction: 'none',
-		                        userSelect: 'none',
-		                        WebkitUserSelect: 'none',
-		                        WebkitTouchCallout: 'none',
-		                      }}
+	                    <div
+	                      style={{
+	                        position: 'relative',
+	                        height: 32,
+	                        borderRadius: 10,
+	                        overflow: 'hidden',
+	                        border: '1px solid rgba(255,255,255,0.12)',
+	                        touchAction: 'none',
+	                        userSelect: 'none',
+	                        WebkitUserSelect: 'none',
+	                        WebkitTouchCallout: 'none',
+	                        width: '100%',
+	                        boxSizing: 'border-box',
+	                      }}
 		                      onPointerDown={(e) => {
 		                        if (e.button != null && e.button !== 0) return
 		                        if (!(totalSeconds > 0)) return
