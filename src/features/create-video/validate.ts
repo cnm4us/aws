@@ -737,9 +737,30 @@ export async function validateAndNormalizeCreateVideoTimeline(
       (g as any).position != null ||
       (g as any).insetXPx != null ||
       (g as any).insetYPx != null
+    const hasEffectsFields =
+      (g as any).borderWidthPx != null ||
+      (g as any).borderColor != null ||
+      (g as any).shadowEnabled != null ||
+      (g as any).fade != null
 
-    if (!hasPlacementFields) {
+    const borderWidthRaw = Number((g as any).borderWidthPx)
+    const borderWidthAllowed = new Set([0, 2, 4, 6])
+    const borderWidthPx = borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0
+    const borderColorRaw = String((g as any).borderColor || '#000000').trim()
+    const borderColor = /^#?[0-9a-fA-F]{6}$/.test(borderColorRaw) ? (borderColorRaw.startsWith('#') ? borderColorRaw : `#${borderColorRaw}`) : '#000000'
+    const shadowEnabled = Boolean((g as any).shadowEnabled)
+    const fadeRaw = String((g as any).fade || 'none').trim().toLowerCase()
+    const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+    const fade = fadeAllowed.has(fadeRaw) ? fadeRaw : 'none'
+
+    if (!hasPlacementFields && !hasEffectsFields) {
       graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds })
+      continue
+    }
+
+    // Effects-only (no placement) keeps legacy full-frame rendering, but persists effect fields.
+    if (!hasPlacementFields && hasEffectsFields) {
+      graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds, borderWidthPx, borderColor, shadowEnabled, fade })
       continue
     }
 
@@ -758,7 +779,21 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
     const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
 
-    graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds, fitMode, sizePctWidth, position, insetXPx, insetYPx })
+    graphics.push({
+      id,
+      uploadId: meta.id,
+      startSeconds,
+      endSeconds,
+      fitMode,
+      sizePctWidth,
+      position,
+      insetXPx,
+      insetYPx,
+      borderWidthPx,
+      borderColor,
+      shadowEnabled,
+      fade,
+    })
   }
 
   // Sort by time for overlap validation and deterministic export.
