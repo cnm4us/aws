@@ -949,48 +949,7 @@ export default function CreateVideo() {
     | null
   >(null)
 
-  const hasPlayablePreview = Boolean(
-    totalSeconds > 0 &&
-      (timeline.clips.length ||
-        videoOverlays.length ||
-        (Array.isArray((timeline as any).narration) && ((timeline as any).narration as any[]).length) ||
-        (Array.isArray((timeline as any).audioSegments) && ((timeline as any).audioSegments as any[]).length) ||
-        ((timeline as any).audioTrack && typeof (timeline as any).audioTrack === 'object'))
-  )
-
-  useEffect(() => {
-    // Persist toggle + position.
-    try {
-      window.localStorage.setItem('cv_preview_toolbar_v1', JSON.stringify({ enabled: showPreviewToolbar, bottomPx: previewToolbarBottomPx }))
-    } catch {}
-  }, [previewToolbarBottomPx, showPreviewToolbar])
-
-  useEffect(() => {
-    // Only show when useful; auto-hide if the timeline has no playable sources.
-    if (!hasPlayablePreview && showPreviewToolbar) setShowPreviewToolbar(false)
-  }, [hasPlayablePreview, showPreviewToolbar])
-
-  useEffect(() => {
-    // Clamp toolbar position to the preview container.
-    const el = previewWrapRef.current
-    if (!el) return
-    const clampNow = () => {
-      const h = el.getBoundingClientRect().height
-      const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
-      const min = 8
-      const max = Math.max(min, Math.floor(h - barH - 8))
-      setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
-    }
-    clampNow()
-    let ro: ResizeObserver | null = null
-    try {
-      ro = new ResizeObserver(() => clampNow())
-      ro.observe(el)
-    } catch {}
-    return () => {
-      try { ro?.disconnect?.() } catch {}
-    }
-  }, [])
+  // (hasPlayablePreview + related effects are defined later, after totalSeconds is initialized)
 
   useEffect(() => {
     if (!previewToolbarDragging) return
@@ -1234,6 +1193,48 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(m))
   }, [timeline, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo, totalSecondsVideoOverlays])
+
+  const hasPlayablePreview = useMemo(() => {
+    if (!(totalSeconds > 0)) return false
+    const nar: any[] = Array.isArray((timeline as any).narration) ? ((timeline as any).narration as any[]) : []
+    const segs: any[] = Array.isArray((timeline as any).audioSegments) ? ((timeline as any).audioSegments as any[]) : []
+    const hasTrack = Boolean((timeline as any).audioTrack && typeof (timeline as any).audioTrack === 'object')
+    return Boolean(timeline.clips.length || videoOverlays.length || nar.length || segs.length || hasTrack)
+  }, [totalSeconds, timeline, videoOverlays.length])
+
+  useEffect(() => {
+    // Persist toggle + position.
+    try {
+      window.localStorage.setItem('cv_preview_toolbar_v1', JSON.stringify({ enabled: showPreviewToolbar, bottomPx: previewToolbarBottomPx }))
+    } catch {}
+  }, [previewToolbarBottomPx, showPreviewToolbar])
+
+  useEffect(() => {
+    // Only show when useful; auto-hide if the timeline has no playable sources.
+    if (!hasPlayablePreview && showPreviewToolbar) setShowPreviewToolbar(false)
+  }, [hasPlayablePreview, showPreviewToolbar])
+
+  useEffect(() => {
+    // Clamp toolbar position to the preview container.
+    const el = previewWrapRef.current
+    if (!el) return
+    const clampNow = () => {
+      const h = el.getBoundingClientRect().height
+      const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
+      const min = 8
+      const max = Math.max(min, Math.floor(h - barH - 8))
+      setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
+    }
+    clampNow()
+    let ro: ResizeObserver | null = null
+    try {
+      ro = new ResizeObserver(() => clampNow())
+      ro.observe(el)
+    } catch {}
+    return () => {
+      try { ro?.disconnect?.() } catch {}
+    }
+  }, [])
 
   const outputFrame = useMemo(() => {
     const even = (n: number) => {
