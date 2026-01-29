@@ -610,6 +610,32 @@ export default function CreateVideo() {
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
+  const previewWrapRef = useRef<HTMLDivElement | null>(null)
+  const previewToolbarRef = useRef<HTMLDivElement | null>(null)
+  const [showPreviewToolbar, setShowPreviewToolbar] = useState<boolean>(() => {
+    try {
+      const raw = window.localStorage.getItem('cv_preview_toolbar_v1')
+      if (!raw) return false
+      const v = JSON.parse(raw)
+      return Boolean(v?.enabled)
+    } catch {
+      return false
+    }
+  })
+  const [previewToolbarBottomPx, setPreviewToolbarBottomPx] = useState<number>(() => {
+    try {
+      const raw = window.localStorage.getItem('cv_preview_toolbar_v1')
+      if (!raw) return 12
+      const v = JSON.parse(raw)
+      const n = Number(v?.bottomPx)
+      if (Number.isFinite(n) && n >= 0) return n
+      return 12
+    } catch {
+      return 12
+    }
+  })
+  const previewToolbarDragRef = useRef<null | { pointerId: number; startY: number; startBottom: number }>(null)
+  const [previewToolbarDragging, setPreviewToolbarDragging] = useState(false)
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
@@ -922,6 +948,82 @@ export default function CreateVideo() {
       }
     | null
   >(null)
+
+  const hasPlayablePreview = Boolean(
+    totalSeconds > 0 &&
+      (timeline.clips.length ||
+        videoOverlays.length ||
+        (Array.isArray((timeline as any).narration) && ((timeline as any).narration as any[]).length) ||
+        (Array.isArray((timeline as any).audioSegments) && ((timeline as any).audioSegments as any[]).length) ||
+        ((timeline as any).audioTrack && typeof (timeline as any).audioTrack === 'object'))
+  )
+
+  useEffect(() => {
+    // Persist toggle + position.
+    try {
+      window.localStorage.setItem('cv_preview_toolbar_v1', JSON.stringify({ enabled: showPreviewToolbar, bottomPx: previewToolbarBottomPx }))
+    } catch {}
+  }, [previewToolbarBottomPx, showPreviewToolbar])
+
+  useEffect(() => {
+    // Only show when useful; auto-hide if the timeline has no playable sources.
+    if (!hasPlayablePreview && showPreviewToolbar) setShowPreviewToolbar(false)
+  }, [hasPlayablePreview, showPreviewToolbar])
+
+  useEffect(() => {
+    // Clamp toolbar position to the preview container.
+    const el = previewWrapRef.current
+    if (!el) return
+    const clampNow = () => {
+      const h = el.getBoundingClientRect().height
+      const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
+      const min = 8
+      const max = Math.max(min, Math.floor(h - barH - 8))
+      setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
+    }
+    clampNow()
+    let ro: ResizeObserver | null = null
+    try {
+      ro = new ResizeObserver(() => clampNow())
+      ro.observe(el)
+    } catch {}
+    return () => {
+      try { ro?.disconnect?.() } catch {}
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!previewToolbarDragging) return
+    const onMove = (e: PointerEvent) => {
+      const cur = previewToolbarDragRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      const el = previewWrapRef.current
+      if (!el) return
+      const h = el.getBoundingClientRect().height
+      const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
+      const min = 8
+      const max = Math.max(min, Math.floor(h - barH - 8))
+      const dy = e.clientY - cur.startY
+      const next = clamp(cur.startBottom - dy, min, max)
+      setPreviewToolbarBottomPx(next)
+    }
+    const onUp = (e: PointerEvent) => {
+      const cur = previewToolbarDragRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      previewToolbarDragRef.current = null
+      setPreviewToolbarDragging(false)
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('pointerup', onUp, { passive: true })
+    window.addEventListener('pointercancel', onUp, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [previewToolbarDragging])
   const [trimDragging, setTrimDragging] = useState(false)
   const trimDragLockScrollLeftRef = useRef<number | null>(null)
   const trimDragScrollRestoreRef = useRef<{
@@ -11801,15 +11903,15 @@ export default function CreateVideo() {
           Clips: {timeline.clips.length} • Stills: {stills.length} • Graphics: {graphics.length} • Total: {totalSeconds.toFixed(1)}s
         </div>
 
-        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
-          <div style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative' }}>
-            <video
-              ref={videoRef}
-              playsInline
-              preload="metadata"
-              poster={activePoster || undefined}
-              style={previewBaseVideoStyle}
-            />
+	        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
+	          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative' }}>
+	            <video
+	              ref={videoRef}
+	              playsInline
+	              preload="metadata"
+	              poster={activePoster || undefined}
+	              style={previewBaseVideoStyle}
+	            />
             {activeStillUrl ? (
               <img
                 src={activeStillUrl}
@@ -11824,18 +11926,256 @@ export default function CreateVideo() {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }}
               />
             ) : null}
-            <video
-              ref={overlayVideoRef}
-              playsInline
-              preload="metadata"
-              poster={activeVideoOverlayPreview?.thumbUrl || undefined}
-              style={previewOverlayVideoStyle}
-            />
-              {activeScreenTitlePreview ? (
-                <img
-                  src={activeScreenTitlePreview.url}
-                  alt=""
-                  style={activeScreenTitlePreview.style}
+	            <video
+	              ref={overlayVideoRef}
+	              playsInline
+	              preload="metadata"
+	              poster={activeVideoOverlayPreview?.thumbUrl || undefined}
+	              style={previewOverlayVideoStyle}
+	            />
+	            {showPreviewToolbar && hasPlayablePreview ? (
+	              <div
+	                ref={previewToolbarRef}
+	                style={{
+	                  position: 'absolute',
+	                  left: '50%',
+	                  transform: 'translateX(-50%)',
+	                  bottom: previewToolbarBottomPx,
+	                  zIndex: 70,
+	                  maxWidth: '94%',
+	                  userSelect: 'none',
+	                  WebkitUserSelect: 'none',
+	                  WebkitTouchCallout: 'none',
+	                }}
+	              >
+	                <div
+	                  style={{
+	                    display: 'inline-flex',
+	                    flexDirection: 'column',
+	                    borderRadius: 14,
+	                    border: '1px solid rgba(255,255,255,0.18)',
+	                    background: 'rgba(0,0,0,0.55)',
+	                    backdropFilter: 'blur(6px)',
+	                  }}
+	                >
+	                  <div
+	                    onPointerDown={(e) => {
+	                      if (e.button != null && e.button !== 0) return
+	                      e.preventDefault()
+	                      e.stopPropagation()
+	                      try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+	                      previewToolbarDragRef.current = { pointerId: e.pointerId, startY: e.clientY, startBottom: previewToolbarBottomPx }
+	                      setPreviewToolbarDragging(true)
+	                    }}
+	                    style={{
+	                      height: 18,
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      cursor: 'grab',
+	                      touchAction: 'none',
+	                    }}
+	                    title="Drag to move preview controls"
+	                  >
+	                    <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
+	                  </div>
+	                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10 }}>
+	                    <button
+	                      type="button"
+	                      onClick={jumpPrevBoundary}
+	                      disabled={totalSeconds <= 0 || !canJumpPrev}
+	                      style={{
+	                        padding: 0,
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+	                        color: '#ffd24a',
+	                        fontWeight: 900,
+	                        fontSize: 26,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                        cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                      }}
+	                      title="Jump to previous boundary"
+	                      aria-label="Jump to previous boundary"
+	                    >
+	                      «
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={() => nudgePlayhead(-0.1)}
+	                      disabled={totalSeconds <= 0}
+	                      style={{
+	                        padding: 0,
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0c0c0c',
+	                        color: '#ffd24a',
+	                        fontWeight: 900,
+	                        fontSize: 26,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                        cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                      }}
+	                      title="Nudge backward 0.1s"
+	                      aria-label="Nudge backward 0.1 seconds"
+	                    >
+	                      ‹
+	                    </button>
+	
+	                    <button
+	                      type="button"
+	                      onClick={togglePlay}
+	                      disabled={totalSeconds <= 0}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(10,132,255,0.55)',
+	                        background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                      }}
+	                      title="Play/Pause"
+	                      aria-label={playing ? 'Pause' : 'Play'}
+	                    >
+	                      <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                        {playPauseGlyph(playing)}
+	                      </span>
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={toggleNarrationPlay}
+	                      disabled={!sortedNarration.length}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(175,82,222,0.65)',
+	                        background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: sortedNarration.length ? 'pointer' : 'default',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                      }}
+	                      title="Play narration (voice memo)"
+	                      aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+	                    >
+	                      <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                        {playPauseGlyph(narrationPreviewPlaying)}
+	                      </span>
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={toggleMusicPlay}
+	                      disabled={!audioSegments.length}
+	                      style={{
+	                        padding: '10px 12px',
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(48,209,88,0.65)',
+	                        background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        cursor: audioSegments.length ? 'pointer' : 'default',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                      }}
+	                      title="Play music"
+	                      aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+	                    >
+	                      <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                        {playPauseGlyph(musicPreviewPlaying)}
+	                      </span>
+	                    </button>
+	
+	                    <button
+	                      type="button"
+	                      onClick={() => nudgePlayhead(0.1)}
+	                      disabled={totalSeconds <= 0}
+	                      style={{
+	                        padding: 0,
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: '#0c0c0c',
+	                        color: '#ffd24a',
+	                        fontWeight: 900,
+	                        fontSize: 26,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                        cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                      }}
+	                      title="Nudge forward 0.1s"
+	                      aria-label="Nudge forward 0.1 seconds"
+	                    >
+	                      ›
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={jumpNextBoundary}
+	                      disabled={totalSeconds <= 0 || !canJumpNext}
+	                      style={{
+	                        padding: 0,
+	                        borderRadius: 10,
+	                        border: '1px solid rgba(255,255,255,0.18)',
+	                        background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+	                        color: '#ffd24a',
+	                        fontWeight: 900,
+	                        fontSize: 26,
+	                        lineHeight: 1,
+	                        display: 'flex',
+	                        alignItems: 'center',
+	                        justifyContent: 'center',
+	                        cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
+	                        flex: '0 0 auto',
+	                        minWidth: 40,
+	                        height: 40,
+	                      }}
+	                      title="Jump to next boundary"
+	                      aria-label="Jump to next boundary"
+	                    >
+	                      »
+	                    </button>
+	                  </div>
+	                </div>
+	              </div>
+	            ) : null}
+	              {activeScreenTitlePreview ? (
+	                <img
+	                  src={activeScreenTitlePreview.url}
+	                  alt=""
+	                  style={activeScreenTitlePreview.style}
                 />
               ) : null}
 	            {activeLowerThirdPreview ? (
@@ -13384,13 +13724,13 @@ export default function CreateVideo() {
             </div>
           </div>
 
-	          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-	            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-	              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={openAdd}
-                  style={{
+		          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+		            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+	                <button
+	                  type="button"
+	                  onClick={openAdd}
+	                  style={{
                     padding: '10px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(212,175,55,0.65)',
@@ -13400,9 +13740,9 @@ export default function CreateVideo() {
                     cursor: 'pointer',
                     flex: '0 0 auto',
                   }}
-                >
-                  Add
-                </button>
+	                >
+	                  Add
+	                </button>
                 <button
                   type="button"
                   onClick={undo}
@@ -13472,14 +13812,36 @@ export default function CreateVideo() {
 	                  }}
 	                  title="Guideline (tap to add, hold for menu)"
 	                  aria-label="Guideline"
-	                >
-		                  G
-		                </button>
+			                >
+			                  G
+			                </button>
+			              </div>
+		              <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 120 }}>
+		                {hasPlayablePreview ? (
+		                  <button
+		                    type="button"
+		                    onClick={() => setShowPreviewToolbar((v) => !v)}
+		                    style={{
+		                      padding: '10px 12px',
+		                      borderRadius: 999,
+		                      border: '1px solid rgba(212,175,55,0.65)',
+		                      background: showPreviewToolbar ? 'rgba(212,175,55,0.22)' : 'rgba(212,175,55,0.08)',
+		                      color: '#fff',
+		                      fontWeight: 900,
+		                      cursor: 'pointer',
+		                      flex: '0 0 auto',
+		                    }}
+		                    title="Toggle floating preview controls"
+		                    aria-label="Toggle floating preview controls"
+		                  >
+		                    Preview Controls
+		                  </button>
+		                ) : null}
 		              </div>
-	              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-	                <button
-	                  type="button"
-	                  onClick={toggleNarrationPlay}
+		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+		                <button
+		                  type="button"
+		                  onClick={toggleNarrationPlay}
 	                  disabled={!sortedNarration.length}
 	                  style={{
 	                    padding: '10px 12px',
