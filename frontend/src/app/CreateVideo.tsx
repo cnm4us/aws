@@ -2299,16 +2299,20 @@ export default function CreateVideo() {
       return { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }
     }
 
-    const sizePct = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
-    const insetXPx = clamp(Number(g.insetXPx ?? 24), 0, 300)
-    const insetYPx = clamp(Number(g.insetYPx ?? 24), 0, 300)
+    const sizePctRaw = Number(g.sizePctWidth)
+    const sizePct = clamp(Number.isFinite(sizePctRaw) ? sizePctRaw : 70, 10, 100)
+    const insetXPxRaw = Number(g.insetXPx)
+    const insetYPxRaw = Number(g.insetYPx)
+    const insetXPx = clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300)
+    const insetYPx = clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300)
     const scale = previewBoxSize.w > 0 ? previewBoxSize.w / 1080 : 1
     const insetX = Math.round(insetXPx * scale)
     const insetY = Math.round(insetYPx * scale)
     const desiredW = Math.round((previewBoxSize.w * sizePct) / 100)
     const maxW = Math.max(0, Math.round(previewBoxSize.w - insetX * 2))
     const maxH = Math.max(0, Math.round(previewBoxSize.h - insetY * 2))
-    const widthPx = Math.max(1, Math.min(desiredW, maxW))
+    const widthPxRaw = Math.min(desiredW, maxW)
+    const widthPx = Number.isFinite(widthPxRaw) ? Math.max(1, widthPxRaw) : 1
 
     const posRaw = String(g.position || 'middle_center')
     const pos = normalizeLegacyPosition(posRaw)
@@ -10200,10 +10204,10 @@ export default function CreateVideo() {
       const wantsPlacement = graphicEditor.fitMode === 'contain_transparent'
       const placement = {
         fitMode: graphicEditor.fitMode,
-        sizePctWidth: Math.round(clamp(Number(graphicEditor.sizePctWidth), 10, 100)),
+        sizePctWidth: Math.round(clamp(Number.isFinite(Number(graphicEditor.sizePctWidth)) ? Number(graphicEditor.sizePctWidth) : 70, 10, 100)),
         position: graphicEditor.position,
-        insetXPx: Math.round(clamp(Number(graphicEditor.insetXPx), 0, 300)),
-        insetYPx: Math.round(clamp(Number(graphicEditor.insetYPx), 0, 300)),
+        insetXPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetXPx)) ? Number(graphicEditor.insetXPx) : 24, 0, 300)),
+        insetYPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetYPx)) ? Number(graphicEditor.insetYPx) : 24, 0, 300)),
       }
 
       // Backward compatibility:
@@ -14491,8 +14495,8 @@ export default function CreateVideo() {
 	                            style={{
 	                              padding: '8px 10px',
 	                              borderRadius: 10,
-	                              border: '1px solid rgba(255,255,255,0.18)',
-	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
+	                              border: graphicEditor.fitMode === 'cover_full' ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
 	                              color: '#fff',
 	                              fontWeight: 900,
 	                              cursor: 'pointer',
@@ -14515,9 +14519,12 @@ export default function CreateVideo() {
 	                            style={{
 	                              padding: '8px 10px',
 	                              borderRadius: 10,
-	                              border: '1px solid rgba(10,132,255,0.45)',
+	                              border:
+	                                graphicEditor.fitMode === 'contain_transparent'
+	                                  ? '2px solid rgba(255,214,10,0.95)'
+	                                  : '1px solid rgba(10,132,255,0.45)',
 	                              background:
-	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(10,132,255,0.16)' : 'rgba(10,132,255,0.08)',
+	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(255,214,10,0.10)' : 'rgba(10,132,255,0.08)',
 	                              color: '#fff',
 	                              fontWeight: 900,
 	                              cursor: 'pointer',
