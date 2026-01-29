@@ -624,6 +624,7 @@ export default function CreateVideo() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const [exportJobId, setExportJobId] = useState<number | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
@@ -12017,6 +12018,7 @@ export default function CreateVideo() {
     setExporting(true)
     setExportError(null)
     setExportStatus('Starting export…')
+    setExportJobId(null)
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
@@ -12029,11 +12031,14 @@ export default function CreateVideo() {
       })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'export_failed'))
+      const jid = Number(json?.jobId)
+      if (Number.isFinite(jid) && jid > 0) setExportJobId(jid)
       setExportStatus('Export in progress…')
     } catch (e: any) {
       setExportError(e?.message || 'export_failed')
       setExportStatus(null)
       setExporting(false)
+      setExportJobId(null)
     }
   }, [audioSegments, project?.id, project?.name, totalSeconds])
 
@@ -12043,7 +12048,8 @@ export default function CreateVideo() {
     let alive = true
     const tick = async () => {
       try {
-        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export-status`, { credentials: 'same-origin' })
+        const qs = exportJobId != null && Number.isFinite(exportJobId) && exportJobId > 0 ? `?jobId=${encodeURIComponent(String(exportJobId))}` : ''
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/export-status${qs}`, { credentials: 'same-origin' })
         const json: any = await res.json().catch(() => null)
         if (!alive) return
         const status = String(json?.status || '')
@@ -12058,12 +12064,16 @@ export default function CreateVideo() {
             return
           }
           setExportError('Export completed but missing upload id.')
+          setExportStatus(null)
           setExporting(false)
+          setExportJobId(null)
           return
         }
         if (status === 'failed' || status === 'dead') {
           setExportError(String(json?.error?.message || json?.error?.code || 'export_failed'))
+          setExportStatus(null)
           setExporting(false)
+          setExportJobId(null)
           return
         }
         setExportStatus(`Export: ${status}`)
@@ -12077,7 +12087,7 @@ export default function CreateVideo() {
       alive = false
       window.clearInterval(t)
     }
-  }, [exporting, project?.id])
+  }, [exporting, exportJobId, project?.id])
 
   if (loading) {
     return (

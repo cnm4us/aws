@@ -258,27 +258,54 @@ async function exportRowAsJob(userId: number, row: CreateVideoProjectRow): Promi
   return { jobId: Number(jobId) }
 }
 
-export async function getExportStatusForUserByProjectId(userId: number, projectId: number): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
+export async function getExportStatusForUserByProjectId(
+  userId: number,
+  projectId: number,
+  opts?: { jobId?: number | null }
+): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getById(Number(projectId))
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
-  return getExportStatusForRow(row)
+  return getExportStatusForRow(row, { jobId: opts?.jobId })
 }
 
-export async function getExportStatusForUser(userId: number): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
+export async function getExportStatusForUser(
+  userId: number,
+  opts?: { jobId?: number | null }
+): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
   if (!userId) throw new ForbiddenError()
   const row = await repo.getActiveByUser(Number(userId))
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
-  return getExportStatusForRow(row)
+  return getExportStatusForRow(row, { jobId: opts?.jobId })
 }
 
-async function getExportStatusForRow(row: CreateVideoProjectRow): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
-  const jobId = row.last_export_job_id != null ? Number(row.last_export_job_id) : null
+async function getExportStatusForRow(
+  row: CreateVideoProjectRow,
+  opts?: { jobId?: number | null }
+): Promise<{ status: string; jobId: number | null; resultUploadId: number | null; error?: any }> {
+  const explicitJobId = opts?.jobId != null && Number.isFinite(Number(opts.jobId)) ? Number(opts.jobId) : null
+  const jobId = explicitJobId != null ? explicitJobId : (row.last_export_job_id != null ? Number(row.last_export_job_id) : null)
   if (!jobId) return { status: 'idle', jobId: null, resultUploadId: null }
   const job = await mediaJobsRepo.getById(jobId)
   if (!job) return { status: 'idle', jobId: null, resultUploadId: null }
+
+  if (explicitJobId != null) {
+    try {
+      const input = (job as any).input_json
+      const ij = typeof input === 'string' ? JSON.parse(input) : input
+      const uj = Number(ij?.userId)
+      const pj = Number(ij?.projectId)
+      if (!(Number.isFinite(uj) && uj > 0 && uj === Number(row.user_id))) throw new ForbiddenError()
+      if (!(Number.isFinite(pj) && pj > 0 && pj === Number(row.id))) throw new NotFoundError('not_found')
+    } catch (err) {
+      // If input_json isn't parseable (or doesn't match), treat as not accessible.
+      if (err instanceof ForbiddenError) throw err
+      if (err instanceof NotFoundError) throw err
+      throw new ForbiddenError()
+    }
+  }
 
   const status = String((job as any).status || '')
   let resultUploadId: number | null = null

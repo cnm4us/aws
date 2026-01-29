@@ -157,7 +157,8 @@ createVideoRouter.get('/api/create-video/projects/:id/export-status', requireAut
   try {
     const currentUserId = Number(req.user!.id)
     const projectId = Number(req.params.id)
-    const result = await createVideoSvc.getExportStatusForUserByProjectId(currentUserId, projectId)
+    const jobId = req.query.jobId != null ? Number(req.query.jobId) : null
+    const result = await createVideoSvc.getExportStatusForUserByProjectId(currentUserId, projectId, { jobId })
     res.json(result)
   } catch (err: any) {
     next(err)
@@ -208,7 +209,8 @@ createVideoRouter.post('/api/create-video/project/export', requireAuth, async (r
 createVideoRouter.get('/api/create-video/project/export-status', requireAuth, async (req, res, next) => {
   try {
     const currentUserId = Number(req.user!.id)
-    const result = await createVideoSvc.getExportStatusForUser(currentUserId)
+    const jobId = req.query.jobId != null ? Number(req.query.jobId) : null
+    const result = await createVideoSvc.getExportStatusForUser(currentUserId, { jobId })
     res.json(result)
   } catch (err: any) {
     next(err)
