@@ -12056,7 +12056,7 @@ export default function CreateVideo() {
 	                  >
 	                    <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
 	                  </div>
-	                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 10 }}>
+		                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', padding: 10 }}>
 	                    <button
 	                      type="button"
 	                      onClick={jumpPrevBoundary}
