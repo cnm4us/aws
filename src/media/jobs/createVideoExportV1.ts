@@ -783,7 +783,8 @@ async function overlayGraphics(opts: {
 
   const args: string[] = ['-i', opts.baseMp4Path]
   for (const g of opts.graphics) {
-    args.push('-loop', '1', '-t', String(baseDur), '-i', g.imagePath)
+    // Force image demuxer so we can loop a single still reliably across formats.
+    args.push('-f', 'image2', '-loop', '1', '-t', String(baseDur), '-i', g.imagePath)
   }
 
   const filters: string[] = []
@@ -1652,7 +1653,8 @@ export async function runCreateVideoExportV1Job(
         if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
         const oid = row.user_id != null ? Number(row.user_id) : null
         if (!(oid === userId || oid == null)) throw new Error('forbidden')
-        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_${String(i).padStart(3, '0')}`)
+        const ext = path.extname(String(row.s3_key || '')).toLowerCase() || '.img'
+        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_${String(i).padStart(3, '0')}${ext}`)
         if (!imageDownloads.has(uploadId)) {
           await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
           imageDownloads.set(uploadId, inPath)
