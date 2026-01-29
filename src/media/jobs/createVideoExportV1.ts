@@ -835,9 +835,17 @@ async function overlayGraphics(opts: {
     }
 
     if (shadowEnabled) {
-      // Simple shadow: black+alpha copy, blurred, offset behind the source.
+      // Simple shadow: black+alpha copy, blurred, and shifted down/right *behind* the source.
+      // Note: We keep the output size equal to the source by padding+cropping (shadow is clipped at edges).
+      const shadowOffset = 8
+      const shadowPad = shadowOffset * 2
       filters.push(
-        `[img${i}b]split=2[img${i}src][img${i}s];[img${i}s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.45,boxblur=12:1[img${i}sh];[img${i}sh][img${i}src]overlay=8:8:format=auto${fadeIn}${fadeOut}[img${i}]`
+        `[img${i}b]split=2[img${i}src][img${i}s];` +
+          `[img${i}s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.45,` +
+          `gblur=sigma=8:steps=2,` +
+          `pad=iw+${shadowPad}:ih+${shadowPad}:${shadowOffset}:${shadowOffset}:color=black@0,` +
+          `crop=iw:ih:0:0[img${i}sh];` +
+          `[img${i}sh][img${i}src]overlay=0:0:format=auto${fadeIn}${fadeOut}[img${i}]`
       )
     } else {
       filters.push(`[img${i}b]${fadeIn || fadeOut ? `null${fadeIn}${fadeOut}` : 'null'}[img${i}]`)
