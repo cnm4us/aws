@@ -14475,26 +14475,46 @@ export default function CreateVideo() {
 
 	                return (
 	                  <>
-	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-	                      <div style={statBox}>
-	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
-	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
-	                      </div>
-	                      <div style={statBox}>
-	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Duration</div>
-	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) && Number.isFinite(end) ? `${Math.max(0, end - start).toFixed(1)}s` : '—'}</div>
-	                      </div>
-	                      <div style={statBox}>
-	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
-	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
-	                      </div>
-	                    </div>
+		                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+		                      <div style={statBox}>
+		                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
+		                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
+		                      </div>
+		                      <div style={statBox}>
+		                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Duration</div>
+		                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) && Number.isFinite(end) ? `${Math.max(0, end - start).toFixed(1)}s` : '—'}</div>
+		                      </div>
+		                      <div style={statBox}>
+		                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
+		                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
+		                      </div>
+		                    </div>
 
-	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
-	                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-	                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
-	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-	                          <button
+		                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+		                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+		                        <div>
+		                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+		                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+		                            <button type="button" disabled={!canStartDec01} onClick={() => adjustStart(-0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
+		                            <button type="button" disabled={!canStartInc01} onClick={() => adjustStart(0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
+		                          </div>
+		                        </div>
+		                        <div>
+		                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
+		                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+		                            <button type="button" disabled={!canEndDec01} onClick={() => adjustEnd(-0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
+		                            <button type="button" disabled={!canEndInc01} onClick={() => adjustEnd(0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
+		                          </div>
+		                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
+		                        </div>
+		                      </div>
+		                    </div>
+
+		                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+		                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+		                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
+		                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+		                          <button
 	                            type="button"
 	                            onClick={() =>
 	                              setGraphicEditor((p) =>
@@ -14686,28 +14706,9 @@ export default function CreateVideo() {
 	                      )}
 	                    </div>
 
-	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-	                        <div>
-	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
-                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                            <button type="button" disabled={!canStartDec01} onClick={() => adjustStart(-0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
-                            <button type="button" disabled={!canStartInc01} onClick={() => adjustStart(0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust End</div>
-                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                            <button type="button" disabled={!canEndDec01} onClick={() => adjustEnd(-0.1)} style={adjustBtn(canEndDec01)}>-0.1s</button>
-                            <button type="button" disabled={!canEndInc01} onClick={() => adjustEnd(0.1)} style={adjustBtn(canEndInc01)}>+0.1s</button>
-                          </div>
-                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Max end: {cap.toFixed(1)}s</div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )
-              })()}
+	                  </>
+	                )
+	              })()}
               {graphicEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{graphicEditorError}</div> : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
                 <button
