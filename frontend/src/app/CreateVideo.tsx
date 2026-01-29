@@ -535,6 +535,10 @@ export default function CreateVideo() {
       | 'bottom_right'
     insetXPx: number
     insetYPx: number
+    borderWidthPx: 0 | 2 | 4 | 6
+    borderColor: string
+    shadowEnabled: boolean
+    fade: 'none' | 'in' | 'out' | 'in_out'
   } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
@@ -2291,13 +2295,36 @@ export default function CreateVideo() {
   const activeGraphicPreviewStyle = useMemo<React.CSSProperties | null>(() => {
     const g: any = activeGraphicAtPlayhead as any
     if (!g) return null
+    const borderWidthAllowed = new Set([0, 2, 4, 6])
+    const borderWidth = borderWidthAllowed.has(Number(g.borderWidthPx)) ? Number(g.borderWidthPx) : 0
+    const borderColor = String(g.borderColor || '#000000')
     const fitMode = g.fitMode != null ? String(g.fitMode) : ''
     // Legacy behavior: full-frame cover when placement fields are absent.
     if (!fitMode) {
-      return { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        pointerEvents: 'none',
+        zIndex: 20,
+        boxSizing: 'border-box',
+        border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
+      }
     }
     if (fitMode !== 'contain_transparent') {
-      return { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 20 }
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        pointerEvents: 'none',
+        zIndex: 20,
+        boxSizing: 'border-box',
+        border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
+      }
     }
 
     const sizePctRaw = Number(g.sizePctWidth)
@@ -2330,6 +2357,8 @@ export default function CreateVideo() {
       objectFit: 'contain',
       pointerEvents: 'none',
       zIndex: 20,
+      boxSizing: 'border-box',
+      border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
     }
     const insetXStr = `${insetX}px`
     const insetYStr = `${insetY}px`
@@ -2368,6 +2397,16 @@ export default function CreateVideo() {
     }
     return style as React.CSSProperties
   }, [activeGraphicAtPlayhead, previewBoxSize.h, previewBoxSize.w])
+
+  const activeGraphicPreviewIndicators = useMemo(() => {
+    const g: any = activeGraphicAtPlayhead as any
+    if (!g) return { show: false, hasFade: false, hasShadow: false }
+    if (String((g as any).id || '') !== String(selectedGraphicId || '')) return { show: false, hasFade: false, hasShadow: false }
+    const fade = String((g as any).fade || 'none')
+    const hasFade = fade !== 'none'
+    const hasShadow = Boolean((g as any).shadowEnabled)
+    return { show: hasFade || hasShadow, hasFade, hasShadow }
+  }, [activeGraphicAtPlayhead, selectedGraphicId])
 
   const activeStillUrl = useMemo(() => {
     if (!activeStillUploadId) return null
@@ -5808,6 +5847,10 @@ export default function CreateVideo() {
         position: 'middle_center',
         insetXPx: 24,
         insetYPx: 24,
+        borderWidthPx: 0,
+        borderColor: '#000000',
+        shadowEnabled: false,
+        fade: 'none',
       }
       snapshotUndo()
       setTimeline((prev) => {
@@ -8332,7 +8375,7 @@ export default function CreateVideo() {
       }
 
       const newId = `gfx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const newGraphic: any = { id: newId, uploadId: Number(g0.uploadId), startSeconds: start, endSeconds: end }
+      const newGraphic: any = { ...(g0 as any), id: newId, uploadId: Number(g0.uploadId), startSeconds: start, endSeconds: end }
       const nextGraphics = [...prevGraphics, newGraphic].slice().sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
       snapshotUndo()
       const nextTimeline: any = { ...(timeline as any), graphics: nextGraphics }
@@ -10204,6 +10247,7 @@ export default function CreateVideo() {
       const current = prevGraphics[idx] as any
       const currentHasPlacement =
         current?.fitMode != null || current?.sizePctWidth != null || current?.position != null || current?.insetXPx != null || current?.insetYPx != null
+      const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.shadowEnabled != null || current?.fade != null
 
       const nextBase: any = { ...current, startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
       const wantsPlacement = graphicEditor.fitMode === 'contain_transparent'
@@ -10214,6 +10258,13 @@ export default function CreateVideo() {
         insetXPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetXPx)) ? Number(graphicEditor.insetXPx) : 24, 0, 300)),
         insetYPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetYPx)) ? Number(graphicEditor.insetYPx) : 24, 0, 300)),
       }
+      const borderWidthAllowed = new Set([0, 2, 4, 6])
+      const borderWidth = borderWidthAllowed.has(Number(graphicEditor.borderWidthPx)) ? Number(graphicEditor.borderWidthPx) : 0
+      const shadowEnabled = Boolean(graphicEditor.shadowEnabled)
+      const fadeModeRaw = String(graphicEditor.fade || 'none')
+      const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+      const fadeMode = fadeAllowed.has(fadeModeRaw) ? fadeModeRaw : 'none'
+      const wantsEffects = borderWidth > 0 || shadowEnabled || fadeMode !== 'none'
 
       // Backward compatibility:
       // - If the graphic has never had placement fields and the user keeps it as "Full Frame" (cover),
@@ -10239,6 +10290,17 @@ export default function CreateVideo() {
       }
       const nextGraphics = prevGraphics.slice()
       nextGraphics[idx] = updated
+      if (!currentHasEffects && !wantsEffects) {
+        delete (nextGraphics[idx] as any).borderWidthPx
+        delete (nextGraphics[idx] as any).borderColor
+        delete (nextGraphics[idx] as any).shadowEnabled
+        delete (nextGraphics[idx] as any).fade
+      } else {
+        ;(nextGraphics[idx] as any).borderWidthPx = borderWidth
+        ;(nextGraphics[idx] as any).borderColor = String(graphicEditor.borderColor || '#000000')
+        ;(nextGraphics[idx] as any).shadowEnabled = shadowEnabled
+        ;(nextGraphics[idx] as any).fade = fadeMode
+      }
       nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
       const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), graphics: nextGraphics } as any)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
@@ -12172,7 +12234,40 @@ export default function CreateVideo() {
               />
             ) : null}
 	            {activeGraphicUrl && activeGraphicPreviewStyle ? (
-	              <img src={activeGraphicUrl} alt="" style={activeGraphicPreviewStyle} />
+	              <>
+	                <img src={activeGraphicUrl} alt="" style={activeGraphicPreviewStyle} />
+	                {activeGraphicPreviewIndicators.show ? (
+	                  <div
+	                    style={{
+	                      position: 'absolute',
+	                      inset: 0,
+	                      display: 'flex',
+	                      alignItems: 'center',
+	                      justifyContent: 'center',
+	                      pointerEvents: 'none',
+	                      zIndex: 25,
+	                    }}
+	                  >
+	                    <div
+	                      style={{
+	                        display: 'inline-flex',
+	                        gap: 8,
+	                        padding: '8px 10px',
+	                        borderRadius: 999,
+	                        border: '1px solid rgba(255,255,255,0.22)',
+	                        background: 'rgba(0,0,0,0.55)',
+	                        color: '#fff',
+	                        fontWeight: 900,
+	                        fontSize: 12,
+	                        letterSpacing: 0.4,
+	                      }}
+	                    >
+	                      {activeGraphicPreviewIndicators.hasFade ? <span>FADE</span> : null}
+	                      {activeGraphicPreviewIndicators.hasShadow ? <span>SHADOW</span> : null}
+	                    </div>
+	                  </div>
+	                ) : null}
+	              </>
 	            ) : null}
 	            <video
 	              ref={overlayVideoRef}
@@ -14706,6 +14801,101 @@ export default function CreateVideo() {
 	                      )}
 	                    </div>
 
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+	                      <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Effects</div>
+	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Fade</div>
+	                          <select
+	                            value={String(graphicEditor.fade || 'none')}
+	                            onChange={(e) => setGraphicEditor((p) => (p ? { ...p, fade: e.target.value as any } : p))}
+	                            style={{
+	                              width: '100%',
+	                              padding: '10px 12px',
+	                              borderRadius: 12,
+	                              border: '1px solid rgba(255,255,255,0.16)',
+	                              background: '#0c0c0c',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                            }}
+	                          >
+	                            <option value="none">None</option>
+	                            <option value="in">Fade In</option>
+	                            <option value="out">Fade Out</option>
+	                            <option value="in_out">Fade In/Out</option>
+	                          </select>
+	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Fixed duration: 0.35s</div>
+	                        </div>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Shadow</div>
+	                          <button
+	                            type="button"
+	                            onClick={() => setGraphicEditor((p) => (p ? { ...p, shadowEnabled: !p.shadowEnabled } : p))}
+	                            style={{
+	                              width: '100%',
+	                              padding: '10px 12px',
+	                              borderRadius: 12,
+	                              border: graphicEditor.shadowEnabled ? '2px solid rgba(10,132,255,0.85)' : '1px solid rgba(255,255,255,0.18)',
+	                              background: graphicEditor.shadowEnabled ? 'rgba(10,132,255,0.12)' : 'rgba(255,255,255,0.04)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            {graphicEditor.shadowEnabled ? 'On' : 'Off'}
+	                          </button>
+	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Preset</div>
+	                        </div>
+	                      </div>
+	                      {graphicEditor.fitMode === 'contain_transparent' ? (
+	                        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+	                          <div>
+	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Border</div>
+	                            <select
+	                              value={String(graphicEditor.borderWidthPx || 0)}
+	                              onChange={(e) => setGraphicEditor((p) => (p ? { ...p, borderWidthPx: Number(e.target.value) as any } : p))}
+	                              style={{
+	                                width: '100%',
+	                                padding: '10px 12px',
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                color: '#fff',
+	                                fontWeight: 900,
+	                              }}
+	                            >
+	                              <option value="0">None</option>
+	                              <option value="2">Thin (2px)</option>
+	                              <option value="4">Medium (4px)</option>
+	                              <option value="6">Thick (6px)</option>
+	                            </select>
+	                          </div>
+	                          <div>
+	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Border color</div>
+	                            <input
+	                              type="color"
+	                              value={String(graphicEditor.borderColor || '#000000')}
+	                              disabled={Number(graphicEditor.borderWidthPx || 0) <= 0}
+	                              onChange={(e) => setGraphicEditor((p) => (p ? { ...p, borderColor: e.target.value } : p))}
+	                              style={{
+	                                width: '100%',
+	                                height: 44,
+	                                padding: 0,
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                cursor: Number(graphicEditor.borderWidthPx || 0) <= 0 ? 'default' : 'pointer',
+	                                opacity: Number(graphicEditor.borderWidthPx || 0) <= 0 ? 0.5 : 1,
+	                              }}
+	                            />
+	                            <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+	                              Default: black
+	                            </div>
+	                          </div>
+	                        </div>
+	                      ) : null}
+	                    </div>
+
 	                  </>
 	                )
 	              })()}
@@ -15960,6 +16150,14 @@ export default function CreateVideo() {
 				                        const insetYPxRaw = Number((g as any).insetYPx)
 				                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
 				                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+				                        const borderWidthAllowed = new Set([0, 2, 4, 6])
+				                        const borderWidthRaw = Number((g as any).borderWidthPx)
+				                        const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
+				                        const borderColor = String((g as any).borderColor || '#000000')
+				                        const shadowEnabled = Boolean((g as any).shadowEnabled)
+				                        const fadeRaw = String((g as any).fade || 'none')
+				                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+				                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
 				                        setSelectedGraphicId(String((g as any).id))
 				                        setSelectedClipId(null)
 				                        setSelectedLogoId(null)
@@ -15977,6 +16175,10 @@ export default function CreateVideo() {
 				                          position,
 				                          insetXPx,
 				                          insetYPx,
+				                          borderWidthPx,
+				                          borderColor,
+				                          shadowEnabled,
+				                          fade,
 				                        })
 				                        setGraphicEditorError(null)
 				                      }

@@ -37,6 +37,11 @@ export type Graphic = {
     | 'bottom_right'
   insetXPx?: number
   insetYPx?: number
+  // Optional presentation effects (v1).
+  borderWidthPx?: 0 | 2 | 4 | 6
+  borderColor?: string
+  shadowEnabled?: boolean
+  fade?: 'none' | 'in' | 'out' | 'in_out'
 }
 
 export type VideoOverlay = {

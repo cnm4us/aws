@@ -40,6 +40,11 @@ type Graphic = {
     | 'bottom_right'
   insetXPx?: number
   insetYPx?: number
+  // Optional presentation effects (v1).
+  borderWidthPx?: 0 | 2 | 4 | 6
+  borderColor?: string
+  shadowEnabled?: boolean
+  fade?: 'none' | 'in' | 'out' | 'in_out'
 }
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
 type VideoOverlay = {
@@ -772,6 +777,10 @@ async function overlayGraphics(opts: {
     position?: string
     insetXPx?: number
     insetYPx?: number
+    borderWidthPx?: number
+    borderColor?: string
+    shadowEnabled?: boolean
+    fade?: 'none' | 'in' | 'out' | 'in_out'
   }>
   targetW: number
   targetH: number
@@ -794,6 +803,19 @@ async function overlayGraphics(opts: {
     const g = opts.graphics[i]
     const inIdx = i + 1
     const fitMode = g.fitMode || 'cover_full'
+    const borderWidthRaw = g.borderWidthPx == null ? 0 : Number(g.borderWidthPx)
+    const borderWidth = borderWidthRaw === 2 || borderWidthRaw === 4 || borderWidthRaw === 6 ? borderWidthRaw : 0
+    const borderColorRaw = g.borderColor ? String(g.borderColor) : '#000000'
+    const borderColor = `${normalizeFfmpegColor(borderColorRaw)}@1.0`
+    const borderFilter = borderWidth > 0 ? `,drawbox=x=0:y=0:w=iw:h=ih:color=${borderColor}:t=${borderWidth}` : ''
+    const shadowEnabled = Boolean(g.shadowEnabled)
+    const fadeMode = (g.fade as any) == null ? 'none' : String(g.fade)
+    const s = roundToTenth(Number(g.startSeconds))
+    const e = roundToTenth(Number(g.endSeconds))
+    const segDur = Math.max(0, e - s)
+    const fadeD = segDur > 0.05 ? Math.max(0, Math.min(0.35, segDur / 2)) : 0
+    const fadeIn = fadeD > 0 && (fadeMode === 'in' || fadeMode === 'in_out') ? `,fade=t=in:st=${s.toFixed(3)}:d=${fadeD.toFixed(3)}:alpha=1` : ''
+    const fadeOut = fadeD > 0 && (fadeMode === 'out' || fadeMode === 'in_out') ? `,fade=t=out:st=${(e - fadeD).toFixed(3)}:d=${fadeD.toFixed(3)}:alpha=1` : ''
     if (fitMode === 'contain_transparent') {
       const sizePctWidth = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
@@ -804,12 +826,21 @@ async function overlayGraphics(opts: {
       // - available width after X insets
       // - available height after Y insets (converted to width by aspect)
       const wExpr = `min(${desiredW},min(${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih))`
-      filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba[img${i}]`)
+      filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba${borderFilter}[img${i}b]`)
     } else {
       // Legacy full-frame cover.
       filters.push(
-        `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba[img${i}]`
+        `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba${borderFilter}[img${i}b]`
       )
+    }
+
+    if (shadowEnabled) {
+      // Simple shadow: black+alpha copy, blurred, offset behind the source.
+      filters.push(
+        `[img${i}b]split=2[img${i}src][img${i}s];[img${i}s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.45,boxblur=12:1[img${i}sh];[img${i}sh][img${i}src]overlay=8:8:format=auto${fadeIn}${fadeOut}[img${i}]`
+      )
+    } else {
+      filters.push(`[img${i}b]${fadeIn || fadeOut ? `null${fadeIn}${fadeOut}` : 'null'}[img${i}]`)
     }
   }
 
@@ -1650,6 +1681,10 @@ export async function runCreateVideoExportV1Job(
         position?: string
         insetXPx?: number
         insetYPx?: number
+        borderWidthPx?: number
+        borderColor?: string
+        shadowEnabled?: boolean
+        fade?: 'none' | 'in' | 'out' | 'in_out'
       }> = []
       for (let i = 0; i < sorted.length; i++) {
         const g = sorted[i]
@@ -1675,6 +1710,10 @@ export async function runCreateVideoExportV1Job(
           position: (g as any).position != null ? String((g as any).position) : undefined,
           insetXPx: (g as any).insetXPx != null ? Number((g as any).insetXPx) : undefined,
           insetYPx: (g as any).insetYPx != null ? Number((g as any).insetYPx) : undefined,
+          borderWidthPx: (g as any).borderWidthPx != null ? Number((g as any).borderWidthPx) : undefined,
+          borderColor: (g as any).borderColor != null ? String((g as any).borderColor) : undefined,
+          shadowEnabled: (g as any).shadowEnabled != null ? Boolean((g as any).shadowEnabled) : undefined,
+          fade: (g as any).fade != null ? (String((g as any).fade) as any) : undefined,
         })
       }
       const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
