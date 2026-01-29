@@ -12245,25 +12245,36 @@ export default function CreateVideo() {
 	                        width: '100%',
 	                        boxSizing: 'border-box',
 	                      }}
-		                      onPointerDown={(e) => {
-		                        if (e.button != null && e.button !== 0) return
-		                        if (!(totalSeconds > 0)) return
-		                        e.preventDefault()
-	                        e.stopPropagation()
-	                        try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
-	                        previewMiniDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startPlayhead: Number(playheadRef.current || 0) }
-	                      }}
-	                      onPointerMove={(e) => {
-	                        const cur = previewMiniDragRef.current
-	                        if (!cur) return
-	                        if (e.pointerId !== cur.pointerId) return
-	                        const dx = e.clientX - cur.startX
-	                        const deltaSeconds = -dx / pxPerSecond
-	                        const next = clamp(roundToTenth(cur.startPlayhead + deltaSeconds), 0, Math.max(0, totalSeconds))
-	                        playheadFromVideoRef.current = true
-	                        playheadRef.current = next
-	                        setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
-	                      }}
+			                      onPointerDown={(e) => {
+			                        if (e.button != null && e.button !== 0) return
+			                        if (!(totalSeconds > 0)) return
+			                        e.preventDefault()
+		                        e.stopPropagation()
+		                        // If user scrubs while playing, pause for predictable behavior.
+		                        if (playingRef.current) {
+		                          try { videoRef.current?.pause?.() } catch {}
+		                          try { overlayVideoRef.current?.pause?.() } catch {}
+		                          setPlaying(false)
+		                        }
+			                        try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+		                        previewMiniDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startPlayhead: Number(playheadRef.current || 0) }
+		                      }}
+		                      onPointerMove={(e) => {
+		                        const cur = previewMiniDragRef.current
+		                        if (!cur) return
+		                        if (e.pointerId !== cur.pointerId) return
+		                        const dx = e.clientX - cur.startX
+		                        const deltaSeconds = -dx / pxPerSecond
+		                        const next = clamp(roundToTenth(cur.startPlayhead + deltaSeconds), 0, Math.max(0, totalSeconds))
+		                        // This scrubber should behave like the main timeline: as the user drags,
+		                        // we actively seek the preview video(s) so the frame updates immediately.
+		                        // Mark as "from video" to skip the playhead→seek effect (we are seeking here).
+		                        playheadFromVideoRef.current = true
+		                        playheadRef.current = next
+		                        setTimeline((prev) => ({ ...prev, playheadSeconds: next }))
+		                        void seek(next)
+		                        void seekOverlay(next)
+		                      }}
 	                      onPointerUp={(e) => {
 	                        const cur = previewMiniDragRef.current
 	                        if (!cur) return
