@@ -14455,27 +14455,220 @@ export default function CreateVideo() {
                 const canEndDec01 = Number.isFinite(start) && Number.isFinite(end) && end - 0.1 >= start + minLen - 1e-9
                 const canEndInc01 = Number.isFinite(end) && end + 0.1 <= cap + 1e-9
 
-                return (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      <div style={statBox}>
-                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
-                      </div>
-                      <div style={statBox}>
-                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Duration</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) && Number.isFinite(end) ? `${Math.max(0, end - start).toFixed(1)}s` : '—'}</div>
-                      </div>
-                      <div style={statBox}>
-                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
-                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
-                      </div>
-                    </div>
+	                return (
+	                  <>
+	                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Start</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) ? `${start.toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>Duration</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(start) && Number.isFinite(end) ? `${Math.max(0, end - start).toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                      <div style={statBox}>
+	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
+	                      </div>
+	                    </div>
 
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                        <div>
-                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+	                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+	                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
+	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+	                          <button
+	                            type="button"
+	                            onClick={() =>
+	                              setGraphicEditor((p) =>
+	                                p
+	                                  ? {
+	                                      ...p,
+	                                      fitMode: 'cover_full',
+	                                    }
+	                                  : p
+	                              )
+	                            }
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(255,255,255,0.18)',
+	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Full Frame
+	                          </button>
+	                          <button
+	                            type="button"
+	                            onClick={() =>
+	                              setGraphicEditor((p) =>
+	                                p
+	                                  ? {
+	                                      ...p,
+	                                      fitMode: 'contain_transparent',
+	                                    }
+	                                  : p
+	                              )
+	                            }
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: '1px solid rgba(10,132,255,0.45)',
+	                              background:
+	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(10,132,255,0.16)' : 'rgba(10,132,255,0.08)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
+	                          >
+	                            Positioned
+	                          </button>
+	                        </div>
+	                      </div>
+
+	                      {graphicEditor.fitMode === 'contain_transparent' ? (
+	                        <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
+	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
+	                            <div>
+	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
+	                              <select
+	                                value={String(graphicEditor.sizePctWidth)}
+	                                onChange={(e) => {
+	                                  const v = Math.round(Number(e.target.value))
+	                                  setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
+	                                }}
+	                                style={{
+	                                  width: '100%',
+	                                  padding: '10px 12px',
+	                                  borderRadius: 12,
+	                                  border: '1px solid rgba(255,255,255,0.16)',
+	                                  background: '#0c0c0c',
+	                                  color: '#fff',
+	                                  fontWeight: 900,
+	                                }}
+	                              >
+	                                {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+	                                  <option key={n} value={String(n)}>
+	                                    {n}%
+	                                  </option>
+	                                ))}
+	                              </select>
+	                            </div>
+	                            <div>
+	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
+	                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+	                                <input
+	                                  type="number"
+	                                  inputMode="numeric"
+	                                  value={String(graphicEditor.insetXPx)}
+	                                  onChange={(e) => {
+	                                    const v = Math.round(Number(e.target.value))
+	                                    setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
+	                                  }}
+	                                  style={{
+	                                    width: '100%',
+	                                    padding: '10px 12px',
+	                                    borderRadius: 12,
+	                                    border: '1px solid rgba(255,255,255,0.16)',
+	                                    background: '#0c0c0c',
+	                                    color: '#fff',
+	                                    fontWeight: 900,
+	                                  }}
+	                                  aria-label="Horizontal inset px"
+	                                  title="Horizontal inset (px)"
+	                                />
+	                                <input
+	                                  type="number"
+	                                  inputMode="numeric"
+	                                  value={String(graphicEditor.insetYPx)}
+	                                  onChange={(e) => {
+	                                    const v = Math.round(Number(e.target.value))
+	                                    setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
+	                                  }}
+	                                  style={{
+	                                    width: '100%',
+	                                    padding: '10px 12px',
+	                                    borderRadius: 12,
+	                                    border: '1px solid rgba(255,255,255,0.16)',
+	                                    background: '#0c0c0c',
+	                                    color: '#fff',
+	                                    fontWeight: 900,
+	                                  }}
+	                                  aria-label="Vertical inset px"
+	                                  title="Vertical inset (px)"
+	                                />
+	                              </div>
+	                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Left/Right · Top/Bottom</div>
+	                            </div>
+	                          </div>
+
+	                          <div>
+	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Position</div>
+	                            {(() => {
+	                              const cells: Array<{ key: any; label: string }> = [
+	                                { key: 'top_left', label: '↖' },
+	                                { key: 'top_center', label: '↑' },
+	                                { key: 'top_right', label: '↗' },
+	                                { key: 'middle_left', label: '←' },
+	                                { key: 'middle_center', label: '•' },
+	                                { key: 'middle_right', label: '→' },
+	                                { key: 'bottom_left', label: '↙' },
+	                                { key: 'bottom_center', label: '↓' },
+	                                { key: 'bottom_right', label: '↘' },
+	                              ]
+	                              return (
+	                                <div
+	                                  style={{
+	                                    display: 'grid',
+	                                    gridTemplateColumns: 'repeat(3, 1fr)',
+	                                    gap: 8,
+	                                    maxWidth: 240,
+	                                  }}
+	                                >
+	                                  {cells.map((c) => {
+	                                    const selected = String(graphicEditor.position) === String(c.key)
+	                                    return (
+	                                      <button
+	                                        key={String(c.key)}
+	                                        type="button"
+	                                        onClick={() => setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))}
+	                                        style={{
+	                                          height: 44,
+	                                          borderRadius: 12,
+	                                          border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                                          background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+	                                          color: '#fff',
+	                                          fontWeight: 900,
+	                                          cursor: 'pointer',
+	                                          display: 'flex',
+	                                          alignItems: 'center',
+	                                          justifyContent: 'center',
+	                                          fontSize: 18,
+	                                        }}
+	                                        aria-label={`Position ${String(c.key)}`}
+	                                      >
+	                                        {c.label}
+	                                      </button>
+	                                    )
+	                                  })}
+	                                </div>
+	                              )
+	                            })()}
+	                          </div>
+	                        </div>
+	                      ) : (
+	                        <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
+	                          Full-frame graphics fill the canvas and may crop to cover.
+	                        </div>
+	                      )}
+	                    </div>
+
+	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+	                        <div>
+	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Adjust Start</div>
                           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                             <button type="button" disabled={!canStartDec01} onClick={() => adjustStart(-0.1)} style={adjustBtn(canStartDec01)}>-0.1s</button>
                             <button type="button" disabled={!canStartInc01} onClick={() => adjustStart(0.1)} style={adjustBtn(canStartInc01)}>+0.1s</button>
@@ -15219,199 +15412,6 @@ export default function CreateVideo() {
 	                        <div style={{ color: '#bbb', fontSize: 12, marginBottom: 4 }}>End</div>
 	                        <div style={{ fontSize: 14, fontWeight: 900 }}>{Number.isFinite(end) ? `${end.toFixed(1)}s` : '—'}</div>
 	                      </div>
-	                    </div>
-
-	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
-	                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-	                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
-	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-	                          <button
-	                            type="button"
-	                            onClick={() =>
-	                              setGraphicEditor((p) =>
-	                                p
-	                                  ? {
-	                                      ...p,
-	                                      fitMode: 'cover_full',
-	                                    }
-	                                  : p
-	                              )
-	                            }
-	                            style={{
-	                              padding: '8px 10px',
-	                              borderRadius: 10,
-	                              border: '1px solid rgba(255,255,255,0.18)',
-	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                            }}
-	                          >
-	                            Full Frame
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() =>
-	                              setGraphicEditor((p) =>
-	                                p
-	                                  ? {
-	                                      ...p,
-	                                      fitMode: 'contain_transparent',
-	                                    }
-	                                  : p
-	                              )
-	                            }
-	                            style={{
-	                              padding: '8px 10px',
-	                              borderRadius: 10,
-	                              border: '1px solid rgba(10,132,255,0.45)',
-	                              background:
-	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(10,132,255,0.16)' : 'rgba(10,132,255,0.08)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                            }}
-	                          >
-	                            Positioned
-	                          </button>
-	                        </div>
-	                      </div>
-
-	                      {graphicEditor.fitMode === 'contain_transparent' ? (
-	                        <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
-	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'end' }}>
-	                            <div>
-	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
-	                              <select
-	                                value={String(graphicEditor.sizePctWidth)}
-	                                onChange={(e) => {
-	                                  const v = Math.round(Number(e.target.value))
-	                                  setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
-	                                }}
-	                                style={{
-	                                  width: '100%',
-	                                  padding: '10px 12px',
-	                                  borderRadius: 12,
-	                                  border: '1px solid rgba(255,255,255,0.16)',
-	                                  background: '#0c0c0c',
-	                                  color: '#fff',
-	                                  fontWeight: 900,
-	                                }}
-	                              >
-	                                {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
-	                                  <option key={n} value={String(n)}>
-	                                    {n}%
-	                                  </option>
-	                                ))}
-	                              </select>
-	                            </div>
-	                            <div>
-	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
-	                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(graphicEditor.insetXPx)}
-	                                  onChange={(e) => {
-	                                    const v = Math.round(Number(e.target.value))
-	                                    setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '100%',
-	                                    padding: '10px 12px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                  aria-label="Horizontal inset px"
-	                                  title="Horizontal inset (px)"
-	                                />
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(graphicEditor.insetYPx)}
-	                                  onChange={(e) => {
-	                                    const v = Math.round(Number(e.target.value))
-	                                    setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '100%',
-	                                    padding: '10px 12px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                  aria-label="Vertical inset px"
-	                                  title="Vertical inset (px)"
-	                                />
-	                              </div>
-	                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Left/Right · Top/Bottom</div>
-	                            </div>
-	                          </div>
-
-	                          <div>
-	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Position</div>
-	                            {(() => {
-	                              const cells: Array<{ key: any; label: string }> = [
-	                                { key: 'top_left', label: '↖' },
-	                                { key: 'top_center', label: '↑' },
-	                                { key: 'top_right', label: '↗' },
-	                                { key: 'middle_left', label: '←' },
-	                                { key: 'middle_center', label: '•' },
-	                                { key: 'middle_right', label: '→' },
-	                                { key: 'bottom_left', label: '↙' },
-	                                { key: 'bottom_center', label: '↓' },
-	                                { key: 'bottom_right', label: '↘' },
-	                              ]
-	                              return (
-	                                <div
-	                                  style={{
-	                                    display: 'grid',
-	                                    gridTemplateColumns: 'repeat(3, 1fr)',
-	                                    gap: 8,
-	                                    maxWidth: 240,
-	                                  }}
-	                                >
-	                                  {cells.map((c) => {
-	                                    const selected = String(graphicEditor.position) === String(c.key)
-	                                    return (
-	                                      <button
-	                                        key={String(c.key)}
-	                                        type="button"
-	                                        onClick={() => setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))}
-	                                        style={{
-	                                          height: 44,
-	                                          borderRadius: 12,
-	                                          border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
-	                                          background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
-	                                          color: '#fff',
-	                                          fontWeight: 900,
-	                                          cursor: 'pointer',
-	                                          display: 'flex',
-	                                          alignItems: 'center',
-	                                          justifyContent: 'center',
-	                                          fontSize: 18,
-	                                        }}
-	                                        aria-label={`Position ${String(c.key)}`}
-	                                      >
-	                                        {c.label}
-	                                      </button>
-	                                    )
-	                                  })}
-	                                </div>
-	                              )
-	                            })()}
-	                          </div>
-	                        </div>
-	                      ) : (
-	                        <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
-	                          Full-frame graphics fill the canvas and may crop to cover.
-	                        </div>
-	                      )}
 	                    </div>
 
 	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
