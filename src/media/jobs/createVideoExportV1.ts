@@ -838,14 +838,17 @@ async function overlayGraphics(opts: {
       // Simple shadow: black+alpha copy, blurred, and shifted down/right *behind* the source.
       // Note: We keep the output size equal to the source by padding+cropping (shadow is clipped at edges).
       const shadowOffset = 8
-      const shadowPad = shadowOffset * 2
+      // Provide enough margin for blur to spread without clamping. Must be >= shadowOffset.
+      const padMargin = 32
+      const pad2 = padMargin * 2
       filters.push(
         `[img${i}b]split=2[img${i}src][img${i}s];` +
           `[img${i}s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.45,` +
           // Pad *before* blur so the blur can spill outward (otherwise it clamps at the edges and looks like an outline).
-          `pad=iw+${shadowPad}:ih+${shadowPad}:${shadowOffset}:${shadowOffset}:color=black@0,` +
+          // Keep the source centered in the padded canvas; then crop a down/right window to create the offset shadow.
+          `pad=iw+${pad2}:ih+${pad2}:${padMargin}:${padMargin}:color=black@0,` +
           `gblur=sigma=16:steps=4,` +
-          `crop=iw-${shadowPad}:ih-${shadowPad}:0:0[img${i}sh];` +
+          `crop=iw-${pad2}:ih-${pad2}:${padMargin + shadowOffset}:${padMargin + shadowOffset}[img${i}sh];` +
           `[img${i}sh][img${i}src]overlay=0:0:format=auto${fadeIn}${fadeOut}[img${i}]`
       )
     } else {
