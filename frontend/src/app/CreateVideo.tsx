@@ -15450,24 +15450,62 @@ export default function CreateVideo() {
                 </select>
               </label>
 
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
-                <select
-                  value={String(videoOverlayEditor.position)}
-                  onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, position: e.target.value as any }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                >
-                  <option value="top_left">Top Left</option>
-                  <option value="top_center">Top Center</option>
-                  <option value="top_right">Top Right</option>
-                  <option value="middle_left">Middle Left</option>
-                  <option value="middle_center">Middle Center</option>
-                  <option value="middle_right">Middle Right</option>
-                  <option value="bottom_left">Bottom Left</option>
-                  <option value="bottom_center">Bottom Center</option>
-                  <option value="bottom_right">Bottom Right</option>
-                </select>
-              </label>
+	              <label style={{ display: 'grid', gap: 6 }}>
+	                <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
+	                {(() => {
+	                  const cells = [
+	                    { key: 'top_left', label: '↖' },
+	                    { key: 'top_center', label: '↑' },
+	                    { key: 'top_right', label: '↗' },
+	                    { key: 'middle_left', label: '←' },
+	                    { key: 'middle_center', label: '•' },
+	                    { key: 'middle_right', label: '→' },
+	                    { key: 'bottom_left', label: '↙' },
+	                    { key: 'bottom_center', label: '↓' },
+	                    { key: 'bottom_right', label: '↘' },
+	                  ] as const
+	                  return (
+	                    <div
+	                      style={{
+	                        display: 'grid',
+	                        gridTemplateColumns: 'repeat(3, 1fr)',
+	                        gap: 8,
+	                        maxWidth: 240,
+	                      }}
+	                    >
+	                      {cells.map((c) => {
+	                        const selected = String(videoOverlayEditor.position) === String(c.key)
+	                        return (
+	                          <button
+	                            key={String(c.key)}
+	                            type="button"
+	                            onClick={() => {
+	                              setVideoOverlayEditorError(null)
+	                              setVideoOverlayEditor((p) => (p ? ({ ...p, position: c.key as any }) : p))
+	                            }}
+	                            style={{
+	                              height: 44,
+	                              borderRadius: 12,
+	                              border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                              background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                              display: 'flex',
+	                              alignItems: 'center',
+	                              justifyContent: 'center',
+	                              fontSize: 18,
+	                            }}
+	                            aria-label={`Position ${String(c.key)}`}
+	                          >
+	                            {c.label}
+	                          </button>
+	                        )
+	                      })}
+	                    </div>
+	                  )
+	                })()}
+	              </label>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
                 <input
