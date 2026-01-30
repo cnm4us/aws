@@ -532,12 +532,12 @@ export default function Exports() {
                   style={{
                     padding: '12px 12px',
                     borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#0c0c0c',
+                    border: '1px solid rgba(10,132,255,0.55)',
+                    background: actionsProjectId ? '#0a84ff' : 'rgba(40,40,40,0.92)',
                     color: '#fff',
                     fontWeight: 900,
                     cursor: actionsProjectId ? 'pointer' : 'default',
-                    opacity: actionsProjectId ? 1 : 0.5,
+                    opacity: actionsProjectId ? 1 : 0.85,
                   }}
                 >
                   Open Timeline
