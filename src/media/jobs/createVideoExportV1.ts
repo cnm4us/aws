@@ -854,16 +854,14 @@ async function overlayGraphics(opts: {
   }
 
   const filters: string[] = []
-  const shadowMeta: Array<{ enabled: boolean; offsetPx: number; padMarginPx: number }> = []
+  const shadowMeta: Array<{ enabled: boolean; offsetPx: number }> = []
   for (let i = 0; i < opts.graphics.length; i++) {
     const g = opts.graphics[i]
     const inIdx = i + 1
     const fitMode = g.fitMode || 'cover_full'
-    const borderWidthRaw = g.borderWidthPx == null ? 0 : Number(g.borderWidthPx)
-    const borderWidth = borderWidthRaw === 2 || borderWidthRaw === 4 || borderWidthRaw === 6 ? borderWidthRaw : 0
-    const borderColorRaw = g.borderColor ? String(g.borderColor) : '#000000'
-    const borderColor = `${normalizeFfmpegColor(borderColorRaw)}@1.0`
-    const borderFilter = borderWidth > 0 ? `,drawbox=x=0:y=0:w=iw:h=ih:color=${borderColor}:t=${borderWidth}` : ''
+    // NOTE: Shadow debugging mode: we intentionally bypass borders + fades to simplify the filter graph.
+    // UI controls remain, but export ignores them for now.
+    const borderFilter = ''
     const shadowEnabled = Boolean(g.shadowEnabled)
     const shadowSigmaRaw = Number(g.shadowBlurSigma)
     const shadowSigma = Number.isFinite(shadowSigmaRaw) ? Math.max(0.5, Math.min(64, shadowSigmaRaw)) : 16
@@ -871,23 +869,7 @@ async function overlayGraphics(opts: {
     const shadowOffset = Number.isFinite(shadowOffsetRaw) ? Math.max(0, Math.min(64, Math.round(shadowOffsetRaw))) : 8
     const shadowOpacityRaw = Number(g.shadowOpacityPct)
     const shadowOpacity = Number.isFinite(shadowOpacityRaw) ? Math.max(0, Math.min(100, shadowOpacityRaw)) / 100 : 0.45
-    const shadowPadMarginRaw = Math.max(
-      shadowOffset,
-      // Big enough for most of the blur energy to fit without looking like a clipped outline.
-      Math.ceil(shadowSigma * 2),
-    )
-    shadowMeta[i] = {
-      enabled: shadowEnabled,
-      offsetPx: shadowOffset,
-      padMarginPx: Math.min(128, shadowPadMarginRaw),
-    }
-    const fadeMode = (g.fade as any) == null ? 'none' : String(g.fade)
-    const s = roundToTenth(Number(g.startSeconds))
-    const e = roundToTenth(Number(g.endSeconds))
-    const segDur = Math.max(0, e - s)
-    const fadeD = segDur > 0.05 ? Math.max(0, Math.min(0.35, segDur / 2)) : 0
-    const fadeIn = fadeD > 0 && (fadeMode === 'in' || fadeMode === 'in_out') ? `,fade=t=in:st=${s.toFixed(3)}:d=${fadeD.toFixed(3)}:alpha=1` : ''
-    const fadeOut = fadeD > 0 && (fadeMode === 'out' || fadeMode === 'in_out') ? `,fade=t=out:st=${(e - fadeD).toFixed(3)}:d=${fadeD.toFixed(3)}:alpha=1` : ''
+    shadowMeta[i] = { enabled: shadowEnabled, offsetPx: shadowOffset }
     if (fitMode === 'contain_transparent') {
       const sizePctWidth = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
@@ -898,31 +880,21 @@ async function overlayGraphics(opts: {
       // - available width after X insets
       // - available height after Y insets (converted to width by aspect)
       const wExpr = `min(${desiredW},min(${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih))`
-      filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba${borderFilter}[img${i}b]`)
+      filters.push(`[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba${borderFilter}[img${i}src]`)
     } else {
       // Legacy full-frame cover.
       filters.push(
-        `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba${borderFilter}[img${i}b]`
+        `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba${borderFilter}[img${i}src]`
       )
     }
 
     if (shadowEnabled) {
-      const margin = shadowMeta[i].padMarginPx
-      const pad2 = margin * 2
-      // Apply fade to the whole composite by applying the same alpha fade to both layers (shadow + source).
       filters.push(
-        // Split so the base stream can feed both shadow and source branches.
-        `[img${i}b]split=2[img${i}src0][img${i}sh0];` +
-          // Source branch (border + optional fade).
-          `[img${i}src0]null${fadeIn}${fadeOut}[img${i}src];` +
-          // Shadow branch: black+alpha copy, pad to give blur room, blur, optional fade.
+        // Simplest possible shadow: duplicate the source, tint black+alpha, blur, and overlay behind at an offset.
+        `[img${i}src]split=2[img${i}src0][img${i}sh0];` +
           `[img${i}sh0]colorchannelmixer=rr=0:gg=0:bb=0:aa=${shadowOpacity.toFixed(3)},` +
-          `pad=iw+${pad2}:ih+${pad2}:${margin}:${margin}:color=black@0,` +
-          `gblur=sigma=${shadowSigma.toFixed(2)}:steps=4,` +
-          `null${fadeIn}${fadeOut}[img${i}sh]`
+          `gblur=sigma=${shadowSigma.toFixed(2)}:steps=4[img${i}sh]`
       )
-    } else {
-      filters.push(`[img${i}b]null${fadeIn}${fadeOut}[img${i}src]`)
     }
   }
 
@@ -936,25 +908,23 @@ async function overlayGraphics(opts: {
     const shadow = shadowMeta[i]
     const shadowEnabled = Boolean(shadow?.enabled)
     const shadowOffset = Math.round(Number(shadow?.offsetPx || 0))
-    const shadowPadMargin = Math.round(Number(shadow?.padMarginPx || 0))
     if (fitMode === 'contain_transparent') {
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
       const pos = String(g.position || 'middle_center')
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
       if (shadowEnabled) {
-        const sxy = overlayXYForShadowPositionPx(pos, insetXPx, insetYPx, shadowOffset, shadowPadMargin)
-        filters.push(`${current}[img${i}sh]overlay=${sxy.x}:${sxy.y}:enable='between(t,${s},${e})'[vs${i}]`)
-        filters.push(`[vs${i}][img${i}src]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
+        const sx = `(${xy.x})+${shadowOffset}`
+        const sy = `(${xy.y})+${shadowOffset}`
+        filters.push(`${current}[img${i}sh]overlay=${sx}:${sy}:enable='between(t,${s},${e})'[vs${i}]`)
+        filters.push(`[vs${i}][img${i}src0]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       }
     } else {
       if (shadowEnabled) {
-        const ox = shadowOffset - shadowPadMargin
-        const oy = shadowOffset - shadowPadMargin
-        filters.push(`${current}[img${i}sh]overlay=${ox}:${oy}:enable='between(t,${s},${e})'[vs${i}]`)
-        filters.push(`[vs${i}][img${i}src]overlay=0:0:enable='between(t,${s},${e})'${next}`)
+        filters.push(`${current}[img${i}sh]overlay=${shadowOffset}:${shadowOffset}:enable='between(t,${s},${e})'[vs${i}]`)
+        filters.push(`[vs${i}][img${i}src0]overlay=0:0:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=0:0:enable='between(t,${s},${e})'${next}`)
       }
