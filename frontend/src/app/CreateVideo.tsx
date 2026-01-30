@@ -12392,10 +12392,10 @@ export default function CreateVideo() {
 	                        alignItems: 'center',
 	                        justifyContent: 'center',
 	                      }}
-	                      title="Play/Pause"
+	                      title={playing ? 'Pause' : 'Play'}
 	                      aria-label={playing ? 'Pause' : 'Play'}
 	                    >
-	                      <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+	                      <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
 	                        {playPauseGlyph(playing)}
 	                      </span>
 	                    </button>
@@ -14398,10 +14398,10 @@ export default function CreateVideo() {
 			                    minWidth: 44,
 			                    lineHeight: 1,
 			                  }}
-			                  title="Play/Pause"
+			                  title={playing ? 'Pause' : 'Play'}
 			                  aria-label={playing ? 'Pause' : 'Play'}
 			                >
-			                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+			                  <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
 			                    {playPauseGlyph(playing)}
 			                  </span>
 			                </button>
