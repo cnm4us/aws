@@ -93,6 +93,10 @@ export default function Exports() {
   const [actionsUploadId, setActionsUploadId] = useState<number | null>(null)
   const [actionsTitle, setActionsTitle] = useState<string>('')
   const [actionsProjectId, setActionsProjectId] = useState<number | null>(null)
+  const [actionsHlsState, setActionsHlsState] = useState<'not_ready' | 'in_progress' | 'ready' | 'failed'>('not_ready')
+  const [actionsProductionId, setActionsProductionId] = useState<number | null>(null)
+  const [actionsHlsError, setActionsHlsError] = useState<string | null>(null)
+  const [actionsHlsLoading, setActionsHlsLoading] = useState(false)
 
   const projectsById = useMemo(() => {
     const m = new Map<number, ProjectListItem>()
@@ -146,6 +150,55 @@ export default function Exports() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!actionsOpen) return
+    if (!me?.userId) return
+    if (actionsUploadId == null) return
+    let cancelled = false
+    let pollTimer: any = null
+
+    const fetchStatus = async () => {
+      if (cancelled) return
+      try {
+        setActionsHlsLoading(true)
+        const res = await fetch(`/api/exports/${encodeURIComponent(String(actionsUploadId))}/hls-status`, { credentials: 'same-origin' })
+        const json: any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_load_hls_status'))
+        const state = json?.state != null ? String(json.state) : 'not_ready'
+        const productionId = json?.productionId != null ? Number(json.productionId) : null
+        const errorMessage = json?.errorMessage != null ? String(json.errorMessage) : null
+        if (cancelled) return
+        if (state === 'ready' || state === 'in_progress' || state === 'failed' || state === 'not_ready') {
+          setActionsHlsState(state)
+        } else {
+          setActionsHlsState('not_ready')
+        }
+        setActionsProductionId(Number.isFinite(productionId as any) && (productionId as any) > 0 ? (productionId as any) : null)
+        setActionsHlsError(errorMessage ? errorMessage : null)
+      } catch (e: any) {
+        if (cancelled) return
+        setActionsHlsState('not_ready')
+        setActionsProductionId(null)
+        setActionsHlsError(e?.message || 'Failed to load HLS status')
+      } finally {
+        if (!cancelled) setActionsHlsLoading(false)
+      }
+    }
+
+    fetchStatus()
+    pollTimer = setInterval(() => {
+      if (cancelled) return
+      if (actionsHlsState !== 'in_progress') return
+      fetchStatus()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      if (pollTimer) clearInterval(pollTimer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionsOpen, actionsUploadId, me?.userId, actionsHlsState])
+
   if (loading) {
 	  return (
 	    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -181,7 +234,7 @@ export default function Exports() {
         </div>
 
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Exports</h1>
-	        <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Send to HLS when ready.</p>
+	        <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Prep for Publish (HLS) when ready.</p>
 
 	        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
           {exportsList.map((u) => {
@@ -268,6 +321,9 @@ export default function Exports() {
                         setActionsUploadId(Number(u.id))
                         setActionsTitle(title)
                         setActionsProjectId(projectId)
+                        setActionsHlsState('not_ready')
+                        setActionsProductionId(null)
+                        setActionsHlsError(null)
                       }}
                       style={{
                         position: 'absolute',
@@ -395,6 +451,9 @@ export default function Exports() {
               setActionsUploadId(null)
               setActionsTitle('')
               setActionsProjectId(null)
+              setActionsHlsState('not_ready')
+              setActionsProductionId(null)
+              setActionsHlsError(null)
             }}
             style={{
               position: 'fixed',
@@ -426,6 +485,9 @@ export default function Exports() {
                     setActionsUploadId(null)
                     setActionsTitle('')
                     setActionsProjectId(null)
+                    setActionsHlsState('not_ready')
+                    setActionsProductionId(null)
+                    setActionsHlsError(null)
                   }}
                   style={{
                     width: 42,
@@ -443,6 +505,23 @@ export default function Exports() {
               </div>
 
               <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+                <div style={{ color: '#ddd', fontSize: 13 }}>
+                  <span style={{ fontWeight: 900 }}>Prep:</span>{' '}
+                  {actionsHlsLoading ? (
+                    <span style={{ color: '#bbb' }}>Checking…</span>
+                  ) : actionsHlsState === 'ready' ? (
+                    <span style={{ color: '#7dff9f', fontWeight: 900 }}>Ready</span>
+                  ) : actionsHlsState === 'in_progress' ? (
+                    <span style={{ color: '#ffd37d', fontWeight: 900 }}>In progress</span>
+                  ) : actionsHlsState === 'failed' ? (
+                    <span style={{ color: '#ff9b9b', fontWeight: 900 }}>Failed</span>
+                  ) : (
+                    <span style={{ color: '#bbb' }}>Not ready</span>
+                  )}
+                </div>
+                {actionsHlsState === 'failed' && actionsHlsError ? (
+                  <div style={{ color: '#ff9b9b', fontSize: 12, wordBreak: 'break-word' }}>{actionsHlsError}</div>
+                ) : null}
                 <button
                   type="button"
                   disabled={!actionsProjectId}
@@ -465,7 +544,12 @@ export default function Exports() {
                 </button>
                 <button
                   type="button"
-                  disabled={actionsUploadId == null || sendingId === actionsUploadId}
+                  disabled={
+                    actionsUploadId == null ||
+                    sendingId === actionsUploadId ||
+                    actionsHlsState === 'in_progress' ||
+                    actionsHlsState === 'ready'
+                  }
                   onClick={async () => {
                     if (!me?.userId) return
                     if (actionsUploadId == null) return
@@ -474,16 +558,19 @@ export default function Exports() {
                       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
                       const csrf = getCsrfToken()
                       if (csrf) headers['x-csrf-token'] = csrf
-                      const res = await fetch('/api/productions', {
+                      const res = await fetch(`/api/exports/${encodeURIComponent(String(actionsUploadId))}/prep-hls`, {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers,
-                        body: JSON.stringify({ uploadId: actionsUploadId, name: actionsTitle }),
+                        body: JSON.stringify({ name: actionsTitle }),
                       })
                       const json: any = await res.json().catch(() => null)
-                      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_send'))
-                      const productionId = Number(json?.production?.id)
-                      window.location.href = Number.isFinite(productionId) && productionId > 0 ? `/productions?id=${encodeURIComponent(String(productionId))}` : '/productions'
+                      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_prep'))
+                      const state = json?.state != null ? String(json.state) : 'in_progress'
+                      const productionId = json?.productionId != null ? Number(json.productionId) : null
+                      setActionsHlsState(state === 'ready' || state === 'failed' || state === 'not_ready' ? state : 'in_progress')
+                      setActionsProductionId(Number.isFinite(productionId as any) && (productionId as any) > 0 ? (productionId as any) : null)
+                      setActionsHlsError(null)
                     } catch (e: any) {
                       window.alert(e?.message || 'Failed to start HLS')
                     } finally {
@@ -494,14 +581,38 @@ export default function Exports() {
                     padding: '12px 12px',
                     borderRadius: 12,
                     border: '1px solid rgba(10,132,255,0.55)',
-                    background: '#0a84ff',
+                    background:
+                      actionsHlsState === 'ready' || actionsHlsState === 'in_progress'
+                        ? 'rgba(40,40,40,0.92)'
+                        : '#0a84ff',
                     color: '#fff',
                     fontWeight: 900,
-                    cursor: 'pointer',
+                    cursor: actionsHlsState === 'ready' || actionsHlsState === 'in_progress' ? 'default' : 'pointer',
                     opacity: actionsUploadId != null && sendingId === actionsUploadId ? 0.7 : 1,
                   }}
                 >
-                  Send to HLS
+                  {actionsHlsState === 'failed' ? 'Retry Prep for Publish (HLS)' : 'Prep for Publish (HLS)'}
+                </button>
+                <button
+                  type="button"
+                  disabled={actionsHlsState !== 'ready' || !actionsProductionId}
+                  onClick={() => {
+                    if (actionsHlsState !== 'ready') return
+                    if (!actionsProductionId) return
+                    window.location.href = `/publish?production=${encodeURIComponent(String(actionsProductionId))}`
+                  }}
+                  style={{
+                    padding: '12px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(10,132,255,0.55)',
+                    background: actionsHlsState === 'ready' && actionsProductionId ? '#0a84ff' : 'rgba(40,40,40,0.92)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: actionsHlsState === 'ready' && actionsProductionId ? 'pointer' : 'default',
+                    opacity: actionsHlsState === 'ready' && actionsProductionId ? 1 : 0.85,
+                  }}
+                >
+                  Publish
                 </button>
                 <button
                   type="button"
@@ -527,6 +638,9 @@ export default function Exports() {
                       setActionsUploadId(null)
                       setActionsTitle('')
                       setActionsProjectId(null)
+                      setActionsHlsState('not_ready')
+                      setActionsProductionId(null)
+                      setActionsHlsError(null)
                     } catch (e: any) {
                       window.alert(e?.message || 'Failed to delete export')
                     } finally {

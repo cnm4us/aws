@@ -85,6 +85,8 @@ export async function ensureSchema(db: DB) {
 	  // Plan 68: discriminate raw uploads vs Create Video exports, and link export uploads back to their timeline project.
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS video_role ENUM('source','export') NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS create_video_project_id BIGINT UNSIGNED NULL`);
+	  // Plan 75: stable mapping from an export upload to its HLS production (for /exports "Prep for Publish" + "Publish" UX).
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS create_video_production_id BIGINT UNSIGNED NULL`);
 	  // Plan 51: richer system audio metadata (selectable by creators)
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS artist VARCHAR(255) NULL`);
 	  await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads (user_id)`);
@@ -96,6 +98,7 @@ export async function ensureSchema(db: DB) {
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_kind_role_status ON uploads (kind, image_role, status, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_project ON uploads (video_role, create_video_project_id, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_production ON uploads (video_role, create_video_production_id, id)`); } catch {}
 
 		  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
 		  await db.query(`

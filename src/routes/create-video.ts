@@ -6,6 +6,9 @@ import { requireAuth } from '../middleware/auth'
 import * as createVideoSvc from '../features/create-video/service'
 import { getPool } from '../db'
 import { DomainError } from '../core/errors'
+import * as prodSvc from '../features/productions/service'
+import { can } from '../security/permissions'
+import { PERM } from '../security/perm'
 import * as screenTitlePresetsSvc from '../features/screen-title-presets/service'
 import { renderScreenTitlePngWithPango } from '../services/pango/screenTitlePng'
 import { uploadFileToS3 } from '../services/ffmpeg/audioPipeline'
@@ -148,6 +151,157 @@ createVideoRouter.post('/api/create-video/projects/:id/export', requireAuth, asy
     const projectId = Number(req.params.id)
     const result = await createVideoSvc.exportProjectForUserById(currentUserId, projectId)
     res.status(202).json(result)
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+type ExportHlsState = 'not_ready' | 'in_progress' | 'ready' | 'failed'
+function mapProductionToHlsState(statusRaw: unknown): ExportHlsState {
+  const status = String(statusRaw || '').toLowerCase()
+  if (!status) return 'not_ready'
+  if (status === 'completed') return 'ready'
+  if (status === 'failed') return 'failed'
+  // pending/pending_media/queued/processing all mean "started but not ready yet"
+  return 'in_progress'
+}
+
+async function loadExportUploadForUser(uploadId: number, currentUserId: number) {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, video_role, s3_key, create_video_production_id, modified_filename
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('not_found', 'not_found', 404)
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId === currentUserId
+  const isAdmin = await can(currentUserId, PERM.VIDEO_DELETE_ANY).catch(() => false)
+  if (!isOwner && !isAdmin) throw new DomainError('forbidden', 'forbidden', 403)
+  if (String(row.kind || '') !== 'video') throw new DomainError('invalid_kind', 'invalid_kind', 400)
+  const role = row.video_role != null ? String(row.video_role) : ''
+  const key = String(row.s3_key || '')
+  const isExport = role === 'export' || key.includes('/renders/') || key.startsWith('renders/')
+  if (!isExport) throw new DomainError('not_export', 'not_export', 400)
+  return row
+}
+
+createVideoRouter.get('/api/exports/:uploadId/hls-status', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const uploadId = Number(req.params.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new DomainError('bad_upload_id', 'bad_upload_id', 400)
+    const upload = await loadExportUploadForUser(uploadId, currentUserId)
+    const db = getPool()
+
+    let productionId: number | null =
+      upload.create_video_production_id != null && Number.isFinite(Number(upload.create_video_production_id)) && Number(upload.create_video_production_id) > 0
+        ? Number(upload.create_video_production_id)
+        : null
+
+    let productionRow: any | null = null
+    if (productionId) {
+      const [prows] = await db.query(
+        `SELECT id, status, error_message
+           FROM productions
+          WHERE id = ? AND user_id = ?
+          LIMIT 1`,
+        [productionId, currentUserId]
+      )
+      productionRow = (prows as any[])[0] || null
+      if (!productionRow) productionId = null
+    }
+
+    if (!productionRow) {
+      const [prows] = await db.query(
+        `SELECT id, status, error_message
+           FROM productions
+          WHERE upload_id = ? AND user_id = ?
+          ORDER BY id DESC
+          LIMIT 1`,
+        [uploadId, currentUserId]
+      )
+      productionRow = (prows as any[])[0] || null
+      if (productionRow) {
+        productionId = Number(productionRow.id)
+        try {
+          await db.query(`UPDATE uploads SET create_video_production_id = ? WHERE id = ?`, [productionId, uploadId])
+        } catch {}
+      }
+    }
+
+    const state: ExportHlsState = productionRow ? mapProductionToHlsState(productionRow.status) : 'not_ready'
+    res.json({
+      state,
+      productionId: productionId ?? null,
+      productionStatus: productionRow ? String(productionRow.status || '') : null,
+      errorMessage: productionRow && productionRow.error_message != null ? String(productionRow.error_message) : null,
+    })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
+createVideoRouter.post('/api/exports/:uploadId/prep-hls', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const uploadId = Number(req.params.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new DomainError('bad_upload_id', 'bad_upload_id', 400)
+    const upload = await loadExportUploadForUser(uploadId, currentUserId)
+    const db = getPool()
+
+    const requestedName = req.body && typeof req.body === 'object' ? (req.body as any).name : null
+    const name = requestedName != null ? String(requestedName).slice(0, 255) : upload.modified_filename != null ? String(upload.modified_filename).slice(0, 255) : undefined
+
+    // If already linked, respect current state unless failed (then retry by creating a fresh production and updating the link).
+    const linkedIdRaw = upload.create_video_production_id
+    const linkedId = linkedIdRaw != null && Number.isFinite(Number(linkedIdRaw)) && Number(linkedIdRaw) > 0 ? Number(linkedIdRaw) : null
+    if (linkedId) {
+      const [prows] = await db.query(
+        `SELECT id, status
+           FROM productions
+          WHERE id = ? AND user_id = ?
+          LIMIT 1`,
+        [linkedId, currentUserId]
+      )
+      const p = (prows as any[])[0] || null
+      if (p) {
+        const state = mapProductionToHlsState(p.status)
+        if (state === 'ready' || state === 'in_progress') {
+          return res.json({ state, productionId: Number(p.id) })
+        }
+      }
+      // Broken link or failed: fall through to create a new production and relink.
+    }
+
+    // If there's an existing production for this export, prefer linking to it (avoid duplicates) unless it's failed.
+    const [existingRows] = await db.query(
+      `SELECT id, status
+         FROM productions
+        WHERE upload_id = ? AND user_id = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+      [uploadId, currentUserId]
+    )
+    const existing = (existingRows as any[])[0] || null
+    if (existing) {
+      const existingState = mapProductionToHlsState(existing.status)
+      if (existingState === 'ready' || existingState === 'in_progress') {
+        const pid = Number(existing.id)
+        try { await db.query(`UPDATE uploads SET create_video_production_id = ? WHERE id = ?`, [pid, uploadId]) } catch {}
+        return res.json({ state: existingState, productionId: pid })
+      }
+      // failed -> we intentionally create a new production row for retry, and update mapping.
+    }
+
+    const created = await prodSvc.create({ uploadId, name }, currentUserId)
+    const pid = Number(created?.production?.id)
+    if (!Number.isFinite(pid) || pid <= 0) throw new DomainError('failed_to_create_production', 'failed_to_create_production', 500)
+    await db.query(`UPDATE uploads SET create_video_production_id = ? WHERE id = ?`, [pid, uploadId])
+    res.json({ state: 'in_progress' as const, productionId: pid })
   } catch (err: any) {
     next(err)
   }
