@@ -15075,9 +15075,19 @@ export default function CreateVideo() {
                       color: '#fff',
                       fontWeight: 900,
                       cursor: 'pointer',
+                      minWidth: 44,
+                      height: 40,
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
+                    title={audioPreviewPlayingId === uploadId ? 'Pause preview' : 'Play preview'}
+                    aria-label={audioPreviewPlayingId === uploadId ? 'Pause preview' : 'Play preview'}
                   >
-                    {audioPreviewPlayingId === uploadId ? 'Pause' : 'Play'}
+                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                      {playPauseGlyph(audioPreviewPlayingId === uploadId)}
+                    </span>
                   </button>
                 </div>
               )
