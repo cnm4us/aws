@@ -740,10 +740,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const hasEffectsFields =
       (g as any).borderWidthPx != null ||
       (g as any).borderColor != null ||
-      (g as any).shadowEnabled != null ||
-      (g as any).shadowBlurSigma != null ||
-      (g as any).shadowOffsetPx != null ||
-      (g as any).shadowOpacityPct != null ||
       (g as any).fade != null
 
     const borderWidthRaw = Number((g as any).borderWidthPx)
@@ -751,13 +747,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const borderWidthPx = borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0
     const borderColorRaw = String((g as any).borderColor || '#000000').trim()
     const borderColor = /^#?[0-9a-fA-F]{6}$/.test(borderColorRaw) ? (borderColorRaw.startsWith('#') ? borderColorRaw : `#${borderColorRaw}`) : '#000000'
-    const shadowEnabled = Boolean((g as any).shadowEnabled)
-    const shadowBlurSigmaRaw = Number((g as any).shadowBlurSigma)
-    const shadowBlurSigma = Number.isFinite(shadowBlurSigmaRaw) ? clamp(shadowBlurSigmaRaw, 0.5, 64) : 16
-    const shadowOffsetPxRaw = Number((g as any).shadowOffsetPx)
-    const shadowOffsetPx = Number.isFinite(shadowOffsetPxRaw) ? Math.round(clamp(shadowOffsetPxRaw, 0, 64)) : 8
-    const shadowOpacityPctRaw = Number((g as any).shadowOpacityPct)
-    const shadowOpacityPct = Number.isFinite(shadowOpacityPctRaw) ? Math.round(clamp(shadowOpacityPctRaw, 0, 100)) : 45
     const fadeRaw = String((g as any).fade || 'none').trim().toLowerCase()
     const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
     const fade = fadeAllowed.has(fadeRaw) ? fadeRaw : 'none'
@@ -776,10 +765,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
         endSeconds,
         borderWidthPx,
         borderColor,
-        shadowEnabled,
-        shadowBlurSigma,
-        shadowOffsetPx,
-        shadowOpacityPct,
         fade,
       })
       continue
@@ -812,10 +797,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
       insetYPx,
       borderWidthPx,
       borderColor,
-      shadowEnabled,
-      shadowBlurSigma,
-      shadowOffsetPx,
-      shadowOpacityPct,
       fade,
     })
   }

@@ -537,10 +537,6 @@ export default function CreateVideo() {
     insetYPx: number
     borderWidthPx: 0 | 2 | 4 | 6
     borderColor: string
-    shadowEnabled: boolean
-    shadowBlurSigma: number
-    shadowOffsetPx: number
-    shadowOpacityPct: number
     fade: 'none' | 'in' | 'out' | 'in_out'
   } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
@@ -2403,12 +2399,11 @@ export default function CreateVideo() {
 
   const activeGraphicPreviewIndicators = useMemo(() => {
     const g: any = activeGraphicAtPlayhead as any
-    if (!g) return { show: false, hasFade: false, hasShadow: false }
-    if (String((g as any).id || '') !== String(selectedGraphicId || '')) return { show: false, hasFade: false, hasShadow: false }
+    if (!g) return { show: false, hasFade: false }
+    if (String((g as any).id || '') !== String(selectedGraphicId || '')) return { show: false, hasFade: false }
     const fade = String((g as any).fade || 'none')
     const hasFade = fade !== 'none'
-    const hasShadow = Boolean((g as any).shadowEnabled)
-    return { show: hasFade || hasShadow, hasFade, hasShadow }
+    return { show: hasFade, hasFade }
   }, [activeGraphicAtPlayhead, selectedGraphicId])
 
   const activeStillUrl = useMemo(() => {
@@ -5852,10 +5847,6 @@ export default function CreateVideo() {
         insetYPx: 24,
         borderWidthPx: 0,
         borderColor: '#000000',
-        shadowEnabled: false,
-        shadowBlurSigma: 16,
-        shadowOffsetPx: 8,
-        shadowOpacityPct: 45,
         fade: 'none',
       }
       snapshotUndo()
@@ -10253,7 +10244,7 @@ export default function CreateVideo() {
       const current = prevGraphics[idx] as any
       const currentHasPlacement =
         current?.fitMode != null || current?.sizePctWidth != null || current?.position != null || current?.insetXPx != null || current?.insetYPx != null
-      const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.shadowEnabled != null || current?.fade != null
+      const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.fade != null
 
       const nextBase: any = { ...current, startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
       const wantsPlacement = graphicEditor.fitMode === 'contain_transparent'
@@ -10266,14 +10257,10 @@ export default function CreateVideo() {
       }
       const borderWidthAllowed = new Set([0, 2, 4, 6])
       const borderWidth = borderWidthAllowed.has(Number(graphicEditor.borderWidthPx)) ? Number(graphicEditor.borderWidthPx) : 0
-      const shadowEnabled = Boolean(graphicEditor.shadowEnabled)
-      const shadowBlurSigma = clamp(Number.isFinite(Number(graphicEditor.shadowBlurSigma)) ? Number(graphicEditor.shadowBlurSigma) : 16, 0.5, 64)
-      const shadowOffsetPx = clamp(Number.isFinite(Number(graphicEditor.shadowOffsetPx)) ? Number(graphicEditor.shadowOffsetPx) : 8, 0, 64)
-      const shadowOpacityPct = clamp(Number.isFinite(Number(graphicEditor.shadowOpacityPct)) ? Number(graphicEditor.shadowOpacityPct) : 45, 0, 100)
       const fadeModeRaw = String(graphicEditor.fade || 'none')
       const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
       const fadeMode = fadeAllowed.has(fadeModeRaw) ? fadeModeRaw : 'none'
-      const wantsEffects = borderWidth > 0 || shadowEnabled || fadeMode !== 'none'
+      const wantsEffects = borderWidth > 0 || fadeMode !== 'none'
 
       // Backward compatibility:
       // - If the graphic has never had placement fields and the user keeps it as "Full Frame" (cover),
@@ -10302,15 +10289,10 @@ export default function CreateVideo() {
       if (!currentHasEffects && !wantsEffects) {
         delete (nextGraphics[idx] as any).borderWidthPx
         delete (nextGraphics[idx] as any).borderColor
-        delete (nextGraphics[idx] as any).shadowEnabled
         delete (nextGraphics[idx] as any).fade
       } else {
         ;(nextGraphics[idx] as any).borderWidthPx = borderWidth
         ;(nextGraphics[idx] as any).borderColor = String(graphicEditor.borderColor || '#000000')
-        ;(nextGraphics[idx] as any).shadowEnabled = shadowEnabled
-        ;(nextGraphics[idx] as any).shadowBlurSigma = shadowBlurSigma
-        ;(nextGraphics[idx] as any).shadowOffsetPx = shadowOffsetPx
-        ;(nextGraphics[idx] as any).shadowOpacityPct = shadowOpacityPct
         ;(nextGraphics[idx] as any).fade = fadeMode
       }
       nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
@@ -12275,7 +12257,6 @@ export default function CreateVideo() {
 	                      }}
 	                    >
 	                      {activeGraphicPreviewIndicators.hasFade ? <span>FADE</span> : null}
-	                      {activeGraphicPreviewIndicators.hasShadow ? <span>SHADOW</span> : null}
 	                    </div>
 	                  </div>
 	                ) : null}
@@ -14815,7 +14796,7 @@ export default function CreateVideo() {
 
 	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
 	                      <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Effects</div>
-	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'end' }}>
 	                        <div>
 	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Fade</div>
 	                          <select
@@ -14837,94 +14818,6 @@ export default function CreateVideo() {
 	                            <option value="in_out">Fade In/Out</option>
 	                          </select>
 	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Fixed duration: 0.35s</div>
-	                        </div>
-	                        <div>
-	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Shadow</div>
-	                          <button
-	                            type="button"
-	                            onClick={() => setGraphicEditor((p) => (p ? { ...p, shadowEnabled: !p.shadowEnabled } : p))}
-	                            style={{
-	                              width: '100%',
-	                              padding: '10px 12px',
-	                              borderRadius: 12,
-	                              border: graphicEditor.shadowEnabled ? '2px solid rgba(10,132,255,0.85)' : '1px solid rgba(255,255,255,0.18)',
-	                              background: graphicEditor.shadowEnabled ? 'rgba(10,132,255,0.12)' : 'rgba(255,255,255,0.04)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                            }}
-	                          >
-	                            {graphicEditor.shadowEnabled ? 'On' : 'Off'}
-	                          </button>
-	                          {graphicEditor.shadowEnabled ? (
-	                            <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-	                              <div>
-	                                <div style={{ color: '#bbb', fontSize: 12, marginBottom: 6 }}>Blur</div>
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(Math.round(Number(graphicEditor.shadowBlurSigma || 16) * 10) / 10)}
-	                                  onChange={(e) => {
-	                                    const v = Number(e.target.value)
-	                                    setGraphicEditor((p) => (p ? { ...p, shadowBlurSigma: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '100%',
-	                                    padding: '10px 10px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                />
-	                              </div>
-	                              <div>
-	                                <div style={{ color: '#bbb', fontSize: 12, marginBottom: 6 }}>Offset</div>
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(Math.round(Number(graphicEditor.shadowOffsetPx || 8)))}
-	                                  onChange={(e) => {
-	                                    const v = Number(e.target.value)
-	                                    setGraphicEditor((p) => (p ? { ...p, shadowOffsetPx: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '100%',
-	                                    padding: '10px 10px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                />
-	                              </div>
-	                              <div>
-	                                <div style={{ color: '#bbb', fontSize: 12, marginBottom: 6 }}>Opacity</div>
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(Math.round(Number(graphicEditor.shadowOpacityPct || 45)))}
-	                                  onChange={(e) => {
-	                                    const v = Number(e.target.value)
-	                                    setGraphicEditor((p) => (p ? { ...p, shadowOpacityPct: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '100%',
-	                                    padding: '10px 10px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                />
-	                              </div>
-	                            </div>
-	                          ) : (
-	                            <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Preset</div>
-	                          )}
 	                        </div>
 	                      </div>
 	                      {graphicEditor.fitMode === 'contain_transparent' ? (
@@ -16230,20 +16123,13 @@ export default function CreateVideo() {
 				                        const insetYPxRaw = Number((g as any).insetYPx)
 				                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
 				                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
-				                        const borderWidthAllowed = new Set([0, 2, 4, 6])
-				                        const borderWidthRaw = Number((g as any).borderWidthPx)
-				                        const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
-				                        const borderColor = String((g as any).borderColor || '#000000')
-				                        const shadowEnabled = Boolean((g as any).shadowEnabled)
-				                        const shadowBlurSigmaRaw = Number((g as any).shadowBlurSigma)
-				                        const shadowBlurSigma = Number.isFinite(shadowBlurSigmaRaw) ? clamp(shadowBlurSigmaRaw, 0.5, 64) : 16
-				                        const shadowOffsetPxRaw = Number((g as any).shadowOffsetPx)
-				                        const shadowOffsetPx = Number.isFinite(shadowOffsetPxRaw) ? clamp(shadowOffsetPxRaw, 0, 64) : 8
-				                        const shadowOpacityPctRaw = Number((g as any).shadowOpacityPct)
-				                        const shadowOpacityPct = Number.isFinite(shadowOpacityPctRaw) ? clamp(shadowOpacityPctRaw, 0, 100) : 45
-				                        const fadeRaw = String((g as any).fade || 'none')
-				                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
-				                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+					                        const borderWidthAllowed = new Set([0, 2, 4, 6])
+					                        const borderWidthRaw = Number((g as any).borderWidthPx)
+					                        const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
+					                        const borderColor = String((g as any).borderColor || '#000000')
+					                        const fadeRaw = String((g as any).fade || 'none')
+					                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+					                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
 				                        setSelectedGraphicId(String((g as any).id))
 				                        setSelectedClipId(null)
 				                        setSelectedLogoId(null)
@@ -16259,18 +16145,14 @@ export default function CreateVideo() {
 				                          fitMode,
 				                          sizePctWidth,
 				                          position,
-				                          insetXPx,
-				                          insetYPx,
-				                          borderWidthPx,
-				                          borderColor,
-				                          shadowEnabled,
-				                          shadowBlurSigma,
-				                          shadowOffsetPx,
-				                          shadowOpacityPct,
-				                          fade,
-				                        })
-				                        setGraphicEditorError(null)
-				                      }
+					                          insetXPx,
+					                          insetYPx,
+					                          borderWidthPx,
+					                          borderColor,
+					                          fade,
+					                        })
+					                        setGraphicEditorError(null)
+					                      }
 				                    } else if (timelineCtxMenu.kind === 'logo') {
 			                      const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
 			                      if (l) {
