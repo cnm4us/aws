@@ -768,6 +768,54 @@ function overlayXYForPositionPx(position: string, insetXPx: number, insetYPx: nu
   }
 }
 
+function overlayXYForShadowPositionPx(
+  position: string,
+  insetXPx: number,
+  insetYPx: number,
+  shadowOffsetPx: number,
+  shadowPadMarginPx: number
+): { x: string; y: string } {
+  const insetX = Math.max(0, Math.round(Number(insetXPx) || 0))
+  const insetY = Math.max(0, Math.round(Number(insetYPx) || 0))
+  const off = Math.round(Number(shadowOffsetPx) || 0)
+  const margin = Math.max(0, Math.round(Number(shadowPadMarginPx) || 0))
+
+  // Note: When we overlay the padded shadow image, `overlay_w/h` refer to the padded dimensions.
+  // For positions that already incorporate `overlay_w/h` (center/right/bottom), the base position
+  // shifts by `-margin` automatically, so we only add `+off`.
+  // For positions anchored only by insets (top/left), we must subtract `margin` manually to keep
+  // the shadow's "content" aligned to the source position before applying the offset.
+  const xLeft = `${insetX + off - margin}`
+  const xCenter = `(main_w-overlay_w)/2+${off}`
+  const xRight = `main_w-overlay_w-${insetX}+${off}`
+
+  const yTop = `${insetY + off - margin}`
+  const yMiddle = `(main_h-overlay_h)/2+${off}`
+  const yBottom = `main_h-overlay_h-${insetY}+${off}`
+
+  switch (String(position || 'middle_center')) {
+    case 'top_left':
+      return { x: xLeft, y: yTop }
+    case 'top_center':
+      return { x: xCenter, y: yTop }
+    case 'top_right':
+      return { x: xRight, y: yTop }
+    case 'middle_left':
+      return { x: xLeft, y: yMiddle }
+    case 'middle_center':
+      return { x: xCenter, y: yMiddle }
+    case 'middle_right':
+      return { x: xRight, y: yMiddle }
+    case 'bottom_left':
+      return { x: xLeft, y: yBottom }
+    case 'bottom_center':
+      return { x: xCenter, y: yBottom }
+    case 'bottom_right':
+    default:
+      return { x: xRight, y: yBottom }
+  }
+}
+
 async function overlayGraphics(opts: {
   baseMp4Path: string
   outPath: string
@@ -805,12 +853,6 @@ async function overlayGraphics(opts: {
   }
 
   const filters: string[] = []
-  const addExprOffset = (expr: string, off: number) => {
-    const trimmed = String(expr || '0').trim()
-    if (!off) return trimmed
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return String(Number(trimmed) + off)
-    return `(${trimmed})+${off}`
-  }
   const shadowMeta: Array<{ enabled: boolean; offsetPx: number; padMarginPx: number }> = []
   for (let i = 0; i < opts.graphics.length; i++) {
     const g = opts.graphics[i]
@@ -900,18 +942,17 @@ async function overlayGraphics(opts: {
       const pos = String(g.position || 'middle_center')
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
       if (shadowEnabled) {
-        const sx = addExprOffset(xy.x, shadowOffset - shadowPadMargin)
-        const sy = addExprOffset(xy.y, shadowOffset - shadowPadMargin)
-        filters.push(`${current}[img${i}sh]overlay=${sx}:${sy}:enable='between(t,${s},${e})'[vs${i}]`)
+        const sxy = overlayXYForShadowPositionPx(pos, insetXPx, insetYPx, shadowOffset, shadowPadMargin)
+        filters.push(`${current}[img${i}sh]overlay=${sxy.x}:${sxy.y}:enable='between(t,${s},${e})'[vs${i}]`)
         filters.push(`[vs${i}][img${i}src]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       }
     } else {
       if (shadowEnabled) {
-        filters.push(
-          `${current}[img${i}sh]overlay=${shadowOffset - shadowPadMargin}:${shadowOffset - shadowPadMargin}:enable='between(t,${s},${e})'[vs${i}]`
-        )
+        const ox = shadowOffset - shadowPadMargin
+        const oy = shadowOffset - shadowPadMargin
+        filters.push(`${current}[img${i}sh]overlay=${ox}:${oy}:enable='between(t,${s},${e})'[vs${i}]`)
         filters.push(`[vs${i}][img${i}src]overlay=0:0:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=0:0:enable='between(t,${s},${e})'${next}`)
