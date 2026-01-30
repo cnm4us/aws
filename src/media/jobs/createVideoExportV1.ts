@@ -1265,8 +1265,8 @@ async function insertGeneratedUpload(input: {
   const db = getPool()
   // This environment has kind/user_id columns; keep the insert simple.
   const [result] = await db.query(
-    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, user_id, video_role, create_video_project_id)
-     VALUES (?, ?, 'video.mp4', NULL, NULL, 'video/mp4', ?, ?, ?, ?, ?, ?, 'uploaded', 'video', ?, 'export', ?)`,
+    `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, user_id, video_role, create_video_project_id, uploaded_at)
+     VALUES (?, ?, 'video.mp4', NULL, NULL, 'video/mp4', ?, ?, ?, ?, ?, ?, 'completed', 'video', ?, 'export', ?, CURRENT_TIMESTAMP)`,
     [input.bucket, input.key, input.sizeBytes, input.width, input.height, input.durationSeconds, input.assetUuid, input.dateYmd, input.userId, input.projectId]
   )
   return Number((result as any).insertId)

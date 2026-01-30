@@ -253,7 +253,7 @@ export default function Exports() {
   function renderStatusForUpload(u: UploadListItem): { state: 'failed' | 'processing' | 'complete' } {
     const raw = String(u.status || '').toLowerCase()
     if (raw === 'failed') return { state: 'failed' }
-    if (raw === 'completed') return { state: 'complete' }
+    if (raw === 'completed' || raw === 'uploaded') return { state: 'complete' }
     // everything else is "processing" for exports (signed/uploading/queued/processing/uploaded)
     return { state: 'processing' }
   }
