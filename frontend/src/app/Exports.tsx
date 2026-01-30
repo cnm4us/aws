@@ -199,7 +199,7 @@ export default function Exports() {
                 key={u.id}
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
-                  background: 'linear-gradient(180deg, rgba(128,0,32,0.22) 0%, rgba(80,0,18,0.12) 100%)',
+                  background: 'linear-gradient(180deg, rgba(128,0,32,0.42) 0%, rgba(80,0,18,0.24) 100%)',
                   borderRadius: 12,
                   overflow: 'hidden',
                 }}
@@ -213,7 +213,7 @@ export default function Exports() {
                 </div>
 
                 <div style={{ padding: 12, paddingTop: 0 }}>
-                  <div style={{ position: 'relative', background: 'rgba(0,0,0,0.35)', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 560 }}>
+                  <div style={{ position: 'relative', background: 'rgba(0,0,0,0.35)', borderRadius: 12, overflow: 'hidden', width: '100%', height: 520, maxHeight: '70vh' }}>
                     <button
                       type="button"
                       onClick={async () => {
@@ -276,8 +276,8 @@ export default function Exports() {
                         width: 44,
                         height: 44,
                         borderRadius: 999,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: 'rgba(0,0,0,0.55)',
+                        border: '1px solid rgba(255,255,255,0.20)',
+                        background: '#000',
                         color: '#fff',
                         cursor: 'pointer',
                         display: 'flex',
@@ -400,7 +400,7 @@ export default function Exports() {
               position: 'fixed',
               inset: 0,
               zIndex: 21000,
-              background: 'rgba(0,0,0,0.45)',
+              background: '#000',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
