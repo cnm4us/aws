@@ -89,6 +89,10 @@ export default function Exports() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewFallbackTried, setPreviewFallbackTried] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [actionsUploadId, setActionsUploadId] = useState<number | null>(null)
+  const [actionsTitle, setActionsTitle] = useState<string>('')
+  const [actionsProjectId, setActionsProjectId] = useState<number | null>(null)
 
   const projectsById = useMemo(() => {
     const m = new Map<number, ProjectListItem>()
@@ -143,9 +147,9 @@ export default function Exports() {
   }, [])
 
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+	  return (
+	    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+	      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>Exports</h1>
           <p style={{ color: '#bbb' }}>Loading…</p>
         </div>
@@ -208,176 +212,94 @@ export default function Exports() {
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    padding: 12,
-                    paddingTop: 0,
-                    display: 'flex',
-                    gap: 12,
-                    alignItems: 'stretch',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <div style={{ minWidth: 0, flex: '2 1 320px' }}>
-                    <div style={{ position: 'relative', background: '#0b0b0b', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 520 }}>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!me?.userId) return
-                          const uploadId = Number(u.id)
-                          setPreviewOpen(true)
-                          setPreviewUploadId(uploadId)
-                          setPreviewTitle(title)
-                          setPreviewUrl(null)
-                          setPreviewFallbackTried(false)
-                          setPreviewLoading(true)
-                          setPreviewError(null)
-                          try {
-                            const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
-                            const json: any = await res.json().catch(() => null)
-                            if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
-                            const url = json?.url != null ? String(json.url) : ''
-                            if (!url) throw new Error('missing_url')
-                            setPreviewUrl(url)
-                          } catch (e: any) {
-                            setPreviewError(e?.message || 'Failed to load preview')
-                            setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
-                            setPreviewFallbackTried(true)
-                          } finally {
-                            setPreviewLoading(false)
-                          }
-                        }}
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          border: 'none',
-                          padding: 0,
-                          margin: 0,
-                          background: 'transparent',
-                          cursor: 'pointer',
-                        }}
-                        aria-label="Preview export"
-                      >
-                        <img
-                          src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
-                          alt=""
-                          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-                        />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ minWidth: 0, flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'flex-end' }}>
+                <div style={{ padding: 12, paddingTop: 0 }}>
+                  <div style={{ position: 'relative', background: '#0b0b0b', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 560 }}>
                     <button
                       type="button"
-                      disabled={!projectId}
-                      onClick={() => {
-                        if (!projectId) return
-                        window.location.href = `/create-video?project=${encodeURIComponent(String(projectId))}`
-                      }}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: projectId ? 'pointer' : 'default',
-                        opacity: projectId ? 1 : 0.5,
-                        width: '100%',
-                      }}
-                    >
-                      Open Timeline
-                    </button>
-                    <button
-                      type="button"
-                      disabled={sendingId === u.id}
                       onClick={async () => {
                         if (!me?.userId) return
-                        setSendingId(u.id)
+                        const uploadId = Number(u.id)
+                        setPreviewOpen(true)
+                        setPreviewUploadId(uploadId)
+                        setPreviewTitle(title)
+                        setPreviewUrl(null)
+                        setPreviewFallbackTried(false)
+                        setPreviewLoading(true)
+                        setPreviewError(null)
                         try {
-                          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                          const csrf = getCsrfToken()
-                          if (csrf) headers['x-csrf-token'] = csrf
-                          const res = await fetch('/api/productions', {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers,
-                            body: JSON.stringify({ uploadId: u.id, name: title }),
-                          })
+                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
                           const json: any = await res.json().catch(() => null)
-                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_send'))
-                          const productionId = Number(json?.production?.id)
-                          window.location.href = Number.isFinite(productionId) && productionId > 0 ? `/productions?id=${encodeURIComponent(String(productionId))}` : '/productions'
+                          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
+                          const url = json?.url != null ? String(json.url) : ''
+                          if (!url) throw new Error('missing_url')
+                          setPreviewUrl(url)
                         } catch (e: any) {
-                          window.alert(e?.message || 'Failed to start HLS')
+                          setPreviewError(e?.message || 'Failed to load preview')
+                          setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
+                          setPreviewFallbackTried(true)
                         } finally {
-                          setSendingId(null)
+                          setPreviewLoading(false)
                         }
                       }}
                       style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: '#0a84ff',
-                        color: '#fff',
-                        fontWeight: 900,
+                        position: 'absolute',
+                        inset: 0,
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        background: 'transparent',
                         cursor: 'pointer',
-                        opacity: sendingId === u.id ? 0.7 : 1,
-                        width: '100%',
                       }}
+                      aria-label="Preview export"
                     >
-                      Send to HLS
+                      <img
+                        src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                      />
                     </button>
                     <button
                       type="button"
-                      disabled={deletingId === u.id}
-                      onClick={async () => {
-                        if (!me?.userId) return
-                        if (!window.confirm('Delete this export? This cannot be undone.')) return
-                        setDeletingId(u.id)
-                        try {
-                          const headers: Record<string, string> = {}
-                          const csrf = getCsrfToken()
-                          if (csrf) headers['x-csrf-token'] = csrf
-                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(u.id))}`, {
-                            method: 'DELETE',
-                            credentials: 'same-origin',
-                            headers,
-                          })
-                          const json: any = await res.json().catch(() => null)
-                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
-                          setExportsList((prev) => prev.filter((x) => Number(x.id) !== Number(u.id)))
-                        } catch (e: any) {
-                          window.alert(e?.message || 'Failed to delete export')
-                        } finally {
-                          setDeletingId(null)
-                        }
+                      aria-label="Export actions"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setActionsOpen(true)
+                        setActionsUploadId(Number(u.id))
+                        setActionsTitle(title)
+                        setActionsProjectId(projectId)
                       }}
                       style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        width: 44,
+                        height: 44,
+                        borderRadius: 999,
                         border: '1px solid rgba(255,255,255,0.18)',
-                        background: deletingId === u.id ? 'rgba(128,0,32,0.55)' : '#800020',
+                        background: 'rgba(0,0,0,0.55)',
                         color: '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 18,
                         fontWeight: 900,
-                        cursor: deletingId === u.id ? 'default' : 'pointer',
-                        opacity: deletingId === u.id ? 0.85 : 1,
-                        width: '100%',
+                        zIndex: 2,
                       }}
                     >
-                      Delete
+                      ⚙
                     </button>
                   </div>
                 </div>
               </div>
             )
           })}
-	          {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
+		          {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
 	        </div>
 	      </div>
 
-      {previewOpen ? (
+	      {previewOpen ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -462,7 +384,172 @@ export default function Exports() {
             </div>
           </div>
         </div>
-      ) : null}
-    </div>
-  )
-}
+	      ) : null}
+
+        {actionsOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => {
+              setActionsOpen(false)
+              setActionsUploadId(null)
+              setActionsTitle('')
+              setActionsProjectId(null)
+            }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 21000,
+              background: 'rgba(0,0,0,0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 'min(520px, 100%)',
+                borderRadius: 16,
+                border: '1px solid rgba(255,255,255,0.16)',
+                background: '#0b0b0b',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: 12, alignItems: 'center' }}>
+                <div style={{ fontWeight: 900, lineHeight: 1.2, minWidth: 0, wordBreak: 'break-word' }}>{actionsTitle || 'Export'}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false)
+                    setActionsUploadId(null)
+                    setActionsTitle('')
+                    setActionsProjectId(null)
+                  }}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+                <button
+                  type="button"
+                  disabled={!actionsProjectId}
+                  onClick={() => {
+                    if (!actionsProjectId) return
+                    window.location.href = `/create-video?project=${encodeURIComponent(String(actionsProjectId))}`
+                  }}
+                  style={{
+                    padding: '12px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0c0c0c',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: actionsProjectId ? 'pointer' : 'default',
+                    opacity: actionsProjectId ? 1 : 0.5,
+                  }}
+                >
+                  Open Timeline
+                </button>
+                <button
+                  type="button"
+                  disabled={actionsUploadId == null || sendingId === actionsUploadId}
+                  onClick={async () => {
+                    if (!me?.userId) return
+                    if (actionsUploadId == null) return
+                    setSendingId(actionsUploadId)
+                    try {
+                      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                      const csrf = getCsrfToken()
+                      if (csrf) headers['x-csrf-token'] = csrf
+                      const res = await fetch('/api/productions', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers,
+                        body: JSON.stringify({ uploadId: actionsUploadId, name: actionsTitle }),
+                      })
+                      const json: any = await res.json().catch(() => null)
+                      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_send'))
+                      const productionId = Number(json?.production?.id)
+                      window.location.href = Number.isFinite(productionId) && productionId > 0 ? `/productions?id=${encodeURIComponent(String(productionId))}` : '/productions'
+                    } catch (e: any) {
+                      window.alert(e?.message || 'Failed to start HLS')
+                    } finally {
+                      setSendingId(null)
+                    }
+                  }}
+                  style={{
+                    padding: '12px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(10,132,255,0.55)',
+                    background: '#0a84ff',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    opacity: actionsUploadId != null && sendingId === actionsUploadId ? 0.7 : 1,
+                  }}
+                >
+                  Send to HLS
+                </button>
+                <button
+                  type="button"
+                  disabled={actionsUploadId == null || deletingId === actionsUploadId}
+                  onClick={async () => {
+                    if (!me?.userId) return
+                    if (actionsUploadId == null) return
+                    if (!window.confirm('Delete this export? This cannot be undone.')) return
+                    setDeletingId(actionsUploadId)
+                    try {
+                      const headers: Record<string, string> = {}
+                      const csrf = getCsrfToken()
+                      if (csrf) headers['x-csrf-token'] = csrf
+                      const res = await fetch(`/api/uploads/${encodeURIComponent(String(actionsUploadId))}`, {
+                        method: 'DELETE',
+                        credentials: 'same-origin',
+                        headers,
+                      })
+                      const json: any = await res.json().catch(() => null)
+                      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
+                      setExportsList((prev) => prev.filter((x) => Number(x.id) !== Number(actionsUploadId)))
+                      setActionsOpen(false)
+                      setActionsUploadId(null)
+                      setActionsTitle('')
+                      setActionsProjectId(null)
+                    } catch (e: any) {
+                      window.alert(e?.message || 'Failed to delete export')
+                    } finally {
+                      setDeletingId(null)
+                    }
+                  }}
+                  style={{
+                    padding: '12px 12px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: actionsUploadId != null && deletingId === actionsUploadId ? 'rgba(128,0,32,0.55)' : '#800020',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    opacity: actionsUploadId != null && deletingId === actionsUploadId ? 0.85 : 1,
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+	    </div>
+	  )
+	}
