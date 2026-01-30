@@ -177,17 +177,22 @@ export default function Exports() {
         </div>
 
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Exports</h1>
-        <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Send to HLS when ready.</p>
+	        <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Send to HLS when ready.</p>
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
-	          {exportsList.map((u) => {
-	            const projectId = u.create_video_project_id != null ? Number(u.create_video_project_id) : null
-	            const project = projectId != null ? projectsById.get(projectId) : undefined
-	            const title = u.modified_filename && String(u.modified_filename).trim() ? String(u.modified_filename) : project?.name ? String(project.name) : `Export #${u.id}`
-	            const timelineLabel = projectId ? `Timeline #${projectId}` : ''
-	            return (
-	              <div
-	                key={u.id}
+	        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+          {exportsList.map((u) => {
+            const projectId = u.create_video_project_id != null ? Number(u.create_video_project_id) : null
+            const project = projectId != null ? projectsById.get(projectId) : undefined
+            const title =
+              u.modified_filename && String(u.modified_filename).trim()
+                ? String(u.modified_filename)
+                : project?.name
+                  ? String(project.name)
+                  : `Export #${u.id}`
+            const timelineLabel = projectId ? `Timeline #${projectId}` : ''
+            return (
+              <div
+                key={u.id}
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
                   background: 'rgba(255,255,255,0.04)',
@@ -195,168 +200,182 @@ export default function Exports() {
                   overflow: 'hidden',
                 }}
               >
-                <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#0b0b0b' }}>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!me?.userId) return
-                      const uploadId = Number(u.id)
-                      setPreviewOpen(true)
-                      setPreviewUploadId(uploadId)
-                      setPreviewTitle(title)
-                      setPreviewUrl(null)
-                      setPreviewFallbackTried(false)
-                      setPreviewLoading(true)
-                      setPreviewError(null)
-                      try {
-                        const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
-                        const json: any = await res.json().catch(() => null)
-                        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
-                        const url = json?.url != null ? String(json.url) : ''
-                        if (!url) throw new Error('missing_url')
-                        setPreviewUrl(url)
-                      } catch (e: any) {
-                        setPreviewError(e?.message || 'Failed to load preview')
-                        setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
-                        setPreviewFallbackTried(true)
-                      } finally {
-                        setPreviewLoading(false)
-                      }
-                    }}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      border: 'none',
-                      padding: 0,
-                      margin: 0,
-                      background: 'transparent',
-                      cursor: 'pointer',
-                    }}
-                    aria-label="Preview export"
-                  >
-                    <img
-                      src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
-                      alt=""
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  </button>
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
+                  <div style={{ color: '#9a9a9a', fontSize: 13 }}>
+                    {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
+                    {timelineLabel ? ` · ${timelineLabel}` : ''}
+                  </div>
                 </div>
 
-	                <div style={{ padding: 12 }}>
-	                  <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
-	                  <div style={{ color: '#9a9a9a', fontSize: 13 }}>
-	                    {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
-	                    {timelineLabel ? ` · ${timelineLabel}` : ''}
-	                  </div>
-
-	                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-	                    <button
-	                      type="button"
-	                      disabled={deletingId === u.id}
-	                      onClick={async () => {
-	                        if (!me?.userId) return
-	                        if (!window.confirm('Delete this export? This cannot be undone.')) return
-	                        setDeletingId(u.id)
-	                        try {
-	                          const headers: Record<string, string> = {}
-	                          const csrf = getCsrfToken()
-	                          if (csrf) headers['x-csrf-token'] = csrf
-	                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(u.id))}`, {
-	                            method: 'DELETE',
-	                            credentials: 'same-origin',
-	                            headers,
-	                          })
-	                          const json: any = await res.json().catch(() => null)
-	                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
-	                          setExportsList((prev) => prev.filter((x) => Number(x.id) !== Number(u.id)))
-	                        } catch (e: any) {
-	                          window.alert(e?.message || 'Failed to delete export')
-	                        } finally {
-	                          setDeletingId(null)
-	                        }
-	                      }}
-	                      style={{
-	                        padding: '10px 12px',
-	                        borderRadius: 10,
-	                        border: '1px solid rgba(255,255,255,0.18)',
-	                        background: deletingId === u.id ? 'rgba(128,0,32,0.55)' : '#800020',
-	                        color: '#fff',
-	                        fontWeight: 900,
-	                        cursor: deletingId === u.id ? 'default' : 'pointer',
-	                        opacity: deletingId === u.id ? 0.85 : 1,
-	                      }}
-	                    >
-	                      Delete
-	                    </button>
-	                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-	                      <button
-	                        type="button"
-	                        disabled={!projectId}
-                        onClick={() => {
-                          if (!projectId) return
-                          window.location.href = `/create-video?project=${encodeURIComponent(String(projectId))}`
-                        }}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          background: '#0c0c0c',
-                          color: '#fff',
-                          fontWeight: 900,
-                          cursor: projectId ? 'pointer' : 'default',
-                          opacity: projectId ? 1 : 0.5,
-                        }}
-                      >
-                        Open Timeline
-                      </button>
-	                      <button
-	                        type="button"
-	                        disabled={sendingId === u.id}
+                <div
+                  style={{
+                    padding: 12,
+                    paddingTop: 0,
+                    display: 'flex',
+                    gap: 12,
+                    alignItems: 'stretch',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: '2 1 320px' }}>
+                    <div style={{ position: 'relative', background: '#0b0b0b', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 520 }}>
+                      <button
+                        type="button"
                         onClick={async () => {
                           if (!me?.userId) return
-                          setSendingId(u.id)
+                          const uploadId = Number(u.id)
+                          setPreviewOpen(true)
+                          setPreviewUploadId(uploadId)
+                          setPreviewTitle(title)
+                          setPreviewUrl(null)
+                          setPreviewFallbackTried(false)
+                          setPreviewLoading(true)
+                          setPreviewError(null)
                           try {
-                            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                            const csrf = getCsrfToken()
-                            if (csrf) headers['x-csrf-token'] = csrf
-                            const res = await fetch('/api/productions', {
-                              method: 'POST',
-                              credentials: 'same-origin',
-                              headers,
-                              body: JSON.stringify({ uploadId: u.id, name: title }),
-                            })
+                            const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
                             const json: any = await res.json().catch(() => null)
-                            if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_send'))
-                            const productionId = Number(json?.production?.id)
-                            window.location.href = Number.isFinite(productionId) && productionId > 0 ? `/productions?id=${encodeURIComponent(String(productionId))}` : '/productions'
+                            if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
+                            const url = json?.url != null ? String(json.url) : ''
+                            if (!url) throw new Error('missing_url')
+                            setPreviewUrl(url)
                           } catch (e: any) {
-                            window.alert(e?.message || 'Failed to start HLS')
+                            setPreviewError(e?.message || 'Failed to load preview')
+                            setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
+                            setPreviewFallbackTried(true)
                           } finally {
-                            setSendingId(null)
+                            setPreviewLoading(false)
                           }
                         }}
                         style={{
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(10,132,255,0.55)',
-                          background: '#0a84ff',
-                          color: '#fff',
-                          fontWeight: 900,
+                          position: 'absolute',
+                          inset: 0,
+                          border: 'none',
+                          padding: 0,
+                          margin: 0,
+                          background: 'transparent',
                           cursor: 'pointer',
-                          opacity: sendingId === u.id ? 0.7 : 1,
                         }}
-	                      >
-	                        Send to HLS
-	                      </button>
-	                    </div>
-	                  </div>
-	                </div>
-	              </div>
-	            )
-	          })}
-          {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
-        </div>
-      </div>
+                        aria-label="Preview export"
+                      >
+                        <img
+                          src={`/api/uploads/${encodeURIComponent(String(u.id))}/thumb`}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ minWidth: 0, flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      disabled={!projectId}
+                      onClick={() => {
+                        if (!projectId) return
+                        window.location.href = `/create-video?project=${encodeURIComponent(String(projectId))}`
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: projectId ? 'pointer' : 'default',
+                        opacity: projectId ? 1 : 0.5,
+                        width: '100%',
+                      }}
+                    >
+                      Open Timeline
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sendingId === u.id}
+                      onClick={async () => {
+                        if (!me?.userId) return
+                        setSendingId(u.id)
+                        try {
+                          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                          const csrf = getCsrfToken()
+                          if (csrf) headers['x-csrf-token'] = csrf
+                          const res = await fetch('/api/productions', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers,
+                            body: JSON.stringify({ uploadId: u.id, name: title }),
+                          })
+                          const json: any = await res.json().catch(() => null)
+                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_send'))
+                          const productionId = Number(json?.production?.id)
+                          window.location.href = Number.isFinite(productionId) && productionId > 0 ? `/productions?id=${encodeURIComponent(String(productionId))}` : '/productions'
+                        } catch (e: any) {
+                          window.alert(e?.message || 'Failed to start HLS')
+                        } finally {
+                          setSendingId(null)
+                        }
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(10,132,255,0.55)',
+                        background: '#0a84ff',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        opacity: sendingId === u.id ? 0.7 : 1,
+                        width: '100%',
+                      }}
+                    >
+                      Send to HLS
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletingId === u.id}
+                      onClick={async () => {
+                        if (!me?.userId) return
+                        if (!window.confirm('Delete this export? This cannot be undone.')) return
+                        setDeletingId(u.id)
+                        try {
+                          const headers: Record<string, string> = {}
+                          const csrf = getCsrfToken()
+                          if (csrf) headers['x-csrf-token'] = csrf
+                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(u.id))}`, {
+                            method: 'DELETE',
+                            credentials: 'same-origin',
+                            headers,
+                          })
+                          const json: any = await res.json().catch(() => null)
+                          if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
+                          setExportsList((prev) => prev.filter((x) => Number(x.id) !== Number(u.id)))
+                        } catch (e: any) {
+                          window.alert(e?.message || 'Failed to delete export')
+                        } finally {
+                          setDeletingId(null)
+                        }
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: deletingId === u.id ? 'rgba(128,0,32,0.55)' : '#800020',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: deletingId === u.id ? 'default' : 'pointer',
+                        opacity: deletingId === u.id ? 0.85 : 1,
+                        width: '100%',
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+	          {!exportsList.length ? <div style={{ color: '#bbb' }}>No exports yet.</div> : null}
+	        </div>
+	      </div>
 
       {previewOpen ? (
         <div
