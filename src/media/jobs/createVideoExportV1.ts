@@ -842,7 +842,8 @@ async function overlayGraphics(opts: {
       filters.push(
         `[img${i}b]split=2[img${i}src][img${i}s];` +
           `[img${i}s]colorchannelmixer=rr=0:gg=0:bb=0:aa=0.45,` +
-          `gblur=sigma=8:steps=2,` +
+          // Heavier blur so it reads as a shadow (not an outline).
+          `gblur=sigma=16:steps=4,` +
           `pad=iw+${shadowPad}:ih+${shadowPad}:${shadowOffset}:${shadowOffset}:color=black@0,` +
           `crop=iw:ih:0:0[img${i}sh];` +
           `[img${i}sh][img${i}src]overlay=0:0:format=auto${fadeIn}${fadeOut}[img${i}]`
