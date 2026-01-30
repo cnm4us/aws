@@ -400,7 +400,7 @@ export default function Exports() {
               position: 'fixed',
               inset: 0,
               zIndex: 21000,
-              background: '#000',
+              background: 'rgba(0,0,0,0.65)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -413,7 +413,7 @@ export default function Exports() {
                 width: 'min(520px, 100%)',
                 borderRadius: 16,
                 border: '1px solid rgba(255,255,255,0.16)',
-                background: 'linear-gradient(180deg, rgba(10,132,255,0.22) 0%, rgba(0,20,60,0.92) 100%)',
+                background: 'linear-gradient(180deg, rgba(10,132,255,1) 0%, rgba(0,20,60,1) 100%)',
                 overflow: 'hidden',
               }}
             >
