@@ -781,17 +781,18 @@ function overlayXYForShadowPositionPx(
   const margin = Math.max(0, Math.round(Number(shadowPadMarginPx) || 0))
 
   // Note: When we overlay the padded shadow image, `overlay_w/h` refer to the padded dimensions.
-  // For positions that already incorporate `overlay_w/h` (center/right/bottom), the base position
-  // shifts by `-margin` automatically, so we only add `+off`.
+  // For positions that incorporate `overlay_w/h`:
+  // - center: `(main_w-overlay_w)/2` implicitly shifts by `-margin` and we only add `+off`
+  // - right/bottom: `main_w-overlay_w-...` shifts by `-2*margin`, so we must add `+margin` (plus `+off`)
   // For positions anchored only by insets (top/left), we must subtract `margin` manually to keep
   // the shadow's "content" aligned to the source position before applying the offset.
   const xLeft = `${insetX + off - margin}`
   const xCenter = `(main_w-overlay_w)/2+${off}`
-  const xRight = `main_w-overlay_w-${insetX}+${off}`
+  const xRight = `main_w-overlay_w-${insetX}+${off}+${margin}`
 
   const yTop = `${insetY + off - margin}`
   const yMiddle = `(main_h-overlay_h)/2+${off}`
-  const yBottom = `main_h-overlay_h-${insetY}+${off}`
+  const yBottom = `main_h-overlay_h-${insetY}+${off}+${margin}`
 
   switch (String(position || 'middle_center')) {
     case 'top_left':
