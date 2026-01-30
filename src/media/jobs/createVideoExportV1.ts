@@ -889,11 +889,19 @@ async function overlayGraphics(opts: {
     }
 
     if (shadowEnabled) {
+      // IMPORTANT: Without padding, blur has no "outside" pixels to bleed into, so the shadow edge stays sharp.
+      // We pad, blur, then crop back to the original size with a shifted crop window. That encodes the offset
+      // into the shadow image while keeping its dimensions equal to the source, so overlay positioning stays simple.
+      const padMargin = Math.min(128, Math.max(shadowOffset, Math.ceil(shadowSigma * 2), 32))
+      const pad2 = padMargin * 2
+      const cropXY = padMargin - shadowOffset
       filters.push(
         // Simplest possible shadow: duplicate the source, tint black+alpha, blur, and overlay behind at an offset.
         `[img${i}src]split=2[img${i}src0][img${i}sh0];` +
           `[img${i}sh0]colorchannelmixer=rr=0:gg=0:bb=0:aa=${shadowOpacity.toFixed(3)},` +
-          `gblur=sigma=${shadowSigma.toFixed(2)}:steps=4[img${i}sh]`
+          `pad=iw+${pad2}:ih+${pad2}:${padMargin}:${padMargin}:color=black@0,` +
+          `gblur=sigma=${shadowSigma.toFixed(2)}:steps=4,` +
+          `crop=iw-${pad2}:ih-${pad2}:${cropXY}:${cropXY}[img${i}sh]`
       )
     }
   }
@@ -907,23 +915,20 @@ async function overlayGraphics(opts: {
     const fitMode = g.fitMode || 'cover_full'
     const shadow = shadowMeta[i]
     const shadowEnabled = Boolean(shadow?.enabled)
-    const shadowOffset = Math.round(Number(shadow?.offsetPx || 0))
     if (fitMode === 'contain_transparent') {
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
       const pos = String(g.position || 'middle_center')
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
       if (shadowEnabled) {
-        const sx = `(${xy.x})+${shadowOffset}`
-        const sy = `(${xy.y})+${shadowOffset}`
-        filters.push(`${current}[img${i}sh]overlay=${sx}:${sy}:enable='between(t,${s},${e})'[vs${i}]`)
+        filters.push(`${current}[img${i}sh]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'[vs${i}]`)
         filters.push(`[vs${i}][img${i}src0]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:enable='between(t,${s},${e})'${next}`)
       }
     } else {
       if (shadowEnabled) {
-        filters.push(`${current}[img${i}sh]overlay=${shadowOffset}:${shadowOffset}:enable='between(t,${s},${e})'[vs${i}]`)
+        filters.push(`${current}[img${i}sh]overlay=0:0:enable='between(t,${s},${e})'[vs${i}]`)
         filters.push(`[vs${i}][img${i}src0]overlay=0:0:enable='between(t,${s},${e})'${next}`)
       } else {
         filters.push(`${current}[img${i}src]overlay=0:0:enable='between(t,${s},${e})'${next}`)
