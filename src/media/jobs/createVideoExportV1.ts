@@ -848,7 +848,9 @@ async function overlayGraphics(opts: {
           // Keep the source centered in the padded canvas; then crop a down/right window to create the offset shadow.
           `pad=iw+${pad2}:ih+${pad2}:${padMargin}:${padMargin}:color=black@0,` +
           `gblur=sigma=16:steps=4,` +
-          `crop=iw-${pad2}:ih-${pad2}:${padMargin + shadowOffset}:${padMargin + shadowOffset}[img${i}sh];` +
+          // Crop so the original (centered) source ends up at (shadowOffset, shadowOffset) inside the shadow image.
+          // Then compositing the source at (0,0) yields a shadow that appears down/right.
+          `crop=iw-${pad2}:ih-${pad2}:${padMargin - shadowOffset}:${padMargin - shadowOffset}[img${i}sh];` +
           `[img${i}sh][img${i}src]overlay=0:0:format=auto${fadeIn}${fadeOut}[img${i}]`
       )
     } else {
