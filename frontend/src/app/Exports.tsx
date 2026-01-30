@@ -97,12 +97,49 @@ export default function Exports() {
   const [actionsProductionId, setActionsProductionId] = useState<number | null>(null)
   const [actionsHlsError, setActionsHlsError] = useState<string | null>(null)
   const [actionsHlsLoading, setActionsHlsLoading] = useState(false)
+  const [hlsByUploadId, setHlsByUploadId] = useState<
+    Record<
+      string,
+      { state: 'not_ready' | 'in_progress' | 'ready' | 'failed'; productionId: number | null; errorMessage: string | null }
+    >
+  >({})
 
   const projectsById = useMemo(() => {
     const m = new Map<number, ProjectListItem>()
     for (const p of projects) m.set(Number(p.id), p)
     return m
   }, [projects])
+
+  async function refreshHlsStatusesForUploadIds(uploadIds: number[]) {
+    if (!uploadIds.length) return
+    try {
+      const unique = Array.from(new Set(uploadIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))).slice(0, 250)
+      if (!unique.length) return
+      const res = await fetch(`/api/exports/hls-status?ids=${encodeURIComponent(unique.join(','))}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_load_hls_status'))
+      const items: any[] = Array.isArray(json?.items) ? json.items : []
+      setHlsByUploadId((prev) => {
+        const next = { ...prev }
+        for (const it of items) {
+          const uploadId = it?.uploadId != null ? Number(it.uploadId) : NaN
+          if (!Number.isFinite(uploadId) || uploadId <= 0) continue
+          const state = it?.state != null ? String(it.state) : 'not_ready'
+          if (state !== 'ready' && state !== 'in_progress' && state !== 'failed' && state !== 'not_ready') continue
+          const productionId = it?.productionId != null ? Number(it.productionId) : null
+          const errorMessage = it?.errorMessage != null ? String(it.errorMessage) : null
+          next[String(uploadId)] = {
+            state,
+            productionId: Number.isFinite(productionId as any) && (productionId as any) > 0 ? (productionId as any) : null,
+            errorMessage: errorMessage ? errorMessage : null,
+          }
+        }
+        return next
+      })
+    } catch {
+      // best-effort; cards can still load without HLS status
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -135,6 +172,7 @@ export default function Exports() {
           .slice()
           .sort((a, b) => Number(b.id) - Number(a.id))
         setExportsList(items)
+        refreshHlsStatusesForUploadIds(items.map((x) => Number(x.id)))
 
         const projItems: ProjectListItem[] = Array.isArray(projectsJson?.items) ? projectsJson.items : []
         setProjects(projItems)
@@ -199,6 +237,76 @@ export default function Exports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionsOpen, actionsUploadId, me?.userId, actionsHlsState])
 
+  useEffect(() => {
+    if (!actionsOpen) return
+    if (actionsUploadId == null) return
+    setHlsByUploadId((prev) => ({
+      ...prev,
+      [String(actionsUploadId)]: {
+        state: actionsHlsState,
+        productionId: actionsProductionId,
+        errorMessage: actionsHlsError,
+      },
+    }))
+  }, [actionsOpen, actionsUploadId, actionsHlsState, actionsProductionId, actionsHlsError])
+
+  function renderStatusForUpload(u: UploadListItem): { state: 'failed' | 'processing' | 'complete' } {
+    const raw = String(u.status || '').toLowerCase()
+    if (raw === 'failed') return { state: 'failed' }
+    if (raw === 'completed') return { state: 'complete' }
+    // everything else is "processing" for exports (signed/uploading/queued/processing/uploaded)
+    return { state: 'processing' }
+  }
+
+  function hlsStatusForUploadId(uploadId: number): { state: 'not_ready' | 'in_progress' | 'ready' | 'failed'; productionId: number | null } {
+    const it = hlsByUploadId[String(uploadId)]
+    if (!it) return { state: 'not_ready', productionId: null }
+    return { state: it.state, productionId: it.productionId }
+  }
+
+  function cardBorderFor(u: UploadListItem): string {
+    const render = renderStatusForUpload(u).state
+    const hls = hlsStatusForUploadId(Number(u.id)).state
+    if (render === 'failed' || hls === 'failed') return '1px solid rgba(255, 65, 65, 0.75)'
+    if (hls === 'ready') return '1px solid rgba(125, 255, 159, 0.75)'
+    if (render === 'complete') return '1px solid rgba(10, 132, 255, 0.75)'
+    return '1px solid rgba(255,255,255,0.14)'
+  }
+
+  function StatusChip(props: { label: string; tone: 'gray' | 'blue' | 'green' | 'amber' | 'red' }) {
+    const { label, tone } = props
+    const colors =
+      tone === 'blue'
+        ? { bg: 'rgba(10,132,255,0.18)', border: 'rgba(10,132,255,0.6)', fg: '#d9ecff' }
+        : tone === 'green'
+          ? { bg: 'rgba(125,255,159,0.16)', border: 'rgba(125,255,159,0.6)', fg: '#d9ffe6' }
+          : tone === 'amber'
+            ? { bg: 'rgba(255,211,125,0.14)', border: 'rgba(255,211,125,0.55)', fg: '#fff0d9' }
+            : tone === 'red'
+              ? { bg: 'rgba(255,155,155,0.14)', border: 'rgba(255,155,155,0.6)', fg: '#ffe3e3' }
+              : { bg: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.18)', fg: '#eaeaea' }
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          borderRadius: 999,
+          border: `1px solid ${colors.border}`,
+          background: colors.bg,
+          color: colors.fg,
+          fontSize: 12,
+          fontWeight: 900,
+          lineHeight: 1.2,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {label}
+      </span>
+    )
+  }
+
   if (loading) {
 	  return (
 	    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
@@ -247,11 +355,27 @@ export default function Exports() {
                   ? String(project.name)
                   : `Export #${u.id}`
             const timelineLabel = projectId ? `Timeline #${projectId}` : ''
+            const renderState = renderStatusForUpload(u).state
+            const renderChip =
+              renderState === 'failed'
+                ? { label: 'Render: Failed', tone: 'red' as const }
+                : renderState === 'complete'
+                  ? { label: 'Render: Complete', tone: 'blue' as const }
+                  : { label: 'Render: Processing', tone: 'amber' as const }
+            const hls = hlsStatusForUploadId(Number(u.id))
+            const hlsChip =
+              hls.state === 'ready'
+                ? { label: 'Prep: Ready', tone: 'green' as const }
+                : hls.state === 'in_progress'
+                  ? { label: 'Prep: In progress', tone: 'amber' as const }
+                  : hls.state === 'failed'
+                    ? { label: 'Prep: Failed', tone: 'red' as const }
+                    : { label: 'Prep: Not started', tone: 'gray' as const }
             return (
               <div
                 key={u.id}
                 style={{
-                  border: '1px solid rgba(255,255,255,0.14)',
+                  border: cardBorderFor(u),
                   background: 'linear-gradient(180deg, rgba(128,0,32,0.42) 0%, rgba(80,0,18,0.24) 100%)',
                   borderRadius: 12,
                   overflow: 'hidden',
@@ -262,6 +386,10 @@ export default function Exports() {
                   <div style={{ color: '#9a9a9a', fontSize: 13 }}>
                     {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
                     {timelineLabel ? ` · ${timelineLabel}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                    <StatusChip label={renderChip.label} tone={renderChip.tone} />
+                    <StatusChip label={hlsChip.label} tone={hlsChip.tone} />
                   </div>
                 </div>
 

@@ -307,6 +307,108 @@ createVideoRouter.post('/api/exports/:uploadId/prep-hls', requireAuth, async (re
   }
 })
 
+createVideoRouter.get('/api/exports/hls-status', requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.user!.id)
+    const raw = String(req.query?.ids || '').trim()
+    if (!raw) return res.json({ items: [] })
+    const ids = raw
+      .split(',')
+      .map((s) => Number(String(s).trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .slice(0, 250)
+    if (!ids.length) return res.json({ items: [] })
+
+    const db = getPool()
+    const placeholders = ids.map(() => '?').join(',')
+    const [uploadRows] = await db.query(
+      `SELECT id, s3_key, kind, video_role, create_video_production_id
+         FROM uploads
+        WHERE user_id = ?
+          AND id IN (${placeholders})
+          AND kind = 'video'`,
+      [currentUserId, ...ids]
+    )
+    const uploads = Array.isArray(uploadRows) ? (uploadRows as any[]) : []
+    if (!uploads.length) return res.json({ items: [] })
+
+    // Only exports (defensive; client already filters).
+    const exportUploads = uploads.filter((u) => {
+      const role = u.video_role != null ? String(u.video_role) : ''
+      const key = String(u.s3_key || '')
+      return role === 'export' || key.includes('/renders/') || key.startsWith('renders/')
+    })
+    if (!exportUploads.length) return res.json({ items: [] })
+
+    const uploadIds = exportUploads.map((u) => Number(u.id)).filter((n) => Number.isFinite(n) && n > 0)
+    const productionIds = exportUploads
+      .map((u) => (u.create_video_production_id != null ? Number(u.create_video_production_id) : NaN))
+      .filter((n) => Number.isFinite(n) && n > 0)
+
+    const prodById = new Map<number, any>()
+    const prodsByUploadId = new Map<number, any[]>()
+
+    if (uploadIds.length || productionIds.length) {
+      const whereParts: string[] = []
+      const params: any[] = [currentUserId]
+      if (uploadIds.length) {
+        whereParts.push(`upload_id IN (${uploadIds.map(() => '?').join(',')})`)
+        params.push(...uploadIds)
+      }
+      if (productionIds.length) {
+        whereParts.push(`id IN (${productionIds.map(() => '?').join(',')})`)
+        params.push(...productionIds)
+      }
+      const where = whereParts.length ? `(${whereParts.join(' OR ')})` : '0'
+      const [prodRows] = await db.query(
+        `SELECT id, upload_id, status, error_message
+           FROM productions
+          WHERE user_id = ?
+            AND ${where}`,
+        params
+      )
+      const rows = Array.isArray(prodRows) ? (prodRows as any[]) : []
+      for (const p of rows) {
+        const pid = Number(p.id)
+        if (Number.isFinite(pid) && pid > 0) prodById.set(pid, p)
+        const uid = Number(p.upload_id)
+        if (!Number.isFinite(uid) || uid <= 0) continue
+        if (!prodsByUploadId.has(uid)) prodsByUploadId.set(uid, [])
+        prodsByUploadId.get(uid)!.push(p)
+      }
+      // Sort newest-first per upload for fallback selection.
+      for (const [uid, arr] of prodsByUploadId.entries()) {
+        arr.sort((a, b) => Number(b.id) - Number(a.id))
+        prodsByUploadId.set(uid, arr)
+      }
+    }
+
+    const items = exportUploads.map((u) => {
+      const uid = Number(u.id)
+      const preferredPid =
+        u.create_video_production_id != null && Number.isFinite(Number(u.create_video_production_id)) && Number(u.create_video_production_id) > 0
+          ? Number(u.create_video_production_id)
+          : null
+      let prod: any | null = null
+      if (preferredPid && prodById.has(preferredPid)) prod = prodById.get(preferredPid)
+      if (!prod) {
+        const arr = prodsByUploadId.get(uid) || []
+        prod = arr.length ? arr[0] : null
+      }
+      const state: ExportHlsState = prod ? mapProductionToHlsState(prod.status) : 'not_ready'
+      return {
+        uploadId: uid,
+        state,
+        productionId: prod ? Number(prod.id) : null,
+        errorMessage: prod && prod.error_message != null ? String(prod.error_message) : null,
+      }
+    })
+    res.json({ items })
+  } catch (err: any) {
+    next(err)
+  }
+})
+
 createVideoRouter.get('/api/create-video/projects/:id/export-status', requireAuth, async (req, res, next) => {
   try {
     const currentUserId = Number(req.user!.id)
