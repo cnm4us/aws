@@ -41,6 +41,9 @@ export type Graphic = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   shadowEnabled?: boolean
+  shadowBlurSigma?: number
+  shadowOffsetPx?: number
+  shadowOpacityPct?: number
   fade?: 'none' | 'in' | 'out' | 'in_out'
 }
 
