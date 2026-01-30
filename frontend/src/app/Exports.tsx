@@ -199,7 +199,7 @@ export default function Exports() {
                 key={u.id}
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
-                  background: 'rgba(255,255,255,0.04)',
+                  background: 'linear-gradient(180deg, rgba(128,0,32,0.22) 0%, rgba(80,0,18,0.12) 100%)',
                   borderRadius: 12,
                   overflow: 'hidden',
                 }}
@@ -213,7 +213,7 @@ export default function Exports() {
                 </div>
 
                 <div style={{ padding: 12, paddingTop: 0 }}>
-                  <div style={{ position: 'relative', background: '#0b0b0b', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 560 }}>
+                  <div style={{ position: 'relative', background: 'rgba(0,0,0,0.35)', borderRadius: 12, overflow: 'hidden', aspectRatio: '9 / 16', maxHeight: 560 }}>
                     <button
                       type="button"
                       onClick={async () => {
@@ -328,7 +328,7 @@ export default function Exports() {
               width: 'min(960px, 100%)',
               borderRadius: 16,
               border: '1px solid rgba(255,255,255,0.16)',
-              background: '#0b0b0b',
+              background: 'linear-gradient(180deg, rgba(20,20,20,0.96) 0%, rgba(0,0,0,0.92) 100%)',
               overflow: 'hidden',
             }}
           >
@@ -413,7 +413,7 @@ export default function Exports() {
                 width: 'min(520px, 100%)',
                 borderRadius: 16,
                 border: '1px solid rgba(255,255,255,0.16)',
-                background: '#0b0b0b',
+                background: 'linear-gradient(180deg, rgba(10,132,255,0.22) 0%, rgba(0,20,60,0.92) 100%)',
                 overflow: 'hidden',
               }}
             >
