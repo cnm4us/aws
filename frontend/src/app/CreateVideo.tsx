@@ -15145,20 +15145,6 @@ export default function CreateVideo() {
                 </label>
               ) : null}
 
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Legacy Audio Config (ignored for exports)</div>
-                <select
-                  value={String(audioEditor.audioConfigId)}
-                  onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => p ? ({ ...p, audioConfigId: Number(e.target.value) }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                >
-                  <option value="0">None</option>
-                  {audioConfigs.map((c) => (
-                    <option key={`cfg-${c.id}`} value={String(c.id)}>{c.name}</option>
-                  ))}
-                </select>
-              </label>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
