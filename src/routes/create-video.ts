@@ -234,11 +234,25 @@ createVideoRouter.get('/api/exports/:uploadId/hls-status', requireAuth, async (r
     }
 
     const state: ExportHlsState = productionRow ? mapProductionToHlsState(productionRow.status) : 'not_ready'
+    let publishedCount = 0
+    if (productionId) {
+      try {
+        const [cntRows] = await db.query(
+          `SELECT COUNT(*) AS c
+             FROM space_publications
+            WHERE production_id = ?
+              AND status = 'published'`,
+          [productionId]
+        )
+        publishedCount = Number((cntRows as any[])[0]?.c || 0)
+      } catch {}
+    }
     res.json({
       state,
       productionId: productionId ?? null,
       productionStatus: productionRow ? String(productionRow.status || '') : null,
       errorMessage: productionRow && productionRow.error_message != null ? String(productionRow.error_message) : null,
+      publishedCount,
     })
   } catch (err: any) {
     next(err)
@@ -383,7 +397,8 @@ createVideoRouter.get('/api/exports/hls-status', requireAuth, async (req, res, n
       }
     }
 
-    const items = exportUploads.map((u) => {
+    const selectedProds: any[] = []
+    const itemsPre = exportUploads.map((u) => {
       const uid = Number(u.id)
       const preferredPid =
         u.create_video_production_id != null && Number.isFinite(Number(u.create_video_production_id)) && Number(u.create_video_production_id) > 0
@@ -395,6 +410,7 @@ createVideoRouter.get('/api/exports/hls-status', requireAuth, async (req, res, n
         const arr = prodsByUploadId.get(uid) || []
         prod = arr.length ? arr[0] : null
       }
+      if (prod) selectedProds.push(prod)
       const state: ExportHlsState = prod ? mapProductionToHlsState(prod.status) : 'not_ready'
       return {
         uploadId: uid,
@@ -402,6 +418,32 @@ createVideoRouter.get('/api/exports/hls-status', requireAuth, async (req, res, n
         productionId: prod ? Number(prod.id) : null,
         errorMessage: prod && prod.error_message != null ? String(prod.error_message) : null,
       }
+    })
+
+    const prodIdsForPub = Array.from(new Set(selectedProds.map((p) => Number(p.id)).filter((n) => Number.isFinite(n) && n > 0)))
+    const publishedByProductionId = new Map<number, number>()
+    if (prodIdsForPub.length) {
+      const placeholders2 = prodIdsForPub.map(() => '?').join(',')
+      const [cntRows] = await db.query(
+        `SELECT production_id, COUNT(*) AS c
+           FROM space_publications
+          WHERE production_id IN (${placeholders2})
+            AND status = 'published'
+          GROUP BY production_id`,
+        prodIdsForPub
+      )
+      const rows2 = Array.isArray(cntRows) ? (cntRows as any[]) : []
+      for (const r of rows2) {
+        const pid = Number(r.production_id)
+        const c = Number(r.c || 0)
+        if (Number.isFinite(pid) && pid > 0) publishedByProductionId.set(pid, c)
+      }
+    }
+
+    const items = itemsPre.map((it) => {
+      const pid = it.productionId != null ? Number(it.productionId) : null
+      const publishedCount = pid && publishedByProductionId.has(pid) ? Number(publishedByProductionId.get(pid) || 0) : 0
+      return { ...it, publishedCount }
     })
     res.json({ items })
   } catch (err: any) {

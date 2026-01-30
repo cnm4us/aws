@@ -100,7 +100,12 @@ export default function Exports() {
   const [hlsByUploadId, setHlsByUploadId] = useState<
     Record<
       string,
-      { state: 'not_ready' | 'in_progress' | 'ready' | 'failed'; productionId: number | null; errorMessage: string | null }
+      {
+        state: 'not_ready' | 'in_progress' | 'ready' | 'failed'
+        productionId: number | null
+        errorMessage: string | null
+        publishedCount: number
+      }
     >
   >({})
 
@@ -132,6 +137,7 @@ export default function Exports() {
             state,
             productionId: Number.isFinite(productionId as any) && (productionId as any) > 0 ? (productionId as any) : null,
             errorMessage: errorMessage ? errorMessage : null,
+            publishedCount: Number.isFinite(Number(it?.publishedCount)) ? Number(it.publishedCount) : 0,
           }
         }
         return next
@@ -246,6 +252,7 @@ export default function Exports() {
         state: actionsHlsState,
         productionId: actionsProductionId,
         errorMessage: actionsHlsError,
+        publishedCount: prev[String(actionsUploadId)]?.publishedCount ?? 0,
       },
     }))
   }, [actionsOpen, actionsUploadId, actionsHlsState, actionsProductionId, actionsHlsError])
@@ -258,10 +265,14 @@ export default function Exports() {
     return { state: 'processing' }
   }
 
-  function hlsStatusForUploadId(uploadId: number): { state: 'not_ready' | 'in_progress' | 'ready' | 'failed'; productionId: number | null } {
+  function hlsStatusForUploadId(uploadId: number): {
+    state: 'not_ready' | 'in_progress' | 'ready' | 'failed'
+    productionId: number | null
+    publishedCount: number
+  } {
     const it = hlsByUploadId[String(uploadId)]
-    if (!it) return { state: 'not_ready', productionId: null }
-    return { state: it.state, productionId: it.productionId }
+    if (!it) return { state: 'not_ready', productionId: null, publishedCount: 0 }
+    return { state: it.state, productionId: it.productionId, publishedCount: Number(it.publishedCount || 0) }
   }
 
   function cardBorderFor(u: UploadListItem): string {
@@ -371,6 +382,7 @@ export default function Exports() {
                   : hls.state === 'failed'
                     ? { label: 'Prep: Failed', tone: 'red' as const }
                     : { label: 'Prep: Not started', tone: 'gray' as const }
+            const pubChip = hls.publishedCount > 0 ? { label: 'Published: Yes', tone: 'green' as const } : { label: 'Published: No', tone: 'gray' as const }
             return (
               <div
                 key={u.id}
@@ -390,6 +402,7 @@ export default function Exports() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                     <StatusChip label={renderChip.label} tone={renderChip.tone} />
                     <StatusChip label={hlsChip.label} tone={hlsChip.tone} />
+                    <StatusChip label={pubChip.label} tone={pubChip.tone} />
                   </div>
                 </div>
 
