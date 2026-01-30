@@ -715,6 +715,23 @@ export default function CreateVideo() {
   >([])
   const [undoDepth, setUndoDepth] = useState(0)
   const [redoDepth, setRedoDepth] = useState(0)
+  const [rippleEnabled, setRippleEnabled] = useState<boolean>(() => {
+    try {
+      const raw = window.localStorage.getItem('cv_ripple_v1')
+      if (!raw) return false
+      const v = JSON.parse(raw)
+      return Boolean(v?.enabled)
+    } catch {
+      return false
+    }
+  })
+  const rippleEnabledRef = useRef(false)
+  useEffect(() => {
+    rippleEnabledRef.current = rippleEnabled
+    try {
+      window.localStorage.setItem('cv_ripple_v1', JSON.stringify({ enabled: rippleEnabled }))
+    } catch {}
+  }, [rippleEnabled])
   const lastSavedRef = useRef<string>('')
   const hydratingRef = useRef(false)
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
@@ -1381,6 +1398,140 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd, aEnd)))
   }, [])
+
+  const rippleRightSimpleLane = useCallback(
+    <T extends { id: string; startSeconds: number; endSeconds: number }>(
+      itemsRaw: T[],
+      startId: string
+    ): { items: T[]; pushedCount: number } | null => {
+      const items = itemsRaw
+        .slice()
+        .map((x) => ({ ...x }))
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id))) as T[]
+      const idx = items.findIndex((x) => String(x.id) === String(startId))
+      if (idx < 0) return null
+      let pushed = 0
+      let prevEnd = roundToTenth(Number((items[idx] as any).endSeconds || 0))
+      if (!Number.isFinite(prevEnd)) prevEnd = 0
+      for (let i = idx + 1; i < items.length; i++) {
+        const cur = items[i] as any
+        const s0 = roundToTenth(Number(cur.startSeconds || 0))
+        const e0 = roundToTenth(Number(cur.endSeconds || 0))
+        if (!(Number.isFinite(e0) && e0 > s0)) continue
+        if (s0 < prevEnd - 1e-6) {
+          const d = roundToTenth(prevEnd - s0)
+          const ns = roundToTenth(s0 + d)
+          const ne = roundToTenth(e0 + d)
+          if (ne > MAX_TIMELINE_SECONDS + 1e-6) return null
+          cur.startSeconds = ns
+          cur.endSeconds = ne
+          pushed++
+        }
+        prevEnd = roundToTenth(Math.max(prevEnd, Number(cur.endSeconds || 0)))
+      }
+      return { items: items as any, pushedCount: pushed }
+    },
+    [MAX_TIMELINE_SECONDS]
+  )
+
+  const rippleRightBaseLane = useCallback(
+    (
+      clipsRaw: Clip[],
+      stillsRaw: Still[],
+      startKind: 'clip' | 'still',
+      startId: string
+    ): { clips: Clip[]; stills: Still[]; pushedCount: number } | null => {
+      const clipStarts = computeClipStarts(clipsRaw)
+      const clips = clipsRaw.map((c, i) => ({ ...(c as any), startSeconds: roundToTenth(Number((c as any).startSeconds ?? clipStarts[i] ?? 0)) })) as any[]
+      const stills = stillsRaw.map((s) => ({ ...(s as any) })) as any[]
+      const segments: Array<
+        | { kind: 'clip'; id: string; start: number; end: number; clipId: string }
+        | { kind: 'still'; id: string; start: number; end: number; stillId: string }
+      > = []
+      for (const c of clips) {
+        const s = roundToTenth(Number((c as any).startSeconds || 0))
+        const e = roundToTenth(s + clipDurationSeconds(c as any))
+        if (Number.isFinite(s) && Number.isFinite(e) && e > s) segments.push({ kind: 'clip', id: String((c as any).id), start: s, end: e, clipId: String((c as any).id) })
+      }
+      for (const st of stills) {
+        const s = roundToTenth(Number((st as any).startSeconds || 0))
+        const e = roundToTenth(Number((st as any).endSeconds || 0))
+        if (Number.isFinite(s) && Number.isFinite(e) && e > s) segments.push({ kind: 'still', id: String((st as any).id), start: s, end: e, stillId: String((st as any).id) })
+      }
+      segments.sort((a, b) => a.start - b.start || a.end - b.end || a.id.localeCompare(b.id))
+      const idx = segments.findIndex((x) => x.kind === startKind && x.id === String(startId))
+      if (idx < 0) return null
+      let pushed = 0
+      let prevEnd = segments[idx].end
+      for (let i = idx + 1; i < segments.length; i++) {
+        const cur = segments[i]
+        if (cur.start < prevEnd - 1e-6) {
+          const d = roundToTenth(prevEnd - cur.start)
+          const ns = roundToTenth(cur.start + d)
+          const ne = roundToTenth(cur.end + d)
+          if (ne > MAX_TIMELINE_SECONDS + 1e-6) return null
+          cur.start = ns
+          cur.end = ne
+          pushed++
+          if (cur.kind === 'clip') {
+            const ci = clips.findIndex((c: any) => String(c.id) === cur.clipId)
+            if (ci >= 0) clips[ci] = { ...(clips[ci] as any), startSeconds: ns }
+          } else {
+            const si = stills.findIndex((s: any) => String(s.id) === cur.stillId)
+            if (si >= 0) stills[si] = { ...(stills[si] as any), startSeconds: ns, endSeconds: ne }
+          }
+        }
+        prevEnd = Math.max(prevEnd, cur.end)
+      }
+      return { clips: clips as any, stills: stills as any, pushedCount: pushed }
+    },
+    [MAX_TIMELINE_SECONDS]
+  )
+
+  const rippleRightDerivedLane = useCallback(
+    <T extends { id: string; startSeconds?: number }>(
+      itemsRaw: T[],
+      startId: string,
+      opts: { getDurationSeconds: (item: T) => number; normalizeStarts?: boolean }
+    ): { items: T[]; pushedCount: number } | null => {
+      const normalizeStarts = Boolean(opts.normalizeStarts)
+      const items0 = itemsRaw.slice().map((x) => ({ ...x })) as any[]
+      if (normalizeStarts) {
+        const starts = computeClipStarts(items0 as any)
+        for (let i = 0; i < items0.length; i++) {
+          items0[i] = { ...(items0[i] as any), startSeconds: roundToTenth(Number(starts[i] || 0)) }
+        }
+      }
+      const items = items0
+        .slice()
+        .sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id))) as T[]
+      const idx = items.findIndex((x: any) => String(x.id) === String(startId))
+      if (idx < 0) return null
+      let pushed = 0
+      const dur0 = roundToTenth(Math.max(0.2, Number(opts.getDurationSeconds(items[idx])) || 0))
+      let prevEnd = roundToTenth(Number((items[idx] as any).startSeconds || 0) + dur0)
+      for (let i = idx + 1; i < items.length; i++) {
+        const cur: any = items[i]
+        const s0 = roundToTenth(Number(cur.startSeconds || 0))
+        const dur = roundToTenth(Math.max(0.2, Number(opts.getDurationSeconds(cur)) || 0))
+        const e0 = roundToTenth(s0 + dur)
+        if (!(Number.isFinite(e0) && e0 > s0)) continue
+        if (s0 < prevEnd - 1e-6) {
+          const d = roundToTenth(prevEnd - s0)
+          const ns = roundToTenth(s0 + d)
+          const ne = roundToTenth(e0 + d)
+          if (ne > MAX_TIMELINE_SECONDS + 1e-6) return null
+          cur.startSeconds = ns
+          pushed++
+          prevEnd = ne
+        } else {
+          prevEnd = e0
+        }
+      }
+      return { items: items as any, pushedCount: pushed }
+    },
+    [MAX_TIMELINE_SECONDS]
+  )
 
   const extendViewportEndSecondsIfNeeded = useCallback(
     (prevTl: Timeline, nextTl: Timeline, requiredEndSeconds: number): Timeline => {
@@ -4502,6 +4653,7 @@ export default function CreateVideo() {
   useEffect(() => {
     if (!project?.id) return
     if (hydratingRef.current) return
+    if (trimDragging || panDragging) return
     const next = { ...timeline, playheadSeconds: playhead }
     const json = JSON.stringify(next)
     if (json === lastSavedRef.current) return
@@ -4526,7 +4678,7 @@ export default function CreateVideo() {
       }
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [persistHistoryNow, playhead, project?.id, timeline])
+  }, [persistHistoryNow, playhead, project?.id, timeline, trimDragging, panDragging])
 
   const saveTimelineNow = useCallback(
     async (nextTimeline: Timeline) => {
@@ -5776,7 +5928,49 @@ export default function CreateVideo() {
 	        audioEnabled: true,
 	      }
 	      snapshotUndo()
-	      setTimeline((prev) => insertClipAtPlayhead(prev, newClip))
+	      setTimeline((prev) => {
+	        if (!rippleEnabledRef.current) return insertClipAtPlayhead(prev, newClip)
+	        // Insert at (or after) the playhead, allowing overlap to the right (ripple-right only).
+	        const clipStarts = computeClipStarts(prev.clips)
+	        const prevClips: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(Number((c as any).startSeconds ?? clipStarts[i] ?? 0)) }))
+	        const prevStills: Still[] = Array.isArray((prev as any).stills) ? ((prev as any).stills as any) : []
+	        const desiredStart0 = clamp(roundToTenth(Number(prev.playheadSeconds || 0)), 0, MAX_TIMELINE_SECONDS)
+
+	        // Block/adjust left collisions only: if playhead is inside an existing base segment, start after it.
+	        const segs: Array<{ kind: 'clip' | 'still'; start: number; end: number }> = []
+	        for (const c of prevClips as any[]) {
+	          const s = roundToTenth(Number((c as any).startSeconds || 0))
+	          const e = roundToTenth(s + clipDurationSeconds(c as any))
+	          if (Number.isFinite(s) && Number.isFinite(e) && e > s) segs.push({ kind: 'clip', start: s, end: e })
+	        }
+	        for (const st of prevStills as any[]) {
+	          const s = roundToTenth(Number((st as any).startSeconds || 0))
+	          const e = roundToTenth(Number((st as any).endSeconds || 0))
+	          if (Number.isFinite(s) && Number.isFinite(e) && e > s) segs.push({ kind: 'still', start: s, end: e })
+	        }
+	        segs.sort((a, b) => a.start - b.start || a.end - b.end)
+	        let startSeconds = desiredStart0
+	        for (const seg of segs) {
+	          if (startSeconds < seg.end - 1e-6 && startSeconds > seg.start + 1e-6) {
+	            startSeconds = roundToTenth(seg.end)
+	          }
+	        }
+
+	        const placed: Clip = { ...newClip, startSeconds }
+	        const nextClips = [...prevClips, placed].sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+
+	        const ripple = rippleRightBaseLane(nextClips as any, prevStills as any, 'clip', placed.id)
+	        if (!ripple) {
+	          setTimelineMessage('Timeline max length reached.')
+	          return prev
+	        }
+	        const nextTimeline0: any = { ...(prev as any), clips: ripple.clips, stills: ripple.stills }
+	        const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+	        const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+	        const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+	        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+	        return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+	      })
 	      setSelectedClipId(id)
 	      setSelectedVideoOverlayId(null)
       setSelectedGraphicId(null)
@@ -5785,7 +5979,7 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(null)
     },
-    [setTimeline, snapshotUndo]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, rippleRightBaseLane, setTimeline, snapshotUndo]
   )
 
   const addVideoOverlayFromUpload = useCallback(
@@ -5815,7 +6009,38 @@ export default function CreateVideo() {
 	        audioEnabled: true,
 	      }
       snapshotUndo()
-      setTimeline((prev) => insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any)
+      setTimeline((prev) => {
+        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any
+        const prevOs0: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
+        const starts = computeClipStarts(prevOs0 as any)
+        const prevOs = prevOs0.map((o: any, i: number) => ({ ...(o as any), startSeconds: roundToTenth(Number((o as any).startSeconds ?? starts[i] ?? 0)) }))
+        const desiredStart0 = clamp(roundToTenth(Number(prev.playheadSeconds || 0)), 0, MAX_TIMELINE_SECONDS)
+        // Adjust only for left collision (if inside an existing overlay).
+        let startSeconds = desiredStart0
+        const ranges = prevOs
+          .map((o: any) => {
+            const s = roundToTenth(Number(o.startSeconds || 0))
+            const e = roundToTenth(s + clipDurationSeconds(o as any))
+            return { id: String(o.id), start: s, end: e }
+          })
+          .sort((a: any, b: any) => a.start - b.start)
+        for (const r of ranges) {
+          if (startSeconds < r.end - 1e-6 && startSeconds > r.start + 1e-6) startSeconds = roundToTenth(r.end)
+        }
+        const placed: any = { ...(overlay as any), startSeconds }
+        const nextOs = [...prevOs, placed].sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+        const ripple = rippleRightDerivedLane(nextOs as any, String(placed.id), { getDurationSeconds: (x: any) => clipDurationSeconds(x as any) })
+        if (!ripple) {
+          setTimelineMessage('Timeline max length reached.')
+          return prev
+        }
+        const nextTimeline0: any = { ...(prev as any), videoOverlays: ripple.items }
+        const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+        const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+        const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+        return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+      })
       setSelectedVideoOverlayId(id)
       setSelectedClipId(null)
       setSelectedGraphicId(null)
@@ -5826,7 +6051,7 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(null)
     },
-    [insertVideoOverlayAtPlayhead, snapshotUndo]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, insertVideoOverlayAtPlayhead, rippleRightDerivedLane, snapshotUndo]
   )
 
   const addGraphicFromUpload = useCallback(
@@ -5844,21 +6069,34 @@ export default function CreateVideo() {
         return
       }
 
-      // Disallow overlaps: slide forward to the next available slot.
       const existing = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const g = existing[i]
-        const gs = Number((g as any).startSeconds)
-        const ge = Number((g as any).endSeconds)
-        if (!(Number.isFinite(gs) && Number.isFinite(ge))) continue
-        const overlaps = start < ge - 1e-6 && end > gs + 1e-6
-        if (overlaps) {
-          start = roundToTenth(ge)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (cap != null && end > cap + 1e-6) {
-            setTimelineMessage('No available slot for a 5s graphic without overlapping.')
-            return
+      if (!rippleEnabledRef.current) {
+        // Disallow overlaps: slide forward to the next available slot.
+        for (let i = 0; i < existing.length; i++) {
+          const g = existing[i]
+          const gs = Number((g as any).startSeconds)
+          const ge = Number((g as any).endSeconds)
+          if (!(Number.isFinite(gs) && Number.isFinite(ge))) continue
+          const overlaps = start < ge - 1e-6 && end > gs + 1e-6
+          if (overlaps) {
+            start = roundToTenth(ge)
+            end = roundToTenth(start + dur)
+            i = -1
+            if (cap != null && end > cap + 1e-6) {
+              setTimelineMessage('No available slot for a 5s graphic without overlapping.')
+              return
+            }
+          }
+        }
+      } else {
+        // Ripple-right insert: only adjust for left collision (if playhead is inside an existing segment).
+        for (const g of existing as any[]) {
+          const gs = Number((g as any).startSeconds)
+          const ge = Number((g as any).endSeconds)
+          if (!(Number.isFinite(gs) && Number.isFinite(ge) && ge > gs)) continue
+          if (start < ge - 1e-6 && start > gs + 1e-6) {
+            start = roundToTenth(ge)
+            end = roundToTenth(start + dur)
           }
         }
       }
@@ -5879,8 +6117,21 @@ export default function CreateVideo() {
       }
       snapshotUndo()
       setTimeline((prev) => {
-        const next = [...(Array.isArray((prev as any).graphics) ? (prev as any).graphics : []), newGraphic]
-        next.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
+        const prevGs: Graphic[] = Array.isArray((prev as any).graphics) ? ((prev as any).graphics as any) : []
+        const next = [...prevGs, newGraphic].sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next as any, String(newGraphic.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), graphics: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
         return { ...prev, graphics: next }
       })
       setSelectedClipId(null)
@@ -5891,7 +6142,7 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(null)
     },
-    [graphics, playhead, snapshotUndo, timeline.clips.length, totalSecondsVideo]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, graphics, playhead, rippleRightSimpleLane, snapshotUndo, timeline.clips.length, totalSecondsVideo]
   )
 
   const addLogoFromPick = useCallback(
@@ -5922,19 +6173,36 @@ export default function CreateVideo() {
       }
 
       const existing = logos.slice().sort((a, b) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const l = existing[i] as any
-        const ls = Number(l.startSeconds)
-        const le = Number(l.endSeconds)
-        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
-        const overlaps = start < le - 1e-6 && end > ls + 1e-6
-        if (overlaps) {
-          start = roundToTenth(le)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (end > cap + 1e-6) {
-            setTimelineMessage('No available slot for a 5s logo segment without overlapping.')
-            return
+      if (!rippleEnabledRef.current) {
+        for (let i = 0; i < existing.length; i++) {
+          const l = existing[i] as any
+          const ls = Number(l.startSeconds)
+          const le = Number(l.endSeconds)
+          if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
+          const overlaps = start < le - 1e-6 && end > ls + 1e-6
+          if (overlaps) {
+            start = roundToTenth(le)
+            end = roundToTenth(start + dur)
+            i = -1
+            if (end > cap + 1e-6) {
+              setTimelineMessage('No available slot for a 5s logo segment without overlapping.')
+              return
+            }
+          }
+        }
+      } else {
+        // Ripple-right insert: only adjust for left collision (if inside an existing segment).
+        for (const l of existing as any[]) {
+          const ls = Number((l as any).startSeconds)
+          const le = Number((l as any).endSeconds)
+          if (!(Number.isFinite(ls) && Number.isFinite(le) && le > ls)) continue
+          if (start < le - 1e-6 && start > ls + 1e-6) {
+            start = roundToTenth(le)
+            end = roundToTenth(start + dur)
+            if (end > cap + 1e-6) {
+              setTimelineMessage('Not enough room to add a 5s logo segment within the timeline.')
+              return
+            }
           }
         }
       }
@@ -5944,6 +6212,19 @@ export default function CreateVideo() {
       setTimeline((prev) => {
         const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
         const next = [...prevLogos, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), logos: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
         return { ...prev, logos: next }
       })
       setSelectedClipId(null)
@@ -5953,7 +6234,7 @@ export default function CreateVideo() {
       setSelectedLogoId(id)
       setSelectedLowerThirdId(null)
     },
-    [logoConfigs, logos, playhead, snapshotUndo, totalSeconds]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, logoConfigs, logos, playhead, rippleRightSimpleLane, snapshotUndo, totalSeconds]
   )
 
 	  const addLowerThirdFromPick = useCallback(
@@ -5987,19 +6268,35 @@ export default function CreateVideo() {
 	      }
 
       const existing = lowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const lt = existing[i] as any
-        const ls = Number(lt.startSeconds)
-        const le = Number(lt.endSeconds)
-        if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
-        const overlaps = start < le - 1e-6 && end > ls + 1e-6
-        if (overlaps) {
-          start = roundToTenth(le)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (end > cap + 1e-6) {
-            setTimelineMessage('No available slot for a 10s lower third segment without overlapping.')
-            return
+      if (!rippleEnabledRef.current) {
+        for (let i = 0; i < existing.length; i++) {
+          const lt = existing[i] as any
+          const ls = Number(lt.startSeconds)
+          const le = Number(lt.endSeconds)
+          if (!(Number.isFinite(ls) && Number.isFinite(le))) continue
+          const overlaps = start < le - 1e-6 && end > ls + 1e-6
+          if (overlaps) {
+            start = roundToTenth(le)
+            end = roundToTenth(start + dur)
+            i = -1
+            if (end > cap + 1e-6) {
+              setTimelineMessage('No available slot for a 10s lower third segment without overlapping.')
+              return
+            }
+          }
+        }
+      } else {
+        for (const lt of existing as any[]) {
+          const ls = Number((lt as any).startSeconds)
+          const le = Number((lt as any).endSeconds)
+          if (!(Number.isFinite(ls) && Number.isFinite(le) && le > ls)) continue
+          if (start < le - 1e-6 && start > ls + 1e-6) {
+            start = roundToTenth(le)
+            end = roundToTenth(start + dur)
+            if (end > cap + 1e-6) {
+              setTimelineMessage('Not enough room to add a 10s lower third segment within the timeline.')
+              return
+            }
           }
         }
       }
@@ -6009,6 +6306,19 @@ export default function CreateVideo() {
       setTimeline((prev) => {
         const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
         const next = [...prevLts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), lowerThirds: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
         return { ...prev, lowerThirds: next }
       })
       setSelectedClipId(null)
@@ -6019,7 +6329,7 @@ export default function CreateVideo() {
       setSelectedLowerThirdId(id)
       setSelectedScreenTitleId(null)
 	    },
-	    [lowerThirdConfigs, lowerThirds, playhead, snapshotUndo, totalSeconds, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo]
+	    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, lowerThirdConfigs, lowerThirds, playhead, rippleRightSimpleLane, snapshotUndo, totalSeconds, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo]
 	  )
 
   const addScreenTitleFromPreset = useCallback(
@@ -6042,19 +6352,35 @@ export default function CreateVideo() {
       }
 
       const existing = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (let i = 0; i < existing.length; i++) {
-        const st: any = existing[i]
-        const ss = Number(st.startSeconds)
-        const se = Number(st.endSeconds)
-        if (!(Number.isFinite(ss) && Number.isFinite(se))) continue
-        const overlaps = start < se - 1e-6 && end > ss + 1e-6
-        if (overlaps) {
-          start = roundToTenth(se)
-          end = roundToTenth(start + dur)
-          i = -1
-          if (end > totalSeconds + 1e-6) {
-            setTimelineMessage('No available slot for a 5s screen title segment without overlapping.')
-            return
+      if (!rippleEnabledRef.current) {
+        for (let i = 0; i < existing.length; i++) {
+          const st: any = existing[i]
+          const ss = Number(st.startSeconds)
+          const se = Number(st.endSeconds)
+          if (!(Number.isFinite(ss) && Number.isFinite(se))) continue
+          const overlaps = start < se - 1e-6 && end > ss + 1e-6
+          if (overlaps) {
+            start = roundToTenth(se)
+            end = roundToTenth(start + dur)
+            i = -1
+            if (end > totalSeconds + 1e-6) {
+              setTimelineMessage('No available slot for a 5s screen title segment without overlapping.')
+              return
+            }
+          }
+        }
+      } else {
+        for (const st of existing as any[]) {
+          const ss = Number((st as any).startSeconds)
+          const se = Number((st as any).endSeconds)
+          if (!(Number.isFinite(ss) && Number.isFinite(se) && se > ss)) continue
+          if (start < se - 1e-6 && start > ss + 1e-6) {
+            start = roundToTenth(se)
+            end = roundToTenth(start + dur)
+            if (end > totalSeconds + 1e-6) {
+              setTimelineMessage('Not enough room to add a 5s screen title segment within the timeline.')
+              return
+            }
           }
         }
       }
@@ -6118,6 +6444,19 @@ export default function CreateVideo() {
       setTimeline((prev) => {
         const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
         const next = [...prevSts, seg].sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), screenTitles: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
         return { ...prev, screenTitles: next }
       })
       setSelectedClipId(null)
@@ -6130,7 +6469,7 @@ export default function CreateVideo() {
       setScreenTitleEditor({ id, start, end, presetId, text: '' })
       setScreenTitleEditorError(null)
     },
-    [playhead, screenTitles, snapshotUndo, totalSeconds]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, playhead, rippleRightSimpleLane, screenTitles, snapshotUndo, totalSeconds]
   )
 
   const addAudioFromUpload = useCallback(
@@ -6286,23 +6625,40 @@ export default function CreateVideo() {
       const maxSeconds = 20 * 60
       const start0 = clamp(roundToTenth(playhead), 0, maxSeconds)
       const segDur = roundToTenth(Math.max(0.2, dur != null && Number.isFinite(dur) ? dur : 5.0))
-      const start = start0
-      const end = clamp(roundToTenth(start + segDur), 0, maxSeconds)
+      let start = start0
+      let end = clamp(roundToTenth(start + segDur), 0, maxSeconds)
       if (!(end > start + 0.05)) {
         setTimelineMessage('Narration clip is too short.')
         return
       }
 
-      // Disallow overlaps in narration lane.
       const existing = narration.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
-      for (const n of existing as any[]) {
-        const ns = Number(n.startSeconds || 0)
-        const ne = Number(n.endSeconds || 0)
-        if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
-        const overlaps = start < ne - 1e-6 && end > ns + 1e-6
-        if (overlaps) {
-          setTimelineMessage('Narration overlaps an existing narration segment. Move the playhead or trim/delete the existing narration first.')
-          return
+      if (!rippleEnabledRef.current) {
+        // Disallow overlaps in narration lane.
+        for (const n of existing as any[]) {
+          const ns = Number(n.startSeconds || 0)
+          const ne = Number(n.endSeconds || 0)
+          if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
+          const overlaps = start < ne - 1e-6 && end > ns + 1e-6
+          if (overlaps) {
+            setTimelineMessage('Narration overlaps an existing narration segment. Move the playhead or trim/delete the existing narration first.')
+            return
+          }
+        }
+      } else {
+        // Ripple-right insert: only adjust for left collision (if inside an existing segment).
+        for (const n of existing as any[]) {
+          const ns = Number(n.startSeconds || 0)
+          const ne = Number(n.endSeconds || 0)
+          if (!(Number.isFinite(ns) && Number.isFinite(ne) && ne > ns)) continue
+          if (start < ne - 1e-6 && start > ns + 1e-6) {
+            start = roundToTenth(ne)
+            end = clamp(roundToTenth(start + segDur), 0, maxSeconds)
+            if (!(end > start + 0.05)) {
+              setTimelineMessage('Narration clip is too short.')
+              return
+            }
+          }
         }
       }
 
@@ -6311,10 +6667,23 @@ export default function CreateVideo() {
       snapshotUndo()
       setTimeline((prev) => {
         const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
-        const next = [...prevNs, seg].sort(
+        const next0 = [...prevNs, seg].sort(
           (a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
         )
-        const nextTimeline: any = { ...(prev as any), narration: next }
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next0 as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), narration: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
+        const nextTimeline: any = { ...(prev as any), narration: next0 }
         const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
         const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
         return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
@@ -6328,7 +6697,7 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(null)
     },
-    [computeTotalSecondsForTimeline, narration, playhead, snapshotUndo]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, narration, playhead, rippleRightSimpleLane, snapshotUndo]
   )
 
   const pickFromAssets = useMemo(() => {
@@ -10883,113 +11252,124 @@ export default function CreateVideo() {
             const next = normalizedClips.slice()
             const prevStills: any[] = Array.isArray((prev as any).stills) ? (prev as any).stills : []
 
-	          if (drag.edge === 'move') {
-	            const dur = Math.max(0.2, roundToTenth(clipDurationSeconds(c)))
-	            const minStartSeconds = drag.minStartSeconds != null ? Number(drag.minStartSeconds) : 0
-	            const maxEndSeconds = drag.maxEndSeconds != null ? Number(drag.maxEndSeconds) : 20 * 60
-	            const maxStartSeconds =
-	              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur))
-	            let desiredStart = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), minStartSeconds, maxStartSeconds)
+		          if (drag.edge === 'move') {
+		            const dur = Math.max(0.2, roundToTenth(clipDurationSeconds(c)))
+		            const minStartSeconds = drag.minStartSeconds != null ? Number(drag.minStartSeconds) : 0
+		            const maxEndSeconds = rippleEnabledRef.current
+		              ? MAX_TIMELINE_SECONDS
+		              : drag.maxEndSeconds != null
+		                ? Number(drag.maxEndSeconds)
+		                : 20 * 60
+		            const maxStartSeconds = rippleEnabledRef.current
+		              ? Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur))
+		              : drag.maxStartSeconds != null
+		                ? Number(drag.maxStartSeconds)
+		                : Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur))
+		            const desiredStart = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), minStartSeconds, maxStartSeconds)
 
-	            // Always enforce: clips may never overlap freeze-frame stills or other clips on the base track.
-	            // Compute available gaps and clamp the desired start into the best-fitting gap.
-	            const occupied: Array<{ start: number; end: number }> = []
-	            for (let i = 0; i < next.length; i++) {
-	              if (i === idx) continue
-	              const s = roundToTenth(Number((next[i] as any).startSeconds || 0))
-	              const e = roundToTenth(s + clipDurationSeconds(next[i]))
-	              if (e > s) occupied.push({ start: s, end: e })
-	            }
-	            for (const st of prevStills) {
-	              const s = roundToTenth(Number((st as any).startSeconds || 0))
-	              const e = roundToTenth(Number((st as any).endSeconds || 0))
-	              if (e > s) occupied.push({ start: s, end: e })
-	            }
-	            occupied.sort((a, b) => a.start - b.start || a.end - b.end)
-	            const merged: Array<{ start: number; end: number }> = []
-	            for (const r of occupied) {
-	              const s = clamp(roundToTenth(r.start), minStartSeconds, maxEndSeconds)
-	              const e = clamp(roundToTenth(r.end), minStartSeconds, maxEndSeconds)
-	              if (!(e > s)) continue
-	              const last = merged.length ? merged[merged.length - 1] : null
-	              if (!last) merged.push({ start: s, end: e })
-	              else if (s <= last.end + 1e-6) last.end = Math.max(last.end, e)
-	              else merged.push({ start: s, end: e })
-	            }
-	            const gaps: Array<{ start: number; end: number }> = []
-	            let cursor = minStartSeconds
-	            for (const r of merged) {
-	              if (r.start > cursor + 1e-6) gaps.push({ start: cursor, end: r.start })
-	              cursor = Math.max(cursor, r.end)
-	            }
-	            if (maxEndSeconds > cursor + 1e-6) gaps.push({ start: cursor, end: maxEndSeconds })
+		            if (rippleEnabledRef.current) {
+		              next[idx] = { ...c, startSeconds: desiredStart }
+		            } else {
+		              // Always enforce: clips may never overlap freeze-frame stills or other clips on the base track.
+		              // Compute available gaps and clamp the desired start into the best-fitting gap.
+		              const occupied: Array<{ start: number; end: number }> = []
+		              for (let i = 0; i < next.length; i++) {
+		                if (i === idx) continue
+		                const s = roundToTenth(Number((next[i] as any).startSeconds || 0))
+		                const e = roundToTenth(s + clipDurationSeconds(next[i]))
+		                if (e > s) occupied.push({ start: s, end: e })
+		              }
+		              for (const st of prevStills) {
+		                const s = roundToTenth(Number((st as any).startSeconds || 0))
+		                const e = roundToTenth(Number((st as any).endSeconds || 0))
+		                if (e > s) occupied.push({ start: s, end: e })
+		              }
+		              occupied.sort((a, b) => a.start - b.start || a.end - b.end)
+		              const merged: Array<{ start: number; end: number }> = []
+		              for (const r of occupied) {
+		                const s = clamp(roundToTenth(r.start), minStartSeconds, maxEndSeconds)
+		                const e = clamp(roundToTenth(r.end), minStartSeconds, maxEndSeconds)
+		                if (!(e > s)) continue
+		                const last = merged.length ? merged[merged.length - 1] : null
+		                if (!last) merged.push({ start: s, end: e })
+		                else if (s <= last.end + 1e-6) last.end = Math.max(last.end, e)
+		                else merged.push({ start: s, end: e })
+		              }
+		              const gaps: Array<{ start: number; end: number }> = []
+		              let cursor = minStartSeconds
+		              for (const r of merged) {
+		                if (r.start > cursor + 1e-6) gaps.push({ start: cursor, end: r.start })
+		                cursor = Math.max(cursor, r.end)
+		              }
+		              if (maxEndSeconds > cursor + 1e-6) gaps.push({ start: cursor, end: maxEndSeconds })
 
-	            const validStartIntervals = gaps
-	              .map((g) => ({
-	                start: roundToTenth(g.start),
-	                end: roundToTenth(g.end),
-	                startMax: roundToTenth(g.end - dur),
-	              }))
-	              .filter((g) => g.startMax >= g.start - 1e-6)
+		              const validStartIntervals = gaps
+		                .map((g) => ({
+		                  start: roundToTenth(g.start),
+		                  end: roundToTenth(g.end),
+		                  startMax: roundToTenth(g.end - dur),
+		                }))
+		                .filter((g) => g.startMax >= g.start - 1e-6)
 
-	            const movingRight = deltaSeconds >= 0
-	            let startTimeline = desiredStart
-		            if (validStartIntervals.length > 0) {
-		              // Find a gap that can hold the clip and contains the desired start.
-		              const inGap = validStartIntervals.find((g) => desiredStart >= g.start - 1e-6 && desiredStart <= g.startMax + 1e-6)
-		              if (inGap) {
-		                startTimeline = clamp(desiredStart, inGap.start, inGap.startMax)
-		              } else {
-		                // If desiredStart is inside an occupied range (or outside all gaps), block on collision:
-		                // clamp to the nearest boundary rather than jumping to a different gap.
-		                const desiredEnd = roundToTenth(desiredStart + dur)
-		                const hit = merged.find((r) => desiredStart < r.end - 1e-6 && desiredEnd > r.start + 1e-6) || null
-		                if (hit) {
-		                  // Moving right: stop with our end aligned to hit.start (if there's a gap that can fit).
-		                  // Moving left: stop with our start aligned to hit.end (if there's a gap that can fit).
-		                  if (movingRight) {
-		                    const before = validStartIntervals
-		                      .filter((g) => g.startMax <= hit.start + 1e-6)
-		                      .sort((a, b) => b.startMax - a.startMax)[0]
-		                    if (before) startTimeline = clamp(before.startMax, minStartSeconds, maxStartSeconds)
-		                    else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
-		                  } else {
-		                    const after = validStartIntervals
-		                      .filter((g) => g.start >= hit.end - 1e-6)
-		                      .sort((a, b) => a.start - b.start)[0]
-		                    if (after) startTimeline = clamp(after.start, minStartSeconds, maxStartSeconds)
-		                    else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
-		                  }
+		              const movingRight = deltaSeconds >= 0
+		              let startTimeline = desiredStart
+		              if (validStartIntervals.length > 0) {
+		                // Find a gap that can hold the clip and contains the desired start.
+		                const inGap = validStartIntervals.find((g) => desiredStart >= g.start - 1e-6 && desiredStart <= g.startMax + 1e-6)
+		                if (inGap) {
+		                  startTimeline = clamp(desiredStart, inGap.start, inGap.startMax)
 		                } else {
-		                  // No explicit overlap but desiredStart is outside any valid interval: clamp to nearest interval.
-		                  const first = validStartIntervals[0]
-		                  const last = validStartIntervals[validStartIntervals.length - 1]
-		                  if (desiredStart < first.start - 1e-6) startTimeline = first.start
-		                  else if (desiredStart > last.startMax + 1e-6) startTimeline = last.startMax
-		                  else {
-		                    // Between gaps: clamp to the closest boundary in the movement direction.
+		                  // If desiredStart is inside an occupied range (or outside all gaps), block on collision:
+		                  // clamp to the nearest boundary rather than jumping to a different gap.
+		                  const desiredEnd = roundToTenth(desiredStart + dur)
+		                  const hit = merged.find((r) => desiredStart < r.end - 1e-6 && desiredEnd > r.start + 1e-6) || null
+		                  if (hit) {
+		                    // Moving right: stop with our end aligned to hit.start (if there's a gap that can fit).
+		                    // Moving left: stop with our start aligned to hit.end (if there's a gap that can fit).
 		                    if (movingRight) {
 		                      const before = validStartIntervals
-		                        .filter((g) => g.startMax <= desiredStart + 1e-6)
+		                        .filter((g) => g.startMax <= hit.start + 1e-6)
 		                        .sort((a, b) => b.startMax - a.startMax)[0]
-		                      startTimeline = before ? before.startMax : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                      if (before) startTimeline = clamp(before.startMax, minStartSeconds, maxStartSeconds)
+		                      else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
 		                    } else {
 		                      const after = validStartIntervals
-		                        .filter((g) => g.start >= desiredStart - 1e-6)
+		                        .filter((g) => g.start >= hit.end - 1e-6)
 		                        .sort((a, b) => a.start - b.start)[0]
-		                      startTimeline = after ? after.start : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                      if (after) startTimeline = clamp(after.start, minStartSeconds, maxStartSeconds)
+		                      else startTimeline = clamp(roundToTenth(Number(drag.startStartSeconds || 0)), minStartSeconds, maxStartSeconds)
+		                    }
+		                  } else {
+		                    // No explicit overlap but desiredStart is outside any valid interval: clamp to nearest interval.
+		                    const first = validStartIntervals[0]
+		                    const last = validStartIntervals[validStartIntervals.length - 1]
+		                    if (desiredStart < first.start - 1e-6) startTimeline = first.start
+		                    else if (desiredStart > last.startMax + 1e-6) startTimeline = last.startMax
+		                    else {
+		                      // Between gaps: clamp to the closest boundary in the movement direction.
+		                      if (movingRight) {
+		                        const before = validStartIntervals
+		                          .filter((g) => g.startMax <= desiredStart + 1e-6)
+		                          .sort((a, b) => b.startMax - a.startMax)[0]
+		                        startTimeline = before ? before.startMax : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                      } else {
+		                        const after = validStartIntervals
+		                          .filter((g) => g.start >= desiredStart - 1e-6)
+		                          .sort((a, b) => a.start - b.start)[0]
+		                        startTimeline = after ? after.start : clamp(desiredStart, minStartSeconds, maxStartSeconds)
+		                      }
 		                    }
 		                  }
 		                }
+		              } else {
+		                // No gap can fit this clip duration; keep it at its original position.
+		                startTimeline = roundToTenth(Number(drag.startStartSeconds || 0))
 		              }
-		            } else {
-		              // No gap can fit this clip duration; keep it at its original position.
-		              startTimeline = roundToTenth(Number(drag.startStartSeconds || 0))
-	            }
-	            startTimeline = clamp(roundToTenth(startTimeline), minStartSeconds, maxStartSeconds)
+		              startTimeline = clamp(roundToTenth(startTimeline), minStartSeconds, maxStartSeconds)
 
-	            next[idx] = { ...c, startSeconds: startTimeline }
-	            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+		              next[idx] = { ...c, startSeconds: startTimeline }
+		            }
+		            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
 		          } else {
 		            // Trimming clips edits the source-time window, and can also affect the timeline start when trimming the start edge.
 		            // `startS/endS` are source-time seconds; `timelineStartS` is timeline-time seconds.
@@ -10997,7 +11377,12 @@ export default function CreateVideo() {
 		            let startS = roundToTenth(Number(c.sourceStartSeconds || 0))
 		            let endS = roundToTenth(Number(c.sourceEndSeconds || 0))
 
-		            const maxTimelineDur = drag.maxTimelineDurationSeconds != null ? Number(drag.maxTimelineDurationSeconds) : Number.POSITIVE_INFINITY
+		            const maxTimelineDur =
+		              rippleEnabledRef.current && drag.edge === 'end'
+		                ? Number.POSITIVE_INFINITY
+		                : drag.maxTimelineDurationSeconds != null
+		                  ? Number(drag.maxTimelineDurationSeconds)
+		                  : Number.POSITIVE_INFINITY
 
 		            if (drag.edge === 'start') {
 		              // Behave like narration: moving the start edge shifts the clip on the timeline AND
@@ -11045,7 +11430,7 @@ export default function CreateVideo() {
 	            // (including freeze-frame stills). We already constrain at pointerdown-time, but this keeps
 	            // behavior correct if nearby items change while dragging.
 		            const clipStartTimeline = roundToTenth(timelineStartS)
-		            if (Number.isFinite(clipStartTimeline)) {
+		            if (!(rippleEnabledRef.current && drag.edge === 'end') && Number.isFinite(clipStartTimeline)) {
 		              const otherBaseStarts: number[] = []
 		              for (let i = 0; i < next.length; i++) {
 		                if (i === idx) continue
@@ -11124,16 +11509,18 @@ export default function CreateVideo() {
 	              : roundToTenth(timelineStart0 + clipDurationSeconds(o0 as any))
 	          const dur0 = roundToTenth(Math.max(minLen, timelineEnd0 - timelineStart0))
 
-	          const minStartSeconds =
-	            (drag as any).minStartSeconds != null && Number.isFinite(Number((drag as any).minStartSeconds)) ? Number((drag as any).minStartSeconds) : 0
-	          const maxEndSeconds =
-	            (drag as any).maxEndSeconds != null && Number.isFinite(Number((drag as any).maxEndSeconds))
-	              ? Number((drag as any).maxEndSeconds)
-	              : Math.max(minStartSeconds, roundToTenth(totalSeconds))
-	          const maxStartSeconds =
-	            (drag as any).maxStartSeconds != null && Number.isFinite(Number((drag as any).maxStartSeconds))
-	              ? Number((drag as any).maxStartSeconds)
-	              : Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur0))
+		          const minStartSeconds =
+		            (drag as any).minStartSeconds != null && Number.isFinite(Number((drag as any).minStartSeconds)) ? Number((drag as any).minStartSeconds) : 0
+		          const maxEndSecondsRaw =
+		            (drag as any).maxEndSeconds != null && Number.isFinite(Number((drag as any).maxEndSeconds))
+		              ? Number((drag as any).maxEndSeconds)
+		              : Math.max(minStartSeconds, roundToTenth(totalSeconds))
+		          const maxEndSeconds = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : maxEndSecondsRaw
+		          const maxStartSecondsRaw =
+		            (drag as any).maxStartSeconds != null && Number.isFinite(Number((drag as any).maxStartSeconds))
+		              ? Number((drag as any).maxStartSeconds)
+		              : Math.max(minStartSeconds, roundToTenth(maxEndSecondsRaw - dur0))
+		          const maxStartSeconds = rippleEnabledRef.current ? Math.max(minStartSeconds, roundToTenth(maxEndSeconds - dur0)) : maxStartSecondsRaw
 
 	          const sourceStart0 = roundToTenth(Number((drag as any).startStartSeconds || o0.sourceStartSeconds || 0))
 	          const sourceEnd0 = roundToTenth(Number((drag as any).startEndSeconds || o0.sourceEndSeconds || 0))
@@ -11198,30 +11585,34 @@ export default function CreateVideo() {
 
           let startS = roundToTenth(Number(s0.startSeconds || 0))
           let endS = roundToTenth(Number(s0.endSeconds || 0))
-          const dur = Math.max(minLen, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+	          const dur = Math.max(minLen, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
 
-          if (drag.edge === 'move') {
-            const maxStart =
-              drag.maxStartSeconds != null
-                ? Number(drag.maxStartSeconds)
-                : Math.max(drag.minStartSeconds, roundToTenth(drag.maxEndSeconds - dur))
-            startS = clamp(roundToTenth(Number(drag.startStartSeconds) + deltaSeconds), drag.minStartSeconds, maxStart)
-            endS = roundToTenth(startS + dur)
-          } else if (drag.edge === 'start') {
+	          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
+
+	          if (drag.edge === 'move') {
+	            const maxStart =
+	              rippleEnabledRef.current
+	                ? Math.max(drag.minStartSeconds, roundToTenth(maxEndSecondsLane - dur))
+	                : drag.maxStartSeconds != null
+	                  ? Number(drag.maxStartSeconds)
+	                  : Math.max(drag.minStartSeconds, roundToTenth(maxEndSecondsLane - dur))
+	            startS = clamp(roundToTenth(Number(drag.startStartSeconds) + deltaSeconds), drag.minStartSeconds, maxStart)
+	            endS = roundToTenth(startS + dur)
+	          } else if (drag.edge === 'start') {
             startS = clamp(
               roundToTenth(Number(drag.startStartSeconds) + deltaSeconds),
               drag.minStartSeconds,
               Math.max(drag.minStartSeconds, roundToTenth(Number(drag.startEndSeconds) - minLen))
             )
             endS = roundToTenth(Number(drag.startEndSeconds))
-          } else {
-            endS = clamp(
-              roundToTenth(Number(drag.startEndSeconds) + deltaSeconds),
-              Math.max(drag.minStartSeconds + minLen, roundToTenth(Number(drag.startStartSeconds) + minLen)),
-              drag.maxEndSeconds
-            )
-            startS = roundToTenth(Number(drag.startStartSeconds))
-          }
+	          } else {
+	            endS = clamp(
+	              roundToTenth(Number(drag.startEndSeconds) + deltaSeconds),
+	              Math.max(drag.minStartSeconds + minLen, roundToTenth(Number(drag.startStartSeconds) + minLen)),
+	              maxEndSecondsLane
+	            )
+	            startS = roundToTenth(Number(drag.startStartSeconds))
+	          }
 
           if (!(endS > startS)) endS = roundToTenth(startS + minLen)
           nextStills[idx] = { ...s0, startSeconds: startS, endSeconds: endS }
@@ -11260,10 +11651,11 @@ export default function CreateVideo() {
               ? roundToTenth(Number((drag as any).startSourceStartSeconds))
               : sourceStartS
 
-          // Ensure duration doesn't exceed remaining source when file duration is known.
-          const maxLenByAudio =
-            Number.isFinite(maxDurForFile) && maxDurForFile > 0 ? roundToTenth(Math.max(0, maxDurForFile - baseSourceStart)) : null
-          const dur = maxLenByAudio != null && Number.isFinite(maxLenByAudio) && maxLenByAudio > 0 ? Math.min(rawDur, maxLenByAudio) : rawDur
+	          // Ensure duration doesn't exceed remaining source when file duration is known.
+	          const maxLenByAudio =
+	            Number.isFinite(maxDurForFile) && maxDurForFile > 0 ? roundToTenth(Math.max(0, maxDurForFile - baseSourceStart)) : null
+	          const dur = maxLenByAudio != null && Number.isFinite(maxLenByAudio) && maxLenByAudio > 0 ? Math.min(rawDur, maxLenByAudio) : rawDur
+	          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
 
           if (drag.edge === 'start') {
             const minStartByAudio =
@@ -11279,14 +11671,14 @@ export default function CreateVideo() {
             sourceStartS = roundToTenth(Math.max(0, baseSourceStart + delta))
             startS = nextStart
             endS = roundToTenth(Number(drag.startEndSeconds))
-          } else if (drag.edge === 'end') {
-            const maxEndByAudio =
-              Number.isFinite(maxDurForFile) && maxDurForFile > 0
-                ? Math.min(
-                    drag.maxEndSeconds,
-                    roundToTenth(Number(drag.startStartSeconds) + Math.max(0.2, maxLenByAudio != null ? maxLenByAudio : maxDurForFile))
-                  )
-                : drag.maxEndSeconds
+	          } else if (drag.edge === 'end') {
+	            const maxEndByAudio =
+	              Number.isFinite(maxDurForFile) && maxDurForFile > 0
+	                ? Math.min(
+	                    maxEndSecondsLane,
+	                    roundToTenth(Number(drag.startStartSeconds) + Math.max(0.2, maxLenByAudio != null ? maxLenByAudio : maxDurForFile))
+	                  )
+	                : maxEndSecondsLane
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
@@ -11294,13 +11686,17 @@ export default function CreateVideo() {
             )
             startS = roundToTenth(Number(drag.startStartSeconds))
             sourceStartS = baseSourceStart
-          } else {
-            const maxStart =
-              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
-            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
-            endS = roundToTenth(startS + dur)
-            sourceStartS = baseSourceStart
-          }
+	          } else {
+	            const maxStart =
+	              rippleEnabledRef.current
+	                ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+	                : drag.maxStartSeconds != null
+	                  ? Number(drag.maxStartSeconds)
+	                  : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+	            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+	            endS = roundToTenth(startS + dur)
+	            sourceStartS = baseSourceStart
+	          }
 
           if (!(endS > startS)) endS = roundToTenth(startS + minLen)
           const nextSegs = prevSegs.slice()
@@ -11326,6 +11722,7 @@ export default function CreateVideo() {
           let startS = Number(l0.startSeconds || 0)
           let endS = Number(l0.endSeconds || 0)
           const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
           if (drag.edge === 'start') {
             startS = clamp(
               roundToTenth(drag.startStartSeconds + deltaSeconds),
@@ -11336,11 +11733,14 @@ export default function CreateVideo() {
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-              drag.maxEndSeconds
+              maxEndSecondsLane
             )
           } else {
-            const maxStart =
-              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            const maxStart = rippleEnabledRef.current
+              ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+              : drag.maxStartSeconds != null
+                ? Number(drag.maxStartSeconds)
+                : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
           }
@@ -11363,6 +11763,7 @@ export default function CreateVideo() {
           let startS = Number(lt0.startSeconds || 0)
           let endS = Number(lt0.endSeconds || 0)
           const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
           if (drag.edge === 'start') {
             startS = clamp(
               roundToTenth(drag.startStartSeconds + deltaSeconds),
@@ -11373,11 +11774,14 @@ export default function CreateVideo() {
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-              drag.maxEndSeconds
+              maxEndSecondsLane
             )
           } else {
-            const maxStart =
-              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            const maxStart = rippleEnabledRef.current
+              ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+              : drag.maxStartSeconds != null
+                ? Number(drag.maxStartSeconds)
+                : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
           }
@@ -11400,6 +11804,7 @@ export default function CreateVideo() {
           let startS = Number(st0.startSeconds || 0)
           let endS = Number(st0.endSeconds || 0)
           const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
           if (drag.edge === 'start') {
             startS = clamp(
               roundToTenth(drag.startStartSeconds + deltaSeconds),
@@ -11410,11 +11815,14 @@ export default function CreateVideo() {
             endS = clamp(
               roundToTenth(drag.startEndSeconds + deltaSeconds),
               Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-              drag.maxEndSeconds
+              maxEndSecondsLane
             )
           } else {
-            const maxStart =
-              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+            const maxStart = rippleEnabledRef.current
+              ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+              : drag.maxStartSeconds != null
+                ? Number(drag.maxStartSeconds)
+                : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
           }
@@ -11442,6 +11850,7 @@ export default function CreateVideo() {
 		          const maxDurForFile =
 		            drag.maxDurationSeconds != null && Number.isFinite(Number(drag.maxDurationSeconds)) ? Number(drag.maxDurationSeconds) : Number.POSITIVE_INFINITY
 		          const dur = Number.isFinite(maxDurForFile) && maxDurForFile > 0 ? Math.min(rawDur, maxDurForFile) : rawDur
+		          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
 		          if (drag.edge === 'start') {
 		            const minStartByAudio =
 		              drag.startSourceStartSeconds != null && Number.isFinite(Number(drag.startSourceStartSeconds))
@@ -11464,8 +11873,8 @@ export default function CreateVideo() {
 		          } else if (drag.edge === 'end') {
 		            const maxEndByAudio =
 		              Number.isFinite(maxDurForFile) && maxDurForFile > 0
-		                ? Math.min(drag.maxEndSeconds, roundToTenth(Number(drag.startStartSeconds) + maxDurForFile))
-		                : drag.maxEndSeconds
+		                ? Math.min(maxEndSecondsLane, roundToTenth(Number(drag.startStartSeconds) + maxDurForFile))
+		                : maxEndSecondsLane
 		            endS = clamp(
 		              roundToTenth(drag.startEndSeconds + deltaSeconds),
 		              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
@@ -11473,7 +11882,11 @@ export default function CreateVideo() {
 		            )
 		          } else {
 		            const maxStart =
-		              drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+		              rippleEnabledRef.current
+		                ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+		                : drag.maxStartSeconds != null
+		                  ? Number(drag.maxStartSeconds)
+		                  : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
 		            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
 		            endS = roundToTenth(startS + dur)
 		          }
@@ -11496,6 +11909,7 @@ export default function CreateVideo() {
         let startS = Number(g.startSeconds || 0)
         let endS = Number(g.endSeconds || 0)
         const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+        const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
         if (drag.edge === 'start') {
           startS = clamp(
             roundToTenth(drag.startStartSeconds + deltaSeconds),
@@ -11506,11 +11920,14 @@ export default function CreateVideo() {
           endS = clamp(
             roundToTenth(drag.startEndSeconds + deltaSeconds),
             Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
-            drag.maxEndSeconds
+            maxEndSecondsLane
           )
         } else {
-          const maxStart =
-            drag.maxStartSeconds != null ? Number(drag.maxStartSeconds) : Math.max(drag.minStartSeconds, drag.maxEndSeconds - dur)
+          const maxStart = rippleEnabledRef.current
+            ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+            : drag.maxStartSeconds != null
+              ? Number(drag.maxStartSeconds)
+              : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
           startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
           endS = roundToTenth(startS + dur)
         }
@@ -11791,6 +12208,102 @@ export default function CreateVideo() {
         } catch {}
         stopTrimDrag('still_ctx_menu')
         return
+      }
+
+      // Commit ripple-right (pointer-up): allow temporary overlaps during drag when ripple is enabled,
+      // then cascade-push later items to remove overlaps.
+      if (drag && rippleEnabledRef.current && Boolean((drag as any).moved) && (drag.edge === 'end' || drag.edge === 'move')) {
+        try {
+          setTimeline((prev) => {
+            const kind = String((drag as any).kind || '')
+            let next: any = prev
+
+            if (kind === 'clip') {
+              const prevStills: Still[] = Array.isArray((prev as any).stills) ? ((prev as any).stills as any) : []
+              const ripple = rippleRightBaseLane(prev.clips as any, prevStills as any, 'clip', String((drag as any).clipId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), clips: ripple.clips, stills: ripple.stills }
+            } else if (kind === 'still') {
+              const prevStills: Still[] = Array.isArray((prev as any).stills) ? ((prev as any).stills as any) : []
+              const ripple = rippleRightBaseLane(prev.clips as any, prevStills as any, 'still', String((drag as any).stillId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), clips: ripple.clips, stills: ripple.stills }
+            } else if (kind === 'videoOverlay') {
+              const prevOs: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
+              const ripple = rippleRightDerivedLane(prevOs as any, String((drag as any).videoOverlayId), {
+                getDurationSeconds: (x: any) => clipDurationSeconds(x as any),
+                normalizeStarts: true,
+              })
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), videoOverlays: ripple.items }
+            } else if (kind === 'graphic') {
+              const prevGs: Graphic[] = Array.isArray((prev as any).graphics) ? ((prev as any).graphics as any) : []
+              const ripple = rippleRightSimpleLane(prevGs as any, String((drag as any).graphicId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), graphics: ripple.items }
+            } else if (kind === 'logo') {
+              const prevLs: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
+              const ripple = rippleRightSimpleLane(prevLs as any, String((drag as any).logoId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), logos: ripple.items }
+            } else if (kind === 'lowerThird') {
+              const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
+              const ripple = rippleRightSimpleLane(prevLts as any, String((drag as any).lowerThirdId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), lowerThirds: ripple.items }
+            } else if (kind === 'screenTitle') {
+              const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+              const ripple = rippleRightSimpleLane(prevSts as any, String((drag as any).screenTitleId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), screenTitles: ripple.items }
+            } else if (kind === 'narration') {
+              const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
+              const ripple = rippleRightSimpleLane(prevNs as any, String((drag as any).narrationId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), narration: ripple.items }
+            } else if (kind === 'audioSegment') {
+              const prevAs: AudioSegment[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any) : []
+              const ripple = rippleRightSimpleLane(prevAs as any, String((drag as any).audioSegmentId))
+              if (!ripple) {
+                setTimelineMessage('Timeline max length reached.')
+                return prev
+              }
+              next = { ...(prev as any), audioSegments: ripple.items, audioTrack: null }
+            } else {
+              return prev
+            }
+
+            const nextTotal = computeTotalSecondsForTimeline(next as any)
+            const next1: any = extendViewportEndSecondsIfNeeded(prev as any, next as any, nextTotal + VIEWPORT_PAD_SECONDS)
+            const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((next1 as any).viewportEndSeconds || 0))
+            const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+            return { ...(next1 as any), playheadSeconds: nextPlayhead }
+          })
+        } catch {}
       }
 
       stopTrimDrag('pointerup')
@@ -14282,11 +14795,31 @@ export default function CreateVideo() {
 	                    WebkitTouchCallout: 'none',
 	                  }}
 	                  title="Guideline (tap to add, hold for menu)"
-	                  aria-label="Guideline"
-			                >
-			                  G
-			                </button>
-			              </div>
+                  aria-label="Guideline"
+				                >
+				                  G
+				                </button>
+                      <button
+                        type="button"
+                        onClick={() => setRippleEnabled((v) => !v)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: rippleEnabled ? '1px solid rgba(48,209,88,0.85)' : '1px solid rgba(255,255,255,0.18)',
+                          background: rippleEnabled ? 'rgba(48,209,88,0.18)' : '#0c0c0c',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                          flex: '0 0 auto',
+                          minWidth: 44,
+                          lineHeight: 1,
+                        }}
+                        title="Toggle ripple-right (push later objects on the same lane)"
+                        aria-label="Toggle ripple"
+                      >
+                        Ripple {rippleEnabled ? 'ON' : 'OFF'}
+                      </button>
+				              </div>
 		              <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 120 }}>
 		                {hasPlayablePreview ? (
 		                  <button
