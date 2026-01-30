@@ -391,8 +391,44 @@ export default function Exports() {
                   background: 'linear-gradient(180deg, rgba(128,0,32,0.42) 0%, rgba(80,0,18,0.24) 100%)',
                   borderRadius: 12,
                   overflow: 'hidden',
+                  position: 'relative',
                 }}
               >
+                <button
+                  type="button"
+                  aria-label="Export actions"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setActionsOpen(true)
+                    setActionsUploadId(Number(u.id))
+                    setActionsTitle(title)
+                    setActionsProjectId(projectId)
+                    setActionsHlsState('not_ready')
+                    setActionsProductionId(null)
+                    setActionsHlsError(null)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,0.20)',
+                    background: '#000',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    zIndex: 3,
+                  }}
+                >
+                  ⚙
+                </button>
                 <div style={{ padding: 12 }}>
                   <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
                   <div style={{ color: '#9a9a9a', fontSize: 13 }}>
@@ -451,41 +487,6 @@ export default function Exports() {
                         alt=""
                         style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                       />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Export actions"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setActionsOpen(true)
-                        setActionsUploadId(Number(u.id))
-                        setActionsTitle(title)
-                        setActionsProjectId(projectId)
-                        setActionsHlsState('not_ready')
-                        setActionsProductionId(null)
-                        setActionsHlsError(null)
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: 10,
-                        right: 10,
-                        width: 44,
-                        height: 44,
-                        borderRadius: 999,
-                        border: '1px solid rgba(255,255,255,0.20)',
-                        background: '#000',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 18,
-                        fontWeight: 900,
-                        zIndex: 2,
-                      }}
-                    >
-                      ⚙
                     </button>
                   </div>
                 </div>
