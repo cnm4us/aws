@@ -1212,7 +1212,11 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(m))
   }, [timeline])
-  const totalSeconds = useMemo(() => {
+  const MAX_TIMELINE_SECONDS = 20 * 60
+  const MIN_VIEWPORT_SECONDS = 30
+  const VIEWPORT_PAD_SECONDS = 0.5
+
+  const contentTotalSeconds = useMemo(() => {
     let m = Math.max(0, roundToTenth(Math.max(totalSecondsVideo, totalSecondsVideoOverlays, totalSecondsGraphics, totalSecondsStills)))
     const ls: any[] = Array.isArray((timeline as any).logos) ? (timeline as any).logos : []
     const lts: any[] = Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : []
@@ -1241,6 +1245,18 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(m))
   }, [timeline, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo, totalSecondsVideoOverlays])
+
+  const viewportEndSecondsRaw = useMemo(() => {
+    const v = Number((timeline as any).viewportEndSeconds)
+    if (!Number.isFinite(v)) return 0
+    return clamp(roundToTenth(v), 0, MAX_TIMELINE_SECONDS)
+  }, [timeline])
+
+  // totalSeconds is the editor viewport duration: can be longer than content to allow placing/moving clips later in time.
+  const totalSeconds = useMemo(() => {
+    const base = Math.max(MIN_VIEWPORT_SECONDS, contentTotalSeconds, viewportEndSecondsRaw)
+    return clamp(roundToTenth(base), 0, MAX_TIMELINE_SECONDS)
+  }, [contentTotalSeconds, viewportEndSecondsRaw])
 
   const hasPlayablePreview = useMemo(() => {
     if (!(totalSeconds > 0)) return false
@@ -1365,6 +1381,18 @@ export default function CreateVideo() {
     }
     return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd, aEnd)))
   }, [])
+
+  const extendViewportEndSecondsIfNeeded = useCallback(
+    (prevTl: Timeline, nextTl: Timeline, requiredEndSeconds: number): Timeline => {
+      const prevViewportRaw = Number((prevTl as any).viewportEndSeconds)
+      const prevViewport = Number.isFinite(prevViewportRaw) ? clamp(roundToTenth(prevViewportRaw), 0, MAX_TIMELINE_SECONDS) : 0
+      const required = clamp(roundToTenth(requiredEndSeconds), 0, MAX_TIMELINE_SECONDS)
+      const nextViewport = clamp(roundToTenth(Math.max(prevViewport, MIN_VIEWPORT_SECONDS, required)), 0, MAX_TIMELINE_SECONDS)
+      if (nextViewport <= prevViewport + 1e-6 && (nextTl as any).viewportEndSeconds === (prevTl as any).viewportEndSeconds) return nextTl
+      return { ...(nextTl as any), viewportEndSeconds: nextViewport } as any
+    },
+    [MAX_TIMELINE_SECONDS, MIN_VIEWPORT_SECONDS]
+  )
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
   const pxPerSecond = 48
   const visualTotalSeconds = useMemo(() => Math.max(10, totalSeconds), [totalSeconds])
@@ -8799,7 +8827,7 @@ export default function CreateVideo() {
       // Disallow overlaps: constrain by neighbors.
       const sorted = prevGraphics.slice().sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
       const pos = sorted.findIndex((gg: any) => String(gg?.id) === targetId)
-      const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
+      const capEnd = MAX_TIMELINE_SECONDS
       const prevEnd = pos > 0 ? roundToTenth(Number((sorted[pos - 1] as any).endSeconds || 0)) : 0
       const nextStart =
         pos >= 0 && pos < sorted.length - 1 ? roundToTenth(Number((sorted[pos + 1] as any).startSeconds || capEnd)) : roundToTenth(capEnd)
@@ -11060,10 +11088,12 @@ export default function CreateVideo() {
 		            next[idx] = { ...c, startSeconds: roundToTenth(timelineStartS), sourceStartSeconds: startS, sourceEndSeconds: endS }
 		            next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
 		          }
-          const nextTimeline: any = { ...prev, clips: next }
-          const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
-          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-	          return { ...nextTimeline, playheadSeconds: nextPlayhead }
+          const nextTimeline0: any = { ...prev, clips: next }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+	          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
 	        }
 
 	        if (drag.kind === 'videoOverlay') {
@@ -11150,10 +11180,12 @@ export default function CreateVideo() {
 	            (a: any, b: any) =>
 	              Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
 	          )
-	          const nextTimeline: any = { ...(prev as any), videoOverlays: nextOs }
-	          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-	          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-	          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+	          const nextTimeline0: any = { ...(prev as any), videoOverlays: nextOs }
+	          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+	          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+	          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+	          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+	          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
 	        }
 
 	        if (drag.kind === 'still') {
@@ -11198,10 +11230,12 @@ export default function CreateVideo() {
               Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
           )
 
-          const nextTimeline: any = { ...(prev as any), stills: nextStills }
-          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+          const nextTimeline0: any = { ...(prev as any), stills: nextStills }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
         }
 
         if (drag.kind === 'audioSegment') {
@@ -11271,8 +11305,16 @@ export default function CreateVideo() {
           if (!(endS > startS)) endS = roundToTenth(startS + minLen)
           const nextSegs = prevSegs.slice()
           nextSegs[idx] = { ...(s0 as any), startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
-          nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
-          return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
+          nextSegs.sort(
+            (a: any, b: any) =>
+              Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+          )
+          const nextTimeline0: any = { ...(prev as any), audioSegments: nextSegs, audioTrack: null }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead } as any
         }
 
         if (drag.kind === 'logo') {
@@ -11304,10 +11346,12 @@ export default function CreateVideo() {
           }
           nextLogos[idx] = { ...l0, startSeconds: startS, endSeconds: endS }
           nextLogos.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
-          const nextTimeline: any = { ...(prev as any), logos: nextLogos }
-          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+          const nextTimeline0: any = { ...(prev as any), logos: nextLogos }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
         }
 
         if (drag.kind === 'lowerThird') {
@@ -11339,10 +11383,12 @@ export default function CreateVideo() {
           }
           nextLts[idx] = { ...lt0, startSeconds: startS, endSeconds: endS }
           nextLts.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
-          const nextTimeline: any = { ...(prev as any), lowerThirds: nextLts }
-          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+          const nextTimeline0: any = { ...(prev as any), lowerThirds: nextLts }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
         }
 
 	        if (drag.kind === 'screenTitle') {
@@ -11374,10 +11420,12 @@ export default function CreateVideo() {
           }
           nextSts[idx] = { ...st0, startSeconds: startS, endSeconds: endS }
           nextSts.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
-          const nextTimeline: any = { ...(prev as any), screenTitles: nextSts }
-          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-	          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+          const nextTimeline0: any = { ...(prev as any), screenTitles: nextSts }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+	          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
 	        }
 
 		        if (drag.kind === 'narration') {
@@ -11431,10 +11479,12 @@ export default function CreateVideo() {
 		          }
 	          nextNs[idx] = { ...n0, startSeconds: startS, endSeconds: endS, sourceStartSeconds: sourceStartS }
 	          nextNs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
-	          const nextTimeline: any = { ...(prev as any), narration: nextNs }
-	          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
-	          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-	          return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+	          const nextTimeline0: any = { ...(prev as any), narration: nextNs }
+	          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+	          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+	          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+	          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+	          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
 	        }
 
 	        if (drag.kind !== 'graphic') return prev
@@ -11468,9 +11518,12 @@ export default function CreateVideo() {
         const nextGraphics = prevGraphics.slice()
         nextGraphics[idx] = { ...g, startSeconds: startS, endSeconds: endS }
         nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
-        const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), graphics: nextGraphics } as any)
-        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-        return { ...prev, graphics: nextGraphics, playheadSeconds: nextPlayhead }
+        const nextTimeline0: any = { ...(prev as any), graphics: nextGraphics }
+        const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+        const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+        const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+        return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
       })
     }
     const onUp = (e: PointerEvent) => {
@@ -12766,7 +12819,7 @@ export default function CreateVideo() {
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
 
-                    const capEnd = Math.max(0, totalSeconds)
+                    const capEnd = MAX_TIMELINE_SECONDS
                     const sorted = logos.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
                     const pos = sorted.findIndex((ll: any) => String(ll?.id) === String((l as any).id))
                     const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
@@ -12850,7 +12903,7 @@ export default function CreateVideo() {
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
 
-                    const capEnd = Math.max(0, totalSeconds)
+                    const capEnd = MAX_TIMELINE_SECONDS
                     const sorted = lowerThirds
                       .slice()
                       .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
@@ -12940,7 +12993,7 @@ export default function CreateVideo() {
                       return
                     }
 
-                    const capEnd = Math.max(0, totalSeconds)
+                    const capEnd = MAX_TIMELINE_SECONDS
                     const sorted = screenTitles.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
                     const pos = sorted.findIndex((x: any) => String(x?.id) === String((st as any).id))
                     const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
@@ -13031,7 +13084,7 @@ export default function CreateVideo() {
 	                    nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 	                    nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 
-	                    const capEnd = Math.max(0, totalSeconds)
+	                    const capEnd = MAX_TIMELINE_SECONDS
 	                    const normalized: any[] = videoOverlays.map((vv: any, i: number) => ({
 	                      ...(vv as any),
 	                      startSeconds: roundToTenth((starts0 as any)[i] || (vv as any).startSeconds || 0),
@@ -13142,7 +13195,7 @@ export default function CreateVideo() {
 		                    const sorted = graphics.slice().sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
 		                    const pos = sorted.findIndex((gg: any) => String(gg?.id) === String(g.id))
 		                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
-		                    const capEnd = timeline.clips.length ? totalSecondsVideo : 20 * 60
+			                    const capEnd = MAX_TIMELINE_SECONDS
 		                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
 		                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
 		                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
@@ -13236,7 +13289,7 @@ export default function CreateVideo() {
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
 
-	                    const capEnd = Math.max(0, totalSeconds)
+	                    const capEnd = MAX_TIMELINE_SECONDS
 	                    const sorted = narration
 	                      .slice()
 	                      .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String((a as any).id).localeCompare(String((b as any).id)))

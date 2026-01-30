@@ -1256,9 +1256,21 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const guidelines = Array.from(guidelinesMap.values()).sort((a, b) => a - b)
 
+  // Optional: viewport end (UI-only, does not affect export duration).
+  // Normalize for legacy freeze removal so the viewport doesn't retain "phantom time".
+  const viewportEndRaw = (raw as any).viewportEndSeconds
+  let viewportEndSeconds: number | undefined = undefined
+  if (viewportEndRaw != null && viewportEndRaw !== '') {
+    const t0 = normalizeSeconds(viewportEndRaw)
+    const t1 = legacyCumulative.length ? legacyMapTime(t0) : t0
+    const t = roundToTenth(Math.max(0, Math.min(MAX_SECONDS, t1)))
+    viewportEndSeconds = t
+  }
+
   return {
     version: 'create_video_v1',
     playheadSeconds: safePlayheadSeconds,
+    viewportEndSeconds,
     clips,
     stills,
     videoOverlays,

@@ -187,6 +187,10 @@ export type CreateVideoNarrationSegmentV1 = {
 export type CreateVideoTimelineV1 = {
   version: 'create_video_v1'
   playheadSeconds?: number
+  // UI-only: allows the editor to show/scroll past the last content end
+  // without affecting export duration (export duration is derived from content).
+  // Stored/persisted so a refresh doesn't "snap back" shorter.
+  viewportEndSeconds?: number
   clips: CreateVideoClipV1[]
   stills?: CreateVideoStillV1[]
   videoOverlays?: CreateVideoVideoOverlayV1[]
