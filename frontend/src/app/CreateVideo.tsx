@@ -5777,15 +5777,15 @@ export default function CreateVideo() {
         }
       } catch {}
       const id = `vo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      const overlay: VideoOverlay = {
-        id,
-        uploadId: Number(upload.id),
-        sourceStartSeconds: 0,
-        sourceEndSeconds: roundToTenth(dur),
-        sizePctWidth: 40,
-        position: 'bottom_right',
-        audioEnabled: false,
-      }
+	      const overlay: VideoOverlay = {
+	        id,
+	        uploadId: Number(upload.id),
+	        sourceStartSeconds: 0,
+	        sourceEndSeconds: roundToTenth(dur),
+	        sizePctWidth: 40,
+	        position: 'bottom_right',
+	        audioEnabled: true,
+	      }
       snapshotUndo()
       setTimeline((prev) => insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any)
       setSelectedVideoOverlayId(id)
