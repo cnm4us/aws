@@ -15507,19 +15507,10 @@ export default function CreateVideo() {
 	                })()}
 	              </label>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(videoOverlayEditor.audioEnabled)}
-                  onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, audioEnabled: Boolean(e.target.checked) }) : p) }}
-                />
-                <span style={{ color: '#fff', fontWeight: 800 }}>Enable overlay audio</span>
-              </label>
-
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
-                <select
-                  value={String(videoOverlayEditor.boostDb)}
+	              <label style={{ display: 'grid', gap: 6 }}>
+	                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
+	                <select
+	                  value={String(videoOverlayEditor.boostDb)}
                   onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
                   style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
                 >
