@@ -1255,11 +1255,6 @@ export default function CreateVideo() {
       const e = Number((n as any).endSeconds)
       if (Number.isFinite(e) && e > m) m = e
     }
-    const segs: any[] = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
-    for (const seg of segs) {
-      const e = Number((seg as any).endSeconds)
-      if (Number.isFinite(e) && e > m) m = e
-    }
     return Math.max(0, roundToTenth(m))
   }, [timeline, totalSecondsGraphics, totalSecondsStills, totalSecondsVideo, totalSecondsVideoOverlays])
 
@@ -1390,13 +1385,7 @@ export default function CreateVideo() {
       const e = Number((n as any).endSeconds)
       if (Number.isFinite(e) && e > nEnd) nEnd = e
     }
-    const segs: any[] = Array.isArray((tl as any).audioSegments) ? (tl as any).audioSegments : []
-    let aEnd = 0
-    for (const seg of segs) {
-      const e = Number((seg as any).endSeconds)
-      if (Number.isFinite(e) && e > aEnd) aEnd = e
-    }
-    return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd, aEnd)))
+    return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd)))
   }, [])
 
   const rippleRightSimpleLane = useCallback(
@@ -6474,7 +6463,7 @@ export default function CreateVideo() {
 
   const addAudioFromUpload = useCallback(
     (upload: SystemAudioItem) => {
-      if (!(totalSeconds > 0)) {
+      if (!(contentTotalSeconds > 0)) {
         setTimelineMessage('Add at least one video or graphic first.')
         return
       }
@@ -6502,7 +6491,10 @@ export default function CreateVideo() {
       const audioConfigId = pickDefault()
 
       const end = roundToTenth(
-        Math.max(0, dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(totalSeconds, dur) : Math.max(0, totalSeconds))
+        Math.max(
+          0,
+          dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(contentTotalSeconds, dur) : Math.max(0, contentTotalSeconds)
+        )
       )
       snapshotUndo()
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -6527,12 +6519,12 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(segId)
     },
-    [audioConfigs, audioSegments, snapshotUndo, totalSeconds]
+    [audioConfigs, audioSegments, contentTotalSeconds, snapshotUndo]
   )
 
   const addAudioFromUploadWithConfig = useCallback(
     (upload: SystemAudioItem, audioConfigIdRaw: number, configsOverride?: AudioConfigItem[]) => {
-      if (!(totalSeconds > 0)) {
+      if (!(contentTotalSeconds > 0)) {
         setTimelineMessage('Add at least one video or graphic first.')
         return
       }
@@ -6554,7 +6546,10 @@ export default function CreateVideo() {
       }
 
       const end = roundToTenth(
-        Math.max(0, dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(totalSeconds, dur) : Math.max(0, totalSeconds))
+        Math.max(
+          0,
+          dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(contentTotalSeconds, dur) : Math.max(0, contentTotalSeconds)
+        )
       )
       snapshotUndo()
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -6579,7 +6574,7 @@ export default function CreateVideo() {
       setSelectedStillId(null)
       setSelectedAudioId(segId)
     },
-    [audioConfigs, snapshotUndo, totalSeconds]
+    [audioConfigs, contentTotalSeconds, snapshotUndo]
   )
 
   const fmtSize = useCallback((bytes: any): string => {
@@ -6841,12 +6836,12 @@ export default function CreateVideo() {
       setAudioEditorError('Select a ducking intensity.')
       return
     }
-    if (!(totalSeconds > 0)) {
+    if (!(contentTotalSeconds > 0)) {
       setAudioEditorError('Add video or graphics first.')
       return
     }
-    if (end > totalSeconds + 1e-6) {
-      setAudioEditorError(`End exceeds timeline (${totalSeconds.toFixed(1)}s).`)
+    if (end > contentTotalSeconds + 1e-6) {
+      setAudioEditorError(`End exceeds content (${contentTotalSeconds.toFixed(1)}s).`)
       return
     }
 	    for (const other of audioSegments) {
@@ -6866,7 +6861,7 @@ export default function CreateVideo() {
 	      return
 	    }
 	    const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
-	    const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, totalSeconds))
+	    const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, contentTotalSeconds))
 	    const nextSegs = prevSegs.slice()
 	    nextSegs[idx] = {
 	      ...(prevSegs[idx] as any),
