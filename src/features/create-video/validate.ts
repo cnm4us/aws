@@ -1150,7 +1150,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (audioSegmentsRaw.length > MAX_AUDIO_SEGMENTS) throw new DomainError('too_many_audio_segments', 'too_many_audio_segments', 400)
       if (audioSegmentsRaw.length && !(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
-      let commonUploadId: number | null = null
       for (let i = 0; i < audioSegmentsRaw.length; i++) {
         const seg = audioSegmentsRaw[i]
         if (!seg || typeof seg !== 'object') continue
@@ -1167,9 +1166,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
         const musicLevelRaw = (seg as any).musicLevel == null ? null : String((seg as any).musicLevel)
         const duckingIntensityRaw = (seg as any).duckingIntensity == null ? null : String((seg as any).duckingIntensity)
         if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
-
-        if (commonUploadId == null) commonUploadId = uploadId
-        if (commonUploadId != null && uploadId !== commonUploadId) throw new DomainError('multiple_audio_tracks_not_supported', 'multiple_audio_tracks_not_supported', 400)
 
         const meta = await loadBackgroundMusicAudioMetaForUser(uploadId, ctx.userId)
 

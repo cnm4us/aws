@@ -6494,13 +6494,6 @@ export default function CreateVideo() {
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       setTimeline((prev) => {
         const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any[]) : []
-        const existingUploadId =
-          prevSegs.length && Number.isFinite(Number((prevSegs[0] as any)?.uploadId)) ? Number((prevSegs[0] as any).uploadId) : null
-        if (existingUploadId != null && existingUploadId > 0 && existingUploadId !== id) {
-          setTimelineMessage('Only one Music track is supported right now. Delete the existing Music first.')
-          return prev
-        }
-
         const maxEnd = roundToTenth(Math.max(0, contentTotalSeconds))
         const ph = clamp(roundToTenth(Number((prev as any).playheadSeconds || 0)), 0, maxEnd)
 
@@ -6592,13 +6585,6 @@ export default function CreateVideo() {
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       setTimeline((prev) => {
         const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any[]) : []
-        const existingUploadId =
-          prevSegs.length && Number.isFinite(Number((prevSegs[0] as any)?.uploadId)) ? Number((prevSegs[0] as any).uploadId) : null
-        if (existingUploadId != null && existingUploadId > 0 && existingUploadId !== id) {
-          setTimelineMessage('Only one Music track is supported right now. Delete the existing Music first.')
-          return prev
-        }
-
         const maxEnd = roundToTenth(Math.max(0, contentTotalSeconds))
         const ph = clamp(roundToTenth(Number((prev as any).playheadSeconds || 0)), 0, maxEnd)
         const defaultLen = prevSegs.length ? 5 : (dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(maxEnd, dur) : maxEnd)

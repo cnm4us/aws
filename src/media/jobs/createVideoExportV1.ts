@@ -2110,30 +2110,6 @@ export async function runCreateVideoExportV1Job(
     if (audioSegments.length) {
       const enabledSegments = audioSegments.filter((s) => (s as any).audioEnabled !== false)
       if (enabledSegments.length) {
-        const firstSeg = enabledSegments[0]
-        const trackUploadId = Number((firstSeg as any).uploadId)
-        if (!Number.isFinite(trackUploadId) || trackUploadId <= 0) throw new Error('upload_not_found')
-
-        // Ensure all enabled segments reference the same upload.
-        for (const s of enabledSegments) {
-          const uid = Number((s as any).uploadId)
-          if (!(Number.isFinite(uid) && uid > 0 && uid === trackUploadId)) throw new Error('multiple_audio_tracks_not_supported')
-        }
-
-        const row = byId.get(trackUploadId)
-        if (!row) throw new Error('upload_not_found')
-        if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
-        // Allow system audio for all creators; allow user audio only when owned by the project user.
-        const isSystem = Number(row.is_system || 0) === 1
-        const ownerId = Number(row.user_id || 0)
-        if (!isSystem && ownerId !== userId) throw new Error('forbidden')
-        if (row.source_deleted_at) throw new Error('source_deleted')
-        const st = String(row.status || '').toLowerCase()
-        if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
-
-        const audioPath = path.join(tmpDir, `audio_${trackUploadId}`)
-        await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
-
         const videoDur = (await probeDurationSeconds(finalOut)) ?? baseDurationSeconds
 
         const segmentsWithCfg = enabledSegments.map((s) => ({
@@ -2154,13 +2130,18 @@ export async function runCreateVideoExportV1Job(
         const hasOpener = segmentsWithCfg.some((x) => x.musicMode === 'opener_cutoff')
         if (hasOpener && enabledSegments.length !== 1) throw new Error('opener_cutoff_requires_single_segment')
 
-        const groups = new Map<string, { mode: MusicMode; level: MusicLevel; duckingIntensity?: DuckingIntensity; segs: any[] }>()
+        const groups = new Map<
+          string,
+          { uploadId: number; mode: MusicMode; level: MusicLevel; duckingIntensity?: DuckingIntensity; segs: any[] }
+        >()
         for (const x of segmentsWithCfg) {
+          const uploadId = Number((x.seg as any).uploadId)
+          if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('upload_not_found')
           const mode = x.musicMode as MusicMode
           const level = x.musicLevel as MusicLevel
           const intensity = x.duckingIntensity ? (x.duckingIntensity as DuckingIntensity) : undefined
-          const key = `${mode}|${level}|${intensity || ''}`
-          const g = groups.get(key) || { mode, level, duckingIntensity: intensity, segs: [] as any[] }
+          const key = `${uploadId}|${mode}|${level}|${intensity || ''}`
+          const g = groups.get(key) || { uploadId, mode, level, duckingIntensity: intensity, segs: [] as any[] }
           g.segs.push(x.seg)
           groups.set(key, g)
         }
@@ -2174,6 +2155,22 @@ export async function runCreateVideoExportV1Job(
         for (let gi = 0; gi < sortedGroups.length; gi++) {
           const g = sortedGroups[gi]
           const cfg = buildMusicAudioConfig({ mode: g.mode, level: g.level, duckingIntensity: g.duckingIntensity })
+
+          const trackUploadId = Number(g.uploadId)
+          if (!Number.isFinite(trackUploadId) || trackUploadId <= 0) throw new Error('upload_not_found')
+          const row = byId.get(trackUploadId)
+          if (!row) throw new Error('upload_not_found')
+          if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
+          // Allow system audio for all creators; allow user audio only when owned by the project user.
+          const isSystem = Number(row.is_system || 0) === 1
+          const ownerId = Number(row.user_id || 0)
+          if (!isSystem && ownerId !== userId) throw new Error('forbidden')
+          if (row.source_deleted_at) throw new Error('source_deleted')
+          const st = String(row.status || '').toLowerCase()
+          if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+
+          const audioPath = path.join(tmpDir, `audio_${trackUploadId}`)
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
 
           const clampedSegments = g.segs
             .slice()
