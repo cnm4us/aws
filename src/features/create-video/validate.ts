@@ -927,8 +927,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const insetXPxRaw = Number((l as any).insetXPx)
     const insetYPxRaw = Number((l as any).insetYPx)
-    const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetXPxRaw))) : 48
-    const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetYPxRaw))) : 48
+    const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetXPxRaw))) : 100
+    const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetYPxRaw))) : 100
 
     logos.push({ id, uploadId: meta.id, startSeconds, endSeconds, sizePctWidth, position, opacityPct, fade, insetXPx, insetYPx })
   }

@@ -6084,8 +6084,8 @@ export default function CreateVideo() {
         fitMode: 'contain_transparent',
         sizePctWidth: 70,
         position: 'middle_center',
-        insetXPx: 48,
-        insetYPx: 48,
+        insetXPx: 100,
+        insetYPx: 100,
         borderWidthPx: 0,
         borderColor: '#000000',
         fade: 'none',
@@ -6180,8 +6180,8 @@ export default function CreateVideo() {
         position: 'top_left',
         opacityPct: 100,
         fade: 'none',
-        insetXPx: 48,
-        insetYPx: 48,
+        insetXPx: 100,
+        insetYPx: 100,
       }
       snapshotUndo()
       setTimeline((prev) => {
@@ -10820,7 +10820,7 @@ export default function CreateVideo() {
 	    const sizePctWidth = Math.round(Number(logoEditor.sizePctWidth))
 	    const insetPresetRaw = String((logoEditor as any).insetPreset || 'medium').toLowerCase()
 	    const insetPreset = insetPresetRaw === 'small' || insetPresetRaw === 'large' ? insetPresetRaw : 'medium'
-	    const insetPx = insetPreset === 'small' ? 24 : insetPreset === 'large' ? 60 : 48
+	    const insetPx = insetPreset === 'small' ? 50 : insetPreset === 'large' ? 150 : 100
 	    const position = String(logoEditor.position || '') as any
 	    const opacityPctRaw = Number(logoEditor.opacityPct)
 	    const opacityPct = Math.round(clamp(Number.isFinite(opacityPctRaw) ? opacityPctRaw : 100, 0, 100))
@@ -17003,7 +17003,7 @@ export default function CreateVideo() {
 	                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
 	                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
 	                        const insetMax = Math.max(insetXPx, insetYPx)
-	                        const insetPreset = (insetMax <= 30 ? 'small' : insetMax <= 54 ? 'medium' : 'large') as any
+	                        const insetPreset = (insetMax <= 75 ? 'small' : insetMax <= 125 ? 'medium' : 'large') as any
 	                        setSelectedLogoId(String((l as any).id))
 	                        setSelectedClipId(null)
 	                        setSelectedGraphicId(null)
