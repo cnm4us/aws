@@ -6797,15 +6797,35 @@ export default function CreateVideo() {
       return up && typeof up === 'object' ? up : null
     }
 
+    const markVideoUsed = async (id: number) => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        await fetch(`/api/assets/videos/${encodeURIComponent(String(id))}/used`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({}),
+        })
+      } catch {}
+    }
+
     ;(async () => {
       try {
         const t = String(pickFromAssets.type || '')
         if (t === 'video' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
-          if (up) addClipFromUpload(up as any)
+          if (up) {
+            addClipFromUpload(up as any)
+            void markVideoUsed(pickFromAssets.uploadId)
+          }
         } else if (t === 'videoOverlay' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
-          if (up) addVideoOverlayFromUpload(up as any)
+          if (up) {
+            addVideoOverlayFromUpload(up as any)
+            void markVideoUsed(pickFromAssets.uploadId)
+          }
         } else if (t === 'graphic' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) addGraphicFromUpload(up as any)

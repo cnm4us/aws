@@ -20,6 +20,7 @@ import { enqueueJob } from '../media-jobs/service'
 import * as prodRepo from '../productions/repo'
 import * as audioTagsRepo from '../audio-tags/repo'
 import * as audioFavoritesRepo from '../audio-favorites/repo'
+import * as uploadPrefsRepo from '../upload-prefs/repo'
 import { TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from '../../config'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
@@ -896,6 +897,211 @@ export async function setSystemAudioFavorite(
 
   await audioFavoritesRepo.setFavorite(Number(ctx.userId), uploadId, favorite)
   return { ok: true, uploadId, favorite }
+}
+
+type VideoSortKey =
+  | 'newest'
+  | 'oldest'
+  | 'name_asc'
+  | 'name_desc'
+  | 'duration_asc'
+  | 'duration_desc'
+  | 'size_asc'
+  | 'size_desc'
+  | 'recent'
+
+function normalizeVideoSort(raw: any): VideoSortKey {
+  const s = String(raw || '').trim().toLowerCase()
+  switch (s) {
+    case 'oldest':
+    case 'name_asc':
+    case 'name_desc':
+    case 'duration_asc':
+    case 'duration_desc':
+    case 'size_asc':
+    case 'size_desc':
+    case 'recent':
+      return s as VideoSortKey
+    default:
+      return 'newest'
+  }
+}
+
+function videoSourceRoleWhereSql(): string {
+  // Plan 68: prefer `video_role='source'`, else infer from s3_key.
+  return `(
+    u.video_role = 'source'
+    OR (u.video_role IS NULL AND u.s3_key NOT REGEXP '(^|/)renders/')
+  )`
+}
+
+export async function listUserVideoAssets(
+  input: {
+    q?: string
+    sort?: string
+    favoritesOnly?: boolean
+    includeRecent?: boolean
+    limit?: number
+  },
+  ctx: ServiceContext
+): Promise<{ recent: any[]; items: any[] }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const userId = Number(ctx.userId)
+  if (!Number.isFinite(userId) || userId <= 0) throw new ForbiddenError()
+
+  const q = String(input?.q || '').trim().slice(0, 200)
+  const sort = normalizeVideoSort(input?.sort)
+  const favoritesOnly = Boolean(input?.favoritesOnly)
+  const includeRecent = Boolean(input?.includeRecent)
+  const lim = clampLimit(input?.limit, 200, 1, 500)
+
+  const db = getPool()
+  const where: string[] = []
+  const args: any[] = []
+
+  where.push(`u.kind = 'video'`)
+  where.push(videoSourceRoleWhereSql())
+  where.push(`u.status IN ('uploaded','completed')`)
+  where.push(`u.source_deleted_at IS NULL`)
+  where.push(`u.user_id = ?`)
+  args.push(userId)
+
+  if (q) {
+    where.push(
+      `(COALESCE(u.modified_filename, u.original_filename) LIKE ? OR u.description LIKE ? OR u.original_filename LIKE ?)`
+    )
+    const like = `%${q}%`
+    args.push(like, like, like)
+  }
+
+  const joinSql = `LEFT JOIN user_upload_prefs p ON p.user_id = ? AND p.upload_id = u.id`
+  const joinArgs = [userId]
+
+  if (favoritesOnly) where.push(`COALESCE(p.is_favorite, 0) = 1`)
+
+  const orderBy = (() => {
+    switch (sort) {
+      case 'oldest':
+        return `u.id ASC`
+      case 'name_asc':
+        return `COALESCE(u.modified_filename, u.original_filename) ASC, u.id DESC`
+      case 'name_desc':
+        return `COALESCE(u.modified_filename, u.original_filename) DESC, u.id DESC`
+      case 'duration_asc':
+        return `COALESCE(u.duration_seconds, 0) ASC, u.id DESC`
+      case 'duration_desc':
+        return `COALESCE(u.duration_seconds, 0) DESC, u.id DESC`
+      case 'size_asc':
+        return `COALESCE(u.size_bytes, 0) ASC, u.id DESC`
+      case 'size_desc':
+        return `COALESCE(u.size_bytes, 0) DESC, u.id DESC`
+      case 'recent':
+        return `p.last_used_at DESC, u.id DESC`
+      case 'newest':
+      default:
+        return `u.id DESC`
+    }
+  })()
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const [rows] = await db.query(
+    `SELECT u.*, COALESCE(p.is_favorite, 0) AS is_favorite, p.last_used_at
+       FROM uploads u
+       ${joinSql}
+       ${whereSql}
+      ORDER BY ${orderBy}
+      LIMIT ?`,
+    [...joinArgs, ...args, lim]
+  )
+
+  const enhanced = (rows as any[]).map((row) => {
+    const out: any = enhanceUploadRow(row)
+    out.is_favorite = Number((row as any).is_favorite || 0) === 1
+    out.last_used_at = (row as any).last_used_at == null ? null : String((row as any).last_used_at)
+    return out
+  })
+
+  const shouldIncludeRecent = includeRecent && !q && !favoritesOnly && sort !== 'recent'
+  if (!shouldIncludeRecent) return { recent: [], items: enhanced }
+
+  const [recentRows] = await db.query(
+    `SELECT u.*, COALESCE(p.is_favorite, 0) AS is_favorite, p.last_used_at
+       FROM uploads u
+       JOIN user_upload_prefs p ON p.user_id = ? AND p.upload_id = u.id
+      WHERE u.kind = 'video'
+        AND ${videoSourceRoleWhereSql()}
+        AND u.status IN ('uploaded','completed')
+        AND u.source_deleted_at IS NULL
+        AND u.user_id = ?
+        AND p.last_used_at IS NOT NULL
+      ORDER BY p.last_used_at DESC
+      LIMIT 10`,
+    [userId, userId]
+  )
+  const recent = (recentRows as any[]).map((row) => {
+    const out: any = enhanceUploadRow(row)
+    out.is_favorite = Number((row as any).is_favorite || 0) === 1
+    out.last_used_at = (row as any).last_used_at == null ? null : String((row as any).last_used_at)
+    return out
+  })
+
+  return { recent, items: enhanced }
+}
+
+export async function setVideoAssetFavorite(
+  input: { uploadId: number; favorite: boolean },
+  ctx: ServiceContext
+): Promise<{ ok: true; uploadId: number; favorite: boolean }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const userId = Number(ctx.userId)
+  const uploadId = Number(input.uploadId)
+  if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('bad_id')
+
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+  if (String((row as any).kind || 'video').toLowerCase() !== 'video') throw new ForbiddenError()
+  if ((row as any).source_deleted_at) throw new ForbiddenError()
+  const ownerId = (row as any).user_id != null ? Number((row as any).user_id) : null
+  if (ownerId == null || ownerId !== userId) throw new ForbiddenError()
+
+  const inferredRole = (() => {
+    const roleRaw = (row as any).video_role != null ? String((row as any).video_role).trim().toLowerCase() : ''
+    const keyRaw = (row as any).s3_key != null ? String((row as any).s3_key) : ''
+    if (roleRaw === 'source' || roleRaw === 'export') return roleRaw
+    return /(^|\/)renders\//.test(keyRaw) ? 'export' : 'source'
+  })()
+  if (inferredRole !== 'source') throw new ForbiddenError()
+
+  await uploadPrefsRepo.setFavorite(userId, uploadId, Boolean(input.favorite))
+  return { ok: true, uploadId, favorite: Boolean(input.favorite) }
+}
+
+export async function markVideoAssetUsed(
+  input: { uploadId: number },
+  ctx: ServiceContext
+): Promise<{ ok: true; uploadId: number }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const userId = Number(ctx.userId)
+  const uploadId = Number(input.uploadId)
+  if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('bad_id')
+
+  const row = await repo.getById(uploadId)
+  if (!row) throw new NotFoundError('not_found')
+  if (String((row as any).kind || 'video').toLowerCase() !== 'video') throw new ForbiddenError()
+  if ((row as any).source_deleted_at) throw new ForbiddenError()
+  const ownerId = (row as any).user_id != null ? Number((row as any).user_id) : null
+  if (ownerId == null || ownerId !== userId) throw new ForbiddenError()
+
+  const inferredRole = (() => {
+    const roleRaw = (row as any).video_role != null ? String((row as any).video_role).trim().toLowerCase() : ''
+    const keyRaw = (row as any).s3_key != null ? String((row as any).s3_key) : ''
+    if (roleRaw === 'source' || roleRaw === 'export') return roleRaw
+    return /(^|\/)renders\//.test(keyRaw) ? 'export' : 'source'
+  })()
+  if (inferredRole !== 'source') throw new ForbiddenError()
+
+  await uploadPrefsRepo.markUsed(userId, uploadId)
+  return { ok: true, uploadId }
 }
 
 export async function listSummariesByIds(

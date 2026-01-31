@@ -144,6 +144,22 @@ export async function ensureSchema(db: DB) {
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `)
 
+        // Plan 78: per-user favorites + recents for video uploads.
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS user_upload_prefs (
+            user_id BIGINT UNSIGNED NOT NULL,
+            upload_id BIGINT UNSIGNED NOT NULL,
+            is_favorite TINYINT(1) NOT NULL DEFAULT 0,
+            last_used_at DATETIME NULL DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_user_upload_prefs (user_id, upload_id),
+            KEY idx_user_upload_prefs_user_fav (user_id, is_favorite, upload_id),
+            KEY idx_user_upload_prefs_user_last_used (user_id, last_used_at, upload_id),
+            KEY idx_user_upload_prefs_upload (upload_id, user_id)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `)
+
 			  // Plan 52: license sources (system audio vendor/platform) + one-time user upload terms acceptance
 			  await db.query(`
 			    CREATE TABLE IF NOT EXISTS license_sources (
