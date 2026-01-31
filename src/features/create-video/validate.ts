@@ -2,7 +2,6 @@ import { DomainError, ForbiddenError, ValidationError } from '../../core/errors'
 import { getPool } from '../../db'
 import type { CreateVideoTimelineV1 } from './types'
 import * as audioConfigsSvc from '../audio-configs/service'
-import * as logoConfigsSvc from '../logo-configs/service'
 import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
 import * as screenTitlePresetsSvc from '../screen-title-presets/service'
 
@@ -218,45 +217,6 @@ async function loadLogoMetaForUser(uploadId: number, userId: number): Promise<{ 
   if (!isOwner && !isSystem) throw new ForbiddenError()
 
   return { id: Number(row.id) }
-}
-
-function normalizeLogoConfigSnapshot(raw: any, configId: number) {
-  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) throw new ValidationError('invalid_logo_config_snapshot')
-  const id = Number((raw as any).id)
-  if (!Number.isFinite(id) || id <= 0 || id !== Number(configId)) throw new ValidationError('invalid_logo_config_snapshot')
-  const name = String((raw as any).name || '').trim()
-  if (!name || name.length > 200) throw new ValidationError('invalid_logo_config_snapshot')
-  const position = String((raw as any).position || '').trim()
-  if (!position || position.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
-  const sizePctWidth = Number((raw as any).sizePctWidth)
-  const opacityPct = Number((raw as any).opacityPct)
-  if (!Number.isFinite(sizePctWidth) || sizePctWidth < 1 || sizePctWidth > 100) throw new ValidationError('invalid_logo_config_snapshot')
-  if (!Number.isFinite(opacityPct) || opacityPct < 0 || opacityPct > 100) throw new ValidationError('invalid_logo_config_snapshot')
-  const timingRule = String((raw as any).timingRule || '').trim()
-  if (!timingRule || timingRule.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
-  const timingSecondsRaw = (raw as any).timingSeconds
-  const timingSeconds = timingSecondsRaw == null ? null : Number(timingSecondsRaw)
-  if (timingSeconds != null && (!Number.isFinite(timingSeconds) || timingSeconds < 0 || timingSeconds > 3600)) throw new ValidationError('invalid_logo_config_snapshot')
-  const fade = String((raw as any).fade || '').trim()
-  if (!fade || fade.length > 40) throw new ValidationError('invalid_logo_config_snapshot')
-  const insetXPresetRaw = (raw as any).insetXPreset
-  const insetYPresetRaw = (raw as any).insetYPreset
-  const insetXPreset = insetXPresetRaw == null ? null : String(insetXPresetRaw || '').trim() || null
-  const insetYPreset = insetYPresetRaw == null ? null : String(insetYPresetRaw || '').trim() || null
-  if (insetXPreset != null && insetXPreset.length > 20) throw new ValidationError('invalid_logo_config_snapshot')
-  if (insetYPreset != null && insetYPreset.length > 20) throw new ValidationError('invalid_logo_config_snapshot')
-  return {
-    id,
-    name,
-    position,
-    sizePctWidth: Math.round(sizePctWidth),
-    opacityPct: Math.round(opacityPct),
-    timingRule,
-    timingSeconds,
-    fade,
-    insetXPreset,
-    insetYPreset,
-  }
 }
 
 function normalizeLowerThirdConfigSnapshot(raw: any, configId: number) {
@@ -922,6 +882,21 @@ export async function validateAndNormalizeCreateVideoTimeline(
     : logosRaw0
   if (logosRaw.length > MAX_LOGOS) throw new DomainError('too_many_logos', 'too_many_logos', 400)
   const logos: any[] = []
+  const logoSizeAllowed = new Set([10, 20, 30, 40, 50])
+  const logoFadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+  const logoPositionAllowed = new Set([
+    'top_left',
+    'top_center',
+    'top_right',
+    'middle_left',
+    'middle_center',
+    'middle_right',
+    'bottom_left',
+    'bottom_center',
+    'bottom_right',
+    // Legacy fallback.
+    'center',
+  ])
   for (const l of logosRaw) {
     if (!l || typeof l !== 'object') continue
     const id = normalizeId((l as any).id)
@@ -930,19 +905,32 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const uploadId = Number((l as any).uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
-    const configId = Number((l as any).configId)
-    if (!Number.isFinite(configId) || configId <= 0) throw new ValidationError('invalid_logo_config_id')
 
     const startSeconds = normalizeSeconds((l as any).startSeconds)
     const endSeconds = normalizeSeconds((l as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
 
     const meta = await loadLogoMetaForUser(uploadId, ctx.userId)
-    // Validate config exists and is accessible (and not archived).
-    await logoConfigsSvc.getForUser(configId, Number(ctx.userId))
-    const configSnapshot = normalizeLogoConfigSnapshot((l as any).configSnapshot, configId)
 
-    logos.push({ id, uploadId: meta.id, startSeconds, endSeconds, configId, configSnapshot })
+    const sizeRaw = Number((l as any).sizePctWidth)
+    const sizeRounded = Number.isFinite(sizeRaw) ? Math.round(sizeRaw) : 20
+    const sizePctWidth = logoSizeAllowed.has(sizeRounded) ? sizeRounded : 20
+
+    const positionRaw = String((l as any).position || 'top_left').trim().toLowerCase()
+    const position = (logoPositionAllowed.has(positionRaw) ? positionRaw : 'top_left') as any
+
+    const opacityRaw = Number((l as any).opacityPct)
+    const opacityPct = Number.isFinite(opacityRaw) ? Math.max(0, Math.min(100, Math.round(opacityRaw))) : 100
+
+    const fadeRaw = String((l as any).fade || 'none').trim().toLowerCase()
+    const fade = (logoFadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+
+    const insetXPxRaw = Number((l as any).insetXPx)
+    const insetYPxRaw = Number((l as any).insetYPx)
+    const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetXPxRaw))) : 24
+    const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetYPxRaw))) : 24
+
+    logos.push({ id, uploadId: meta.id, startSeconds, endSeconds, sizePctWidth, position, opacityPct, fade, insetXPx, insetYPx })
   }
 
   logos.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))

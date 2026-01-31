@@ -48,26 +48,26 @@ export type CreateVideoVideoOverlayV1 = {
   boostDb?: number
 }
 
-export type CreateVideoLogoConfigSnapshotV1 = {
-  id: number
-  name: string
-  position: string
-  sizePctWidth: number
-  opacityPct: number
-  timingRule: string
-  timingSeconds: number | null
-  fade: string
-  insetXPreset?: string | null
-  insetYPreset?: string | null
-}
-
 export type CreateVideoLogoV1 = {
   id: string
   uploadId: number
   startSeconds: number
   endSeconds: number
-  configId: number
-  configSnapshot: CreateVideoLogoConfigSnapshotV1
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  opacityPct?: number
+  fade?: 'none' | 'in' | 'out' | 'in_out'
+  insetXPx?: number
+  insetYPx?: number
 }
 
 export type CreateVideoLowerThirdConfigSnapshotV1 = {

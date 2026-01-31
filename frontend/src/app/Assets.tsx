@@ -2410,8 +2410,8 @@ export default function Assets() {
         onPick={
           mode === 'pick'
             ? (u) => {
-                const href = withParams('/assets/logo-config', { ...pickPassthrough, logoUploadId: String(u.id) })
-                window.location.href = href
+                const href = buildReturnHref({ cvPickType: 'logo', cvPickUploadId: String(u.id) })
+                if (href) window.location.href = href
               }
             : undefined
         }

@@ -23,6 +23,9 @@ export type LogoConfigSnapshot = {
   fade?: OverlayFade
   insetXPreset?: 'small' | 'medium' | 'large' | null
   insetYPreset?: 'small' | 'medium' | 'large' | null
+  // Create Video v1 uses px insets (scaled from 1080×1920).
+  insetXPx?: number
+  insetYPx?: number
 }
 
 export type LowerThirdImageConfigSnapshot = {
@@ -78,8 +81,22 @@ function computeOverlayRect(outputW: number, outputH: number, imgW: number, imgH
   const yMode = row === 'top' ? 'top' : row === 'bottom' ? 'bottom' : 'middle'
   const xMode = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
 
-  const marginX = xMode === 'center' ? 0 : Math.round(outputW * insetPctForPreset(cfg.insetXPreset))
-  const marginY = yMode === 'middle' ? 0 : Math.round(outputH * insetPctForPreset(cfg.insetYPreset))
+  const insetXPxRaw = cfg.insetXPx == null ? NaN : Number(cfg.insetXPx)
+  const insetYPxRaw = cfg.insetYPx == null ? NaN : Number(cfg.insetYPx)
+  const marginXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.round(insetXPxRaw)) : null
+  const marginYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.round(insetYPxRaw)) : null
+  const marginX =
+    xMode === 'center'
+      ? 0
+      : marginXPx != null
+          ? Math.round(outputW * (marginXPx / 1080))
+          : Math.round(outputW * insetPctForPreset(cfg.insetXPreset))
+  const marginY =
+    yMode === 'middle'
+      ? 0
+      : marginYPx != null
+          ? Math.round(outputH * (marginYPx / 1920))
+          : Math.round(outputH * insetPctForPreset(cfg.insetYPreset))
 
   let x = 0
   let y = 0

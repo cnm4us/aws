@@ -6,7 +6,6 @@ import type {
   Clip,
   Graphic,
   Logo,
-  LogoConfigSnapshot,
   LowerThird,
   LowerThirdConfigSnapshot,
   Narration,
@@ -106,7 +105,6 @@ type AudioConfigItem = {
   duckingMode?: string
 }
 
-type LogoConfigItem = LogoConfigSnapshot
 type LowerThirdConfigItem = LowerThirdConfigSnapshot
 
 type ScreenTitlePresetItem = {
@@ -243,6 +241,8 @@ function computeOverlayCssNoOpacity(cfg: {
   sizePctWidth?: number | null
   insetXPreset?: string | null
   insetYPreset?: string | null
+  insetXPx?: number | null
+  insetYPx?: number | null
 }): React.CSSProperties {
   const clampNumber = (n: any, min: number, max: number): number => {
     const v = Number(n)
@@ -257,8 +257,12 @@ function computeOverlayCssNoOpacity(cfg: {
   const col = colRaw || 'right'
   const yMode = row === 'top' ? 'top' : row === 'bottom' ? 'bottom' : 'middle'
   const xMode = col === 'left' ? 'left' : col === 'right' ? 'right' : 'center'
-  const insetXPct = insetPctForPreset(cfg.insetXPreset) * 100
-  const insetYPct = insetPctForPreset(cfg.insetYPreset) * 100
+  // Inset is specified in px relative to a 1080×1920 baseline (Create Video export resolution).
+  // If missing, fall back to legacy preset-based insets.
+  const insetXPxRaw = cfg.insetXPx != null ? Number(cfg.insetXPx) : NaN
+  const insetYPxRaw = cfg.insetYPx != null ? Number(cfg.insetYPx) : NaN
+  const insetXPct = Number.isFinite(insetXPxRaw) ? (clampNumber(insetXPxRaw, 0, 9999) / 1080) * 100 : insetPctForPreset(cfg.insetXPreset) * 100
+  const insetYPct = Number.isFinite(insetYPxRaw) ? (clampNumber(insetYPxRaw, 0, 9999) / 1920) * 100 : insetPctForPreset(cfg.insetYPreset) * 100
   const marginXPct = xMode === 'center' ? 0 : insetXPct
   const marginYPct = yMode === 'middle' ? 0 : insetYPct
 
@@ -511,9 +515,6 @@ export default function CreateVideo() {
     if (!clipEditor) return
     setFreezeInsertSeconds(2)
   }, [clipEditor])
-  const [logoConfigs, setLogoConfigs] = useState<LogoConfigItem[]>([])
-  const [logoConfigsLoaded, setLogoConfigsLoaded] = useState(false)
-  const [logoConfigsError, setLogoConfigsError] = useState<string | null>(null)
   const [lowerThirdConfigs, setLowerThirdConfigs] = useState<LowerThirdConfigItem[]>([])
   const [lowerThirdConfigsLoaded, setLowerThirdConfigsLoaded] = useState(false)
   const [lowerThirdConfigsError, setLowerThirdConfigsError] = useState<string | null>(null)
@@ -542,7 +543,24 @@ export default function CreateVideo() {
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [stillEditorError, setStillEditorError] = useState<string | null>(null)
-  const [logoEditor, setLogoEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
+  const [logoEditor, setLogoEditor] = useState<{
+    id: string
+    start: number
+    end: number
+    sizePctWidth: number
+    position:
+      | 'top_left'
+      | 'top_center'
+      | 'top_right'
+      | 'middle_left'
+      | 'middle_center'
+      | 'middle_right'
+      | 'bottom_left'
+      | 'bottom_center'
+      | 'bottom_right'
+    opacityPct: number
+    fade: 'none' | 'in' | 'out' | 'in_out'
+  } | null>(null)
   const [logoEditorError, setLogoEditorError] = useState<string | null>(null)
   const [videoOverlayEditor, setVideoOverlayEditor] = useState<{
     id: string
@@ -2046,9 +2064,7 @@ export default function CreateVideo() {
     if (drag.kind === 'logo') {
       const l = logos.find((ll: any) => String((ll as any).id) === String((drag as any).logoId)) as any
       if (!l) return null
-      const logoName = namesByUploadId[Number(l.uploadId)] || `Logo ${l.uploadId}`
-      const cfgName = String(l?.configSnapshot?.name || '') || `Config ${l.configId}`
-      const name = `${logoName} • ${cfgName}`
+      const name = namesByUploadId[Number(l.uploadId)] || `Logo ${l.uploadId}`
       const start = roundToTenth(Number(l.startSeconds || 0))
       const end = roundToTenth(Number(l.endSeconds || 0))
       const len = Math.max(0, roundToTenth(end - start))
@@ -2605,19 +2621,16 @@ export default function CreateVideo() {
     const segEnd = Number(seg.endSeconds || 0)
     if (!(Number.isFinite(segStart) && Number.isFinite(segEnd) && segEnd > segStart)) return null
     const segDur = Math.max(0, segEnd - segStart)
-    const cfg: any = seg.configSnapshot && typeof seg.configSnapshot === 'object' ? seg.configSnapshot : {}
-    const { startRelS, endRelS } = computeSegmentTimingWindow(cfg, segDur)
-    if (!(endRelS > startRelS)) return null
     const tRel = Number(playhead) - segStart
-    if (!(Number.isFinite(tRel) && tRel >= startRelS - 1e-6 && tRel <= endRelS + 1e-6)) return null
+    if (!(Number.isFinite(tRel) && tRel >= -1e-6 && tRel <= segDur + 1e-6)) return null
 
-    const baseOpacityPct = cfg.opacityPct != null ? Number(cfg.opacityPct) : 100
+    const baseOpacityPct = seg.opacityPct != null ? Number(seg.opacityPct) : 100
     const baseOpacity = Math.min(1, Math.max(0, (Number.isFinite(baseOpacityPct) ? baseOpacityPct : 100) / 100))
-    const fadeAlpha = computeFadeAlpha(cfg, tRel, startRelS, endRelS)
+    const fadeAlpha = computeFadeAlpha({ fade: seg.fade }, tRel, 0, segDur)
     const alpha = baseOpacity * fadeAlpha
     if (!(alpha > 0.001)) return null
 
-    const style: any = computeOverlayCssNoOpacity(cfg)
+    const style: any = computeOverlayCssNoOpacity(seg)
     style.opacity = alpha
     style.zIndex = 50
     return { url, style }
@@ -3799,9 +3812,7 @@ export default function CreateVideo() {
         ctx.restore()
       }
 
-      const logoName = namesByUploadId[Number(l.uploadId)] || `Logo ${l.uploadId}`
-      const cfgName = String(l?.configSnapshot?.name || '') || `Config ${l.configId}`
-      const name = `${logoName} • ${cfgName}`
+      const name = namesByUploadId[Number(l.uploadId)] || `Logo ${l.uploadId}`
       ctx.fillStyle = '#fff'
       const padLeft = showHandles ? 6 + handleSize + 10 : 12
       const padRight = showHandles ? 6 + handleSize + 10 : 12
@@ -5764,24 +5775,6 @@ export default function CreateVideo() {
 	    gapPlaybackRef.current = { raf, target, nextClipIndex }
 	  }, [clipStarts, playhead, playing, seek, seekOverlay, timeline.clips.length, totalSeconds, videoOverlayStarts, videoOverlays.length])
 
-  const ensureLogoConfigs = useCallback(async (): Promise<LogoConfigItem[]> => {
-    if (logoConfigsLoaded) return logoConfigs
-    setLogoConfigsError(null)
-    try {
-      const res = await fetch(`/api/logo-configs`, { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: LogoConfigItem[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
-      setLogoConfigs(items)
-      setLogoConfigsLoaded(true)
-      return items
-    } catch (e: any) {
-      setLogoConfigsError(e?.message || 'Failed to load logo configs')
-      setLogoConfigsLoaded(true)
-      return []
-    }
-  }, [logoConfigs, logoConfigsLoaded])
-
   const ensureLowerThirdConfigs = useCallback(async (): Promise<LowerThirdConfigItem[]> => {
     if (lowerThirdConfigsLoaded) return lowerThirdConfigs
     setLowerThirdConfigsError(null)
@@ -5867,14 +5860,6 @@ export default function CreateVideo() {
     if (audioConfigsLoaded) return
     void ensureAudioConfigs()
   }, [audioConfigsLoaded, audioSegments.length, ensureAudioConfigs])
-
-  // If a timeline already has logo segments (hydrated from a saved draft), prefetch logo configs so
-  // the Logo Properties editor can show the config list immediately.
-  useEffect(() => {
-    if (!logos.length) return
-    if (logoConfigsLoaded) return
-    void ensureLogoConfigs()
-  }, [ensureLogoConfigs, logoConfigsLoaded, logos.length])
 
   // If a timeline already has lower-third segments (hydrated from a saved draft), prefetch lower-third configs so
   // the properties editor can show the config list immediately.
@@ -6135,20 +6120,9 @@ export default function CreateVideo() {
   )
 
   const addLogoFromPick = useCallback(
-    (uploadIdRaw: number, configIdRaw: number, configsOverride?: LogoConfigItem[]) => {
+    (uploadIdRaw: number) => {
       const uploadId = Number(uploadIdRaw)
-      const cfgId = Number(configIdRaw)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
-      if (!Number.isFinite(cfgId) || cfgId <= 0) {
-        setTimelineMessage('Pick a logo configuration.')
-        return
-      }
-      const cfgSource = Array.isArray(configsOverride) && configsOverride.length ? configsOverride : logoConfigs
-      const cfg = cfgSource.find((c) => Number((c as any).id) === cfgId) || null
-      if (!cfg) {
-        setTimelineMessage('Logo configuration not found.')
-        return
-      }
 
       const dur = 5.0
       const id = `logo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -6196,7 +6170,18 @@ export default function CreateVideo() {
         }
       }
 
-      const seg: Logo = { id, uploadId, startSeconds: start, endSeconds: end, configId: cfgId, configSnapshot: cfg as any }
+      const seg: Logo = {
+        id,
+        uploadId,
+        startSeconds: start,
+        endSeconds: end,
+        sizePctWidth: 20,
+        position: 'top_left',
+        opacityPct: 100,
+        fade: 'none',
+        insetXPx: 24,
+        insetYPx: 24,
+      }
       snapshotUndo()
       setTimeline((prev) => {
         const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
@@ -6223,7 +6208,7 @@ export default function CreateVideo() {
       setSelectedLogoId(id)
       setSelectedLowerThirdId(null)
     },
-    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, logoConfigs, logos, playhead, rippleRightSimpleLane, snapshotUndo, totalSeconds]
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, logos, playhead, rippleRightSimpleLane, snapshotUndo, totalSeconds]
   )
 
 	  const addLowerThirdFromPick = useCallback(
@@ -6826,9 +6811,8 @@ export default function CreateVideo() {
         } else if (t === 'narration' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) await addNarrationFromUpload(up as any)
-        } else if (t === 'logo' && pickFromAssets.uploadId && pickFromAssets.configId) {
-          const cfgs = await ensureLogoConfigs()
-          addLogoFromPick(pickFromAssets.uploadId, pickFromAssets.configId, cfgs as any)
+        } else if (t === 'logo' && pickFromAssets.uploadId) {
+          addLogoFromPick(pickFromAssets.uploadId)
         } else if (t === 'lowerThird' && pickFromAssets.uploadId && pickFromAssets.configId) {
           const cfgs = await ensureLowerThirdConfigs()
           addLowerThirdFromPick(pickFromAssets.uploadId, pickFromAssets.configId, cfgs as any)
@@ -6858,7 +6842,6 @@ export default function CreateVideo() {
     addNarrationFromUpload,
     addScreenTitleFromPreset,
     ensureAudioConfigs,
-    ensureLogoConfigs,
     ensureLowerThirdConfigs,
     ensureScreenTitlePresets,
     loading,
@@ -10822,13 +10805,8 @@ export default function CreateVideo() {
     if (!logoEditor) return
     const start = roundToTenth(Number(logoEditor.start))
     const end = roundToTenth(Number(logoEditor.end))
-    const configId = Number(logoEditor.configId)
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setLogoEditorError('End must be after start.')
-      return
-    }
-    if (!Number.isFinite(configId) || configId <= 0) {
-      setLogoEditorError('Pick a logo configuration.')
       return
     }
 
@@ -10838,9 +10816,32 @@ export default function CreateVideo() {
       return
     }
 
-    const cfg = logoConfigs.find((c: any) => Number((c as any).id) === configId) as any
-    if (!cfg) {
-      setLogoEditorError('Logo configuration not found.')
+    const sizePctWidth = Math.round(Number(logoEditor.sizePctWidth))
+    const position = String(logoEditor.position || '') as any
+    const opacityPctRaw = Number(logoEditor.opacityPct)
+    const opacityPct = Math.round(clamp(Number.isFinite(opacityPctRaw) ? opacityPctRaw : 100, 0, 100))
+    const fadeRaw = String((logoEditor as any).fade || 'none')
+    const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+    const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+
+    const allowedSizes = new Set([10, 20, 30, 40, 50])
+    const allowedPositions = new Set([
+      'top_left',
+      'top_center',
+      'top_right',
+      'middle_left',
+      'middle_center',
+      'middle_right',
+      'bottom_left',
+      'bottom_center',
+      'bottom_right',
+    ])
+    if (!allowedSizes.has(sizePctWidth)) {
+      setLogoEditorError('Pick a size.')
+      return
+    }
+    if (!allowedPositions.has(position)) {
+      setLogoEditorError('Pick a position.')
       return
     }
 
@@ -10866,8 +10867,12 @@ export default function CreateVideo() {
         ...prevLogos[idx],
         startSeconds: Math.max(0, start),
         endSeconds: Math.max(0, end),
-        configId,
-        configSnapshot: cfg as any,
+        sizePctWidth,
+        position,
+        opacityPct,
+        fade,
+        insetXPx: 24,
+        insetYPx: 24,
       }
       const nextLogos = prevLogos.slice()
       nextLogos[idx] = updated
@@ -10878,7 +10883,7 @@ export default function CreateVideo() {
     })
     setLogoEditor(null)
     setLogoEditorError(null)
-  }, [computeTotalSecondsForTimeline, logoConfigs, logoEditor, logos, snapshotUndo])
+  }, [computeTotalSecondsForTimeline, logoEditor, logos, snapshotUndo])
 
   const saveVideoOverlayEditor = useCallback(() => {
     if (!videoOverlayEditor) return
@@ -15892,57 +15897,165 @@ export default function CreateVideo() {
             {(() => {
               const seg = logos.find((l) => String((l as any).id) === String(logoEditor.id)) as any
               const uploadId = Number(seg?.uploadId)
-              const name = (Number.isFinite(uploadId) && uploadId > 0 ? (namesByUploadId[uploadId] || `Logo ${uploadId}`) : 'Logo')
-              const cfgName = seg?.configSnapshot?.name || (seg?.configId ? `Config ${seg.configId}` : 'Config')
+              const name = Number.isFinite(uploadId) && uploadId > 0 ? (namesByUploadId[uploadId] || `Logo ${uploadId}`) : 'Logo'
               return (
                 <div style={{ marginTop: 10, color: '#fff', fontWeight: 900 }}>
-                  {name} * {cfgName}
+                  {name}
                 </div>
               )
             })()}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Logo Config</div>
-                <select
-                  value={String(logoEditor.configId)}
-                  onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, configId: Number(e.target.value) }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                >
-                  <option value="0" disabled>
-                    Select…
-                  </option>
-                  {logoConfigs.map((c: any) => (
-                    <option key={`logo_cfg_${String(c.id)}`} value={String(c.id)}>
-                      {String(c.name || `Config ${c.id}`)}
-                    </option>
-                  ))}
-                </select>
-                {logoConfigsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{logoConfigsError}</div> : null}
-              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <div style={{ padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.03)' }}>
+                  <div style={{ color: '#bbb', fontSize: 12, fontWeight: 800 }}>Start</div>
+                  <div style={{ fontSize: 20, fontWeight: 900 }}>{Number(logoEditor.start).toFixed(1)}s</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.03)' }}>
+                  <div style={{ color: '#bbb', fontSize: 12, fontWeight: 800 }}>Duration</div>
+                  <div style={{ fontSize: 20, fontWeight: 900 }}>{Math.max(0, Number(logoEditor.end) - Number(logoEditor.start)).toFixed(1)}s</div>
+                </div>
+                <div style={{ padding: 10, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.03)' }}>
+                  <div style={{ color: '#bbb', fontSize: 12, fontWeight: 800 }}>End</div>
+                  <div style={{ fontSize: 20, fontWeight: 900 }}>{Number(logoEditor.end).toFixed(1)}s</div>
+                </div>
+              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13, fontWeight: 900 }}>Adjust Start</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: Math.max(0, roundToTenth(Number(p.start) - 0.1)) } as any) : p))}
+                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                      −0.1s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: roundToTenth(Number(p.start) + 0.1) } as any) : p))}
+                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                      +0.1s
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 13, fontWeight: 900 }}>Adjust End</div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: Math.max(0, roundToTenth(Number(p.end) - 0.1)) } as any) : p))}
+                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                      −0.1s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: roundToTenth(Number(p.end) + 0.1) } as any) : p))}
+                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                    >
+                      +0.1s
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Placement</div>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Size (% width)</div>
+                      <select
+                        value={String(logoEditor.sizePctWidth)}
+                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) } as any) : p) }}
+                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                      >
+                        {[10, 20, 30, 40, 50].map((n) => (
+                          <option key={`logo_sz_${n}`} value={String(n)}>{`${n}%`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Opacity (%)</div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={String(logoEditor.opacityPct)}
+                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, opacityPct: Number(e.target.value) } as any) : p) }}
+                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
+                    {(() => {
+                      const cells = [
+                        { key: 'top_left', label: '↖' },
+                        { key: 'top_center', label: '↑' },
+                        { key: 'top_right', label: '↗' },
+                        { key: 'middle_left', label: '←' },
+                        { key: 'middle_center', label: '•' },
+                        { key: 'middle_right', label: '→' },
+                        { key: 'bottom_left', label: '↙' },
+                        { key: 'bottom_center', label: '↓' },
+                        { key: 'bottom_right', label: '↘' },
+                      ] as const
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, maxWidth: 240 }}>
+                          {cells.map((c) => {
+                            const selected = String(logoEditor.position) === String(c.key)
+                            return (
+                              <button
+                                key={String(c.key)}
+                                type="button"
+                                onClick={() => { setLogoEditorError(null); setLogoEditor((p) => (p ? ({ ...p, position: c.key as any } as any) : p)) }}
+                                style={{
+                                  height: 44,
+                                  borderRadius: 12,
+                                  border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                                  background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 18,
+                                }}
+                                aria-label={`Position ${String(c.key)}`}
+                              >
+                                {c.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Effects</div>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-                  <input
-                    type="number"
-                    step={0.1}
-                    min={0}
-                    value={String(logoEditor.start)}
-                    onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                  />
-                </label>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-                  <input
-                    type="number"
-                    step={0.1}
-                    min={0}
-                    value={String(logoEditor.end)}
-                    onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                  />
+                  <div style={{ color: '#bbb', fontSize: 13 }}>Fade</div>
+                  <select
+                    value={String(logoEditor.fade || 'none')}
+                    onChange={(e) => setLogoEditor((p) => (p ? ({ ...p, fade: e.target.value as any } as any) : p))}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                  >
+                    <option value="none">None</option>
+                    <option value="in">Fade In</option>
+                    <option value="out">Fade Out</option>
+                    <option value="in_out">Fade In/Out</option>
+                  </select>
+                  <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Fixed duration: 0.35s</div>
                 </label>
               </div>
 
@@ -16842,23 +16955,44 @@ export default function CreateVideo() {
 					                        })
 					                        setGraphicEditorError(null)
 					                      }
-				                    } else if (timelineCtxMenu.kind === 'logo') {
-			                      const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
-			                      if (l) {
-			                        const s = roundToTenth(Number((l as any).startSeconds || 0))
-			                        const e2 = roundToTenth(Number((l as any).endSeconds || 0))
-			                        setSelectedLogoId(String((l as any).id))
-			                        setSelectedClipId(null)
-			                        setSelectedGraphicId(null)
-			                        setSelectedLowerThirdId(null)
-			                        setSelectedScreenTitleId(null)
-			                        setSelectedNarrationId(null)
-			                        setSelectedStillId(null)
-			                        setSelectedAudioId(null)
-			                        setLogoEditor({ id: String((l as any).id), start: s, end: e2, configId: Number((l as any).configId || 0) })
-			                        setLogoEditorError(null)
-			                      }
-			                    } else if (timelineCtxMenu.kind === 'lowerThird') {
+                    } else if (timelineCtxMenu.kind === 'logo') {
+                      const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
+                      if (l) {
+                        const s = roundToTenth(Number((l as any).startSeconds || 0))
+                        const e2 = roundToTenth(Number((l as any).endSeconds || 0))
+                        const sizePctWidthRaw = Math.round(Number((l as any).sizePctWidth))
+                        const sizeAllowed = new Set([10, 20, 30, 40, 50])
+                        const sizePctWidth = sizeAllowed.has(sizePctWidthRaw) ? sizePctWidthRaw : 20
+                        const posRaw = String((l as any).position || 'top_left')
+                        const posAllowed = new Set([
+                          'top_left',
+                          'top_center',
+                          'top_right',
+                          'middle_left',
+                          'middle_center',
+                          'middle_right',
+                          'bottom_left',
+                          'bottom_center',
+                          'bottom_right',
+                        ])
+                        const position = (posAllowed.has(posRaw) ? posRaw : 'top_left') as any
+                        const opacityRaw = Number((l as any).opacityPct)
+                        const opacityPct = Math.round(clamp(Number.isFinite(opacityRaw) ? opacityRaw : 100, 0, 100))
+                        const fadeRaw = String((l as any).fade || 'none')
+                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+                        setSelectedLogoId(String((l as any).id))
+                        setSelectedClipId(null)
+                        setSelectedGraphicId(null)
+                        setSelectedLowerThirdId(null)
+                        setSelectedScreenTitleId(null)
+                        setSelectedNarrationId(null)
+                        setSelectedStillId(null)
+                        setSelectedAudioId(null)
+                        setLogoEditor({ id: String((l as any).id), start: s, end: e2, sizePctWidth, position, opacityPct, fade })
+                        setLogoEditorError(null)
+                      }
+                    } else if (timelineCtxMenu.kind === 'lowerThird') {
 			                      const lt = lowerThirds.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
 			                      if (lt) {
 			                        const s = roundToTenth(Number((lt as any).startSeconds || 0))

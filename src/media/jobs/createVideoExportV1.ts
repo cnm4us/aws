@@ -67,7 +67,29 @@ type VideoOverlay = {
   audioEnabled?: boolean
   boostDb?: number
 }
-type Logo = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
+type Logo = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+    // Legacy fallback.
+    | 'center'
+  opacityPct?: number
+  fade?: 'none' | 'in' | 'out' | 'in_out'
+  insetXPx?: number
+  insetYPx?: number
+}
 type LowerThird = { id: string; uploadId: number; startSeconds: number; endSeconds: number; configId: number; configSnapshot: any }
 type ScreenTitle = { id: string; startSeconds: number; endSeconds: number; presetId: number | null; presetSnapshot: any | null; text?: string; renderUploadId: number | null }
 type AudioTrack = { uploadId: number; audioConfigId: number; startSeconds: number; endSeconds: number }
@@ -1991,37 +2013,39 @@ export async function runCreateVideoExportV1Job(
         const segStart = clamp(roundToTenth(Number(l.startSeconds)), 0, Math.max(0, baseDurationSeconds))
         const segEnd = clamp(roundToTenth(Number(l.endSeconds)), 0, Math.max(0, baseDurationSeconds))
         if (!(segEnd > segStart + 0.01)) continue
-        const segDur = roundToTenth(segEnd - segStart)
+        const sizeRaw = l.sizePctWidth == null ? 20 : Number(l.sizePctWidth)
+        const sizePctWidth = Number.isFinite(sizeRaw) ? Math.max(1, Math.min(100, Math.round(sizeRaw))) : 20
+        const opacityRaw = l.opacityPct == null ? 100 : Number(l.opacityPct)
+        const opacityPct = Number.isFinite(opacityRaw) ? Math.max(0, Math.min(100, Math.round(opacityRaw))) : 100
+        const insetXRaw = l.insetXPx == null ? 24 : Number(l.insetXPx)
+        const insetYRaw = l.insetYPx == null ? 24 : Number(l.insetYPx)
+        const insetXPx = Number.isFinite(insetXRaw) ? Math.max(0, Math.min(9999, Math.round(insetXRaw))) : 24
+        const insetYPx = Number.isFinite(insetYRaw) ? Math.max(0, Math.min(9999, Math.round(insetYRaw))) : 24
 
-        const cfg = l.configSnapshot && typeof l.configSnapshot === 'object' ? l.configSnapshot : {}
-        const rule = String(cfg.timingRule || 'entire').toLowerCase()
-        const secsRaw = cfg.timingSeconds == null ? null : Number(cfg.timingSeconds)
-        const secs = secsRaw != null && Number.isFinite(secsRaw) ? Math.max(0, Math.min(3600, secsRaw)) : null
+        const posRaw = String(l.position || 'top_left').toLowerCase()
+        const position =
+          posRaw === 'center'
+            ? 'center'
+            : (posRaw as any)
+        const fadeRaw = String(l.fade || 'none').toLowerCase()
+        const fade = fadeRaw === 'in' || fadeRaw === 'out' || fadeRaw === 'in_out' ? fadeRaw : 'none'
 
-        let startRel = 0
-        let endRel = segDur
-        if (rule === 'start_after') {
-          startRel = Math.min(segDur, secs ?? 0)
-          endRel = segDur
-        } else if (rule === 'first_only') {
-          endRel = Math.max(0, Math.min(segDur, secs ?? 0))
-        } else if (rule === 'last_only') {
-          const d = Math.max(0, Math.min(segDur, secs ?? segDur))
-          startRel = Math.max(0, segDur - d)
-          endRel = segDur
+        const cfg = {
+          position,
+          sizePctWidth,
+          opacityPct,
+          fade,
+          insetXPx,
+          insetYPx,
         }
-
-        const effStart = roundToTenth(segStart + startRel)
-        const effEnd = roundToTenth(segStart + endRel)
-        if (!(effEnd > effStart + 0.01)) continue
 
         overlays.push({
           pngPath: entry.path,
           imgW: entry.w,
           imgH: entry.h,
           cfg,
-          startSeconds: effStart,
-          endSeconds: effEnd,
+          startSeconds: segStart,
+          endSeconds: segEnd,
         })
       }
 

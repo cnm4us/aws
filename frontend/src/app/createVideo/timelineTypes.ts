@@ -63,26 +63,27 @@ export type VideoOverlay = {
   audioEnabled?: boolean
 }
 
-export type LogoConfigSnapshot = {
-  id: number
-  name: string
-  position: string
-  sizePctWidth: number
-  opacityPct: number
-  timingRule: string
-  timingSeconds: number | null
-  fade: string
-  insetXPreset?: string | null
-  insetYPreset?: string | null
-}
-
 export type Logo = {
   id: string
   uploadId: number
   startSeconds: number
   endSeconds: number
-  configId: number
-  configSnapshot: LogoConfigSnapshot
+  // Simplified logo placement (Create Video v1).
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  opacityPct?: number
+  fade?: 'none' | 'in' | 'out' | 'in_out'
+  insetXPx?: number
+  insetYPx?: number
 }
 
 export type LowerThirdConfigSnapshot = {
@@ -317,21 +318,51 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(l.uploadId),
           startSeconds: Number(l.startSeconds),
           endSeconds: Number(l.endSeconds),
-          configId: Number(l.configId),
-          configSnapshot: l.configSnapshot && typeof l.configSnapshot === 'object'
-            ? {
-                id: Number(l.configSnapshot.id),
-                name: String(l.configSnapshot.name || ''),
-                position: String(l.configSnapshot.position || ''),
-                sizePctWidth: Number(l.configSnapshot.sizePctWidth),
-                opacityPct: Number(l.configSnapshot.opacityPct),
-                timingRule: String(l.configSnapshot.timingRule || ''),
-                timingSeconds: l.configSnapshot.timingSeconds == null ? null : Number(l.configSnapshot.timingSeconds),
-                fade: String(l.configSnapshot.fade || ''),
-                insetXPreset: l.configSnapshot.insetXPreset == null ? null : String(l.configSnapshot.insetXPreset),
-                insetYPreset: l.configSnapshot.insetYPreset == null ? null : String(l.configSnapshot.insetYPreset),
-              }
-            : ({ id: 0, name: '', position: 'bottom_right', sizePctWidth: 15, opacityPct: 35, timingRule: 'entire', timingSeconds: null, fade: 'none', insetXPreset: null, insetYPreset: null } as any),
+          // Legacy timelines may contain logo configs; we normalize to the new simplified fields with defaults.
+          sizePctWidth: (() => {
+            const raw = l?.sizePctWidth
+            const n = Math.round(Number(raw))
+            if (Number.isFinite(n) && n >= 1 && n <= 100) return n
+            return 20
+          })(),
+          position: (() => {
+            const raw = String(l?.position || '').trim()
+            const allowed = new Set([
+              'top_left',
+              'top_center',
+              'top_right',
+              'middle_left',
+              'middle_center',
+              'middle_right',
+              'bottom_left',
+              'bottom_center',
+              'bottom_right',
+            ])
+            if (allowed.has(raw)) return raw as any
+            return 'top_left' as any
+          })(),
+          opacityPct: (() => {
+            const n = Math.round(Number(l?.opacityPct))
+            if (Number.isFinite(n) && n >= 0 && n <= 100) return n
+            return 100
+          })(),
+          fade: (() => {
+            const raw = String(l?.fade || '').trim().toLowerCase()
+            if (raw === 'in') return 'in' as any
+            if (raw === 'out') return 'out' as any
+            if (raw === 'in_out') return 'in_out' as any
+            return 'none' as any
+          })(),
+          insetXPx: (() => {
+            const n = Math.round(Number(l?.insetXPx))
+            if (Number.isFinite(n) && n >= 0 && n <= 9999) return n
+            return 24
+          })(),
+          insetYPx: (() => {
+            const n = Math.round(Number(l?.insetYPx))
+            if (Number.isFinite(n) && n >= 0 && n <= 9999) return n
+            return 24
+          })(),
         }))
       : [],
     lowerThirds: Array.isArray((timeline as any).lowerThirds)
