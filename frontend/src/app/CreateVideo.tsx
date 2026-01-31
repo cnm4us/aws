@@ -6490,28 +6490,71 @@ export default function CreateVideo() {
       }
       const audioConfigId = pickDefault()
 
-      const end = roundToTenth(
-        Math.max(
-          0,
-          dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(contentTotalSeconds, dur) : Math.max(0, contentTotalSeconds)
-        )
-      )
       snapshotUndo()
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      setTimeline((prev) => ({
-        ...(prev as any),
-        audioTrack: null,
-        audioSegments: [
-          {
-            id: segId,
-            uploadId: id,
-            ...(audioConfigId ? { audioConfigId } : {}),
-            startSeconds: 0,
-            endSeconds: end,
-            sourceStartSeconds: 0,
-          },
-        ],
-      }))
+      setTimeline((prev) => {
+        const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any[]) : []
+        const existingUploadId =
+          prevSegs.length && Number.isFinite(Number((prevSegs[0] as any)?.uploadId)) ? Number((prevSegs[0] as any).uploadId) : null
+        if (existingUploadId != null && existingUploadId > 0 && existingUploadId !== id) {
+          setTimelineMessage('Only one Music track is supported right now. Delete the existing Music first.')
+          return prev
+        }
+
+        const maxEnd = roundToTenth(Math.max(0, contentTotalSeconds))
+        const ph = clamp(roundToTenth(Number((prev as any).playheadSeconds || 0)), 0, maxEnd)
+
+        // If this is the first music segment, default to covering the whole content range (or the file duration if shorter).
+        // Otherwise, default to a short segment at the playhead.
+        const defaultLen = prevSegs.length ? 5 : (dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(maxEnd, dur) : maxEnd)
+        const start = prevSegs.length ? ph : 0
+        const end0 = prevSegs.length ? Math.min(maxEnd, start + defaultLen) : Math.min(maxEnd, defaultLen)
+        const end = roundToTenth(end0)
+        if (!(end > start + 1e-6)) {
+          setTimelineMessage('No room to add Music here.')
+          return prev
+        }
+
+        const seg: any = {
+          id: segId,
+          uploadId: id,
+          ...(audioConfigId ? { audioConfigId } : {}),
+          audioEnabled: true,
+          startSeconds: roundToTenth(start),
+          endSeconds: end,
+          sourceStartSeconds: 0,
+        }
+
+        const next0 = [...prevSegs, seg].sort(
+          (a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
+        )
+
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next0 as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), audioTrack: null, audioSegments: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
+
+        // No ripple: require no overlaps.
+        for (let i = 1; i < next0.length; i++) {
+          const prevSeg = next0[i - 1] as any
+          const curSeg = next0[i] as any
+          if (Number(curSeg.startSeconds) < Number(prevSeg.endSeconds) - 1e-6) {
+            setTimelineMessage('Not enough room to add Music here. Turn Ripple ON or move items.')
+            return prev
+          }
+        }
+
+        return { ...(prev as any), audioTrack: null, audioSegments: next0 }
+      })
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
@@ -6545,28 +6588,66 @@ export default function CreateVideo() {
         setDurationsByUploadId((prev) => ({ ...prev, [id]: dur }))
       }
 
-      const end = roundToTenth(
-        Math.max(
-          0,
-          dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(contentTotalSeconds, dur) : Math.max(0, contentTotalSeconds)
-        )
-      )
       snapshotUndo()
       const segId = `aud_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-      setTimeline((prev) => ({
-        ...(prev as any),
-        audioTrack: null,
-        audioSegments: [
-          {
-            id: segId,
-            uploadId: id,
-            ...(audioConfigIdOk ? { audioConfigId: audioConfigIdOk } : {}),
-            startSeconds: 0,
-            endSeconds: end,
-            sourceStartSeconds: 0,
-          },
-        ],
-      }))
+      setTimeline((prev) => {
+        const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any[]) : []
+        const existingUploadId =
+          prevSegs.length && Number.isFinite(Number((prevSegs[0] as any)?.uploadId)) ? Number((prevSegs[0] as any).uploadId) : null
+        if (existingUploadId != null && existingUploadId > 0 && existingUploadId !== id) {
+          setTimelineMessage('Only one Music track is supported right now. Delete the existing Music first.')
+          return prev
+        }
+
+        const maxEnd = roundToTenth(Math.max(0, contentTotalSeconds))
+        const ph = clamp(roundToTenth(Number((prev as any).playheadSeconds || 0)), 0, maxEnd)
+        const defaultLen = prevSegs.length ? 5 : (dur != null && Number.isFinite(dur) && dur > 0 ? Math.min(maxEnd, dur) : maxEnd)
+        const start = prevSegs.length ? ph : 0
+        const end0 = prevSegs.length ? Math.min(maxEnd, start + defaultLen) : Math.min(maxEnd, defaultLen)
+        const end = roundToTenth(end0)
+        if (!(end > start + 1e-6)) {
+          setTimelineMessage('No room to add Music here.')
+          return prev
+        }
+
+        const seg: any = {
+          id: segId,
+          uploadId: id,
+          ...(audioConfigIdOk ? { audioConfigId: audioConfigIdOk } : {}),
+          audioEnabled: true,
+          startSeconds: roundToTenth(start),
+          endSeconds: end,
+          sourceStartSeconds: 0,
+        }
+
+        const next0 = [...prevSegs, seg].sort(
+          (a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
+        )
+
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next0 as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), audioTrack: null, audioSegments: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
+
+        for (let i = 1; i < next0.length; i++) {
+          const prevSeg = next0[i - 1] as any
+          const curSeg = next0[i] as any
+          if (Number(curSeg.startSeconds) < Number(prevSeg.endSeconds) - 1e-6) {
+            setTimelineMessage('Not enough room to add Music here. Turn Ripple ON or move items.')
+            return prev
+          }
+        }
+        return { ...(prev as any), audioTrack: null, audioSegments: next0 }
+      })
       setSelectedClipId(null)
       setSelectedGraphicId(null)
       setSelectedLogoId(null)
