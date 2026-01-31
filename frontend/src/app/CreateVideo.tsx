@@ -15883,10 +15883,18 @@ export default function CreateVideo() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
           onClick={() => { setLogoEditor(null); setLogoEditorError(null) }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,159,10,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
-          >
+	          <div
+	            onClick={(e) => e.stopPropagation()}
+	            style={{
+	              maxWidth: 560,
+	              margin: '0 auto',
+	              borderRadius: 14,
+	              border: '1px solid rgba(255,159,10,0.55)',
+	              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+	              padding: 16,
+	              boxSizing: 'border-box',
+	            }}
+	          >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Logo Properties</div>
               <button
@@ -15969,32 +15977,32 @@ export default function CreateVideo() {
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Placement</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-	                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-	                    <label style={{ display: 'grid', gap: 6 }}>
-	                      <div style={{ color: '#bbb', fontSize: 13 }}>Size (% width)</div>
-	                      <select
-                        value={String(logoEditor.sizePctWidth)}
-                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) } as any) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                      >
-                        {[10, 20, 30, 40, 50].map((n) => (
-                          <option key={`logo_sz_${n}`} value={String(n)}>{`${n}%`}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Opacity (%)</div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={String(logoEditor.opacityPct)}
-                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, opacityPct: Number(e.target.value) } as any) : p) }}
-                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-	                      />
-	                    </label>
-	                  </div>
+		                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
+		                    <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+		                      <div style={{ color: '#bbb', fontSize: 13 }}>Size (% width)</div>
+		                      <select
+		                        value={String(logoEditor.sizePctWidth)}
+		                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) } as any) : p) }}
+		                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+		                      >
+		                        {[10, 20, 30, 40, 50].map((n) => (
+		                          <option key={`logo_sz_${n}`} value={String(n)}>{`${n}%`}</option>
+		                        ))}
+		                      </select>
+		                    </label>
+		                    <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+		                      <div style={{ color: '#bbb', fontSize: 13 }}>Opacity (%)</div>
+		                      <input
+		                        type="number"
+		                        min={0}
+		                        max={100}
+		                        step={1}
+		                        value={String(logoEditor.opacityPct)}
+		                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, opacityPct: Number(e.target.value) } as any) : p) }}
+		                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+		                      />
+		                    </label>
+		                  </div>
 	
 	                  <label style={{ display: 'grid', gap: 6 }}>
 	                    <div style={{ color: '#bbb', fontSize: 13 }}>Inset</div>
