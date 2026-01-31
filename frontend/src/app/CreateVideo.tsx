@@ -543,24 +543,25 @@ export default function CreateVideo() {
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [stillEditorError, setStillEditorError] = useState<string | null>(null)
-  const [logoEditor, setLogoEditor] = useState<{
-    id: string
-    start: number
-    end: number
-    sizePctWidth: number
-    position:
-      | 'top_left'
-      | 'top_center'
-      | 'top_right'
-      | 'middle_left'
+	  const [logoEditor, setLogoEditor] = useState<{
+	    id: string
+	    start: number
+	    end: number
+	    sizePctWidth: number
+	    insetPreset: 'small' | 'medium' | 'large'
+	    position:
+	      | 'top_left'
+	      | 'top_center'
+	      | 'top_right'
+	      | 'middle_left'
       | 'middle_center'
       | 'middle_right'
       | 'bottom_left'
       | 'bottom_center'
       | 'bottom_right'
-    opacityPct: number
-    fade: 'none' | 'in' | 'out' | 'in_out'
-  } | null>(null)
+	    opacityPct: number
+	    fade: 'none' | 'in' | 'out' | 'in_out'
+	  } | null>(null)
   const [logoEditorError, setLogoEditorError] = useState<string | null>(null)
   const [videoOverlayEditor, setVideoOverlayEditor] = useState<{
     id: string
@@ -10816,11 +10817,14 @@ export default function CreateVideo() {
       return
     }
 
-    const sizePctWidth = Math.round(Number(logoEditor.sizePctWidth))
-    const position = String(logoEditor.position || '') as any
-    const opacityPctRaw = Number(logoEditor.opacityPct)
-    const opacityPct = Math.round(clamp(Number.isFinite(opacityPctRaw) ? opacityPctRaw : 100, 0, 100))
-    const fadeRaw = String((logoEditor as any).fade || 'none')
+	    const sizePctWidth = Math.round(Number(logoEditor.sizePctWidth))
+	    const insetPresetRaw = String((logoEditor as any).insetPreset || 'medium').toLowerCase()
+	    const insetPreset = insetPresetRaw === 'small' || insetPresetRaw === 'large' ? insetPresetRaw : 'medium'
+	    const insetPx = insetPreset === 'small' ? 12 : insetPreset === 'large' ? 36 : 24
+	    const position = String(logoEditor.position || '') as any
+	    const opacityPctRaw = Number(logoEditor.opacityPct)
+	    const opacityPct = Math.round(clamp(Number.isFinite(opacityPctRaw) ? opacityPctRaw : 100, 0, 100))
+	    const fadeRaw = String((logoEditor as any).fade || 'none')
     const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
     const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
 
@@ -10863,17 +10867,17 @@ export default function CreateVideo() {
       const prevLogos: Logo[] = Array.isArray((prev as any).logos) ? ((prev as any).logos as any) : []
       const idx = prevLogos.findIndex((l) => String((l as any).id) === String(logoEditor.id))
       if (idx < 0) return prev
-      const updated: Logo = {
-        ...prevLogos[idx],
-        startSeconds: Math.max(0, start),
-        endSeconds: Math.max(0, end),
-        sizePctWidth,
-        position,
-        opacityPct,
-        fade,
-        insetXPx: 24,
-        insetYPx: 24,
-      }
+	      const updated: Logo = {
+	        ...prevLogos[idx],
+	        startSeconds: Math.max(0, start),
+	        endSeconds: Math.max(0, end),
+	        sizePctWidth,
+	        position,
+	        opacityPct,
+	        fade,
+	        insetXPx: insetPx,
+	        insetYPx: insetPx,
+	      }
       const nextLogos = prevLogos.slice()
       nextLogos[idx] = updated
       nextLogos.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
@@ -15965,10 +15969,10 @@ export default function CreateVideo() {
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Placement</div>
                 <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-                    <label style={{ display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Size (% width)</div>
-                      <select
+	                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
+	                    <label style={{ display: 'grid', gap: 6 }}>
+	                      <div style={{ color: '#bbb', fontSize: 13 }}>Size (% width)</div>
+	                      <select
                         value={String(logoEditor.sizePctWidth)}
                         onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) } as any) : p) }}
                         style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
@@ -15988,13 +15992,26 @@ export default function CreateVideo() {
                         value={String(logoEditor.opacityPct)}
                         onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, opacityPct: Number(e.target.value) } as any) : p) }}
                         style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                      />
-                    </label>
-                  </div>
+	                      />
+	                    </label>
+	                  </div>
+	
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ color: '#bbb', fontSize: 13 }}>Inset</div>
+	                    <select
+	                      value={String((logoEditor as any).insetPreset || 'medium')}
+	                      onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => (p ? ({ ...p, insetPreset: e.target.value as any } as any) : p)) }}
+	                      style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+	                    >
+	                      <option value="small">Small</option>
+	                      <option value="medium">Medium</option>
+	                      <option value="large">Large</option>
+	                    </select>
+	                  </label>
 
-                  <label style={{ display: 'grid', gap: 6 }}>
-                    <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
-                    {(() => {
+	                  <label style={{ display: 'grid', gap: 6 }}>
+	                    <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
+	                    {(() => {
                       const cells = [
                         { key: 'top_left', label: '↖' },
                         { key: 'top_center', label: '↑' },
@@ -16957,10 +16974,10 @@ export default function CreateVideo() {
 					                      }
                     } else if (timelineCtxMenu.kind === 'logo') {
                       const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
-                      if (l) {
-                        const s = roundToTenth(Number((l as any).startSeconds || 0))
-                        const e2 = roundToTenth(Number((l as any).endSeconds || 0))
-                        const sizePctWidthRaw = Math.round(Number((l as any).sizePctWidth))
+	                      if (l) {
+	                        const s = roundToTenth(Number((l as any).startSeconds || 0))
+	                        const e2 = roundToTenth(Number((l as any).endSeconds || 0))
+	                        const sizePctWidthRaw = Math.round(Number((l as any).sizePctWidth))
                         const sizeAllowed = new Set([10, 20, 30, 40, 50])
                         const sizePctWidth = sizeAllowed.has(sizePctWidthRaw) ? sizePctWidthRaw : 20
                         const posRaw = String((l as any).position || 'top_left')
@@ -16976,23 +16993,29 @@ export default function CreateVideo() {
                           'bottom_right',
                         ])
                         const position = (posAllowed.has(posRaw) ? posRaw : 'top_left') as any
-                        const opacityRaw = Number((l as any).opacityPct)
-                        const opacityPct = Math.round(clamp(Number.isFinite(opacityRaw) ? opacityRaw : 100, 0, 100))
-                        const fadeRaw = String((l as any).fade || 'none')
-                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
-                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
-                        setSelectedLogoId(String((l as any).id))
-                        setSelectedClipId(null)
-                        setSelectedGraphicId(null)
-                        setSelectedLowerThirdId(null)
-                        setSelectedScreenTitleId(null)
-                        setSelectedNarrationId(null)
-                        setSelectedStillId(null)
-                        setSelectedAudioId(null)
-                        setLogoEditor({ id: String((l as any).id), start: s, end: e2, sizePctWidth, position, opacityPct, fade })
-                        setLogoEditorError(null)
-                      }
-                    } else if (timelineCtxMenu.kind === 'lowerThird') {
+	                        const opacityRaw = Number((l as any).opacityPct)
+	                        const opacityPct = Math.round(clamp(Number.isFinite(opacityRaw) ? opacityRaw : 100, 0, 100))
+	                        const fadeRaw = String((l as any).fade || 'none')
+	                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+	                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+	                        const insetXPxRaw = Number((l as any).insetXPx)
+	                        const insetYPxRaw = Number((l as any).insetYPx)
+	                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+	                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+	                        const insetMax = Math.max(insetXPx, insetYPx)
+	                        const insetPreset = (insetMax <= 16 ? 'small' : insetMax <= 30 ? 'medium' : 'large') as any
+	                        setSelectedLogoId(String((l as any).id))
+	                        setSelectedClipId(null)
+	                        setSelectedGraphicId(null)
+	                        setSelectedLowerThirdId(null)
+	                        setSelectedScreenTitleId(null)
+	                        setSelectedNarrationId(null)
+	                        setSelectedStillId(null)
+	                        setSelectedAudioId(null)
+	                        setLogoEditor({ id: String((l as any).id), start: s, end: e2, sizePctWidth, insetPreset, position, opacityPct, fade })
+	                        setLogoEditorError(null)
+	                      }
+	                    } else if (timelineCtxMenu.kind === 'lowerThird') {
 			                      const lt = lowerThirds.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
 			                      if (lt) {
 			                        const s = roundToTenth(Number((lt as any).startSeconds || 0))
