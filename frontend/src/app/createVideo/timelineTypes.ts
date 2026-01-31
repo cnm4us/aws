@@ -356,13 +356,13 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           insetXPx: (() => {
             const n = Math.round(Number(l?.insetXPx))
             if (Number.isFinite(n) && n >= 0 && n <= 9999) return n
-            return 24
-          })(),
-          insetYPx: (() => {
-            const n = Math.round(Number(l?.insetYPx))
-            if (Number.isFinite(n) && n >= 0 && n <= 9999) return n
-            return 24
-          })(),
+	            return 48
+	          })(),
+	          insetYPx: (() => {
+	            const n = Math.round(Number(l?.insetYPx))
+	            if (Number.isFinite(n) && n >= 0 && n <= 9999) return n
+	            return 48
+	          })(),
         }))
       : [],
     lowerThirds: Array.isArray((timeline as any).lowerThirds)

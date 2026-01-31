@@ -2019,8 +2019,8 @@ export async function runCreateVideoExportV1Job(
         const opacityPct = Number.isFinite(opacityRaw) ? Math.max(0, Math.min(100, Math.round(opacityRaw))) : 100
         const insetXRaw = l.insetXPx == null ? 24 : Number(l.insetXPx)
         const insetYRaw = l.insetYPx == null ? 24 : Number(l.insetYPx)
-        const insetXPx = Number.isFinite(insetXRaw) ? Math.max(0, Math.min(9999, Math.round(insetXRaw))) : 24
-        const insetYPx = Number.isFinite(insetYRaw) ? Math.max(0, Math.min(9999, Math.round(insetYRaw))) : 24
+        const insetXPx = Number.isFinite(insetXRaw) ? Math.max(0, Math.min(9999, Math.round(insetXRaw))) : 48
+        const insetYPx = Number.isFinite(insetYRaw) ? Math.max(0, Math.min(9999, Math.round(insetYRaw))) : 48
 
         const posRaw = String(l.position || 'top_left').toLowerCase()
         const position =
