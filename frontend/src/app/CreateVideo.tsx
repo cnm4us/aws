@@ -6464,7 +6464,7 @@ export default function CreateVideo() {
   const addAudioFromUpload = useCallback(
     (upload: SystemAudioItem) => {
       if (!(contentTotalSeconds > 0)) {
-        setTimelineMessage('Add at least one video or graphic first.')
+        setTimelineMessage('Add a video/graphic (anything with time) before adding Music.')
         return
       }
       const id = Number(upload.id)
@@ -6525,7 +6525,7 @@ export default function CreateVideo() {
   const addAudioFromUploadWithConfig = useCallback(
     (upload: SystemAudioItem, audioConfigIdRaw: number, configsOverride?: AudioConfigItem[]) => {
       if (!(contentTotalSeconds > 0)) {
-        setTimelineMessage('Add at least one video or graphic first.')
+        setTimelineMessage('Add a video/graphic (anything with time) before adding Music.')
         return
       }
       const id = Number((upload as any).id)
@@ -15062,7 +15062,23 @@ export default function CreateVideo() {
 		              </div>
 		            </div>
 
-            {timelineMessage ? <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center' }}>{timelineMessage}</div> : null}
+            {timelineMessage ? (
+              <div
+                style={{
+                  marginTop: 6,
+                  color: '#ffd24a',
+                  fontSize: 13,
+                  textAlign: 'center',
+                  fontWeight: 900,
+                  background: 'rgba(255,210,74,0.10)',
+                  border: '1px solid rgba(255,210,74,0.28)',
+                  borderRadius: 12,
+                  padding: '8px 10px',
+                }}
+              >
+                {timelineMessage}
+              </div>
+            ) : null}
           </div>
         </div>
 
