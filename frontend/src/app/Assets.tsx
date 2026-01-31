@@ -1162,89 +1162,6 @@ const LowerThirdConfigPickPage: React.FC = () => {
   )
 }
 
-const AudioConfigPickPage: React.FC = () => {
-  const [items, setItems] = React.useState<any[]>([])
-  const [loading, setLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const uploadId = Number(getQueryParam('audioUploadId') || 0)
-  const passthrough = useMemo(() => getPickPassthrough(), [])
-  const backHref = useMemo(() => withParams('/assets/audio', passthrough), [passthrough])
-
-  React.useEffect(() => {
-    const run = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetchJson('/api/audio-configs?limit=200')
-        const raw = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []
-        setItems(raw)
-      } catch (e: any) {
-        setError(String(e?.message || 'Failed to load'))
-      } finally {
-        setLoading(false)
-      }
-    }
-    void run()
-  }, [])
-
-  return (
-    <PickListShell title="Select Audio Config" subtitle="Pick a preset to apply to the selected music track." backHref={backHref}>
-      {loading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
-      {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
-      <div style={{ display: 'grid', gap: 12 }}>
-        {items.map((c: any) => {
-          const id = Number(c?.id || 0)
-          if (!Number.isFinite(id) || id <= 0) return null
-          const name = String(c?.name || `Config ${id}`)
-          const desc = String(c?.description || '').trim()
-          return (
-            <div
-              key={`aud-cfg-${id}`}
-              style={{
-                padding: 12,
-                borderRadius: 12,
-                border: '1px solid rgba(255,214,10,0.55)',
-                background: 'rgba(0,0,0,0.35)',
-                color: '#fff',
-                display: 'grid',
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 900 }}>{name}</div>
-              {desc ? <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>{desc}</div> : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!Number.isFinite(uploadId) || uploadId <= 0) return
-                    const href = buildReturnHref({
-                      cvPickType: 'audio',
-                      cvPickUploadId: String(uploadId),
-                      cvPickAudioConfigId: String(id),
-                    })
-                    if (href) window.location.href = href
-                  }}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: '#0a84ff',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Select
-                </button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </PickListShell>
-  )
-}
-
 const NarrationAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
@@ -1937,9 +1854,11 @@ const AudioMusicAssetsPage: React.FC = () => {
   const canShowSearch = true
 
   const selectTrack = (uploadId: number) => {
-    const pt = getPickPassthrough()
-    const href = withParams('/assets/audio-config', { ...pt, audioUploadId: String(uploadId) })
-    window.location.href = href
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    if (mode === 'pick') {
+      const href = buildReturnHref({ cvPickType: 'audio', cvPickUploadId: String(uploadId) })
+      if (href) window.location.href = href
+    }
   }
 
   const editSave = async () => {
@@ -2407,7 +2326,6 @@ export default function Assets() {
 
   if (route?.type === 'logo-config') return <LogoConfigPickPage />
   if (route?.type === 'lower-third-config') return <LowerThirdConfigPickPage />
-  if (route?.type === 'audio-config') return <AudioConfigPickPage />
 
   if (route?.type === 'narration') return <NarrationAssetsPage />
   if (route?.type === 'audio') return <AudioMusicAssetsPage />
