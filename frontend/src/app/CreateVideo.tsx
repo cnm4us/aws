@@ -14798,44 +14798,52 @@ export default function CreateVideo() {
 	                >
 	                  Add
 	                </button>
-                <button
-                  type="button"
-                  onClick={undo}
-                  disabled={!canUndo}
-                  style={{
+	                <button
+	                  type="button"
+	                  onClick={undo}
+	                  disabled={!canUndo}
+	                  style={{
+		                    padding: '10px 12px',
+		                    borderRadius: 10,
+		                    border: '1px solid rgba(255,255,255,0.18)',
+		                    background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+		                    color: '#fff',
+		                    fontWeight: 900,
+		                    cursor: canUndo ? 'pointer' : 'default',
+		                    flex: '0 0 auto',
+		                    minWidth: 44,
+		                    lineHeight: 1,
+		                  }}
+	                  title="Undo"
+	                  aria-label="Undo"
+		                >
+		                  <svg viewBox="0 0 24 24" width="18" height="18" style={{ display: 'block' }} fill="currentColor" aria-hidden="true">
+		                    <path d="M12.5 8c-2.65 0-5.05 1-6.86 2.64L3 8v8h8l-3.62-3.62c1.34-1.24 3.13-1.88 5.12-1.88 2.76 0 5 2.24 5 5s-2.24 5-5 5c-1.57 0-2.97-.73-3.89-1.87l-1.42 1.42C8.56 22.17 10.44 23 12.5 23c3.87 0 7-3.13 7-7s-3.13-7-7-7z" />
+		                  </svg>
+		                </button>
+	                <button
+	                  type="button"
+	                  onClick={redo}
+	                  disabled={!canRedo}
+	                  style={{
 	                    padding: '10px 12px',
 	                    borderRadius: 10,
 	                    border: '1px solid rgba(255,255,255,0.18)',
-	                    background: canUndo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
+	                    background: canRedo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
 	                    color: '#fff',
 	                    fontWeight: 900,
-	                    cursor: canUndo ? 'pointer' : 'default',
+	                    cursor: canRedo ? 'pointer' : 'default',
 	                    flex: '0 0 auto',
+	                    minWidth: 44,
+	                    lineHeight: 1,
 	                  }}
-                  title="Undo"
-                  aria-label="Undo"
+	                  title="Redo"
+	                  aria-label="Redo"
 	                >
-	                  U
+	                  <svg viewBox="0 0 24 24" width="18" height="18" style={{ display: 'block' }} fill="currentColor" aria-hidden="true">
+	                    <path d="M18.4 10.64C16.59 9 14.19 8 11.54 8c-3.87 0-7 3.13-7 7s3.13 7 7 7c2.06 0 3.94-.83 5.32-2.17l-1.42-1.42c-.92 1.14-2.32 1.87-3.9 1.87-2.76 0-5-2.24-5-5s2.24-5 5-5c1.99 0 3.78.64 5.12 1.88L14.06 14h8V6l-3.66 3.64z" />
+	                  </svg>
 	                </button>
-                <button
-                  type="button"
-                  onClick={redo}
-                  disabled={!canRedo}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: canRedo ? '#0c0c0c' : 'rgba(255,255,255,0.06)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: canRedo ? 'pointer' : 'default',
-                    flex: '0 0 auto',
-                  }}
-                  title="Redo"
-                  aria-label="Redo"
-                >
-                  R
-                </button>
                 <button
                   type="button"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
@@ -14887,82 +14895,33 @@ export default function CreateVideo() {
                         }}
                         title="Toggle ripple-right (push later objects on the same lane)"
                         aria-label="Toggle ripple"
-                      >
-                        Ripple {rippleEnabled ? 'ON' : 'OFF'}
-                      </button>
-				              </div>
-		              <div style={{ flex: '1 1 auto', display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 120 }}>
-		                {hasPlayablePreview ? (
-		                  <button
-		                    type="button"
-		                    onClick={() => setShowPreviewToolbar((v) => !v)}
-		                    style={{
-		                      padding: '10px 12px',
-		                      borderRadius: 999,
-		                      border: '1px solid rgba(212,175,55,0.65)',
-		                      background: showPreviewToolbar ? 'rgba(212,175,55,0.22)' : 'rgba(212,175,55,0.08)',
-		                      color: '#fff',
-		                      fontWeight: 900,
-		                      cursor: 'pointer',
-		                      flex: '0 0 auto',
-		                    }}
-		                    title="Toggle floating preview controls"
-		                    aria-label="Toggle floating preview controls"
-		                  >
-		                    Preview Controls
-		                  </button>
-		                ) : null}
-		              </div>
-		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-		                <button
-		                  type="button"
-		                  onClick={toggleNarrationPlay}
-	                  disabled={!sortedNarration.length}
-	                  style={{
-	                    padding: '10px 12px',
-	                    borderRadius: 10,
-	                    border: '1px solid rgba(175,82,222,0.65)',
-	                    background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
-	                    color: '#fff',
-	                    fontWeight: 900,
-	                    cursor: sortedNarration.length ? 'pointer' : 'default',
-	                    flex: '0 0 auto',
-	                    minWidth: 44,
-	                    lineHeight: 1,
-	                  }}
-	                  title="Play narration (voice memo)"
-	                  aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
-	                >
-	                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-	                    {playPauseGlyph(narrationPreviewPlaying)}
-	                  </span>
-	                </button>
-
-	                <button
-	                  type="button"
-	                  onClick={toggleMusicPlay}
-	                  disabled={!audioSegments.length}
-	                  style={{
-	                    padding: '10px 12px',
-	                    borderRadius: 10,
-	                    border: '1px solid rgba(48,209,88,0.65)',
-	                    background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
-	                    color: '#fff',
-	                    fontWeight: 900,
-	                    cursor: audioSegments.length ? 'pointer' : 'default',
-	                    flex: '0 0 auto',
-	                    minWidth: 44,
-	                    lineHeight: 1,
-	                  }}
-	                  title="Play music"
-	                  aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
-	                >
-	                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-	                    {playPauseGlyph(musicPreviewPlaying)}
-	                  </span>
-	                </button>
-	              </div>
-	            </div>
+	                      >
+	                        R {rippleEnabled ? 'ON' : 'OFF'}
+	                      </button>
+			                {hasPlayablePreview ? (
+			                  <button
+			                    type="button"
+			                    onClick={() => setShowPreviewToolbar((v) => !v)}
+			                    style={{
+			                      padding: '10px 12px',
+			                      borderRadius: 999,
+			                      border: '1px solid rgba(212,175,55,0.65)',
+			                      background: showPreviewToolbar ? 'rgba(212,175,55,0.22)' : 'rgba(212,175,55,0.08)',
+			                      color: '#fff',
+			                      fontWeight: 900,
+			                      cursor: 'pointer',
+			                      flex: '0 0 auto',
+			                      minWidth: 44,
+			                      lineHeight: 1,
+			                    }}
+			                    title="Toggle floating preview controls"
+			                    aria-label="Toggle floating preview controls"
+			                  >
+			                    PC
+			                  </button>
+			                ) : null}
+					              </div>
+			            </div>
 
 		            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 10, alignItems: 'center' }}>
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-start' }}>
@@ -15038,11 +14997,11 @@ export default function CreateVideo() {
 		                </button>
 		              </div>
 
-			              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-			                <button
-			                  type="button"
-			                  onClick={togglePlay}
-			                  disabled={totalSeconds <= 0}
+				              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+				                <button
+				                  type="button"
+				                  onClick={togglePlay}
+				                  disabled={totalSeconds <= 0}
 			                  style={{
 			                    padding: '10px 12px',
 			                    borderRadius: 10,
@@ -15058,11 +15017,59 @@ export default function CreateVideo() {
 			                  title={playing ? 'Pause' : 'Play'}
 			                  aria-label={playing ? 'Pause' : 'Play'}
 			                >
-			                  <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
-			                    {playPauseGlyph(playing)}
-			                  </span>
-			                </button>
-			              </div>
+				                  <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+				                    {playPauseGlyph(playing)}
+				                  </span>
+				                </button>
+
+				                <button
+				                  type="button"
+				                  onClick={toggleNarrationPlay}
+				                  disabled={!sortedNarration.length}
+				                  style={{
+				                    padding: '10px 12px',
+				                    borderRadius: 10,
+				                    border: '1px solid rgba(175,82,222,0.65)',
+				                    background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+				                    color: '#fff',
+				                    fontWeight: 900,
+				                    cursor: sortedNarration.length ? 'pointer' : 'default',
+				                    flex: '0 0 auto',
+				                    minWidth: 44,
+				                    lineHeight: 1,
+				                  }}
+				                  title="Play narration (voice memo)"
+				                  aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+				                >
+				                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+				                    {playPauseGlyph(narrationPreviewPlaying)}
+				                  </span>
+				                </button>
+
+				                <button
+				                  type="button"
+				                  onClick={toggleMusicPlay}
+				                  disabled={!audioSegments.length}
+				                  style={{
+				                    padding: '10px 12px',
+				                    borderRadius: 10,
+				                    border: '1px solid rgba(48,209,88,0.65)',
+				                    background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+				                    color: '#fff',
+				                    fontWeight: 900,
+				                    cursor: audioSegments.length ? 'pointer' : 'default',
+				                    flex: '0 0 auto',
+				                    minWidth: 44,
+				                    lineHeight: 1,
+				                  }}
+				                  title="Play music"
+				                  aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+				                >
+				                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+				                    {playPauseGlyph(musicPreviewPlaying)}
+				                  </span>
+				                </button>
+				              </div>
 
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' }}>
 		                <button
