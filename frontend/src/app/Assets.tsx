@@ -776,6 +776,12 @@ function normalizeVideoSort(raw: string): string {
   return allowed.has(s) ? s : 'newest'
 }
 
+function normalizeGraphicSort(raw: string): string {
+  const s = String(raw || '').trim()
+  const allowed = new Set(['newest', 'oldest', 'name_asc', 'name_desc', 'size_asc', 'size_desc', 'recent'])
+  return allowed.has(s) ? s : 'newest'
+}
+
 const VideoAssetsListPage: React.FC<{
   title: string
   subtitle: string
@@ -1208,6 +1214,440 @@ const VideoAssetsListPage: React.FC<{
                     objectFit: 'contain',
                     display: 'block',
                   }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+const GraphicAssetsListPage: React.FC<{
+  title: string
+  subtitle: string
+  uploadHref: string
+  pickType?: 'graphic'
+}> = ({ title, subtitle, uploadHref, pickType }) => {
+  const mode = useMemo(() => parseMode(), [])
+  const [me, setMe] = React.useState<MeResponse | null>(null)
+  const [items, setItems] = React.useState<UploadListItem[]>([])
+  const [recent, setRecent] = React.useState<UploadListItem[]>([])
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const [q, setQ] = React.useState('')
+  const [sort, setSort] = React.useState<string>('newest')
+  const [favoritesOnly, setFavoritesOnly] = React.useState(false)
+  const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
+  const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
+  const [imagePreview, setImagePreview] = React.useState<{ title: string; src: string } | null>(null)
+
+  const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
+
+  const backHref = useMemo(() => {
+    const base = '/assets'
+    if (mode !== 'pick') return base
+    try {
+      const qs = new URLSearchParams(window.location.search)
+      const ret = qs.get('return')
+      return ret ? String(ret) : base
+    } catch {
+      return base
+    }
+  }, [mode])
+
+  const load = React.useCallback(
+    async (opts?: { signal?: AbortSignal }) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const user = await ensureLoggedIn()
+        setMe(user)
+        if (!user?.userId) throw new Error('not_authenticated')
+        const params = new URLSearchParams()
+        const qTrim = q.trim()
+        if (qTrim) params.set('q', qTrim)
+        params.set('sort', normalizeGraphicSort(sort))
+        if (favoritesOnly) params.set('favorites_only', '1')
+        if (!qTrim && !favoritesOnly && normalizeGraphicSort(sort) !== 'recent') params.set('include_recent', '1')
+        params.set('limit', '200')
+        const res = await fetch(`/api/assets/graphics?${params.toString()}`, {
+          credentials: 'same-origin',
+          signal: opts?.signal,
+        })
+        const json: VideoAssetsResponse | any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+        setItems(Array.isArray(json?.items) ? json.items : [])
+        setRecent(Array.isArray(json?.recent) ? json.recent : [])
+      } catch (e: any) {
+        if (String(e?.name || '') === 'AbortError') return
+        setError(e?.message || 'Failed to load')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [favoritesOnly, q, sort]
+  )
+
+  React.useEffect(() => {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => void load({ signal: ctrl.signal }), 200)
+    return () => {
+      ctrl.abort()
+      clearTimeout(t)
+    }
+  }, [load])
+
+  const onPick = React.useCallback(
+    (u: UploadListItem) => {
+      const href = buildReturnHref({ cvPickType: pickType || 'graphic', cvPickUploadId: String(u.id) })
+      if (href) window.location.href = href
+    },
+    [pickType]
+  )
+
+  const toggleFavorite = React.useCallback(
+    async (u: UploadListItem) => {
+      if (!u?.id) return
+      if (togglingFav[u.id]) return
+      setTogglingFav((prev) => ({ ...prev, [u.id]: true }))
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const nextFav = !Boolean(u.is_favorite)
+        const res = await fetch(`/api/assets/graphics/${u.id}/favorite`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ favorite: nextFav }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed')
+        setItems((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
+        setRecent((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
+      } catch (e: any) {
+        window.alert(e?.message || 'Failed to favorite')
+      } finally {
+        setTogglingFav((prev) => {
+          const next = { ...prev }
+          delete next[u.id]
+          return next
+        })
+      }
+    },
+    [togglingFav]
+  )
+
+  const renderCard = (u: UploadListItem) => {
+    const name = (u.modified_filename || u.original_filename || `Upload ${u.id}`).trim()
+    const originalName = (u.original_filename || '').trim()
+    const date = formatDate(u.created_at)
+    const size = formatBytes(u.size_bytes)
+    const dims = u.width && u.height ? `${u.width}px × ${u.height}px` : ''
+    const meta = [date, size, dims].filter(Boolean).join(' · ')
+    const fileLine = originalName ? `File: ${originalName}` : ''
+    const thumbSrc = `/api/uploads/${encodeURIComponent(String(u.id))}/file`
+    const fav = Boolean(u.is_favorite)
+    const isPick = mode === 'pick'
+    return (
+      <div
+        key={u.id}
+        style={{
+          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'rgba(28,28,28,0.96)',
+          borderRadius: 16,
+          padding: 14,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div style={{ fontWeight: 900, fontSize: 18, wordBreak: 'break-word' }}>{name}</div>
+            {fileLine ? <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{fileLine}</div> : null}
+            <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleFavorite(u)}
+            disabled={!!togglingFav[u.id]}
+            title={fav ? 'Unfavorite' : 'Favorite'}
+            style={{
+              flex: '0 0 auto',
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              border: '1px solid rgba(10,132,255,0.35)',
+              background: '#0c0c0c',
+              color: fav ? '#ffd35a' : '#bbb',
+              fontSize: 18,
+              fontWeight: 900,
+              cursor: togglingFav[u.id] ? 'default' : 'pointer',
+              opacity: togglingFav[u.id] ? 0.7 : 1,
+            }}
+          >
+            {fav ? '★' : '☆'}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={() => setImagePreview({ title: name, src: thumbSrc })}
+            style={{
+              padding: 0,
+              margin: 0,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              width: 120,
+              maxWidth: 140,
+              alignSelf: 'flex-start',
+            }}
+          >
+            <div
+              style={{
+                position: 'relative',
+                aspectRatio: '1 / 1',
+                background: '#0b0b0b',
+                borderRadius: 12,
+                overflow: 'hidden',
+              }}
+            >
+              <img src={thumbSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+          </button>
+        </div>
+
+        {isPick ? (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => onPick(u)}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: '#0a84ff',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              Select
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = window.confirm('Delete this asset? This cannot be undone.')
+                if (!ok) return
+                try {
+                  const headers: Record<string, string> = {}
+                  const csrf = getCsrfToken()
+                  if (csrf) headers['x-csrf-token'] = csrf
+                  const res = await fetch(`/api/uploads/${u.id}`, { method: 'DELETE', credentials: 'same-origin', headers })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                  setItems((prev) => prev.filter((x) => x.id !== u.id))
+                  setRecent((prev) => prev.filter((x) => x.id !== u.id))
+                } catch (e: any) {
+                  window.alert(e?.message || 'Failed to delete')
+                }
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,155,155,0.40)',
+                background: 'rgba(128,0,0,1)',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditUpload(u)}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: '#0c0c0c',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
+            ← Assets
+          </a>
+          <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
+            {mode === 'pick' ? '← Back to Timeline' : 'Timelines'}
+          </a>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 28 }}>{title}</h1>
+            <p style={{ margin: '4px 0 0 0', color: '#bbb' }}>{subtitle}</p>
+          </div>
+          {mode !== 'pick' ? (
+            <a
+              href={withParams(uploadHref, { return: returnTo })}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: '#0a84ff',
+                color: '#fff',
+                fontWeight: 900,
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              Upload
+            </a>
+          ) : null}
+        </div>
+
+        <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(String((e.target as any).value || ''))}
+            placeholder="Search name or description…"
+            style={{
+              flex: '1 1 220px',
+              minWidth: 200,
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: '#0c0c0c',
+              color: '#fff',
+              outline: 'none',
+            }}
+          />
+
+          <select
+            value={sort}
+            onChange={(e) => setSort(normalizeGraphicSort(String((e.target as any).value || 'newest')))}
+            style={{
+              flex: '0 0 auto',
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.14)',
+              background: '#0c0c0c',
+              color: '#fff',
+              outline: 'none',
+              fontWeight: 900,
+            }}
+          >
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name_asc">Name A→Z</option>
+            <option value="name_desc">Name Z→A</option>
+            <option value="size_asc">Size (small→large)</option>
+            <option value="size_desc">Size (large→small)</option>
+            <option value="recent">Recent</option>
+          </select>
+
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
+            <input
+              type="checkbox"
+              checked={favoritesOnly}
+              onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
+            />
+            Favorites
+          </label>
+        </div>
+
+        {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+        {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
+
+        {!q.trim() && !favoritesOnly && recent.length ? (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
+            <div style={{ display: 'grid', gap: 14 }}>{recent.map(renderCard)}</div>
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{items.map(renderCard)}</div>
+
+        {editUpload ? (
+          <EditUploadModal
+            upload={editUpload}
+            onClose={() => setEditUpload(null)}
+            onSaved={({ name, description }) => {
+              setItems((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
+              setRecent((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
+            }}
+          />
+        ) : null}
+
+        {imagePreview ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+            onClick={() => setImagePreview(null)}
+          >
+            <div
+              style={{
+                position: 'fixed',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 'min(92vw, 720px)',
+                maxHeight: '82vh',
+                background: '#0b0b0b',
+                border: '1px solid rgba(255,255,255,0.18)',
+                borderRadius: 16,
+                padding: 12,
+                boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{imagePreview.title}</div>
+                <button
+                  type="button"
+                  onClick={() => setImagePreview(null)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <img
+                  src={imagePreview.src}
+                  alt=""
+                  style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', display: 'block', borderRadius: 12, background: '#000' }}
                 />
               </div>
             </div>
@@ -2824,21 +3264,11 @@ export default function Assets() {
 
   if (route?.type === 'graphic') {
     return (
-      <AssetUploadsListPage
+      <GraphicAssetsListPage
         title="Graphics"
-        subtitle="Full-screen overlay images."
-        kind="image"
-        imageRole="overlay"
+        subtitle="Graphics (overlay images) for your timeline."
         uploadHref="/uploads/new?kind=image&image_role=overlay"
-        allowDelete
-        onPick={
-          mode === 'pick'
-            ? (u) => {
-                const href = buildReturnHref({ cvPickType: 'graphic', cvPickUploadId: String(u.id) })
-                if (href) window.location.href = href
-              }
-            : undefined
-        }
+        pickType="graphic"
       />
     )
   }

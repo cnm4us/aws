@@ -6811,6 +6811,20 @@ export default function CreateVideo() {
       } catch {}
     }
 
+    const markGraphicUsed = async (id: number) => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        await fetch(`/api/assets/graphics/${encodeURIComponent(String(id))}/used`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({}),
+        })
+      } catch {}
+    }
+
     ;(async () => {
       try {
         const t = String(pickFromAssets.type || '')
@@ -6828,7 +6842,10 @@ export default function CreateVideo() {
           }
         } else if (t === 'graphic' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
-          if (up) addGraphicFromUpload(up as any)
+          if (up) {
+            addGraphicFromUpload(up as any)
+            void markGraphicUsed(pickFromAssets.uploadId)
+          }
         } else if (t === 'narration' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) await addNarrationFromUpload(up as any)

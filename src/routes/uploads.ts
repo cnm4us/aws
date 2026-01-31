@@ -188,6 +188,58 @@ uploadsRouter.post('/api/assets/videos/:id/used', requireAuth, async (req, res) 
   }
 })
 
+// Plan 78: graphics library (overlay images) with per-user favorites + recents
+uploadsRouter.get('/api/assets/graphics', requireAuth, async (req, res) => {
+  try {
+    const userId = Number(req.user!.id)
+    const { q, sort, favorites_only, include_recent, limit } = req.query as any
+    const data = await uploadsSvc.listUserGraphicAssets(
+      {
+        q: q != null ? String(q) : undefined,
+        sort: sort != null ? String(sort) : undefined,
+        favoritesOnly: favorites_only === '1' || favorites_only === 'true',
+        includeRecent: include_recent === '1' || include_recent === 'true',
+        limit: limit != null ? Number(limit) : undefined,
+      },
+      { userId }
+    )
+    return res.json(data)
+  } catch (err: any) {
+    console.error('list graphic assets error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
+  }
+})
+
+uploadsRouter.post('/api/assets/graphics/:id/favorite', requireAuth, async (req, res) => {
+  try {
+    const userId = Number(req.user!.id)
+    const uploadId = Number(req.params.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return res.status(400).json({ error: 'bad_id' })
+    const favorite = Boolean((req.body || {})?.favorite)
+    const data = await uploadsSvc.setGraphicAssetFavorite({ uploadId, favorite }, { userId })
+    return res.json(data)
+  } catch (err: any) {
+    console.error('favorite graphic asset error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
+  }
+})
+
+uploadsRouter.post('/api/assets/graphics/:id/used', requireAuth, async (req, res) => {
+  try {
+    const userId = Number(req.user!.id)
+    const uploadId = Number(req.params.id)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return res.status(400).json({ error: 'bad_id' })
+    const data = await uploadsSvc.markGraphicAssetUsed({ uploadId }, { userId })
+    return res.json(data)
+  } catch (err: any) {
+    console.error('mark graphic used error', err)
+    const status = err?.status || 500
+    res.status(status).json({ error: err?.code || 'failed_to_mark_used', detail: String(err?.message || err) })
+  }
+})
+
 uploadsRouter.get('/api/audio-tags', requireAuth, async (req, res) => {
   try {
     const userId = Number(req.user!.id)
