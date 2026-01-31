@@ -793,6 +793,7 @@ const VideoAssetsListPage: React.FC<{
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
+  const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
 
@@ -898,6 +899,9 @@ const VideoAssetsListPage: React.FC<{
     const dur = formatDuration(u.duration_seconds ?? null)
     const meta = [date, size, dur].filter(Boolean).join(' · ')
     const thumbSrc = `/api/uploads/${encodeURIComponent(String(u.id))}/thumb`
+    const isPortrait = u.width != null && u.height != null && Number(u.width) > 0 && Number(u.height) > 0 ? Number(u.height) > Number(u.width) : false
+    const previewAspect = isPortrait ? '9 / 16' : '16 / 9'
+    const previewFit = isPortrait ? 'contain' : 'cover'
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (
@@ -905,7 +909,7 @@ const VideoAssetsListPage: React.FC<{
         key={u.id}
         style={{
           border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'rgba(28,28,28,0.96)',
           borderRadius: 16,
           padding: 14,
         }}
@@ -939,17 +943,29 @@ const VideoAssetsListPage: React.FC<{
         </div>
 
         <div style={{ marginTop: 10 }}>
-          <div
+          <button
+            type="button"
+            onClick={() => {
+              setVideoPreview({
+                title: name,
+                src: `/api/uploads/${encodeURIComponent(String(u.id))}/edit-proxy#t=0.1`,
+              })
+            }}
             style={{
               position: 'relative',
-              aspectRatio: '16 / 9',
+              aspectRatio: previewAspect,
               background: '#0b0b0b',
               borderRadius: 12,
               overflow: 'hidden',
+              width: '100%',
+              border: 'none',
+              padding: 0,
+              margin: 0,
+              cursor: 'pointer',
             }}
           >
-            <img src={thumbSrc} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          </div>
+            <img src={thumbSrc} alt="" style={{ width: '100%', height: '100%', objectFit: previewFit, display: 'block' }} />
+          </button>
         </div>
 
         {isPick ? (
@@ -1134,6 +1150,68 @@ const VideoAssetsListPage: React.FC<{
               setRecent((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
             }}
           />
+        ) : null}
+
+        {videoPreview ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+            onClick={() => setVideoPreview(null)}
+          >
+            <div
+              style={{
+                position: 'fixed',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 'min(92vw, 900px)',
+                maxHeight: '82vh',
+                background: '#0b0b0b',
+                border: '1px solid rgba(255,255,255,0.18)',
+                borderRadius: 16,
+                padding: 12,
+                boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{videoPreview.title}</div>
+                <button
+                  type="button"
+                  onClick={() => setVideoPreview(null)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={videoPreview.src}
+                  style={{
+                    width: '100%',
+                    maxHeight: '72vh',
+                    background: '#000',
+                    borderRadius: 12,
+                    objectFit: 'contain',
+                    display: 'block',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
