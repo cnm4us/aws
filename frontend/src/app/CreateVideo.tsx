@@ -15992,15 +15992,20 @@ export default function CreateVideo() {
 		                    </label>
 		                    <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
 		                      <div style={{ color: '#bbb', fontSize: 13 }}>Opacity (%)</div>
-		                      <input
-		                        type="number"
-		                        min={0}
-		                        max={100}
-		                        step={1}
-		                        value={String(logoEditor.opacityPct)}
+		                      <select
+		                        value={String(Math.round(Number(logoEditor.opacityPct)))}
 		                        onChange={(e) => { setLogoEditorError(null); setLogoEditor((p) => p ? ({ ...p, opacityPct: Number(e.target.value) } as any) : p) }}
 		                        style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-		                      />
+		                      >
+		                        {Array.from({ length: 11 }).map((_, i) => {
+		                          const n = i * 10
+		                          return (
+		                            <option key={`logo_op_${n}`} value={String(n)}>
+		                              {`${n}%`}
+		                            </option>
+		                          )
+		                        })}
+		                      </select>
 		                    </label>
 		                  </div>
 	
@@ -16043,8 +16048,8 @@ export default function CreateVideo() {
                                 style={{
                                   height: 44,
                                   borderRadius: 12,
-                                  border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                                  background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+	                                  border: selected ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                                  background: selected ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
                                   color: '#fff',
                                   fontWeight: 900,
                                   cursor: 'pointer',
