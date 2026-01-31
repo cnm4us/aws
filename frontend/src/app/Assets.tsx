@@ -2525,20 +2525,20 @@ export default function Assets() {
         </p>
 
         <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
-          {types.map((t) => (
-            <a
-              key={t.key}
-              href={t.href}
-              style={{
-                display: 'block',
-                textDecoration: 'none',
-                color: '#fff',
-                borderRadius: 16,
-                border: '1px solid rgba(212,175,55,0.55)',
-                background: 'rgba(255,255,255,0.03)',
-                padding: 14,
-              }}
-            >
+	          {types.map((t) => (
+	            <a
+	              key={t.key}
+	              href={t.href}
+	              style={{
+	                display: 'block',
+	                textDecoration: 'none',
+	                color: '#fff',
+	                borderRadius: 16,
+	                border: '1px solid rgba(212,175,55,0.55)',
+	                background: 'rgba(28,28,28,0.96)',
+	                padding: 14,
+	              }}
+	            >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                 <div style={{ fontSize: 18, fontWeight: 900 }}>{t.label}</div>
                 <div style={{ color: '#d4af37', fontWeight: 900 }}>→</div>
