@@ -15889,7 +15889,7 @@ export default function CreateVideo() {
 	              maxWidth: 560,
 	              margin: '0 auto',
 	              borderRadius: 14,
-	              border: '1px solid rgba(255,159,10,0.55)',
+	              border: '1px solid rgba(96,165,250,0.95)',
 	              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
 	              padding: 16,
 	              boxSizing: 'border-box',
@@ -15938,17 +15938,17 @@ export default function CreateVideo() {
                   <div style={{ color: '#bbb', fontSize: 13, fontWeight: 900 }}>Adjust Start</div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
-                      type="button"
-                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: Math.max(0, roundToTenth(Number(p.start) - 0.1)) } as any) : p))}
-                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                    >
+	                      type="button"
+	                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: Math.max(0, roundToTenth(Number(p.start) - 0.1)) } as any) : p))}
+	                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.65)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+	                    >
                       −0.1s
                     </button>
                     <button
-                      type="button"
-                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: roundToTenth(Number(p.start) + 0.1) } as any) : p))}
-                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                    >
+	                      type="button"
+	                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, start: roundToTenth(Number(p.start) + 0.1) } as any) : p))}
+	                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.65)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+	                    >
                       +0.1s
                     </button>
                   </div>
@@ -15957,17 +15957,17 @@ export default function CreateVideo() {
                   <div style={{ color: '#bbb', fontSize: 13, fontWeight: 900 }}>Adjust End</div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button
-                      type="button"
-                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: Math.max(0, roundToTenth(Number(p.end) - 0.1)) } as any) : p))}
-                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                    >
+	                      type="button"
+	                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: Math.max(0, roundToTenth(Number(p.end) - 0.1)) } as any) : p))}
+	                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.65)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+	                    >
                       −0.1s
                     </button>
                     <button
-                      type="button"
-                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: roundToTenth(Number(p.end) + 0.1) } as any) : p))}
-                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                    >
+	                      type="button"
+	                      onClick={() => setLogoEditor((p) => (p ? ({ ...p, end: roundToTenth(Number(p.end) + 0.1) } as any) : p))}
+	                      style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.65)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+	                    >
                       +0.1s
                     </button>
                   </div>
@@ -16100,10 +16100,10 @@ export default function CreateVideo() {
                   Cancel
                 </button>
                 <button
-                  type="button"
-                  onClick={saveLogoEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,159,10,0.65)', background: 'rgba(255,159,10,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                >
+	                  type="button"
+	                  onClick={saveLogoEditor}
+	                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+	                >
                   Save
                 </button>
               </div>
