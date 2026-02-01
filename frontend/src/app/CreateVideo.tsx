@@ -7841,7 +7841,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -8098,7 +8098,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -8327,7 +8327,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -8580,7 +8580,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -9026,7 +9026,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -9264,7 +9264,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -9610,7 +9610,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -9952,7 +9952,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -10294,7 +10294,7 @@ export default function CreateVideo() {
       ).sort((a, b) => a - b)
       if (!gsSorted.length) {
         if (action === 'snap') {
-          setTimelineMessage('No guidelines yet. Tap G to add one.')
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
           return
         }
         gsSorted = [roundToTenth(playhead)]
@@ -14913,7 +14913,16 @@ export default function CreateVideo() {
 	                  title="Guideline (tap to add, hold for menu)"
                   aria-label="Guideline"
 				                >
-				                  G
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              display: 'inline-block',
+                              width: 2,
+                              height: 18,
+                              borderRadius: 2,
+                              background: 'rgba(212,175,55,0.85)',
+                            }}
+                          />
 				                </button>
                       <button
                         type="button"
