@@ -176,7 +176,7 @@ const YellowModal: React.FC<{ title: string; body: string; onClose: () => void }
         alignItems: 'flex-start',
         justifyContent: 'center',
         padding: 16,
-        paddingTop: 'calc(16px + env(safe-area-inset-top))',
+        paddingTop: 'calc(72px + env(safe-area-inset-top))',
       }}
     >
       <div
@@ -184,9 +184,9 @@ const YellowModal: React.FC<{ title: string; body: string; onClose: () => void }
         style={{
           width: 'min(720px, 100%)',
           borderRadius: 16,
-          border: '1px solid rgba(0,0,0,0.25)',
-          background: '#d4af37',
-          color: '#2a2a2a',
+          border: '1px solid rgba(255,214,10,0.20)',
+          background: 'linear-gradient(180deg, rgba(92, 62, 24, 0.98), rgba(40, 28, 14, 0.98))',
+          color: '#fff',
           padding: 16,
         }}
       >
@@ -199,9 +199,9 @@ const YellowModal: React.FC<{ title: string; body: string; onClose: () => void }
               width: 42,
               height: 42,
               borderRadius: 999,
-              border: '1px solid rgba(0,0,0,0.35)',
-              background: 'rgba(0,0,0,0.10)',
-              color: '#000',
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#000',
+              color: '#fff',
               fontWeight: 900,
               cursor: 'pointer',
             }}
