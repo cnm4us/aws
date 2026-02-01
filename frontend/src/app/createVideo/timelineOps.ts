@@ -1,4 +1,4 @@
-import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline, VideoOverlay } from './timelineTypes'
+import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline, VideoOverlay, VideoOverlayStill } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
@@ -184,6 +184,31 @@ export function splitStillAtPlayhead(
   const next = [...ss.slice(0, idx), left, right, ...ss.slice(idx + 1)]
   next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), stills: next } as any, selectedStillId: right.id }
+}
+
+export function splitVideoOverlayStillAtPlayhead(
+  timeline: Timeline,
+  selectedVideoOverlayStillId: string | null
+): { timeline: Timeline; selectedVideoOverlayStillId: string | null } {
+  if (!selectedVideoOverlayStillId) return { timeline, selectedVideoOverlayStillId }
+  const ss: VideoOverlayStill[] = Array.isArray((timeline as any).videoOverlayStills) ? ((timeline as any).videoOverlayStills as any) : []
+  const idx = ss.findIndex((s: any) => String(s?.id) === String(selectedVideoOverlayStillId))
+  if (idx < 0) return { timeline, selectedVideoOverlayStillId }
+  const s0: any = ss[idx]
+  const start = roundToTenth(Number(s0?.startSeconds || 0))
+  const end = roundToTenth(Number(s0?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedVideoOverlayStillId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.1
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedVideoOverlayStillId }
+
+  const left: VideoOverlayStill = { ...s0, id: `${String(s0.id)}_a`, startSeconds: start, endSeconds: cut }
+  const right: VideoOverlayStill = { ...s0, id: `${String(s0.id)}_b`, startSeconds: cut, endSeconds: end }
+  const next = [...ss.slice(0, idx), left, right, ...ss.slice(idx + 1)]
+  next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), videoOverlayStills: next } as any, selectedVideoOverlayStillId: right.id }
 }
 
 export function splitLogoAtPlayhead(

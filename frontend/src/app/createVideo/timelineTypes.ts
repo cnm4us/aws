@@ -63,6 +63,18 @@ export type VideoOverlay = {
   audioEnabled?: boolean
 }
 
+export type VideoOverlayStill = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  // Optional linkage for debugging/UX (e.g. which overlay generated this).
+  sourceVideoOverlayId?: string
+  // Optional: keep the still pinned to the same overlay box layout as its originating overlay (when known).
+  sizePctWidth?: number
+  position?: VideoOverlay['position']
+}
+
 export type Logo = {
   id: string
   uploadId: number
@@ -183,6 +195,7 @@ export type Timeline = {
   clips: Clip[]
   stills?: Still[]
   videoOverlays?: VideoOverlay[]
+  videoOverlayStills?: VideoOverlayStill[]
   graphics: Graphic[]
   guidelines?: number[]
   logos?: Logo[]
@@ -229,6 +242,17 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           sizePctWidth: Number(o.sizePctWidth ?? 40),
           position: String(o.position || 'bottom_right') as any,
           audioEnabled: o.audioEnabled == null ? false : Boolean(o.audioEnabled),
+        }))
+      : [],
+    videoOverlayStills: Array.isArray((timeline as any).videoOverlayStills)
+      ? (timeline as any).videoOverlayStills.map((s: any) => ({
+          id: String(s.id),
+          uploadId: Number(s.uploadId),
+          startSeconds: Number(s.startSeconds),
+          endSeconds: Number(s.endSeconds),
+          sourceVideoOverlayId: s.sourceVideoOverlayId != null ? String(s.sourceVideoOverlayId) : undefined,
+          sizePctWidth: s.sizePctWidth != null ? Number(s.sizePctWidth) : undefined,
+          position: s.position != null ? (String(s.position) as any) : undefined,
         }))
       : [],
     graphics: Array.isArray((timeline as any).graphics)

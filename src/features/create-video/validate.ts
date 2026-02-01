@@ -775,6 +775,74 @@ export async function validateAndNormalizeCreateVideoTimeline(
   const graphicsTotalSeconds = graphics.length ? Number(graphics[graphics.length - 1].endSeconds) : 0
   const stillsTotalSeconds = stills.length ? Number(stills[stills.length - 1].endSeconds) : 0
 
+  const videoOverlayStillsRaw0 = Array.isArray((raw as any).videoOverlayStills) ? ((raw as any).videoOverlayStills as any[]) : []
+  const videoOverlayStillsRaw = legacyCumulative.length
+    ? videoOverlayStillsRaw0.map((s) => ({
+        ...(s as any),
+        startSeconds: legacyMapMaybe((s as any).startSeconds),
+        endSeconds: legacyMapMaybe((s as any).endSeconds),
+      }))
+    : videoOverlayStillsRaw0
+  const MAX_VIDEO_OVERLAY_STILLS = 500
+  if (videoOverlayStillsRaw.length > MAX_VIDEO_OVERLAY_STILLS) throw new DomainError('too_many_video_overlay_stills', 'too_many_video_overlay_stills', 400)
+  const videoOverlayStills: any[] = []
+  const allowedOverlayPositionsForStills = new Set([
+    'top_left',
+    'top_center',
+    'top_right',
+    'middle_left',
+    'middle_center',
+    'middle_right',
+    'bottom_left',
+    'bottom_center',
+    'bottom_right',
+  ])
+  const allowedOverlaySizesForStills = new Set([25, 33, 40, 50, 70, 90])
+  for (const s of videoOverlayStillsRaw) {
+    if (!s || typeof s !== 'object') continue
+    const id = normalizeId((s as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const uploadId = Number((s as any).uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
+    const startSeconds = normalizeSeconds((s as any).startSeconds)
+    const endSeconds = normalizeSeconds((s as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+
+    const meta = await loadFreezeFrameImageMetaForUser(uploadId, ctx.userId)
+    const sourceVideoOverlayIdRaw = (s as any).sourceVideoOverlayId
+    const sourceVideoOverlayId = sourceVideoOverlayIdRaw != null ? String(sourceVideoOverlayIdRaw).trim() : undefined
+
+    const sizePctWidthRaw = (s as any).sizePctWidth
+    const sizePctWidthParsed = sizePctWidthRaw == null ? undefined : Math.round(Number(sizePctWidthRaw))
+    const sizePctWidth = sizePctWidthParsed != null && allowedOverlaySizesForStills.has(sizePctWidthParsed) ? sizePctWidthParsed : undefined
+
+    const posRaw = (s as any).position
+    const pos = posRaw == null ? undefined : String(posRaw).trim().toLowerCase()
+    const position = pos != null && allowedOverlayPositionsForStills.has(pos) ? pos : undefined
+
+    videoOverlayStills.push({
+      id,
+      uploadId: meta.id,
+      startSeconds,
+      endSeconds,
+      ...(sourceVideoOverlayId ? { sourceVideoOverlayId } : {}),
+      ...(sizePctWidth != null ? { sizePctWidth } : {}),
+      ...(position ? { position } : {}),
+    })
+  }
+
+  videoOverlayStills.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < videoOverlayStills.length; i++) {
+    const s = videoOverlayStills[i] as any
+    if (s.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
+    if (i > 0) {
+      const prev = videoOverlayStills[i - 1] as any
+      if (s.startSeconds < Number(prev.endSeconds) - 1e-6) throw new DomainError('video_overlay_still_overlap', 'video_overlay_still_overlap', 400)
+    }
+  }
+
   const videoOverlaysRaw0 = Array.isArray((raw as any).videoOverlays) ? ((raw as any).videoOverlays as any[]) : []
   const videoOverlaysRaw = legacyCumulative.length
     ? videoOverlaysRaw0.map((o) => ({
@@ -871,6 +939,23 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (start < prevEnd - 1e-6) throw new DomainError('video_overlay_overlap', 'video_overlay_overlap', 400)
     }
   }
+
+  // No overlaps between overlay videos and overlay stills (same lane).
+  if (videoOverlayStills.length && videoOverlays.length) {
+    for (const s of videoOverlayStills) {
+      const ss = Number((s as any).startSeconds)
+      const se = Number((s as any).endSeconds)
+      if (!(Number.isFinite(ss) && Number.isFinite(se) && se > ss)) continue
+      for (const o of videoOverlays) {
+        const os = Number((o as any).startSeconds || 0)
+        const od = Math.max(0, Number((o as any).sourceEndSeconds) - Number((o as any).sourceStartSeconds))
+        const oe = roundToTenth(os + od)
+        if (ss < oe - 1e-6 && se > os + 1e-6) throw new DomainError('video_overlay_lane_overlap', 'video_overlay_lane_overlap', 400)
+      }
+    }
+  }
+
+  const videoOverlayStillsTotalSeconds = videoOverlayStills.length ? Number(videoOverlayStills[videoOverlayStills.length - 1].endSeconds) : 0
 
   const logosRaw0 = Array.isArray((raw as any).logos) ? ((raw as any).logos as any[]) : []
   const logosRaw = legacyCumulative.length
@@ -1116,6 +1201,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       graphicsTotalSeconds,
       stillsTotalSeconds,
       videoOverlaysTotalSeconds,
+      videoOverlayStillsTotalSeconds,
       logosTotalSeconds,
       lowerThirdsTotalSeconds,
       screenTitlesTotalSeconds,
@@ -1258,6 +1344,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     clips,
     stills,
     videoOverlays,
+    videoOverlayStills,
     graphics,
     guidelines,
     logos,

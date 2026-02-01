@@ -48,6 +48,18 @@ export type CreateVideoVideoOverlayV1 = {
   boostDb?: number
 }
 
+export type CreateVideoVideoOverlayStillV1 = {
+  id: string
+  uploadId: number
+  startSeconds: number
+  endSeconds: number
+  // Optional linkage for debugging/UX (e.g. which overlay generated this).
+  sourceVideoOverlayId?: string
+  // Optional: keep the still pinned to the same overlay box layout as its originating overlay (when known).
+  sizePctWidth?: number
+  position?: CreateVideoVideoOverlayV1['position']
+}
+
 export type CreateVideoLogoV1 = {
   id: string
   uploadId: number
@@ -194,6 +206,7 @@ export type CreateVideoTimelineV1 = {
   clips: CreateVideoClipV1[]
   stills?: CreateVideoStillV1[]
   videoOverlays?: CreateVideoVideoOverlayV1[]
+  videoOverlayStills?: CreateVideoVideoOverlayStillV1[]
   graphics?: CreateVideoGraphicV1[]
   guidelines?: number[]
   logos?: CreateVideoLogoV1[]
