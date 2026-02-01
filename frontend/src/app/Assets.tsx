@@ -2524,7 +2524,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                 style={{
                   borderRadius: 16,
                   border: '1px solid rgba(255,214,10,0.55)',
-                  background: 'rgba(0,0,0,0.35)',
+                  background: 'rgba(28,28,28,0.96)',
                   padding: 12,
                   display: 'grid',
                   gap: 8,
@@ -2618,7 +2618,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                 padding: 12,
                 borderRadius: 14,
                 border: '1px solid rgba(255,214,10,0.55)',
-                background: 'rgba(0,0,0,0.35)',
+                background: 'rgba(28,28,28,0.96)',
                 color: '#fff',
                 display: 'grid',
                 gap: 8,
