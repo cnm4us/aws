@@ -43,6 +43,7 @@ const UNDO_ICON_URL = new URL('./icons/undo.svg', import.meta.url).toString()
 const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
+const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
 
 type MeResponse = {
   userId: number | null
@@ -14956,7 +14957,7 @@ export default function CreateVideo() {
 			                    onClick={() => setShowPreviewToolbar((v) => !v)}
 			                    style={{
 			                      padding: '10px 12px',
-			                      borderRadius: 999,
+			                      borderRadius: 10,
 			                      border: '1px solid rgba(212,175,55,0.65)',
 			                      background: showPreviewToolbar ? 'rgba(212,175,55,0.22)' : 'rgba(212,175,55,0.08)',
 			                      color: '#fff',
@@ -14969,7 +14970,7 @@ export default function CreateVideo() {
 			                    title="Toggle floating preview controls"
 			                    aria-label="Toggle floating preview controls"
 			                  >
-			                    PC
+                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
 			                  </button>
 			                ) : null}
 					              </div>
