@@ -39,6 +39,9 @@ import {
   splitVideoOverlayAtPlayhead,
 } from './createVideo/timelineOps'
 
+const UNDO_ICON_URL = new URL('./icons/undo.svg', import.meta.url).toString()
+const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
+
 type MeResponse = {
   userId: number | null
   email: string | null
@@ -14859,9 +14862,7 @@ export default function CreateVideo() {
 	                  title="Undo"
 	                  aria-label="Undo"
 		                >
-		                  <svg viewBox="0 0 24 24" width="18" height="18" style={{ display: 'block' }} fill="currentColor" aria-hidden="true">
-		                    <path d="M12.5 8c-2.65 0-5.05 1-6.86 2.64L3 8v8h8l-3.62-3.62c1.34-1.24 3.13-1.88 5.12-1.88 2.76 0 5 2.24 5 5s-2.24 5-5 5c-1.57 0-2.97-.73-3.89-1.87l-1.42 1.42C8.56 22.17 10.44 23 12.5 23c3.87 0 7-3.13 7-7s-3.13-7-7-7z" />
-		                  </svg>
+                      <img src={UNDO_ICON_URL} alt="" aria-hidden="true" style={{ width: 18, height: 18, display: 'block' }} />
 		                </button>
 	                <button
 	                  type="button"
@@ -14882,9 +14883,7 @@ export default function CreateVideo() {
 	                  title="Redo"
 	                  aria-label="Redo"
 	                >
-	                  <svg viewBox="0 0 24 24" width="18" height="18" style={{ display: 'block' }} fill="currentColor" aria-hidden="true">
-	                    <path d="M18.4 10.64C16.59 9 14.19 8 11.54 8c-3.87 0-7 3.13-7 7s3.13 7 7 7c2.06 0 3.94-.83 5.32-2.17l-1.42-1.42c-.92 1.14-2.32 1.87-3.9 1.87-2.76 0-5-2.24-5-5s2.24-5 5-5c1.99 0 3.78.64 5.12 1.88L14.06 14h8V6l-3.66 3.64z" />
-	                  </svg>
+                    <img src={REDO_ICON_URL} alt="" aria-hidden="true" style={{ width: 18, height: 18, display: 'block' }} />
 	                </button>
                 <button
                   type="button"
