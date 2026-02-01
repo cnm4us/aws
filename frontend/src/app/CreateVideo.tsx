@@ -14829,11 +14829,16 @@ export default function CreateVideo() {
                     background: 'rgba(212,175,55,0.12)',
                     color: '#fff',
                     fontWeight: 900,
+                    fontSize: 20,
+                    lineHeight: 1,
                     cursor: 'pointer',
                     flex: '0 0 auto',
+                    minWidth: 44,
                   }}
+	                  title="Add"
+	                  aria-label="Add"
 	                >
-	                  Add
+	                  +
 	                </button>
 	                <button
 	                  type="button"
