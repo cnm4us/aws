@@ -41,6 +41,7 @@ import {
 
 const UNDO_ICON_URL = new URL('./icons/undo.svg', import.meta.url).toString()
 const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
+const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 
 type MeResponse = {
   userId: number | null
@@ -14841,7 +14842,7 @@ export default function CreateVideo() {
 	                  title="Add"
 	                  aria-label="Add"
 	                >
-	                  +
+                    <img src={PLUS_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
 	                </button>
 	                <button
 	                  type="button"
