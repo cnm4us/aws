@@ -5449,28 +5449,29 @@ export default function CreateVideo() {
     [activeUploadId, clipStarts, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
   )
 
-	  const seekOverlay = useCallback(
-	    async (t: number, opts?: { autoPlay?: boolean }) => {
-	      const v = overlayVideoRef.current
-	      if (!v) return
-      const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
-      if (!videoOverlays.length && !(videoOverlayStills as any[]).length) {
-        try { v.pause() } catch {}
-        setOverlayActiveUploadId(null)
-        overlayLoadedUploadIdRef.current = null
-        return
-      }
-      const still = findVideoOverlayStillAtTime(tClamped)
-      if (still) {
-        try { v.pause() } catch {}
-        return
-      }
-      const idx = findClipIndexAtTime(tClamped, videoOverlays as any, videoOverlayStarts as any)
-      if (idx < 0) {
-        activeVideoOverlayIndexRef.current = Math.max(0, videoOverlayStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
-        try { v.pause() } catch {}
-        return
-      }
+		  const seekOverlay = useCallback(
+		    async (t: number, opts?: { autoPlay?: boolean }) => {
+		      const v = overlayVideoRef.current
+		      if (!v) return
+	      const shouldAutoPlay = Boolean(opts?.autoPlay)
+	      if (!shouldAutoPlay) {
+	        try { v.pause() } catch {}
+	      }
+	      const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
+	      if (!videoOverlays.length && !(videoOverlayStills as any[]).length) {
+	        setOverlayActiveUploadId(null)
+	        overlayLoadedUploadIdRef.current = null
+	        return
+	      }
+	      const still = findVideoOverlayStillAtTime(tClamped)
+	      if (still) {
+	        return
+	      }
+	      const idx = findClipIndexAtTime(tClamped, videoOverlays as any, videoOverlayStarts as any)
+	      if (idx < 0) {
+	        activeVideoOverlayIndexRef.current = Math.max(0, videoOverlayStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
+	        return
+	      }
       activeVideoOverlayIndexRef.current = idx
       const o: any = (videoOverlays as any)[idx]
       if (!o) return
@@ -5483,10 +5484,10 @@ export default function CreateVideo() {
       const nextUploadId = Number(o.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
 
-      // Fast-path: the correct upload is already loaded into the overlay element's src.
-      if (overlayLoadedUploadIdRef.current === nextUploadId) {
-        if (overlayActiveUploadId !== nextUploadId) setOverlayActiveUploadId(nextUploadId)
-        try { v.muted = desiredMuted } catch {}
+	      // Fast-path: the correct upload is already loaded into the overlay element's src.
+	      if (overlayLoadedUploadIdRef.current === nextUploadId) {
+	        if (overlayActiveUploadId !== nextUploadId) setOverlayActiveUploadId(nextUploadId)
+	        try { v.muted = desiredMuted } catch {}
         try {
           const w = Number(v.videoWidth || 0)
           const h = Number(v.videoHeight || 0)
@@ -5496,22 +5497,20 @@ export default function CreateVideo() {
             )
           }
         } catch {}
-        try { v.currentTime = Math.max(0, sourceTime) } catch {}
-        if (!opts?.autoPlay) {
-          try { v.pause() } catch {}
-        } else {
-          void (async () => {
-            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-            if (!ok) setPlaying(false)
-          })()
-        }
-        return
+	        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+	        if (shouldAutoPlay) {
+	          void (async () => {
+	            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+	            if (!ok) setPlaying(false)
+	          })()
+	        }
+	        return
       }
 
-      if (overlayActiveUploadId !== nextUploadId) {
-        setOverlayActiveUploadId(nextUploadId)
-        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+	      if (overlayActiveUploadId !== nextUploadId) {
+	        setOverlayActiveUploadId(nextUploadId)
+	        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
+	        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
         overlayLoadedUploadIdRef.current = nextUploadId
         v.load()
         const onMeta = () => {
@@ -5523,41 +5522,49 @@ export default function CreateVideo() {
 	            if (w > 0 && h > 0) {
 	              setDimsByUploadId((prev) => (prev[nextUploadId] ? prev : { ...prev, [nextUploadId]: { width: Math.round(w), height: Math.round(h) } }))
 	            }
-	          } catch {}
-	          try { v.currentTime = Math.max(0, sourceTime) } catch {}
-	          if (!opts?.autoPlay) {
-	            try { v.pause() } catch {}
-	          }
-	          const srcKey = String(v.currentSrc || v.src || '')
-	          if (!opts?.autoPlay && srcKey && primedOverlayFrameSrcRef.current !== srcKey) {
-	            primedOverlayFrameSrcRef.current = srcKey
-	            void primePausedFrame(v)
-	          }
-	          if (opts?.autoPlay) {
-	            void (async () => {
-	              const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-	              if (!ok) setPlaying(false)
-	            })()
-	          }
+		          } catch {}
+		          try { v.currentTime = Math.max(0, sourceTime) } catch {}
+		          const srcKey = String(v.currentSrc || v.src || '')
+		          if (!shouldAutoPlay && srcKey && primedOverlayFrameSrcRef.current !== srcKey) {
+		            primedOverlayFrameSrcRef.current = srcKey
+		            void primePausedFrame(v)
+		          }
+		          if (shouldAutoPlay) {
+		            void (async () => {
+		              const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+		              if (!ok) setPlaying(false)
+		            })()
+		          }
 	        }
         v.addEventListener('loadedmetadata', onMeta)
-      } else {
-        overlayLoadedUploadIdRef.current = nextUploadId
-        try { v.muted = desiredMuted } catch {}
-        try { v.currentTime = Math.max(0, sourceTime) } catch {}
-        if (!opts?.autoPlay) {
-          try { v.pause() } catch {}
-        }
-	        if (opts?.autoPlay) {
-	          void (async () => {
-	            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-	            if (!ok) setPlaying(false)
-	          })()
-	        }
-	      }
-	    },
-    [findVideoOverlayStillAtTime, overlayActiveUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays, videoOverlayStills]
-  )
+	      } else {
+	        overlayLoadedUploadIdRef.current = nextUploadId
+	        try { v.muted = desiredMuted } catch {}
+	        try { v.currentTime = Math.max(0, sourceTime) } catch {}
+		        if (shouldAutoPlay) {
+		          void (async () => {
+		            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+		            if (!ok) setPlaying(false)
+		          })()
+		        }
+		      }
+		    },
+	    [findVideoOverlayStillAtTime, overlayActiveUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays, videoOverlayStills]
+	  )
+
+  // If the overlay lane changes (e.g. user inserts an overlay), ensure the overlay preview is
+  // synced to the current playhead and NOT playing until the user hits Play.
+  useEffect(() => {
+    if (playingRef.current) return
+    void seekOverlay(playheadRef.current)
+  }, [seekOverlay, videoOverlays.length, videoOverlayStills.length])
+
+  // Extra safety: if we're not playing, force the overlay element to stay paused even if it
+  // tries to auto-play after a src swap or metadata load.
+  useEffect(() => {
+    if (playingRef.current) return
+    try { overlayVideoRef.current?.pause?.() } catch {}
+  }, [overlayActiveUploadId, videoOverlays.length, playing])
 
   // Ensure the preview initializes after the timeline loads (especially when playhead is 0.0).
   // Without this, `playhead` may not change during hydration, so the normal playhead-driven sync won't run.
@@ -5931,6 +5938,10 @@ export default function CreateVideo() {
     }
 
     const onPlayOverlay = () => {
+      if (!playingRef.current) {
+        try { overlay?.pause?.() } catch {}
+        return
+      }
       if (playbackClockRef.current === 'overlay') setPlaying(true)
     }
     const onPauseOverlay = () => {
