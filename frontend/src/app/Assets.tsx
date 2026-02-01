@@ -3566,12 +3566,9 @@ export default function Assets() {
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <a href="/create-video" style={{ color: '#0a84ff', textDecoration: 'none' }}>
-            ← Create Video
-          </a>
-          {headerRight}
-        </div>
+        {mode === 'pick' ? (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>{headerRight}</div>
+        ) : null}
 
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>{mode === 'pick' ? 'Select Assets' : 'Manage Assets'}</h1>
         <p style={{ margin: 0, color: '#bbb' }}>
