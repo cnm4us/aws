@@ -5,6 +5,7 @@ import styles from '../../styles/menu.module.css'
 export default function MyAssets(props: { onNavigate?: () => void }) {
   const { onNavigate } = props
   const items = [
+    { label: 'Create Video', href: '/create-video' },
     { label: 'Timelines', href: '/timelines' },
     { label: 'Assets', href: '/assets' },
     { label: 'Exports', href: '/exports' },
