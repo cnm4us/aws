@@ -42,6 +42,7 @@ import {
 const UNDO_ICON_URL = new URL('./icons/undo.svg', import.meta.url).toString()
 const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
+const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
 
 type MeResponse = {
   userId: number | null
@@ -14945,9 +14946,9 @@ export default function CreateVideo() {
                           lineHeight: 1,
                         }}
                         title="Toggle ripple-right (push later objects on the same lane)"
-                        aria-label="Toggle ripple"
+                        aria-label={rippleEnabled ? 'Ripple enabled' : 'Ripple disabled'}
 	                      >
-	                        R {rippleEnabled ? 'ON' : 'OFF'}
+	                        <img src={RIPPLE_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
 	                      </button>
 			                {hasPlayablePreview ? (
 			                  <button
