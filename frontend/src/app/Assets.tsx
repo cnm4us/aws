@@ -3573,7 +3573,7 @@ export default function Assets() {
           {headerRight}
         </div>
 
-        <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Manage Assets</h1>
+        <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>{mode === 'pick' ? 'Select Assets' : 'Manage Assets'}</h1>
         <p style={{ margin: 0, color: '#bbb' }}>
           {mode === 'pick' ? 'Select an asset type to add to your timeline.' : 'Browse and manage your assets.'}
         </p>
