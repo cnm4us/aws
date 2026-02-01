@@ -885,7 +885,37 @@ export default function ScreenTitlePresetsPage() {
             </div>
           </div>
         ) : (
-          <div style={{ marginTop: 14 }}>
+          <div
+            style={{
+              marginTop: 14,
+              maxWidth: 560,
+              marginLeft: 'auto',
+              marginRight: 'auto',
+              borderRadius: 14,
+              padding: 16,
+              boxSizing: 'border-box',
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Screen Title Properties</div>
+              <button
+                type="button"
+                onClick={goBackToStyles}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 {selectedId ? (
@@ -909,21 +939,6 @@ export default function ScreenTitlePresetsPage() {
                 ) : null}
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={goBackToStyles}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#000',
-                    color: '#fff',
-                    fontWeight: 750,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ← Styles
-                </button>
                 {backToTimelineHref ? (
                   <button
                     type="button"
@@ -932,8 +947,8 @@ export default function ScreenTitlePresetsPage() {
                     style={{
                       padding: '8px 12px',
                       borderRadius: 10,
-                      border: '1px solid rgba(10,132,255,0.95)',
-                      background: '#0a84ff',
+                      border: '1px solid rgba(96,165,250,0.95)',
+                      background: 'rgba(96,165,250,0.14)',
                       color: '#fff',
                       fontWeight: 850,
                       cursor: saving ? 'default' : 'pointer',
@@ -950,8 +965,8 @@ export default function ScreenTitlePresetsPage() {
                   style={{
                     padding: '8px 12px',
                     borderRadius: 10,
-                    border: '1px solid rgba(10,132,255,0.95)',
-                    background: '#0a84ff',
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    background: 'rgba(96,165,250,0.14)',
                     color: '#fff',
                     fontWeight: 850,
                     cursor: saving ? 'default' : 'pointer',
@@ -963,7 +978,15 @@ export default function ScreenTitlePresetsPage() {
               </div>
             </div>
 
-            <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, background: 'rgba(88, 20, 24, 0.9)', padding: 14, marginTop: 12 }}>
+            <div
+              style={{
+                border: '1px solid rgba(255,255,255,0.14)',
+                borderRadius: 14,
+                background: 'rgba(255,255,255,0.03)',
+                padding: 14,
+                marginTop: 12,
+              }}
+            >
               <div style={{ fontWeight: 850, fontSize: 16, marginBottom: 12 }}>{selectedId ? 'Edit Preset' : 'New Preset'}</div>
               <div style={{ display: 'grid', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6 }}>
@@ -1682,21 +1705,6 @@ export default function ScreenTitlePresetsPage() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-              <button
-                type="button"
-                onClick={goBackToStyles}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: '#000',
-                  color: '#fff',
-                  fontWeight: 750,
-                  cursor: 'pointer',
-                }}
-              >
-                ← Styles
-              </button>
               {backToTimelineHref ? (
                 <button
                   type="button"
@@ -1705,8 +1713,8 @@ export default function ScreenTitlePresetsPage() {
                   style={{
                     padding: '8px 12px',
                     borderRadius: 10,
-                    border: '1px solid rgba(10,132,255,0.95)',
-                    background: '#0a84ff',
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    background: 'rgba(96,165,250,0.14)',
                     color: '#fff',
                     fontWeight: 850,
                     cursor: saving ? 'default' : 'pointer',
@@ -1723,8 +1731,8 @@ export default function ScreenTitlePresetsPage() {
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
-                  border: '1px solid rgba(10,132,255,0.95)',
-                  background: '#0a84ff',
+                  border: '1px solid rgba(96,165,250,0.95)',
+                  background: 'rgba(96,165,250,0.14)',
                   color: '#fff',
                   fontWeight: 850,
                   cursor: saving ? 'default' : 'pointer',
