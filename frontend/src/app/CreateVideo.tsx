@@ -2975,12 +2975,17 @@ export default function CreateVideo() {
     }
     if (!position) position = 'bottom_right'
 
-    let aspectRatio = '9 / 16'
+    let aspectRatio: string | null = null
+    const stillUploadId = Number((s as any).uploadId || 0)
+    const stillDims = stillUploadId ? dimsByUploadId[stillUploadId] : null
+    if (stillDims && Number.isFinite(Number(stillDims.width)) && Number.isFinite(Number(stillDims.height)) && Number(stillDims.width) > 0 && Number(stillDims.height) > 0) {
+      aspectRatio = `${Math.round(Number(stillDims.width))} / ${Math.round(Number(stillDims.height))}`
+    }
     if (sourceOverlayId) {
       const ov: any = videoOverlays.find((o: any) => String((o as any).id) === sourceOverlayId)
       const uploadId = ov ? Number((ov as any).uploadId) : 0
       const dims = uploadId ? dimsByUploadId[uploadId] : null
-      if (dims && Number.isFinite(Number(dims.width)) && Number.isFinite(Number(dims.height)) && Number(dims.width) > 0 && Number(dims.height) > 0) {
+      if (!aspectRatio && dims && Number.isFinite(Number(dims.width)) && Number.isFinite(Number(dims.height)) && Number(dims.width) > 0 && Number(dims.height) > 0) {
         aspectRatio = `${Math.round(Number(dims.width))} / ${Math.round(Number(dims.height))}`
       }
     }
@@ -2989,7 +2994,7 @@ export default function CreateVideo() {
     const style: any = {
       position: 'absolute',
       width: `${sizePctWidth}%`,
-      aspectRatio,
+      ...(aspectRatio ? { aspectRatio } : { height: 'auto' }),
       overflow: 'hidden',
       objectFit: 'contain',
       pointerEvents: 'none',
@@ -4818,6 +4823,7 @@ export default function CreateVideo() {
     selectedLowerThirdId,
     selectedScreenTitleId,
     selectedVideoOverlayId,
+    selectedVideoOverlayStillId,
     selectedNarrationId,
     selectedStillId,
     trimDragging,
@@ -5345,6 +5351,21 @@ export default function CreateVideo() {
             if (!Number.isFinite(id) || id <= 0) continue
             const d = dur == null ? null : Number(dur)
             if (d != null && Number.isFinite(d) && d > 0) next[id] = d
+          }
+          return next
+        })
+        setDimsByUploadId((prev) => {
+          const next = { ...prev }
+          for (const it of items as any[]) {
+            const id = Number((it as any).id)
+            if (!Number.isFinite(id) || id <= 0) continue
+            const w = (it as any).width
+            const h = (it as any).height
+            const ww = w == null ? null : Number(w)
+            const hh = h == null ? null : Number(h)
+            if (ww != null && hh != null && Number.isFinite(ww) && Number.isFinite(hh) && ww > 0 && hh > 0) {
+              if (!next[id]) next[id] = { width: Math.round(ww), height: Math.round(hh) }
+            }
           }
           return next
         })
@@ -6379,15 +6400,15 @@ export default function CreateVideo() {
         }
       } catch {}
       const id = `vo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-	      const overlay: VideoOverlay = {
-	        id,
-	        uploadId: Number(upload.id),
-	        sourceStartSeconds: 0,
-	        sourceEndSeconds: roundToTenth(dur),
-	        sizePctWidth: 40,
-	        position: 'bottom_right',
-	        audioEnabled: true,
-	      }
+      const overlay: VideoOverlay = {
+        id,
+        uploadId: Number(upload.id),
+        sourceStartSeconds: 0,
+        sourceEndSeconds: roundToTenth(dur),
+        sizePctWidth: 90,
+        position: 'bottom_center',
+        audioEnabled: true,
+      }
       snapshotUndo()
       setTimeline((prev) => {
         if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any
@@ -15713,12 +15734,34 @@ export default function CreateVideo() {
 			                    return
 			                  }
 
-			                  if (withinVideoOverlay) {
-			                    const o = findVideoOverlayAtTime(t)
-				                    if (!o) {
-				                      setSelectedClipId(null)
-				                      setSelectedVideoOverlayId(null)
-				                      setSelectedVideoOverlayStillId(null)
+		                  if (withinVideoOverlay) {
+		                    const overlayStill = findVideoOverlayStillAtTime(t)
+		                    if (overlayStill) {
+		                      const s = Number((overlayStill as any).startSeconds || 0)
+		                      const e2 = Number((overlayStill as any).endSeconds || 0)
+		                      const leftX = padPx + s * pxPerSecond
+		                      const rightX = padPx + e2 * pxPerSecond
+		                      if (clickXInScroll >= leftX && clickXInScroll <= rightX) {
+		                        if (selectedVideoOverlayStillId !== String((overlayStill as any).id)) {
+		                          setSelectedVideoOverlayStillId(String((overlayStill as any).id))
+		                          setSelectedVideoOverlayId(null)
+		                          setSelectedClipId(null)
+		                          setSelectedGraphicId(null)
+		                          setSelectedLogoId(null)
+		                          setSelectedLowerThirdId(null)
+		                          setSelectedScreenTitleId(null)
+		                          setSelectedNarrationId(null)
+		                          setSelectedStillId(null)
+		                          setSelectedAudioId(null)
+		                        }
+		                        return
+		                      }
+		                    }
+		                    const o = findVideoOverlayAtTime(t)
+		                    if (!o) {
+		                      setSelectedClipId(null)
+		                      setSelectedVideoOverlayId(null)
+		                      setSelectedVideoOverlayStillId(null)
 				                      setSelectedGraphicId(null)
 				                      setSelectedLogoId(null)
 				                      setSelectedLowerThirdId(null)
