@@ -3178,6 +3178,15 @@ export default function CreateVideo() {
     ensureAudioEnvelope(uploadId).catch(() => {})
   }, [ensureAudioEnvelope, selectedAudioId])
 
+  useEffect(() => {
+    if (!selectedVideoOverlayId) return
+    const overlay: any = videoOverlays.find((o: any) => String(o?.id) === String(selectedVideoOverlayId))
+    if (!overlay) return
+    const uploadId = Number(overlay.uploadId)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    ensureAudioEnvelope(uploadId).catch(() => {})
+  }, [ensureAudioEnvelope, selectedVideoOverlayId, videoOverlays])
+
   const stopNarrationPreview = useCallback(() => {
     const a = narrationPreviewRef.current
     try { a?.pause?.() } catch {}
@@ -3895,22 +3904,33 @@ export default function CreateVideo() {
     ctx.lineTo(wCss, waveformBottom + 0.5)
     ctx.stroke()
 
+    const selectedOverlay: any =
+      selectedVideoOverlayId != null ? videoOverlays.find((o: any) => String(o?.id) === String(selectedVideoOverlayId)) : null
+    const overlayIdx =
+      selectedOverlay != null ? videoOverlays.findIndex((o: any) => String(o?.id) === String(selectedVideoOverlayId)) : -1
     const selectedNarration: any =
       selectedNarrationId != null ? narration.find((n: any) => String(n?.id) === String(selectedNarrationId)) : null
     const selectedAudioSeg: any =
       selectedAudioId != null ? audioSegments.find((a: any) => String(a?.id) === String(selectedAudioId)) : null
     const clipIdx = selectedClipIndex
     const clip = clipIdx >= 0 ? timeline.clips[clipIdx] : null
-    const hasAnyTarget = Boolean(selectedNarration) || Boolean(selectedAudioSeg) || Boolean(clip)
+    const hasAnyTarget = Boolean(selectedOverlay) || Boolean(selectedNarration) || Boolean(selectedAudioSeg) || Boolean(clip)
     if (!hasAnyTarget) {
       ctx.fillStyle = 'rgba(255,255,255,0.55)'
       ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
       ctx.textBaseline = 'middle'
-      ctx.fillText('Select a clip, narration, or audio segment to see waveform', 10, rulerH + waveformH / 2)
+      ctx.fillText('Select a clip, overlay, narration, or audio segment to see waveform', 10, rulerH + waveformH / 2)
     } else {
-      const kind: 'narration' | 'audio' | 'clip' = selectedNarration ? 'narration' : selectedAudioSeg ? 'audio' : 'clip'
+      const kind: 'videoOverlay' | 'narration' | 'audio' | 'clip' =
+        selectedOverlay ? 'videoOverlay' : selectedNarration ? 'narration' : selectedAudioSeg ? 'audio' : 'clip'
       const uploadId =
-        kind === 'narration' ? Number(selectedNarration.uploadId) : kind === 'audio' ? Number(selectedAudioSeg.uploadId) : Number((clip as any).uploadId)
+        kind === 'videoOverlay'
+          ? Number((selectedOverlay as any).uploadId)
+          : kind === 'narration'
+            ? Number(selectedNarration.uploadId)
+            : kind === 'audio'
+              ? Number(selectedAudioSeg.uploadId)
+              : Number((clip as any).uploadId)
       const env = uploadId > 0 ? audioEnvelopeByUploadId[uploadId] : null
       const envStatus = uploadId > 0 ? (audioEnvelopeStatusByUploadId[uploadId] || 'idle') : 'idle'
       const hasAudio = env && typeof env === 'object' ? Boolean((env as any).hasAudio) : false
@@ -3920,7 +3940,14 @@ export default function CreateVideo() {
       let segEndT = 0
       let sourceStart = 0
       let sourceEnd = 0
-      if (kind === 'narration') {
+      if (kind === 'videoOverlay') {
+        const start = overlayIdx >= 0 ? Number(videoOverlayStarts[overlayIdx] || 0) : 0
+        segStartT = roundToTenth(start)
+        segEndT = roundToTenth(segStartT + clipDurationSeconds(selectedOverlay as any))
+        sourceStart = Number((selectedOverlay as any).sourceStartSeconds || 0)
+        const rawEnd = Number((selectedOverlay as any).sourceEndSeconds || 0)
+        sourceEnd = Number.isFinite(rawEnd) && rawEnd > 0 ? rawEnd : roundToTenth(sourceStart + Math.max(0, segEndT - segStartT))
+      } else if (kind === 'narration') {
         segStartT = roundToTenth(Number(selectedNarration.startSeconds || 0))
         segEndT = roundToTenth(Number(selectedNarration.endSeconds || 0))
         sourceStart =
@@ -4832,6 +4859,7 @@ export default function CreateVideo() {
     timelineScrollLeftPx,
     totalSeconds,
     videoOverlays,
+    videoOverlayStarts,
     visualTotalSeconds,
   ])
 
