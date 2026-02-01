@@ -14970,7 +14970,7 @@ export default function CreateVideo() {
 			                    title="Toggle floating preview controls"
 			                    aria-label="Toggle floating preview controls"
 			                  >
-                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
+                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 26, height: 26, display: 'block' }} />
 			                  </button>
 			                ) : null}
 					              </div>
