@@ -2655,6 +2655,167 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
   )
 }
 
+const GoldAudioPreviewPlayer: React.FC<{
+  playerKey: string
+  src: string
+  activePlayerKey: string | null
+  setActivePlayerKey: (k: string | null) => void
+  activeAudioRef: React.MutableRefObject<HTMLAudioElement | null>
+}> = ({ playerKey, src, activePlayerKey, setActivePlayerKey, activeAudioRef }) => {
+  const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const [duration, setDuration] = React.useState(0)
+  const [currentTime, setCurrentTime] = React.useState(0)
+  const isPlaying = activePlayerKey === playerKey
+
+  React.useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const onLoaded = () => {
+      const d = Number.isFinite(audio.duration) ? Number(audio.duration) : 0
+      setDuration(d > 0 ? d : 0)
+    }
+
+    const onTime = () => setCurrentTime(audio.currentTime || 0)
+
+    const onPause = () => {
+      setCurrentTime(audio.currentTime || 0)
+      if (activePlayerKey === playerKey) {
+        activeAudioRef.current = null
+        setActivePlayerKey(null)
+      }
+    }
+
+    const onEnded = () => {
+      if (activePlayerKey === playerKey) {
+        activeAudioRef.current = null
+        setActivePlayerKey(null)
+      }
+    }
+
+    audio.addEventListener('loadedmetadata', onLoaded)
+    audio.addEventListener('timeupdate', onTime)
+    audio.addEventListener('pause', onPause)
+    audio.addEventListener('ended', onEnded)
+    return () => {
+      audio.removeEventListener('loadedmetadata', onLoaded)
+      audio.removeEventListener('timeupdate', onTime)
+      audio.removeEventListener('pause', onPause)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [activeAudioRef, activePlayerKey, playerKey, setActivePlayerKey])
+
+  React.useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (activePlayerKey !== playerKey && !audio.paused) {
+      audio.pause()
+    }
+  }, [activePlayerKey, playerKey])
+
+  const togglePlay = async () => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (isPlaying) {
+      audio.pause()
+      activeAudioRef.current = null
+      setActivePlayerKey(null)
+      return
+    }
+
+    if (activeAudioRef.current && activeAudioRef.current !== audio) {
+      try {
+        activeAudioRef.current.pause()
+      } catch {}
+    }
+
+    activeAudioRef.current = audio
+    setActivePlayerKey(playerKey)
+    try {
+      await audio.play()
+    } catch {
+      activeAudioRef.current = null
+      setActivePlayerKey(null)
+    }
+  }
+
+  const max = duration > 0 ? duration : 0
+  const safeTime = Math.max(0, Math.min(currentTime || 0, max || 0))
+  const pct = max > 0 ? Math.round((safeTime / max) * 10000) / 100 : 0
+
+  const fmtTime = (seconds: number): string => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
+    const s = Math.floor(seconds)
+    const m = Math.floor(s / 60)
+    const r = s % 60
+    return `${m}:${String(r).padStart(2, '0')}`
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <audio ref={audioRef} preload="metadata" src={src} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          type="button"
+          onClick={togglePlay}
+          aria-label={isPlaying ? 'Pause audio preview' : 'Play audio preview'}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 999,
+            border: 'none',
+            background: '#0c0c0c',
+            cursor: 'pointer',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 0,
+          }}
+        >
+          {isPlaying ? (
+            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
+              <rect x="4" y="3" width="4" height="12" fill="#ffd60a" rx="1" />
+              <rect x="10" y="3" width="4" height="12" fill="#ffd60a" rx="1" />
+            </svg>
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M6 4 L14 9 L6 14 Z" fill="#ffd60a" />
+            </svg>
+          )}
+        </button>
+        <div style={{ flex: 1, display: 'grid', gap: 6 }}>
+          <input
+            type="range"
+            min={0}
+            max={max || 0}
+            step={0.01}
+            value={safeTime}
+            onInput={(e) => {
+              const audio = audioRef.current
+              if (!audio) return
+              const v = Number((e.target as HTMLInputElement).value || 0)
+              audio.currentTime = Number.isFinite(v) ? v : 0
+              setCurrentTime(audio.currentTime || 0)
+            }}
+            disabled={!max}
+            aria-label="Audio preview position"
+            style={{
+              width: '100%',
+              height: 10,
+              borderRadius: 999,
+              background: `linear-gradient(90deg, rgba(255,214,10,0.95) 0%, rgba(255,214,10,0.95) ${pct}%, rgba(255,255,255,0.18) ${pct}%, rgba(255,255,255,0.18) 100%)`,
+              accentColor: '#ffd60a',
+            }}
+          />
+          <div style={{ textAlign: 'center', fontSize: 12, color: '#ffd60a', fontWeight: 800 }}>
+            {fmtTime(safeTime)} / {fmtTime(max)}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const AudioMusicAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
@@ -2685,6 +2846,17 @@ const AudioMusicAssetsPage: React.FC = () => {
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState<number | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
+  const [activePreviewKey, setActivePreviewKey] = React.useState<string | null>(null)
+  const activePreviewAudioRef = React.useRef<HTMLAudioElement | null>(null)
+
+  React.useEffect(() => {
+    return () => {
+      try {
+        activePreviewAudioRef.current?.pause()
+      } catch {}
+      activePreviewAudioRef.current = null
+    }
+  }, [])
 
   React.useEffect(() => {
     if (scope !== 'search') return
@@ -3025,7 +3197,13 @@ const AudioMusicAssetsPage: React.FC = () => {
                   {name}
                 </button>
                 {meta ? <div style={{ color: '#bbb', fontSize: 12 }}>{meta}</div> : null}
-                <audio controls preload="none" style={{ width: '100%' }} src={`/api/uploads/${id}/file`} />
+                <GoldAudioPreviewPlayer
+                  playerKey={`aud-${scope}-${id}`}
+                  src={`/api/uploads/${id}/file`}
+                  activePlayerKey={activePreviewKey}
+                  setActivePlayerKey={setActivePreviewKey}
+                  activeAudioRef={activePreviewAudioRef}
+                />
 
                 {mode === 'pick' ? (
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
