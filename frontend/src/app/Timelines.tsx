@@ -45,6 +45,28 @@ function fmtDefaultTimelineName(now = new Date()): string {
 }
 
 export default function Timelines() {
+  const returnBase = useMemo(() => {
+    try {
+      const qp = new URLSearchParams(window.location.search || '')
+      const raw = String(qp.get('return') || '').trim()
+      if (!raw) return null
+      if (!raw.startsWith('/')) return null
+      return raw
+    } catch {
+      return null
+    }
+  }, [])
+
+  const buildReturnHref = (base: string, projectId: number) => {
+    try {
+      const url = new URL(base, window.location.origin)
+      url.searchParams.set('project', String(projectId))
+      return `${url.pathname}${url.search}${url.hash || ''}`
+    } catch {
+      return `/create-video?project=${encodeURIComponent(String(projectId))}`
+    }
+  }
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<ProjectListItem[]>([])
@@ -115,7 +137,7 @@ export default function Timelines() {
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_create'))
       const id = Number(json?.project?.id)
       if (Number.isFinite(id) && id > 0) {
-        window.location.href = `/create-video?project=${encodeURIComponent(String(id))}`
+        window.location.href = returnBase ? buildReturnHref(returnBase, id) : `/create-video?project=${encodeURIComponent(String(id))}`
       } else {
         await refresh()
       }
@@ -245,7 +267,13 @@ export default function Timelines() {
                   >
                     <button
                       type="button"
-                      onClick={() => (window.location.href = `/create-video?project=${encodeURIComponent(String(p.id))}`)}
+                      onClick={() => {
+                        const pid = Number(p.id)
+                        if (!Number.isFinite(pid) || pid <= 0) return
+                        window.location.href = returnBase
+                          ? buildReturnHref(returnBase, pid)
+                          : `/create-video?project=${encodeURIComponent(String(pid))}`
+                      }}
                       style={{
                         padding: '8px 10px',
                         borderRadius: 10,

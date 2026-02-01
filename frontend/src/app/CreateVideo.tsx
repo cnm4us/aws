@@ -468,18 +468,6 @@ export default function CreateVideo() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
-  const [projectPickerLoading, setProjectPickerLoading] = useState(false)
-  const [projectPickerError, setProjectPickerError] = useState<string | null>(null)
-  const [projectPickerItems, setProjectPickerItems] = useState<ProjectListItem[]>([])
-  const [projectCreateOpen, setProjectCreateOpen] = useState(false)
-  const [projectCreateDefaultName, setProjectCreateDefaultName] = useState(() => fmtDefaultTimelineName())
-  const [projectCreateName, setProjectCreateName] = useState(() => fmtDefaultTimelineName())
-  const [projectCreateDescription, setProjectCreateDescription] = useState('')
-  const [projectEditOpen, setProjectEditOpen] = useState(false)
-  const [projectEditId, setProjectEditId] = useState<number | null>(null)
-  const [projectEditName, setProjectEditName] = useState('')
-  const [projectEditDescription, setProjectEditDescription] = useState('')
   const [timeline, setTimeline] = useState<Timeline>({
     version: 'create_video_v1',
     playheadSeconds: 0,
@@ -12498,117 +12486,6 @@ export default function CreateVideo() {
     }
   }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
 
-  const openCreateProject = useCallback(() => {
-    const nextDefault = fmtDefaultTimelineName()
-    setProjectCreateDefaultName(nextDefault)
-    setProjectCreateName(nextDefault)
-    setProjectCreateDescription('')
-    setProjectCreateOpen(true)
-  }, [])
-
-  const createNewProjectAndReload = useCallback(async (meta?: { name?: string; description?: string | null }) => {
-    try {
-      const name = String(meta?.name || '').trim() || fmtDefaultTimelineName()
-      const description = meta?.description == null ? null : String(meta.description || '').trim() || null
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const csrf = getCsrfToken()
-      if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch('/api/create-video/projects', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers,
-        body: JSON.stringify({ name, description }),
-      })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_create'))
-      const id = Number(json?.project?.id)
-      if (!Number.isFinite(id) || id <= 0) throw new Error('failed_to_create')
-      try { localStorage.setItem(CURRENT_PROJECT_ID_KEY, String(id)) } catch {}
-      window.location.href = `/create-video?project=${encodeURIComponent(String(id))}`
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  const openProject = useCallback((projectId: number) => {
-    const id = Number(projectId)
-    if (!Number.isFinite(id) || id <= 0) return
-    try { localStorage.setItem(CURRENT_PROJECT_ID_KEY, String(id)) } catch {}
-    window.location.href = `/create-video?project=${encodeURIComponent(String(id))}`
-  }, [])
-
-  const refreshProjectPicker = useCallback(async () => {
-    setProjectPickerError(null)
-    setProjectPickerLoading(true)
-    try {
-      const res = await fetch('/api/create-video/projects', { credentials: 'same-origin' })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
-      const items: ProjectListItem[] = Array.isArray(json?.items) ? json.items : []
-      setProjectPickerItems(items)
-    } catch (e: any) {
-      setProjectPickerError(e?.message || 'Failed to load timelines')
-      setProjectPickerItems([])
-    } finally {
-      setProjectPickerLoading(false)
-    }
-  }, [])
-
-  const openProjectPicker = useCallback(async () => {
-    setProjectPickerOpen(true)
-    await refreshProjectPicker()
-  }, [refreshProjectPicker])
-
-  const openEditProjectFromPicker = useCallback(
-    (projectId: number) => {
-      const cur = projectPickerItems.find((p) => Number(p.id) === Number(projectId))
-      if (!cur) return
-      setProjectEditId(Number(cur.id))
-      setProjectEditName((cur.name || '').trim() || `Timeline #${cur.id}`)
-      setProjectEditDescription((cur.description || '').trim())
-      setProjectEditOpen(true)
-    },
-    [projectPickerItems]
-  )
-
-  const saveEditProjectFromPicker = useCallback(async () => {
-    if (!projectEditId) return
-    const name = String(projectEditName || '').trim()
-    const description = String(projectEditDescription || '').trim()
-    if (!name) return
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    const csrf = getCsrfToken()
-    if (csrf) headers['x-csrf-token'] = csrf
-    const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectEditId))}`, {
-      method: 'PATCH',
-      credentials: 'same-origin',
-      headers,
-      body: JSON.stringify({ name, description: description || null }),
-    })
-    const json: any = await res.json().catch(() => null)
-    if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_save'))
-    setProjectEditOpen(false)
-    await refreshProjectPicker()
-  }, [projectEditDescription, projectEditId, projectEditName, refreshProjectPicker])
-
-  const deleteProjectFromPicker = useCallback(
-    async (projectId: number) => {
-      const ok = window.confirm('Delete this timeline? This cannot be undone.')
-      if (!ok) return
-      const headers: Record<string, string> = {}
-      const csrf = getCsrfToken()
-      if (csrf) headers['x-csrf-token'] = csrf
-      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}`, {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers,
-      })
-      const json: any = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.error || json?.detail || 'failed_to_delete'))
-      await refreshProjectPicker()
-    },
-    [refreshProjectPicker]
-  )
 
   const cancelTimelineLongPress = useCallback((reason: string) => {
     const lp = timelineLongPressRef.current
@@ -12852,21 +12729,23 @@ export default function CreateVideo() {
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
-            <button
-              type="button"
-              onClick={openProjectPicker}
+            <a
+              href={`/timelines?return=${encodeURIComponent('/create-video')}`}
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 padding: '10px 12px',
                 borderRadius: 10,
                 border: '1px solid rgba(255,255,255,0.18)',
                 background: 'rgba(255,255,255,0.06)',
                 color: '#fff',
                 fontWeight: 800,
-                cursor: 'pointer',
+                textDecoration: 'none',
               }}
             >
               Timelines
-            </button>
+            </a>
             <button
               type="button"
               onClick={exportNow}
@@ -17639,7 +17518,7 @@ export default function CreateVideo() {
 			        </div>
 			      ) : null}
 
-        {projectPickerOpen ? (
+        {/* Timelines picker moved to `/timelines`.
           <div
             role="dialog"
             aria-modal="true"
@@ -18012,7 +17891,7 @@ export default function CreateVideo() {
               ) : null}
             </div>
           </div>
-        ) : null}
+        */}
 
 		      {guidelineMenuOpen ? (
 		        <div
