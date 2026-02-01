@@ -899,7 +899,7 @@ export default function ScreenTitlePresetsPage() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>Screen Title Properties</div>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Edit Style</div>
               <button
                 type="button"
                 onClick={goBackToStyles}
@@ -980,16 +980,11 @@ export default function ScreenTitlePresetsPage() {
 
             <div
               style={{
-                border: '1px solid rgba(255,255,255,0.14)',
-                borderRadius: 14,
-                background: 'rgba(255,255,255,0.03)',
-                padding: 14,
                 marginTop: 12,
               }}
             >
-              <div style={{ fontWeight: 850, fontSize: 16, marginBottom: 12 }}>{selectedId ? 'Edit Preset' : 'New Preset'}</div>
               <div style={{ display: 'grid', gap: 12 }}>
-              <label style={{ display: 'grid', gap: 6 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontWeight: 750 }}>Name</div>
                 <input
                   value={draft.name}
@@ -1008,9 +1003,9 @@ export default function ScreenTitlePresetsPage() {
                     lineHeight: '20px',
                   }}
                 />
-              </label>
+                </label>
 
-              <label style={{ display: 'grid', gap: 6 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontWeight: 750 }}>Description</div>
                 <textarea
                   value={draft.description || ''}
@@ -1031,9 +1026,9 @@ export default function ScreenTitlePresetsPage() {
                     lineHeight: '20px',
                   }}
                 />
-              </label>
+                </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
                   <select
@@ -1083,7 +1078,7 @@ export default function ScreenTitlePresetsPage() {
                     <option value="right">Right</option>
                   </select>
                 </label>
-              </div>
+                </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
