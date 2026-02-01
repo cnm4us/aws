@@ -13172,7 +13172,15 @@ export default function CreateVideo() {
 	          </div>
 	        </div>
 
-        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.35)', padding: 12 }}>
+        <div
+          style={{
+            marginTop: 14,
+            borderRadius: 0,
+            border: 'none',
+            background: 'transparent',
+            padding: '12px 0',
+          }}
+        >
           <div style={{ position: 'relative', paddingTop: 14 }}>
             <div style={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', color: '#bbb', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
               {playhead.toFixed(1)}s
