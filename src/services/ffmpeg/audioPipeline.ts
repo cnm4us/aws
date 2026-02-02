@@ -84,7 +84,7 @@ export async function uploadFileToS3(bucket: string, key: string, filePath: stri
 
 export async function runFfmpeg(
   args: string[],
-  opts?: { stdoutPath?: string; stderrPath?: string }
+  opts?: { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const filterThreads = parsePositiveIntEnv('FFMPEG_FILTER_THREADS')
@@ -98,8 +98,18 @@ export async function runFfmpeg(
 
     const hasThreadsFlag = args.includes('-threads')
     const finalArgs = threads && !hasThreadsFlag ? [...args.slice(0, -1), '-threads', String(threads), args[args.length - 1]] : args
+    const fullArgs = [...injected, ...finalArgs]
+    if (opts?.commandLog) {
+      const quote = (v: string) => (/[\\s"]/g.test(v) ? JSON.stringify(v) : v)
+      const cmd = ['ffmpeg', ...fullArgs].map(quote).join(' ')
+      const labeled = opts.commandLabel ? `# ${opts.commandLabel}\n${cmd}` : cmd
+      opts.commandLog.push(labeled)
+      if (opts?.stderrPath) {
+        try { fs.appendFileSync(opts.stderrPath, `\n[ffmpeg] ${labeled}\n`) } catch {}
+      }
+    }
 
-    const p = spawn('ffmpeg', [...injected, ...finalArgs], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const p = spawn('ffmpeg', fullArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
     if (nice && p.pid) {
       try { os.setPriority(p.pid, Math.min(19, Math.max(0, nice))) } catch {}
     }

@@ -4582,6 +4582,25 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
     }
     body += '</div>'
 
+    const manifestBlocks: string[] = []
+    for (const a of attempts) {
+      let manifest: any = a.scratch_manifest_json
+      try { if (typeof manifest === 'string') manifest = JSON.parse(manifest) } catch {}
+      if (!manifest || (typeof manifest === 'object' && Object.keys(manifest).length === 0)) continue
+      const no = Number(a.attempt_no)
+      manifestBlocks.push(
+        `<details style="margin-top:10px"><summary>Attempt #${escapeHtml(String(no))} manifest</summary>` +
+          `<pre style="white-space:pre-wrap; word-break:break-word; margin-top:8px">${escapeHtml(JSON.stringify(manifest, null, 2))}</pre>` +
+        `</details>`
+      )
+    }
+    if (manifestBlocks.length) {
+      body += '<div class="section">'
+      body += '<div class="section-title">Attempt Manifests</div>'
+      body += manifestBlocks.join('')
+      body += '</div>'
+    }
+
     body += '<div class="section">'
     body += '<div class="section-title">Input JSON</div>'
     body += `<pre style="white-space:pre-wrap; word-break:break-word">${escapeHtml(JSON.stringify(inputJson ?? null, null, 2))}</pre>`

@@ -9,6 +9,8 @@ import { buildExportKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
 
+type FfmpegLogPaths = { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
+
 type Clip = {
   id: string
   uploadId: number
@@ -354,7 +356,7 @@ async function applyAudioTrackToMp4(opts: {
   trackStartSeconds: number
   trackEndSeconds: number
   normalizeAudio?: boolean
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const cfg = opts.audioConfig || {}
   const mode = String(cfg.mode || 'mix').toLowerCase() === 'replace' ? 'replace' : 'mix'
@@ -482,7 +484,7 @@ async function applyAudioSegmentsToMp4(opts: {
   audioConfig: any
   segments: Array<{ startSeconds: number; endSeconds: number; sourceStartSeconds: number }>
   normalizeAudio?: boolean
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const segs = Array.isArray(opts.segments) ? opts.segments : []
   if (!segs.length) {
@@ -642,7 +644,7 @@ async function applyNarrationSegmentsToMp4(opts: {
   inMp4Path: string
   outMp4Path: string
   segments: Array<{ audioPath: string; startSeconds: number; endSeconds: number; sourceStartSeconds: number; gainDb: number }>
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const segs = Array.isArray(opts.segments) ? opts.segments : []
   if (!segs.length) {
@@ -741,7 +743,7 @@ async function renderBlackBaseMp4(opts: {
   targetH: number
   fps: number
   color?: string
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const dur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!(dur > 0)) throw new Error('invalid_duration')
@@ -827,7 +829,7 @@ async function overlayGraphics(opts: {
   targetW: number
   targetH: number
   durationSeconds: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!opts.graphics.length) throw new Error('no_graphics')
@@ -1006,7 +1008,7 @@ async function overlayVideoOverlays(opts: {
   targetW: number
   targetH: number
   durationSeconds: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!opts.overlays.length) throw new Error('no_video_overlays')
@@ -1205,7 +1207,7 @@ async function overlayVideoOverlayStills(opts: {
   targetW: number
   targetH: number
   durationSeconds: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!opts.stills.length) throw new Error('no_video_overlay_stills')
@@ -1277,7 +1279,7 @@ async function overlayFullFrameScreenTitles(opts: {
   targetW: number
   targetH: number
   durationSeconds: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!opts.screenTitles.length) throw new Error('no_screen_titles')
@@ -1357,7 +1359,7 @@ async function renderSegmentMp4(opts: {
   targetW: number
   targetH: number
   fps: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const start = roundToTenth(Math.max(0, Number(opts.startSeconds)))
   const end = roundToTenth(Math.max(0, Number(opts.endSeconds)))
@@ -1427,7 +1429,7 @@ async function renderStillSegmentMp4(opts: {
   targetW: number
   targetH: number
   fps: number
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: FfmpegLogPaths
 }) {
   const dur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!(dur > 0.05)) throw new Error('invalid_still_duration')
@@ -1502,8 +1504,10 @@ async function insertGeneratedUpload(input: {
 
 export async function runCreateVideoExportV1Job(
   input: CreateVideoExportV1Input,
-  logPaths?: { stdoutPath?: string; stderrPath?: string }
-): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string } }> {
+  logPaths?: FfmpegLogPaths
+): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string }; ffmpegCommands?: string[] }> {
+  const ffmpegCommands: string[] = []
+  logPaths = { ...(logPaths || {}), commandLog: ffmpegCommands }
   const userId = Number(input.userId)
   const clips = Array.isArray(input.timeline?.clips) ? input.timeline.clips : []
   const stills = Array.isArray((input.timeline as any)?.stills) ? ((input.timeline as any).stills as Still[]) : []
@@ -2550,7 +2554,7 @@ export async function runCreateVideoExportV1Job(
       dateYmd: ymd,
     })
 
-    return { resultUploadId: uploadId, output: { bucket, key, s3Url: `s3://${bucket}/${key}` } }
+    return { resultUploadId: uploadId, output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, ffmpegCommands }
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }

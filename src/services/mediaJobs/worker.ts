@@ -193,11 +193,13 @@ async function runOne(job: any, attempt: any, workerId: string) {
       const result = await runCreateVideoExportV1Job(input, { stdoutPath, stderrPath })
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+      const ffmpegCommands = Array.isArray((result as any)?.ffmpegCommands) ? (result as any).ffmpegCommands : null
 
       await mediaJobsRepo.finishAttempt(Number(attempt.id), {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: ffmpegCommands ? { ffmpegCommands } : undefined,
       })
       await mediaJobsRepo.completeJob(jobId, result)
 
