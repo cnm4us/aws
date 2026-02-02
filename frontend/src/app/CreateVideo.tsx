@@ -145,6 +145,16 @@ type ScreenTitlePresetItem = {
 
 const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
+const hexToRgba = (hex: string, alpha: number): string => {
+  const raw = String(hex || '').trim()
+  const cleaned = raw.startsWith('#') ? raw.slice(1) : raw
+  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) return `rgba(0,0,0,${alpha})`
+  const r = parseInt(cleaned.slice(0, 2), 16)
+  const g = parseInt(cleaned.slice(2, 4), 16)
+  const b = parseInt(cleaned.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
 const FREEZE_OPTIONS_SECONDS = [
   0,
   0.1,
@@ -571,6 +581,9 @@ export default function CreateVideo() {
     position: VideoOverlay['position']
     audioEnabled: boolean
     boostDb: number
+    plateStyle: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+    plateColor: string
+    plateOpacityPct: number
   } | null>(null)
   const [videoOverlayEditorError, setVideoOverlayEditorError] = useState<string | null>(null)
   const [lowerThirdEditor, setLowerThirdEditor] = useState<{ id: string; start: number; end: number; configId: number } | null>(null)
@@ -2900,43 +2913,125 @@ export default function CreateVideo() {
       border: '2px dashed rgba(255,214,170,0.75)',
       borderRadius: 10,
     }
+    const plateStyleRaw = String((o as any).plateStyle || 'none')
+    const plateOpacityPct = clamp(Number((o as any).plateOpacityPct ?? 85), 0, 100)
+    const plateAlpha = plateOpacityPct / 100
+    const plateColor = hexToRgba(String((o as any).plateColor || '#000000'), plateAlpha)
+    const plateStyle: React.CSSProperties | null = (() => {
+      if (plateStyleRaw === 'none') return null
+      if (plateStyleRaw === 'band') {
+        const band: any = {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          height: 120,
+          background: plateColor,
+          pointerEvents: 'none',
+          zIndex: 24,
+        }
+        return band
+      }
+      const padPx = plateStyleRaw === 'thin' ? 4 : plateStyleRaw === 'medium' ? 12 : 30
+      return {
+        position: 'absolute',
+        width: `${sizePctWidth}%`,
+        aspectRatio,
+        padding: padPx,
+        background: plateColor,
+        boxSizing: 'content-box',
+        pointerEvents: 'none',
+        zIndex: 24,
+        borderRadius: 10,
+      } as any
+    })()
     const pos = String(o.position || 'bottom_right')
     if (pos === 'top_left') {
       style.left = inset
       style.top = inset
+      if (plateStyle) {
+        plateStyle.left = inset
+        plateStyle.top = inset
+      }
     } else if (pos === 'top_center') {
       style.left = '50%'
       style.top = inset
       style.transform = 'translateX(-50%)'
+      if (plateStyle) {
+        plateStyle.left = '50%'
+        plateStyle.top = inset
+        plateStyle.transform = 'translateX(-50%)'
+      }
     } else if (pos === 'top_right') {
       style.right = inset
       style.top = inset
+      if (plateStyle) {
+        plateStyle.right = inset
+        plateStyle.top = inset
+      }
     } else if (pos === 'middle_left') {
       style.left = inset
       style.top = '50%'
       style.transform = 'translateY(-50%)'
+      if (plateStyle) {
+        plateStyle.left = inset
+        plateStyle.top = '50%'
+        plateStyle.transform = 'translateY(-50%)'
+      }
     } else if (pos === 'middle_center') {
       style.left = '50%'
       style.top = '50%'
       style.transform = 'translate(-50%, -50%)'
+      if (plateStyle) {
+        plateStyle.left = '50%'
+        plateStyle.top = '50%'
+        plateStyle.transform = 'translate(-50%, -50%)'
+      }
     } else if (pos === 'middle_right') {
       style.right = inset
       style.top = '50%'
       style.transform = 'translateY(-50%)'
+      if (plateStyle) {
+        plateStyle.right = inset
+        plateStyle.top = '50%'
+        plateStyle.transform = 'translateY(-50%)'
+      }
     } else if (pos === 'bottom_left') {
       style.left = inset
       style.bottom = inset
+      if (plateStyle) {
+        plateStyle.left = inset
+        plateStyle.bottom = inset
+      }
     } else if (pos === 'bottom_center') {
       style.left = '50%'
       style.bottom = inset
       style.transform = 'translateX(-50%)'
+      if (plateStyle) {
+        plateStyle.left = '50%'
+        plateStyle.bottom = inset
+        plateStyle.transform = 'translateX(-50%)'
+      }
     } else {
       style.right = inset
       style.bottom = inset
+      if (plateStyle) {
+        plateStyle.right = inset
+        plateStyle.bottom = inset
+      }
+    }
+    if (plateStyleRaw === 'band' && plateStyle) {
+      if (pos.startsWith('top')) {
+        plateStyle.top = inset
+      } else if (pos.startsWith('bottom')) {
+        plateStyle.bottom = inset
+      } else {
+        plateStyle.top = '50%'
+        plateStyle.transform = 'translateY(-50%)'
+      }
     }
     const label = (namesByUploadId[uploadId] || `Overlay ${uploadId}`).toString()
     const thumbUrl = posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
-    return { uploadId, style: style as React.CSSProperties, label, thumbUrl }
+    return { uploadId, style: style as React.CSSProperties, label, thumbUrl, plateStyle: plateStyle as React.CSSProperties | null }
   }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
 
   const activeVideoOverlayStillPreview = useMemo(() => {
@@ -5046,13 +5141,32 @@ export default function CreateVideo() {
     }
   }, [computeTimelineHash])
 
+  const stripGraphicsShadowFields = useCallback((tl: Timeline): Timeline => {
+    if (!Array.isArray((tl as any).graphics)) return tl
+    const nextGraphics = (tl as any).graphics.map((g: any) => {
+      if (!g || typeof g !== 'object') return g
+      const {
+        shadowEnabled,
+        shadowBlurSigma,
+        shadowOffsetPx,
+        shadowOpacityPct,
+        shadowBlurPx,
+        shadowColor,
+        ...rest
+      } = g
+      return rest
+    })
+    return { ...(tl as any), graphics: nextGraphics }
+  }, [])
+
 	  // Autosave timeline (debounced)
 	  useEffect(() => {
 	    if (!project?.id) return
 	    if (hydratingRef.current) return
 	    if (trimDragging || panDragging) return
 	    const next = { ...timeline, playheadSeconds: playhead }
-	    const json = JSON.stringify(next)
+	    const sanitizedNext = stripGraphicsShadowFields(next as any)
+	    const json = JSON.stringify(sanitizedNext)
 	    if (json === lastSavedRef.current) return
 	    const timer = window.setTimeout(async () => {
 	      let abort: AbortController | null = null
@@ -5072,14 +5186,14 @@ export default function CreateVideo() {
 	          method: 'PATCH',
 	          credentials: 'same-origin',
 	          headers,
-	          body: JSON.stringify({ timeline: next }),
+	          body: JSON.stringify({ timeline: sanitizedNext }),
 	          signal: abort.signal,
 	        })
 	        const data: any = await res.json().catch(() => null)
 	        if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
 	        lastSavedRef.current = json
 	        // Keep local undo/redo persistence aligned to the latest saved timeline.
-	        persistHistoryNow({ timelineOverride: next as any })
+	        persistHistoryNow({ timelineOverride: sanitizedNext as any })
 	      } catch {
 	        // ignore; user can still export later
 	      } finally {
@@ -5089,14 +5203,15 @@ export default function CreateVideo() {
 	    return () => {
 	      window.clearTimeout(timer)
 	    }
-	  }, [persistHistoryNow, playhead, project?.id, timeline, trimDragging, panDragging])
+	  }, [persistHistoryNow, playhead, project?.id, stripGraphicsShadowFields, timeline, trimDragging, panDragging])
 
-	  const saveTimelineNow = useCallback(
-	    async (nextTimeline: Timeline) => {
-	      if (!project?.id) return
-	      if (hydratingRef.current) return
-	      let abort: AbortController | null = null
-	      try {
+  const saveTimelineNow = useCallback(
+    async (nextTimeline: Timeline) => {
+      if (!project?.id) return
+      if (hydratingRef.current) return
+      const sanitizedTimeline = stripGraphicsShadowFields(nextTimeline)
+      let abort: AbortController | null = null
+      try {
 	        // Prevent out-of-order saves from overwriting newer timeline state.
 	        if (timelineSaveAbortRef.current) {
 	          try {
@@ -5106,28 +5221,28 @@ export default function CreateVideo() {
 	        abort = new AbortController()
 	        timelineSaveAbortRef.current = abort
 	        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-	        const csrf = getCsrfToken()
-	        if (csrf) headers['x-csrf-token'] = csrf
-	        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/timeline`, {
-	          method: 'PATCH',
-	          credentials: 'same-origin',
-	          headers,
-	          body: JSON.stringify({ timeline: nextTimeline }),
-	          signal: abort.signal,
-	        })
-	        const data: any = await res.json().catch(() => null)
-	        if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
-	        lastSavedRef.current = JSON.stringify(nextTimeline)
-	        // Keep local undo/redo persistence aligned to the latest saved timeline.
-	        persistHistoryNow({ timelineOverride: nextTimeline })
-	      } catch {
-	        // ignore; user can still export later
-	      } finally {
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(project.id))}/timeline`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ timeline: sanitizedTimeline }),
+          signal: abort.signal,
+        })
+        const data: any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(data?.error || 'save_failed'))
+        lastSavedRef.current = JSON.stringify(sanitizedTimeline)
+        // Keep local undo/redo persistence aligned to the latest saved timeline.
+        persistHistoryNow({ timelineOverride: sanitizedTimeline })
+      } catch {
+        // ignore; user can still export later
+      } finally {
 	        if (abort && timelineSaveAbortRef.current === abort) timelineSaveAbortRef.current = null
 	      }
 	    },
-	    [persistHistoryNow, project?.id]
-	  )
+    [persistHistoryNow, project?.id, stripGraphicsShadowFields]
+  )
 
   const forceReloadScreenTitlePresets = useCallback(async (): Promise<ScreenTitlePresetItem[]> => {
     setScreenTitlePresetsError(null)
@@ -6436,6 +6551,9 @@ export default function CreateVideo() {
         sizePctWidth: 90,
         position: 'bottom_center',
         audioEnabled: true,
+        plateStyle: 'none',
+        plateColor: '#000000',
+        plateOpacityPct: 85,
       }
       snapshotUndo()
       setTimeline((prev) => {
@@ -11969,6 +12087,15 @@ export default function CreateVideo() {
     const boostRaw = Number((videoOverlayEditor as any).boostDb)
     const boostAllowed = new Set([0, 3, 6, 9])
     const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+    const plateStyleRaw = String((videoOverlayEditor as any).plateStyle || 'none').toLowerCase()
+    const plateAllowed = new Set(['none', 'thin', 'medium', 'thick', 'band'])
+    const plateStyle = plateAllowed.has(plateStyleRaw) ? (plateStyleRaw as any) : 'none'
+    const plateColorRaw = String((videoOverlayEditor as any).plateColor || '#000000')
+    const plateColor = /^#?[0-9a-fA-F]{6}$/.test(plateColorRaw)
+      ? (plateColorRaw.startsWith('#') ? plateColorRaw : `#${plateColorRaw}`)
+      : '#000000'
+    const plateOpacityRaw = Number((videoOverlayEditor as any).plateOpacityPct)
+    const plateOpacityPct = Number.isFinite(plateOpacityRaw) ? Math.round(clamp(plateOpacityRaw, 0, 100)) : 85
     const allowedSizes = new Set([25, 33, 40, 50, 70, 90])
     const allowedPositions = new Set([
       'top_left',
@@ -12001,6 +12128,9 @@ export default function CreateVideo() {
         position,
         audioEnabled,
         boostDb,
+        plateStyle,
+        plateColor,
+        plateOpacityPct,
       }
       const next = prevOverlays.slice()
       next[idx] = updated
@@ -14065,10 +14195,13 @@ export default function CreateVideo() {
                 style={activeVideoOverlayStillPreview.style}
               />
             ) : null}
-	            <video
-	              ref={overlayVideoRef}
-	              playsInline
-	              preload="metadata"
+            {activeVideoOverlayPreview?.plateStyle ? (
+              <div style={activeVideoOverlayPreview.plateStyle} />
+            ) : null}
+            <video
+              ref={overlayVideoRef}
+              playsInline
+              preload="metadata"
 	              poster={activeVideoOverlayPreview?.thumbUrl || undefined}
 	              style={previewOverlayVideoStyle}
 	            />
@@ -17827,6 +17960,76 @@ export default function CreateVideo() {
               </label>
 
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Overlay Frame</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'end' }}>
+                  <div>
+                    <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Style</div>
+                    <select
+                      value={String(videoOverlayEditor.plateStyle || 'none')}
+                      onChange={(e) => setVideoOverlayEditor((p) => (p ? ({ ...p, plateStyle: e.target.value as any }) : p))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 900,
+                      }}
+                    >
+                      <option value="none">None</option>
+                      <option value="thin">Thin</option>
+                      <option value="medium">Medium</option>
+                      <option value="thick">Thick</option>
+                      <option value="band">Band</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+                  <div>
+                    <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Frame color</div>
+                    <input
+                      type="color"
+                      value={String(videoOverlayEditor.plateColor || '#000000')}
+                      onChange={(e) => setVideoOverlayEditor((p) => (p ? ({ ...p, plateColor: e.target.value } : p)))}
+                      style={{
+                        width: '100%',
+                        height: 44,
+                        padding: 0,
+                        borderRadius: 12,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Default: black</div>
+                  </div>
+                  <div>
+                    <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Frame opacity</div>
+                    <select
+                      value={String(Number(videoOverlayEditor.plateOpacityPct ?? 85))}
+                      onChange={(e) => setVideoOverlayEditor((p) => (p ? ({ ...p, plateOpacityPct: Number(e.target.value) }) : p))}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(255,255,255,0.16)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {Array.from({ length: 11 }, (_, i) => i * 10).map((n) => (
+                        <option key={`plate-op-${n}`} value={String(n)}>
+                          {n}%
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 14, fontWeight: 900 }}>Freeze Frames - Duration: 2.0s</div>
                 </div>
@@ -18661,6 +18864,9 @@ export default function CreateVideo() {
 					                        const position = String((o as any).position || 'top_right') as any
 					                        const audioEnabled = Boolean((o as any).audioEnabled)
 					                        const boostDb = (o as any).boostDb == null ? 0 : Number((o as any).boostDb)
+                              const plateStyle = String((o as any).plateStyle || 'none') as any
+                              const plateColor = String((o as any).plateColor || '#000000')
+                              const plateOpacityPct = Number((o as any).plateOpacityPct ?? 85)
 					                        setSelectedVideoOverlayId(String((o as any).id))
 					                        setSelectedVideoOverlayStillId(null)
 					                        setSelectedClipId(null)
@@ -18671,7 +18877,16 @@ export default function CreateVideo() {
 					                        setSelectedNarrationId(null)
 					                        setSelectedStillId(null)
 					                        setSelectedAudioId(null)
-					                        setVideoOverlayEditor({ id: String((o as any).id), sizePctWidth, position, audioEnabled, boostDb })
+					                        setVideoOverlayEditor({
+                              id: String((o as any).id),
+                              sizePctWidth,
+                              position,
+                              audioEnabled,
+                              boostDb,
+                              plateStyle,
+                              plateColor,
+                              plateOpacityPct,
+                            })
 					                        setVideoOverlayEditorError(null)
 					                      }
 				                    } else if (timelineCtxMenu.kind === 'videoOverlayStill') {

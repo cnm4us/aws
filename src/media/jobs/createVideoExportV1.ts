@@ -84,6 +84,9 @@ type VideoOverlay = {
     | 'bottom_right'
   audioEnabled?: boolean
   boostDb?: number
+  plateStyle?: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+  plateColor?: string
+  plateOpacityPct?: number
 }
 type Logo = {
   id: string
@@ -967,6 +970,9 @@ async function overlayVideoOverlays(opts: {
     position: string
     audioEnabled: boolean
     boostDb?: number
+    plateStyle?: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+    plateColor?: string
+    plateOpacityPct?: number
   }>
   targetW: number
   targetH: number
@@ -994,6 +1000,7 @@ async function overlayVideoOverlays(opts: {
   const filters: string[] = []
   let currentV = '[0:v]'
   const audioLabels: string[] = []
+  const dimsCache = new Map<string, { width: number; height: number }>()
 
   for (let i = 0; i < overlays.length; i++) {
     const inIdx = i + 1
@@ -1010,7 +1017,54 @@ async function overlayVideoOverlays(opts: {
 
     const pct = Math.max(10, Math.min(100, Math.round(Number(o.sizePctWidth || 40))))
     const boxW = even((opts.targetW * pct) / 100)
+    let boxH = even((opts.targetH * pct) / 100)
+    try {
+      const key = String(o.inPath)
+      let dims = dimsCache.get(key)
+      if (!dims) {
+        dims = await probeVideoDisplayDimensions(o.inPath)
+        dimsCache.set(key, dims)
+      }
+      if (dims && Number.isFinite(dims.width) && Number.isFinite(dims.height) && dims.width > 0 && dims.height > 0) {
+        boxH = even((boxW * dims.height) / dims.width)
+      }
+    } catch {}
     const { x, y } = overlayXYForPosition(o.position)
+
+    const plateStyleRaw = String(o.plateStyle || 'none').toLowerCase()
+    const plateStyleAllowed = new Set(['none', 'thin', 'medium', 'thick', 'band'])
+    const plateStyle = plateStyleAllowed.has(plateStyleRaw) ? plateStyleRaw : 'none'
+    if (plateStyle !== 'none') {
+      const plateOpacity = Math.max(0, Math.min(1, Number(o.plateOpacityPct ?? 85) / 100))
+      const plateColor = String(o.plateColor || '#000000')
+      const pad =
+        plateStyle === 'thin' ? 4 :
+        plateStyle === 'medium' ? 12 :
+        plateStyle === 'thick' ? 30 : 0
+      const plateW = plateStyle === 'band' ? even(opts.targetW) : even(boxW + pad * 2)
+      const plateH = plateStyle === 'band' ? even(boxH + 80) : even(boxH + pad * 2)
+      const plateLabel = `plate${i}`
+      const plateOut = `pov${i}`
+      const platePos =
+        plateStyle === 'band'
+          ? {
+              x: '0',
+              y:
+                o.position === 'top_left' || o.position === 'top_center' || o.position === 'top_right'
+                  ? '(main_h*0.02)'
+                  : o.position === 'bottom_left' || o.position === 'bottom_center' || o.position === 'bottom_right'
+                    ? 'main_h-overlay_h-(main_h*0.02)'
+                    : '(main_h-overlay_h)/2',
+            }
+          : overlayXYForPosition(o.position)
+      filters.push(
+        `color=c=${plateColor}@${plateOpacity}:s=${plateW}x${plateH}:d=${baseDur},format=rgba[${plateLabel}]`
+      )
+      filters.push(
+        `${currentV}[${plateLabel}]overlay=x=${platePos.x}:y=${platePos.y}:eof_action=pass:enable='between(t,${start.toFixed(3)},${effectiveEnd.toFixed(3)})'[${plateOut}]`
+      )
+      currentV = `[${plateOut}]`
+    }
 
     filters.push(
       `[${inIdx}:v]trim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},setpts=PTS-STARTPTS+${start.toFixed(3)}/TB,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
@@ -1913,6 +1967,9 @@ export async function runCreateVideoExportV1Job(
           position: String(o.position || 'bottom_right'),
           audioEnabled: Boolean(o.audioEnabled),
           boostDb: (o as any).boostDb == null ? 0 : Number((o as any).boostDb),
+          plateStyle: (o as any).plateStyle != null ? String((o as any).plateStyle) : 'none',
+          plateColor: (o as any).plateColor != null ? String((o as any).plateColor) : '#000000',
+          plateOpacityPct: (o as any).plateOpacityPct != null ? Number((o as any).plateOpacityPct) : 85,
         })
       }
 

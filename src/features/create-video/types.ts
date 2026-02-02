@@ -46,6 +46,10 @@ export type CreateVideoVideoOverlayV1 = {
   audioEnabled?: boolean
   // Optional per-overlay loudness adjustment (MVP: 0/+3/+6/+9).
   boostDb?: number
+  // Optional overlay plate (frame/band) styling.
+  plateStyle?: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+  plateColor?: string
+  plateOpacityPct?: number
 }
 
 export type CreateVideoVideoOverlayStillV1 = {

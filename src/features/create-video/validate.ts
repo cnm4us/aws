@@ -865,6 +865,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
   ])
   const videoOverlays: any[] = []
   let overlayCursorSeconds = 0
+  const allowedPlateStyles = new Set(['none', 'thin', 'medium', 'thick', 'band'])
   for (const o of videoOverlaysRaw) {
     if (!o || typeof o !== 'object') continue
     const id = normalizeId((o as any).id)
@@ -896,6 +897,15 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const boostAllowed = new Set([0, 3, 6, 9])
     if (!Number.isFinite(boostDb) || !boostAllowed.has(Math.round(boostDb))) throw new ValidationError('invalid_boost_db')
 
+    const plateStyleRaw = String((o as any).plateStyle || 'none').trim().toLowerCase()
+    const plateStyle = allowedPlateStyles.has(plateStyleRaw) ? plateStyleRaw : 'none'
+    const plateColorRaw = String((o as any).plateColor || '#000000').trim()
+    const plateColor = /^#?[0-9a-fA-F]{6}$/.test(plateColorRaw)
+      ? (plateColorRaw.startsWith('#') ? plateColorRaw : `#${plateColorRaw}`)
+      : '#000000'
+    const plateOpacityRaw = Number((o as any).plateOpacityPct)
+    const plateOpacityPct = Number.isFinite(plateOpacityRaw) ? Math.round(clamp(plateOpacityRaw, 0, 100)) : 85
+
     const meta = await loadUploadMetaForUser(uploadId, ctx.userId, { requireVideoRole: 'source' })
     let end = sourceEndSeconds
     if (meta.durationSeconds != null) {
@@ -918,6 +928,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
       position,
       audioEnabled,
       boostDb: Math.round(boostDb),
+      plateStyle,
+      plateColor,
+      plateOpacityPct,
     })
   }
 

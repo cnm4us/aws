@@ -61,6 +61,9 @@ export type VideoOverlay = {
     | 'bottom_center'
     | 'bottom_right'
   audioEnabled?: boolean
+  plateStyle?: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+  plateColor?: string
+  plateOpacityPct?: number
 }
 
 export type VideoOverlayStill = {
@@ -242,6 +245,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           sizePctWidth: Number(o.sizePctWidth ?? 40),
           position: String(o.position || 'bottom_right') as any,
           audioEnabled: o.audioEnabled == null ? false : Boolean(o.audioEnabled),
+          plateStyle: String((o as any).plateStyle || 'none') as any,
+          plateColor: (o as any).plateColor != null ? String((o as any).plateColor) : '#000000',
+          plateOpacityPct: (o as any).plateOpacityPct != null ? Number((o as any).plateOpacityPct) : 85,
         }))
       : [],
     videoOverlayStills: Array.isArray((timeline as any).videoOverlayStills)
