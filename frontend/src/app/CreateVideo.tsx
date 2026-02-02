@@ -667,6 +667,7 @@ export default function CreateVideo() {
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
+  const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
   const previewToolbarRef = useRef<HTMLDivElement | null>(null)
   const previewMiniTimelineRef = useRef<HTMLCanvasElement | null>(null)
   const [previewBoxSize, setPreviewBoxSize] = useState<{ w: number; h: number }>({ w: 1080, h: 1920 })
@@ -1376,11 +1377,15 @@ export default function CreateVideo() {
     const el = previewWrapRef.current
     if (!el) return
     const clampNow = () => {
-      const h = el.getBoundingClientRect().height
+      const rect = el.getBoundingClientRect()
+      const h = rect.height
       const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
       const min = 8
       const max = Math.max(min, Math.floor(h - barH - 8))
       setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
+      if (Number.isFinite(rect.width) && Number.isFinite(rect.height)) {
+        setPreviewSize({ w: rect.width, h: rect.height })
+      }
     }
     clampNow()
     let ro: ResizeObserver | null = null
@@ -2900,139 +2905,176 @@ export default function CreateVideo() {
         ? `${Math.round(Number(dims.width))} / ${Math.round(Number(dims.height))}`
         : '9 / 16'
     const sizePctWidth = clamp(Number(o.sizePctWidth || 40), 10, 100)
-    const inset = '4%'
-    const style: any = {
-      position: 'absolute',
-      width: `${sizePctWidth}%`,
-      aspectRatio,
-      overflow: 'hidden',
-      objectFit: 'contain',
-      pointerEvents: 'none',
-      zIndex: 25,
-      background: 'rgba(0,0,0,0.25)',
-      border: '2px dashed rgba(255,214,170,0.75)',
-      borderRadius: 10,
+    const insetPct = 0.04
+    let measuredW = 0
+    let measuredH = 0
+    try {
+      const rect = previewWrapRef.current?.getBoundingClientRect()
+      if (rect && rect.width > 0 && rect.height > 0) {
+        measuredW = rect.width
+        measuredH = rect.height
+      }
+    } catch {}
+    const previewW =
+      measuredW > 0 ? measuredW : previewSize.w > 0 ? previewSize.w : previewBoxSize.w
+    const previewH =
+      measuredH > 0 ? measuredH : previewSize.h > 0 ? previewSize.h : previewBoxSize.h
+    const insetXPx = previewW ? Math.round(previewW * insetPct) : 12
+    const insetYPx = previewH ? Math.round(previewH * insetPct) : 12
+    const ratio =
+      dims && Number.isFinite(Number(dims.width)) && Number.isFinite(Number(dims.height)) && Number(dims.width) > 0 && Number(dims.height) > 0
+        ? Number(dims.height) / Number(dims.width)
+        : 16 / 9
+    const overlayW = previewW ? Math.round((previewW * sizePctWidth) / 100) : 0
+    const overlayH = overlayW ? Math.round(overlayW * ratio) : 0
+    let left = 0
+    let top = 0
+    let fallbackStyle: any | null = null
+    const pos = String(o.position || 'bottom_right')
+    if (previewW && previewH && overlayW && overlayH) {
+      if (pos === 'top_left') {
+        left = insetXPx
+        top = insetYPx
+      } else if (pos === 'top_center') {
+        left = Math.round((previewW - overlayW) / 2)
+        top = insetYPx
+      } else if (pos === 'top_right') {
+        left = previewW - overlayW - insetXPx
+        top = insetYPx
+      } else if (pos === 'middle_left') {
+        left = insetXPx
+        top = (previewH - overlayH) / 2
+      } else if (pos === 'middle_center') {
+        left = Math.round((previewW - overlayW) / 2)
+        top = Math.round((previewH - overlayH) / 2)
+      } else if (pos === 'middle_right') {
+        left = previewW - overlayW - insetXPx
+        top = Math.round((previewH - overlayH) / 2)
+      } else if (pos === 'bottom_left') {
+        left = insetXPx
+        top = previewH - overlayH - insetYPx
+      } else if (pos === 'bottom_center') {
+        left = Math.round((previewW - overlayW) / 2)
+        top = Math.round(previewH - overlayH - insetYPx)
+      } else {
+        left = Math.round(previewW - overlayW - insetXPx)
+        top = Math.round(previewH - overlayH - insetYPx)
+      }
+      left = Math.round(left)
+      top = Math.round(top)
+    } else {
+      const inset = '4%'
+      fallbackStyle = {
+        position: 'absolute',
+        width: `${sizePctWidth}%`,
+        aspectRatio,
+        pointerEvents: 'none',
+        zIndex: 25,
+      }
+      if (pos === 'top_left') {
+        fallbackStyle.left = inset
+        fallbackStyle.top = inset
+      } else if (pos === 'top_center') {
+        fallbackStyle.left = '50%'
+        fallbackStyle.top = inset
+        fallbackStyle.transform = 'translateX(-50%)'
+      } else if (pos === 'top_right') {
+        fallbackStyle.right = inset
+        fallbackStyle.top = inset
+      } else if (pos === 'middle_left') {
+        fallbackStyle.left = inset
+        fallbackStyle.top = '50%'
+        fallbackStyle.transform = 'translateY(-50%)'
+      } else if (pos === 'middle_center') {
+        fallbackStyle.left = '50%'
+        fallbackStyle.top = '50%'
+        fallbackStyle.transform = 'translate(-50%, -50%)'
+      } else if (pos === 'middle_right') {
+        fallbackStyle.right = inset
+        fallbackStyle.top = '50%'
+        fallbackStyle.transform = 'translateY(-50%)'
+      } else if (pos === 'bottom_left') {
+        fallbackStyle.left = inset
+        fallbackStyle.bottom = inset
+      } else if (pos === 'bottom_center') {
+        fallbackStyle.left = '50%'
+        fallbackStyle.bottom = inset
+        fallbackStyle.transform = 'translateX(-50%)'
+      } else {
+        fallbackStyle.right = inset
+        fallbackStyle.bottom = inset
+      }
     }
+    const overlayStyleFromPx: any =
+      previewW && previewH && overlayW && overlayH
+        ? ({
+            position: 'absolute',
+            width: `${overlayW}px`,
+            height: `${overlayH}px`,
+            left: `${left}px`,
+            top: `${top}px`,
+            overflow: 'visible',
+            pointerEvents: 'none',
+            zIndex: 25,
+          } as any)
+        : null
+    const style: any = overlayStyleFromPx ?? fallbackStyle
+    if (!style) return null
     const plateStyleRaw = String((o as any).plateStyle || 'none')
     const plateOpacityPct = clamp(Number((o as any).plateOpacityPct ?? 85), 0, 100)
     const plateAlpha = plateOpacityPct / 100
     const plateColor = hexToRgba(String((o as any).plateColor || '#000000'), plateAlpha)
-    const plateStyle: React.CSSProperties | null = (() => {
+    const plateDef = (() => {
       if (plateStyleRaw === 'none') return null
-      if (plateStyleRaw === 'band') {
-        const band: any = {
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          height: 120,
-          background: plateColor,
-          pointerEvents: 'none',
-          zIndex: 24,
-        }
-        return band
-      }
-      const padPx = plateStyleRaw === 'thin' ? 4 : plateStyleRaw === 'medium' ? 12 : 30
-      return {
-        position: 'absolute',
-        width: `${sizePctWidth}%`,
-        aspectRatio,
-        padding: padPx,
-        background: plateColor,
-        boxSizing: 'content-box',
-        pointerEvents: 'none',
-        zIndex: 24,
-        borderRadius: 10,
-      } as any
+      const padPx = plateStyleRaw === 'thin' ? 4 : plateStyleRaw === 'medium' ? 12 : plateStyleRaw === 'thick' ? 30 : 0
+      return { style: plateStyleRaw as any, padPx }
     })()
-    const pos = String(o.position || 'bottom_right')
-    if (pos === 'top_left') {
-      style.left = inset
-      style.top = inset
-      if (plateStyle) {
-        plateStyle.left = inset
-        plateStyle.top = inset
-      }
-    } else if (pos === 'top_center') {
-      style.left = '50%'
-      style.top = inset
-      style.transform = 'translateX(-50%)'
-      if (plateStyle) {
-        plateStyle.left = '50%'
-        plateStyle.top = inset
-        plateStyle.transform = 'translateX(-50%)'
-      }
-    } else if (pos === 'top_right') {
-      style.right = inset
-      style.top = inset
-      if (plateStyle) {
-        plateStyle.right = inset
-        plateStyle.top = inset
-      }
-    } else if (pos === 'middle_left') {
-      style.left = inset
-      style.top = '50%'
-      style.transform = 'translateY(-50%)'
-      if (plateStyle) {
-        plateStyle.left = inset
-        plateStyle.top = '50%'
-        plateStyle.transform = 'translateY(-50%)'
-      }
-    } else if (pos === 'middle_center') {
-      style.left = '50%'
-      style.top = '50%'
-      style.transform = 'translate(-50%, -50%)'
-      if (plateStyle) {
-        plateStyle.left = '50%'
-        plateStyle.top = '50%'
-        plateStyle.transform = 'translate(-50%, -50%)'
-      }
-    } else if (pos === 'middle_right') {
-      style.right = inset
-      style.top = '50%'
-      style.transform = 'translateY(-50%)'
-      if (plateStyle) {
-        plateStyle.right = inset
-        plateStyle.top = '50%'
-        plateStyle.transform = 'translateY(-50%)'
-      }
-    } else if (pos === 'bottom_left') {
-      style.left = inset
-      style.bottom = inset
-      if (plateStyle) {
-        plateStyle.left = inset
-        plateStyle.bottom = inset
-      }
-    } else if (pos === 'bottom_center') {
-      style.left = '50%'
-      style.bottom = inset
-      style.transform = 'translateX(-50%)'
-      if (plateStyle) {
-        plateStyle.left = '50%'
-        plateStyle.bottom = inset
-        plateStyle.transform = 'translateX(-50%)'
-      }
-    } else {
-      style.right = inset
-      style.bottom = inset
-      if (plateStyle) {
-        plateStyle.right = inset
-        plateStyle.bottom = inset
-      }
-    }
-    if (plateStyleRaw === 'band' && plateStyle) {
-      if (pos.startsWith('top')) {
-        plateStyle.top = inset
-      } else if (pos.startsWith('bottom')) {
-        plateStyle.bottom = inset
-      } else {
-        plateStyle.top = '50%'
-        plateStyle.transform = 'translateY(-50%)'
-      }
-    }
     const label = (namesByUploadId[uploadId] || `Overlay ${uploadId}`).toString()
     const thumbUrl = posterByUploadId[uploadId] || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
-    return { uploadId, style: style as React.CSSProperties, label, thumbUrl, plateStyle: plateStyle as React.CSSProperties | null }
-  }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId])
+    const outerStyle: React.CSSProperties = { ...style }
+    const innerStyle: React.CSSProperties = {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+      pointerEvents: 'none',
+      border: '2px dashed rgba(255,214,170,0.75)',
+      borderRadius: 0,
+      background: 'rgba(0,0,0,0.25)',
+      overflow: 'hidden',
+      zIndex: 25,
+    }
+    let plateStyle: React.CSSProperties | null = null
+    if (plateDef && overlayStyleFromPx && previewW && previewH && overlayW && overlayH) {
+      if (plateDef.style === 'band') {
+        const bandPad = 40
+        plateStyle = {
+          position: 'absolute',
+          left: 0,
+          top: `${Math.round(top - bandPad)}px`,
+          width: `${previewW}px`,
+          height: `${Math.round(overlayH + bandPad * 2)}px`,
+          background: plateColor,
+          pointerEvents: 'none',
+          zIndex: 20,
+        }
+      } else {
+        const pad = plateDef.padPx
+        plateStyle = {
+          position: 'absolute',
+          left: `${Math.round(left - pad)}px`,
+          top: `${Math.round(top - pad)}px`,
+          width: `${Math.round(overlayW + pad * 2)}px`,
+          height: `${Math.round(overlayH + pad * 2)}px`,
+          background: plateColor,
+          pointerEvents: 'none',
+          zIndex: 20,
+        } as any
+      }
+    }
+    return { uploadId, style: outerStyle as React.CSSProperties, innerStyle, label, thumbUrl, plateStyle }
+  }, [activeVideoOverlayAtPlayhead, dimsByUploadId, namesByUploadId, posterByUploadId, previewBoxSize.h, previewBoxSize.w, previewSize.h, previewSize.w])
 
   const activeVideoOverlayStillPreview = useMemo(() => {
     const s: any = previewVideoOverlayStillAtPlayhead as any
@@ -3147,16 +3189,6 @@ export default function CreateVideo() {
       zIndex: 5,
     }
   }, [activeUploadId, previewObjectFit])
-
-  const previewOverlayVideoStyle = useMemo<React.CSSProperties>(() => {
-    if (!activeVideoOverlayPreview) return { display: 'none' }
-    if (previewVideoOverlayStillAtPlayhead) return { display: 'none' }
-    return {
-      ...(activeVideoOverlayPreview.style as any),
-      display: 'block',
-      zIndex: 30,
-    }
-  }, [activeVideoOverlayPreview, previewVideoOverlayStillAtPlayhead])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -14195,16 +14227,20 @@ export default function CreateVideo() {
                 style={activeVideoOverlayStillPreview.style}
               />
             ) : null}
-            {activeVideoOverlayPreview?.plateStyle ? (
-              <div style={activeVideoOverlayPreview.plateStyle} />
+            {activeVideoOverlayPreview && !activeVideoOverlayStillPreview ? (
+              <>
+                {activeVideoOverlayPreview.plateStyle ? <div style={activeVideoOverlayPreview.plateStyle} /> : null}
+                <div style={activeVideoOverlayPreview.style}>
+                  <video
+                    ref={overlayVideoRef}
+                    playsInline
+                    preload="metadata"
+                    poster={activeVideoOverlayPreview.thumbUrl || undefined}
+                    style={activeVideoOverlayPreview.innerStyle}
+                  />
+                </div>
+              </>
             ) : null}
-            <video
-              ref={overlayVideoRef}
-              playsInline
-              preload="metadata"
-	              poster={activeVideoOverlayPreview?.thumbUrl || undefined}
-	              style={previewOverlayVideoStyle}
-	            />
 	            {showPreviewToolbar && hasPlayablePreview ? (
 	              <div
 	                ref={previewToolbarRef}
@@ -17991,7 +18027,9 @@ export default function CreateVideo() {
                     <input
                       type="color"
                       value={String(videoOverlayEditor.plateColor || '#000000')}
-                      onChange={(e) => setVideoOverlayEditor((p) => (p ? ({ ...p, plateColor: e.target.value } : p)))}
+                      onChange={(e) =>
+                        setVideoOverlayEditor((p) => (p ? { ...p, plateColor: e.target.value } : p))
+                      }
                       style={{
                         width: '100%',
                         height: 44,
@@ -18008,7 +18046,9 @@ export default function CreateVideo() {
                     <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Frame opacity</div>
                     <select
                       value={String(Number(videoOverlayEditor.plateOpacityPct ?? 85))}
-                      onChange={(e) => setVideoOverlayEditor((p) => (p ? ({ ...p, plateOpacityPct: Number(e.target.value) }) : p))}
+                      onChange={(e) =>
+                        setVideoOverlayEditor((p) => (p ? { ...p, plateOpacityPct: Number(e.target.value) } : p))
+                      }
                       style={{
                         width: '100%',
                         padding: '10px 12px',

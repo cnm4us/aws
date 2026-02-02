@@ -957,6 +957,35 @@ function overlayXYForPosition(position: string): { x: string; y: string } {
   }
 }
 
+function overlayXYForPositionWithPad(position: string, padPx: number): { x: string; y: string } {
+  const insetX = '(main_w*0.02)'
+  const insetY = '(main_h*0.02)'
+  const pad = Math.max(0, Math.round(padPx || 0))
+  const padAdd = pad > 0 ? `+${pad}` : ''
+  const padSub = pad > 0 ? `-${pad}` : ''
+  switch (String(position || 'bottom_right')) {
+    case 'top_left':
+      return { x: `${insetX}${padSub}`, y: `${insetY}${padSub}` }
+    case 'top_center':
+      return { x: '(main_w-overlay_w)/2', y: `${insetY}${padSub}` }
+    case 'top_right':
+      return { x: `main_w-overlay_w-${insetX}${padAdd}`, y: `${insetY}${padSub}` }
+    case 'middle_left':
+      return { x: `${insetX}${padSub}`, y: '(main_h-overlay_h)/2' }
+    case 'middle_center':
+      return { x: '(main_w-overlay_w)/2', y: '(main_h-overlay_h)/2' }
+    case 'middle_right':
+      return { x: `main_w-overlay_w-${insetX}${padAdd}`, y: '(main_h-overlay_h)/2' }
+    case 'bottom_left':
+      return { x: `${insetX}${padSub}`, y: `main_h-overlay_h-${insetY}${padAdd}` }
+    case 'bottom_center':
+      return { x: '(main_w-overlay_w)/2', y: `main_h-overlay_h-${insetY}${padAdd}` }
+    case 'bottom_right':
+    default:
+      return { x: `main_w-overlay_w-${insetX}${padAdd}`, y: `main_h-overlay_h-${insetY}${padAdd}` }
+  }
+}
+
 async function overlayVideoOverlays(opts: {
   baseMp4Path: string
   outPath: string
@@ -1034,44 +1063,70 @@ async function overlayVideoOverlays(opts: {
     const plateStyleRaw = String(o.plateStyle || 'none').toLowerCase()
     const plateStyleAllowed = new Set(['none', 'thin', 'medium', 'thick', 'band'])
     const plateStyle = plateStyleAllowed.has(plateStyleRaw) ? plateStyleRaw : 'none'
-    if (plateStyle !== 'none') {
-      const plateOpacity = Math.max(0, Math.min(1, Number(o.plateOpacityPct ?? 85) / 100))
-      const plateColor = String(o.plateColor || '#000000')
-      const pad =
-        plateStyle === 'thin' ? 4 :
-        plateStyle === 'medium' ? 12 :
-        plateStyle === 'thick' ? 30 : 0
-      const plateW = plateStyle === 'band' ? even(opts.targetW) : even(boxW + pad * 2)
-      const plateH = plateStyle === 'band' ? even(boxH + 80) : even(boxH + pad * 2)
-      const plateLabel = `plate${i}`
-      const plateOut = `pov${i}`
-      const platePos =
-        plateStyle === 'band'
-          ? {
-              x: '0',
-              y:
-                o.position === 'top_left' || o.position === 'top_center' || o.position === 'top_right'
-                  ? '(main_h*0.02)'
-                  : o.position === 'bottom_left' || o.position === 'bottom_center' || o.position === 'bottom_right'
-                    ? 'main_h-overlay_h-(main_h*0.02)'
-                    : '(main_h-overlay_h)/2',
-            }
-          : overlayXYForPosition(o.position)
-      filters.push(
-        `color=c=${plateColor}@${plateOpacity}:s=${plateW}x${plateH}:d=${baseDur},format=rgba[${plateLabel}]`
-      )
-      filters.push(
-        `${currentV}[${plateLabel}]overlay=x=${platePos.x}:y=${platePos.y}:eof_action=pass:enable='between(t,${start.toFixed(3)},${effectiveEnd.toFixed(3)})'[${plateOut}]`
-      )
-      currentV = `[${plateOut}]`
-    }
 
     filters.push(
       `[${inIdx}:v]trim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},setpts=PTS-STARTPTS+${start.toFixed(3)}/TB,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
     )
+    let baseUnderOverlay = currentV
+    if (plateStyle !== 'none') {
+      const plateOpacity = Math.max(0, Math.min(1, Number(o.plateOpacityPct ?? 85) / 100))
+      const plateColorRaw = String(o.plateColor || '#000000').trim()
+      const plateHex = /^#?[0-9a-fA-F]{6}$/.test(plateColorRaw)
+        ? (plateColorRaw.startsWith('#') ? plateColorRaw.slice(1) : plateColorRaw)
+        : '000000'
+      const plateColor = `0x${plateHex}`
+      const pad =
+        plateStyle === 'thin' ? 4 :
+        plateStyle === 'medium' ? 12 :
+        plateStyle === 'thick' ? 30 : 0
+      const frameW = plateStyle === 'band' ? even(opts.targetW) : even(boxW + pad * 2)
+      const frameH = plateStyle === 'band' ? even(boxH + 80) : even(boxH + pad * 2)
+      const frameInsetX = '(iw*0.02)'
+      const frameInsetY = '(ih*0.02)'
+      const framePos =
+        plateStyle === 'band'
+          ? (() => {
+              const pos = String(o.position || 'bottom_right')
+              if (pos.startsWith('top_')) return { x: '0', y: '0' }
+              if (pos.startsWith('bottom_')) return { x: '0', y: `ih-${frameH}` }
+              return { x: '0', y: `(ih-${frameH})/2` }
+            })()
+          : (() => {
+              const pos = String(o.position || 'bottom_right')
+              const padAdd = pad > 0 ? `+${pad}` : ''
+              const padSub = pad > 0 ? `-${pad}` : ''
+              switch (pos) {
+                case 'top_left':
+                  return { x: `${frameInsetX}${padSub}`, y: `${frameInsetY}${padSub}` }
+                case 'top_center':
+                  return { x: `(iw-${frameW})/2`, y: `${frameInsetY}${padSub}` }
+                case 'top_right':
+                  return { x: `iw-${frameW}-${frameInsetX}${padAdd}`, y: `${frameInsetY}${padSub}` }
+                case 'middle_left':
+                  return { x: `${frameInsetX}${padSub}`, y: `(ih-${frameH})/2` }
+                case 'middle_center':
+                  return { x: `(iw-${frameW})/2`, y: `(ih-${frameH})/2` }
+                case 'middle_right':
+                  return { x: `iw-${frameW}-${frameInsetX}${padAdd}`, y: `(ih-${frameH})/2` }
+                case 'bottom_left':
+                  return { x: `${frameInsetX}${padSub}`, y: `ih-${frameH}-${frameInsetY}${padAdd}` }
+                case 'bottom_center':
+                  return { x: `(iw-${frameW})/2`, y: `ih-${frameH}-${frameInsetY}${padAdd}` }
+                case 'bottom_right':
+                default:
+                  return { x: `iw-${frameW}-${frameInsetX}${padAdd}`, y: `ih-${frameH}-${frameInsetY}${padAdd}` }
+              }
+            })()
+      const thickness = plateStyle === 'band' ? 'fill' : String(pad)
+      const plateLayer = `[vop${i}]`
+      filters.push(
+        `${currentV}drawbox=x=${framePos.x}:y=${framePos.y}:w=${frameW}:h=${frameH}:color=${plateColor}@${plateOpacity.toFixed(3)}:t=${thickness}:enable='between(t,${start.toFixed(3)},${effectiveEnd.toFixed(3)})'${plateLayer}`
+      )
+      baseUnderOverlay = plateLayer
+    }
     const nextV = `[vov${i + 1}]`
     filters.push(
-      `${currentV}[ov${i}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(3)},${effectiveEnd.toFixed(3)})'${nextV}`
+      `${baseUnderOverlay}[ov${i}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${start.toFixed(3)},${effectiveEnd.toFixed(3)})'${nextV}`
     )
     currentV = nextV
 
@@ -1465,6 +1520,9 @@ export async function runCreateVideoExportV1Job(
       position: String((o as any).position || 'bottom_right') as any,
       audioEnabled: (o as any).audioEnabled == null ? undefined : Boolean((o as any).audioEnabled),
       boostDb: (o as any).boostDb == null ? undefined : Number((o as any).boostDb),
+      plateStyle: (o as any).plateStyle == null ? undefined : (String((o as any).plateStyle) as any),
+      plateColor: (o as any).plateColor == null ? undefined : String((o as any).plateColor),
+      plateOpacityPct: (o as any).plateOpacityPct == null ? undefined : Number((o as any).plateOpacityPct),
     }))
     .filter(
       (o) =>
@@ -1934,6 +1992,9 @@ export async function runCreateVideoExportV1Job(
         position: string
         audioEnabled: boolean
         boostDb?: number
+        plateStyle?: 'none' | 'thin' | 'medium' | 'thick' | 'band'
+        plateColor?: string
+        plateOpacityPct?: number
       }> = []
       for (let i = 0; i < sorted.length; i++) {
         const o: any = sorted[i]
@@ -1957,6 +2018,9 @@ export async function runCreateVideoExportV1Job(
         const dur = roundToTenth(Math.max(0, sourceEndSeconds - sourceStartSeconds))
         const endSeconds = roundToTenth(startSeconds + dur)
         if (!(endSeconds > startSeconds + 0.05)) continue
+        const plateStyleRaw = (o as any).plateStyle != null ? String((o as any).plateStyle).toLowerCase() : 'none'
+        const plateStyleAllowed = new Set(['none', 'thin', 'medium', 'thick', 'band'])
+        const plateStyle = plateStyleAllowed.has(plateStyleRaw) ? (plateStyleRaw as any) : 'none'
         overlays.push({
           startSeconds,
           endSeconds,
@@ -1967,7 +2031,7 @@ export async function runCreateVideoExportV1Job(
           position: String(o.position || 'bottom_right'),
           audioEnabled: Boolean(o.audioEnabled),
           boostDb: (o as any).boostDb == null ? 0 : Number((o as any).boostDb),
-          plateStyle: (o as any).plateStyle != null ? String((o as any).plateStyle) : 'none',
+          plateStyle,
           plateColor: (o as any).plateColor != null ? String((o as any).plateColor) : '#000000',
           plateOpacityPct: (o as any).plateOpacityPct != null ? Number((o as any).plateOpacityPct) : 85,
         })
