@@ -16505,7 +16505,7 @@ export default function CreateVideo() {
         {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
       </div>
 
-	            {graphicEditor ? (
+      {graphicEditor ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -16514,7 +16514,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(10,132,255,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Graphic Properties</div>
@@ -16564,8 +16572,8 @@ export default function CreateVideo() {
                 const adjustBtn = (enabled: boolean): React.CSSProperties => ({
                   padding: '8px 10px',
                   borderRadius: 10,
-                  border: `1px solid ${enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'}`,
-                  background: enabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${enabled ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.10)'}`,
+                  background: enabled ? 'rgba(96,165,250,0.14)' : 'rgba(255,255,255,0.03)',
                   color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
                   fontWeight: 900,
                   cursor: enabled ? 'pointer' : 'not-allowed',
@@ -16618,56 +16626,56 @@ export default function CreateVideo() {
 		                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
 		                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
 		                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-		                          <button
-	                            type="button"
-	                            onClick={() =>
-	                              setGraphicEditor((p) =>
-	                                p
-	                                  ? {
-	                                      ...p,
-	                                      fitMode: 'cover_full',
-	                                    }
-	                                  : p
-	                              )
-	                            }
-	                            style={{
-	                              padding: '8px 10px',
-	                              borderRadius: 10,
-	                              border: graphicEditor.fitMode === 'cover_full' ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
-	                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                            }}
-	                          >
-	                            Full Frame
-	                          </button>
-	                          <button
-	                            type="button"
-	                            onClick={() =>
-	                              setGraphicEditor((p) =>
-	                                p
-	                                  ? {
-	                                      ...p,
-	                                      fitMode: 'contain_transparent',
-	                                    }
-	                                  : p
-	                              )
-	                            }
-	                            style={{
-	                              padding: '8px 10px',
-	                              borderRadius: 10,
-	                              border:
-	                                graphicEditor.fitMode === 'contain_transparent'
-	                                  ? '2px solid rgba(255,214,10,0.95)'
-	                                  : '1px solid rgba(10,132,255,0.45)',
-	                              background:
-	                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(255,214,10,0.10)' : 'rgba(10,132,255,0.08)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                            }}
-	                          >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGraphicEditor((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      fitMode: 'cover_full',
+                                    }
+                                  : p
+                              )
+                            }
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: graphicEditor.fitMode === 'cover_full' ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Full Frame
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGraphicEditor((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      fitMode: 'contain_transparent',
+                                    }
+                                  : p
+                              )
+                            }
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border:
+                                graphicEditor.fitMode === 'contain_transparent'
+                                  ? '2px solid rgba(96,165,250,0.95)'
+                                  : '1px solid rgba(255,255,255,0.18)',
+                              background:
+                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
 	                            Positioned
 	                          </button>
 	                        </div>
@@ -16782,8 +16790,8 @@ export default function CreateVideo() {
 	                                        style={{
 	                                          height: 44,
 	                                          borderRadius: 12,
-	                                          border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
-	                                          background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
+	                                          border: selected ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                                          background: selected ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
 	                                          color: '#fff',
 	                                          fontWeight: 900,
 	                                          cursor: 'pointer',
@@ -16900,7 +16908,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveGraphicEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(10,132,255,0.65)', background: 'rgba(10,132,255,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -16919,7 +16927,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,214,10,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Freeze Frame Properties</div>
@@ -16969,8 +16985,8 @@ export default function CreateVideo() {
                 const adjustBtn = (enabled: boolean): React.CSSProperties => ({
                   padding: '8px 10px',
                   borderRadius: 10,
-                  border: `1px solid ${enabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.10)'}`,
-                  background: enabled ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${enabled ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.10)'}`,
+                  background: enabled ? 'rgba(96,165,250,0.14)' : 'rgba(255,255,255,0.03)',
                   color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
                   fontWeight: 900,
                   cursor: enabled ? 'pointer' : 'not-allowed',
@@ -17032,7 +17048,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveStillEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,214,10,0.65)', background: 'rgba(255,214,10,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -17051,7 +17067,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(48,209,88,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Overlay Freeze Frame Properties</div>
@@ -17101,8 +17125,8 @@ export default function CreateVideo() {
                 const adjustBtn = (enabled: boolean): React.CSSProperties => ({
                   padding: '8px 10px',
                   borderRadius: 10,
-                  border: `1px solid ${enabled ? 'rgba(10,132,255,0.65)' : 'rgba(255,255,255,0.10)'}`,
-                  background: enabled ? 'rgba(10,132,255,0.14)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${enabled ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.10)'}`,
+                  background: enabled ? 'rgba(96,165,250,0.14)' : 'rgba(255,255,255,0.03)',
                   color: enabled ? '#fff' : 'rgba(255,255,255,0.55)',
                   fontWeight: 900,
                   cursor: enabled ? 'pointer' : 'not-allowed',
@@ -17164,7 +17188,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveVideoOverlayStillEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(10,132,255,0.65)', background: 'rgba(10,132,255,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -17183,7 +17207,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(48,209,88,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Audio Properties</div>
@@ -17242,7 +17274,7 @@ export default function CreateVideo() {
             })()}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontSize: 13 }}>Music Mode</div>
                   <select
@@ -17260,7 +17292,7 @@ export default function CreateVideo() {
                           : p
                       )
                     }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   >
                     <option value="">Select…</option>
                     <option value="opener_cutoff">Opener (auto-cut on speech)</option>
@@ -17277,7 +17309,7 @@ export default function CreateVideo() {
                       setAudioEditorError(null)
                       setAudioEditor((p) => (p ? ({ ...p, musicLevel: String(e.target.value || '') as any } as any) : p))
                     }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   >
                     <option value="">Select…</option>
                     <option value="quiet">Quiet</option>
@@ -17293,7 +17325,7 @@ export default function CreateVideo() {
                   <select
                     value={String(audioEditor.duckingIntensity)}
                     onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => (p ? ({ ...p, duckingIntensity: String(e.target.value || '') as any } as any) : p)) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   >
                     <option value="">Select…</option>
                     <option value="min">Min</option>
@@ -17303,7 +17335,7 @@ export default function CreateVideo() {
                 </label>
               ) : null}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
                   <input
@@ -17312,7 +17344,7 @@ export default function CreateVideo() {
                     min={0}
                     value={String(audioEditor.start)}
                     onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   />
                 </label>
                 <label style={{ display: 'grid', gap: 6 }}>
@@ -17323,7 +17355,7 @@ export default function CreateVideo() {
                     min={0}
                     value={String(audioEditor.end)}
                     onChange={(e) => { setAudioEditorError(null); setAudioEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   />
                 </label>
               </div>
@@ -17341,7 +17373,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveAudioEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(48,209,88,0.65)', background: 'rgba(48,209,88,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -17596,7 +17628,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(175,82,222,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Lower Third Properties</div>
@@ -17623,7 +17663,7 @@ export default function CreateVideo() {
                 <select
                   value={String(lowerThirdEditor.configId)}
                   onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, configId: Number(e.target.value) }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                 >
                   {lowerThirdConfigs
                     .filter((c: any) => !(c && typeof c === 'object' && c.archived_at))
@@ -17633,7 +17673,7 @@ export default function CreateVideo() {
                 </select>
               </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
                   <input
@@ -17642,7 +17682,7 @@ export default function CreateVideo() {
                     min={0}
                     value={String(lowerThirdEditor.start)}
                     onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   />
                 </label>
                 <label style={{ display: 'grid', gap: 6 }}>
@@ -17653,7 +17693,7 @@ export default function CreateVideo() {
                     min={0}
                     value={String(lowerThirdEditor.end)}
                     onChange={(e) => { setLowerThirdEditorError(null); setLowerThirdEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
                   />
                 </label>
               </div>
@@ -17671,7 +17711,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveLowerThirdEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(175,82,222,0.65)', background: 'rgba(175,82,222,0.16)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -17690,10 +17730,18 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-              <div style={{ fontSize: 18, fontWeight: 900 }}>Video Overlay</div>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>Video Overlay Properties</div>
               <button
                 type="button"
                 onClick={() => { setVideoOverlayEditor(null); setVideoOverlayEditorError(null) }}
@@ -17703,16 +17751,16 @@ export default function CreateVideo() {
               </button>
             </div>
 
-            {(() => {
-              const o = videoOverlays.find((oo: any) => String((oo as any).id) === String(videoOverlayEditor.id)) as any
-              if (!o) return null
-              const uploadId = Number((o as any).uploadId)
-              return (
-                <div style={{ marginTop: 10, color: '#fff', fontWeight: 900 }}>
-                  {namesByUploadId[uploadId] || `Video ${uploadId}`}
-                </div>
-              )
-            })()}
+              {(() => {
+                const o = videoOverlays.find((oo: any) => String((oo as any).id) === String(videoOverlayEditor.id)) as any
+                if (!o) return null
+                const uploadId = Number((o as any).uploadId)
+                return (
+                  <div style={{ marginTop: 10, color: '#fff', fontWeight: 900 }}>
+                    {namesByUploadId[uploadId] || `Video ${uploadId}`}
+                  </div>
+                )
+              })()}
 
             <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
@@ -17720,7 +17768,7 @@ export default function CreateVideo() {
                 <select
                   value={String(videoOverlayEditor.sizePctWidth)}
                   onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                 >
                   {[25, 33, 40, 50, 70, 90].map((n) => (
                     <option key={`sz-${n}`} value={String(n)}>{`${n}%`}</option>
@@ -17728,75 +17776,54 @@ export default function CreateVideo() {
                 </select>
               </label>
 
-	              <label style={{ display: 'grid', gap: 6 }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
-	                {(() => {
-	                  const cells = [
-	                    { key: 'top_left', label: '↖' },
-	                    { key: 'top_center', label: '↑' },
-	                    { key: 'top_right', label: '↗' },
-	                    { key: 'middle_left', label: '←' },
-	                    { key: 'middle_center', label: '•' },
-	                    { key: 'middle_right', label: '→' },
-	                    { key: 'bottom_left', label: '↙' },
-	                    { key: 'bottom_center', label: '↓' },
-	                    { key: 'bottom_right', label: '↘' },
-	                  ] as const
-	                  return (
-	                    <div
-	                      style={{
-	                        display: 'grid',
-	                        gridTemplateColumns: 'repeat(3, 1fr)',
-	                        gap: 8,
-	                        maxWidth: 240,
-	                      }}
-	                    >
-	                      {cells.map((c) => {
-	                        const selected = String(videoOverlayEditor.position) === String(c.key)
-	                        return (
-	                          <button
-	                            key={String(c.key)}
-	                            type="button"
-	                            onClick={() => {
-	                              setVideoOverlayEditorError(null)
-	                              setVideoOverlayEditor((p) => (p ? ({ ...p, position: c.key as any }) : p))
-	                            }}
-	                            style={{
-	                              height: 44,
-	                              borderRadius: 12,
-	                              border: selected ? '2px solid rgba(255,214,10,0.95)' : '1px solid rgba(255,255,255,0.18)',
-	                              background: selected ? 'rgba(255,214,10,0.12)' : 'rgba(255,255,255,0.04)',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                              cursor: 'pointer',
-	                              display: 'flex',
-	                              alignItems: 'center',
-	                              justifyContent: 'center',
-	                              fontSize: 18,
-	                            }}
-	                            aria-label={`Position ${String(c.key)}`}
-	                          >
-	                            {c.label}
-	                          </button>
-	                        )
-	                      })}
-	                    </div>
-	                  )
-	                })()}
-	              </label>
-
-	              <label style={{ display: 'grid', gap: 6 }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
-	                <select
-	                  value={String(videoOverlayEditor.boostDb)}
-                  onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
-                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-                >
-                  <option value="0">None</option>
-                  <option value="3">+3 dB</option>
-                  <option value="6">+6 dB</option>
-                  <option value="9">+9 dB</option>
-                </select>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
+                {(() => {
+                  const cells = [
+                    { key: 'top_left', label: '↖' },
+                    { key: 'top_center', label: '↑' },
+                    { key: 'top_right', label: '↗' },
+                    { key: 'middle_left', label: '←' },
+                    { key: 'middle_center', label: '•' },
+                    { key: 'middle_right', label: '→' },
+                    { key: 'bottom_left', label: '↙' },
+                    { key: 'bottom_center', label: '↓' },
+                    { key: 'bottom_right', label: '↘' },
+                  ] as const
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, maxWidth: 240 }}>
+                      {cells.map((c) => {
+                        const selected = String(videoOverlayEditor.position) === String(c.key)
+                        return (
+                          <button
+                            key={String(c.key)}
+                            type="button"
+                            onClick={() => {
+                              setVideoOverlayEditorError(null)
+                              setVideoOverlayEditor((p) => (p ? ({ ...p, position: c.key as any }) : p))
+                            }}
+                            style={{
+                              height: 44,
+                              borderRadius: 12,
+                              border: selected ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                              background: selected ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 18,
+                            }}
+                            aria-label={`Position ${String(c.key)}`}
+                          >
+                            {c.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </label>
 
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
@@ -17843,6 +17870,20 @@ export default function CreateVideo() {
                 {overlayFreezeInsertError ? <div style={{ color: '#ff9b9b', fontSize: 13, marginTop: 8 }}>{overlayFreezeInsertError}</div> : null}
               </div>
 
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Audio Boost</div>
+                <select
+                  value={String(videoOverlayEditor.boostDb)}
+                  onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                >
+                  <option value="0">None</option>
+                  <option value="3">+3 dB</option>
+                  <option value="6">+6 dB</option>
+                  <option value="9">+9 dB</option>
+                </select>
+              </label>
+
               {videoOverlayEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{videoOverlayEditorError}</div> : null}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
@@ -17856,7 +17897,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveVideoOverlayEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#000', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -17875,7 +17916,15 @@ export default function CreateVideo() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(255,204,0,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Screen Title</div>
@@ -18086,7 +18135,7 @@ export default function CreateVideo() {
                 <button
                   type="button"
                   onClick={saveScreenTitleEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
                 >
                   Save
                 </button>
@@ -18094,7 +18143,7 @@ export default function CreateVideo() {
                   type="button"
                   disabled={screenTitleRenderBusy}
                   onClick={generateScreenTitle}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(10,132,255,0.65)', background: 'rgba(10,132,255,0.14)', color: '#fff', fontWeight: 900, cursor: screenTitleRenderBusy ? 'not-allowed' : 'pointer', opacity: screenTitleRenderBusy ? 0.65 : 1 }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: screenTitleRenderBusy ? 'not-allowed' : 'pointer', opacity: screenTitleRenderBusy ? 0.65 : 1 }}
                 >
                   {screenTitleRenderBusy ? 'Generating…' : 'Generate'}
                 </button>
@@ -18107,16 +18156,24 @@ export default function CreateVideo() {
         </div>
       ) : null}
 
-		      {clipEditor ? (
-		        <div
-	          role="dialog"
-	          aria-modal="true"
-	          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
-	          onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }}
-	        >
+      {clipEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+          onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }}
+        >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(212,175,55,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
               <div style={{ fontSize: 18, fontWeight: 900 }}>Video Properties</div>
@@ -18185,17 +18242,17 @@ export default function CreateVideo() {
 		                      </label>
 		                    </div>
 
-		                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-		                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Boost</div>
-		                      <select
-		                        value={String(clipEditor.boostDb)}
-		                        onChange={(e) => setClipEditor((p) => (p ? ({ ...p, boostDb: Number(e.target.value) } as any) : p))}
-		                        style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 10px', fontSize: 14 }}
-		                      >
-		                        <option value="0">None</option>
-		                        <option value="3">+3 dB</option>
-		                        <option value="6">+6 dB</option>
-		                        <option value="9">+9 dB</option>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Audio Boost</div>
+                      <select
+                        value={String(clipEditor.boostDb)}
+                        onChange={(e) => setClipEditor((p) => (p ? ({ ...p, boostDb: Number(e.target.value) } as any) : p))}
+                        style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '8px 10px', fontSize: 14, fontWeight: 900 }}
+                      >
+                        <option value="0">None</option>
+                        <option value="3">+3 dB</option>
+                        <option value="6">+6 dB</option>
+                        <option value="9">+9 dB</option>
 		                      </select>
 		                    </div>
 
@@ -18210,8 +18267,8 @@ export default function CreateVideo() {
                             style={{
                               padding: '10px 12px',
                               borderRadius: 10,
-                              border: '1px solid rgba(212,175,55,0.65)',
-                              background: 'rgba(212,175,55,0.14)',
+                              border: '1px solid rgba(96,165,250,0.95)',
+                              background: 'rgba(96,165,250,0.14)',
                               color: '#fff',
                               fontWeight: 900,
                               cursor: freezeInsertBusy ? 'not-allowed' : 'pointer',
@@ -18227,8 +18284,8 @@ export default function CreateVideo() {
                             style={{
                               padding: '10px 12px',
                               borderRadius: 10,
-                              border: '1px solid rgba(212,175,55,0.65)',
-                              background: 'rgba(212,175,55,0.14)',
+                              border: '1px solid rgba(96,165,250,0.95)',
+                              background: 'rgba(96,165,250,0.14)',
                               color: '#fff',
                               fontWeight: 900,
                               cursor: freezeInsertBusy ? 'not-allowed' : 'pointer',
@@ -18254,17 +18311,25 @@ export default function CreateVideo() {
         </div>
 	      ) : null}
 
-		      {narrationEditor ? (
-		        <div
-		          role="dialog"
-		          aria-modal="true"
-		          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
-		          onClick={() => { setNarrationEditor(null); setNarrationEditorError(null) }}
-		        >
-	          <div
-	            onClick={(e) => e.stopPropagation()}
-	            style={{ maxWidth: 560, margin: '0 auto', borderRadius: 14, border: '1px solid rgba(191,90,242,0.55)', background: 'rgba(15,15,15,0.96)', padding: 16 }}
-	          >
+      {narrationEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 80px' }}
+          onClick={() => { setNarrationEditor(null); setNarrationEditorError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
+          >
 	            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
 	              <div style={{ fontSize: 18, fontWeight: 900 }}>Narration Properties</div>
 	              <button type="button" onClick={() => { setNarrationEditor(null); setNarrationEditorError(null) }} style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>
@@ -18285,18 +18350,18 @@ export default function CreateVideo() {
 	                      <button
 	                        type="button"
 	                        onClick={() => toggleAudioPreview(uploadId)}
-	                        style={{
-	                          padding: '8px 10px',
-	                          borderRadius: 10,
-	                          border: '1px solid rgba(255,255,255,0.18)',
-	                          background: isPlaying ? 'rgba(48,209,88,0.20)' : 'rgba(255,255,255,0.06)',
-	                          color: '#fff',
-	                          fontWeight: 900,
-	                          cursor: 'pointer',
-	                        }}
-	                      >
-	                        {isPlaying ? 'Pause preview' : 'Play preview'}
-	                      </button>
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: isPlaying ? 'rgba(48,209,88,0.20)' : 'rgba(255,255,255,0.06)',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {isPlaying ? 'Pause preview' : 'Play preview'}
+                      </button>
 	                    ) : null}
 	                  </div>
 	                </div>
@@ -18304,35 +18369,35 @@ export default function CreateVideo() {
 	            })()}
 
 	            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-	              <label style={{ display: 'grid', gap: 6 }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
-	                <input
-	                  type="number"
-	                  step={0.1}
-	                  min={0}
-	                  value={String(narrationEditor.start)}
-	                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
-	                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-	                />
-	              </label>
-	              <label style={{ display: 'grid', gap: 6 }}>
-	                <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
-	                <input
-	                  type="number"
-	                  step={0.1}
-	                  min={0}
-	                  value={String(narrationEditor.end)}
-	                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
-	                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-	                />
-	              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Start (seconds)</div>
+                <input
+                  type="number"
+                  step={0.1}
+                  min={0}
+                  value={String(narrationEditor.start)}
+                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, start: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>End (seconds)</div>
+                <input
+                  type="number"
+                  step={0.1}
+                  min={0}
+                  value={String(narrationEditor.end)}
+                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, end: Number(e.target.value) }) : p) }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                />
+              </label>
 
 		              <label style={{ display: 'grid', gap: 6 }}>
 		                <div style={{ color: '#bbb', fontSize: 13 }}>Boost</div>
 		                <select
 		                  value={String((narrationEditor as any).boostDb)}
 		                  onChange={(e) => { setNarrationEditorError(null); setNarrationEditor((p) => p ? ({ ...p, boostDb: Number(e.target.value) }) : p) }}
-		                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
+		                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
 		                >
 		                  <option value="0">None</option>
 		                  <option value="3">+3 dB</option>
@@ -18346,10 +18411,10 @@ export default function CreateVideo() {
 	                <button
 	                  type="button"
 	                  onClick={saveNarrationEditor}
-	                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-	                >
-	                  Save
-	                </button>
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Save
+                </button>
 	              </div>
 	            </div>
 	          </div>
