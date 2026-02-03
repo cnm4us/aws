@@ -278,6 +278,134 @@ async function hasAudioStream(filePath: string): Promise<boolean> {
   })
 }
 
+const keyframeCache = new Map<string, number[]>()
+
+async function probeKeyframes(filePath: string): Promise<number[]> {
+  const cached = keyframeCache.get(filePath)
+  if (cached) return cached
+  const frames = await new Promise<number[]>((resolve) => {
+    const p = spawn(
+      'ffprobe',
+      ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'frame=pkt_pts_time,key_frame', '-of', 'csv=p=0', filePath],
+      { stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    let out = ''
+    p.stdout.on('data', (d) => {
+      out += String(d)
+    })
+    p.on('close', (code) => {
+      if (code !== 0) return resolve([])
+      const lines = String(out || '').trim().split(/\r?\n/)
+      const times: number[] = []
+      for (const line of lines) {
+        if (!line) continue
+        const parts = line.split(',')
+        if (parts.length < 2) continue
+        const t = Number(parts[0])
+        const k = Number(parts[1])
+        if (!Number.isFinite(t) || !Number.isFinite(k)) continue
+        if (k === 1) times.push(t)
+      }
+      times.sort((a, b) => a - b)
+      resolve(times)
+    })
+    p.on('error', () => resolve([]))
+  })
+  keyframeCache.set(filePath, frames)
+  return frames
+}
+
+function findPrevKeyframe(keyframes: number[], timeSeconds: number, eps = 0.05): number | null {
+  let prev: number | null = null
+  for (const k of keyframes) {
+    if (k <= timeSeconds + eps) prev = k
+    else break
+  }
+  return prev
+}
+
+function findNextKeyframe(keyframes: number[], timeSeconds: number, eps = 0.05): number | null {
+  for (const k of keyframes) {
+    if (k > timeSeconds + eps) return k
+  }
+  return null
+}
+
+async function smartTrimSegment(opts: {
+  inPath: string
+  outPath: string
+  startSeconds: number
+  endSeconds: number
+  audioEnabled?: boolean
+  logPaths?: FfmpegLogPaths
+}): Promise<string | null> {
+  const start = roundToTenth(Math.max(0, Number(opts.startSeconds)))
+  const end = roundToTenth(Math.max(0, Number(opts.endSeconds)))
+  if (!(end > start + 0.05)) return null
+  if (start <= 0.01) return null
+
+  const keyframes = await probeKeyframes(opts.inPath)
+  const prev = keyframes.length ? findPrevKeyframe(keyframes, start) : null
+  const next = keyframes.length ? findNextKeyframe(keyframes, start) : null
+  if (prev != null && Math.abs(prev - start) <= 0.05) return null
+
+  const includeAudio = (opts.audioEnabled !== false) && (await hasAudioStream(opts.inPath))
+  const tmpDir = path.dirname(opts.outPath)
+  const partA = path.join(tmpDir, `${path.basename(opts.outPath, path.extname(opts.outPath))}_a.mp4`)
+  const partB = path.join(tmpDir, `${path.basename(opts.outPath, path.extname(opts.outPath))}_b.mp4`)
+
+  const fullReencode = async (): Promise<string> => {
+    const dur = Math.max(0.01, end - start)
+    const args: string[] = ['-ss', String(start), '-t', String(dur), '-i', opts.inPath]
+    if (includeAudio) {
+      args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2')
+    } else {
+      args.push('-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0')
+    }
+    args.push('-movflags', '+faststart', opts.outPath)
+    await runFfmpeg(args, opts.logPaths)
+    return opts.outPath
+  }
+
+  if (next == null || next >= end - 0.01) {
+    return await fullReencode()
+  }
+
+  const partADur = Math.max(0.01, next - start)
+  const partArgs: string[] = ['-ss', String(start), '-t', String(partADur), '-i', opts.inPath]
+  if (includeAudio) {
+    partArgs.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2')
+  } else {
+    partArgs.push('-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0')
+  }
+  partArgs.push('-movflags', '+faststart', partA)
+  await runFfmpeg(partArgs, opts.logPaths)
+
+  const partBDur = Math.max(0, end - next)
+  if (partBDur <= 0.05) {
+    fs.copyFileSync(partA, opts.outPath)
+    return opts.outPath
+  }
+
+  const partBArgs: string[] = ['-ss', String(next), '-t', String(partBDur), '-i', opts.inPath]
+  if (!includeAudio) partBArgs.push('-an')
+  partBArgs.push('-c', 'copy', '-movflags', '+faststart', partB)
+  try {
+    await runFfmpeg(partBArgs, opts.logPaths)
+  } catch {
+    return await fullReencode()
+  }
+
+  const listPath = path.join(tmpDir, `${path.basename(opts.outPath, path.extname(opts.outPath))}_list.txt`)
+  fs.writeFileSync(listPath, [`file '${partA.replace(/'/g, "'\\''")}'`, `file '${partB.replace(/'/g, "'\\''")}'`].join('\n') + '\n')
+  try {
+    await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', opts.outPath], opts.logPaths)
+    return opts.outPath
+  } catch {
+    return await fullReencode()
+  }
+}
+
 async function probeDurationSeconds(filePath: string): Promise<number | null> {
   return await new Promise<number | null>((resolve) => {
     const p = spawn(
@@ -1025,8 +1153,37 @@ async function overlayVideoOverlays(opts: {
     .filter((o) => o.endSeconds > o.startSeconds + 0.05 && o.sourceEndSeconds > o.sourceStartSeconds + 0.05)
     .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
 
+  const trimDir = path.dirname(opts.outPath)
+  const overlayInputs = []
+  for (let i = 0; i < overlays.length; i++) {
+    const o = overlays[i]
+    let inPath = o.inPath
+    let trimApplied = false
+    try {
+      const cleaned = await smartTrimSegment({
+        inPath: o.inPath,
+        outPath: path.join(trimDir, `ov_trim_${String(i).padStart(3, '0')}.mp4`),
+        startSeconds: o.sourceStartSeconds,
+        endSeconds: o.sourceEndSeconds,
+        audioEnabled: o.audioEnabled,
+        logPaths: opts.logPaths,
+      })
+      if (cleaned) {
+        inPath = cleaned
+        trimApplied = true
+      }
+    } catch {}
+    const trimDuration = roundToTenth(Math.max(0, Number(o.sourceEndSeconds) - Number(o.sourceStartSeconds)))
+    overlayInputs.push({
+      path: inPath,
+      trimStart: trimApplied ? 0 : Number(o.sourceStartSeconds),
+      trimEnd: trimApplied ? trimDuration : Number(o.sourceEndSeconds),
+      trimApplied,
+    })
+  }
+
   const args: string[] = ['-i', opts.baseMp4Path]
-  for (const o of overlays) args.push('-i', o.inPath)
+  for (const input of overlayInputs) args.push('-i', input.path)
 
   const filters: string[] = []
   let currentV = '[0:v]'
@@ -1036,6 +1193,7 @@ async function overlayVideoOverlays(opts: {
   for (let i = 0; i < overlays.length; i++) {
     const inIdx = i + 1
     const o = overlays[i]
+    const input = overlayInputs[i]
     const start = o.startSeconds
     const end = o.endSeconds
     const srcStart = o.sourceStartSeconds
@@ -1050,10 +1208,10 @@ async function overlayVideoOverlays(opts: {
     const boxW = even((opts.targetW * pct) / 100)
     let boxH = even((opts.targetH * pct) / 100)
     try {
-      const key = String(o.inPath)
+      const key = String(input.path)
       let dims = dimsCache.get(key)
       if (!dims) {
-        dims = await probeVideoDisplayDimensions(o.inPath)
+        dims = await probeVideoDisplayDimensions(input.path)
         dimsCache.set(key, dims)
       }
       if (dims && Number.isFinite(dims.width) && Number.isFinite(dims.height) && dims.width > 0 && dims.height > 0) {
@@ -1066,8 +1224,11 @@ async function overlayVideoOverlays(opts: {
     const plateStyleAllowed = new Set(['none', 'thin', 'medium', 'thick', 'band'])
     const plateStyle = plateStyleAllowed.has(plateStyleRaw) ? plateStyleRaw : 'none'
 
+    const trimStart = Number(input.trimStart || 0).toFixed(3)
+    const trimEnd = Number(input.trimEnd || 0).toFixed(3)
+
     filters.push(
-      `[${inIdx}:v]trim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},setpts=PTS-STARTPTS+${start.toFixed(3)}/TB,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
+      `[${inIdx}:v]trim=start=${trimStart}:end=${trimEnd},setpts=PTS-STARTPTS+${start.toFixed(3)}/TB,scale=${boxW}:-2:force_original_aspect_ratio=decrease[ov${i}]`
     )
     let baseUnderOverlay = currentV
     if (plateStyle !== 'none') {
@@ -1133,7 +1294,7 @@ async function overlayVideoOverlays(opts: {
     currentV = nextV
 
     if (o.audioEnabled) {
-      const hasAudio = await hasAudioStream(o.inPath)
+      const hasAudio = await hasAudioStream(input.path)
       if (hasAudio) {
         const delayMs = Math.max(0, Math.round(start * 1000))
         const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
@@ -1142,8 +1303,10 @@ async function overlayVideoOverlays(opts: {
         const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
         const boostFilter = boostDb !== 0 ? `,volume=${boostDb}dB` : ''
         const label = `ova${i}`
+        const aTrimStart = trimStart
+        const aTrimEnd = trimEnd
         filters.push(
-          `[${inIdx}:a]atrim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},asetpts=N/SR/TB${delay}${boostFilter},apad[${label}]`
+          `[${inIdx}:a]atrim=start=${aTrimStart}:end=${aTrimEnd},asetpts=N/SR/TB${delay}${boostFilter},apad[${label}]`
         )
         audioLabels.push(`[${label}]`)
       }
@@ -1371,6 +1534,65 @@ async function renderSegmentMp4(opts: {
   const fps = Math.max(15, Math.min(60, Math.round(Number(opts.fps || 30))))
   const hasAudio = await hasAudioStream(opts.inPath)
   const audioEnabled = opts.audioEnabled !== false
+
+  const trimOverride = await smartTrimSegment({
+    inPath: opts.inPath,
+    outPath: `${opts.outPath.replace(/\.mp4$/i, '')}_trim.mp4`,
+    startSeconds: start,
+    endSeconds: end,
+    audioEnabled,
+    logPaths: opts.logPaths,
+  })
+  if (trimOverride) {
+    const inputPath = trimOverride
+    const trimDur = roundToTenth(end - start)
+    const fpsNorm = Math.max(15, Math.min(60, Math.round(Number(opts.fps || 30))))
+    const vChain = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2,fps=${fpsNorm},format=yuv420p`
+    const tpad = freezeStart > 0.01 || freezeEnd > 0.01
+      ? `,tpad=start_mode=clone:start_duration=${freezeStart.toFixed(3)}:stop_mode=clone:stop_duration=${freezeEnd.toFixed(3)}`
+      : ''
+    const delayMs = Math.max(0, Math.round(freezeStart * 1000))
+    const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
+    const boostRaw = opts.boostDb == null ? 0 : Number(opts.boostDb)
+    const boostAllowed = new Set([0, 3, 6, 9])
+    const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+    const boostFilter = boostDb !== 0 ? `,volume=${boostDb}dB` : ''
+    const totalDur = roundToTenth(trimDur + freezeStart + freezeEnd)
+
+    await runFfmpeg(
+      [
+        '-i',
+        inputPath,
+        '-filter_complex',
+        `[0:v]${vChain}${tpad}[v];${audioEnabled && hasAudio ? `atrim=0:${trimDur.toFixed(3)},asetpts=PTS-STARTPTS${delay}${boostFilter},apad,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB` : `anullsrc=r=48000:cl=stereo,atrim=0:${totalDur.toFixed(3)},asetpts=PTS-STARTPTS`}[a]`,
+        '-map',
+        '[v]',
+        '-map',
+        '[a]',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-movflags',
+        '+faststart',
+        opts.outPath,
+      ],
+      opts.logPaths
+    )
+    return
+  }
 
   const scalePad = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2`
   const tpad = freezeStart > 0.01 || freezeEnd > 0.01
