@@ -844,12 +844,14 @@ async function overlayGraphics(opts: {
 
   const filters: string[] = []
   const fadeDur = 0.35
+  const overlapSeconds = 0.1
   for (let i = 0; i < opts.graphics.length; i++) {
     const g = opts.graphics[i]
     const inIdx = i + 1
-    const s = roundToTenth(Number(g.startSeconds))
-    const e = roundToTenth(Number(g.endSeconds))
-    const d = Math.max(0, roundToTenth(e - s))
+    const s = Number(g.startSeconds)
+    const rawEnd = Number(g.endSeconds)
+    const trimEnd = Math.min(baseDur, rawEnd + overlapSeconds)
+    const d = Math.max(0, trimEnd - s)
     const fitMode = g.fitMode || 'cover_full'
     const borderWidthAllowed = new Set([0, 2, 4, 6])
     const borderWidthRaw = Number(g.borderWidthPx)
@@ -880,13 +882,13 @@ async function overlayGraphics(opts: {
       const wExpr = `min(${desiredW},min(${opts.targetW}-2*${insetXPx},(${opts.targetH}-2*${insetYPx})*iw/ih))`
       filters.push(
         `[${inIdx}:v]scale=w='${wExpr}':h=-2:flags=lanczos,format=rgba${borderFilter}[img${i}full];` +
-          `[img${i}full]trim=start=${s}:end=${e},setpts=PTS-STARTPTS${fadeFilters},setpts=PTS+${s}/TB[img${i}src]`
+          `[img${i}full]trim=start=${s}:end=${trimEnd},setpts=PTS-STARTPTS${fadeFilters},setpts=PTS+${s}/TB[img${i}src]`
       )
     } else {
       // Legacy full-frame cover.
       filters.push(
         `[${inIdx}:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},format=rgba${borderFilter}[img${i}full];` +
-          `[img${i}full]trim=start=${s}:end=${e},setpts=PTS-STARTPTS${fadeFilters},setpts=PTS+${s}/TB[img${i}src]`
+          `[img${i}full]trim=start=${s}:end=${trimEnd},setpts=PTS-STARTPTS${fadeFilters},setpts=PTS+${s}/TB[img${i}src]`
       )
     }
   }
@@ -896,14 +898,16 @@ async function overlayGraphics(opts: {
     const g = opts.graphics[i]
     const next = `[v${i + 1}]`
     const fitMode = g.fitMode || 'cover_full'
+    const sStr = Number(g.startSeconds).toFixed(3)
+    const eStr = Math.min(baseDur, Number(g.endSeconds) + overlapSeconds).toFixed(3)
     if (fitMode === 'contain_transparent') {
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
       const pos = String(g.position || 'middle_center')
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
-      filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:eof_action=pass${next}`)
+      filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:eof_action=repeat:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
     } else {
-      filters.push(`${current}[img${i}src]overlay=0:0:eof_action=pass${next}`)
+      filters.push(`${current}[img${i}src]overlay=0:0:eof_action=repeat:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
     }
     current = next
   }
@@ -1233,8 +1237,8 @@ async function overlayVideoOverlayStills(opts: {
   for (let i = 0; i < stills.length; i++) {
     const inIdx = i + 1
     const seg = stills[i]
-    const s = roundToTenth(Number(seg.startSeconds))
-    const e = roundToTenth(Number(seg.endSeconds))
+    const s = Number(seg.startSeconds)
+    const e = Number(seg.endSeconds) + 1 / 30
 
     const pct = Math.max(10, Math.min(100, Math.round(Number(seg.sizePctWidth || 40))))
     const boxW = even((opts.targetW * pct) / 100)
