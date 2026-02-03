@@ -2452,6 +2452,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [deletingId, setDeletingId] = React.useState<number | null>(null)
+  const [cloningId, setCloningId] = React.useState<number | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
 
   const backHref = useMemo(() => {
@@ -2574,23 +2575,95 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                     {isDeleting ? 'Deleting…' : 'Delete'}
                   </button>
 
-                  <a
-                    href={makeHref(`/assets/screen-titles/${encodeURIComponent(String(id))}/edit`)}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(10,132,255,0.55)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      fontWeight: 900,
-                      textDecoration: 'none',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    Edit
-                  </a>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      disabled={cloningId === id}
+                      onClick={async () => {
+                        setDeleteError(null)
+                        setCloningId(id)
+                        try {
+                          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                          const csrf = getCsrfToken()
+                          if (csrf) headers['x-csrf-token'] = csrf
+                          const cloneName = `${name} (copy)`
+                          const body = JSON.stringify({
+                            name: cloneName,
+                            description: it?.description ?? null,
+                            style: it?.style === 'outline' ? 'none' : it?.style,
+                            fontKey: it?.fontKey,
+                            sizeKey: it?.sizeKey || 'medium',
+                            fontSizePct: it?.fontSizePct,
+                            trackingPct: it?.trackingPct ?? 0,
+                            lineSpacingPct: Number.isFinite(Number(it?.lineSpacingPct)) ? Number(it?.lineSpacingPct) : 0,
+                            fontColor: it?.fontColor,
+                            shadowColor: it?.shadowColor || '#000000',
+                            shadowOffsetPx: Number.isFinite(Number(it?.shadowOffsetPx)) ? Number(it?.shadowOffsetPx) : 2,
+                            shadowBlurPx: Number.isFinite(Number(it?.shadowBlurPx)) ? Number(it?.shadowBlurPx) : 0,
+                            shadowOpacityPct: Number.isFinite(Number(it?.shadowOpacityPct)) ? Number(it?.shadowOpacityPct) : 65,
+                            fontGradientKey: it?.fontGradientKey ?? null,
+                            outlineWidthPct: it?.outlineWidthPct ?? null,
+                            outlineOpacityPct: it?.outlineOpacityPct ?? null,
+                            outlineColor: it?.outlineColor ?? null,
+                            marginLeftPct: it?.marginLeftPct ?? null,
+                            marginRightPct: it?.marginRightPct ?? null,
+                            marginTopPct: it?.marginTopPct ?? null,
+                            marginBottomPct: it?.marginBottomPct ?? null,
+                            pillBgColor: it?.pillBgColor,
+                            pillBgOpacityPct: it?.pillBgOpacityPct,
+                            alignment: it?.alignment ?? 'center',
+                            position: it?.position,
+                            maxWidthPct: it?.maxWidthPct,
+                            insetXPreset: it?.insetXPreset ?? null,
+                            insetYPreset: it?.insetYPreset ?? null,
+                            timingRule: it?.timingRule,
+                            timingSeconds: it?.timingSeconds ?? null,
+                            fade: it?.fade,
+                          })
+                          const res = await fetch('/api/screen-title-presets', { method: 'POST', credentials: 'same-origin', headers, body })
+                          const data = await res.json().catch(() => ({}))
+                          if (!res.ok) throw new Error(String(data?.detail || data?.error || 'Failed to clone'))
+                          const newId = Number(data?.preset?.id || data?.id || 0)
+                          if (!newId) throw new Error('Clone did not return an id')
+                          window.location.href = makeHref(`/assets/screen-titles/${encodeURIComponent(String(newId))}/edit`)
+                        } catch (e: any) {
+                          setDeleteError(e?.message || 'Failed to clone')
+                        } finally {
+                          setCloningId(null)
+                        }
+                      }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(10,132,255,0.55)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: cloningId === id ? 'default' : 'pointer',
+                        opacity: cloningId === id ? 0.7 : 1,
+                      }}
+                    >
+                      {cloningId === id ? 'Cloning…' : 'Clone'}
+                    </button>
+
+                    <a
+                      href={makeHref(`/assets/screen-titles/${encodeURIComponent(String(id))}/edit`)}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(10,132,255,0.55)',
+                        background: '#0c0c0c',
+                        color: '#fff',
+                        fontWeight: 900,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      Edit
+                    </a>
+                  </div>
                 </div>
               </div>
             )
