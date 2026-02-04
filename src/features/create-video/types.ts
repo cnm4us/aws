@@ -10,6 +10,9 @@ export type CreateVideoClipV1 = {
   audioEnabled?: boolean
   // Optional per-clip loudness adjustment (MVP: 0/+3/+6/+9).
   boostDb?: number
+  // Optional background fill (landscape->portrait only).
+  bgFillStyle?: 'none' | 'blur'
+  bgFillDim?: 'light' | 'medium' | 'strong'
   // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
   // Kept temporarily for backward compatibility with existing projects.
   freezeStartSeconds?: number

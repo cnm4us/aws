@@ -19,6 +19,8 @@ type Clip = {
   sourceEndSeconds: number
   audioEnabled?: boolean
   boostDb?: number
+  bgFillStyle?: 'none' | 'blur'
+  bgFillDim?: 'light' | 'medium' | 'strong'
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
@@ -1358,6 +1360,9 @@ async function renderSegmentMp4(opts: {
   endSeconds: number
   audioEnabled?: boolean
   boostDb?: number
+  bgFillStyle?: 'none' | 'blur'
+  bgFillDim?: 'light' | 'medium' | 'strong'
+  sourceDims?: { width: number; height: number }
   freezeStartSeconds?: number
   freezeEndSeconds?: number
   targetW: number
@@ -1380,7 +1385,32 @@ async function renderSegmentMp4(opts: {
   const tpad = freezeStart > 0.01 || freezeEnd > 0.01
     ? `,tpad=start_mode=clone:start_duration=${freezeStart.toFixed(3)}:stop_mode=clone:stop_duration=${freezeEnd.toFixed(3)}`
     : ''
-  const v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p${tpad}`
+  let v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p${tpad}`
+
+  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').toLowerCase()
+  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+  const bgFillDimRaw = String(opts.bgFillDim || 'medium').toLowerCase()
+  const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+  let sourceDims = opts.sourceDims
+  if (!sourceDims || !(Number.isFinite(sourceDims.width) && Number.isFinite(sourceDims.height) && sourceDims.width > 0 && sourceDims.height > 0)) {
+    try {
+      const dims = await probeVideoDisplayDimensions(opts.inPath)
+      sourceDims = { width: dims.width, height: dims.height }
+    } catch {}
+  }
+  const sourceIsLandscape = !!(sourceDims && sourceDims.width > sourceDims.height)
+  const targetIsPortrait = opts.targetH >= opts.targetW
+  const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
+  if (useBgFill) {
+    const blurSigma = 20
+    const brightness = bgFillDim === 'light' ? -0.05 : bgFillDim === 'strong' ? -0.2 : -0.12
+    const fg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease`
+    const bg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},gblur=sigma=${blurSigma},eq=brightness=${brightness}:saturation=0.9`
+    v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,split=2[fg][bg];` +
+      `[bg]${bg}[bgf];` +
+      `[fg]${fg}[fgf];` +
+      `[bgf][fgf]overlay=(W-w)/2:(H-h)/2,fps=${fps},format=yuv420p${tpad}`
+  }
 
   const delayMs = Math.max(0, Math.round(freezeStart * 1000))
   const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : ''
@@ -1767,7 +1797,12 @@ export async function runCreateVideoExportV1Job(
         await downloadS3ObjectToFile(String(firstRow.s3_bucket), String(firstRow.s3_key), firstIn)
         const dims = await probeVideoDisplayDimensions(firstIn)
         const computed = computeTargetDims(dims.width, dims.height)
-        target = { w: computed.w, h: computed.h }
+        if (computed.w > computed.h) {
+          const portraitW = even((1080 * 9) / 16)
+          target = { w: portraitW, h: 1080 }
+        } else {
+          target = { w: computed.w, h: computed.h }
+        }
         seenDownloads.set(Number(first.uploadId), firstIn)
       }
 
@@ -1816,6 +1851,12 @@ export async function runCreateVideoExportV1Job(
             endSeconds: Number(c.sourceEndSeconds || 0),
             audioEnabled: (c as any).audioEnabled !== false,
             boostDb: (c as any).boostDb,
+            bgFillStyle: (c as any).bgFillStyle,
+            bgFillDim: (c as any).bgFillDim,
+            sourceDims:
+              row.width != null && row.height != null && Number(row.width) > 0 && Number(row.height) > 0
+                ? { width: Number(row.width), height: Number(row.height) }
+                : undefined,
             freezeStartSeconds: Number((c as any).freezeStartSeconds || 0),
             freezeEndSeconds: Number((c as any).freezeEndSeconds || 0),
             targetW: target.w,

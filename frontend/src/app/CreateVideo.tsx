@@ -512,7 +512,14 @@ export default function CreateVideo() {
   const [namesByUploadId, setNamesByUploadId] = useState<Record<number, string>>({})
   const [durationsByUploadId, setDurationsByUploadId] = useState<Record<number, number>>({})
   const [dimsByUploadId, setDimsByUploadId] = useState<Record<number, { width: number; height: number }>>({})
-  const [clipEditor, setClipEditor] = useState<{ id: string; start: number; end: number; boostDb: number } | null>(null)
+  const [clipEditor, setClipEditor] = useState<{
+    id: string
+    start: number
+    end: number
+    boostDb: number
+    bgFillStyle: 'none' | 'blur'
+    bgFillDim: 'light' | 'medium' | 'strong'
+  } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
   const [freezeInsertBusy, setFreezeInsertBusy] = useState(false)
@@ -641,8 +648,10 @@ export default function CreateVideo() {
   const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; boostDb: number } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   const overlayVideoRef = useRef<HTMLVideoElement | null>(null)
   const [previewObjectFit, setPreviewObjectFit] = useState<'cover' | 'contain'>('cover')
+  const [baseVideoDims, setBaseVideoDims] = useState<{ w: number; h: number } | null>(null)
   const [playing, setPlaying] = useState(false)
   const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
   const [overlayActiveUploadId, setOverlayActiveUploadId] = useState<number | null>(null)
@@ -650,6 +659,7 @@ export default function CreateVideo() {
   // hide it by setting activeUploadId=null (e.g. while showing a freeze-frame still overlay).
   // This helps iOS Safari: if we can avoid an async src swap, we can seek + play within the user gesture.
   const baseLoadedUploadIdRef = useRef<number | null>(null)
+  const bgLoadedUploadIdRef = useRef<number | null>(null)
   const overlayLoadedUploadIdRef = useRef<number | null>(null)
   const playbackClockRef = useRef<'base' | 'overlay' | 'synthetic'>('base')
   const playheadRef = useRef(0)
@@ -2563,6 +2573,12 @@ export default function CreateVideo() {
   const activeVideoOverlayAtPlayhead = useMemo(() => findVideoOverlayAtTime(playhead), [findVideoOverlayAtTime, playhead])
   const activeVideoOverlayStillAtPlayhead = useMemo(() => findVideoOverlayStillAtTime(playhead), [findVideoOverlayStillAtTime, playhead])
   const activeStillAtPlayhead = useMemo(() => findStillAtTime(playhead), [findStillAtTime, playhead])
+  const activeClipAtPlayhead = useMemo(() => {
+    if (!timeline.clips.length) return null
+    const idx = findClipIndexAtTime(playhead, timeline.clips, clipStarts)
+    if (idx < 0 || idx >= timeline.clips.length) return null
+    return timeline.clips[idx]
+  }, [playhead, timeline.clips, clipStarts])
 
   // UX: when playback stops exactly at the end of a freeze-frame still (waiting for a user Play gesture
   // to start the next video segment), keep the still visible instead of flashing to black.
@@ -2634,6 +2650,22 @@ export default function CreateVideo() {
     const id = Number((s as any).uploadId)
     return Number.isFinite(id) && id > 0 ? id : null
   }, [previewVideoOverlayStillAtPlayhead])
+
+  const activeClipBgFill = useMemo(() => {
+    const clip: any = activeClipAtPlayhead as any
+    if (!clip) return null
+    const style = String(clip.bgFillStyle || 'none')
+    if (style !== 'blur') return null
+    const uploadId = Number(clip.uploadId || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return null
+    const dims = dimsByUploadId[uploadId]
+    const w = Number(dims?.width ?? (baseVideoDims?.w ?? 0))
+    const h = Number(dims?.height ?? (baseVideoDims?.h ?? 0))
+    if (!(w > 0 && h > 0)) return null
+    if (w <= h) return null
+    const dim = String(clip.bgFillDim || 'medium')
+    return { uploadId, dim }
+  }, [activeClipAtPlayhead, baseVideoDims, dimsByUploadId])
 
   const activeLogoUploadId = useMemo(() => {
     const l = activeLogoAtPlayhead
@@ -3176,6 +3208,26 @@ export default function CreateVideo() {
 
     return { url, style: style as React.CSSProperties }
   }, [activeVideoOverlayStillUrl, dimsByUploadId, previewVideoOverlayStillAtPlayhead, videoOverlays])
+
+  const previewBgVideoStyle = useMemo<React.CSSProperties>(() => {
+    if (!activeClipBgFill) {
+      return { display: 'none' }
+    }
+    const dim = String(activeClipBgFill.dim || 'medium')
+    const brightness = dim === 'light' ? 0.95 : dim === 'strong' ? 0.8 : 0.88
+    return {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      pointerEvents: 'none',
+      zIndex: 2,
+      filter: `blur(20px) brightness(${brightness}) saturate(0.9)`,
+      transform: 'scale(1.02)',
+      display: 'block',
+    }
+  }, [activeClipBgFill])
 
   const previewBaseVideoStyle = useMemo<React.CSSProperties>(() => {
     return {
@@ -5554,12 +5606,14 @@ export default function CreateVideo() {
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
       const v = videoRef.current
+      const bg = bgVideoRef.current
       if (!v) return
       const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
       if (!timeline.clips.length) return
       // Freeze-frame stills are a base-track segment: pause the video and let the still image render as an overlay.
       if (findStillAtTime(tClamped)) {
         try { v.pause() } catch {}
+        try { bg?.pause?.() } catch {}
         setActiveUploadId(null)
         return
       }
@@ -5567,6 +5621,7 @@ export default function CreateVideo() {
       if (idx < 0) {
         activeClipIndexRef.current = Math.max(0, clipStarts.findIndex((s) => Number(s) > tClamped + 1e-6))
         try { v.pause() } catch {}
+        try { bg?.pause?.() } catch {}
         setActiveUploadId(null)
         return
       }
@@ -5581,6 +5636,9 @@ export default function CreateVideo() {
       const sourceTime = clip.sourceStartSeconds + withinMoving
       const nextUploadId = Number(clip.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
+      const clipBgStyle = String((clip as any).bgFillStyle || 'none')
+      const clipDims = dimsByUploadId[nextUploadId]
+      const wantsBg = clipBgStyle === 'blur' && clipDims && Number(clipDims.width) > Number(clipDims.height)
 
       // Fast-path: the correct upload is already loaded into the element's src (even if activeUploadId is null,
       // e.g. while showing a freeze-frame still). Avoid async src swap so play stays within the user gesture on iOS.
@@ -5590,9 +5648,29 @@ export default function CreateVideo() {
         try {
           const w = Number(v.videoWidth || 0)
           const h = Number(v.videoHeight || 0)
-          if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
+          if (w > 0 && h > 0) {
+            setPreviewObjectFit(w > h ? 'contain' : 'cover')
+            setBaseVideoDims({ w, h })
+          }
         } catch {}
         try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (bg) {
+          if (wantsBg) {
+            const src = v.currentSrc || v.src || ''
+            if (bgLoadedUploadIdRef.current !== nextUploadId || (src && bg.currentSrc !== src)) {
+              bg.src = src
+              bgLoadedUploadIdRef.current = nextUploadId
+              bg.load()
+            }
+            try { bg.muted = true } catch {}
+            try { bg.currentTime = Math.max(0, sourceTime) } catch {}
+            if (opts?.autoPlay) {
+              void bg.play().catch(() => {})
+            }
+          } else {
+            try { bg.pause() } catch {}
+          }
+        }
         if (opts?.autoPlay) {
           void (async () => {
             const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
@@ -5605,22 +5683,42 @@ export default function CreateVideo() {
       if (activeUploadId !== nextUploadId) {
         setActiveUploadId(nextUploadId)
         const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        const src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        v.src = src
         baseLoadedUploadIdRef.current = nextUploadId
         v.load()
+        if (bg && wantsBg) {
+          if (bgLoadedUploadIdRef.current !== nextUploadId || bg.currentSrc !== src) {
+            bg.src = src
+            bgLoadedUploadIdRef.current = nextUploadId
+            bg.load()
+          }
+        } else if (bg) {
+          try { bg.pause() } catch {}
+        }
         const onMeta = () => {
           v.removeEventListener('loadedmetadata', onMeta)
           try { v.muted = desiredMuted } catch {}
           try {
             const w = Number(v.videoWidth || 0)
             const h = Number(v.videoHeight || 0)
-            if (w > 0 && h > 0) setPreviewObjectFit(w > h ? 'contain' : 'cover')
+            if (w > 0 && h > 0) {
+              setPreviewObjectFit(w > h ? 'contain' : 'cover')
+              setBaseVideoDims({ w, h })
+            }
           } catch {}
           try { v.currentTime = Math.max(0, sourceTime) } catch {}
           const srcKey = String(v.currentSrc || v.src || '')
           if (!opts?.autoPlay && srcKey && primedFrameSrcRef.current !== srcKey) {
             primedFrameSrcRef.current = srcKey
             void primePausedFrame(v)
+          }
+          if (bg && wantsBg) {
+            try { bg.muted = true } catch {}
+            try { bg.currentTime = Math.max(0, sourceTime) } catch {}
+            if (opts?.autoPlay) {
+              void bg.play().catch(() => {})
+            }
           }
           if (opts?.autoPlay) {
             void (async () => {
@@ -5634,6 +5732,23 @@ export default function CreateVideo() {
         baseLoadedUploadIdRef.current = nextUploadId
         try { v.muted = desiredMuted } catch {}
         try { v.currentTime = Math.max(0, sourceTime) } catch {}
+        if (bg) {
+          if (wantsBg) {
+            const src = v.currentSrc || v.src || ''
+            if (bgLoadedUploadIdRef.current !== nextUploadId || (src && bg.currentSrc !== src)) {
+              bg.src = src
+              bgLoadedUploadIdRef.current = nextUploadId
+              bg.load()
+            }
+            try { bg.muted = true } catch {}
+            try { bg.currentTime = Math.max(0, sourceTime) } catch {}
+            if (opts?.autoPlay) {
+              void bg.play().catch(() => {})
+            }
+          } else {
+            try { bg.pause() } catch {}
+          }
+        }
         if (opts?.autoPlay) {
           void (async () => {
             const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
@@ -5642,8 +5757,37 @@ export default function CreateVideo() {
         }
       }
     },
-    [activeUploadId, clipStarts, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
+    [activeUploadId, clipStarts, dimsByUploadId, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
   )
+
+  useEffect(() => {
+    if (playing) return
+    try { bgVideoRef.current?.pause?.() } catch {}
+  }, [playing])
+
+  useEffect(() => {
+    const bg = bgVideoRef.current
+    const v = videoRef.current
+    if (!bg || !v) return
+    if (!activeClipBgFill) {
+      try { bg.pause() } catch {}
+      return
+    }
+    const src = v.currentSrc || v.src || ''
+    if (src && bg.currentSrc !== src) {
+      bg.src = src
+      bgLoadedUploadIdRef.current = activeClipBgFill.uploadId
+      bg.load()
+    }
+    try { bg.muted = true } catch {}
+    try {
+      const t = Number.isFinite(v.currentTime) ? v.currentTime : 0
+      bg.currentTime = Math.max(0, t)
+    } catch {}
+    if (playing) {
+      void bg.play().catch(() => {})
+    }
+  }, [activeClipBgFill, activeUploadId, playing])
 
 		  const seekOverlay = useCallback(
 		    async (t: number, opts?: { autoPlay?: boolean }) => {
@@ -11476,6 +11620,10 @@ export default function CreateVideo() {
     const boostRaw = Number((clipEditor as any).boostDb)
     const boostAllowed = new Set([0, 3, 6, 9])
     const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+    const bgFillStyleRaw = String((clipEditor as any).bgFillStyle || 'none').toLowerCase()
+    const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+    const bgFillDimRaw = String((clipEditor as any).bgFillDim || 'medium').toLowerCase()
+    const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setClipEditorError('End must be after start.')
       return
@@ -11527,6 +11675,8 @@ export default function CreateVideo() {
         sourceStartSeconds: safeStart,
         sourceEndSeconds: safeEnd,
         boostDb,
+        bgFillStyle,
+        bgFillDim,
       }
       const next = normalized.slice()
       next[idx] = updated
@@ -14181,13 +14331,20 @@ export default function CreateVideo() {
           Clips: {timeline.clips.length} • Stills: {stills.length} • Graphics: {graphics.length} • Total: {totalSeconds.toFixed(1)}s
         </div>
 
-	        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
-	          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative', overflow: 'hidden' }}>
-	            <video
-	              ref={videoRef}
-	              playsInline
-	              preload="metadata"
-	              poster={activePoster || undefined}
+        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
+          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative', overflow: 'hidden' }}>
+            <video
+              ref={bgVideoRef}
+              playsInline
+              preload="metadata"
+              muted
+              style={previewBgVideoStyle}
+            />
+            <video
+              ref={videoRef}
+              playsInline
+              preload="metadata"
+              poster={activePoster || undefined}
 	              style={previewBaseVideoStyle}
 	            />
             {activeStillUrl ? (
@@ -18508,12 +18665,46 @@ export default function CreateVideo() {
                         <option value="3">+3 dB</option>
                         <option value="6">+6 dB</option>
                         <option value="9">+9 dB</option>
-		                      </select>
-		                    </div>
+                      </select>
+                    </div>
 
-		                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
-		                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
-		                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Background Fill</div>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        <label style={{ display: 'grid', gap: 6 }}>
+                          <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
+                          <select
+                            value={String(clipEditor.bgFillStyle || 'none')}
+                            onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillStyle: e.target.value as any }) : p))}
+                            style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                          >
+                            <option value="none">None</option>
+                            <option value="blur">Blur</option>
+                          </select>
+                        </label>
+                        {String(clipEditor.bgFillStyle || 'none') === 'blur' ? (
+                          <label style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ color: '#bbb', fontSize: 13 }}>Dim</div>
+                            <select
+                              value={String(clipEditor.bgFillDim || 'medium')}
+                              onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillDim: e.target.value as any }) : p))}
+                              style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                            >
+                              <option value="light">Light</option>
+                              <option value="medium">Medium</option>
+                              <option value="strong">Strong</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        <div style={{ color: '#888', fontSize: 12 }}>
+                          Applies only when the source is landscape and the output is portrait.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Freeze Frames - Duration: 2.0s</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
 	                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', flex: '1 1 auto' }}>
                           <button
                             type="button"
@@ -18561,6 +18752,22 @@ export default function CreateVideo() {
                 )
               })()}
               {clipEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{clipEditorError}</div> : null}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => { setClipEditor(null); setClipEditorError(null); setFreezeInsertError(null); setFreezeInsertBusy(false) }}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveClipEditor}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -18996,6 +19203,13 @@ export default function CreateVideo() {
 					                          start: clip.sourceStartSeconds,
 					                          end: clip.sourceEndSeconds,
 					                          boostDb: (clip as any).boostDb == null ? 0 : Number((clip as any).boostDb),
+					                          bgFillStyle: (String((clip as any).bgFillStyle || 'none').toLowerCase() === 'blur' ? 'blur' : 'none'),
+					                          bgFillDim:
+					                            String((clip as any).bgFillDim || 'medium').toLowerCase() === 'light'
+					                              ? 'light'
+					                              : String((clip as any).bgFillDim || 'medium').toLowerCase() === 'strong'
+					                                ? 'strong'
+					                                : 'medium',
 					                        })
 				                        setClipEditorError(null)
 				                        setFreezeInsertError(null)
