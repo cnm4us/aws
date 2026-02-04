@@ -23,10 +23,11 @@ export async function createUploadThumbJpeg(opts: {
     // - Portrait:  scale=-2:longEdge
     const vf = `scale=w='if(gte(iw,ih),${longEdge},-2)':h='if(gte(iw,ih),-2,${longEdge})':flags=lanczos`
 
+    // Avoid black/empty first frames (common right at t=0); seek slightly in.
     await runFfmpeg(
       [
         '-ss',
-        '0',
+        '0.2',
         '-i',
         videoPath,
         '-frames:v',
@@ -46,4 +47,3 @@ export async function createUploadThumbJpeg(opts: {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }
 }
-
