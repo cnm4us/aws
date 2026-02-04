@@ -21,6 +21,7 @@ type Clip = {
   boostDb?: number
   bgFillStyle?: 'none' | 'blur'
   bgFillDim?: 'light' | 'medium' | 'strong'
+  bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
@@ -1362,6 +1363,7 @@ async function renderSegmentMp4(opts: {
   boostDb?: number
   bgFillStyle?: 'none' | 'blur'
   bgFillDim?: 'light' | 'medium' | 'strong'
+  bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   sourceDims?: { width: number; height: number }
   freezeStartSeconds?: number
   freezeEndSeconds?: number
@@ -1391,6 +1393,14 @@ async function renderSegmentMp4(opts: {
   const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
   const bgFillDimRaw = String(opts.bgFillDim || 'medium').toLowerCase()
   const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+  const bgFillBlurRaw = String(opts.bgFillBlur || 'medium').toLowerCase()
+  const bgFillBlur = bgFillBlurRaw === 'soft'
+    ? 'soft'
+    : bgFillBlurRaw === 'strong'
+      ? 'strong'
+      : bgFillBlurRaw === 'very_strong'
+        ? 'very_strong'
+        : 'medium'
   let sourceDims = opts.sourceDims
   if (!sourceDims || !(Number.isFinite(sourceDims.width) && Number.isFinite(sourceDims.height) && sourceDims.width > 0 && sourceDims.height > 0)) {
     try {
@@ -1402,7 +1412,7 @@ async function renderSegmentMp4(opts: {
   const targetIsPortrait = opts.targetH >= opts.targetW
   const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
   if (useBgFill) {
-    const blurSigma = 20
+    const blurSigma = bgFillBlur === 'soft' ? 12 : bgFillBlur === 'strong' ? 60 : bgFillBlur === 'very_strong' ? 80 : 32
     const brightness = bgFillDim === 'light' ? -0.05 : bgFillDim === 'strong' ? -0.2 : -0.12
     const fg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease`
     const bg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},gblur=sigma=${blurSigma},eq=brightness=${brightness}:saturation=0.9`
@@ -1853,6 +1863,7 @@ export async function runCreateVideoExportV1Job(
             boostDb: (c as any).boostDb,
             bgFillStyle: (c as any).bgFillStyle,
             bgFillDim: (c as any).bgFillDim,
+            bgFillBlur: (c as any).bgFillBlur,
             sourceDims:
               row.width != null && row.height != null && Number(row.width) > 0 && Number(row.height) > 0
                 ? { width: Number(row.width), height: Number(row.height) }

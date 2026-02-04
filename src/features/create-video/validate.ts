@@ -485,6 +485,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     boostDb: number
     bgFillStyle: 'none' | 'blur'
     bgFillDim: 'light' | 'medium' | 'strong'
+    bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
     metaId: number
     legacyFreezeSeconds: number
     legacyEndSeconds: number
@@ -521,6 +522,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
     const bgFillDimRaw = String((c as any).bgFillDim || 'medium').trim().toLowerCase()
     const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+    const bgFillBlurRaw = String((c as any).bgFillBlur || 'medium').trim().toLowerCase()
+    const bgFillBlur = bgFillBlurRaw === 'soft'
+      ? 'soft'
+      : bgFillBlurRaw === 'strong'
+        ? 'strong'
+        : bgFillBlurRaw === 'very_strong'
+          ? 'very_strong'
+          : 'medium'
 
     // Legacy clip freeze: accept but treat as deprecated. Clamp to 0..5 for safety.
     const freezeStartRaw = (c as any).freezeStartSeconds
@@ -555,6 +564,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       boostDb: Math.round(boostDb),
       bgFillStyle,
       bgFillDim,
+      bgFillBlur,
       metaId: meta.id,
       legacyFreezeSeconds,
       legacyEndSeconds,
@@ -605,6 +615,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     boostDb: c.boostDb,
     bgFillStyle: c.bgFillStyle,
     bgFillDim: c.bgFillDim,
+    bgFillBlur: c.bgFillBlur,
     freezeStartSeconds: 0,
     freezeEndSeconds: 0,
   }))

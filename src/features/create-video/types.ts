@@ -13,6 +13,7 @@ export type CreateVideoClipV1 = {
   // Optional background fill (landscape->portrait only).
   bgFillStyle?: 'none' | 'blur'
   bgFillDim?: 'light' | 'medium' | 'strong'
+  bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
   // Kept temporarily for backward compatibility with existing projects.
   freezeStartSeconds?: number

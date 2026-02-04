@@ -519,6 +519,7 @@ export default function CreateVideo() {
     boostDb: number
     bgFillStyle: 'none' | 'blur'
     bgFillDim: 'light' | 'medium' | 'strong'
+    bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
   } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
@@ -2664,7 +2665,8 @@ export default function CreateVideo() {
     if (!(w > 0 && h > 0)) return null
     if (w <= h) return null
     const dim = String(clip.bgFillDim || 'medium')
-    return { uploadId, dim }
+    const blur = String(clip.bgFillBlur || 'medium')
+    return { uploadId, dim, blur }
   }, [activeClipAtPlayhead, baseVideoDims, dimsByUploadId])
 
   const activeLogoUploadId = useMemo(() => {
@@ -3214,7 +3216,10 @@ export default function CreateVideo() {
       return { display: 'none' }
     }
     const dim = String(activeClipBgFill.dim || 'medium')
-    const brightness = dim === 'light' ? 0.95 : dim === 'strong' ? 0.8 : 0.88
+    const blur = String(activeClipBgFill.blur || 'medium')
+    const brightness = dim === 'light' ? 0.86 : dim === 'strong' ? 0.68 : 0.78
+    const blurPxRaw = blur === 'soft' ? 12 : blur === 'strong' ? 60 : blur === 'very_strong' ? 80 : 32
+    const blurPx = Math.max(2, Math.round(blurPxRaw * 0.55))
     return {
       position: 'absolute',
       inset: 0,
@@ -3223,7 +3228,7 @@ export default function CreateVideo() {
       objectFit: 'cover',
       pointerEvents: 'none',
       zIndex: 2,
-      filter: `blur(20px) brightness(${brightness}) saturate(0.9)`,
+      filter: `blur(${blurPx}px) brightness(${brightness}) saturate(0.9)`,
       transform: 'scale(1.02)',
       display: 'block',
     }
@@ -11624,6 +11629,14 @@ export default function CreateVideo() {
     const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
     const bgFillDimRaw = String((clipEditor as any).bgFillDim || 'medium').toLowerCase()
     const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+    const bgFillBlurRaw = String((clipEditor as any).bgFillBlur || 'medium').toLowerCase()
+    const bgFillBlur = bgFillBlurRaw === 'soft'
+      ? 'soft'
+      : bgFillBlurRaw === 'strong'
+        ? 'strong'
+        : bgFillBlurRaw === 'very_strong'
+          ? 'very_strong'
+          : 'medium'
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setClipEditorError('End must be after start.')
       return
@@ -11660,33 +11673,35 @@ export default function CreateVideo() {
       }
     }
     snapshotUndo()
-    setTimeline((prev) => {
-      const idx = prev.clips.findIndex((c) => c.id === clipEditor.id)
-      if (idx < 0) return prev
-      // Normalize to explicit startSeconds so edits don't implicitly shift later clips.
-      const starts = computeClipStarts(prev.clips)
-      const normalized: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(starts[i] || 0) }))
-      const clip = normalized[idx]
-      const maxEnd = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
-      const safeStart = Math.max(0, start)
-      const safeEnd = Math.min(maxEnd, Math.max(safeStart + 0.2, end))
-      const updated: Clip = {
-        ...clip,
-        sourceStartSeconds: safeStart,
-        sourceEndSeconds: safeEnd,
-        boostDb,
-        bgFillStyle,
-        bgFillDim,
-      }
-      const next = normalized.slice()
-      next[idx] = updated
-      const nextTimeline: any = { ...prev, clips: next }
-      const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
-      const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
-      return { ...nextTimeline, playheadSeconds: nextPlayhead }
-    })
+    const prev = timeline
+    const idx = prev.clips.findIndex((c) => c.id === clipEditor.id)
+    if (idx < 0) return
+    // Normalize to explicit startSeconds so edits don't implicitly shift later clips.
+    const starts = computeClipStarts(prev.clips)
+    const normalized: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(starts[i] || 0) }))
+    const clipAtIdx = normalized[idx]
+    const maxEnd = durationsByUploadId[Number(clipAtIdx.uploadId)] ?? clipAtIdx.sourceEndSeconds
+    const safeStart = Math.max(0, start)
+    const safeEnd = Math.min(maxEnd, Math.max(safeStart + 0.2, end))
+    const updated: Clip = {
+      ...clipAtIdx,
+      sourceStartSeconds: safeStart,
+      sourceEndSeconds: safeEnd,
+      boostDb,
+      bgFillStyle,
+      bgFillDim,
+      bgFillBlur,
+    }
+    const next = normalized.slice()
+    next[idx] = updated
+    const nextTimeline: any = { ...prev, clips: next }
+    const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
+    const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+    const finalized = { ...nextTimeline, playheadSeconds: nextPlayhead }
+    setTimeline(finalized)
+    void saveTimelineNow({ ...(finalized as any), playheadSeconds: nextPlayhead } as any)
     setClipEditor(null)
-  }, [clipEditor, clipStarts, durationsByUploadId, snapshotUndo, timeline.clips, computeTotalSecondsForTimeline, stills])
+  }, [clipEditor, clipStarts, durationsByUploadId, snapshotUndo, timeline, computeTotalSecondsForTimeline, stills, saveTimelineNow])
 
   const rippleInsert = useCallback(
     (tl: Timeline, atSeconds: number, insertSeconds: number): Timeline => {
@@ -18683,18 +18698,33 @@ export default function CreateVideo() {
                           </select>
                         </label>
                         {String(clipEditor.bgFillStyle || 'none') === 'blur' ? (
-                          <label style={{ display: 'grid', gap: 6 }}>
-                            <div style={{ color: '#bbb', fontSize: 13 }}>Dim</div>
-                            <select
-                              value={String(clipEditor.bgFillDim || 'medium')}
-                              onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillDim: e.target.value as any }) : p))}
-                              style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                            >
-                              <option value="light">Light</option>
-                              <option value="medium">Medium</option>
-                              <option value="strong">Strong</option>
-                            </select>
-                          </label>
+                          <>
+                            <label style={{ display: 'grid', gap: 6 }}>
+                              <div style={{ color: '#bbb', fontSize: 13 }}>Dim</div>
+                              <select
+                                value={String(clipEditor.bgFillDim || 'medium')}
+                                onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillDim: e.target.value as any }) : p))}
+                                style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                              >
+                                <option value="light">Light</option>
+                                <option value="medium">Medium</option>
+                                <option value="strong">Strong</option>
+                              </select>
+                            </label>
+                            <label style={{ display: 'grid', gap: 6 }}>
+                              <div style={{ color: '#bbb', fontSize: 13 }}>Blur</div>
+                              <select
+                                value={String(clipEditor.bgFillBlur || 'medium')}
+                                onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillBlur: e.target.value as any }) : p))}
+                                style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                              >
+                                <option value="soft">Soft</option>
+                                <option value="medium">Medium</option>
+                                <option value="strong">Strong</option>
+                                <option value="very_strong">Very strong</option>
+                              </select>
+                            </label>
+                          </>
                         ) : null}
                         <div style={{ color: '#888', fontSize: 12 }}>
                           Applies only when the source is landscape and the output is portrait.
@@ -19210,6 +19240,14 @@ export default function CreateVideo() {
 					                              : String((clip as any).bgFillDim || 'medium').toLowerCase() === 'strong'
 					                                ? 'strong'
 					                                : 'medium',
+					                          bgFillBlur:
+					                            String((clip as any).bgFillBlur || 'medium').toLowerCase() === 'soft'
+					                              ? 'soft'
+					                              : String((clip as any).bgFillBlur || 'medium').toLowerCase() === 'strong'
+					                                ? 'strong'
+					                                : String((clip as any).bgFillBlur || 'medium').toLowerCase() === 'very_strong'
+					                                  ? 'very_strong'
+					                                  : 'medium',
 					                        })
 				                        setClipEditorError(null)
 				                        setFreezeInsertError(null)
