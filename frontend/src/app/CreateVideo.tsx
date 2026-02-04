@@ -2645,6 +2645,87 @@ export default function CreateVideo() {
     return Number.isFinite(id) && id > 0 ? id : null
   }, [previewStillAtPlayhead])
 
+  const activeStillBgFill = useMemo(() => {
+    const s: any = previewStillAtPlayhead as any
+    if (!s) return null
+    let clip: any | null = null
+    const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
+    if (sourceClipId) {
+      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
+    }
+    if (!clip && timeline.clips.length) {
+      const stillStart = roundToTenth(Number(s.startSeconds || 0))
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
+        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
+        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
+          clip = timeline.clips[i]
+          break
+        }
+      }
+    }
+    if (!clip) return null
+    const style = String(clip.bgFillStyle || 'none')
+    if (style !== 'blur') return null
+    const uploadId = Number(clip.uploadId || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return null
+    const dims = dimsByUploadId[uploadId]
+    const w = Number(dims?.width ?? (baseVideoDims?.w ?? 0))
+    const h = Number(dims?.height ?? (baseVideoDims?.h ?? 0))
+    if (w > 0 && h > 0 && w <= h) return null
+    const brightness = String(clip.bgFillBrightness || 'neutral')
+    const blur = String(clip.bgFillBlur || 'medium')
+    return { brightness, blur }
+  }, [baseVideoDims, clipStarts, dimsByUploadId, previewStillAtPlayhead, timeline.clips])
+
+  const activeStillBgFillDebug = useMemo(() => {
+    const s: any = previewStillAtPlayhead as any
+    if (!s) return { ok: false, reason: 'no_still' }
+    const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
+    let clip: any | null = null
+    if (sourceClipId) {
+      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
+    }
+    if (!clip && timeline.clips.length) {
+      const stillStart = roundToTenth(Number(s.startSeconds || 0))
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
+        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
+        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
+          clip = timeline.clips[i]
+          break
+        }
+      }
+    }
+    if (!clip) return { ok: false, reason: 'clip_not_found', sourceClipId, stillStart: s.startSeconds }
+    const style = String(clip.bgFillStyle || 'none')
+    const uploadId = Number(clip.uploadId || 0)
+    const dims = dimsByUploadId[uploadId]
+    const w = Number(dims?.width ?? (baseVideoDims?.w ?? 0))
+    const h = Number(dims?.height ?? (baseVideoDims?.h ?? 0))
+    if (style !== 'blur') {
+      return { ok: false, reason: 'style_not_blur', style, uploadId }
+    }
+    if (w > 0 && h > 0 && w <= h) {
+      return { ok: false, reason: 'portrait_source', uploadId, w, h }
+    }
+    return {
+      ok: true,
+      reason: 'ok',
+      style,
+      uploadId,
+      w,
+      h,
+      brightness: String(clip.bgFillBrightness || 'neutral'),
+      blur: String(clip.bgFillBlur || 'medium'),
+    }
+  }, [baseVideoDims, clipStarts, dimsByUploadId, previewStillAtPlayhead, timeline.clips])
+
+  const activeStillObjectFit = useMemo<'cover' | 'contain'>(() => {
+    if (!activeStillUploadId) return 'cover'
+    return 'contain'
+  }, [activeStillUploadId])
+
   const activeVideoOverlayStillUploadId = useMemo(() => {
     const s = previewVideoOverlayStillAtPlayhead
     if (!s) return null
@@ -3245,6 +3326,41 @@ export default function CreateVideo() {
       display: 'block',
     }
   }, [activeClipBgFill])
+
+  const previewBgStillStyle = useMemo<React.CSSProperties>(() => {
+    if (!activeStillBgFill) {
+      return { display: 'none' }
+    }
+    const brightnessPreset = String(activeStillBgFill.brightness || 'neutral')
+    const blur = String(activeStillBgFill.blur || 'medium')
+    const brightness = brightnessPreset === 'light3'
+      ? 1.24
+      : brightnessPreset === 'light2'
+        ? 1.16
+        : brightnessPreset === 'light1'
+          ? 1.04
+          : brightnessPreset === 'dim1'
+            ? 0.94
+            : brightnessPreset === 'dim3'
+              ? 0.64
+              : brightnessPreset === 'dim2'
+                ? 0.76
+                : 1
+    const blurPxRaw = blur === 'soft' ? 12 : blur === 'strong' ? 60 : blur === 'very_strong' ? 80 : 32
+    const blurPx = Math.max(2, Math.round(blurPxRaw * 0.55))
+    return {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover',
+      pointerEvents: 'none',
+      zIndex: 2,
+      filter: `blur(${blurPx}px) brightness(${brightness}) saturate(0.9)`,
+      transform: 'scale(1.02)',
+      display: 'block',
+    }
+  }, [activeStillBgFill])
 
   const previewBaseVideoStyle = useMemo<React.CSSProperties>(() => {
     return {
@@ -14331,6 +14447,44 @@ export default function CreateVideo() {
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const payload = {
+                    projectId: project?.id ?? null,
+                    timeline,
+                    clipStarts,
+                    activeClipId: (activeClipAtPlayhead as any)?.id ?? null,
+                    activeStillId: (previewStillAtPlayhead as any)?.id ?? null,
+                    activeStillBgFill,
+                    activeStillBgFillDebug,
+                    activeClipBgFill,
+                  }
+                  const text = JSON.stringify(payload, null, 2)
+                  try { await navigator.clipboard.writeText(text) } catch {}
+                  try { console.log('[create-video] timeline debug', payload) } catch {}
+                  alert('Timeline debug JSON copied to clipboard.')
+                } catch (err) {
+                  console.error(err)
+                  alert('Failed to copy timeline debug JSON.')
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                fontWeight: 800,
+                textDecoration: 'none',
+              }}
+            >
+              Copy Timeline JSON
+            </button>
             <a
               href={`/timelines?return=${encodeURIComponent('/create-video')}`}
               style={{
@@ -14381,6 +14535,13 @@ export default function CreateVideo() {
               muted
               style={previewBgVideoStyle}
             />
+            {activeStillUrl && activeStillBgFill ? (
+              <img
+                src={activeStillUrl}
+                alt=""
+                style={previewBgStillStyle}
+              />
+            ) : null}
             <video
               ref={videoRef}
               playsInline
@@ -14392,7 +14553,16 @@ export default function CreateVideo() {
               <img
                 src={activeStillUrl}
                 alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 10 }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: activeStillObjectFit,
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                  background: activeStillBgFill ? 'transparent' : '#000',
+                }}
               />
             ) : null}
 	            {activeGraphicUrl && activeGraphicPreviewStyle ? (

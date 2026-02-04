@@ -1507,6 +1507,11 @@ async function renderStillSegmentMp4(opts: {
   imagePath: string
   outPath: string
   durationSeconds: number
+  bgFillStyle?: 'none' | 'blur'
+  bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
+  bgFillDim?: 'light' | 'medium' | 'strong'
+  bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
+  sourceDims?: { width: number; height: number }
   targetW: number
   targetH: number
   fps: number
@@ -1515,7 +1520,76 @@ async function renderStillSegmentMp4(opts: {
   const dur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
   if (!(dur > 0.05)) throw new Error('invalid_still_duration')
   const fps = Math.max(15, Math.min(60, Math.round(Number(opts.fps || 30))))
-  const v = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},fps=${fps},format=yuv420p`
+
+  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').toLowerCase()
+  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+  const bgFillBrightnessRaw = String(opts.bgFillBrightness || '').toLowerCase()
+  const bgFillBrightness = bgFillBrightnessRaw === 'light3'
+    ? 'light3'
+    : bgFillBrightnessRaw === 'light2'
+      ? 'light2'
+      : bgFillBrightnessRaw === 'light1'
+        ? 'light1'
+        : bgFillBrightnessRaw === 'dim1'
+          ? 'dim1'
+          : bgFillBrightnessRaw === 'dim3'
+            ? 'dim3'
+            : bgFillBrightnessRaw === 'dim2'
+              ? 'dim2'
+              : bgFillBrightnessRaw === 'neutral'
+                ? 'neutral'
+                : ''
+  const bgFillDimRaw = String(opts.bgFillDim || '').toLowerCase()
+  const legacyBrightness = bgFillDimRaw === 'light'
+    ? 'light1'
+    : bgFillDimRaw === 'strong'
+      ? 'dim3'
+      : bgFillDimRaw === 'medium'
+        ? 'dim2'
+        : 'neutral'
+  const resolvedBrightness = bgFillBrightness || legacyBrightness
+  const bgFillBlurRaw = String(opts.bgFillBlur || 'medium').toLowerCase()
+  const bgFillBlur = bgFillBlurRaw === 'soft'
+    ? 'soft'
+    : bgFillBlurRaw === 'strong'
+      ? 'strong'
+      : bgFillBlurRaw === 'very_strong'
+        ? 'very_strong'
+        : 'medium'
+  let sourceDims = opts.sourceDims
+  if (!sourceDims || !(Number.isFinite(sourceDims.width) && Number.isFinite(sourceDims.height) && sourceDims.width > 0 && sourceDims.height > 0)) {
+    try {
+      const dims = await probeVideoDisplayDimensions(opts.imagePath)
+      sourceDims = { width: dims.width, height: dims.height }
+    } catch {}
+  }
+  const sourceIsLandscape = !!(sourceDims && sourceDims.width > sourceDims.height)
+  const targetIsPortrait = opts.targetH >= opts.targetW
+  const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
+
+  let v = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},fps=${fps},format=yuv420p`
+  if (useBgFill) {
+    const blurSigma = bgFillBlur === 'soft' ? 12 : bgFillBlur === 'strong' ? 60 : bgFillBlur === 'very_strong' ? 80 : 32
+    const brightness = resolvedBrightness === 'light3'
+      ? 0.24
+      : resolvedBrightness === 'light2'
+        ? 0.16
+        : resolvedBrightness === 'light1'
+          ? 0.04
+          : resolvedBrightness === 'dim1'
+            ? -0.06
+            : resolvedBrightness === 'dim3'
+              ? -0.36
+              : resolvedBrightness === 'dim2'
+                ? -0.24
+                : 0
+    const fg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease`
+    const bg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},gblur=sigma=${blurSigma},eq=brightness=${brightness}:saturation=0.9`
+    v = `split=2[fg][bg];` +
+      `[bg]${bg}[bgf];` +
+      `[fg]${fg}[fgf];` +
+      `[bgf][fgf]overlay=(W-w)/2:(H-h)/2,fps=${fps},format=yuv420p`
+  }
   await runFfmpeg(
     [
       '-loop',
@@ -1749,6 +1823,10 @@ export async function runCreateVideoExportV1Job(
       return { ...c, startSeconds }
     })
     const sortedClips: Clip[] = normalizedClips.slice().sort((a, b) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+    const clipById = new Map<string, Clip>()
+    for (const c of sortedClips) {
+      clipById.set(String(c.id), c)
+    }
     const sortedStills: Still[] = stills
       .map((s) => ({
         ...s,
@@ -1934,11 +2012,20 @@ export async function runCreateVideoExportV1Job(
           await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
           seenDownloads.set(uploadId, inPath)
         }
+        const sourceClipId = (s as any).sourceClipId != null ? String((s as any).sourceClipId) : ''
+        const sourceClip = sourceClipId ? clipById.get(sourceClipId) : undefined
         const outPath = path.join(tmpDir, `seg_still_${String(i).padStart(3, '0')}.mp4`)
         await renderStillSegmentMp4({
           imagePath: inPath,
           outPath,
           durationSeconds: roundToTenth(endSeconds - startSeconds),
+          bgFillStyle: sourceClip ? (sourceClip as any).bgFillStyle : undefined,
+          bgFillBrightness: sourceClip ? (sourceClip as any).bgFillBrightness : undefined,
+          bgFillBlur: sourceClip ? (sourceClip as any).bgFillBlur : undefined,
+          sourceDims:
+            row.width != null && row.height != null && Number(row.width) > 0 && Number(row.height) > 0
+              ? { width: Number(row.width), height: Number(row.height) }
+              : undefined,
           targetW: target.w,
           targetH: target.h,
           fps,
