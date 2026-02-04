@@ -7532,8 +7532,8 @@ export default function CreateVideo() {
       setAudioEditorError('Add video or graphics first.')
       return
     }
-    if (end > contentTotalSeconds + 1e-6) {
-      setAudioEditorError(`End exceeds content (${contentTotalSeconds.toFixed(1)}s).`)
+    if (end > MAX_TIMELINE_SECONDS + 1e-6) {
+      setAudioEditorError(`End exceeds max timeline (${MAX_TIMELINE_SECONDS.toFixed(1)}s).`)
       return
     }
 	    for (const other of audioSegments) {
@@ -7553,7 +7553,7 @@ export default function CreateVideo() {
 	      return
 	    }
 	    const safeStart = clamp(start, 0, Math.max(0, end - 0.2))
-	    const safeEnd = clamp(end, safeStart + 0.2, Math.max(safeStart + 0.2, contentTotalSeconds))
+	    const safeEnd = clamp(end, safeStart + 0.2, MAX_TIMELINE_SECONDS)
 	    const nextSegs = prevSegs.slice()
 	    nextSegs[idx] = {
 	      ...(prevSegs[idx] as any),
@@ -7565,12 +7565,24 @@ export default function CreateVideo() {
 	      ...(musicMode === 'mix_duck' ? { duckingIntensity: duckingIntensity || 'medium' } : {}),
 	    }
 	    nextSegs.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
-	    const nextTimeline = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
-	    setTimeline(nextTimeline as any)
-	    void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+	    const nextTimeline0 = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
+	    const nextTimeline1: any = extendViewportEndSecondsIfNeeded(timeline as any, nextTimeline0 as any, safeEnd + VIEWPORT_PAD_SECONDS)
+	    setTimeline(nextTimeline1 as any)
+	    void saveTimelineNow({ ...(nextTimeline1 as any), playheadSeconds: playhead } as any)
 	    setAudioEditor(null)
 	    setAudioEditorError(null)
-	  }, [audioEditor, audioSegments, playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds])
+	  }, [
+	    MAX_TIMELINE_SECONDS,
+	    VIEWPORT_PAD_SECONDS,
+	    audioEditor,
+	    audioSegments,
+	    extendViewportEndSecondsIfNeeded,
+	    playhead,
+	    saveTimelineNow,
+	    snapshotUndo,
+	    timeline,
+	    totalSeconds,
+	  ])
 
 		  const saveNarrationEditor = useCallback(() => {
 		    if (!narrationEditor) return
