@@ -797,7 +797,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     'bottom_center',
     'bottom_right',
   ])
-  const allowedOverlaySizesForStills = new Set([25, 33, 40, 50, 70, 90])
+  const allowedOverlaySizesForStills = new Set([25, 33, 40, 50, 70, 90, 100])
   for (const s of videoOverlayStillsRaw) {
     if (!s || typeof s !== 'object') continue
     const id = normalizeId((s as any).id)
@@ -851,7 +851,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       }))
     : videoOverlaysRaw0
   if (videoOverlaysRaw.length > MAX_VIDEO_OVERLAYS) throw new DomainError('too_many_video_overlays', 'too_many_video_overlays', 400)
-  const allowedOverlaySizes = new Set([25, 33, 40, 50, 70, 90])
+  const allowedOverlaySizes = new Set([25, 33, 40, 50, 70, 90, 100])
   const allowedOverlayPositions = new Set([
     'top_left',
     'top_center',

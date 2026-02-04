@@ -12140,7 +12140,7 @@ export default function CreateVideo() {
       : '#000000'
     const plateOpacityRaw = Number((videoOverlayEditor as any).plateOpacityPct)
     const plateOpacityPct = Number.isFinite(plateOpacityRaw) ? Math.round(clamp(plateOpacityRaw, 0, 100)) : 85
-    const allowedSizes = new Set([25, 33, 40, 50, 70, 90])
+    const allowedSizes = new Set([25, 33, 40, 50, 70, 90, 100])
     const allowedPositions = new Set([
       'top_left',
       'top_center',
@@ -17951,7 +17951,7 @@ export default function CreateVideo() {
                   onChange={(e) => { setVideoOverlayEditorError(null); setVideoOverlayEditor((p) => p ? ({ ...p, sizePctWidth: Number(e.target.value) }) : p) }}
                   style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                 >
-                  {[25, 33, 40, 50, 70, 90].map((n) => (
+                  {[25, 33, 40, 50, 70, 90, 100].map((n) => (
                     <option key={`sz-${n}`} value={String(n)}>{`${n}%`}</option>
                   ))}
                 </select>
@@ -18033,7 +18033,7 @@ export default function CreateVideo() {
                     </select>
                   </div>
                 </div>
-                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
                   <div>
                     <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Frame color</div>
                     <input
