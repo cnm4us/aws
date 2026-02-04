@@ -68,18 +68,50 @@ export function parseS3Url(url: string): { bucket: string; key: string } | null 
   return { bucket, key }
 }
 
+let currentS3OpsCollector: any[] | null = null
+
+export function setFfmpegS3OpsCollector(ops: any[] | null) {
+  currentS3OpsCollector = ops
+}
+
 export async function downloadS3ObjectToFile(bucket: string, key: string, filePath: string): Promise<void> {
-  const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
-  const body = resp.Body as any
-  if (!body) throw new Error('missing_s3_body')
-  await pipeline(body, fs.createWriteStream(filePath))
+  const started = Date.now()
+  try {
+    const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+    const body = resp.Body as any
+    if (!body) throw new Error('missing_s3_body')
+    await pipeline(body, fs.createWriteStream(filePath))
+    if (currentS3OpsCollector) {
+      let bytes: number | undefined
+      try { bytes = fs.statSync(filePath).size } catch {}
+      currentS3OpsCollector.push({ op: 'download', bucket, key, bytes, durationMs: Date.now() - started, status: 'ok' })
+    }
+  } catch (err: any) {
+    if (currentS3OpsCollector) {
+      currentS3OpsCollector.push({ op: 'download', bucket, key, durationMs: Date.now() - started, status: 'error', error: String(err?.message || err) })
+    }
+    throw err
+  }
 }
 
 export async function uploadFileToS3(bucket: string, key: string, filePath: string, contentType: string): Promise<void> {
-  const body = fs.createReadStream(filePath)
-  await s3.send(
-    new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'no-store' })
-  )
+  const started = Date.now()
+  try {
+    const body = fs.createReadStream(filePath)
+    await s3.send(
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'no-store' })
+    )
+    if (currentS3OpsCollector) {
+      let bytes: number | undefined
+      try { bytes = fs.statSync(filePath).size } catch {}
+      currentS3OpsCollector.push({ op: 'upload', bucket, key, bytes, durationMs: Date.now() - started, status: 'ok' })
+    }
+  } catch (err: any) {
+    if (currentS3OpsCollector) {
+      currentS3OpsCollector.push({ op: 'upload', bucket, key, durationMs: Date.now() - started, status: 'error', error: String(err?.message || err) })
+    }
+    throw err
+  }
 }
 
 export async function runFfmpeg(

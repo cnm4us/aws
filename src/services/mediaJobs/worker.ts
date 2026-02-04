@@ -16,6 +16,7 @@ import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { runCreateVideoExportV1Job } from '../../media/jobs/createVideoExportV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
+import { setFfmpegS3OpsCollector } from '../ffmpeg/audioPipeline'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadThumbKey } from '../../utils/uploadThumb'
@@ -87,6 +88,8 @@ async function runOne(job: any, attempt: any, workerId: string) {
   const stdoutPath = path.join(os.tmpdir(), `media-job-${jobId}-${attemptNo}-stdout.log`)
   const stderrPath = path.join(os.tmpdir(), `media-job-${jobId}-${attemptNo}-stderr.log`)
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+  const s3Ops: any[] = []
+  const errors: Array<{ code?: string; message?: string }> = []
 
   try {
     fs.writeFileSync(stdoutPath, '')
@@ -99,7 +102,47 @@ async function runOne(job: any, attempt: any, workerId: string) {
     }, Math.max(3000, MEDIA_JOBS_WORKER_HEARTBEAT_MS || 15000))
 
     const startedAt = new Date().toISOString()
+    const startedMs = Date.now()
+    setFfmpegS3OpsCollector(s3Ops)
     writeRequestLog(`media-job:${jobId}:${attemptNo}`, { jobId, attemptNo, workerId, type: job.type, input: job.input_json, startedAt })
+
+    const summarizeInput = (type: string, input: any) => {
+      const t = String(type || '')
+      if (t === 'create_video_export_v1') {
+        const tl = input?.timeline || {}
+        return {
+          projectId: input?.projectId ?? null,
+          userId: input?.userId ?? null,
+          clips: Array.isArray(tl.clips) ? tl.clips.length : 0,
+          stills: Array.isArray(tl.stills) ? tl.stills.length : 0,
+          overlays: Array.isArray(tl.videoOverlays) ? tl.videoOverlays.length : 0,
+          graphics: Array.isArray(tl.graphics) ? tl.graphics.length : 0,
+          duration: tl?.playheadSeconds ?? null,
+        }
+      }
+      if (t === 'upload_thumb_v1') {
+        return { uploadId: input?.uploadId ?? null, outputKey: input?.outputKey ?? null, longEdgePx: input?.longEdgePx ?? null }
+      }
+      if (t === 'upload_edit_proxy_v1' || t === 'upload_audio_envelope_v1' || t === 'upload_freeze_frame_v1') {
+        return { uploadId: input?.uploadId ?? null, bucket: input?.video?.bucket ?? input?.proxy?.bucket ?? null, key: input?.video?.key ?? input?.proxy?.key ?? null }
+      }
+      return { keys: Object.keys(input || {}) }
+    }
+    const inputSummary = summarizeInput(String(job.type), job.input_json)
+
+    const buildManifest = (extra?: { ffmpegCommands?: string[] }) => {
+      const cmds = Array.isArray(extra?.ffmpegCommands) ? extra?.ffmpegCommands : undefined
+      const trimmed = cmds && cmds.length > 20 ? cmds.slice(cmds.length - 20) : cmds
+      return {
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedMs,
+      inputSummary,
+      ffmpegCommands: trimmed,
+      s3Ops: s3Ops.length ? s3Ops : undefined,
+      errors: errors.length ? errors : undefined,
+      }
+    }
 
     if (String(job.type) === 'audio_master_v1') {
       const input = job.input_json as any
@@ -140,6 +183,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, finalResult)
       return
@@ -183,6 +227,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, finalResult)
       return
@@ -199,7 +244,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
-        scratchManifestJson: ffmpegCommands ? { ffmpegCommands } : undefined,
+        scratchManifestJson: buildManifest({ ffmpegCommands: ffmpegCommands || undefined }),
       })
       await mediaJobsRepo.completeJob(jobId, result)
 
@@ -258,6 +303,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, result)
       return
@@ -274,7 +320,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
-        scratchManifestJson: ffmpegCommands ? { ffmpegCommands } : undefined,
+        scratchManifestJson: buildManifest({ ffmpegCommands: ffmpegCommands || undefined }),
       })
       await mediaJobsRepo.completeJob(jobId, result)
       return
@@ -290,6 +336,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, result)
 
@@ -338,6 +385,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, result)
       return
@@ -353,6 +401,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         exitCode: 0,
         stdout: stdoutPtr || undefined,
         stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
       })
       await mediaJobsRepo.completeJob(jobId, result)
       return
@@ -360,16 +409,27 @@ async function runOne(job: any, attempt: any, workerId: string) {
 
     const msg = `unsupported_job_type:${String(job.type)}`
     await uploadTextToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, msg)
-    await mediaJobsRepo.finishAttempt(Number(attempt.id), { exitCode: 2, stderr: { bucket: MEDIA_JOBS_LOGS_BUCKET, key: `${logPrefix}stderr.log` } })
+    errors.push({ code: 'unsupported_type', message: msg })
+    await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+      exitCode: 2,
+      stderr: { bucket: MEDIA_JOBS_LOGS_BUCKET, key: `${logPrefix}stderr.log` },
+      scratchManifestJson: buildManifest(),
+    })
     await mediaJobsRepo.failJob(jobId, { status: 'dead', errorCode: 'unsupported_type', errorMessage: msg })
   } catch (err: any) {
     const message = err?.stack ? String(err.stack) : String(err || 'unknown_error')
     try {
       await uploadTextToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, message)
-      await mediaJobsRepo.finishAttempt(Number(attempt.id), { exitCode: 1, stderr: { bucket: MEDIA_JOBS_LOGS_BUCKET, key: `${logPrefix}stderr.log` } })
+      errors.push({ code: 'failed', message })
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 1,
+        stderr: { bucket: MEDIA_JOBS_LOGS_BUCKET, key: `${logPrefix}stderr.log` },
+        scratchManifestJson: buildManifest(),
+      })
     } catch {}
     await mediaJobsRepo.failJob(jobId, { status: 'failed', errorCode: 'failed', errorMessage: message })
   } finally {
+    setFfmpegS3OpsCollector(null)
     if (heartbeatTimer) {
       try { clearInterval(heartbeatTimer) } catch {}
     }
