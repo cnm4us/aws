@@ -12,7 +12,7 @@ export type CreateVideoClipV1 = {
   boostDb?: number
   // Optional background fill (landscape->portrait only).
   bgFillStyle?: 'none' | 'blur'
-  bgFillDim?: 'light' | 'medium' | 'strong'
+  bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   // Deprecated (Plan 64): freezes are now explicit still segments (stills[]).
   // Kept temporarily for backward compatibility with existing projects.

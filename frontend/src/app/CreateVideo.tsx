@@ -518,7 +518,7 @@ export default function CreateVideo() {
     end: number
     boostDb: number
     bgFillStyle: 'none' | 'blur'
-    bgFillDim: 'light' | 'medium' | 'strong'
+    bgFillBrightness: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
     bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
   } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
@@ -2664,9 +2664,9 @@ export default function CreateVideo() {
     const h = Number(dims?.height ?? (baseVideoDims?.h ?? 0))
     if (!(w > 0 && h > 0)) return null
     if (w <= h) return null
-    const dim = String(clip.bgFillDim || 'medium')
+    const brightness = String(clip.bgFillBrightness || 'neutral')
     const blur = String(clip.bgFillBlur || 'medium')
-    return { uploadId, dim, blur }
+    return { uploadId, brightness, blur }
   }, [activeClipAtPlayhead, baseVideoDims, dimsByUploadId])
 
   const activeLogoUploadId = useMemo(() => {
@@ -3215,9 +3215,21 @@ export default function CreateVideo() {
     if (!activeClipBgFill) {
       return { display: 'none' }
     }
-    const dim = String(activeClipBgFill.dim || 'medium')
+    const brightnessPreset = String(activeClipBgFill.brightness || 'neutral')
     const blur = String(activeClipBgFill.blur || 'medium')
-    const brightness = dim === 'light' ? 0.86 : dim === 'strong' ? 0.68 : 0.78
+    const brightness = brightnessPreset === 'light3'
+      ? 1.24
+      : brightnessPreset === 'light2'
+        ? 1.16
+        : brightnessPreset === 'light1'
+          ? 1.04
+          : brightnessPreset === 'dim1'
+            ? 0.94
+            : brightnessPreset === 'dim3'
+              ? 0.64
+              : brightnessPreset === 'dim2'
+                ? 0.76
+                : 1
     const blurPxRaw = blur === 'soft' ? 12 : blur === 'strong' ? 60 : blur === 'very_strong' ? 80 : 32
     const blurPx = Math.max(2, Math.round(blurPxRaw * 0.55))
     return {
@@ -11627,8 +11639,22 @@ export default function CreateVideo() {
     const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
     const bgFillStyleRaw = String((clipEditor as any).bgFillStyle || 'none').toLowerCase()
     const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
-    const bgFillDimRaw = String((clipEditor as any).bgFillDim || 'medium').toLowerCase()
-    const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+    const bgFillBrightnessRaw = String((clipEditor as any).bgFillBrightness || '').toLowerCase()
+    const bgFillBrightness = bgFillBrightnessRaw === 'light3'
+      ? 'light3'
+      : bgFillBrightnessRaw === 'light2'
+        ? 'light2'
+        : bgFillBrightnessRaw === 'light1'
+          ? 'light1'
+          : bgFillBrightnessRaw === 'dim1'
+            ? 'dim1'
+            : bgFillBrightnessRaw === 'dim3'
+              ? 'dim3'
+              : bgFillBrightnessRaw === 'dim2'
+                ? 'dim2'
+                : bgFillBrightnessRaw === 'neutral'
+                  ? 'neutral'
+                  : 'neutral'
     const bgFillBlurRaw = String((clipEditor as any).bgFillBlur || 'medium').toLowerCase()
     const bgFillBlur = bgFillBlurRaw === 'soft'
       ? 'soft'
@@ -11688,9 +11714,9 @@ export default function CreateVideo() {
       sourceStartSeconds: safeStart,
       sourceEndSeconds: safeEnd,
       boostDb,
-      bgFillStyle,
-      bgFillDim,
-      bgFillBlur,
+        bgFillStyle,
+        bgFillBrightness,
+        bgFillBlur,
     }
     const next = normalized.slice()
     next[idx] = updated
@@ -18700,15 +18726,19 @@ export default function CreateVideo() {
                         {String(clipEditor.bgFillStyle || 'none') === 'blur' ? (
                           <>
                             <label style={{ display: 'grid', gap: 6 }}>
-                              <div style={{ color: '#bbb', fontSize: 13 }}>Dim</div>
+                              <div style={{ color: '#bbb', fontSize: 13 }}>Backdrop brightness</div>
                               <select
-                                value={String(clipEditor.bgFillDim || 'medium')}
-                                onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillDim: e.target.value as any }) : p))}
+                                value={String(clipEditor.bgFillBrightness || 'neutral')}
+                                onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillBrightness: e.target.value as any }) : p))}
                                 style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                               >
-                                <option value="light">Light</option>
-                                <option value="medium">Medium</option>
-                                <option value="strong">Strong</option>
+                                <option value="light3">Lighten 3</option>
+                                <option value="light2">Lighten 2</option>
+                                <option value="light1">Lighten 1</option>
+                                <option value="neutral">Neutral</option>
+                                <option value="dim1">Dim 1</option>
+                                <option value="dim2">Dim 2</option>
+                                <option value="dim3">Dim 3</option>
                               </select>
                             </label>
                             <label style={{ display: 'grid', gap: 6 }}>
@@ -19234,12 +19264,20 @@ export default function CreateVideo() {
 					                          end: clip.sourceEndSeconds,
 					                          boostDb: (clip as any).boostDb == null ? 0 : Number((clip as any).boostDb),
 					                          bgFillStyle: (String((clip as any).bgFillStyle || 'none').toLowerCase() === 'blur' ? 'blur' : 'none'),
-					                          bgFillDim:
-					                            String((clip as any).bgFillDim || 'medium').toLowerCase() === 'light'
-					                              ? 'light'
-					                              : String((clip as any).bgFillDim || 'medium').toLowerCase() === 'strong'
-					                                ? 'strong'
-					                                : 'medium',
+					                          bgFillBrightness:
+					                            String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'light3'
+					                              ? 'light3'
+					                              : String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'light2'
+					                                ? 'light2'
+					                                : String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'light1'
+					                                  ? 'light1'
+					                                  : String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'dim1'
+					                                    ? 'dim1'
+					                                    : String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'dim3'
+					                                      ? 'dim3'
+					                                      : String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'dim2'
+					                                        ? 'dim2'
+					                                        : 'neutral',
 					                          bgFillBlur:
 					                            String((clip as any).bgFillBlur || 'medium').toLowerCase() === 'soft'
 					                              ? 'soft'

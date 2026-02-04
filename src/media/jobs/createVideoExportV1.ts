@@ -20,6 +20,7 @@ type Clip = {
   audioEnabled?: boolean
   boostDb?: number
   bgFillStyle?: 'none' | 'blur'
+  bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillDim?: 'light' | 'medium' | 'strong'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   freezeStartSeconds?: number
@@ -1362,6 +1363,7 @@ async function renderSegmentMp4(opts: {
   audioEnabled?: boolean
   boostDb?: number
   bgFillStyle?: 'none' | 'blur'
+  bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillDim?: 'light' | 'medium' | 'strong'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
   sourceDims?: { width: number; height: number }
@@ -1391,8 +1393,31 @@ async function renderSegmentMp4(opts: {
 
   const bgFillStyleRaw = String(opts.bgFillStyle || 'none').toLowerCase()
   const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
-  const bgFillDimRaw = String(opts.bgFillDim || 'medium').toLowerCase()
-  const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+  const bgFillBrightnessRaw = String(opts.bgFillBrightness || '').toLowerCase()
+  const bgFillBrightness = bgFillBrightnessRaw === 'light3'
+    ? 'light3'
+    : bgFillBrightnessRaw === 'light2'
+      ? 'light2'
+      : bgFillBrightnessRaw === 'light1'
+        ? 'light1'
+        : bgFillBrightnessRaw === 'dim1'
+          ? 'dim1'
+          : bgFillBrightnessRaw === 'dim3'
+            ? 'dim3'
+            : bgFillBrightnessRaw === 'dim2'
+              ? 'dim2'
+              : bgFillBrightnessRaw === 'neutral'
+                ? 'neutral'
+                : ''
+  const bgFillDimRaw = String(opts.bgFillDim || '').toLowerCase()
+  const legacyBrightness = bgFillDimRaw === 'light'
+    ? 'light1'
+    : bgFillDimRaw === 'strong'
+      ? 'dim3'
+      : bgFillDimRaw === 'medium'
+        ? 'dim2'
+        : 'neutral'
+  const resolvedBrightness = bgFillBrightness || legacyBrightness
   const bgFillBlurRaw = String(opts.bgFillBlur || 'medium').toLowerCase()
   const bgFillBlur = bgFillBlurRaw === 'soft'
     ? 'soft'
@@ -1413,7 +1438,19 @@ async function renderSegmentMp4(opts: {
   const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
   if (useBgFill) {
     const blurSigma = bgFillBlur === 'soft' ? 12 : bgFillBlur === 'strong' ? 60 : bgFillBlur === 'very_strong' ? 80 : 32
-    const brightness = bgFillDim === 'light' ? -0.05 : bgFillDim === 'strong' ? -0.2 : -0.12
+    const brightness = resolvedBrightness === 'light3'
+      ? 0.24
+      : resolvedBrightness === 'light2'
+        ? 0.16
+        : resolvedBrightness === 'light1'
+          ? 0.04
+          : resolvedBrightness === 'dim1'
+            ? -0.06
+            : resolvedBrightness === 'dim3'
+              ? -0.36
+              : resolvedBrightness === 'dim2'
+                ? -0.24
+                : 0
     const fg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease`
     const bg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},gblur=sigma=${blurSigma},eq=brightness=${brightness}:saturation=0.9`
     v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,split=2[fg][bg];` +
@@ -1862,7 +1899,7 @@ export async function runCreateVideoExportV1Job(
             audioEnabled: (c as any).audioEnabled !== false,
             boostDb: (c as any).boostDb,
             bgFillStyle: (c as any).bgFillStyle,
-            bgFillDim: (c as any).bgFillDim,
+            bgFillBrightness: (c as any).bgFillBrightness,
             bgFillBlur: (c as any).bgFillBlur,
             sourceDims:
               row.width != null && row.height != null && Number(row.width) > 0 && Number(row.height) > 0

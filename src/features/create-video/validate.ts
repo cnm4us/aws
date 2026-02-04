@@ -484,7 +484,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     audioEnabled: boolean
     boostDb: number
     bgFillStyle: 'none' | 'blur'
-    bgFillDim: 'light' | 'medium' | 'strong'
+    bgFillBrightness: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
     bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
     metaId: number
     legacyFreezeSeconds: number
@@ -520,8 +520,31 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const bgFillStyleRaw = String((c as any).bgFillStyle || 'none').trim().toLowerCase()
     const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
-    const bgFillDimRaw = String((c as any).bgFillDim || 'medium').trim().toLowerCase()
-    const bgFillDim = bgFillDimRaw === 'light' ? 'light' : bgFillDimRaw === 'strong' ? 'strong' : 'medium'
+    const bgFillBrightnessRaw = String((c as any).bgFillBrightness || '').trim().toLowerCase()
+    const bgFillBrightness = bgFillBrightnessRaw === 'light3'
+      ? 'light3'
+      : bgFillBrightnessRaw === 'light2'
+        ? 'light2'
+        : bgFillBrightnessRaw === 'light1'
+          ? 'light1'
+          : bgFillBrightnessRaw === 'dim1'
+            ? 'dim1'
+            : bgFillBrightnessRaw === 'dim3'
+              ? 'dim3'
+              : bgFillBrightnessRaw === 'dim2'
+                ? 'dim2'
+                : bgFillBrightnessRaw === 'neutral'
+                  ? 'neutral'
+                  : ''
+    const bgFillDimRaw = String((c as any).bgFillDim || '').trim().toLowerCase()
+    const legacyBrightness = bgFillDimRaw === 'light'
+      ? 'light1'
+      : bgFillDimRaw === 'strong'
+        ? 'dim3'
+        : bgFillDimRaw === 'medium'
+          ? 'dim2'
+          : 'neutral'
+    const resolvedBgFillBrightness = bgFillBrightness || legacyBrightness
     const bgFillBlurRaw = String((c as any).bgFillBlur || 'medium').trim().toLowerCase()
     const bgFillBlur = bgFillBlurRaw === 'soft'
       ? 'soft'
@@ -563,7 +586,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       audioEnabled,
       boostDb: Math.round(boostDb),
       bgFillStyle,
-      bgFillDim,
+      bgFillBrightness: resolvedBgFillBrightness,
       bgFillBlur,
       metaId: meta.id,
       legacyFreezeSeconds,
@@ -614,7 +637,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     audioEnabled: c.audioEnabled,
     boostDb: c.boostDb,
     bgFillStyle: c.bgFillStyle,
-    bgFillDim: c.bgFillDim,
+    bgFillBrightness: c.bgFillBrightness,
     bgFillBlur: c.bgFillBlur,
     freezeStartSeconds: 0,
     freezeEndSeconds: 0,
