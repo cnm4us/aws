@@ -241,7 +241,22 @@ async function exportRowAsJob(userId: number, row: CreateVideoProjectRow): Promi
   }
   const normalized = await validateAndNormalizeCreateVideoTimeline(timelineRaw, { userId: Number(userId) })
   const graphics = Array.isArray((normalized as any).graphics) ? ((normalized as any).graphics as any[]) : []
-  if (!normalized.clips.length && !graphics.length) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+  const videoOverlays = Array.isArray((normalized as any).videoOverlays) ? ((normalized as any).videoOverlays as any[]) : []
+  const videoOverlayStills = Array.isArray((normalized as any).videoOverlayStills) ? ((normalized as any).videoOverlayStills as any[]) : []
+  const stills = Array.isArray((normalized as any).stills) ? ((normalized as any).stills as any[]) : []
+  const logos = Array.isArray((normalized as any).logos) ? ((normalized as any).logos as any[]) : []
+  const lowerThirds = Array.isArray((normalized as any).lowerThirds) ? ((normalized as any).lowerThirds as any[]) : []
+  const screenTitles = Array.isArray((normalized as any).screenTitles) ? ((normalized as any).screenTitles as any[]) : []
+  const hasVisual =
+    normalized.clips.length ||
+    graphics.length ||
+    videoOverlays.length ||
+    videoOverlayStills.length ||
+    stills.length ||
+    logos.length ||
+    lowerThirds.length ||
+    screenTitles.length
+  if (!hasVisual) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
   const job = await enqueueJob('create_video_export_v1', {
     projectId: Number(row.id),
