@@ -6,15 +6,16 @@ import { createUploadThumbJpeg } from '../../services/ffmpeg/thumbPipeline'
 export async function runUploadThumbV1Job(
   input: UploadThumbV1Input,
   logPaths?: { stdoutPath?: string; stderrPath?: string }
-): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean }> {
+): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean; ffmpegCommands?: string[] }> {
   const bucket = String(input.outputBucket || '')
   const key = String(input.outputKey || '')
   if (!bucket || !key) throw new Error('missing_output_pointer')
+  const ffmpegCommands: string[] = []
 
   // Idempotency: if thumb already exists, skip re-rendering.
   try {
     await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
-    return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true }
+    return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true, ffmpegCommands }
   } catch (e: any) {
     const status = Number(e?.$metadata?.httpStatusCode || 0)
     const name = String(e?.name || e?.Code || '')
@@ -31,7 +32,7 @@ export async function runUploadThumbV1Job(
     video: input.video,
     outKey: key,
     longEdgePx,
-    logPaths: logPaths ? { ...logPaths, commandLog: [] } : undefined,
+    logPaths: logPaths ? { ...logPaths, commandLog: ffmpegCommands } : undefined,
   })
-  return { output: result }
+  return { output: result, ffmpegCommands }
 }
