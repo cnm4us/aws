@@ -5,7 +5,7 @@ import { createUploadThumbJpeg } from '../../services/ffmpeg/thumbPipeline'
 
 export async function runUploadThumbV1Job(
   input: UploadThumbV1Input,
-  _logPaths?: { stdoutPath?: string; stderrPath?: string }
+  logPaths?: { stdoutPath?: string; stderrPath?: string }
 ): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean }> {
   const bucket = String(input.outputBucket || '')
   const key = String(input.outputKey || '')
@@ -31,6 +31,7 @@ export async function runUploadThumbV1Job(
     video: input.video,
     outKey: key,
     longEdgePx,
+    logPaths: logPaths ? { ...logPaths, commandLog: [] } : undefined,
   })
   return { output: result }
 }

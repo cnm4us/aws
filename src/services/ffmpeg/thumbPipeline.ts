@@ -9,6 +9,7 @@ export async function createUploadThumbJpeg(opts: {
   video: { bucket: string; key: string }
   outKey: string
   longEdgePx?: number
+  logPaths?: { stdoutPath?: string; stderrPath?: string; commandLog?: string[] }
 }): Promise<{ bucket: string; key: string; s3Url: string }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-upload-thumb-'))
   const videoPath = path.join(tmpDir, 'video')
@@ -24,21 +25,24 @@ export async function createUploadThumbJpeg(opts: {
     const vf = `scale=w='if(gte(iw,ih),${longEdge},-2)':h='if(gte(iw,ih),-2,${longEdge})':flags=lanczos`
 
     // Avoid black/empty first frames (common right at t=0); seek slightly in.
+    const ffmpegArgs = [
+      '-ss',
+      '0.2',
+      '-i',
+      videoPath,
+      '-frames:v',
+      '1',
+      '-vf',
+      vf,
+      '-q:v',
+      '3',
+      outPath,
+    ]
     await runFfmpeg(
-      [
-        '-ss',
-        '0.2',
-        '-i',
-        videoPath,
-        '-frames:v',
-        '1',
-        '-vf',
-        vf,
-        '-q:v',
-        '3',
-        outPath,
-      ],
-      undefined
+      ffmpegArgs,
+      opts.logPaths
+        ? { ...opts.logPaths, commandLog: opts.logPaths.commandLog, commandLabel: 'upload_thumb_v1' }
+        : undefined
     )
 
     await uploadFileToS3(opts.uploadBucket, opts.outKey, outPath, 'image/jpeg')
