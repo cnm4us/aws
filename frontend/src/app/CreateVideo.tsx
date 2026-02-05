@@ -350,6 +350,8 @@ function applyScreenTitleCustomStyle(snapshot: any, customStyle: ScreenTitleCust
     next.marginBottomPct = pct
     next.insetYPreset = null
   }
+  if (customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))) next.offsetXPx = Number(customStyle.offsetXPx)
+  if (customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))) next.offsetYPx = Number(customStyle.offsetYPx)
   return next
 }
 
@@ -374,6 +376,8 @@ function buildScreenTitlePresetOverride(customStyle: ScreenTitleCustomStyleDraft
     out.marginBottomPct = pct
     out.insetYPreset = null
   }
+  if (customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))) out.offsetXPx = Number(customStyle.offsetXPx)
+  if (customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))) out.offsetYPx = Number(customStyle.offsetYPx)
   return Object.keys(out).length ? out : null
 }
 
@@ -396,6 +400,8 @@ function normalizeScreenTitleCustomStyleForSave(customStyle: ScreenTitleCustomSt
         : screenTitleInsetPresetToMarginPct(basePreset?.insetYPreset)
   const baseMarginXPx = screenTitleMarginPctToPx(baseMarginXPct)
   const baseMarginYPx = screenTitleMarginPctToPx(baseMarginYPct)
+  const baseOffsetXPx = 0
+  const baseOffsetYPx = 0
 
   const out: ScreenTitleCustomStyleDraft = {}
   if (customStyle.position && customStyle.position !== basePos) out.position = customStyle.position
@@ -426,6 +432,20 @@ function normalizeScreenTitleCustomStyleForSave(customStyle: ScreenTitleCustomSt
     Math.abs(Number(customStyle.marginYPx) - Number(baseMarginYPx || 0)) > 0.5
   ) {
     out.marginYPx = Number(customStyle.marginYPx)
+  }
+  if (
+    customStyle.offsetXPx != null &&
+    Number.isFinite(Number(customStyle.offsetXPx)) &&
+    Math.abs(Number(customStyle.offsetXPx) - Number(baseOffsetXPx || 0)) > 0.5
+  ) {
+    out.offsetXPx = Number(customStyle.offsetXPx)
+  }
+  if (
+    customStyle.offsetYPx != null &&
+    Number.isFinite(Number(customStyle.offsetYPx)) &&
+    Math.abs(Number(customStyle.offsetYPx) - Number(baseOffsetYPx || 0)) > 0.5
+  ) {
+    out.offsetYPx = Number(customStyle.offsetYPx)
   }
 
   return Object.keys(out).length ? out : null
@@ -13001,7 +13021,7 @@ export default function CreateVideo() {
     const sameCustomStyle = (a: any, b: any): boolean => {
       if (!a && !b) return true
       if (!a || !b) return false
-      const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
+      const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'offsetXPx', 'offsetYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
       return keys.every((k) => {
         const av = (a as any)[k]
         const bv = (b as any)[k]
@@ -19111,6 +19131,12 @@ export default function CreateVideo() {
               const marginYDisplay = Number.isFinite(Number((customStyle as any)?.marginYPx))
                 ? Number((customStyle as any).marginYPx)
                 : screenTitleMarginPctToPx(baseMarginYPct)
+              const offsetXDisplay = Number.isFinite(Number((customStyle as any)?.offsetXPx))
+                ? Number((customStyle as any).offsetXPx)
+                : 0
+              const offsetYDisplay = Number.isFinite(Number((customStyle as any)?.offsetYPx))
+                ? Number((customStyle as any).offsetYPx)
+                : 0
               const pos = String((effective as any)?.position || 'top') as 'top' | 'middle' | 'bottom'
               const align = String((effective as any)?.alignment || 'center') as 'left' | 'center' | 'right'
               const effectiveGradient =
@@ -19367,19 +19393,19 @@ export default function CreateVideo() {
                       <div style={{ color: '#bbb', fontSize: 13 }}>Offset</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
                         <div style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>X: {Math.round(marginXDisplay)}px</div>
+                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>X: {Math.round(offsetXDisplay)}px</div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {[-5, -1, 1, 5].map((delta) => (
                               <button
                                 key={`x_${delta}`}
                                 type="button"
                                 onClick={() => {
-                                  const nextVal = Math.max(0, Math.min(1000, (Number(marginXDisplay) || 0) + delta))
+                                  const nextVal = Math.max(-1000, Math.min(1000, (Number(offsetXDisplay) || 0) + delta))
                                   setScreenTitleCustomizeEditor((p) => {
                                     if (!p) return p
                                     const nextInstances = (p.instances || []).map((inst) =>
                                       String(inst.id) === String(activeInstanceId)
-                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: nextVal } }
+                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetXPx: nextVal } }
                                         : inst
                                     )
                                     return { ...p, instances: nextInstances }
@@ -19401,19 +19427,19 @@ export default function CreateVideo() {
                           </div>
                         </div>
                         <div style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>Y: {Math.round(marginYDisplay)}px</div>
+                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>Y: {Math.round(offsetYDisplay)}px</div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {[-5, -1, 1, 5].map((delta) => (
                               <button
                                 key={`y_${delta}`}
                                 type="button"
                                 onClick={() => {
-                                  const nextVal = Math.max(0, Math.min(1000, (Number(marginYDisplay) || 0) + delta))
+                                  const nextVal = Math.max(-1000, Math.min(1000, (Number(offsetYDisplay) || 0) + delta))
                                   setScreenTitleCustomizeEditor((p) => {
                                     if (!p) return p
                                     const nextInstances = (p.instances || []).map((inst) =>
                                       String(inst.id) === String(activeInstanceId)
-                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: nextVal } }
+                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetYPx: nextVal } }
                                         : inst
                                     )
                                     return { ...p, instances: nextInstances }
@@ -19458,21 +19484,21 @@ export default function CreateVideo() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
                       <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-                        <div style={{ color: '#bbb', fontSize: 13 }}>Horizontal Margin (px)</div>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Offset X (px)</div>
                         <input
                           type="number"
-                          min={0}
+                          min={-1000}
                           max={1000}
                           step={1}
-                          value={Number.isFinite(marginXDisplay) ? String(Math.round(marginXDisplay)) : '0'}
+                          value={Number.isFinite(offsetXDisplay) ? String(Math.round(offsetXDisplay)) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
-                            const clamped = Number.isFinite(next) ? Math.max(0, Math.min(1000, next)) : 0
+                            const clamped = Number.isFinite(next) ? Math.max(-1000, Math.min(1000, next)) : 0
                             setScreenTitleCustomizeEditor((p) => {
                               if (!p) return p
                               const nextInstances = (p.instances || []).map((inst) =>
                                 String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: clamped } }
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetXPx: clamped } }
                                   : inst
                               )
                               return { ...p, instances: nextInstances }
@@ -19482,21 +19508,21 @@ export default function CreateVideo() {
                         />
                       </label>
                       <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-                        <div style={{ color: '#bbb', fontSize: 13 }}>Vertical Margin (px)</div>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Offset Y (px)</div>
                         <input
                           type="number"
-                          min={0}
+                          min={-1000}
                           max={1000}
                           step={1}
-                          value={Number.isFinite(marginYDisplay) ? String(Math.round(marginYDisplay)) : '0'}
+                          value={Number.isFinite(offsetYDisplay) ? String(Math.round(offsetYDisplay)) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
-                            const clamped = Number.isFinite(next) ? Math.max(0, Math.min(1000, next)) : 0
+                            const clamped = Number.isFinite(next) ? Math.max(-1000, Math.min(1000, next)) : 0
                             setScreenTitleCustomizeEditor((p) => {
                               if (!p) return p
                               const nextInstances = (p.instances || []).map((inst) =>
                                 String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: clamped } }
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetYPx: clamped } }
                                   : inst
                               )
                               return { ...p, instances: nextInstances }

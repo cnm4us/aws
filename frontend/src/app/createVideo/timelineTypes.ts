@@ -187,6 +187,8 @@ export type ScreenTitleCustomStyle = {
   alignment?: 'left' | 'center' | 'right'
   marginXPx?: number
   marginYPx?: number
+  offsetXPx?: number
+  offsetYPx?: number
   fontKey?: string
   fontSizePct?: number
   fontColor?: string

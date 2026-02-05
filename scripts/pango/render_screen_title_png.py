@@ -148,6 +148,10 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
   shadow_blur_px = clamp(shadow_blur_px, 0.0, 20.0)
   shadow_opacity_pct = normalize_number(preset.get("shadowOpacityPct"), 65.0)
   shadow_opacity = clamp(shadow_opacity_pct / 100.0, 0.0, 1.0)
+  offset_x_px = normalize_number(preset.get("offsetXPx"), 0.0)
+  offset_y_px = normalize_number(preset.get("offsetYPx"), 0.0)
+  offset_x_px = clamp(offset_x_px, -1000.0, 1000.0)
+  offset_y_px = clamp(offset_y_px, -1000.0, 1000.0)
   bg_color = str(preset.get("pillBgColor") or "#000000")
   bg_opacity_pct = float(preset.get("pillBgOpacityPct") or 55.0)
   bg_opacity = clamp(bg_opacity_pct / 100.0, 0.0, 1.0)
@@ -396,6 +400,12 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
   else:
     box_y = min_y
   box_y = clamp(box_y, min_y, max_y)
+
+  # Apply per-instance offsets relative to the anchor, then clamp to frame bounds.
+  box_x = box_x + offset_x_px
+  box_y = box_y + offset_y_px
+  box_x = clamp(box_x, 0.0, width - box_w)
+  box_y = clamp(box_y, 0.0, height - box_h)
 
   x_draw = box_x - box_x0
   y_draw = box_y - box_y0

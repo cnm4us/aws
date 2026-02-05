@@ -553,6 +553,8 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
       if (override.marginRightPct != null && Number.isFinite(Number(override.marginRightPct))) preset.marginRightPct = Math.max(0, Math.min(50, Number(override.marginRightPct)))
       if (override.marginTopPct != null && Number.isFinite(Number(override.marginTopPct))) preset.marginTopPct = Math.max(0, Math.min(50, Number(override.marginTopPct)))
       if (override.marginBottomPct != null && Number.isFinite(Number(override.marginBottomPct))) preset.marginBottomPct = Math.max(0, Math.min(50, Number(override.marginBottomPct)))
+      if (override.offsetXPx != null && Number.isFinite(Number(override.offsetXPx))) preset.offsetXPx = Math.max(-1000, Math.min(1000, Number(override.offsetXPx)))
+      if (override.offsetYPx != null && Number.isFinite(Number(override.offsetYPx))) preset.offsetYPx = Math.max(-1000, Math.min(1000, Number(override.offsetYPx)))
       if (override.insetXPreset === null) preset.insetXPreset = null
       if (override.insetYPreset === null) preset.insetYPreset = null
       return preset

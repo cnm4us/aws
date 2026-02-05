@@ -160,6 +160,8 @@ export type CreateVideoScreenTitleV1 = {
       alignment?: 'left' | 'center' | 'right'
       marginXPx?: number
       marginYPx?: number
+      offsetXPx?: number
+      offsetYPx?: number
       fontKey?: string
       fontSizePct?: number
       fontColor?: string
@@ -171,6 +173,8 @@ export type CreateVideoScreenTitleV1 = {
     alignment?: 'left' | 'center' | 'right'
     marginXPx?: number
     marginYPx?: number
+    offsetXPx?: number
+    offsetYPx?: number
     fontKey?: string
     fontSizePct?: number
     fontColor?: string

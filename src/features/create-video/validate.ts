@@ -1180,6 +1180,10 @@ export async function validateAndNormalizeCreateVideoTimeline(
       const marginYPxRaw = (customStyleRaw as any).marginYPx
       const marginXPx = marginXPxRaw == null ? undefined : Number(marginXPxRaw)
       const marginYPx = marginYPxRaw == null ? undefined : Number(marginYPxRaw)
+      const offsetXPxRaw = (customStyleRaw as any).offsetXPx
+      const offsetYPxRaw = (customStyleRaw as any).offsetYPx
+      const offsetXPx = offsetXPxRaw == null ? undefined : Number(offsetXPxRaw)
+      const offsetYPx = offsetYPxRaw == null ? undefined : Number(offsetYPxRaw)
       const fontKeyRaw = (customStyleRaw as any).fontKey
       const fontKey = fontKeyRaw == null ? undefined : String(fontKeyRaw)
       const fontSizePctRaw = (customStyleRaw as any).fontSizePct
@@ -1199,6 +1203,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (alignment) out.alignment = alignment
       if (Number.isFinite(marginXPx)) out.marginXPx = clamp(marginXPx as number, 0, 1000)
       if (Number.isFinite(marginYPx)) out.marginYPx = clamp(marginYPx as number, 0, 1000)
+      if (Number.isFinite(offsetXPx)) out.offsetXPx = clamp(offsetXPx as number, -1000, 1000)
+      if (Number.isFinite(offsetYPx)) out.offsetYPx = clamp(offsetYPx as number, -1000, 1000)
       if (fontKey && fontKey.length <= 120) out.fontKey = fontKey
       if (Number.isFinite(fontSizePct)) out.fontSizePct = clamp(fontSizePct as number, 0.5, 20)
       if (fontColor && fontColor.length <= 32) out.fontColor = fontColor
