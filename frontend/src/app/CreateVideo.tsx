@@ -19000,6 +19000,23 @@ export default function CreateVideo() {
               boxSizing: 'border-box',
             }}
           >
+            <style>{`
+              .cv-color-picker {
+                -webkit-appearance: none;
+                appearance: none;
+              }
+              .cv-color-picker::-webkit-color-swatch-wrapper {
+                padding: 0;
+              }
+              .cv-color-picker::-webkit-color-swatch {
+                border: none;
+                border-radius: 0;
+              }
+              .cv-color-picker::-moz-color-swatch {
+                border: none;
+                border-radius: 0;
+              }
+            `}</style>
             {(() => {
               const presetId = Number(screenTitleCustomizeEditor.presetId || 0)
               const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
@@ -19301,29 +19318,41 @@ export default function CreateVideo() {
                       </label>
                       <label style={{ display: 'grid', gap: 6 }}>
                         <div style={{ color: '#bbb', fontSize: 13 }}>Font Color</div>
-                        <input
-                          type="color"
-                          value={fontColorValue}
-                          onChange={(e) => {
-                            const nextColor = String(e.target.value || '#ffffff')
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), fontColor: nextColor },
-                            }) : p)
-                          }}
+                        <div
                           style={{
                             width: '100%',
                             height: 38,
-                            padding: 0,
                             borderRadius: 10,
                             border: '1px solid rgba(255,255,255,0.18)',
                             background: fontColorValue,
                             boxSizing: 'border-box',
-                            cursor: 'pointer',
-                            WebkitAppearance: 'none',
-                            appearance: 'none',
+                            overflow: 'hidden',
                           }}
-                        />
+                        >
+                          <input
+                            type="color"
+                            value={fontColorValue}
+                            onChange={(e) => {
+                              const nextColor = String(e.target.value || '#ffffff')
+                              setScreenTitleCustomizeEditor((p) => p ? ({
+                                ...p,
+                                customStyle: { ...(p.customStyle || {}), fontColor: nextColor },
+                              }) : p)
+                            }}
+                            className="cv-color-picker"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              padding: 0,
+                              border: 0,
+                              background: 'transparent',
+                              boxSizing: 'border-box',
+                              cursor: 'pointer',
+                              WebkitAppearance: 'none',
+                              appearance: 'none',
+                            }}
+                          />
+                        </div>
                       </label>
                     </div>
 
