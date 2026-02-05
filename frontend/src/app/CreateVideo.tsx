@@ -338,20 +338,22 @@ function applyScreenTitleCustomStyle(snapshot: any, customStyle: ScreenTitleCust
   if (customStyle.fontSizePct != null && Number.isFinite(Number(customStyle.fontSizePct))) next.fontSizePct = Number(customStyle.fontSizePct)
   if (customStyle.fontColor) next.fontColor = customStyle.fontColor
   if (customStyle.fontGradientKey !== undefined) next.fontGradientKey = customStyle.fontGradientKey
-  if (customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
+  const hasOffsetX = customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))
+  const hasOffsetY = customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))
+  if (!hasOffsetX && customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
     const pct = screenTitleMarginPxToPct(Number(customStyle.marginXPx))
     next.marginLeftPct = pct
     next.marginRightPct = pct
     next.insetXPreset = null
   }
-  if (customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
+  if (!hasOffsetY && customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
     const pct = screenTitleMarginPxToPct(Number(customStyle.marginYPx))
     next.marginTopPct = pct
     next.marginBottomPct = pct
     next.insetYPreset = null
   }
-  if (customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))) next.offsetXPx = Number(customStyle.offsetXPx)
-  if (customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))) next.offsetYPx = Number(customStyle.offsetYPx)
+  if (hasOffsetX) next.offsetXPx = Number(customStyle.offsetXPx)
+  if (hasOffsetY) next.offsetYPx = Number(customStyle.offsetYPx)
   return next
 }
 
@@ -364,20 +366,22 @@ function buildScreenTitlePresetOverride(customStyle: ScreenTitleCustomStyleDraft
   if (customStyle.fontSizePct != null && Number.isFinite(Number(customStyle.fontSizePct))) out.fontSizePct = Number(customStyle.fontSizePct)
   if (customStyle.fontColor) out.fontColor = customStyle.fontColor
   if (customStyle.fontGradientKey !== undefined) out.fontGradientKey = customStyle.fontGradientKey
-  if (customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
+  const hasOffsetX = customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))
+  const hasOffsetY = customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))
+  if (!hasOffsetX && customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
     const pct = screenTitleMarginPxToPct(Number(customStyle.marginXPx))
     out.marginLeftPct = pct
     out.marginRightPct = pct
     out.insetXPreset = null
   }
-  if (customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
+  if (!hasOffsetY && customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
     const pct = screenTitleMarginPxToPct(Number(customStyle.marginYPx))
     out.marginTopPct = pct
     out.marginBottomPct = pct
     out.insetYPreset = null
   }
-  if (customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))) out.offsetXPx = Number(customStyle.offsetXPx)
-  if (customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))) out.offsetYPx = Number(customStyle.offsetYPx)
+  if (hasOffsetX) out.offsetXPx = Number(customStyle.offsetXPx)
+  if (hasOffsetY) out.offsetYPx = Number(customStyle.offsetYPx)
   return Object.keys(out).length ? out : null
 }
 
@@ -419,33 +423,24 @@ function normalizeScreenTitleCustomStyleForSave(customStyle: ScreenTitleCustomSt
     const nextGradient = customStyle.fontGradientKey == null ? null : String(customStyle.fontGradientKey)
     if (String(nextGradient || '') !== String(baseGradient || '')) out.fontGradientKey = nextGradient
   }
-  if (
-    customStyle.marginXPx != null &&
-    Number.isFinite(Number(customStyle.marginXPx)) &&
-    Math.abs(Number(customStyle.marginXPx) - Number(baseMarginXPx || 0)) > 0.5
-  ) {
-    out.marginXPx = Number(customStyle.marginXPx)
+  const offsetXPx =
+    customStyle.offsetXPx != null && Number.isFinite(Number(customStyle.offsetXPx))
+      ? Number(customStyle.offsetXPx)
+      : customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))
+        ? Number(customStyle.marginXPx)
+        : null
+  const offsetYPx =
+    customStyle.offsetYPx != null && Number.isFinite(Number(customStyle.offsetYPx))
+      ? Number(customStyle.offsetYPx)
+      : customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))
+        ? Number(customStyle.marginYPx)
+        : null
+
+  if (offsetXPx != null && Math.abs(offsetXPx - Number(baseOffsetXPx || 0)) > 0.5) {
+    out.offsetXPx = offsetXPx
   }
-  if (
-    customStyle.marginYPx != null &&
-    Number.isFinite(Number(customStyle.marginYPx)) &&
-    Math.abs(Number(customStyle.marginYPx) - Number(baseMarginYPx || 0)) > 0.5
-  ) {
-    out.marginYPx = Number(customStyle.marginYPx)
-  }
-  if (
-    customStyle.offsetXPx != null &&
-    Number.isFinite(Number(customStyle.offsetXPx)) &&
-    Math.abs(Number(customStyle.offsetXPx) - Number(baseOffsetXPx || 0)) > 0.5
-  ) {
-    out.offsetXPx = Number(customStyle.offsetXPx)
-  }
-  if (
-    customStyle.offsetYPx != null &&
-    Number.isFinite(Number(customStyle.offsetYPx)) &&
-    Math.abs(Number(customStyle.offsetYPx) - Number(baseOffsetYPx || 0)) > 0.5
-  ) {
-    out.offsetYPx = Number(customStyle.offsetYPx)
+  if (offsetYPx != null && Math.abs(offsetYPx - Number(baseOffsetYPx || 0)) > 0.5) {
+    out.offsetYPx = offsetYPx
   }
 
   return Object.keys(out).length ? out : null
@@ -19133,10 +19128,14 @@ export default function CreateVideo() {
                 : screenTitleMarginPctToPx(baseMarginYPct)
               const offsetXDisplay = Number.isFinite(Number((customStyle as any)?.offsetXPx))
                 ? Number((customStyle as any).offsetXPx)
-                : 0
+                : Number.isFinite(Number((customStyle as any)?.marginXPx))
+                  ? Number((customStyle as any).marginXPx)
+                  : 0
               const offsetYDisplay = Number.isFinite(Number((customStyle as any)?.offsetYPx))
                 ? Number((customStyle as any).offsetYPx)
-                : 0
+                : Number.isFinite(Number((customStyle as any)?.marginYPx))
+                  ? Number((customStyle as any).marginYPx)
+                  : 0
               const pos = String((effective as any)?.position || 'top') as 'top' | 'middle' | 'bottom'
               const align = String((effective as any)?.alignment || 'center') as 'left' | 'center' | 'right'
               const effectiveGradient =
