@@ -90,6 +90,22 @@ async function runOne(job: any, attempt: any, workerId: string) {
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined
   const s3Ops: any[] = []
   const errors: Array<{ code?: string; message?: string }> = []
+  let startedMs = Date.now()
+  let startedAt = new Date().toISOString()
+  let inputSummary: any = { keys: [] as string[] }
+  const buildManifest = (extra?: { ffmpegCommands?: string[] }) => {
+    const cmds = Array.isArray(extra?.ffmpegCommands) ? extra?.ffmpegCommands : undefined
+    const trimmed = cmds && cmds.length > 20 ? cmds.slice(cmds.length - 20) : cmds
+    return {
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedMs,
+      inputSummary,
+      ffmpegCommands: trimmed,
+      s3Ops: s3Ops.length ? s3Ops : undefined,
+      errors: errors.length ? errors : undefined,
+    }
+  }
 
   try {
     fs.writeFileSync(stdoutPath, '')
@@ -101,8 +117,8 @@ async function runOne(job: any, attempt: any, workerId: string) {
       mediaJobsRepo.updateJobProcessingHeartbeat(jobId, workerId).catch(() => {})
     }, Math.max(3000, MEDIA_JOBS_WORKER_HEARTBEAT_MS || 15000))
 
-    const startedAt = new Date().toISOString()
-    const startedMs = Date.now()
+    startedAt = new Date().toISOString()
+    startedMs = Date.now()
     setFfmpegS3OpsCollector(s3Ops)
     writeRequestLog(`media-job:${jobId}:${attemptNo}`, { jobId, attemptNo, workerId, type: job.type, input: job.input_json, startedAt })
 
@@ -128,21 +144,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
       }
       return { keys: Object.keys(input || {}) }
     }
-    const inputSummary = summarizeInput(String(job.type), job.input_json)
-
-    const buildManifest = (extra?: { ffmpegCommands?: string[] }) => {
-      const cmds = Array.isArray(extra?.ffmpegCommands) ? extra?.ffmpegCommands : undefined
-      const trimmed = cmds && cmds.length > 20 ? cmds.slice(cmds.length - 20) : cmds
-      return {
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedMs,
-      inputSummary,
-      ffmpegCommands: trimmed,
-      s3Ops: s3Ops.length ? s3Ops : undefined,
-      errors: errors.length ? errors : undefined,
-      }
-    }
+    inputSummary = summarizeInput(String(job.type), job.input_json)
 
     if (String(job.type) === 'audio_master_v1') {
       const input = job.input_json as any
