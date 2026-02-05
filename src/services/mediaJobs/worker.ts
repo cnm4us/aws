@@ -16,7 +16,7 @@ import { runVideoMasterV1Job } from '../../media/jobs/videoMasterV1'
 import { runCreateVideoExportV1Job } from '../../media/jobs/createVideoExportV1'
 import { startMediaConvertForExistingProduction } from '../productionRunner'
 import { uploadFileToS3, uploadTextToS3 } from './s3Logs'
-import { setFfmpegS3OpsCollector } from '../ffmpeg/audioPipeline'
+import { setFfmpegOpsCollector, setFfmpegS3OpsCollector } from '../ffmpeg/audioPipeline'
 import { buildUploadEditProxyKey } from '../../utils/uploadEditProxy'
 import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadThumbKey } from '../../utils/uploadThumb'
@@ -90,19 +90,29 @@ async function runOne(job: any, attempt: any, workerId: string) {
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined
   const s3Ops: any[] = []
   const errors: Array<{ code?: string; message?: string }> = []
+  const ffmpegOps: any[] = []
   let startedMs = Date.now()
   let startedAt = new Date().toISOString()
   let inputSummary: any = { keys: [] as string[] }
   const buildManifest = (extra?: { ffmpegCommands?: string[] }) => {
     const cmds = Array.isArray(extra?.ffmpegCommands) ? extra?.ffmpegCommands : undefined
     const trimmed = cmds && cmds.length > 20 ? cmds.slice(cmds.length - 20) : cmds
+    const ffmpegMs = ffmpegOps.reduce((sum, f) => sum + (Number(f?.durationMs) || 0), 0)
+    const s3BytesIn = s3Ops.reduce((sum, o) => sum + (o?.op === 'download' ? Number(o?.bytes) || 0 : 0), 0)
+    const s3BytesOut = s3Ops.reduce((sum, o) => sum + (o?.op === 'upload' ? Number(o?.bytes) || 0 : 0), 0)
     return {
       startedAt,
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - startedMs,
       inputSummary,
       ffmpegCommands: trimmed,
+      metrics: {
+        ffmpegMs,
+        s3BytesIn,
+        s3BytesOut,
+      },
       s3Ops: s3Ops.length ? s3Ops : undefined,
+      ffmpegOps: ffmpegOps.length ? ffmpegOps : undefined,
       errors: errors.length ? errors : undefined,
     }
   }
@@ -120,6 +130,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     startedAt = new Date().toISOString()
     startedMs = Date.now()
     setFfmpegS3OpsCollector(s3Ops)
+    setFfmpegOpsCollector(ffmpegOps)
     writeRequestLog(`media-job:${jobId}:${attemptNo}`, { jobId, attemptNo, workerId, type: job.type, input: job.input_json, startedAt })
 
     const summarizeInput = (type: string, input: any) => {
@@ -129,6 +140,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         return {
           projectId: input?.projectId ?? null,
           userId: input?.userId ?? null,
+          traceId: input?.traceId ?? null,
           clips: Array.isArray(tl.clips) ? tl.clips.length : 0,
           stills: Array.isArray(tl.stills) ? tl.stills.length : 0,
           overlays: Array.isArray(tl.videoOverlays) ? tl.videoOverlays.length : 0,
@@ -137,10 +149,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
         }
       }
       if (t === 'upload_thumb_v1') {
-        return { uploadId: input?.uploadId ?? null, outputKey: input?.outputKey ?? null, longEdgePx: input?.longEdgePx ?? null }
+        return { uploadId: input?.uploadId ?? null, outputKey: input?.outputKey ?? null, longEdgePx: input?.longEdgePx ?? null, traceId: input?.traceId ?? null }
       }
       if (t === 'upload_edit_proxy_v1' || t === 'upload_audio_envelope_v1' || t === 'upload_freeze_frame_v1') {
-        return { uploadId: input?.uploadId ?? null, bucket: input?.video?.bucket ?? input?.proxy?.bucket ?? null, key: input?.video?.key ?? input?.proxy?.key ?? null }
+        return { uploadId: input?.uploadId ?? null, bucket: input?.video?.bucket ?? input?.proxy?.bucket ?? null, key: input?.video?.key ?? input?.proxy?.key ?? null, traceId: input?.traceId ?? null }
       }
       return { keys: Object.keys(input || {}) }
     }
@@ -272,6 +284,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
         const userId = Number(input?.userId)
         const outBucket = String((result as any)?.output?.bucket || '')
         const outKey = String((result as any)?.output?.key || '')
+        const traceId = (input as any)?.traceId
         if (Number.isFinite(resultUploadId) && resultUploadId > 0 && Number.isFinite(userId) && userId > 0 && outBucket && outKey) {
           await mediaJobs.enqueueJob('upload_thumb_v1', {
             uploadId: resultUploadId,
@@ -280,6 +293,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
             outputBucket: String(UPLOAD_BUCKET),
             outputKey: buildUploadThumbKey(resultUploadId),
             longEdgePx: 640,
+            traceId,
           })
           await mediaJobs.enqueueJob('upload_edit_proxy_v1', {
             uploadId: resultUploadId,
@@ -290,6 +304,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
             longEdgePx: 540,
             fps: 30,
             gop: 8,
+            traceId,
           })
         }
       } catch {}
@@ -370,6 +385,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
               outputBucket: String(UPLOAD_BUCKET),
               outputKey: buildUploadAudioEnvelopeKey(uploadId),
               intervalSeconds: 0.1,
+              traceId: (input as any)?.traceId,
             })
           }
         }

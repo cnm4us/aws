@@ -69,9 +69,14 @@ export function parseS3Url(url: string): { bucket: string; key: string } | null 
 }
 
 let currentS3OpsCollector: any[] | null = null
+let currentFfmpegOpsCollector: any[] | null = null
 
 export function setFfmpegS3OpsCollector(ops: any[] | null) {
   currentS3OpsCollector = ops
+}
+
+export function setFfmpegOpsCollector(ops: any[] | null) {
+  currentFfmpegOpsCollector = ops
 }
 
 export async function downloadS3ObjectToFile(bucket: string, key: string, filePath: string): Promise<void> {
@@ -118,6 +123,7 @@ export async function runFfmpeg(
   args: string[],
   opts?: { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
 ): Promise<void> {
+  const started = Date.now()
   await new Promise<void>((resolve, reject) => {
     const filterThreads = parsePositiveIntEnv('FFMPEG_FILTER_THREADS')
     const filterComplexThreads = parsePositiveIntEnv('FFMPEG_FILTER_COMPLEX_THREADS')
@@ -158,6 +164,14 @@ export async function runFfmpeg(
     p.on('close', (code) => {
       try { outStream?.end() } catch {}
       try { errStream?.end() } catch {}
+      const durationMs = Date.now() - started
+      if (currentFfmpegOpsCollector) {
+        currentFfmpegOpsCollector.push({
+          label: opts?.commandLabel,
+          durationMs,
+          status: code === 0 ? 'ok' : 'error',
+        })
+      }
       if (code === 0) return resolve()
       reject(new Error(`ffmpeg_failed:${code}:${stderr.slice(0, 800)}`))
     })

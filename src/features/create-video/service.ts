@@ -1,4 +1,5 @@
 import { DomainError, ForbiddenError, InvalidStateError, NotFoundError, ValidationError } from '../../core/errors'
+import { randomUUID } from 'crypto'
 import * as repo from './repo'
 import { validateAndNormalizeCreateVideoTimeline } from './validate'
 import type { CreateVideoProjectDto, CreateVideoProjectListItemDto, CreateVideoProjectRow, CreateVideoTimelineV1 } from './types'
@@ -262,6 +263,7 @@ async function exportRowAsJob(userId: number, row: CreateVideoProjectRow): Promi
     projectId: Number(row.id),
     userId: Number(userId),
     timeline: normalized,
+    traceId: randomUUID(),
   })
   const jobId = Number((job as any).id)
   if (!Number.isFinite(jobId) || jobId <= 0) throw new DomainError('failed_to_enqueue', 'failed_to_enqueue', 500)
