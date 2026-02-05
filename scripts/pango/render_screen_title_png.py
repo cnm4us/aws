@@ -401,11 +401,21 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
     box_y = min_y
   box_y = clamp(box_y, min_y, max_y)
 
-  # Apply per-instance offsets relative to the anchor, then clamp to frame bounds.
+  # Apply per-instance offsets relative to the anchor.
   box_x = box_x + offset_x_px
   box_y = box_y + offset_y_px
-  box_x = clamp(box_x, 0.0, width - box_w)
-  box_y = clamp(box_y, 0.0, height - box_h)
+
+  # If no offsets are present, keep content fully within frame bounds.
+  # When offsets are used, allow some overflow so stacking/spacing isn't
+  # unintentionally compressed by clamping.
+  if abs(offset_x_px) < 0.001:
+    box_x = clamp(box_x, 0.0, width - box_w)
+  else:
+    box_x = clamp(box_x, -box_w, width)
+  if abs(offset_y_px) < 0.001:
+    box_y = clamp(box_y, 0.0, height - box_h)
+  else:
+    box_y = clamp(box_y, -box_h, height)
 
   x_draw = box_x - box_x0
   y_draw = box_y - box_y0
