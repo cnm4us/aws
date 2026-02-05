@@ -846,6 +846,7 @@ export default function CreateVideo() {
     activeInstanceId: string
   } | null>(null)
   const [screenTitleCustomizeError, setScreenTitleCustomizeError] = useState<string | null>(null)
+  const [screenTitleLastInstanceById, setScreenTitleLastInstanceById] = useState<Record<string, string>>({})
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
@@ -7023,6 +7024,17 @@ export default function CreateVideo() {
     void ensureScreenTitleFonts()
     void ensureScreenTitleGradients()
   }, [screenTitleCustomizeEditor, ensureScreenTitlePresets, ensureScreenTitleFonts, ensureScreenTitleGradients])
+
+  useEffect(() => {
+    if (!screenTitleCustomizeEditor?.id) return
+    const stId = String(screenTitleCustomizeEditor.id)
+    const activeId = String(screenTitleCustomizeEditor.activeInstanceId || '')
+    if (!activeId) return
+    setScreenTitleLastInstanceById((prev) => {
+      if (prev[stId] === activeId) return prev
+      return { ...prev, [stId]: activeId }
+    })
+  }, [screenTitleCustomizeEditor?.id, screenTitleCustomizeEditor?.activeInstanceId])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
@@ -20581,11 +20593,14 @@ export default function CreateVideo() {
                                         customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
                                       },
                                     ]
+                              const stId = String((st as any).id)
+                              const preferred = screenTitleLastInstanceById[stId]
+                              const preferredExists = preferred && instances.some((inst: any) => String(inst.id) === String(preferred))
                               setScreenTitleCustomizeEditor({
-                                id: String((st as any).id),
+                                id: stId,
                                 presetId,
                                 instances,
-                                activeInstanceId: String(instances[0]?.id || ''),
+                                activeInstanceId: String(preferredExists ? preferred : instances[0]?.id || ''),
                               })
                               setScreenTitleCustomizeError(null)
                               void ensureScreenTitlePresets()
