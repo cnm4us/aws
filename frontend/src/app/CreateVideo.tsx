@@ -19363,6 +19363,80 @@ export default function CreateVideo() {
                       </div>
                     </div>
 
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Offset</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>X: {Math.round(marginXDisplay)}px</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {[-5, -1, 1, 5].map((delta) => (
+                              <button
+                                key={`x_${delta}`}
+                                type="button"
+                                onClick={() => {
+                                  const nextVal = Math.max(0, Math.min(1000, (Number(marginXDisplay) || 0) + delta))
+                                  setScreenTitleCustomizeEditor((p) => {
+                                    if (!p) return p
+                                    const nextInstances = (p.instances || []).map((inst) =>
+                                      String(inst.id) === String(activeInstanceId)
+                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: nextVal } }
+                                        : inst
+                                    )
+                                    return { ...p, instances: nextInstances }
+                                  })
+                                }}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {delta > 0 ? `+${delta}` : `${delta}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>Y: {Math.round(marginYDisplay)}px</div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {[-5, -1, 1, 5].map((delta) => (
+                              <button
+                                key={`y_${delta}`}
+                                type="button"
+                                onClick={() => {
+                                  const nextVal = Math.max(0, Math.min(1000, (Number(marginYDisplay) || 0) + delta))
+                                  setScreenTitleCustomizeEditor((p) => {
+                                    if (!p) return p
+                                    const nextInstances = (p.instances || []).map((inst) =>
+                                      String(inst.id) === String(activeInstanceId)
+                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: nextVal } }
+                                        : inst
+                                    )
+                                    return { ...p, instances: nextInstances }
+                                  })
+                                }}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {delta > 0 ? `+${delta}` : `${delta}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Reset</div>
                       <button

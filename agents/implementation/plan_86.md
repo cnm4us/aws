@@ -115,10 +115,18 @@ POST /api/create-video/screen-titles/render
 ---
 
 ## Phase 3 — Micro‑Nudge Controls (Optional)
-Add to Customize modal:
-- `Nudge X` and `Nudge Y` controls (±1px, ±5px).
-- This adjusts per‑instance margin/padding or explicit offset fields.
-- If using margins only, apply to `marginXPx`, `marginYPx`.
+Add **explicit per‑instance offsets** in Customize modal:
+- `Offset X (px)` buttons: −5, −1, +1, +5
+- `Offset Y (px)` buttons: −5, −1, +1, +5
+
+Behavior:
+- Offsets apply **relative to the 3×3 position grid anchor** for that instance.
+- Store offsets in `customStyle.marginXPx` / `customStyle.marginYPx` (existing fields).
+- Each instance is independent; no auto‑stacking or grouping.
+
+UI notes:
+- Place offsets near the Position grid for clarity.
+- Show current offset values (e.g., `X: 0px`, `Y: 0px`) to avoid confusion.
 
 ---
 
