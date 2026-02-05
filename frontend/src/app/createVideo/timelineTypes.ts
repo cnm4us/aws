@@ -7,6 +7,9 @@ export type Clip = {
   audioEnabled?: boolean
   freezeStartSeconds?: number
   freezeEndSeconds?: number
+  bgFillStyle?: 'none' | 'blur'
+  bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
+  bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
 }
 
 export type Still = {
@@ -246,6 +249,10 @@ export function cloneTimeline(timeline: Timeline): Timeline {
       audioEnabled: (c as any).audioEnabled == null ? true : Boolean((c as any).audioEnabled),
       freezeStartSeconds: (c as any).freezeStartSeconds != null ? Number((c as any).freezeStartSeconds) : undefined,
       freezeEndSeconds: (c as any).freezeEndSeconds != null ? Number((c as any).freezeEndSeconds) : undefined,
+      bgFillStyle: (c as any).bgFillStyle == null ? undefined : ((String((c as any).bgFillStyle) as any) || undefined),
+      bgFillBrightness:
+        (c as any).bgFillBrightness == null ? undefined : ((String((c as any).bgFillBrightness) as any) || undefined),
+      bgFillBlur: (c as any).bgFillBlur == null ? undefined : ((String((c as any).bgFillBlur) as any) || undefined),
     })),
     stills: Array.isArray((timeline as any).stills)
       ? (timeline as any).stills.map((s: any) => ({
