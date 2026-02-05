@@ -19459,53 +19459,51 @@ export default function CreateVideo() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
                       <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
                         <div style={{ color: '#bbb', fontSize: 13 }}>Horizontal Margin (px)</div>
-                        <select
-                          value={Number.isFinite(marginXDisplay) ? String(Math.round(marginXDisplay / 10) * 10) : '0'}
+                        <input
+                          type="number"
+                          min={0}
+                          max={1000}
+                          step={1}
+                          value={Number.isFinite(marginXDisplay) ? String(Math.round(marginXDisplay)) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
+                            const clamped = Number.isFinite(next) ? Math.max(0, Math.min(1000, next)) : 0
                             setScreenTitleCustomizeEditor((p) => {
                               if (!p) return p
                               const nextInstances = (p.instances || []).map((inst) =>
                                 String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: Number.isFinite(next) ? next : 0 } }
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: clamped } }
                                   : inst
                               )
                               return { ...p, instances: nextInstances }
                             })
                           }}
                           style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                        >
-                          {Array.from({ length: 11 }, (_, i) => i * 10).map((val) => (
-                            <option key={val} value={String(val)}>
-                              {val}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                       <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
                         <div style={{ color: '#bbb', fontSize: 13 }}>Vertical Margin (px)</div>
-                        <select
-                          value={Number.isFinite(marginYDisplay) ? String(Math.round(marginYDisplay / 10) * 10) : '0'}
+                        <input
+                          type="number"
+                          min={0}
+                          max={1000}
+                          step={1}
+                          value={Number.isFinite(marginYDisplay) ? String(Math.round(marginYDisplay)) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
+                            const clamped = Number.isFinite(next) ? Math.max(0, Math.min(1000, next)) : 0
                             setScreenTitleCustomizeEditor((p) => {
                               if (!p) return p
                               const nextInstances = (p.instances || []).map((inst) =>
                                 String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: Number.isFinite(next) ? next : 0 } }
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: clamped } }
                                   : inst
                               )
                               return { ...p, instances: nextInstances }
                             })
                           }}
                           style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                        >
-                          {Array.from({ length: 11 }, (_, i) => i * 10).map((val) => (
-                            <option key={val} value={String(val)}>
-                              {val}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                     </div>
 
