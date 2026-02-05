@@ -19,6 +19,7 @@ def hex_to_rgba(hex_str, alpha):
   b = int(s[5:7], 16) / 255.0
   return (r, g, b, alpha)
 
+
 def luminance(rgb):
   r, g, b = rgb
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -32,11 +33,13 @@ def inset_pct_for_preset(preset):
     return 0.14
   return 0.10
 
+
 def pct_to_px(pct, total_px):
   try:
     return float(total_px) * (float(pct) / 100.0)
   except Exception:
     return 0.0
+
 
 def normalize_margin_pct(raw, fallback_pct):
   if raw is None:
@@ -51,6 +54,7 @@ def normalize_margin_pct(raw, fallback_pct):
     return clamp(n, 0.0, 40.0)
   except Exception:
     return float(fallback_pct)
+
 
 def normalize_number(raw, fallback):
   if raw is None:
@@ -75,6 +79,7 @@ def normalize_position(pos):
     return "bottom"
   return "top"
 
+
 def normalize_alignment(aln):
   raw = (aln or "center").strip().lower()
   if raw == "left":
@@ -97,32 +102,10 @@ def rounded_rect(ctx, x, y, w, h, r):
   ctx.close_path()
 
 
-def main():
-  ap = argparse.ArgumentParser()
-  ap.add_argument("--input-json", required=True)
-  ap.add_argument("--out", required=True)
-  args = ap.parse_args()
-
-  try:
-    with open(args.input_json, "r", encoding="utf-8") as f:
-      payload = json.load(f)
-  except Exception as e:
-    sys.stderr.write(f"failed_read_input_json: {e}\n")
-    return 2
-
-  text = str(payload.get("text") or "").replace("\r\n", "\n").strip()
+def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
   if not text:
-    sys.stderr.write("missing_text\n")
-    return 2
+    return
 
-  frame = payload.get("frame") or {}
-  width = int(frame.get("width") or 0)
-  height = int(frame.get("height") or 0)
-  if width <= 0 or height <= 0:
-    sys.stderr.write("invalid_frame\n")
-    return 2
-
-  preset = payload.get("preset") or {}
   style = str(preset.get("style") or "pill").strip().lower()
   # Legacy support: old presets used style='outline' to mean "no background + outlined text".
   # We now model this as style='none' with explicit outline settings.
@@ -261,25 +244,6 @@ def main():
       outline_opacity = clamp(float(outline_opacity_pct_raw) / 100.0, 0.0, 1.0)
     except Exception:
       outline_opacity = outline_opacity_default
-
-  # Import GI only after validating args; yields clearer error if missing.
-  try:
-    import gi  # type: ignore
-    gi.require_foreign("cairo")
-    gi.require_version("Pango", "1.0")
-    gi.require_version("PangoCairo", "1.0")
-    from gi.repository import Pango, PangoCairo  # type: ignore
-    import cairo  # type: ignore
-  except Exception as e:
-    sys.stderr.write(f"missing_pango_deps: {e}\n")
-    return 3
-
-  surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-  ctx = cairo.Context(surface)
-  ctx.set_source_rgba(0.0, 0.0, 0.0, 0.0)
-  ctx.set_operator(cairo.OPERATOR_SOURCE)
-  ctx.paint()
-  ctx.set_operator(cairo.OPERATOR_OVER)
 
   layout = PangoCairo.create_layout(ctx)
   fd = Pango.FontDescription()
@@ -555,6 +519,72 @@ def main():
     ctx.set_source_rgba(rr, gg, bb, aa)
   ctx.fill()
   ctx.restore()
+
+
+def main():
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--input-json", required=True)
+  ap.add_argument("--out", required=True)
+  args = ap.parse_args()
+
+  try:
+    with open(args.input_json, "r", encoding="utf-8") as f:
+      payload = json.load(f)
+  except Exception as e:
+    sys.stderr.write(f"failed_read_input_json: {e}\n")
+    return 2
+
+  frame = payload.get("frame") or {}
+  width = int(frame.get("width") or 0)
+  height = int(frame.get("height") or 0)
+  if width <= 0 or height <= 0:
+    sys.stderr.write("invalid_frame\n")
+    return 2
+
+  instances_raw = payload.get("instances")
+  instances = []
+  if isinstance(instances_raw, list) and len(instances_raw) > 0:
+    for inst in instances_raw:
+      if not isinstance(inst, dict):
+        continue
+      text = str(inst.get("text") or "").replace("\r\n", "\n").strip()
+      if not text:
+        continue
+      preset = inst.get("preset") or {}
+      instances.append({"text": text, "preset": preset})
+  else:
+    text = str(payload.get("text") or "").replace("\r\n", "\n").strip()
+    if not text:
+      sys.stderr.write("missing_text\n")
+      return 2
+    preset = payload.get("preset") or {}
+    instances.append({"text": text, "preset": preset})
+
+  if not instances:
+    sys.stderr.write("missing_text\n")
+    return 2
+
+  # Import GI only after validating args; yields clearer error if missing.
+  try:
+    import gi  # type: ignore
+    gi.require_foreign("cairo")
+    gi.require_version("Pango", "1.0")
+    gi.require_version("PangoCairo", "1.0")
+    from gi.repository import Pango, PangoCairo  # type: ignore
+    import cairo  # type: ignore
+  except Exception as e:
+    sys.stderr.write(f"missing_pango_deps: {e}\n")
+    return 3
+
+  surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+  ctx = cairo.Context(surface)
+  ctx.set_source_rgba(0.0, 0.0, 0.0, 0.0)
+  ctx.set_operator(cairo.OPERATOR_SOURCE)
+  ctx.paint()
+  ctx.set_operator(cairo.OPERATOR_OVER)
+
+  for inst in instances:
+    render_instance(ctx, width, height, inst.get("text"), inst.get("preset") or {}, Pango, PangoCairo, cairo)
 
   try:
     surface.write_to_png(args.out)

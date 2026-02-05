@@ -186,6 +186,12 @@ type ScreenTitleCustomStyleDraft = {
   fontGradientKey?: string | null
 }
 
+type ScreenTitleInstanceDraft = {
+  id: string
+  text: string
+  customStyle: ScreenTitleCustomStyleDraft | null
+}
+
 const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
 const hexToRgba = (hex: string, alpha: number): string => {
@@ -821,8 +827,8 @@ export default function CreateVideo() {
   const [screenTitleCustomizeEditor, setScreenTitleCustomizeEditor] = useState<{
     id: string
     presetId: number | null
-    text: string
-    customStyle: ScreenTitleCustomStyleDraft | null
+    instances: ScreenTitleInstanceDraft[]
+    activeInstanceId: string
   } | null>(null)
   const [screenTitleCustomizeError, setScreenTitleCustomizeError] = useState<string | null>(null)
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
@@ -7633,6 +7639,8 @@ export default function CreateVideo() {
         presetId,
         presetSnapshot: snapshot,
         text: '',
+        customStyle: null,
+        instances: [{ id: `${id}_i1`, text: '', customStyle: null }],
         renderUploadId: null,
       }
 
@@ -12953,17 +12961,15 @@ export default function CreateVideo() {
     if (!screenTitleCustomizeEditor) return
     const presetIdRaw = screenTitleCustomizeEditor.presetId
     const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
-    const text = String(screenTitleCustomizeEditor.text || '').replace(/\r\n/g, '\n')
     if (presetId == null || !Number.isFinite(presetId) || presetId <= 0) {
       setScreenTitleCustomizeError('Pick a screen title style.')
       return
     }
-    if (text.length > 1000) {
-      setScreenTitleCustomizeError('Max 1000 characters.')
-      return
-    }
-    if (text.split('\n').length > 30) {
-      setScreenTitleCustomizeError('Max 30 lines.')
+    const rawInstances = Array.isArray(screenTitleCustomizeEditor.instances)
+      ? screenTitleCustomizeEditor.instances
+      : []
+    if (!rawInstances.length) {
+      setScreenTitleCustomizeError('Add a text instance.')
       return
     }
 
@@ -12973,19 +12979,47 @@ export default function CreateVideo() {
       return
     }
     const snapshot = buildScreenTitlePresetSnapshot(preset)
-    const customStyle = normalizeScreenTitleCustomStyleForSave(screenTitleCustomizeEditor.customStyle || null, snapshot)
+    const normalizedInstances: ScreenTitleInstanceDraft[] = []
+    for (const inst of rawInstances) {
+      const text = String(inst?.text || '').replace(/\r\n/g, '\n')
+      if (text.length > 1000) {
+        setScreenTitleCustomizeError('Max 1000 characters.')
+        return
+      }
+      if (text.split('\n').length > 30) {
+        setScreenTitleCustomizeError('Max 30 lines.')
+        return
+      }
+      const customStyle = normalizeScreenTitleCustomStyleForSave(inst?.customStyle || null, snapshot)
+      normalizedInstances.push({
+        id: String(inst?.id || ''),
+        text,
+        customStyle,
+      })
+    }
 
-      const sameCustomStyle = (a: any, b: any): boolean => {
-        if (!a && !b) return true
-        if (!a || !b) return false
-        const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
-        return keys.every((k) => {
-          const av = (a as any)[k]
-          const bv = (b as any)[k]
-          if (av == null && bv == null) return true
-          if (Number.isFinite(Number(av)) && Number.isFinite(Number(bv))) return Math.abs(Number(av) - Number(bv)) < 0.001
+    const sameCustomStyle = (a: any, b: any): boolean => {
+      if (!a && !b) return true
+      if (!a || !b) return false
+      const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
+      return keys.every((k) => {
+        const av = (a as any)[k]
+        const bv = (b as any)[k]
+        if (av == null && bv == null) return true
+        if (Number.isFinite(Number(av)) && Number.isFinite(Number(bv))) return Math.abs(Number(av) - Number(bv)) < 0.001
         return String(av || '') === String(bv || '')
       })
+    }
+    const sameInstances = (a: any[], b: any[]): boolean => {
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        const ai = a[i]
+        const bi = b[i]
+        if (String(ai?.id || '') !== String(bi?.id || '')) return false
+        if (String(ai?.text || '') !== String(bi?.text || '')) return false
+        if (!sameCustomStyle(ai?.customStyle || null, bi?.customStyle || null)) return false
+      }
+      return true
     }
 
     snapshotUndo()
@@ -12994,16 +13028,26 @@ export default function CreateVideo() {
       const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleCustomizeEditor.id))
       if (idx < 0) return prev
       const prevSeg: any = prevSts[idx] as any
+      const prevInstancesRaw = Array.isArray(prevSeg?.instances) && prevSeg.instances.length
+        ? prevSeg.instances
+        : [
+            {
+              id: `${String(prevSeg?.id || screenTitleCustomizeEditor.id)}_i1`,
+              text: String(prevSeg?.text || ''),
+              customStyle: (prevSeg?.customStyle as any) || null,
+            },
+          ]
       const invalidateRender =
         Number(prevSeg?.presetId) !== presetId ||
-        String(prevSeg?.text || '') !== text ||
-        !sameCustomStyle(prevSeg?.customStyle || null, customStyle || null)
+        !sameInstances(prevInstancesRaw, normalizedInstances)
+      const primaryInst = normalizedInstances[0] || { text: '', customStyle: null }
       const updated: any = {
         ...prevSeg,
         presetId,
         presetSnapshot: snapshot,
-        customStyle,
-        text,
+        instances: normalizedInstances,
+        customStyle: primaryInst?.customStyle || null,
+        text: String(primaryInst?.text || ''),
         renderUploadId: invalidateRender ? null : (prevSeg?.renderUploadId ?? null),
       }
       const nextSts = prevSts.slice()
@@ -13020,21 +13064,15 @@ export default function CreateVideo() {
     if (!screenTitleCustomizeEditor) return
     const presetIdRaw = screenTitleCustomizeEditor.presetId
     const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
-    const text = String(screenTitleCustomizeEditor.text || '').replace(/\r\n/g, '\n').trim()
     if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
       setScreenTitleCustomizeError('Pick a screen title style.')
       return
     }
-    if (!text) {
-      setScreenTitleCustomizeError('Enter text.')
-      return
-    }
-    if (text.length > 1000) {
-      setScreenTitleCustomizeError('Max 1000 characters.')
-      return
-    }
-    if (text.split('\n').length > 30) {
-      setScreenTitleCustomizeError('Max 30 lines.')
+    const rawInstances = Array.isArray(screenTitleCustomizeEditor.instances)
+      ? screenTitleCustomizeEditor.instances
+      : []
+    if (!rawInstances.length) {
+      setScreenTitleCustomizeError('Add a text instance.')
       return
     }
 
@@ -13044,8 +13082,24 @@ export default function CreateVideo() {
       const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
       if (!preset) throw new Error('Screen title style not found.')
       const snapshot = buildScreenTitlePresetSnapshot(preset)
-      const customStyle = normalizeScreenTitleCustomStyleForSave(screenTitleCustomizeEditor.customStyle || null, snapshot)
-      const presetOverride = buildScreenTitlePresetOverride(customStyle)
+      const normalizedInstances: ScreenTitleInstanceDraft[] = []
+      for (const inst of rawInstances) {
+        const text = String(inst?.text || '').replace(/\r\n/g, '\n').trim()
+        if (!text) continue
+        if (text.length > 1000) throw new Error('Max 1000 characters.')
+        if (text.split('\n').length > 30) throw new Error('Max 30 lines.')
+        const customStyle = normalizeScreenTitleCustomStyleForSave(inst?.customStyle || null, snapshot)
+        normalizedInstances.push({
+          id: String(inst?.id || ''),
+          text,
+          customStyle,
+        })
+      }
+      if (!normalizedInstances.length) throw new Error('Enter text.')
+      const renderInstances = normalizedInstances.map((inst) => ({
+        text: inst.text,
+        presetOverride: buildScreenTitlePresetOverride(inst.customStyle || null),
+      }))
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
@@ -13054,7 +13108,12 @@ export default function CreateVideo() {
         method: 'POST',
         credentials: 'same-origin',
         headers,
-        body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height, presetOverride }),
+        body: JSON.stringify({
+          presetId,
+          frameW: outputFrame.width,
+          frameH: outputFrame.height,
+          instances: renderInstances,
+        }),
       })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || json?.message || 'internal_error'))
@@ -13068,12 +13127,14 @@ export default function CreateVideo() {
         const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleCustomizeEditor.id))
         if (idx < 0) return prev
         const prevSeg: any = prevSts[idx] as any
+        const primaryInst = normalizedInstances[0] || { text: '', customStyle: null }
         const updated: any = {
           ...prevSeg,
           presetId,
           presetSnapshot: snapshot,
-          customStyle,
-          text,
+          instances: normalizedInstances,
+          customStyle: primaryInst?.customStyle || null,
+          text: String(primaryInst?.text || ''),
           renderUploadId: uploadId,
         }
         const nextSts = prevSts.slice()
@@ -19019,9 +19080,14 @@ export default function CreateVideo() {
             `}</style>
             {(() => {
               const presetId = Number(screenTitleCustomizeEditor.presetId || 0)
+              const instances = Array.isArray(screenTitleCustomizeEditor.instances) ? screenTitleCustomizeEditor.instances : []
+              const activeInstanceId = String(screenTitleCustomizeEditor.activeInstanceId || '')
+              const activeIndex = instances.findIndex((inst) => String(inst.id) === activeInstanceId)
+              const activeInstance = activeIndex >= 0 ? instances[activeIndex] : instances[0]
               const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
               const baseSnapshot = preset ? buildScreenTitlePresetSnapshot(preset) : null
-              const customStyle = screenTitleCustomizeEditor.customStyle || null
+              const customStyle = activeInstance?.customStyle || null
+              const activeText = activeInstance?.text == null ? '' : String(activeInstance.text)
               const effective = baseSnapshot ? applyScreenTitleCustomStyle(baseSnapshot, customStyle) : null
               const effectiveFontKey = String((effective as any)?.fontKey || (baseSnapshot as any)?.fontKey || '')
               const family = resolveScreenTitleFamilyForFontKey(effectiveFontKey)
@@ -19110,6 +19176,91 @@ export default function CreateVideo() {
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 900, marginTop: 8 }}>Customize Screen Title</div>
 
+                  <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                      <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Instances</div>
+                      <button
+                        type="button"
+                        disabled={instances.length >= 5}
+                        onClick={() => {
+                          const newId = `sti_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+                          const base = instances.length ? instances[instances.length - 1] : { text: '', customStyle: null }
+                          const nextInst: ScreenTitleInstanceDraft = {
+                            id: newId,
+                            text: String(base?.text || ''),
+                            customStyle: base?.customStyle ? { ...(base.customStyle as any) } : null,
+                          }
+                          setScreenTitleCustomizeEditor((p) => {
+                            if (!p) return p
+                            return { ...p, instances: [...(p.instances || []), nextInst], activeInstanceId: newId }
+                          })
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(96,165,250,0.95)',
+                          background: instances.length >= 5 ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.14)',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: instances.length >= 5 ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        + Add Instance
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {instances.map((inst, idx) => {
+                        const isActive = String(inst.id) === String(activeInstanceId)
+                        return (
+                          <div key={String(inst.id)} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitleCustomizeEditor((p) => (p ? { ...p, activeInstanceId: String(inst.id) } : p))}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                                background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                                color: '#fff',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Instance {idx + 1}
+                            </button>
+                            {instances.length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setScreenTitleCustomizeEditor((p) => {
+                                    if (!p) return p
+                                    const list = (p.instances || []).filter((it) => String(it.id) !== String(inst.id))
+                                    const nextActive =
+                                      String(p.activeInstanceId) === String(inst.id)
+                                        ? String(list[Math.max(0, idx - 1)]?.id || list[0]?.id || '')
+                                        : p.activeInstanceId
+                                    return { ...p, instances: list, activeInstanceId: nextActive }
+                                  })
+                                }}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: 'rgba(255,69,58,0.2)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                −
+                              </button>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
                   <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
                     <label style={{ display: 'grid', gap: 6 }}>
                       <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
@@ -19117,7 +19268,12 @@ export default function CreateVideo() {
                         value={Number.isFinite(presetId) && presetId > 0 ? String(presetId) : ''}
                         onChange={(e) => {
                           const nextId = Number(e.target.value)
-                          setScreenTitleCustomizeEditor((p) => p ? ({ ...p, presetId: Number.isFinite(nextId) ? nextId : null, customStyle: null }) : p)
+                          setScreenTitleCustomizeEditor((p) => {
+                            if (!p) return p
+                            const nextPreset = Number.isFinite(nextId) ? nextId : null
+                            const nextInstances = (p.instances || []).map((inst) => ({ ...inst, customStyle: null }))
+                            return { ...p, presetId: nextPreset, instances: nextInstances }
+                          })
                           setScreenTitleCustomizeError(null)
                         }}
                         style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
@@ -19135,10 +19291,18 @@ export default function CreateVideo() {
                       <div style={{ color: '#bbb', fontSize: 13 }}>Text</div>
                       <textarea
                         ref={screenTitleTextAreaRef}
-                        value={screenTitleCustomizeEditor.text}
+                        value={activeText}
                         onChange={(e) => {
                           const next = e.target.value
-                          setScreenTitleCustomizeEditor((p) => p ? ({ ...p, text: next }) : p)
+                          setScreenTitleCustomizeEditor((p) => {
+                            if (!p) return p
+                            const nextInstances = (p.instances || []).map((inst) =>
+                              String(inst.id) === String(activeInstanceId)
+                                ? { ...inst, text: next }
+                                : inst
+                            )
+                            return { ...p, instances: nextInstances }
+                          })
                           setScreenTitleCustomizeError(null)
                           if (screenTitleTextAreaRef.current) {
                             const el = screenTitleTextAreaRef.current
@@ -19173,10 +19337,15 @@ export default function CreateVideo() {
                               key={g.key}
                               type="button"
                               onClick={() => {
-                                setScreenTitleCustomizeEditor((p) => p ? ({
-                                  ...p,
-                                  customStyle: { ...(p.customStyle || {}), position: g.row, alignment: g.col },
-                                }) : p)
+                                setScreenTitleCustomizeEditor((p) => {
+                                  if (!p) return p
+                                  const nextInstances = (p.instances || []).map((inst) =>
+                                    String(inst.id) === String(activeInstanceId)
+                                      ? { ...inst, customStyle: { ...(inst.customStyle || {}), position: g.row, alignment: g.col } }
+                                      : inst
+                                  )
+                                  return { ...p, instances: nextInstances }
+                                })
                                 setScreenTitleCustomizeError(null)
                               }}
                               style={{
@@ -19198,7 +19367,15 @@ export default function CreateVideo() {
                       <div style={{ color: '#bbb', fontSize: 13 }}>Reset</div>
                       <button
                         type="button"
-                        onClick={() => setScreenTitleCustomizeEditor((p) => p ? ({ ...p, customStyle: null }) : p)}
+                        onClick={() => {
+                          setScreenTitleCustomizeEditor((p) => {
+                            if (!p) return p
+                            const nextInstances = (p.instances || []).map((inst) =>
+                              String(inst.id) === String(activeInstanceId) ? { ...inst, customStyle: null } : inst
+                            )
+                            return { ...p, instances: nextInstances }
+                          })
+                        }}
                         style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
                       >
                         Reset to Base
@@ -19212,10 +19389,15 @@ export default function CreateVideo() {
                           value={Number.isFinite(marginXDisplay) ? String(Math.round(marginXDisplay / 10) * 10) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), marginXPx: Number.isFinite(next) ? next : 0 },
-                            }) : p)
+                            setScreenTitleCustomizeEditor((p) => {
+                              if (!p) return p
+                              const nextInstances = (p.instances || []).map((inst) =>
+                                String(inst.id) === String(activeInstanceId)
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginXPx: Number.isFinite(next) ? next : 0 } }
+                                  : inst
+                              )
+                              return { ...p, instances: nextInstances }
+                            })
                           }}
                           style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                         >
@@ -19232,10 +19414,15 @@ export default function CreateVideo() {
                           value={Number.isFinite(marginYDisplay) ? String(Math.round(marginYDisplay / 10) * 10) : '0'}
                           onChange={(e) => {
                             const next = Number(e.target.value)
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), marginYPx: Number.isFinite(next) ? next : 0 },
-                            }) : p)
+                            setScreenTitleCustomizeEditor((p) => {
+                              if (!p) return p
+                              const nextInstances = (p.instances || []).map((inst) =>
+                                String(inst.id) === String(activeInstanceId)
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), marginYPx: Number.isFinite(next) ? next : 0 } }
+                                  : inst
+                              )
+                              return { ...p, instances: nextInstances }
+                            })
                           }}
                           style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                         >
@@ -19257,10 +19444,15 @@ export default function CreateVideo() {
                             const nextFamily = String(e.target.value)
                             const fam = screenTitleFontFamilies.find((f) => String(f.familyKey) === nextFamily) || screenTitleFontFamilies[0]
                             const nextVariant = fam?.variants?.[0]?.key || ''
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), fontKey: nextVariant },
-                            }) : p)
+                            setScreenTitleCustomizeEditor((p) => {
+                              if (!p) return p
+                              const nextInstances = (p.instances || []).map((inst) =>
+                                String(inst.id) === String(activeInstanceId)
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontKey: nextVariant } }
+                                  : inst
+                              )
+                              return { ...p, instances: nextInstances }
+                            })
                           }}
                           style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                         >
@@ -19277,10 +19469,15 @@ export default function CreateVideo() {
                           value={effectiveFontKey}
                           onChange={(e) => {
                             const nextKey = String(e.target.value)
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), fontKey: nextKey },
-                            }) : p)
+                            setScreenTitleCustomizeEditor((p) => {
+                              if (!p) return p
+                              const nextInstances = (p.instances || []).map((inst) =>
+                                String(inst.id) === String(activeInstanceId)
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontKey: nextKey } }
+                                  : inst
+                              )
+                              return { ...p, instances: nextInstances }
+                            })
                           }}
                           style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                         >
@@ -19302,10 +19499,15 @@ export default function CreateVideo() {
                             const nextKey = String(e.target.value)
                             const opt = sizeOptions.find((o) => o.key === nextKey)
                             if (!opt) return
-                            setScreenTitleCustomizeEditor((p) => p ? ({
-                              ...p,
-                              customStyle: { ...(p.customStyle || {}), fontSizePct: opt.fontSizePct },
-                            }) : p)
+                            setScreenTitleCustomizeEditor((p) => {
+                              if (!p) return p
+                              const nextInstances = (p.instances || []).map((inst) =>
+                                String(inst.id) === String(activeInstanceId)
+                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontSizePct: opt.fontSizePct } }
+                                  : inst
+                              )
+                              return { ...p, instances: nextInstances }
+                            })
                           }}
                           style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                         >
@@ -19334,10 +19536,15 @@ export default function CreateVideo() {
                             value={fontColorValue}
                             onChange={(e) => {
                               const nextColor = String(e.target.value || '#ffffff')
-                              setScreenTitleCustomizeEditor((p) => p ? ({
-                                ...p,
-                                customStyle: { ...(p.customStyle || {}), fontColor: nextColor },
-                              }) : p)
+                              setScreenTitleCustomizeEditor((p) => {
+                                if (!p) return p
+                                const nextInstances = (p.instances || []).map((inst) =>
+                                  String(inst.id) === String(activeInstanceId)
+                                    ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontColor: nextColor } }
+                                    : inst
+                                )
+                                return { ...p, instances: nextInstances }
+                              })
                             }}
                             className="cv-color-picker"
                             style={{
@@ -19362,10 +19569,15 @@ export default function CreateVideo() {
                         value={gradientValue}
                         onChange={(e) => {
                           const next = String(e.target.value || '')
-                          setScreenTitleCustomizeEditor((p) => p ? ({
-                            ...p,
-                            customStyle: { ...(p.customStyle || {}), fontGradientKey: next ? next : null },
-                          }) : p)
+                          setScreenTitleCustomizeEditor((p) => {
+                            if (!p) return p
+                            const nextInstances = (p.instances || []).map((inst) =>
+                              String(inst.id) === String(activeInstanceId)
+                                ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontGradientKey: next ? next : null } }
+                                : inst
+                            )
+                            return { ...p, instances: nextInstances }
+                          })
                         }}
                         style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                       >
@@ -20257,11 +20469,26 @@ export default function CreateVideo() {
                               setSelectedNarrationId(null)
                               setSelectedStillId(null)
                               setSelectedAudioId(null)
+                              const rawInstances = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
+                              const instances =
+                                rawInstances.length > 0
+                                  ? rawInstances.map((inst: any, idx: number) => ({
+                                      id: String(inst?.id || `${String((st as any).id)}_i${idx + 1}`),
+                                      text: inst?.text == null ? '' : String(inst.text),
+                                      customStyle: inst?.customStyle ? { ...(inst.customStyle as any) } : null,
+                                    }))
+                                  : [
+                                      {
+                                        id: `${String((st as any).id)}_i1`,
+                                        text: String((st as any).text || ''),
+                                        customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
+                                      },
+                                    ]
                               setScreenTitleCustomizeEditor({
                                 id: String((st as any).id),
                                 presetId,
-                                text: String((st as any).text || ''),
-                                customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
+                                instances,
+                                activeInstanceId: String(instances[0]?.id || ''),
                               })
                               setScreenTitleCustomizeError(null)
                               void ensureScreenTitlePresets()

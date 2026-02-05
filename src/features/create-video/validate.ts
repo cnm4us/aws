@@ -1157,12 +1157,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const presetSnapshot = presetId != null ? normalizeScreenTitlePresetSnapshot(presetSnapshotRaw, presetId) : null
     if (presetId == null && presetSnapshotRaw != null) throw new ValidationError('invalid_screen_title_preset_snapshot')
 
-    const textRaw = (st as any).text
-    const text = textRaw == null ? '' : String(textRaw)
-    if (text.length > 1000) throw new ValidationError('invalid_screen_title_text')
-    const lines = text.split(/\r?\n/)
-    if (lines.length > 30) throw new ValidationError('invalid_screen_title_text')
-
     const renderUploadIdRaw = (st as any).renderUploadId
     const renderUploadId = renderUploadIdRaw == null ? null : Number(renderUploadIdRaw)
     let renderUploadMetaId: number | null = null
@@ -1176,9 +1170,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
       await screenTitlePresetsSvc.getActiveForUser(presetId, Number(ctx.userId))
     }
 
-    const customStyleRaw = (st as any).customStyle
-    let customStyle: any = null
-    if (customStyleRaw && typeof customStyleRaw === 'object') {
+    const normalizeCustomStyle = (customStyleRaw: any): any => {
+      if (!customStyleRaw || typeof customStyleRaw !== 'object') return null
       const posRaw = String((customStyleRaw as any).position || '').trim().toLowerCase()
       const position = posRaw === 'top' || posRaw === 'middle' || posRaw === 'bottom' ? posRaw : undefined
       const alnRaw = String((customStyleRaw as any).alignment || '').trim().toLowerCase()
@@ -1211,8 +1204,44 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (fontColor && fontColor.length <= 32) out.fontColor = fontColor
       if (fontGradientKey === null) out.fontGradientKey = null
       if (typeof fontGradientKey === 'string' && fontGradientKey.length > 0 && fontGradientKey.length <= 200) out.fontGradientKey = fontGradientKey
-      if (Object.keys(out).length) customStyle = out
+      return Object.keys(out).length ? out : null
     }
+
+    const instancesRaw = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
+    let instances: any[] | null = null
+    if (instancesRaw.length) {
+      if (instancesRaw.length > 5) throw new ValidationError('invalid_screen_title_text')
+      const insts: any[] = []
+      for (let i = 0; i < instancesRaw.length; i++) {
+        const inst = instancesRaw[i]
+        if (!inst || typeof inst !== 'object') continue
+        const instIdRaw = (inst as any).id
+        const instId = normalizeId(instIdRaw || `${id}_i${i + 1}`)
+        const instTextRaw = (inst as any).text
+        const instText = instTextRaw == null ? '' : String(instTextRaw)
+        if (instText.length > 1000) throw new ValidationError('invalid_screen_title_text')
+        const instLines = instText.split(/\r?\n/)
+        if (instLines.length > 30) throw new ValidationError('invalid_screen_title_text')
+        const instCustomStyle = normalizeCustomStyle((inst as any).customStyle)
+        insts.push({ id: instId, text: instText, customStyle: instCustomStyle })
+      }
+      if (insts.length > 5) throw new ValidationError('invalid_screen_title_text')
+      instances = insts
+    }
+
+    const textRaw = (st as any).text
+    const text = textRaw == null ? '' : String(textRaw)
+    if (!instances) {
+      if (text.length > 1000) throw new ValidationError('invalid_screen_title_text')
+      const lines = text.split(/\r?\n/)
+      if (lines.length > 30) throw new ValidationError('invalid_screen_title_text')
+    }
+
+    const legacyCustomStyle = normalizeCustomStyle((st as any).customStyle)
+    if (!instances || !instances.length) {
+      instances = [{ id: `${id}_i1`, text, customStyle: legacyCustomStyle }]
+    }
+    const primaryInst = instances[0] || { text, customStyle: legacyCustomStyle }
 
     screenTitles.push({
       id,
@@ -1220,8 +1249,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
       endSeconds,
       presetId,
       presetSnapshot,
-      customStyle,
-      text,
+      customStyle: primaryInst?.customStyle || null,
+      text: primaryInst?.text == null ? '' : String(primaryInst.text),
+      instances,
       renderUploadId: renderUploadMetaId,
     })
   }

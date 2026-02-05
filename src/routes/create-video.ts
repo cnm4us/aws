@@ -526,16 +526,19 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
     const frameW = Number(body.frameW)
     const frameH = Number(body.frameH)
     if (!Number.isFinite(presetId) || presetId <= 0) throw new DomainError('bad_preset_id', 'bad_preset_id', 400)
-    if (!text) throw new DomainError('missing_text', 'missing_text', 400)
-    if (text.length > 1000) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
-    if (text.split('\n').length > 30) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
+    const instancesRaw = Array.isArray(body.instances) ? (body.instances as any[]) : []
+    if (!instancesRaw.length) {
+      if (!text) throw new DomainError('missing_text', 'missing_text', 400)
+      if (text.length > 1000) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+      if (text.split('\n').length > 30) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
+    }
     if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || frameW <= 0 || frameH <= 0) throw new DomainError('bad_frame', 'bad_frame', 400)
     if (frameW > 3840 || frameH > 3840) throw new DomainError('bad_frame', 'bad_frame', 400)
 
     const presetBase = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
-    const override = body.presetOverride && typeof body.presetOverride === 'object' ? (body.presetOverride as any) : null
-    const preset: any = { ...(presetBase as any) }
-    if (override) {
+    const applyOverride = (base: any, override: any) => {
+      const preset: any = { ...(base as any) }
+      if (!override || typeof override !== 'object') return preset
       const posRaw = String(override.position || '').toLowerCase()
       if (posRaw === 'top' || posRaw === 'middle' || posRaw === 'bottom') preset.position = posRaw
       const alignRaw = String(override.alignment || '').toLowerCase()
@@ -552,11 +555,31 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
       if (override.marginBottomPct != null && Number.isFinite(Number(override.marginBottomPct))) preset.marginBottomPct = Math.max(0, Math.min(50, Number(override.marginBottomPct)))
       if (override.insetXPreset === null) preset.insetXPreset = null
       if (override.insetYPreset === null) preset.insetYPreset = null
+      return preset
     }
     const frame = { width: Math.round(frameW), height: Math.round(frameH) }
 
+    const instances: Array<{ text: string; preset: any }> = []
+    if (instancesRaw.length) {
+      for (const inst of instancesRaw) {
+        if (!inst || typeof inst !== 'object') continue
+        const instTextRaw = String((inst as any).text || '').replace(/\r\n/g, '\n')
+        const instText = instTextRaw.trim()
+        if (!instText) continue
+        if (instText.length > 1000) throw new DomainError('invalid_screen_title', 'invalid_screen_title', 400)
+        if (instText.split('\n').length > 30) throw new DomainError('invalid_screen_title_lines', 'invalid_screen_title_lines', 400)
+        const instOverride = (inst as any).presetOverride && typeof (inst as any).presetOverride === 'object' ? ((inst as any).presetOverride as any) : null
+        instances.push({ text: instText, preset: applyOverride(presetBase as any, instOverride) })
+      }
+      if (!instances.length) throw new DomainError('missing_text', 'missing_text', 400)
+    } else {
+      const override = body.presetOverride && typeof body.presetOverride === 'object' ? (body.presetOverride as any) : null
+      const preset = applyOverride(presetBase as any, override)
+      instances.push({ text, preset })
+    }
+
     const outPath = path.join(tmpDir, 'screen_title.png')
-    await renderScreenTitlePngWithPango({ input: { text, preset, frame }, outPath })
+    await renderScreenTitlePngWithPango({ input: { instances, frame }, outPath })
 
     const bucket = String(UPLOAD_BUCKET || '')
     if (!bucket) throw new DomainError('missing_bucket', 'missing_bucket', 500)

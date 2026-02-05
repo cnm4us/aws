@@ -4,9 +4,15 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 
-export type ScreenTitlePngInput = {
+export type ScreenTitlePngInstance = {
   text: string
   preset: any
+}
+
+export type ScreenTitlePngInput = {
+  text?: string
+  preset?: any
+  instances?: ScreenTitlePngInstance[]
   frame: { width: number; height: number }
 }
 

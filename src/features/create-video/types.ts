@@ -152,6 +152,20 @@ export type CreateVideoScreenTitleV1 = {
   endSeconds: number
   presetId: number | null
   presetSnapshot: CreateVideoScreenTitlePresetSnapshotV1 | null
+  instances?: Array<{
+    id: string
+    text: string
+    customStyle?: {
+      position?: 'top' | 'middle' | 'bottom'
+      alignment?: 'left' | 'center' | 'right'
+      marginXPx?: number
+      marginYPx?: number
+      fontKey?: string
+      fontSizePct?: number
+      fontColor?: string
+      fontGradientKey?: string | null
+    } | null
+  }>
   customStyle?: {
     position?: 'top' | 'middle' | 'bottom'
     alignment?: 'left' | 'center' | 'right'
@@ -160,6 +174,7 @@ export type CreateVideoScreenTitleV1 = {
     fontKey?: string
     fontSizePct?: number
     fontColor?: string
+    fontGradientKey?: string | null
   } | null
   text: string
   renderUploadId: number | null

@@ -193,6 +193,12 @@ export type ScreenTitleCustomStyle = {
   fontGradientKey?: string | null
 }
 
+export type ScreenTitleInstance = {
+  id: string
+  text: string
+  customStyle?: ScreenTitleCustomStyle | null
+}
+
 export type ScreenTitle = {
   id: string
   startSeconds: number
@@ -201,6 +207,7 @@ export type ScreenTitle = {
   presetSnapshot: ScreenTitlePresetSnapshot | null
   customStyle?: ScreenTitleCustomStyle | null
   text: string
+  instances?: ScreenTitleInstance[]
   renderUploadId: number | null
 }
 
@@ -312,79 +319,100 @@ export function cloneTimeline(timeline: Timeline): Timeline {
         }))
       : [],
     screenTitles: Array.isArray((timeline as any).screenTitles)
-      ? (timeline as any).screenTitles.map((st: any) => ({
-          id: String(st.id),
-          startSeconds: Number(st.startSeconds),
-          endSeconds: Number(st.endSeconds),
-          presetId: st.presetId == null ? null : Number(st.presetId),
-          presetSnapshot:
-            st.presetSnapshot && typeof st.presetSnapshot === 'object'
-              ? {
-                  id: Number(st.presetSnapshot.id),
-                  name: String(st.presetSnapshot.name || ''),
-                  style: (String(st.presetSnapshot.style || 'outline').toLowerCase() === 'pill'
-                    ? 'pill'
-                    : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'strip'
-                      ? 'strip'
-                      : 'outline') as any,
-                  fontKey: String(st.presetSnapshot.fontKey || 'dejavu_sans_bold'),
-                  fontSizePct: Number(st.presetSnapshot.fontSizePct),
-                  trackingPct: Number(st.presetSnapshot.trackingPct),
-                  fontColor: String(st.presetSnapshot.fontColor || '#ffffff'),
-                  pillBgColor: String(st.presetSnapshot.pillBgColor || '#000000'),
-                  pillBgOpacityPct: Number(st.presetSnapshot.pillBgOpacityPct),
-                  position: (String(st.presetSnapshot.position || 'top').toLowerCase() === 'bottom'
-                    ? 'bottom'
-                    : String(st.presetSnapshot.position || 'top').toLowerCase() === 'middle'
-                      ? 'middle'
-                      : 'top') as any,
-                  maxWidthPct: Number(st.presetSnapshot.maxWidthPct),
-                  insetXPreset: st.presetSnapshot.insetXPreset == null ? null : (String(st.presetSnapshot.insetXPreset || '').trim() as any),
-                  insetYPreset: st.presetSnapshot.insetYPreset == null ? null : (String(st.presetSnapshot.insetYPreset || '').trim() as any),
-                  fade: (String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in_out'
-                    ? 'in_out'
-                    : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in'
-                      ? 'in'
-                      : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'out'
-                        ? 'out'
-                        : 'none') as any,
-                }
-              : null,
-          customStyle:
-            st.customStyle && typeof st.customStyle === 'object'
-              ? {
-                  position:
-                    String(st.customStyle.position || '').trim().toLowerCase() === 'bottom'
+      ? (timeline as any).screenTitles.map((st: any) => {
+          const mapCustomStyle = (raw: any): ScreenTitleCustomStyle | null => {
+            if (!raw || typeof raw !== 'object') return null
+            return {
+              position:
+                String(raw.position || '').trim().toLowerCase() === 'bottom'
+                  ? 'bottom'
+                  : String(raw.position || '').trim().toLowerCase() === 'middle'
+                    ? 'middle'
+                    : String(raw.position || '').trim().toLowerCase() === 'top'
+                      ? 'top'
+                      : undefined,
+              alignment:
+                String(raw.alignment || '').trim().toLowerCase() === 'left'
+                  ? 'left'
+                  : String(raw.alignment || '').trim().toLowerCase() === 'right'
+                    ? 'right'
+                    : String(raw.alignment || '').trim().toLowerCase() === 'center'
+                      ? 'center'
+                      : undefined,
+              marginXPx: raw.marginXPx == null ? undefined : Number(raw.marginXPx),
+              marginYPx: raw.marginYPx == null ? undefined : Number(raw.marginYPx),
+              fontKey: raw.fontKey == null ? undefined : String(raw.fontKey),
+              fontSizePct: raw.fontSizePct == null ? undefined : Number(raw.fontSizePct),
+              fontColor: raw.fontColor == null ? undefined : String(raw.fontColor),
+              fontGradientKey:
+                raw.fontGradientKey === undefined
+                  ? undefined
+                  : raw.fontGradientKey == null
+                    ? null
+                    : String(raw.fontGradientKey),
+            }
+          }
+          const legacyText = st.text == null ? '' : String(st.text)
+          const legacyCustomStyle = mapCustomStyle(st.customStyle)
+          const instancesRaw = Array.isArray(st.instances) ? st.instances : []
+          const instances = instancesRaw.length
+            ? instancesRaw.map((inst: any, idx: number) => ({
+                id: String(inst?.id || `${String(st.id)}_i${idx + 1}`),
+                text: inst?.text == null ? '' : String(inst.text),
+                customStyle: mapCustomStyle(inst?.customStyle),
+              }))
+            : [
+                {
+                  id: `${String(st.id)}_i1`,
+                  text: legacyText,
+                  customStyle: legacyCustomStyle,
+                },
+              ]
+          const primary = instances[0] || { text: legacyText, customStyle: legacyCustomStyle }
+          return {
+            id: String(st.id),
+            startSeconds: Number(st.startSeconds),
+            endSeconds: Number(st.endSeconds),
+            presetId: st.presetId == null ? null : Number(st.presetId),
+            presetSnapshot:
+              st.presetSnapshot && typeof st.presetSnapshot === 'object'
+                ? {
+                    id: Number(st.presetSnapshot.id),
+                    name: String(st.presetSnapshot.name || ''),
+                    style: (String(st.presetSnapshot.style || 'outline').toLowerCase() === 'pill'
+                      ? 'pill'
+                      : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'strip'
+                        ? 'strip'
+                        : 'outline') as any,
+                    fontKey: String(st.presetSnapshot.fontKey || 'dejavu_sans_bold'),
+                    fontSizePct: Number(st.presetSnapshot.fontSizePct),
+                    trackingPct: Number(st.presetSnapshot.trackingPct),
+                    fontColor: String(st.presetSnapshot.fontColor || '#ffffff'),
+                    pillBgColor: String(st.presetSnapshot.pillBgColor || '#000000'),
+                    pillBgOpacityPct: Number(st.presetSnapshot.pillBgOpacityPct),
+                    position: (String(st.presetSnapshot.position || 'top').toLowerCase() === 'bottom'
                       ? 'bottom'
-                      : String(st.customStyle.position || '').trim().toLowerCase() === 'middle'
+                      : String(st.presetSnapshot.position || 'top').toLowerCase() === 'middle'
                         ? 'middle'
-                        : String(st.customStyle.position || '').trim().toLowerCase() === 'top'
-                          ? 'top'
-                          : undefined,
-                  alignment:
-                    String(st.customStyle.alignment || '').trim().toLowerCase() === 'left'
-                      ? 'left'
-                      : String(st.customStyle.alignment || '').trim().toLowerCase() === 'right'
-                        ? 'right'
-                        : String(st.customStyle.alignment || '').trim().toLowerCase() === 'center'
-                          ? 'center'
-                          : undefined,
-                  marginXPx: st.customStyle.marginXPx == null ? undefined : Number(st.customStyle.marginXPx),
-                  marginYPx: st.customStyle.marginYPx == null ? undefined : Number(st.customStyle.marginYPx),
-                fontKey: st.customStyle.fontKey == null ? undefined : String(st.customStyle.fontKey),
-                fontSizePct: st.customStyle.fontSizePct == null ? undefined : Number(st.customStyle.fontSizePct),
-                fontColor: st.customStyle.fontColor == null ? undefined : String(st.customStyle.fontColor),
-                fontGradientKey:
-                  st.customStyle.fontGradientKey === undefined
-                    ? undefined
-                    : st.customStyle.fontGradientKey == null
-                      ? null
-                      : String(st.customStyle.fontGradientKey),
-              }
-            : null,
-          text: st.text == null ? '' : String(st.text),
-          renderUploadId: st.renderUploadId == null ? null : Number(st.renderUploadId),
-        }))
+                        : 'top') as any,
+                    maxWidthPct: Number(st.presetSnapshot.maxWidthPct),
+                    insetXPreset: st.presetSnapshot.insetXPreset == null ? null : (String(st.presetSnapshot.insetXPreset || '').trim() as any),
+                    insetYPreset: st.presetSnapshot.insetYPreset == null ? null : (String(st.presetSnapshot.insetYPreset || '').trim() as any),
+                    fade: (String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in_out'
+                      ? 'in_out'
+                      : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'in'
+                        ? 'in'
+                        : String(st.presetSnapshot.fade || 'none').toLowerCase() === 'out'
+                          ? 'out'
+                          : 'none') as any,
+                  }
+                : null,
+            customStyle: primary?.customStyle || null,
+            text: primary?.text == null ? '' : String(primary.text),
+            instances,
+            renderUploadId: st.renderUploadId == null ? null : Number(st.renderUploadId),
+          }
+        })
       : [],
     logos: Array.isArray((timeline as any).logos)
       ? (timeline as any).logos.map((l: any) => ({
