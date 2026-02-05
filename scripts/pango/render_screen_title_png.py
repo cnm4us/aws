@@ -102,7 +102,7 @@ def rounded_rect(ctx, x, y, w, h, r):
   ctx.close_path()
 
 
-def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
+def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, anchor_box_h_middle=None, anchor_box_h_bottom=None, measure_out=None, measure_only=False):
   if not text:
     return
 
@@ -382,6 +382,16 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
   box_w = content_w + 2.0 * (pad_x + stroke_pad) + abs(shadow_dx) + (2.0 * shadow_blur)
   box_h = content_h + 2.0 * (pad_y + stroke_pad) + abs(shadow_dy) + (2.0 * shadow_blur)
 
+  if measure_out is not None:
+    try:
+      measure_out["box_h"] = float(box_h)
+      measure_out["box_w"] = float(box_w)
+    except Exception:
+      pass
+
+  if measure_only:
+    return
+
   # Position the bounding box, then derive the layout draw origin.
   if aln == "left":
     box_x = margin_left_px
@@ -394,9 +404,11 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo):
   min_y = margin_top_px
   max_y = height - box_h - margin_bottom_px
   if pos == "bottom":
-    box_y = max_y
+    base_y = (height * 2.0 / 3.0) + margin_top_px
+    box_y = base_y
   elif pos == "middle":
-    box_y = (height - box_h) / 2.0
+    base_y = (height / 3.0) + margin_top_px
+    box_y = base_y
   else:
     box_y = min_y
   box_y = clamp(box_y, min_y, max_y)
@@ -603,8 +615,64 @@ def main():
   ctx.paint()
   ctx.set_operator(cairo.OPERATOR_OVER)
 
+  # Compute shared anchor heights so middle/bottom aligned instances keep
+  # consistent vertical spacing regardless of individual text box height.
+  anchor_box_h_middle = None
+  anchor_box_h_bottom = None
+  try:
+    max_box_h_mid = 0.0
+    max_box_h_bot = 0.0
+    for inst in instances:
+      preset = inst.get("preset") or {}
+      pos = normalize_position(preset.get("position"))
+      if pos not in ("middle", "bottom"):
+        continue
+      measure_out = {}
+      render_instance(
+        ctx,
+        width,
+        height,
+        inst.get("text"),
+        preset,
+        Pango,
+        PangoCairo,
+        cairo,
+        None,
+        None,
+        measure_out,
+        True,
+      )
+      try:
+        box_h_val = float(measure_out.get("box_h") or 0.0)
+        if pos == "middle":
+          if box_h_val > max_box_h_mid:
+            max_box_h_mid = box_h_val
+        else:
+          if box_h_val > max_box_h_bot:
+            max_box_h_bot = box_h_val
+      except Exception:
+        pass
+    if max_box_h_mid > 0.0:
+      anchor_box_h_middle = max_box_h_mid
+    if max_box_h_bot > 0.0:
+      anchor_box_h_bottom = max_box_h_bot
+  except Exception:
+    anchor_box_h_middle = None
+    anchor_box_h_bottom = None
+
   for inst in instances:
-    render_instance(ctx, width, height, inst.get("text"), inst.get("preset") or {}, Pango, PangoCairo, cairo)
+    render_instance(
+      ctx,
+      width,
+      height,
+      inst.get("text"),
+      inst.get("preset") or {},
+      Pango,
+      PangoCairo,
+      cairo,
+      anchor_box_h_middle,
+      anchor_box_h_bottom,
+    )
 
   try:
     surface.write_to_png(args.out)
