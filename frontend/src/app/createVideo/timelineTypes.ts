@@ -182,12 +182,24 @@ export type ScreenTitlePresetSnapshot = {
   fade: 'none' | 'in' | 'out' | 'in_out'
 }
 
+export type ScreenTitleCustomStyle = {
+  position?: 'top' | 'middle' | 'bottom'
+  alignment?: 'left' | 'center' | 'right'
+  marginXPx?: number
+  marginYPx?: number
+  fontKey?: string
+  fontSizePct?: number
+  fontColor?: string
+  fontGradientKey?: string | null
+}
+
 export type ScreenTitle = {
   id: string
   startSeconds: number
   endSeconds: number
   presetId: number | null
   presetSnapshot: ScreenTitlePresetSnapshot | null
+  customStyle?: ScreenTitleCustomStyle | null
   text: string
   renderUploadId: number | null
 }
@@ -338,6 +350,38 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                         : 'none') as any,
                 }
               : null,
+          customStyle:
+            st.customStyle && typeof st.customStyle === 'object'
+              ? {
+                  position:
+                    String(st.customStyle.position || '').trim().toLowerCase() === 'bottom'
+                      ? 'bottom'
+                      : String(st.customStyle.position || '').trim().toLowerCase() === 'middle'
+                        ? 'middle'
+                        : String(st.customStyle.position || '').trim().toLowerCase() === 'top'
+                          ? 'top'
+                          : undefined,
+                  alignment:
+                    String(st.customStyle.alignment || '').trim().toLowerCase() === 'left'
+                      ? 'left'
+                      : String(st.customStyle.alignment || '').trim().toLowerCase() === 'right'
+                        ? 'right'
+                        : String(st.customStyle.alignment || '').trim().toLowerCase() === 'center'
+                          ? 'center'
+                          : undefined,
+                  marginXPx: st.customStyle.marginXPx == null ? undefined : Number(st.customStyle.marginXPx),
+                  marginYPx: st.customStyle.marginYPx == null ? undefined : Number(st.customStyle.marginYPx),
+                fontKey: st.customStyle.fontKey == null ? undefined : String(st.customStyle.fontKey),
+                fontSizePct: st.customStyle.fontSizePct == null ? undefined : Number(st.customStyle.fontSizePct),
+                fontColor: st.customStyle.fontColor == null ? undefined : String(st.customStyle.fontColor),
+                fontGradientKey:
+                  st.customStyle.fontGradientKey === undefined
+                    ? undefined
+                    : st.customStyle.fontGradientKey == null
+                      ? null
+                      : String(st.customStyle.fontGradientKey),
+              }
+            : null,
           text: st.text == null ? '' : String(st.text),
           renderUploadId: st.renderUploadId == null ? null : Number(st.renderUploadId),
         }))

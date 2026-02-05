@@ -1028,56 +1028,39 @@ export default function ScreenTitlePresetsPage() {
                 />
                 </label>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
-                  <select
-                    value={draft.position}
-                    onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value as any }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                  </select>
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Alignment</div>
-                  <select
-                    value={draft.alignment}
-                    onChange={(e) => setDraft((d) => ({ ...d, alignment: e.target.value as any }))}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    {([
+                      { key: 'top_left', row: 'top', col: 'left' },
+                      { key: 'top_center', row: 'top', col: 'center' },
+                      { key: 'top_right', row: 'top', col: 'right' },
+                      { key: 'middle_left', row: 'middle', col: 'left' },
+                      { key: 'middle_center', row: 'middle', col: 'center' },
+                      { key: 'middle_right', row: 'middle', col: 'right' },
+                      { key: 'bottom_left', row: 'bottom', col: 'left' },
+                      { key: 'bottom_center', row: 'bottom', col: 'center' },
+                      { key: 'bottom_right', row: 'bottom', col: 'right' },
+                    ] as const).map((g) => {
+                      const active = `${draft.position}_${draft.alignment}` === g.key
+                      return (
+                        <button
+                          key={g.key}
+                          type="button"
+                          onClick={() => setDraft((d) => ({ ...d, position: g.row, alignment: g.col }))}
+                          style={{
+                            height: 34,
+                            borderRadius: 8,
+                            border: `1px solid ${active ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.16)'}`,
+                            background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                          }}
+                        />
+                      )
+                    })}
+                  </div>
                 </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>

@@ -1176,12 +1176,51 @@ export async function validateAndNormalizeCreateVideoTimeline(
       await screenTitlePresetsSvc.getActiveForUser(presetId, Number(ctx.userId))
     }
 
+    const customStyleRaw = (st as any).customStyle
+    let customStyle: any = null
+    if (customStyleRaw && typeof customStyleRaw === 'object') {
+      const posRaw = String((customStyleRaw as any).position || '').trim().toLowerCase()
+      const position = posRaw === 'top' || posRaw === 'middle' || posRaw === 'bottom' ? posRaw : undefined
+      const alnRaw = String((customStyleRaw as any).alignment || '').trim().toLowerCase()
+      const alignment = alnRaw === 'left' || alnRaw === 'center' || alnRaw === 'right' ? alnRaw : undefined
+      const marginXPxRaw = (customStyleRaw as any).marginXPx
+      const marginYPxRaw = (customStyleRaw as any).marginYPx
+      const marginXPx = marginXPxRaw == null ? undefined : Number(marginXPxRaw)
+      const marginYPx = marginYPxRaw == null ? undefined : Number(marginYPxRaw)
+      const fontKeyRaw = (customStyleRaw as any).fontKey
+      const fontKey = fontKeyRaw == null ? undefined : String(fontKeyRaw)
+      const fontSizePctRaw = (customStyleRaw as any).fontSizePct
+      const fontSizePct = fontSizePctRaw == null ? undefined : Number(fontSizePctRaw)
+      const fontColorRaw = (customStyleRaw as any).fontColor
+      const fontColor = fontColorRaw == null ? undefined : String(fontColorRaw)
+      const fontGradientKeyRaw = (customStyleRaw as any).fontGradientKey
+      const fontGradientKey =
+        fontGradientKeyRaw === undefined
+          ? undefined
+          : fontGradientKeyRaw == null
+            ? null
+            : String(fontGradientKeyRaw || '').trim() || null
+
+      const out: any = {}
+      if (position) out.position = position
+      if (alignment) out.alignment = alignment
+      if (Number.isFinite(marginXPx)) out.marginXPx = clamp(marginXPx as number, 0, 1000)
+      if (Number.isFinite(marginYPx)) out.marginYPx = clamp(marginYPx as number, 0, 1000)
+      if (fontKey && fontKey.length <= 120) out.fontKey = fontKey
+      if (Number.isFinite(fontSizePct)) out.fontSizePct = clamp(fontSizePct as number, 0.5, 20)
+      if (fontColor && fontColor.length <= 32) out.fontColor = fontColor
+      if (fontGradientKey === null) out.fontGradientKey = null
+      if (typeof fontGradientKey === 'string' && fontGradientKey.length > 0 && fontGradientKey.length <= 200) out.fontGradientKey = fontGradientKey
+      if (Object.keys(out).length) customStyle = out
+    }
+
     screenTitles.push({
       id,
       startSeconds,
       endSeconds,
       presetId,
       presetSnapshot,
+      customStyle,
       text,
       renderUploadId: renderUploadMetaId,
     })

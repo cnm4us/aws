@@ -532,7 +532,27 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
     if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || frameW <= 0 || frameH <= 0) throw new DomainError('bad_frame', 'bad_frame', 400)
     if (frameW > 3840 || frameH > 3840) throw new DomainError('bad_frame', 'bad_frame', 400)
 
-    const preset = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
+    const presetBase = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
+    const override = body.presetOverride && typeof body.presetOverride === 'object' ? (body.presetOverride as any) : null
+    const preset: any = { ...(presetBase as any) }
+    if (override) {
+      const posRaw = String(override.position || '').toLowerCase()
+      if (posRaw === 'top' || posRaw === 'middle' || posRaw === 'bottom') preset.position = posRaw
+      const alignRaw = String(override.alignment || '').toLowerCase()
+      if (alignRaw === 'left' || alignRaw === 'center' || alignRaw === 'right') preset.alignment = alignRaw
+      if (override.fontKey != null) preset.fontKey = String(override.fontKey || preset.fontKey || '')
+      if (override.fontSizePct != null && Number.isFinite(Number(override.fontSizePct))) preset.fontSizePct = Number(override.fontSizePct)
+      if (override.fontColor != null) preset.fontColor = String(override.fontColor || preset.fontColor || '')
+      if (override.fontGradientKey !== undefined) {
+        preset.fontGradientKey = override.fontGradientKey == null ? null : String(override.fontGradientKey || '')
+      }
+      if (override.marginLeftPct != null && Number.isFinite(Number(override.marginLeftPct))) preset.marginLeftPct = Math.max(0, Math.min(50, Number(override.marginLeftPct)))
+      if (override.marginRightPct != null && Number.isFinite(Number(override.marginRightPct))) preset.marginRightPct = Math.max(0, Math.min(50, Number(override.marginRightPct)))
+      if (override.marginTopPct != null && Number.isFinite(Number(override.marginTopPct))) preset.marginTopPct = Math.max(0, Math.min(50, Number(override.marginTopPct)))
+      if (override.marginBottomPct != null && Number.isFinite(Number(override.marginBottomPct))) preset.marginBottomPct = Math.max(0, Math.min(50, Number(override.marginBottomPct)))
+      if (override.insetXPreset === null) preset.insetXPreset = null
+      if (override.insetYPreset === null) preset.insetYPreset = null
+    }
     const frame = { width: Math.round(frameW), height: Math.round(frameH) }
 
     const outPath = path.join(tmpDir, 'screen_title.png')

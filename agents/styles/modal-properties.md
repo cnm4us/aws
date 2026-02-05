@@ -55,6 +55,16 @@ Use this for:
 - Input rounding: `borderRadius: 10`
 - Padding: `10px 12px`
 - Font: size `14`, weight `900`
+- **Always** include:
+  - `width: '100%'`
+  - `maxWidth: '100%'`
+  - `boxSizing: 'border-box'`
+
+### Textareas
+
+- Use the same input styling as above.
+- **Required**: `width: '100%'; maxWidth: '100%'; boxSizing: 'border-box'`
+- Prevents right-side overflow when padding is applied.
 
 ### Buttons
 
@@ -108,6 +118,7 @@ Use this pattern whenever two inputs share a row:
   - `display: grid; gap: 6; minWidth: 0`
 - Each input/select:
   - Must include `boxSizing: 'border-box'`
+  - Must include `width: '100%'` and `maxWidth: '100%'`
 
 This prevents:
 - Right-side overflow

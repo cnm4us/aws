@@ -46,6 +46,22 @@ const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
+const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
+const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
+const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
+  x_small: 'X-Small',
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  x_large: 'X-Large',
+}
+const DEFAULT_SCREEN_TITLE_SIZE_MAP: Record<string, number> = {
+  x_small: 3.0,
+  small: 3.8,
+  medium: 4.5,
+  large: 5.2,
+  x_large: 6.4,
+}
 
 type MeResponse = {
   userId: number | null
@@ -143,6 +159,33 @@ type ScreenTitlePresetItem = {
   archivedAt?: string | null
 }
 
+type ScreenTitleFontFamily = {
+  familyKey: string
+  label: string
+  variants: Array<{ key: string; label: string }>
+}
+
+type ScreenTitleFontPresetsResponse = {
+  families: Record<
+    string,
+    {
+      sizes: Record<string, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>
+      variants?: Record<string, { sizes?: Record<string, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }> }>
+    }
+  >
+}
+
+type ScreenTitleCustomStyleDraft = {
+  position?: 'top' | 'middle' | 'bottom'
+  alignment?: 'left' | 'center' | 'right'
+  marginXPx?: number
+  marginYPx?: number
+  fontKey?: string
+  fontSizePct?: number
+  fontColor?: string
+  fontGradientKey?: string | null
+}
+
 const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
 const hexToRgba = (hex: string, alpha: number): string => {
@@ -211,6 +254,175 @@ function fmtDefaultTimelineName(now = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(
     now.getSeconds()
   )}`
+}
+
+const screenTitleInsetPresetToMarginPct = (raw: any): number => {
+  const s = String(raw || '').trim().toLowerCase()
+  if (s === 'small') return 6
+  if (s === 'large') return 14
+  return 10
+}
+
+const screenTitleMarginPxToPct = (px: number): number => {
+  return Math.round(((px / SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX) * 100) * 100) / 100
+}
+
+const screenTitleMarginPctToPx = (pct: number): number => {
+  return Math.round((pct / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)
+}
+
+function buildScreenTitlePresetSnapshot(preset: ScreenTitlePresetItem) {
+  const presetId = Number((preset as any).id)
+  return {
+    id: presetId,
+    name: String((preset as any).name || `Preset ${presetId}`),
+    style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
+      ? 'pill'
+      : String((preset as any).style || 'none').toLowerCase() === 'strip'
+        ? 'strip'
+        : 'none') as any,
+    fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
+    fontSizePct: Number((preset as any).fontSizePct),
+    trackingPct: Number((preset as any).trackingPct),
+    lineSpacingPct: Number((preset as any).lineSpacingPct ?? 0),
+    fontColor: String((preset as any).fontColor || '#ffffff'),
+    shadowColor: String((preset as any).shadowColor || '#000000'),
+    shadowOffsetPx: Number((preset as any).shadowOffsetPx ?? 2),
+    shadowBlurPx: Number((preset as any).shadowBlurPx ?? 0),
+    shadowOpacityPct: Number((preset as any).shadowOpacityPct ?? 65),
+    fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
+    outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
+    outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
+    outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
+    pillBgColor: String((preset as any).pillBgColor || '#000000'),
+    pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
+    alignment: (String((preset as any).alignment || 'center').toLowerCase() === 'left'
+      ? 'left'
+      : String((preset as any).alignment || 'center').toLowerCase() === 'right'
+        ? 'right'
+        : 'center') as any,
+    position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
+      ? 'bottom'
+      : String((preset as any).position || 'top').toLowerCase() === 'middle'
+        ? 'middle'
+        : 'top') as any,
+    maxWidthPct: Number((preset as any).maxWidthPct),
+    insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
+    insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
+    marginLeftPct: (preset as any).marginLeftPct == null ? null : Number((preset as any).marginLeftPct),
+    marginRightPct: (preset as any).marginRightPct == null ? null : Number((preset as any).marginRightPct),
+    marginTopPct: (preset as any).marginTopPct == null ? null : Number((preset as any).marginTopPct),
+    marginBottomPct: (preset as any).marginBottomPct == null ? null : Number((preset as any).marginBottomPct),
+    fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
+      ? 'in_out'
+      : String((preset as any).fade || 'none').toLowerCase() === 'in'
+        ? 'in'
+        : String((preset as any).fade || 'none').toLowerCase() === 'out'
+          ? 'out'
+          : 'none') as any,
+  }
+}
+
+function applyScreenTitleCustomStyle(snapshot: any, customStyle: ScreenTitleCustomStyleDraft | null) {
+  if (!customStyle) return snapshot
+  const next: any = { ...(snapshot as any) }
+  if (customStyle.position) next.position = customStyle.position
+  if (customStyle.alignment) next.alignment = customStyle.alignment
+  if (customStyle.fontKey) next.fontKey = customStyle.fontKey
+  if (customStyle.fontSizePct != null && Number.isFinite(Number(customStyle.fontSizePct))) next.fontSizePct = Number(customStyle.fontSizePct)
+  if (customStyle.fontColor) next.fontColor = customStyle.fontColor
+  if (customStyle.fontGradientKey !== undefined) next.fontGradientKey = customStyle.fontGradientKey
+  if (customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
+    const pct = screenTitleMarginPxToPct(Number(customStyle.marginXPx))
+    next.marginLeftPct = pct
+    next.marginRightPct = pct
+    next.insetXPreset = null
+  }
+  if (customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
+    const pct = screenTitleMarginPxToPct(Number(customStyle.marginYPx))
+    next.marginTopPct = pct
+    next.marginBottomPct = pct
+    next.insetYPreset = null
+  }
+  return next
+}
+
+function buildScreenTitlePresetOverride(customStyle: ScreenTitleCustomStyleDraft | null) {
+  if (!customStyle) return null
+  const out: any = {}
+  if (customStyle.position) out.position = customStyle.position
+  if (customStyle.alignment) out.alignment = customStyle.alignment
+  if (customStyle.fontKey) out.fontKey = customStyle.fontKey
+  if (customStyle.fontSizePct != null && Number.isFinite(Number(customStyle.fontSizePct))) out.fontSizePct = Number(customStyle.fontSizePct)
+  if (customStyle.fontColor) out.fontColor = customStyle.fontColor
+  if (customStyle.fontGradientKey !== undefined) out.fontGradientKey = customStyle.fontGradientKey
+  if (customStyle.marginXPx != null && Number.isFinite(Number(customStyle.marginXPx))) {
+    const pct = screenTitleMarginPxToPct(Number(customStyle.marginXPx))
+    out.marginLeftPct = pct
+    out.marginRightPct = pct
+    out.insetXPreset = null
+  }
+  if (customStyle.marginYPx != null && Number.isFinite(Number(customStyle.marginYPx))) {
+    const pct = screenTitleMarginPxToPct(Number(customStyle.marginYPx))
+    out.marginTopPct = pct
+    out.marginBottomPct = pct
+    out.insetYPreset = null
+  }
+  return Object.keys(out).length ? out : null
+}
+
+function normalizeScreenTitleCustomStyleForSave(customStyle: ScreenTitleCustomStyleDraft | null, basePreset: any) {
+  if (!customStyle) return null
+  const basePos = String(basePreset?.position || 'top') as any
+  const baseAln = String(basePreset?.alignment || 'center') as any
+  const baseGradient = basePreset?.fontGradientKey == null ? null : String(basePreset.fontGradientKey)
+  const baseMarginXPct =
+    basePreset?.marginLeftPct != null
+      ? Number(basePreset.marginLeftPct)
+      : basePreset?.marginRightPct != null
+        ? Number(basePreset.marginRightPct)
+        : screenTitleInsetPresetToMarginPct(basePreset?.insetXPreset)
+  const baseMarginYPct =
+    basePreset?.marginTopPct != null
+      ? Number(basePreset.marginTopPct)
+      : basePreset?.marginBottomPct != null
+        ? Number(basePreset.marginBottomPct)
+        : screenTitleInsetPresetToMarginPct(basePreset?.insetYPreset)
+  const baseMarginXPx = screenTitleMarginPctToPx(baseMarginXPct)
+  const baseMarginYPx = screenTitleMarginPctToPx(baseMarginYPct)
+
+  const out: ScreenTitleCustomStyleDraft = {}
+  if (customStyle.position && customStyle.position !== basePos) out.position = customStyle.position
+  if (customStyle.alignment && customStyle.alignment !== baseAln) out.alignment = customStyle.alignment
+  if (customStyle.fontKey && customStyle.fontKey !== String(basePreset?.fontKey || '')) out.fontKey = customStyle.fontKey
+  if (
+    customStyle.fontSizePct != null &&
+    Number.isFinite(Number(customStyle.fontSizePct)) &&
+    Math.abs(Number(customStyle.fontSizePct) - Number(basePreset?.fontSizePct || 0)) > 0.001
+  ) {
+    out.fontSizePct = Number(customStyle.fontSizePct)
+  }
+  if (customStyle.fontColor && customStyle.fontColor !== String(basePreset?.fontColor || '')) out.fontColor = customStyle.fontColor
+  if (customStyle.fontGradientKey !== undefined) {
+    const nextGradient = customStyle.fontGradientKey == null ? null : String(customStyle.fontGradientKey)
+    if (String(nextGradient || '') !== String(baseGradient || '')) out.fontGradientKey = nextGradient
+  }
+  if (
+    customStyle.marginXPx != null &&
+    Number.isFinite(Number(customStyle.marginXPx)) &&
+    Math.abs(Number(customStyle.marginXPx) - Number(baseMarginXPx || 0)) > 0.5
+  ) {
+    out.marginXPx = Number(customStyle.marginXPx)
+  }
+  if (
+    customStyle.marginYPx != null &&
+    Number.isFinite(Number(customStyle.marginYPx)) &&
+    Math.abs(Number(customStyle.marginYPx) - Number(baseMarginYPx || 0)) > 0.5
+  ) {
+    out.marginYPx = Number(customStyle.marginYPx)
+  }
+
+  return Object.keys(out).length ? out : null
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -599,8 +811,20 @@ export default function CreateVideo() {
   const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePresetItem[]>([])
   const [screenTitlePresetsLoaded, setScreenTitlePresetsLoaded] = useState(false)
   const [screenTitlePresetsError, setScreenTitlePresetsError] = useState<string | null>(null)
-  const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number; presetId: number | null; text: string } | null>(null)
+  const [screenTitleFontFamilies, setScreenTitleFontFamilies] = useState<ScreenTitleFontFamily[]>([])
+  const [screenTitleFontPresets, setScreenTitleFontPresets] = useState<ScreenTitleFontPresetsResponse | null>(null)
+  const [screenTitleFontsLoaded, setScreenTitleFontsLoaded] = useState(false)
+  const [screenTitleGradients, setScreenTitleGradients] = useState<Array<{ key: string; label: string }>>([])
+  const [screenTitleGradientsLoaded, setScreenTitleGradientsLoaded] = useState(false)
+  const [screenTitleEditor, setScreenTitleEditor] = useState<{ id: string; start: number; end: number } | null>(null)
   const [screenTitleEditorError, setScreenTitleEditorError] = useState<string | null>(null)
+  const [screenTitleCustomizeEditor, setScreenTitleCustomizeEditor] = useState<{
+    id: string
+    presetId: number | null
+    text: string
+    customStyle: ScreenTitleCustomStyleDraft | null
+  } | null>(null)
+  const [screenTitleCustomizeError, setScreenTitleCustomizeError] = useState<string | null>(null)
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
@@ -1841,8 +2065,6 @@ export default function CreateVideo() {
       if (!st) return false
       const s = roundToTenth(Number((st as any).startSeconds || 0))
       const e2 = roundToTenth(Number((st as any).endSeconds || 0))
-      const presetId = Number((st as any).presetId || 0)
-      const text = String((st as any).text || '')
       setSelectedScreenTitleId(String((st as any).id))
       setSelectedClipId(null)
       setSelectedGraphicId(null)
@@ -1851,7 +2073,7 @@ export default function CreateVideo() {
       setSelectedNarrationId(null)
       setSelectedStillId(null)
       setSelectedAudioId(null)
-      setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2, presetId, text })
+      setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2 })
       setScreenTitleEditorError(null)
       return true
     },
@@ -5521,11 +5743,12 @@ export default function CreateVideo() {
         const text = textRaw.trim()
         if (!text) continue
         try {
+          const presetOverride = buildScreenTitlePresetOverride((st as any).customStyle || null)
           const res = await fetch(`/api/create-video/screen-titles/render`, {
             method: 'POST',
             credentials: 'same-origin',
             headers,
-            body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height }),
+            body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height, presetOverride }),
           })
           const json: any = await res.json().catch(() => null)
           if (!res.ok) continue
@@ -5563,7 +5786,17 @@ export default function CreateVideo() {
         window.history.replaceState({}, '', next)
       } catch {}
     })()
-  }, [forceReloadScreenTitlePresets, getUploadCdnUrl, outputFrame.height, outputFrame.width, refreshScreenTitlePresetId, saveTimelineNow, screenTitles, timeline])
+  }, [
+    buildScreenTitlePresetOverride,
+    forceReloadScreenTitlePresets,
+    getUploadCdnUrl,
+    outputFrame.height,
+    outputFrame.width,
+    refreshScreenTitlePresetId,
+    saveTimelineNow,
+    screenTitles,
+    timeline,
+  ])
 
   const addGuidelineAtPlayhead = useCallback(() => {
     const t = roundToTenth(playhead)
@@ -6690,6 +6923,55 @@ export default function CreateVideo() {
     }
   }, [screenTitlePresets, screenTitlePresetsLoaded])
 
+  const ensureScreenTitleFonts = useCallback(async (): Promise<ScreenTitleFontFamily[]> => {
+    if (screenTitleFontsLoaded) return screenTitleFontFamilies
+    try {
+      const [fontsRes, fontPresetsRes] = await Promise.all([
+        fetch('/api/screen-title-fonts', { credentials: 'same-origin' }),
+        fetch('/api/screen-title-font-presets', { credentials: 'same-origin' }),
+      ])
+      if (fontsRes.ok) {
+        const fontsData = (await fontsRes.json().catch(() => null)) as { families?: ScreenTitleFontFamily[] } | null
+        const fams = Array.isArray(fontsData?.families) ? fontsData!.families : []
+        setScreenTitleFontFamilies(
+          fams.map((f) => ({
+            familyKey: String((f as any).familyKey || ''),
+            label: String((f as any).label || ''),
+            variants: Array.isArray((f as any).variants)
+              ? (f as any).variants.map((v: any) => ({ key: String(v.key || ''), label: String(v.label || '') }))
+              : [],
+          }))
+        )
+      }
+      if (fontPresetsRes.ok) {
+        const data = (await fontPresetsRes.json().catch(() => null)) as ScreenTitleFontPresetsResponse | null
+        if (data && typeof data === 'object' && (data as any).families && typeof (data as any).families === 'object') {
+          setScreenTitleFontPresets(data)
+        }
+      }
+    } catch {}
+    setScreenTitleFontsLoaded(true)
+    return screenTitleFontFamilies
+  }, [screenTitleFontFamilies, screenTitleFontsLoaded])
+
+  const ensureScreenTitleGradients = useCallback(async (): Promise<Array<{ key: string; label: string }>> => {
+    if (screenTitleGradientsLoaded) return screenTitleGradients
+    try {
+      const res = await fetch('/api/screen-title-gradients', { credentials: 'same-origin' })
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as { gradients?: Array<{ key: string; label: string }> } | null
+        const list = Array.isArray(data?.gradients) ? data!.gradients : []
+        setScreenTitleGradients(
+          list
+            .map((g) => ({ key: String((g as any).key || ''), label: String((g as any).label || '') }))
+            .filter((g) => g.key)
+        )
+      }
+    } catch {}
+    setScreenTitleGradientsLoaded(true)
+    return screenTitleGradients
+  }, [screenTitleGradients, screenTitleGradientsLoaded])
+
   const handledOpenAddStepRef = useRef(false)
   useEffect(() => {
     if (handledOpenAddStepRef.current) return
@@ -6713,6 +6995,13 @@ export default function CreateVideo() {
       window.location.href = '/assets?mode=pick'
     }
   }, [openAddStepFromUrl])
+
+  useEffect(() => {
+    if (!screenTitleCustomizeEditor) return
+    void ensureScreenTitlePresets()
+    void ensureScreenTitleFonts()
+    void ensureScreenTitleGradients()
+  }, [screenTitleCustomizeEditor, ensureScreenTitlePresets, ensureScreenTitleFonts, ensureScreenTitleGradients])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
@@ -6755,6 +7044,57 @@ export default function CreateVideo() {
     if (screenTitlePresetsLoaded) return
     void ensureScreenTitlePresets()
   }, [ensureScreenTitlePresets, screenTitlePresetsLoaded, screenTitles.length])
+
+  useEffect(() => {
+    if (!screenTitles.length) return
+    if (screenTitleFontsLoaded) return
+    void ensureScreenTitleFonts()
+  }, [ensureScreenTitleFonts, screenTitleFontsLoaded, screenTitles.length])
+
+  const resolveScreenTitleFamilyForFontKey = useCallback(
+    (fontKey: string | null) => {
+      const key = String(fontKey || '').trim()
+      for (const fam of screenTitleFontFamilies) {
+        if (fam.variants.some((v) => String(v.key) === key)) return fam
+      }
+      return screenTitleFontFamilies[0] || null
+    },
+    [screenTitleFontFamilies]
+  )
+
+  const getScreenTitleSizeOptions = useCallback(
+    (familyKey: string | null, fontKey: string | null) => {
+      const famKey = String(familyKey || '').trim()
+      const fontKeyStr = String(fontKey || '').trim()
+      const fam = famKey ? screenTitleFontPresets?.families?.[famKey] : null
+      const baseSizes = fam?.sizes || null
+      const variantSizes = fam?.variants?.[fontKeyStr]?.sizes || null
+      return SCREEN_TITLE_SIZE_KEYS.map((key) => {
+        const base = baseSizes && (baseSizes as any)[key] ? (baseSizes as any)[key] : null
+        const ov = variantSizes && (variantSizes as any)[key] ? (variantSizes as any)[key] : null
+        const fontSizePct =
+          (ov && Number((ov as any).fontSizePct)) ||
+          (base && Number((base as any).fontSizePct)) ||
+          DEFAULT_SCREEN_TITLE_SIZE_MAP[key]
+        return { key, label: SCREEN_TITLE_SIZE_LABELS[key], fontSizePct: Number(fontSizePct) }
+      })
+    },
+    [screenTitleFontPresets]
+  )
+
+  const pickScreenTitleSizeKey = useCallback((fontSizePct: number, options: Array<{ key: string; fontSizePct: number }>) => {
+    if (!Number.isFinite(fontSizePct)) return options[0]?.key || 'medium'
+    let bestKey = options[0]?.key || 'medium'
+    let bestDist = Number.POSITIVE_INFINITY
+    for (const opt of options) {
+      const d = Math.abs(Number(opt.fontSizePct) - Number(fontSizePct))
+      if (d < bestDist - 1e-6) {
+        bestDist = d
+        bestKey = opt.key
+      }
+    }
+    return bestKey
+  }, [])
 
 	  const addClipFromUpload = useCallback(
 	    (upload: UploadListItem) => {
@@ -7322,7 +7662,7 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(id)
-      setScreenTitleEditor({ id, start, end, presetId, text: '' })
+      setScreenTitleEditor({ id, start, end })
       setScreenTitleEditorError(null)
     },
     [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, playhead, rippleRightSimpleLane, screenTitles, snapshotUndo, totalSeconds]
@@ -12562,24 +12902,9 @@ export default function CreateVideo() {
     if (!screenTitleEditor) return
     const start = roundToTenth(Number(screenTitleEditor.start))
     const end = roundToTenth(Number(screenTitleEditor.end))
-    const presetIdRaw = screenTitleEditor.presetId
-    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
-    const text = String(screenTitleEditor.text || '').replace(/\r\n/g, '\n')
 
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setScreenTitleEditorError('End must be after start.')
-      return
-    }
-    if (presetId == null || !Number.isFinite(presetId) || presetId <= 0) {
-      setScreenTitleEditorError('Pick a screen title style.')
-      return
-    }
-    if (text.length > 1000) {
-      setScreenTitleEditorError('Max 1000 characters.')
-      return
-    }
-    if (text.split('\n').length > 30) {
-      setScreenTitleEditorError('Max 30 lines.')
       return
     }
 
@@ -12587,47 +12912,6 @@ export default function CreateVideo() {
     if (end > cap + 1e-6) {
       setScreenTitleEditorError(`End exceeds allowed duration (${cap.toFixed(1)}s).`)
       return
-    }
-
-    const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
-    if (!preset) {
-      setScreenTitleEditorError('Screen title style not found.')
-      return
-    }
-
-      const snapshot: any = {
-      id: presetId,
-      name: String((preset as any).name || `Preset ${presetId}`),
-      style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
-        ? 'pill'
-        : String((preset as any).style || 'none').toLowerCase() === 'strip'
-          ? 'strip'
-          : 'none') as any,
-      fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
-      fontSizePct: Number((preset as any).fontSizePct),
-      trackingPct: Number((preset as any).trackingPct),
-      fontColor: String((preset as any).fontColor || '#ffffff'),
-      fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
-      outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
-      outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
-      outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
-      pillBgColor: String((preset as any).pillBgColor || '#000000'),
-      pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
-      position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
-        ? 'bottom'
-        : String((preset as any).position || 'top').toLowerCase() === 'middle'
-          ? 'middle'
-          : 'top') as any,
-      maxWidthPct: Number((preset as any).maxWidthPct),
-      insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
-      insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
-      fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
-        ? 'in_out'
-        : String((preset as any).fade || 'none').toLowerCase() === 'in'
-          ? 'in'
-          : String((preset as any).fade || 'none').toLowerCase() === 'out'
-            ? 'out'
-            : 'none') as any,
     }
 
     // Disallow overlaps with other screen-title segments.
@@ -12649,17 +12933,10 @@ export default function CreateVideo() {
       const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleEditor.id))
       if (idx < 0) return prev
       const prevSeg: any = prevSts[idx] as any
-      const invalidateRender =
-        Number(prevSeg?.presetId) !== presetId ||
-        String(prevSeg?.text || '') !== text
       const updated: any = {
         ...prevSeg,
         startSeconds: Math.max(0, start),
         endSeconds: Math.max(0, end),
-        presetId,
-        presetSnapshot: snapshot,
-        text,
-        renderUploadId: invalidateRender ? null : (prevSeg?.renderUploadId ?? null),
       }
       const nextSts = prevSts.slice()
       nextSts[idx] = updated
@@ -12670,33 +12947,106 @@ export default function CreateVideo() {
     })
     setScreenTitleEditor(null)
     setScreenTitleEditorError(null)
-  }, [computeTotalSecondsForTimeline, screenTitleEditor, screenTitlePresets, screenTitles, snapshotUndo])
+  }, [computeTotalSecondsForTimeline, screenTitleEditor, screenTitles, snapshotUndo])
 
-  const generateScreenTitle = useCallback(async () => {
-    if (!screenTitleEditor) return
-    const presetIdRaw = screenTitleEditor.presetId
+  const saveScreenTitleCustomizeEditor = useCallback(() => {
+    if (!screenTitleCustomizeEditor) return
+    const presetIdRaw = screenTitleCustomizeEditor.presetId
     const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
-    const text = String(screenTitleEditor.text || '').replace(/\r\n/g, '\n').trim()
-    if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
-      setScreenTitleEditorError('Pick a screen title style.')
-      return
-    }
-    if (!text) {
-      setScreenTitleEditorError('Enter text.')
+    const text = String(screenTitleCustomizeEditor.text || '').replace(/\r\n/g, '\n')
+    if (presetId == null || !Number.isFinite(presetId) || presetId <= 0) {
+      setScreenTitleCustomizeError('Pick a screen title style.')
       return
     }
     if (text.length > 1000) {
-      setScreenTitleEditorError('Max 1000 characters.')
+      setScreenTitleCustomizeError('Max 1000 characters.')
       return
     }
     if (text.split('\n').length > 30) {
-      setScreenTitleEditorError('Max 30 lines.')
+      setScreenTitleCustomizeError('Max 30 lines.')
+      return
+    }
+
+    const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+    if (!preset) {
+      setScreenTitleCustomizeError('Screen title style not found.')
+      return
+    }
+    const snapshot = buildScreenTitlePresetSnapshot(preset)
+    const customStyle = normalizeScreenTitleCustomStyleForSave(screenTitleCustomizeEditor.customStyle || null, snapshot)
+
+      const sameCustomStyle = (a: any, b: any): boolean => {
+        if (!a && !b) return true
+        if (!a || !b) return false
+        const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
+        return keys.every((k) => {
+          const av = (a as any)[k]
+          const bv = (b as any)[k]
+          if (av == null && bv == null) return true
+          if (Number.isFinite(Number(av)) && Number.isFinite(Number(bv))) return Math.abs(Number(av) - Number(bv)) < 0.001
+        return String(av || '') === String(bv || '')
+      })
+    }
+
+    snapshotUndo()
+    setTimeline((prev) => {
+      const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+      const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleCustomizeEditor.id))
+      if (idx < 0) return prev
+      const prevSeg: any = prevSts[idx] as any
+      const invalidateRender =
+        Number(prevSeg?.presetId) !== presetId ||
+        String(prevSeg?.text || '') !== text ||
+        !sameCustomStyle(prevSeg?.customStyle || null, customStyle || null)
+      const updated: any = {
+        ...prevSeg,
+        presetId,
+        presetSnapshot: snapshot,
+        customStyle,
+        text,
+        renderUploadId: invalidateRender ? null : (prevSeg?.renderUploadId ?? null),
+      }
+      const nextSts = prevSts.slice()
+      nextSts[idx] = updated
+      nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      return { ...prev, screenTitles: nextSts }
+    })
+
+    setScreenTitleCustomizeEditor(null)
+    setScreenTitleCustomizeError(null)
+  }, [screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
+
+  const generateScreenTitle = useCallback(async () => {
+    if (!screenTitleCustomizeEditor) return
+    const presetIdRaw = screenTitleCustomizeEditor.presetId
+    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
+    const text = String(screenTitleCustomizeEditor.text || '').replace(/\r\n/g, '\n').trim()
+    if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+      setScreenTitleCustomizeError('Pick a screen title style.')
+      return
+    }
+    if (!text) {
+      setScreenTitleCustomizeError('Enter text.')
+      return
+    }
+    if (text.length > 1000) {
+      setScreenTitleCustomizeError('Max 1000 characters.')
+      return
+    }
+    if (text.split('\n').length > 30) {
+      setScreenTitleCustomizeError('Max 30 lines.')
       return
     }
 
     setScreenTitleRenderBusy(true)
-    setScreenTitleEditorError(null)
+    setScreenTitleCustomizeError(null)
     try {
+      const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+      if (!preset) throw new Error('Screen title style not found.')
+      const snapshot = buildScreenTitlePresetSnapshot(preset)
+      const customStyle = normalizeScreenTitleCustomStyleForSave(screenTitleCustomizeEditor.customStyle || null, snapshot)
+      const presetOverride = buildScreenTitlePresetOverride(customStyle)
+
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
@@ -12704,62 +13054,25 @@ export default function CreateVideo() {
         method: 'POST',
         credentials: 'same-origin',
         headers,
-        body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height }),
+        body: JSON.stringify({ presetId, text, frameW: outputFrame.width, frameH: outputFrame.height, presetOverride }),
       })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || json?.message || 'internal_error'))
       const uploadId = Number(json?.uploadId || 0)
       if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('bad_upload_id')
 
-      // Persist preset/text (and clear renderUploadId if needed), then set the new render upload id.
+      // Persist preset/text/custom style then set the new render upload id.
       snapshotUndo()
       setTimeline((prev) => {
         const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
-        const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleEditor.id))
+        const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitleCustomizeEditor.id))
         if (idx < 0) return prev
         const prevSeg: any = prevSts[idx] as any
-        const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
-        const snapshot: any = preset
-          ? {
-              id: presetId,
-              name: String((preset as any).name || `Preset ${presetId}`),
-              style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
-                ? 'pill'
-                : String((preset as any).style || 'none').toLowerCase() === 'strip'
-                  ? 'strip'
-                  : 'none') as any,
-              fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
-              fontSizePct: Number((preset as any).fontSizePct),
-              trackingPct: Number((preset as any).trackingPct),
-              fontColor: String((preset as any).fontColor || '#ffffff'),
-              fontGradientKey: (preset as any).fontGradientKey == null ? null : String((preset as any).fontGradientKey),
-              outlineWidthPct: (preset as any).outlineWidthPct == null ? null : Number((preset as any).outlineWidthPct),
-              outlineOpacityPct: (preset as any).outlineOpacityPct == null ? null : Number((preset as any).outlineOpacityPct),
-              outlineColor: (preset as any).outlineColor == null ? null : String((preset as any).outlineColor),
-              pillBgColor: String((preset as any).pillBgColor || '#000000'),
-              pillBgOpacityPct: Number((preset as any).pillBgOpacityPct),
-              position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
-                ? 'bottom'
-                : String((preset as any).position || 'top').toLowerCase() === 'middle'
-                  ? 'middle'
-                  : 'top') as any,
-              maxWidthPct: Number((preset as any).maxWidthPct),
-              insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
-              insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
-              fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
-                ? 'in_out'
-                : String((preset as any).fade || 'none').toLowerCase() === 'in'
-                  ? 'in'
-                  : String((preset as any).fade || 'none').toLowerCase() === 'out'
-                    ? 'out'
-                    : 'none') as any,
-            }
-          : (prevSeg?.presetSnapshot ?? null)
-
         const updated: any = {
           ...prevSeg,
           presetId,
           presetSnapshot: snapshot,
+          customStyle,
           text,
           renderUploadId: uploadId,
         }
@@ -12776,14 +13089,14 @@ export default function CreateVideo() {
         }
       } catch {}
 
-      setScreenTitleEditor(null)
-      setScreenTitleEditorError(null)
+      setScreenTitleCustomizeEditor(null)
+      setScreenTitleCustomizeError(null)
     } catch (e: any) {
-      setScreenTitleEditorError(e?.message || 'internal_error')
+      setScreenTitleCustomizeError(e?.message || 'internal_error')
     } finally {
       setScreenTitleRenderBusy(false)
     }
-  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitleEditor, screenTitlePresets, snapshotUndo])
+  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
 
   const openAdd = useCallback(() => {
     try {
@@ -18645,136 +18958,428 @@ export default function CreateVideo() {
 	                )
 	              })()}
 
-		            <div style={{ marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-		                <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
-		                <button
-		                  type="button"
-		                  onClick={() => {
-		                    try {
-		                      const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
-		                      window.location.href = `/assets/screen-titles?return=${encodeURIComponent(ret)}`
-		                    } catch {
-		                      window.location.href = '/assets/screen-titles'
-		                    }
-		                  }}
-		                  style={{
-		                    color: '#0a84ff',
-		                    textDecoration: 'none',
-		                    background: 'transparent',
-		                    border: 'none',
-		                    padding: 0,
-		                    cursor: 'pointer',
-		                    font: 'inherit',
-		                  }}
-		                >
-		                  Manage Styles
-		                </button>
-		              </div>
-
-	              <select
-	                value={String(screenTitleEditor.presetId ?? '')}
-	                onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, presetId: e.target.value ? Number(e.target.value) : null }) : p) }}
-	                style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14 }}
-	              >
-	                <option value="" disabled>
-	                  Select…
-	                </option>
-	                {screenTitlePresets
-	                  .filter((p: any) => !(p && typeof p === 'object' && (p as any).archived_at))
-	                  .map((p: any) => (
-	                    <option key={`stp-${String(p.id)}`} value={String(p.id)}>{String(p.name || `Preset ${p.id}`)}</option>
-	                  ))}
-	              </select>
-	              {screenTitlePresetsError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitlePresetsError}</div> : null}
-
-		              <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-		                <div style={{ position: 'relative' }}>
-		                  <textarea
-		                    ref={screenTitleTextAreaRef}
-		                    value={String(screenTitleEditor.text || '')}
-		                    placeholder="Type your screen title here"
-		                    rows={3}
-		                    maxLength={1000}
-		                    onChange={(e) => { setScreenTitleEditorError(null); setScreenTitleEditor((p) => p ? ({ ...p, text: e.target.value }) : p) }}
-		                    style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', paddingBottom: 34, paddingRight: 44, fontSize: 14, resize: 'none', height: screenTitleTextAreaHeight }}
-		                  />
-		                  <div
-		                    role="button"
-		                    aria-label="Resize text area"
-		                    onPointerDown={(e) => {
-		                      const ta = screenTitleTextAreaRef.current
-		                      if (!ta) return
-		                      e.preventDefault()
-		                      e.stopPropagation()
-		                      const rect = ta.getBoundingClientRect()
-		                      screenTitleTextAreaDragRef.current = { pointerId: e.pointerId, startClientY: e.clientY, startHeight: rect.height }
-		                      try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
-		                    }}
-		                    onPointerMove={(e) => {
-		                      const cur = screenTitleTextAreaDragRef.current
-		                      if (!cur || e.pointerId !== cur.pointerId) return
-		                      e.preventDefault()
-		                      e.stopPropagation()
-		                      const dy = e.clientY - cur.startClientY
-		                      const nextH = clamp(cur.startHeight + dy, 72, 520)
-		                      setScreenTitleTextAreaHeight(nextH)
-		                    }}
-		                    onPointerUp={(e) => {
-		                      const cur = screenTitleTextAreaDragRef.current
-		                      if (!cur || e.pointerId !== cur.pointerId) return
-		                      e.preventDefault()
-		                      e.stopPropagation()
-		                      screenTitleTextAreaDragRef.current = null
-		                      try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId) } catch {}
-		                    }}
-		                    style={{
-		                      position: 'absolute',
-		                      right: 8,
-		                      bottom: 8,
-		                      width: 28,
-		                      height: 28,
-		                      borderRadius: 8,
-		                      background: 'rgba(255,255,255,0.06)',
-		                      border: '1px solid rgba(255,255,255,0.22)',
-		                      cursor: 'nwse-resize',
-		                      touchAction: 'none',
-		                      userSelect: 'none',
-		                      display: 'grid',
-		                      placeItems: 'center',
-		                    }}
-		                  >
-		                    <div style={{ width: 16, height: 16, borderRight: '2px solid rgba(255,255,255,0.38)', borderBottom: '2px solid rgba(255,255,255,0.38)' }} />
-		                  </div>
-		                </div>
-		                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#888', fontSize: 12 }}>
-		                  <div>Max 1000 chars • max 30 lines</div>
-		                  <div>{String(screenTitleEditor.text || '').length}/1000</div>
-		                </div>
-		              </div>
-	
 	              {screenTitleEditorError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleEditorError}</div> : null}
-	
+
 	              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
-                <button
-                  type="button"
-                  onClick={saveScreenTitleEditor}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  disabled={screenTitleRenderBusy}
-                  onClick={generateScreenTitle}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: screenTitleRenderBusy ? 'not-allowed' : 'pointer', opacity: screenTitleRenderBusy ? 0.65 : 1 }}
-                >
-                  {screenTitleRenderBusy ? 'Generating…' : 'Generate'}
-                </button>
-              </div>
-              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
-                Generate renders a transparent PNG using the selected style and applies it to the selected time range.
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => { setScreenTitleEditor(null); setScreenTitleEditorError(null) }}
+                    style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveScreenTitleEditor}
+                    style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(96,165,250,0.95)', background: 'rgba(96,165,250,0.14)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                  >
+                    Save
+                  </button>
+	              </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {screenTitleCustomizeEditor ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 96px' }}
+          onClick={() => { setScreenTitleCustomizeEditor(null); setScreenTitleCustomizeError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 640,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
+          >
+            {(() => {
+              const presetId = Number(screenTitleCustomizeEditor.presetId || 0)
+              const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+              const baseSnapshot = preset ? buildScreenTitlePresetSnapshot(preset) : null
+              const customStyle = screenTitleCustomizeEditor.customStyle || null
+              const effective = baseSnapshot ? applyScreenTitleCustomStyle(baseSnapshot, customStyle) : null
+              const effectiveFontKey = String((effective as any)?.fontKey || (baseSnapshot as any)?.fontKey || '')
+              const family = resolveScreenTitleFamilyForFontKey(effectiveFontKey)
+              const familyKey = family?.familyKey || ''
+              const sizeOptions = getScreenTitleSizeOptions(familyKey, effectiveFontKey)
+              const sizeKey = pickScreenTitleSizeKey(
+                Number((effective as any)?.fontSizePct ?? (baseSnapshot as any)?.fontSizePct ?? sizeOptions[0]?.fontSizePct),
+                sizeOptions
+              )
+              const baseMarginXPct =
+                (effective as any)?.marginLeftPct != null
+                  ? Number((effective as any).marginLeftPct)
+                  : screenTitleInsetPresetToMarginPct((effective as any)?.insetXPreset)
+              const baseMarginYPct =
+                (effective as any)?.marginTopPct != null
+                  ? Number((effective as any).marginTopPct)
+                  : screenTitleInsetPresetToMarginPct((effective as any)?.insetYPreset)
+              const marginXDisplay = Number.isFinite(Number((customStyle as any)?.marginXPx))
+                ? Number((customStyle as any).marginXPx)
+                : screenTitleMarginPctToPx(baseMarginXPct)
+              const marginYDisplay = Number.isFinite(Number((customStyle as any)?.marginYPx))
+                ? Number((customStyle as any).marginYPx)
+                : screenTitleMarginPctToPx(baseMarginYPct)
+              const pos = String((effective as any)?.position || 'top') as 'top' | 'middle' | 'bottom'
+              const align = String((effective as any)?.alignment || 'center') as 'left' | 'center' | 'right'
+              const effectiveGradient =
+                customStyle && (customStyle as any).fontGradientKey !== undefined
+                  ? (customStyle as any).fontGradientKey
+                  : (effective as any)?.fontGradientKey ?? null
+              const gradientValue = effectiveGradient == null ? '' : String(effectiveGradient)
+              const fontColorValue =
+                (customStyle as any)?.fontColor != null && String((customStyle as any).fontColor).trim()
+                  ? String((customStyle as any).fontColor)
+                  : String((baseSnapshot as any)?.fontColor || '#ffffff')
+              const gridItems = [
+                { key: 'top_left', row: 'top', col: 'left' },
+                { key: 'top_center', row: 'top', col: 'center' },
+                { key: 'top_right', row: 'top', col: 'right' },
+                { key: 'middle_left', row: 'middle', col: 'left' },
+                { key: 'middle_center', row: 'middle', col: 'center' },
+                { key: 'middle_right', row: 'middle', col: 'right' },
+                { key: 'bottom_left', row: 'bottom', col: 'left' },
+                { key: 'bottom_center', row: 'bottom', col: 'center' },
+                { key: 'bottom_right', row: 'bottom', col: 'right' },
+              ] as const
+              const activeKey = `${pos}_${align}`
+
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          const from = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+                          window.location.href = `/assets/screen-titles?return=${encodeURIComponent(from)}`
+                        } catch {}
+                      }}
+                      style={{
+                        color: '#fff',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.20)',
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontWeight: 800,
+                      }}
+                    >
+                      Manage Styles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenTitleCustomizeEditor(null); setScreenTitleCustomizeError(null) }}
+                      style={{
+                        color: '#fff',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.20)',
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontWeight: 800,
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 900, marginTop: 8 }}>Customize Screen Title</div>
+
+                  <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Select Style</div>
+                      <select
+                        value={Number.isFinite(presetId) && presetId > 0 ? String(presetId) : ''}
+                        onChange={(e) => {
+                          const nextId = Number(e.target.value)
+                          setScreenTitleCustomizeEditor((p) => p ? ({ ...p, presetId: Number.isFinite(nextId) ? nextId : null, customStyle: null }) : p)
+                          setScreenTitleCustomizeError(null)
+                        }}
+                        style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                      >
+                        <option value="">Select...</option>
+                        {screenTitlePresets.map((p: any) => (
+                          <option key={String((p as any).id)} value={String((p as any).id)}>
+                            {String((p as any).name || `Style ${String((p as any).id)}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Text</div>
+                      <textarea
+                        ref={screenTitleTextAreaRef}
+                        value={screenTitleCustomizeEditor.text}
+                        onChange={(e) => {
+                          const next = e.target.value
+                          setScreenTitleCustomizeEditor((p) => p ? ({ ...p, text: next }) : p)
+                          setScreenTitleCustomizeError(null)
+                          if (screenTitleTextAreaRef.current) {
+                            const el = screenTitleTextAreaRef.current
+                            const nextHeight = Math.max(96, Math.min(360, el.scrollHeight))
+                            setScreenTitleTextAreaHeight(nextHeight)
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          minHeight: 96,
+                          height: screenTitleTextAreaHeight,
+                          resize: 'vertical',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: '#0b0b0b',
+                          color: '#fff',
+                          padding: '10px 12px',
+                          fontSize: 14,
+                          fontWeight: 700,
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                        {gridItems.map((g) => {
+                          const isActive = activeKey === g.key
+                          return (
+                            <button
+                              key={g.key}
+                              type="button"
+                              onClick={() => {
+                                setScreenTitleCustomizeEditor((p) => p ? ({
+                                  ...p,
+                                  customStyle: { ...(p.customStyle || {}), position: g.row, alignment: g.col },
+                                }) : p)
+                                setScreenTitleCustomizeError(null)
+                              }}
+                              style={{
+                                height: 34,
+                                borderRadius: 8,
+                                border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                                background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                                color: '#fff',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                              }}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Reset</div>
+                      <button
+                        type="button"
+                        onClick={() => setScreenTitleCustomizeEditor((p) => p ? ({ ...p, customStyle: null }) : p)}
+                        style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        Reset to Base
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
+                      <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Horizontal Margin (px)</div>
+                        <select
+                          value={Number.isFinite(marginXDisplay) ? String(Math.round(marginXDisplay / 10) * 10) : '0'}
+                          onChange={(e) => {
+                            const next = Number(e.target.value)
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), marginXPx: Number.isFinite(next) ? next : 0 },
+                            }) : p)
+                          }}
+                          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                        >
+                          {Array.from({ length: 11 }, (_, i) => i * 10).map((val) => (
+                            <option key={val} value={String(val)}>
+                              {val}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Vertical Margin (px)</div>
+                        <select
+                          value={Number.isFinite(marginYDisplay) ? String(Math.round(marginYDisplay / 10) * 10) : '0'}
+                          onChange={(e) => {
+                            const next = Number(e.target.value)
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), marginYPx: Number.isFinite(next) ? next : 0 },
+                            }) : p)
+                          }}
+                          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                        >
+                          {Array.from({ length: 11 }, (_, i) => i * 10).map((val) => (
+                            <option key={val} value={String(val)}>
+                              {val}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Font Family</div>
+                        <select
+                          value={familyKey}
+                          onChange={(e) => {
+                            const nextFamily = String(e.target.value)
+                            const fam = screenTitleFontFamilies.find((f) => String(f.familyKey) === nextFamily) || screenTitleFontFamilies[0]
+                            const nextVariant = fam?.variants?.[0]?.key || ''
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), fontKey: nextVariant },
+                            }) : p)
+                          }}
+                          style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                        >
+                          {screenTitleFontFamilies.map((f) => (
+                            <option key={String(f.familyKey)} value={String(f.familyKey)}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Variant</div>
+                        <select
+                          value={effectiveFontKey}
+                          onChange={(e) => {
+                            const nextKey = String(e.target.value)
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), fontKey: nextKey },
+                            }) : p)
+                          }}
+                          style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                        >
+                          {family?.variants?.map((v) => (
+                            <option key={String(v.key)} value={String(v.key)}>
+                              {String(v.label || v.key)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Text Size</div>
+                        <select
+                          value={sizeKey}
+                          onChange={(e) => {
+                            const nextKey = String(e.target.value)
+                            const opt = sizeOptions.find((o) => o.key === nextKey)
+                            if (!opt) return
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), fontSizePct: opt.fontSizePct },
+                            }) : p)
+                          }}
+                          style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                        >
+                          {sizeOptions.map((opt) => (
+                            <option key={opt.key} value={opt.key}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontSize: 13 }}>Font Color</div>
+                        <input
+                          type="color"
+                          value={fontColorValue}
+                          onChange={(e) => {
+                            const nextColor = String(e.target.value || '#ffffff')
+                            setScreenTitleCustomizeEditor((p) => p ? ({
+                              ...p,
+                              customStyle: { ...(p.customStyle || {}), fontColor: nextColor },
+                            }) : p)
+                          }}
+                          style={{
+                            width: '100%',
+                            height: 38,
+                            padding: 0,
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: fontColorValue,
+                            boxSizing: 'border-box',
+                            cursor: 'pointer',
+                            WebkitAppearance: 'none',
+                            appearance: 'none',
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Text Gradient</div>
+                      <select
+                        value={gradientValue}
+                        onChange={(e) => {
+                          const next = String(e.target.value || '')
+                          setScreenTitleCustomizeEditor((p) => p ? ({
+                            ...p,
+                            customStyle: { ...(p.customStyle || {}), fontGradientKey: next ? next : null },
+                          }) : p)
+                        }}
+                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
+                      >
+                        <option value="">None</option>
+                        {screenTitleGradients.map((g) => (
+                          <option key={g.key} value={g.key}>
+                            {g.label || g.key}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {screenTitleCustomizeError ? <div style={{ color: '#ff9b9b', fontSize: 13 }}>{screenTitleCustomizeError}</div> : null}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setScreenTitleCustomizeEditor(null); setScreenTitleCustomizeError(null) }}
+                        style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={screenTitleRenderBusy}
+                        onClick={generateScreenTitle}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(96,165,250,0.95)',
+                          background: screenTitleRenderBusy ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.25)',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: screenTitleRenderBusy ? 'default' : 'pointer',
+                        }}
+                      >
+                        {screenTitleRenderBusy ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       ) : null}
@@ -19332,8 +19937,6 @@ export default function CreateVideo() {
 				                      if (st) {
 				                        const s = roundToTenth(Number((st as any).startSeconds || 0))
 				                        const e2 = roundToTenth(Number((st as any).endSeconds || 0))
-				                        const presetId = Number((st as any).presetId || 0)
-				                        const text = String((st as any).text || '')
 				                        setSelectedScreenTitleId(String((st as any).id))
 				                        setSelectedClipId(null)
 				                        setSelectedVideoOverlayId(null)
@@ -19343,7 +19946,7 @@ export default function CreateVideo() {
 				                        setSelectedNarrationId(null)
 				                        setSelectedStillId(null)
 				                        setSelectedAudioId(null)
-				                        setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2, presetId, text })
+				                        setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2 })
 				                        setScreenTitleEditorError(null)
 				                      }
 				                    } else if (timelineCtxMenu.kind === 'videoOverlay') {
@@ -19610,15 +20213,31 @@ export default function CreateVideo() {
                             type="button"
                             onClick={() => {
                               const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
+                              if (!st) return
                               const presetId = Number((st as any)?.presetId || 0)
-                              if (!Number.isFinite(presetId) || presetId <= 0) return
-                              try {
-                                const base = new URL(window.location.href)
-                                base.searchParams.set('cvScreenTitleId', String((st as any).id))
-                                base.searchParams.set('cvRefreshScreenTitlePresetId', String(presetId))
-                                const from = `${base.pathname}${base.search}${base.hash || ''}`
-                                window.location.href = `/assets/screen-titles/${encodeURIComponent(String(presetId))}/edit?return=${encodeURIComponent(from)}`
-                              } catch {}
+                              if (!Number.isFinite(presetId) || presetId <= 0) {
+                                setScreenTitleCustomizeError('Pick a screen title style.')
+                                return
+                              }
+                              setSelectedScreenTitleId(String((st as any).id))
+                              setSelectedClipId(null)
+                              setSelectedVideoOverlayId(null)
+                              setSelectedGraphicId(null)
+                              setSelectedLogoId(null)
+                              setSelectedLowerThirdId(null)
+                              setSelectedNarrationId(null)
+                              setSelectedStillId(null)
+                              setSelectedAudioId(null)
+                              setScreenTitleCustomizeEditor({
+                                id: String((st as any).id),
+                                presetId,
+                                text: String((st as any).text || ''),
+                                customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
+                              })
+                              setScreenTitleCustomizeError(null)
+                              void ensureScreenTitlePresets()
+                              void ensureScreenTitleFonts()
+                              setTimelineCtxMenu(null)
                             }}
                             style={{
                               width: '100%',
@@ -19632,7 +20251,7 @@ export default function CreateVideo() {
                               textAlign: 'left',
                             }}
                           >
-                            Edit Style
+                            Customize Style
                           </button>
                         ) : null}
 			                <button
