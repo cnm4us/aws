@@ -6,7 +6,7 @@ import { createUploadThumbJpeg } from '../../services/ffmpeg/thumbPipeline'
 export async function runUploadThumbV1Job(
   input: UploadThumbV1Input,
   logPaths?: { stdoutPath?: string; stderrPath?: string }
-): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean; ffmpegCommands?: string[] }> {
+): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean; ffmpegCommands?: string[]; metricsInput?: any }> {
   const bucket = String(input.outputBucket || '')
   const key = String(input.outputKey || '')
   if (!bucket || !key) throw new Error('missing_output_pointer')
@@ -34,5 +34,5 @@ export async function runUploadThumbV1Job(
     longEdgePx,
     logPaths: logPaths ? { ...logPaths, commandLog: ffmpegCommands } : undefined,
   })
-  return { output: result, ffmpegCommands }
+  return { output: { bucket: result.bucket, key: result.key, s3Url: result.s3Url }, ffmpegCommands, metricsInput: result.metricsInput }
 }

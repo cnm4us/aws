@@ -4437,6 +4437,28 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
       params
     )
     const items = rows as any[]
+    const jobIds = items.map((r) => Number(r.id)).filter((v) => Number.isFinite(v) && v > 0)
+    const manifestByJobId = new Map<number, any>()
+    if (jobIds.length) {
+      try {
+        const [attRows] = await db.query(
+          `SELECT a.job_id, a.scratch_manifest_json
+             FROM media_job_attempts a
+             JOIN (
+               SELECT job_id, MAX(attempt_no) AS max_no
+                 FROM media_job_attempts
+                WHERE job_id IN (?)
+                GROUP BY job_id
+             ) m ON a.job_id = m.job_id AND a.attempt_no = m.max_no`,
+          [jobIds]
+        )
+        for (const r of attRows as any[]) {
+          let manifest: any = r.scratch_manifest_json
+          try { if (typeof manifest === 'string') manifest = JSON.parse(manifest) } catch {}
+          if (manifest) manifestByJobId.set(Number(r.job_id), manifest)
+        }
+      } catch {}
+    }
     const cookies = parseCookies(req.headers.cookie)
     const csrfToken = cookies['csrf'] || ''
 
@@ -4479,7 +4501,7 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No media jobs yet.</p>'
     } else {
-      body += '<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Attempts</th><th>Created</th><th>Updated</th><th>Duration</th><th>Actions</th></tr></thead><tbody>'
+      body += '<table><thead><tr><th>ID</th><th>Status</th><th>Type</th><th>Attempts</th><th>Created</th><th>Updated</th><th>Duration</th><th>Metrics</th><th>Actions</th></tr></thead><tbody>'
       for (const r of items) {
         const id = Number(r.id)
         const st = String(r.status || '')
@@ -4491,6 +4513,18 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
         const createdAt = created ? new Date(created) : null
         const durMs = completed && createdAt ? Math.max(0, completed.getTime() - createdAt.getTime()) : null
         const durLabel = durMs != null ? `${(durMs / 1000).toFixed(1)}s` : ''
+        const manifest = manifestByJobId.get(id) || null
+        const metrics = manifest?.metrics || {}
+        const input = metrics?.input || {}
+        const inputDuration = Number(input?.durationSeconds ?? manifest?.inputSummary?.duration)
+        const inputDurLabel = Number.isFinite(inputDuration) ? `${inputDuration.toFixed(1)}s` : ''
+        const rtf = Number(metrics?.rtf)
+        const rtfLabel = Number.isFinite(rtf) ? `RTF ${rtf.toFixed(2)}x` : ''
+        const resLabel =
+          Number.isFinite(Number(input?.width)) && Number.isFinite(Number(input?.height))
+            ? `${Number(input.width)}x${Number(input.height)}`
+            : ''
+        const metricsLabel = [resLabel, inputDurLabel, rtfLabel].filter(Boolean).join(' • ') || '-'
         body += `<tr>`
         body += `<td><a href="/admin/media-jobs/${id}">#${id}</a></td>`
         body += `<td>${statusPill(st)}</td>`
@@ -4499,6 +4533,7 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
         body += `<td>${escapeHtml(created)}</td>`
         body += `<td>${escapeHtml(updated)}</td>`
         body += `<td>${escapeHtml(durLabel)}</td>`
+        body += `<td>${escapeHtml(metricsLabel)}</td>`
 	        body += `<td style="white-space:nowrap">
 	          <a class="btn" href="/admin/media-jobs/${id}" style="padding:6px 10px; font-size:12px">View</a>
 	          <form method="post" action="/admin/media-jobs/${id}/retry" style="display:inline" onsubmit="return confirm('Retry media job #${id}?');">
@@ -4634,8 +4669,28 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
       const ffmpegCommands = Array.isArray(summary.ffmpegCommands) ? summary.ffmpegCommands : []
       const s3Ops = Array.isArray(summary.s3Ops) ? summary.s3Ops : []
       const errors = Array.isArray(summary.errors) ? summary.errors : []
+      const metrics = summary.metrics || {}
+      const metricsInput = metrics?.input || {}
+      const metricsHost = metrics?.host || {}
       const durationMs = summary.durationMs != null ? Number(summary.durationMs) : null
       const durationLabel = durationMs != null ? `${(durationMs / 1000).toFixed(2)}s` : ''
+      const inputDuration = Number(metricsInput?.durationSeconds)
+      const inputDurationLabel = Number.isFinite(inputDuration) ? `${inputDuration.toFixed(2)}s` : ''
+      const inputRes =
+        Number.isFinite(Number(metricsInput?.width)) && Number.isFinite(Number(metricsInput?.height))
+          ? `${Number(metricsInput.width)}x${Number(metricsInput.height)}`
+          : ''
+      const inputCodec =
+        metricsInput?.videoCodec || metricsInput?.audioCodec
+          ? [metricsInput?.videoCodec, metricsInput?.audioCodec].filter(Boolean).join(', ')
+          : ''
+      const inputBitrate = Number(metricsInput?.bitrateKbps)
+      const inputBitrateLabel = Number.isFinite(inputBitrate) ? `${inputBitrate} kbps` : ''
+      const rtfVal = Number(metrics?.rtf)
+      const rtfLabel = Number.isFinite(rtfVal) ? `${rtfVal.toFixed(3)}x` : ''
+      const hostLabel = metricsHost?.instanceType
+        ? `${metricsHost.instanceType} • ${metricsHost.cpuCores || '?'} cores • ${metricsHost.memGb || '?'}GB`
+        : ''
       manifestBlocks.push(
         `<details style="margin-top:10px"><summary>Attempt #${escapeHtml(String(no))} manifest</summary>` +
           `<div style="margin-top:8px; display:grid; gap:10px">
@@ -4643,6 +4698,9 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
               Started: ${escapeHtml(String(summary.startedAt || ''))}<br/>
               Finished: ${escapeHtml(String(summary.finishedAt || ''))}<br/>
               Duration: ${escapeHtml(durationLabel)}<br/>
+              ${rtfLabel ? `RTF: ${escapeHtml(rtfLabel)}<br/>` : ''}
+              ${inputDurationLabel || inputRes || inputCodec || inputBitrateLabel ? `Input: ${escapeHtml([inputRes, inputDurationLabel, inputCodec, inputBitrateLabel].filter(Boolean).join(' • '))}<br/>` : ''}
+              ${hostLabel ? `Host: ${escapeHtml(hostLabel)}<br/>` : ''}
             </div>
             ${ffmpegCommands.length ? `<div><strong>ffmpegCommands</strong><pre style="white-space:pre-wrap; word-break:break-word">${escapeHtml(ffmpegCommands.join('\n'))}</pre></div>` : ''}
             ${s3Ops.length ? `<div><strong>S3 Ops</strong><table><thead><tr><th>Op</th><th>Bucket</th><th>Key</th><th>Bytes</th><th>Duration</th><th>Status</th></tr></thead><tbody>${s3Ops

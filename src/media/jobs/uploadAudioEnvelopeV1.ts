@@ -6,7 +6,7 @@ import { createUploadAudioEnvelopeJson } from '../../services/ffmpeg/audioEnvelo
 export async function runUploadAudioEnvelopeV1Job(
   input: UploadAudioEnvelopeV1Input,
   logPaths?: { stdoutPath?: string; stderrPath?: string }
-): Promise<{ output: { bucket: string; key: string; s3Url: string }; intervalSeconds: number; durationSeconds: number; hasAudio: boolean; pointCount: number; skipped?: boolean }> {
+): Promise<{ output: { bucket: string; key: string; s3Url: string }; intervalSeconds: number; durationSeconds: number; hasAudio: boolean; pointCount: number; skipped?: boolean; metricsInput?: any }> {
   const bucket = String(input.outputBucket || '')
   const key = String(input.outputKey || '')
   if (!bucket || !key) throw new Error('missing_output_pointer')
@@ -37,6 +37,6 @@ export async function runUploadAudioEnvelopeV1Job(
     durationSeconds: result.envelope.durationSeconds,
     hasAudio: result.envelope.hasAudio,
     pointCount: Array.isArray(result.envelope.points) ? result.envelope.points.length : 0,
+    metricsInput: result.metricsInput,
   }
 }
-

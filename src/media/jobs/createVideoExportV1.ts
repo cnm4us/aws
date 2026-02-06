@@ -8,6 +8,7 @@ import { CREATE_VIDEO_BG_COLOR, MEDIA_CONVERT_NORMALIZE_AUDIO, UPLOAD_BUCKET, UP
 import { buildExportKey, nowDateYmd } from '../../utils/naming'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from '../../services/ffmpeg/audioPipeline'
 import { burnPngOverlaysIntoMp4, probeVideoDisplayDimensions } from '../../services/ffmpeg/visualPipeline'
+import { probeMediaInfo } from '../../services/ffmpeg/metrics'
 
 type FfmpegLogPaths = { stdoutPath?: string; stderrPath?: string; commandLog?: string[]; commandLabel?: string }
 
@@ -1660,7 +1661,7 @@ async function insertGeneratedUpload(input: {
 export async function runCreateVideoExportV1Job(
   input: CreateVideoExportV1Input,
   logPaths?: FfmpegLogPaths
-): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string }; ffmpegCommands?: string[] }> {
+): Promise<{ resultUploadId: number; output: { bucket: string; key: string; s3Url: string }; ffmpegCommands?: string[]; metricsInput?: any }> {
   const ffmpegCommands: string[] = []
   logPaths = { ...(logPaths || {}), commandLog: ffmpegCommands }
   const userId = Number(input.userId)
@@ -2714,6 +2715,7 @@ export async function runCreateVideoExportV1Job(
 
     const stat = fs.statSync(finalOut)
     const durationSeconds = await probeDurationSeconds(finalOut)
+    const metricsInput = await probeMediaInfo(finalOut)
     const { ymd, folder } = nowDateYmd()
     const assetUuid = randomUUID()
     const key = buildExportKey(String(UPLOAD_PREFIX || ''), folder, assetUuid, '.mp4')
@@ -2734,7 +2736,7 @@ export async function runCreateVideoExportV1Job(
       dateYmd: ymd,
     })
 
-    return { resultUploadId: uploadId, output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, ffmpegCommands }
+    return { resultUploadId: uploadId, output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, ffmpegCommands, metricsInput }
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
   }

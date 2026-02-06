@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { downloadS3ObjectToFile, runFfmpeg, uploadFileToS3 } from './audioPipeline'
+import { probeMediaInfo, type MediaInfo } from './metrics'
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
@@ -105,7 +106,7 @@ export async function createUploadAudioEnvelopeJson(opts: {
   outputKey: string
   intervalSeconds?: number
   logPaths?: { stdoutPath?: string; stderrPath?: string }
-}): Promise<{ output: { bucket: string; key: string; s3Url: string }; envelope: AudioEnvelopeV1 }> {
+}): Promise<{ output: { bucket: string; key: string; s3Url: string }; envelope: AudioEnvelopeV1; metricsInput?: MediaInfo | null }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-upload-audio-envelope-'))
   const proxyPath = path.join(tmpDir, 'proxy.mp4')
   const metaPath = path.join(tmpDir, 'astats.txt')
@@ -115,6 +116,7 @@ export async function createUploadAudioEnvelopeJson(opts: {
 
   try {
     await downloadS3ObjectToFile(opts.proxy.bucket, opts.proxy.key, proxyPath)
+    const metricsInput = await probeMediaInfo(proxyPath)
     const durationSeconds = await probeDurationSeconds(proxyPath)
     const hasAudio = await hasAudioStream(proxyPath)
 
@@ -147,6 +149,7 @@ export async function createUploadAudioEnvelopeJson(opts: {
     return {
       output: { bucket: opts.outputBucket, key: opts.outputKey, s3Url: `s3://${opts.outputBucket}/${opts.outputKey}` },
       envelope,
+      metricsInput,
     }
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}

@@ -6,7 +6,7 @@ import { createUploadEditProxyMp4 } from '../../services/ffmpeg/proxyPipeline'
 export async function runUploadEditProxyV1Job(
   input: UploadEditProxyV1Input,
   logPaths?: { stdoutPath?: string; stderrPath?: string }
-): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean }> {
+): Promise<{ output: { bucket: string; key: string; s3Url: string }; skipped?: boolean; metricsInput?: any }> {
   const bucket = String(input.outputBucket || '')
   const key = String(input.outputKey || '')
   if (!bucket || !key) throw new Error('missing_output_pointer')
@@ -37,6 +37,5 @@ export async function runUploadEditProxyV1Job(
     gop,
     logPaths,
   })
-  return { output: result }
+  return { output: { bucket: result.bucket, key: result.key, s3Url: result.s3Url }, metricsInput: result.metricsInput }
 }
-

@@ -24,6 +24,59 @@ import { buildUploadThumbKey } from '../../utils/uploadThumb'
 let workerTimer: ReturnType<typeof setInterval> | undefined
 let tickRunning = false
 let stopping = false
+let cachedHostMetrics: { instanceType: string | null; cpuCores: number; memGb: number; hostname: string } | null = null
+
+async function fetchWithTimeout(url: string, opts: any, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...(opts || {}), signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function getInstanceType(): Promise<string | null> {
+  const envVal = String(process.env.AWS_INSTANCE_TYPE || process.env.EC2_INSTANCE_TYPE || '').trim()
+  if (envVal) return envVal
+  const base = 'http://169.254.169.254/latest'
+  try {
+    const tokenResp = await fetchWithTimeout(
+      `${base}/api/token`,
+      { method: 'PUT', headers: { 'x-aws-ec2-metadata-token-ttl-seconds': '21600' } },
+      800
+    )
+    if (tokenResp.ok) {
+      const token = await tokenResp.text()
+      const metaResp = await fetchWithTimeout(
+        `${base}/meta-data/instance-type`,
+        { headers: { 'x-aws-ec2-metadata-token': token } },
+        800
+      )
+      if (metaResp.ok) {
+        const txt = String(await metaResp.text()).trim()
+        return txt || null
+      }
+    }
+  } catch {}
+  try {
+    const resp = await fetchWithTimeout(`${base}/meta-data/instance-type`, { method: 'GET' }, 800)
+    if (resp.ok) {
+      const txt = String(await resp.text()).trim()
+      return txt || null
+    }
+  } catch {}
+  return null
+}
+
+async function getHostMetrics() {
+  if (cachedHostMetrics) return cachedHostMetrics
+  const instanceType = await getInstanceType()
+  const cpuCores = Math.max(1, os.cpus().length)
+  const memGb = Math.round((os.totalmem() / 1e9) * 10) / 10
+  cachedHostMetrics = { instanceType, cpuCores, memGb, hostname: os.hostname() }
+  return cachedHostMetrics
+}
 
 function getWorkerId() {
   const raw = process.env.MEDIA_JOBS_WORKER_ID
@@ -94,22 +147,36 @@ async function runOne(job: any, attempt: any, workerId: string) {
   let startedMs = Date.now()
   let startedAt = new Date().toISOString()
   let inputSummary: any = { keys: [] as string[] }
+  let metricsInput: any = null
+  let hostMetrics: any = null
   const buildManifest = (extra?: { ffmpegCommands?: string[] }) => {
     const cmds = Array.isArray(extra?.ffmpegCommands) ? extra?.ffmpegCommands : undefined
     const trimmed = cmds && cmds.length > 20 ? cmds.slice(cmds.length - 20) : cmds
     const ffmpegMs = ffmpegOps.reduce((sum, f) => sum + (Number(f?.durationMs) || 0), 0)
     const s3BytesIn = s3Ops.reduce((sum, o) => sum + (o?.op === 'download' ? Number(o?.bytes) || 0 : 0), 0)
     const s3BytesOut = s3Ops.reduce((sum, o) => sum + (o?.op === 'upload' ? Number(o?.bytes) || 0 : 0), 0)
+    const durationMs = Date.now() - startedMs
+    const inputDurationSeconds = Number(metricsInput?.durationSeconds ?? inputSummary?.duration)
+    const rtf =
+      Number.isFinite(inputDurationSeconds) && inputDurationSeconds > 0 && durationMs > 0
+        ? Number((inputDurationSeconds / (durationMs / 1000)).toFixed(3))
+        : undefined
+    const metricsInputMerged =
+      metricsInput ??
+      (Number.isFinite(inputDurationSeconds) ? { durationSeconds: inputDurationSeconds } : undefined)
     return {
       startedAt,
       finishedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedMs,
+      durationMs,
       inputSummary,
       ffmpegCommands: trimmed,
       metrics: {
         ffmpegMs,
         s3BytesIn,
         s3BytesOut,
+        rtf,
+        input: metricsInputMerged,
+        host: hostMetrics || undefined,
       },
       s3Ops: s3Ops.length ? s3Ops : undefined,
       ffmpegOps: ffmpegOps.length ? ffmpegOps : undefined,
@@ -129,6 +196,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
 
     startedAt = new Date().toISOString()
     startedMs = Date.now()
+    hostMetrics = await getHostMetrics()
     setFfmpegS3OpsCollector(s3Ops)
     setFfmpegOpsCollector(ffmpegOps)
     writeRequestLog(`media-job:${jobId}:${attemptNo}`, { jobId, attemptNo, workerId, type: job.type, input: job.input_json, startedAt })
@@ -250,6 +318,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'create_video_export_v1') {
       const input = job.input_json as any
       const result = await runCreateVideoExportV1Job(input, { stdoutPath, stderrPath })
+      metricsInput = (result as any)?.metricsInput || null
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
       const ffmpegCommands = Array.isArray((result as any)?.ffmpegCommands) ? (result as any).ffmpegCommands : null
@@ -329,6 +398,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'upload_thumb_v1') {
       const input = job.input_json as any
       const result = await runUploadThumbV1Job(input, { stdoutPath, stderrPath })
+      metricsInput = (result as any)?.metricsInput || null
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
       const ffmpegCommands = Array.isArray((result as any)?.ffmpegCommands) ? (result as any).ffmpegCommands : null
@@ -346,6 +416,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'upload_edit_proxy_v1') {
       const input = job.input_json as any
       const result = await runUploadEditProxyV1Job(input, { stdoutPath, stderrPath })
+      metricsInput = (result as any)?.metricsInput || null
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
 
@@ -396,6 +467,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'upload_audio_envelope_v1') {
       const input = job.input_json as any
       const result = await runUploadAudioEnvelopeV1Job(input, { stdoutPath, stderrPath })
+      metricsInput = (result as any)?.metricsInput || null
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
 
