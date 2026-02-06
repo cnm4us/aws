@@ -64,27 +64,37 @@
      - time elapsed / total
      - scrub slider (input range)
    - Keep `currentTime` synced with slider.
+   - Status: Completed (pre-existing skeleton in `frontend/src/app/Library.tsx`).
+   - Testing: Not run (manual UI check pending).
 
 2. **Rolling waveform**
    - Fetch `/api/uploads/:id/audio-envelope`.
    - Render waveform canvas/DOM for a 30s window centered on playhead.
    - As playback moves, update waveform window.
    - Clicking waveform seeks.
+   - Status: Completed (windowed render + click-to-seek in `frontend/src/app/Library.tsx`).
+   - Testing: Not run (manual UI check pending).
 
 3. **Captions toggle + rolling display**
    - Add toggle state in `/library`.
    - New endpoint: `/api/library/videos/:id/captions`
      - parse VTT into cue list in backend.
    - Render cue list; highlight current cue based on `currentTime`.
+   - Status: Completed (backend + frontend wired).
+   - Testing: API check logged in `agents/implementation/tests/plan_89/step_03_captions.md`. Manual UI check pending.
 
 4. **Transcript search matching**
    - Implement tokenizer + stopwords in `features/library/service.ts`.
    - Normalize cue text and query tokens.
    - Match: all query tokens must appear in cue token set.
+   - Status: Completed (token match + stopwords in `src/features/library/service.ts`).
+   - Testing: API check logged in `agents/implementation/tests/plan_89/step_04_search.md`. Manual UI check pending.
 
 5. **Polish**
-   - Ensure scrubber + waveform + captions all stay in sync.
-   - Waveform updates when user jumps via transcript search results.
+    - Ensure scrubber + waveform + captions all stay in sync.
+    - Waveform updates when user jumps via transcript search results.
+   - Status: In Progress.
+   - Testing: Manual UI check pending.
 
 ---
 

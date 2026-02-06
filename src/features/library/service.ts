@@ -8,6 +8,76 @@ import { PERM } from '../../security/perm'
 type ServiceContext = { userId?: number | null }
 import * as captionsRepo from '../captions/repo'
 
+const STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'but',
+  'by',
+  'can',
+  'could',
+  'did',
+  'do',
+  'does',
+  'done',
+  'for',
+  'from',
+  'had',
+  'has',
+  'have',
+  'he',
+  'her',
+  'here',
+  'him',
+  'his',
+  'i',
+  'if',
+  'in',
+  'into',
+  'is',
+  'it',
+  'its',
+  'just',
+  'me',
+  'my',
+  'not',
+  'of',
+  'on',
+  'or',
+  'our',
+  'out',
+  'over',
+  'she',
+  'should',
+  'so',
+  'than',
+  'that',
+  'the',
+  'their',
+  'them',
+  'then',
+  'there',
+  'these',
+  'they',
+  'this',
+  'to',
+  'too',
+  'up',
+  'us',
+  'was',
+  'we',
+  'were',
+  'will',
+  'with',
+  'would',
+  'you',
+  'your',
+])
+
 function parseVttTimestampMs(raw: string): number | null {
   const s = String(raw || '').trim()
   const m = s.match(/^(\d{1,2}:)?(\d{2}):(\d{2})\.(\d{3})$/)
@@ -52,6 +122,17 @@ function parseVttCues(vtt: string): Array<{ startMs: number; endMs: number; text
   return cues
 }
 
+function normalizeTokens(input: string): string[] {
+  const cleaned = String(input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+  if (!cleaned) return []
+  const tokens = cleaned.split(/\s+/).filter(Boolean)
+  const filtered = tokens.filter((token) => token && !STOPWORDS.has(token))
+  return Array.from(new Set(filtered))
+}
+
 async function readS3ObjectText(bucket: string, key: string): Promise<string> {
   const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
   const body = resp.Body as any
@@ -62,6 +143,23 @@ async function readS3ObjectText(bucket: string, key: string): Promise<string> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   return Buffer.concat(chunks).toString('utf8')
+}
+
+async function ensureSystemLibraryUpload(uploadId: number): Promise<void> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id
+       FROM uploads
+      WHERE id = ?
+        AND is_system_library = 1
+        AND kind = 'video'
+        AND status IN ('uploaded','completed')
+        AND source_deleted_at IS NULL
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new NotFoundError('upload_not_found')
 }
 
 export async function listSystemLibraryVideos(
@@ -118,18 +216,25 @@ export async function searchLibraryTranscript(
   if (!ctx.userId) throw new ForbiddenError()
   const uploadId = Number(input.uploadId)
   if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('bad_id')
-  const q = String(input.q || '').trim().toLowerCase()
+  const q = String(input.q || '').trim()
   if (!q) return { items: [] }
+  await ensureSystemLibraryUpload(uploadId)
+  const queryTokens = normalizeTokens(q)
+  if (!queryTokens.length) return { items: [] }
 
   const caps = await captionsRepo.getByUploadId(uploadId)
-  if (!caps || !caps.s3_bucket || !caps.s3_key) return { items: [] }
+  if (!caps || !caps.s3_bucket || !caps.s3_key || caps.status !== 'ready') return { items: [] }
   const vtt = await readS3ObjectText(String(caps.s3_bucket), String(caps.s3_key))
   if (!vtt) return { items: [] }
   const cues = parseVttCues(vtt)
   const items: Array<{ startSeconds: number; endSeconds: number; text: string }> = []
   const lim = clampLimit(input.limit, 50, 1, 200)
   for (const cue of cues) {
-    if (!cue.text.toLowerCase().includes(q)) continue
+    const cueTokens = normalizeTokens(cue.text)
+    if (!cueTokens.length) continue
+    const cueTokenSet = new Set(cueTokens)
+    const match = queryTokens.every((token) => cueTokenSet.has(token))
+    if (!match) continue
     items.push({
       startSeconds: Math.max(0, cue.startMs / 1000),
       endSeconds: Math.max(0, cue.endMs / 1000),
@@ -138,6 +243,28 @@ export async function searchLibraryTranscript(
     if (items.length >= lim) break
   }
   return { items }
+}
+
+export async function getLibraryCaptions(
+  uploadId: number,
+  ctx: ServiceContext
+): Promise<{ items: Array<{ startSeconds: number; endSeconds: number; text: string }> }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const id = Number(uploadId)
+  if (!Number.isFinite(id) || id <= 0) throw new ValidationError('bad_id')
+  await ensureSystemLibraryUpload(id)
+  const caps = await captionsRepo.getByUploadId(id)
+  if (!caps || !caps.s3_bucket || !caps.s3_key || caps.status !== 'ready') return { items: [] }
+  const vtt = await readS3ObjectText(String(caps.s3_bucket), String(caps.s3_key))
+  if (!vtt) return { items: [] }
+  const cues = parseVttCues(vtt)
+  return {
+    items: cues.map((cue) => ({
+      startSeconds: Math.max(0, cue.startMs / 1000),
+      endSeconds: Math.max(0, cue.endMs / 1000),
+      text: cue.text,
+    })),
+  }
 }
 
 export async function createLibraryClip(

@@ -83,6 +83,10 @@ const LibraryPage: React.FC = () => {
   const [waveEnv, setWaveEnv] = useState<AudioEnvelope | null>(null)
   const [waveStatus, setWaveStatus] = useState<'idle' | 'pending' | 'ready' | 'error'>('idle')
   const [waveError, setWaveError] = useState<string | null>(null)
+  const [captionsEnabled, setCaptionsEnabled] = useState(false)
+  const [captions, setCaptions] = useState<TranscriptHit[]>([])
+  const [captionsStatus, setCaptionsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [captionsError, setCaptionsError] = useState<string | null>(null)
   const [clipStart, setClipStart] = useState<number | null>(null)
   const [clipEnd, setClipEnd] = useState<number | null>(null)
   const [clipTitle, setClipTitle] = useState('')
@@ -93,6 +97,8 @@ const LibraryPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const wavePollRef = useRef<number | null>(null)
+  const captionsContainerRef = useRef<HTMLDivElement | null>(null)
+  const activeCaptionRef = useRef<HTMLButtonElement | null>(null)
 
   const selectedVideo = useMemo(
     () => (selectedId ? videos.find((v) => Number(v.id) === Number(selectedId)) || null : null),
@@ -168,6 +174,39 @@ const LibraryPage: React.FC = () => {
     }
   }, [selectedVideo?.id])
 
+  useEffect(() => {
+    setCaptions([])
+    setCaptionsStatus('idle')
+    setCaptionsError(null)
+  }, [selectedVideo?.id])
+
+  useEffect(() => {
+    if (!captionsEnabled || !selectedVideo?.id) return
+    let cancelled = false
+    const id = Number(selectedVideo.id)
+    const fetchCaptions = async () => {
+      setCaptionsStatus('loading')
+      setCaptionsError(null)
+      try {
+        const res = await fetch(`/api/library/videos/${encodeURIComponent(String(id))}/captions`, { credentials: 'same-origin' })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+        if (cancelled) return
+        const items: TranscriptHit[] = Array.isArray(json?.items) ? json.items : []
+        setCaptions(items)
+        setCaptionsStatus('ready')
+      } catch (e: any) {
+        if (cancelled) return
+        setCaptionsStatus('error')
+        setCaptionsError(e?.message || 'failed_to_load')
+      }
+    }
+    fetchCaptions()
+    return () => {
+      cancelled = true
+    }
+  }, [captionsEnabled, selectedVideo?.id])
+
   const handleSearch = useCallback(async () => {
     setSearchError(null)
     setSearching(true)
@@ -223,6 +262,15 @@ const LibraryPage: React.FC = () => {
     } catch {}
   }, [])
 
+  const getWaveWindow = useCallback((time: number, dur: number) => {
+    const windowLen = 10
+    const safeDur = dur > 0 ? dur : Math.max(0, time + 1)
+    let windowStart = Math.max(0, time - windowLen / 2)
+    if (windowStart + windowLen > safeDur) windowStart = Math.max(0, safeDur - windowLen)
+    const windowEnd = windowStart + windowLen
+    return { windowLen, windowStart, windowEnd, safeDur }
+  }, [])
+
   useEffect(() => {
     const canvas = waveCanvasRef.current
     if (!canvas) return
@@ -240,11 +288,7 @@ const LibraryPage: React.FC = () => {
     if (waveStatus !== 'ready' || !waveEnv || !Array.isArray(waveEnv.points)) return
     if (!waveEnv.points.length) return
 
-    const windowLen = 30
-    const dur = duration > 0 ? duration : Math.max(0, currentTime + 1)
-    let windowStart = Math.max(0, currentTime - windowLen / 2)
-    if (windowStart + windowLen > dur) windowStart = Math.max(0, dur - windowLen)
-    const windowEnd = windowStart + windowLen
+    const { windowLen, windowStart, windowEnd } = getWaveWindow(currentTime, duration)
 
     ctx.strokeStyle = '#f0c062'
     ctx.lineWidth = 1
@@ -270,7 +314,64 @@ const LibraryPage: React.FC = () => {
     ctx.moveTo(px, 0)
     ctx.lineTo(px, rect.height)
     ctx.stroke()
-  }, [waveEnv, waveStatus, currentTime, duration])
+  }, [waveEnv, waveStatus, currentTime, duration, getWaveWindow])
+
+  const handleWaveClick = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = waveCanvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      if (!rect.width) return
+      const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
+      const { windowLen, windowStart } = getWaveWindow(currentTime, duration)
+      const target = windowStart + (x / rect.width) * windowLen
+      setCurrentTime(target)
+    },
+    [currentTime, duration, getWaveWindow, setCurrentTime]
+  )
+
+  const activeCaptionIndex = useMemo(() => {
+    if (!captions.length) return -1
+    for (let i = 0; i < captions.length; i += 1) {
+      const cue = captions[i]
+      if (currentTime >= cue.startSeconds && currentTime <= cue.endSeconds) return i
+    }
+    return -1
+  }, [captions, currentTime])
+
+  const visibleCaptions = useMemo(() => {
+    if (!captions.length) return []
+    const windowSize = 8
+    if (activeCaptionIndex < 0) {
+      return captions.slice(0, windowSize).map((cue, idx) => ({ cue, index: idx }))
+    }
+    let start = Math.max(0, activeCaptionIndex - 1)
+    if (start + windowSize > captions.length) {
+      start = Math.max(0, captions.length - windowSize)
+    }
+    const end = Math.min(captions.length, start + windowSize)
+    return captions.slice(start, end).map((cue, idx) => ({ cue, index: start + idx }))
+  }, [captions, activeCaptionIndex])
+
+  useEffect(() => {
+    if (!captionsEnabled) return
+    const container = captionsContainerRef.current
+    const active = activeCaptionRef.current
+    if (!container || !active) return
+    const handle = window.requestAnimationFrame(() => {
+      const gap = 6
+      const desiredOffset = active.offsetHeight + gap
+      const containerRect = container.getBoundingClientRect()
+      const activeRect = active.getBoundingClientRect()
+      const activeOffset = activeRect.top - containerRect.top + container.scrollTop
+      let target = activeOffset - desiredOffset
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+      if (!Number.isFinite(target)) target = 0
+      target = Math.min(maxScroll, Math.max(0, target))
+      container.scrollTop = target
+    })
+    return () => window.cancelAnimationFrame(handle)
+  }, [activeCaptionIndex, captionsEnabled, visibleCaptions.length])
 
   const setInPoint = useCallback(() => {
     const vid = videoRef.current
@@ -463,9 +564,9 @@ const LibraryPage: React.FC = () => {
 
               <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <button
-                    type="button"
-                    onClick={handleTogglePlay}
+                    <button
+                      type="button"
+                      onClick={handleTogglePlay}
                     style={{
                       width: 44,
                       height: 36,
@@ -475,26 +576,102 @@ const LibraryPage: React.FC = () => {
                       color: '#fff',
                       fontWeight: 900,
                     }}
-                  >
-                    {isPlaying ? '❚❚' : '▶'}
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration || 0}
-                    step={0.1}
-                    value={Math.min(currentTime, duration || 0)}
-                    onChange={(e) => handleScrub(Number(e.target.value))}
-                    style={{ flex: 1 }}
-                  />
-                  <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                    >
+                      {isPlaying ? '❚❚' : '▶'}
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration || 0}
+                      step={0.1}
+                      value={Math.min(currentTime, duration || 0)}
+                      onChange={(e) => handleScrub(Number(e.target.value))}
+                      style={{ flex: 1 }}
+                    />
+                    <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
+                      {formatTime(currentTime)} / {formatTime(duration)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCaptionsEnabled((prev) => !prev)}
+                      aria-pressed={captionsEnabled}
+                      style={{
+                        width: 44,
+                        height: 36,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        background: captionsEnabled ? '#0a84ff' : '#111',
+                        color: '#fff',
+                        fontWeight: 800,
+                      }}
+                    >
+                      CC
+                    </button>
                   </div>
-                </div>
                 <div style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
-                  <canvas ref={waveCanvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+                  <canvas
+                    ref={waveCanvasRef}
+                    onClick={handleWaveClick}
+                    style={{ width: '100%', height: '100%', display: 'block', cursor: 'pointer' }}
+                  />
                 </div>
+                {waveStatus === 'pending' ? <div style={{ color: '#9aa0a6' }}>Waveform is generating…</div> : null}
+                {waveStatus === 'error' && waveError ? <div style={{ color: '#ffb3b3' }}>{waveError}</div> : null}
               </div>
+
+              {captionsEnabled ? (
+                <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 800 }}>Captions</div>
+                    {captions.length ? <div style={{ color: '#888', fontSize: 12 }}>{captions.length} cues</div> : null}
+                  </div>
+                  {captionsStatus === 'loading' ? <div>Loading captions…</div> : null}
+                  {captionsError ? <div style={{ color: '#ffb3b3' }}>{captionsError}</div> : null}
+                  {!captionsError && captionsStatus === 'ready' && !captions.length ? (
+                    <div style={{ color: '#bbb' }}>No captions available.</div>
+                  ) : null}
+                  {visibleCaptions.length ? (
+                    <div
+                      ref={captionsContainerRef}
+                      style={{
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        background: '#0f0f0f',
+                        padding: 8,
+                        display: 'grid',
+                        gap: 6,
+                      }}
+                    >
+                      {visibleCaptions.map(({ cue, index }) => {
+                        const isActive = index === activeCaptionIndex
+                        return (
+                          <button
+                            key={`${cue.startSeconds}-${index}`}
+                            ref={isActive ? activeCaptionRef : undefined}
+                            type="button"
+                            onClick={() => setCurrentTime(cue.startSeconds)}
+                            style={{
+                              textAlign: 'left',
+                              padding: 8,
+                              borderRadius: 8,
+                              border: isActive ? '1px solid rgba(10,132,255,0.7)' : '1px solid rgba(255,255,255,0.08)',
+                              background: isActive ? 'rgba(10,132,255,0.15)' : '#111',
+                              color: '#fff',
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, fontSize: 12, color: '#b8c6ff' }}>
+                              {formatTime(cue.startSeconds)} → {formatTime(cue.endSeconds)}
+                            </div>
+                            <div style={{ marginTop: 4, color: '#ddd', fontSize: 13 }}>{cue.text}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
                 <div style={{ fontWeight: 800 }}>Transcript Search</div>

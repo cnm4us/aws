@@ -35,6 +35,18 @@ libraryRouter.get('/api/library/videos/:id', requireAuth, async (req, res) => {
   }
 })
 
+libraryRouter.get('/api/library/videos/:id/captions', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const data = await librarySvc.getLibraryCaptions(id, { userId: Number(req.user!.id) })
+    return res.json(data)
+  } catch (err: any) {
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_get', detail: String(err?.message || err) })
+  }
+})
+
 libraryRouter.get('/api/library/videos/:id/search', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
