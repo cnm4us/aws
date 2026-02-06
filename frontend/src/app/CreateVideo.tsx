@@ -7297,6 +7297,89 @@ export default function CreateVideo() {
     [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, insertClipAtPlayhead, rippleRightBaseLane, snapshotUndo]
   )
 
+  const addVideoOverlayFromLibraryClip = useCallback(
+    (clip: any) => {
+      const uploadId = Number(clip?.upload_id ?? clip?.uploadId)
+      const sourceStart = Number(clip?.start_seconds ?? clip?.startSeconds)
+      const sourceEnd = Number(clip?.end_seconds ?? clip?.endSeconds)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) {
+        setTimelineMessage('That clip is missing its source video.')
+        return
+      }
+      if (!Number.isFinite(sourceStart) || !Number.isFinite(sourceEnd) || !(sourceEnd > sourceStart)) {
+        setTimelineMessage('That clip has an invalid time range.')
+        return
+      }
+      const srcDur = clip?.duration_seconds != null ? Number(clip.duration_seconds) : null
+      if (srcDur != null && Number.isFinite(srcDur) && srcDur > 0) {
+        setDurationsByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: srcDur }))
+      }
+      try {
+        const w = clip?.width != null ? Number(clip.width) : null
+        const h = clip?.height != null ? Number(clip.height) : null
+        if (w != null && h != null && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+          setDimsByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: { width: Math.round(w), height: Math.round(h) } }))
+        }
+      } catch {}
+      const id = `vo_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const overlay: VideoOverlay = {
+        id,
+        uploadId,
+        sourceStartSeconds: roundToTenth(sourceStart),
+        sourceEndSeconds: roundToTenth(sourceEnd),
+        sizePctWidth: 90,
+        position: 'bottom_center',
+        audioEnabled: true,
+        plateStyle: 'none',
+        plateColor: '#000000',
+        plateOpacityPct: 85,
+      }
+      snapshotUndo()
+      setTimeline((prev) => {
+        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any
+        const prevOs0: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
+        const starts = computeClipStarts(prevOs0 as any)
+        const prevOs = prevOs0.map((o: any, i: number) => ({ ...(o as any), startSeconds: roundToTenth(Number((o as any).startSeconds ?? starts[i] ?? 0)) }))
+        const desiredStart0 = clamp(roundToTenth(Number(prev.playheadSeconds || 0)), 0, MAX_TIMELINE_SECONDS)
+        // Adjust only for left collision (if inside an existing overlay).
+        let startSeconds = desiredStart0
+        const ranges = prevOs
+          .map((o: any) => {
+            const s = roundToTenth(Number(o.startSeconds || 0))
+            const e = roundToTenth(s + clipDurationSeconds(o as any))
+            return { id: String(o.id), start: s, end: e }
+          })
+          .sort((a: any, b: any) => a.start - b.start)
+        for (const r of ranges) {
+          if (startSeconds < r.end - 1e-6 && startSeconds > r.start + 1e-6) startSeconds = roundToTenth(r.end)
+        }
+        const placed: any = { ...(overlay as any), startSeconds }
+        const nextOs = [...prevOs, placed].sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
+        const ripple = rippleRightDerivedLane(nextOs as any, String(placed.id), { getDurationSeconds: (x: any) => clipDurationSeconds(x as any) })
+        if (!ripple) {
+          setTimelineMessage('Timeline max length reached.')
+          return prev
+        }
+        const nextTimeline0: any = { ...(prev as any), videoOverlays: ripple.items }
+        const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+        const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+        const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+        const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+        return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+      })
+      setSelectedVideoOverlayId(id)
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, insertVideoOverlayAtPlayhead, rippleRightDerivedLane, snapshotUndo]
+  )
+
   const addVideoOverlayFromUpload = useCallback(
     (upload: UploadListItem) => {
       const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
@@ -8191,6 +8274,13 @@ export default function CreateVideo() {
             const uploadId = Number((clip as any).upload_id || (clip as any).uploadId)
             if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId)
           }
+        } else if (t === 'videoOverlayClip' && pickFromAssets.clipId) {
+          const clip = await fetchClip(pickFromAssets.clipId)
+          if (clip) {
+            addVideoOverlayFromLibraryClip(clip as any)
+            const uploadId = Number((clip as any).upload_id || (clip as any).uploadId)
+            if (Number.isFinite(uploadId) && uploadId > 0) void markVideoUsed(uploadId)
+          }
         } else if (t === 'video' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) {
@@ -8237,6 +8327,7 @@ export default function CreateVideo() {
     addAudioFromUploadWithConfig,
     addClipFromLibraryClip,
     addClipFromUpload,
+    addVideoOverlayFromLibraryClip,
     addVideoOverlayFromUpload,
     addGraphicFromUpload,
     addLogoFromPick,

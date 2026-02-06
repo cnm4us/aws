@@ -822,7 +822,7 @@ const VideoAssetsListPage: React.FC<{
   const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
-  const allowClips = mode === 'pick' && pickType === 'video'
+  const allowClips = mode === 'pick' && (pickType === 'video' || pickType === 'videoOverlay')
   const isClipMode = allowClips && clipScope !== 'uploads'
 
   React.useEffect(() => {
@@ -1185,7 +1185,8 @@ const VideoAssetsListPage: React.FC<{
             <button
               type="button"
               onClick={() => {
-                const href = buildReturnHref({ cvPickType: 'clip', cvPickClipId: String(c.id) })
+                const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
+                const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id) })
                 if (href) window.location.href = href
               }}
               style={{
