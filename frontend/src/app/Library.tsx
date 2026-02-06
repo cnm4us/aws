@@ -23,6 +23,11 @@ type TranscriptHit = {
   text: string
 }
 
+type AudioEnvelope = {
+  hasAudio?: boolean
+  points?: Array<{ t: number; v: number }>
+}
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -72,6 +77,12 @@ const LibraryPage: React.FC = () => {
   const [searchResults, setSearchResults] = useState<TranscriptHit[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [currentTime, setCurrentTimeState] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [waveEnv, setWaveEnv] = useState<AudioEnvelope | null>(null)
+  const [waveStatus, setWaveStatus] = useState<'idle' | 'pending' | 'ready' | 'error'>('idle')
+  const [waveError, setWaveError] = useState<string | null>(null)
   const [clipStart, setClipStart] = useState<number | null>(null)
   const [clipEnd, setClipEnd] = useState<number | null>(null)
   const [clipTitle, setClipTitle] = useState('')
@@ -80,6 +91,8 @@ const LibraryPage: React.FC = () => {
   const [clipSaving, setClipSaving] = useState(false)
   const [clipMessage, setClipMessage] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const wavePollRef = useRef<number | null>(null)
 
   const selectedVideo = useMemo(
     () => (selectedId ? videos.find((v) => Number(v.id) === Number(selectedId)) || null : null),
@@ -115,6 +128,46 @@ const LibraryPage: React.FC = () => {
     void loadVideos()
   }, [loadVideos])
 
+  useEffect(() => {
+    if (!selectedVideo?.id) {
+      setWaveEnv(null)
+      setWaveStatus('idle')
+      setWaveError(null)
+      return
+    }
+    let cancelled = false
+    const id = Number(selectedVideo.id)
+    const fetchEnvelope = async () => {
+      if (cancelled) return
+      setWaveStatus('pending')
+      setWaveError(null)
+      try {
+        const res = await fetch(`/api/uploads/${encodeURIComponent(String(id))}/audio-envelope`, { credentials: 'same-origin' })
+        if (res.status === 202) {
+          wavePollRef.current = window.setTimeout(fetchEnvelope, 2000)
+          return
+        }
+        const json: any = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+        if (cancelled) return
+        setWaveEnv(json)
+        setWaveStatus('ready')
+      } catch (e: any) {
+        if (cancelled) return
+        setWaveStatus('error')
+        setWaveError(e?.message || 'failed_to_load')
+      }
+    }
+    fetchEnvelope()
+    return () => {
+      cancelled = true
+      if (wavePollRef.current) {
+        window.clearTimeout(wavePollRef.current)
+        wavePollRef.current = null
+      }
+    }
+  }, [selectedVideo?.id])
+
   const handleSearch = useCallback(async () => {
     setSearchError(null)
     setSearching(true)
@@ -143,10 +196,81 @@ const LibraryPage: React.FC = () => {
     const vid = videoRef.current
     if (!vid || !Number.isFinite(t)) return
     try {
-      vid.currentTime = Math.max(0, t)
+      const next = Math.max(0, t)
+      vid.currentTime = next
+      setCurrentTimeState(next)
       vid.play().catch(() => {})
     } catch {}
   }, [])
+
+  const handleTogglePlay = useCallback(() => {
+    const vid = videoRef.current
+    if (!vid) return
+    if (vid.paused) {
+      vid.play().catch(() => {})
+    } else {
+      vid.pause()
+    }
+  }, [])
+
+  const handleScrub = useCallback((value: number) => {
+    const vid = videoRef.current
+    const next = Number.isFinite(value) ? Math.max(0, value) : 0
+    setCurrentTimeState(next)
+    if (!vid) return
+    try {
+      vid.currentTime = next
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    const canvas = waveCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const rect = canvas.getBoundingClientRect()
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.round(rect.width * dpr))
+    canvas.height = Math.max(1, Math.round(rect.height * dpr))
+    ctx.scale(dpr, dpr)
+    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.fillStyle = '#0a0a0a'
+    ctx.fillRect(0, 0, rect.width, rect.height)
+
+    if (waveStatus !== 'ready' || !waveEnv || !Array.isArray(waveEnv.points)) return
+    if (!waveEnv.points.length) return
+
+    const windowLen = 30
+    const dur = duration > 0 ? duration : Math.max(0, currentTime + 1)
+    let windowStart = Math.max(0, currentTime - windowLen / 2)
+    if (windowStart + windowLen > dur) windowStart = Math.max(0, dur - windowLen)
+    const windowEnd = windowStart + windowLen
+
+    ctx.strokeStyle = '#f0c062'
+    ctx.lineWidth = 1
+    const mid = rect.height / 2
+    for (const p of waveEnv.points) {
+      const t = Number((p as any).t)
+      const v = Number((p as any).v)
+      if (!Number.isFinite(t) || !Number.isFinite(v)) continue
+      if (t < windowStart || t > windowEnd) continue
+      const x = ((t - windowStart) / windowLen) * rect.width
+      const amp = Math.min(1, Math.max(0, v)) * (rect.height * 0.45)
+      ctx.beginPath()
+      ctx.moveTo(x, mid - amp)
+      ctx.lineTo(x, mid + amp)
+      ctx.stroke()
+    }
+
+    // playhead marker
+    ctx.strokeStyle = 'rgba(255,64,0,0.9)'
+    ctx.lineWidth = 2
+    const px = ((currentTime - windowStart) / windowLen) * rect.width
+    ctx.beginPath()
+    ctx.moveTo(px, 0)
+    ctx.lineTo(px, rect.height)
+    ctx.stroke()
+  }, [waveEnv, waveStatus, currentTime, duration])
 
   const setInPoint = useCallback(() => {
     const vid = videoRef.current
@@ -316,12 +440,60 @@ const LibraryPage: React.FC = () => {
               <div style={{ marginTop: 10 }}>
                 <video
                   ref={videoRef}
-                  controls
                   playsInline
                   preload="metadata"
                   src={playerSrc}
                   style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 12 }}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onTimeUpdate={() => {
+                    const vid = videoRef.current
+                    if (!vid) return
+                    const t = Number(vid.currentTime || 0)
+                    setCurrentTimeState(Number.isFinite(t) ? t : 0)
+                  }}
+                  onLoadedMetadata={() => {
+                    const vid = videoRef.current
+                    if (!vid) return
+                    const d = Number(vid.duration || 0)
+                    setDuration(Number.isFinite(d) ? d : 0)
+                  }}
                 />
+              </div>
+
+              <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={handleTogglePlay}
+                    style={{
+                      width: 44,
+                      height: 36,
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      background: '#111',
+                      color: '#fff',
+                      fontWeight: 900,
+                    }}
+                  >
+                    {isPlaying ? '❚❚' : '▶'}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 0}
+                    step={0.1}
+                    value={Math.min(currentTime, duration || 0)}
+                    onChange={(e) => handleScrub(Number(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </div>
+                </div>
+                <div style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+                  <canvas ref={waveCanvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+                </div>
               </div>
 
               <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
