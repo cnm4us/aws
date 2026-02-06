@@ -20,6 +20,28 @@ type Cache = {
   allowedKeys: Set<string>
 }
 
+function normalizeFontStyleLabel(raw: string): string {
+  const parts = String(raw || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!parts.length) return String(raw || '').trim()
+  const dedup: string[] = []
+  for (const p of parts) {
+    if (!dedup.some((d) => d.toLowerCase() === p.toLowerCase())) dedup.push(p)
+  }
+  let filtered = dedup.slice()
+  if (filtered.length > 1) {
+    // Drop "Regular" and any style token that is already contained in a longer token.
+    filtered = filtered.filter((p) => p.toLowerCase() !== 'regular')
+    filtered = filtered.filter((p) => {
+      const pLower = p.toLowerCase()
+      return !filtered.some((q) => q !== p && q.toLowerCase().includes(pLower))
+    })
+  }
+  return filtered.join(' ')
+}
+
 let cache: Cache | null = null
 
 const BUILT_IN_FAMILIES: ScreenTitleFontFamily[] = [
@@ -98,6 +120,7 @@ function loadFromFontconfig(): Cache {
     const file = String(parts[0] || '').trim()
     const family = String(parts[1] || '').trim()
     const style = String(parts.slice(2).join('\t') || '').trim()
+    const label = normalizeFontStyleLabel(style)
     if (!file || !family || !style) continue
     const resolved = path.resolve(file)
     if (!resolved.startsWith(fontDir + path.sep)) continue
@@ -105,7 +128,7 @@ function loadFromFontconfig(): Cache {
     const key = `fc:${encodeURIComponent(family)}:${encodeURIComponent(style)}`
     variants.push({
       key,
-      label: style,
+      label,
       family,
       style,
     })
