@@ -159,7 +159,7 @@ async function runOne(job: any, attempt: any, workerId: string) {
     const inputDurationSeconds = Number(metricsInput?.durationSeconds ?? inputSummary?.duration)
     const rtf =
       Number.isFinite(inputDurationSeconds) && inputDurationSeconds > 0 && durationMs > 0
-        ? Number((inputDurationSeconds / (durationMs / 1000)).toFixed(3))
+        ? Number(((durationMs / 1000) / inputDurationSeconds).toFixed(3))
         : undefined
     const metricsInputMerged =
       metricsInput ??
