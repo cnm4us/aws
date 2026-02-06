@@ -828,7 +828,7 @@ const VideoAssetsListPage: React.FC<{
         if (qTrim) params.set('q', qTrim)
         params.set('sort', normalizeVideoSort(sort))
         if (favoritesOnly) params.set('favorites_only', '1')
-        if (!qTrim && !favoritesOnly && normalizeVideoSort(sort) !== 'recent') params.set('include_recent', '1')
+        if (!qTrim && !favoritesOnly && normalizeVideoSort(sort) === 'newest') params.set('include_recent', '1')
         params.set('limit', '200')
         const res = await fetch(`/api/assets/videos?${params.toString()}`, {
           credentials: 'same-origin',
@@ -847,6 +847,46 @@ const VideoAssetsListPage: React.FC<{
     },
     [favoritesOnly, q, sort]
   )
+
+  const sortedItems = React.useMemo(() => {
+    const next = items.slice()
+    const key = normalizeVideoSort(sort)
+    if (key === 'recent') {
+      return next.sort((a, b) => {
+        const at = a.last_used_at ? Date.parse(String(a.last_used_at)) : 0
+        const bt = b.last_used_at ? Date.parse(String(b.last_used_at)) : 0
+        return bt - at || Number(b.id) - Number(a.id)
+      })
+    }
+    if (key === 'oldest') return next.sort((a, b) => Number(a.id) - Number(b.id))
+    if (key === 'name_asc') {
+      return next.sort((a, b) =>
+        String(a.modified_filename || a.original_filename || '').localeCompare(
+          String(b.modified_filename || b.original_filename || '')
+        ) || Number(b.id) - Number(a.id)
+      )
+    }
+    if (key === 'name_desc') {
+      return next.sort((a, b) =>
+        String(b.modified_filename || b.original_filename || '').localeCompare(
+          String(a.modified_filename || a.original_filename || '')
+        ) || Number(b.id) - Number(a.id)
+      )
+    }
+    if (key === 'duration_asc') {
+      return next.sort((a, b) => Number(a.duration_seconds || 0) - Number(b.duration_seconds || 0) || Number(b.id) - Number(a.id))
+    }
+    if (key === 'duration_desc') {
+      return next.sort((a, b) => Number(b.duration_seconds || 0) - Number(a.duration_seconds || 0) || Number(b.id) - Number(a.id))
+    }
+    if (key === 'size_asc') {
+      return next.sort((a, b) => Number(a.size_bytes || 0) - Number(b.size_bytes || 0) || Number(b.id) - Number(a.id))
+    }
+    if (key === 'size_desc') {
+      return next.sort((a, b) => Number(b.size_bytes || 0) - Number(a.size_bytes || 0) || Number(b.id) - Number(a.id))
+    }
+    return next.sort((a, b) => Number(b.id) - Number(a.id))
+  }, [items, sort])
 
   React.useEffect(() => {
     const ctrl = new AbortController()
@@ -1145,7 +1185,7 @@ const VideoAssetsListPage: React.FC<{
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{items.map(renderCard)}</div>
+        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{sortedItems.map(renderCard)}</div>
 
         {editUpload ? (
           <EditUploadModal
@@ -1270,7 +1310,7 @@ const GraphicAssetsListPage: React.FC<{
         if (qTrim) params.set('q', qTrim)
         params.set('sort', normalizeGraphicSort(sort))
         if (favoritesOnly) params.set('favorites_only', '1')
-        if (!qTrim && !favoritesOnly && normalizeGraphicSort(sort) !== 'recent') params.set('include_recent', '1')
+        if (!qTrim && !favoritesOnly && normalizeGraphicSort(sort) === 'newest') params.set('include_recent', '1')
         params.set('limit', '200')
         const res = await fetch(`/api/assets/graphics?${params.toString()}`, {
           credentials: 'same-origin',
@@ -1588,7 +1628,7 @@ const GraphicAssetsListPage: React.FC<{
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{items.map(renderCard)}</div>
+        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{sortedItems.map(renderCard)}</div>
 
         {editUpload ? (
           <EditUploadModal
