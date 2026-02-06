@@ -82,6 +82,9 @@ export async function ensureSchema(db: DB) {
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS origin_space_id BIGINT UNSIGNED NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS source_deleted_at DATETIME NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS is_system TINYINT(1) NOT NULL DEFAULT 0`);
+	  // Plan 88: system video library uploads (curated source videos for clipping).
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS is_system_library TINYINT(1) NOT NULL DEFAULT 0`);
+	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS source_org VARCHAR(64) NULL`);
 	  // Plan 68: discriminate raw uploads vs Create Video exports, and link export uploads back to their timeline project.
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS video_role ENUM('source','export') NULL`);
 	  await db.query(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS create_video_project_id BIGINT UNSIGNED NULL`);
@@ -99,6 +102,7 @@ export async function ensureSchema(db: DB) {
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_artist ON uploads (artist, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_project ON uploads (video_role, create_video_project_id, id)`); } catch {}
 		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_video_role_production ON uploads (video_role, create_video_production_id, id)`); } catch {}
+		  try { await db.query(`CREATE INDEX IF NOT EXISTS idx_uploads_system_library ON uploads (is_system_library, source_org, status, id)`); } catch {}
 
 		  // Plan 51: audio tag taxonomy (genres/moods) + join table for system audio uploads
 		  await db.query(`
@@ -1417,6 +1421,44 @@ export async function ensureSchema(db: DB) {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_production_captions_production (production_id),
       KEY idx_production_captions_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  // Plan 88: upload captions (VTT) persisted per upload (system library videos).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS upload_captions (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      upload_id BIGINT UNSIGNED NOT NULL,
+      provider VARCHAR(32) NOT NULL DEFAULT 'assemblyai',
+      transcript_id VARCHAR(128) NULL,
+      format VARCHAR(16) NOT NULL DEFAULT 'vtt',
+      language VARCHAR(16) NOT NULL DEFAULT 'en',
+      s3_bucket VARCHAR(255) NOT NULL,
+      s3_key VARCHAR(1024) NOT NULL,
+      status ENUM('ready','failed','processing') NOT NULL DEFAULT 'ready',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_upload_captions_upload (upload_id),
+      KEY idx_upload_captions_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  // Plan 88: library clips (time ranges within system library videos).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS library_clips (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      upload_id BIGINT UNSIGNED NOT NULL,
+      owner_user_id BIGINT UNSIGNED NOT NULL,
+      title VARCHAR(255) NULL,
+      description TEXT NULL,
+      start_seconds DECIMAL(8,3) NOT NULL,
+      end_seconds DECIMAL(8,3) NOT NULL,
+      is_system TINYINT(1) NOT NULL DEFAULT 0,
+      is_shared TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_library_clips_upload (upload_id, start_seconds, end_seconds),
+      KEY idx_library_clips_owner (owner_user_id, created_at, id),
+      KEY idx_library_clips_shared (is_shared, id),
+      KEY idx_library_clips_system (is_system, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
   // Retroactive cleanup: clear legacy Personal ⇒ Global coupling

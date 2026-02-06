@@ -8,6 +8,7 @@ import * as mediaJobs from '../../features/media-jobs/service'
 import * as mediaJobsRepo from '../../features/media-jobs/repo'
 import { runAudioMasterV1Job } from '../../media/jobs/audioMasterV1'
 import { runAssemblyAiTranscriptV1Job } from '../../media/jobs/assemblyAiTranscriptV1'
+import { runAssemblyAiUploadTranscriptV1Job } from '../../media/jobs/assemblyAiUploadTranscriptV1'
 import { runUploadAudioEnvelopeV1Job } from '../../media/jobs/uploadAudioEnvelopeV1'
 import { runUploadEditProxyV1Job } from '../../media/jobs/uploadEditProxyV1'
 import { runUploadFreezeFrameV1Job } from '../../media/jobs/uploadFreezeFrameV1'
@@ -491,6 +492,22 @@ async function runOne(job: any, attempt: any, workerId: string) {
     if (String(job.type) === 'assemblyai_transcript_v1') {
       const input = job.input_json as any
       const result = await runAssemblyAiTranscriptV1Job(input, { stdoutPath, stderrPath })
+      const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
+      const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
+
+      await mediaJobsRepo.finishAttempt(Number(attempt.id), {
+        exitCode: 0,
+        stdout: stdoutPtr || undefined,
+        stderr: stderrPtr || undefined,
+        scratchManifestJson: buildManifest(),
+      })
+      await mediaJobsRepo.completeJob(jobId, result)
+      return
+    }
+
+    if (String(job.type) === 'assemblyai_upload_transcript_v1') {
+      const input = job.input_json as any
+      const result = await runAssemblyAiUploadTranscriptV1Job(input, { stdoutPath, stderrPath })
       const stdoutPtr = fs.existsSync(stdoutPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stdout.log`, stdoutPath) : null
       const stderrPtr = fs.existsSync(stderrPath) ? await uploadFileToS3(MEDIA_JOBS_LOGS_BUCKET, `${logPrefix}stderr.log`, stderrPath) : null
 

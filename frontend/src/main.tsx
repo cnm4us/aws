@@ -3,7 +3,7 @@ import './styles/variables.css'
 import './styles/base.css'
 import './styles/buttons.css'
 import { createRoot } from 'react-dom/client'
-import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadAssets, loadTimelines, loadLogoConfigs, loadLowerThirds, loadProfile, loadProfileAvatar } from './ui/routes'
+import { loadFeed, loadHomePage, loadPageView, loadRuleView, loadRulesIndex, loadUploads, loadUploadNew, loadProductions, loadPublish, loadPublishStory, loadProduce, loadEditVideo, loadCreateVideo, loadExports, loadAssets, loadTimelines, loadLogoConfigs, loadLowerThirds, loadLibrary, loadProfile, loadProfileAvatar } from './ui/routes'
 import { UploadsSkeleton, UploadNewSkeleton, ProductionsSkeleton, PublishSkeleton } from './ui/Skeletons'
 const HelpPage = React.lazy(() => import('./app/Help'))
 const HomePage = React.lazy(loadHomePage)
@@ -23,6 +23,7 @@ const AssetsPage = React.lazy(loadAssets)
 const TimelinesPage = React.lazy(loadTimelines)
 const LogoConfigsPage = React.lazy(loadLogoConfigs)
 const LowerThirdsPage = React.lazy(loadLowerThirds)
+const LibraryPage = React.lazy(loadLibrary)
 const ProductionsPage = React.lazy(loadProductions)
 const ProfilePage = React.lazy(loadProfile)
 const ProfilePublicPage = React.lazy(() => import('./app/ProfilePublic'))
@@ -225,6 +226,14 @@ if (path === '/' || path === '') {
     <Layout label="Assets">
       <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
         <AssetsPage />
+      </Suspense>
+    </Layout>
+  )
+} else if (path.startsWith('/library')) {
+  root.render(
+    <Layout label="Library">
+      <Suspense fallback={<div style={{ color: '#fff', padding: 20 }}>Loading…</div>}>
+        <LibraryPage />
       </Suspense>
     </Layout>
   )

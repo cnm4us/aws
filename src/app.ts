@@ -19,6 +19,7 @@ import { screenTitlePresetsRouter } from './routes/screen-title-presets';
 import { screenTitlePreviewRouter } from './routes/screen-title-preview';
 import { productionDraftsRouter } from './routes/production-drafts';
 import { createVideoRouter } from './routes/create-video';
+import { libraryRouter } from './routes/library';
 import { BUILD_TAG, getVersionInfo } from './utils/version';
 import { ulidMonotonic as genSpaceUlid } from './utils/ulid';
 import { SCREEN_TITLE_RENDERER, TERMS_UPLOAD_KEY, TERMS_UPLOAD_VERSION } from './config'
@@ -73,6 +74,7 @@ export function buildServer(): express.Application {
   app.use(screenTitlePreviewRouter);
   app.use(productionDraftsRouter);
   app.use(createVideoRouter);
+  app.use(libraryRouter);
   app.use('/api/admin', adminRouter);
   app.use(spacesRouter);
 

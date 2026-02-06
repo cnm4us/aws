@@ -14,6 +14,20 @@ export type ProductionCaptionsRow = {
   updated_at: string
 }
 
+export type UploadCaptionsRow = {
+  id: number
+  upload_id: number
+  provider: string
+  transcript_id: string | null
+  format: string
+  language: string
+  s3_bucket: string
+  s3_key: string
+  status: 'ready' | 'failed' | 'processing'
+  created_at: string
+  updated_at: string
+}
+
 export async function upsertProductionCaptions(input: {
   productionId: number
   provider: string
@@ -58,3 +72,46 @@ export async function getByProductionId(productionId: number): Promise<Productio
   return row as any
 }
 
+export async function upsertUploadCaptions(input: {
+  uploadId: number
+  provider: string
+  transcriptId: string | null
+  format: string
+  language: string
+  bucket: string
+  key: string
+  status: 'ready' | 'failed' | 'processing'
+}) {
+  const db = getPool()
+  await db.query(
+    `INSERT INTO upload_captions (upload_id, provider, transcript_id, format, language, s3_bucket, s3_key, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       provider = VALUES(provider),
+       transcript_id = VALUES(transcript_id),
+       format = VALUES(format),
+       language = VALUES(language),
+       s3_bucket = VALUES(s3_bucket),
+       s3_key = VALUES(s3_key),
+       status = VALUES(status),
+       updated_at = NOW()`,
+    [
+      Number(input.uploadId),
+      String(input.provider || 'assemblyai'),
+      input.transcriptId != null ? String(input.transcriptId) : null,
+      String(input.format || 'vtt'),
+      String(input.language || 'en'),
+      String(input.bucket || ''),
+      String(input.key || ''),
+      String(input.status || 'ready'),
+    ]
+  )
+}
+
+export async function getByUploadId(uploadId: number): Promise<UploadCaptionsRow | null> {
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM upload_captions WHERE upload_id = ? LIMIT 1`, [Number(uploadId)])
+  const row = (rows as any[])[0]
+  if (!row) return null
+  return row as any
+}

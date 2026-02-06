@@ -161,12 +161,22 @@ const UploadNewPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [sourceOrg, setSourceOrg] = useState('cspan')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const returnHref = getReturnHref()
   const kind = (() => {
     const params = new URLSearchParams(window.location.search)
     const raw = String(params.get('kind') || '').toLowerCase()
     return raw === 'logo' ? 'logo' : raw === 'audio' ? 'audio' : raw === 'image' ? 'image' : 'video'
+  })()
+  const isLibrary = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const raw = String(params.get('library') || '').trim().toLowerCase()
+      return raw === '1' || raw === 'true' || raw === 'yes'
+    } catch {
+      return false
+    }
   })()
   const imageRole = (() => {
     try {
@@ -194,6 +204,10 @@ const UploadNewPage: React.FC = () => {
                 ? 'Please sign in to upload images.'
                 : 'Please sign in to upload audio.'
         )
+        return
+      }
+      if (kind === 'video' && isLibrary && !user?.isSiteAdmin) {
+        setUploadError('Only site admins can upload system library videos.')
         return
       }
       if (kind === 'audio' && !user?.isSiteAdmin) {
@@ -329,6 +343,7 @@ const UploadNewPage: React.FC = () => {
             : {}),
           kind,
           ...(kind === 'image' && imageRole ? { imageRole } : {}),
+          ...(kind === 'video' && isLibrary ? { systemLibrary: true, sourceOrg } : {}),
           ...meta,
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -398,6 +413,7 @@ const UploadNewPage: React.FC = () => {
         setModifiedName('')
         setDescription('')
         setArtist('')
+        setSourceOrg('cspan')
         setSelectedLicenseSourceId(null)
         setSelectedGenreIds([])
         setSelectedMoodIds([])
@@ -412,7 +428,7 @@ const UploadNewPage: React.FC = () => {
         setUploading(false)
       }
     },
-    [file, me, modifiedName, description, artist, selectedLicenseSourceId, selectedGenreIds, selectedMoodIds, selectedThemeIds, selectedInstrumentIds, termsAccepted, resetForm, kind, imageRole]
+    [file, me, modifiedName, description, artist, selectedLicenseSourceId, selectedGenreIds, selectedMoodIds, selectedThemeIds, selectedInstrumentIds, termsAccepted, resetForm, kind, imageRole, isLibrary, sourceOrg]
   )
 
   if (me === null) {
@@ -502,10 +518,10 @@ const UploadNewPage: React.FC = () => {
               </div>
             </div>
 
-	            <div>
-	              <label htmlFor="modifiedFilename" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-	                Display Name
-	              </label>
+            <div>
+              <label htmlFor="modifiedFilename" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+                Display Name
+              </label>
 	              <input
                 id="modifiedFilename"
                 type="text"
@@ -522,8 +538,34 @@ const UploadNewPage: React.FC = () => {
                   fontSize: 16,
                 }}
 	                disabled={uploading}
-	              />
-	            </div>
+              />
+            </div>
+
+            {kind === 'video' && isLibrary && me?.isSiteAdmin ? (
+              <div>
+                <label htmlFor="sourceOrg" style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+                  Original Source
+                </label>
+                <select
+                  id="sourceOrg"
+                  value={sourceOrg}
+                  onChange={(event) => setSourceOrg(event.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: 10,
+                    border: '1px solid #1f1f1f',
+                    background: '#050505',
+                    color: '#fff',
+                    fontSize: 16,
+                  }}
+                  disabled={uploading}
+                >
+                  <option value="cspan">CSPAN</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            ) : null}
 
 		            {kind === 'audio' && me?.isSiteAdmin ? (
 		              <>

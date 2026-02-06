@@ -8,6 +8,7 @@ export default function MyAssets(props: { onNavigate?: () => void }) {
     { label: 'Create Video', href: '/create-video' },
     { label: 'Timelines', href: '/timelines' },
     { label: 'Assets', href: '/assets' },
+    { label: 'Video Library', href: '/library' },
     { label: 'Exports', href: '/exports' },
     { label: 'Productions', href: '/productions' },
   ]

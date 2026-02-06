@@ -28,6 +28,24 @@ type UploadListItem = {
   last_used_at?: string | null
 }
 
+type LibraryClipItem = {
+  id: number
+  upload_id: number
+  start_seconds: number
+  end_seconds: number
+  title?: string | null
+  description?: string | null
+  is_system?: number
+  is_shared?: number
+  owner_user_id?: number
+  modified_filename?: string | null
+  original_filename?: string | null
+  upload_description?: string | null
+  duration_seconds?: number | null
+  width?: number | null
+  height?: number | null
+  source_org?: string | null
+}
 type MeResponse = {
   userId: number | null
   email: string | null
@@ -791,17 +809,29 @@ const VideoAssetsListPage: React.FC<{
   const mode = useMemo(() => parseMode(), [])
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
+  const [clipItems, setClipItems] = React.useState<LibraryClipItem[]>([])
   const [recent, setRecent] = React.useState<UploadListItem[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [q, setQ] = React.useState('')
   const [sort, setSort] = React.useState<string>('newest')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
+  const [clipScope, setClipScope] = React.useState<'uploads' | 'system' | 'mine' | 'shared'>('uploads')
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
+  const allowClips = mode === 'pick' && pickType === 'video'
+  const isClipMode = allowClips && clipScope !== 'uploads'
+
+  React.useEffect(() => {
+    if (!allowClips) setClipScope('uploads')
+  }, [allowClips])
+
+  React.useEffect(() => {
+    if (isClipMode && favoritesOnly) setFavoritesOnly(false)
+  }, [isClipMode, favoritesOnly])
 
   const backHref = useMemo(() => {
     const base = '/assets'
@@ -823,21 +853,38 @@ const VideoAssetsListPage: React.FC<{
         const user = await ensureLoggedIn()
         setMe(user)
         if (!user?.userId) throw new Error('not_authenticated')
-        const params = new URLSearchParams()
         const qTrim = q.trim()
-        if (qTrim) params.set('q', qTrim)
-        params.set('sort', normalizeVideoSort(sort))
-        if (favoritesOnly) params.set('favorites_only', '1')
-        if (!qTrim && !favoritesOnly && normalizeVideoSort(sort) === 'newest') params.set('include_recent', '1')
-        params.set('limit', '200')
-        const res = await fetch(`/api/assets/videos?${params.toString()}`, {
-          credentials: 'same-origin',
-          signal: opts?.signal,
-        })
-        const json: VideoAssetsResponse | any = await res.json().catch(() => null)
-        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-        setItems(Array.isArray(json?.items) ? json.items : [])
-        setRecent(Array.isArray(json?.recent) ? json.recent : [])
+        if (isClipMode) {
+          const params = new URLSearchParams()
+          if (qTrim) params.set('q', qTrim)
+          params.set('scope', clipScope)
+          params.set('limit', '200')
+          const res = await fetch(`/api/library/clips?${params.toString()}`, {
+            credentials: 'same-origin',
+            signal: opts?.signal,
+          })
+          const json: any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+          setClipItems(Array.isArray(json?.items) ? json.items : [])
+          setItems([])
+          setRecent([])
+        } else {
+          const params = new URLSearchParams()
+          if (qTrim) params.set('q', qTrim)
+          params.set('sort', normalizeVideoSort(sort))
+          if (favoritesOnly) params.set('favorites_only', '1')
+          if (!qTrim && !favoritesOnly && normalizeVideoSort(sort) === 'newest') params.set('include_recent', '1')
+          params.set('limit', '200')
+          const res = await fetch(`/api/assets/videos?${params.toString()}`, {
+            credentials: 'same-origin',
+            signal: opts?.signal,
+          })
+          const json: VideoAssetsResponse | any = await res.json().catch(() => null)
+          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+          setItems(Array.isArray(json?.items) ? json.items : [])
+          setRecent(Array.isArray(json?.recent) ? json.recent : [])
+          setClipItems([])
+        }
       } catch (e: any) {
         if (String(e?.name || '') === 'AbortError') return
         setError(e?.message || 'Failed to load')
@@ -845,10 +892,10 @@ const VideoAssetsListPage: React.FC<{
         setLoading(false)
       }
     },
-    [favoritesOnly, q, sort]
+    [favoritesOnly, q, sort, isClipMode, clipScope]
   )
 
-  const sortedItems = React.useMemo(() => {
+  const sortedUploadItems = React.useMemo(() => {
     const next = items.slice()
     const key = normalizeVideoSort(sort)
     if (key === 'recent') {
@@ -887,6 +934,23 @@ const VideoAssetsListPage: React.FC<{
     }
     return next.sort((a, b) => Number(b.id) - Number(a.id))
   }, [items, sort])
+
+  const sortedClipItems = React.useMemo(() => {
+    const next = clipItems.slice()
+    const key = normalizeVideoSort(sort)
+    const clipName = (c: LibraryClipItem) =>
+      String(c.title || c.modified_filename || c.original_filename || '')
+    if (key === 'oldest') return next.sort((a, b) => Number(a.id) - Number(b.id))
+    if (key === 'name_asc') return next.sort((a, b) => clipName(a).localeCompare(clipName(b)) || Number(b.id) - Number(a.id))
+    if (key === 'name_desc') return next.sort((a, b) => clipName(b).localeCompare(clipName(a)) || Number(b.id) - Number(a.id))
+    if (key === 'duration_asc') {
+      return next.sort((a, b) => (Number(a.end_seconds) - Number(a.start_seconds)) - (Number(b.end_seconds) - Number(b.start_seconds)) || Number(b.id) - Number(a.id))
+    }
+    if (key === 'duration_desc') {
+      return next.sort((a, b) => (Number(b.end_seconds) - Number(b.start_seconds)) - (Number(a.end_seconds) - Number(a.start_seconds)) || Number(b.id) - Number(a.id))
+    }
+    return next.sort((a, b) => Number(b.id) - Number(a.id))
+  }, [clipItems, sort])
 
   React.useEffect(() => {
     const ctrl = new AbortController()
@@ -1085,6 +1149,85 @@ const VideoAssetsListPage: React.FC<{
     )
   }
 
+  const renderClipCard = (c: LibraryClipItem) => {
+    const baseName = (c.modified_filename || c.original_filename || `Video ${c.upload_id}`).toString()
+    const name = (c.title || baseName).trim()
+    const clipDur = Number(c.end_seconds) - Number(c.start_seconds)
+    const meta = [
+      c.source_org ? String(c.source_org).toUpperCase() : null,
+      formatDuration(clipDur),
+      baseName && c.title ? baseName : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const isPortrait = c.width != null && c.height != null && Number(c.width) > 0 && Number(c.height) > 0 ? Number(c.height) > Number(c.width) : false
+    const previewAspect = isPortrait ? '9 / 16' : '16 / 9'
+    const previewFit = isPortrait ? 'contain' : 'cover'
+    const start = Number(c.start_seconds || 0)
+    const previewSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy#t=${(start + 0.1).toFixed(1)}`
+    const isPick = mode === 'pick'
+    return (
+      <div
+        key={`clip-${c.id}`}
+        style={{
+          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'rgba(28,28,28,0.96)',
+          borderRadius: 16,
+          padding: 14,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+            <div style={{ fontWeight: 900, fontSize: 18, wordBreak: 'break-word' }}>{name}</div>
+            {meta ? <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
+          </div>
+          {isPick ? (
+            <button
+              type="button"
+              onClick={() => {
+                const href = buildReturnHref({ cvPickType: 'clip', cvPickClipId: String(c.id) })
+                if (href) window.location.href = href
+              }}
+              style={{
+                flex: '0 0 auto',
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: '#0a84ff',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Select
+            </button>
+          ) : null}
+        </div>
+        <div
+          style={{
+            marginTop: 12,
+            width: '100%',
+            aspectRatio: previewAspect,
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.18)',
+            background: '#000',
+            overflow: 'hidden',
+            cursor: 'pointer',
+          }}
+          onClick={() => setVideoPreview({ title: name, src: previewSrc })}
+        >
+          <video
+            preload="metadata"
+            playsInline
+            src={previewSrc}
+            style={{ width: '100%', height: '100%', objectFit: previewFit, display: 'block' }}
+          />
+        </div>
+        {c.description ? <div style={{ marginTop: 8, color: '#a8a8a8', fontSize: 13 }}>{c.description}</div> : null}
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
@@ -1122,6 +1265,37 @@ const VideoAssetsListPage: React.FC<{
             </a>
           ) : null}
         </div>
+
+        {allowClips ? (
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {[
+              { key: 'uploads', label: 'Uploads' },
+              { key: 'system', label: 'System Clips' },
+              { key: 'mine', label: 'My Clips' },
+              { key: 'shared', label: 'Other Users' },
+            ].map((opt) => {
+              const active = clipScope === opt.key
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setClipScope(opt.key as any)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 999,
+                    border: active ? '1px solid rgba(10,132,255,0.6)' : '1px solid rgba(255,255,255,0.18)',
+                    background: active ? 'rgba(10,132,255,0.2)' : '#0c0c0c',
+                    color: '#fff',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
           <input
@@ -1165,27 +1339,31 @@ const VideoAssetsListPage: React.FC<{
             <option value="recent">Recent</option>
           </select>
 
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
-            <input
-              type="checkbox"
-              checked={favoritesOnly}
-              onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
-            />
-            Favorites
-          </label>
+          {!isClipMode ? (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
+              <input
+                type="checkbox"
+                checked={favoritesOnly}
+                onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
+              />
+              Favorites
+            </label>
+          ) : null}
         </div>
 
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
-        {!q.trim() && !favoritesOnly && recent.length ? (
+        {!isClipMode && !q.trim() && !favoritesOnly && recent.length ? (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
             <div style={{ display: 'grid', gap: 14 }}>{recent.map(renderCard)}</div>
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{sortedItems.map(renderCard)}</div>
+        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+          {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
+        </div>
 
         {editUpload ? (
           <EditUploadModal

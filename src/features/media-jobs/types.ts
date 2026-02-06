@@ -9,6 +9,7 @@ export type MediaJobType =
   | 'upload_audio_envelope_v1'
   | 'upload_freeze_frame_v1'
   | 'assemblyai_transcript_v1'
+  | 'assemblyai_upload_transcript_v1'
 
 export type MediaJobRow = {
   id: number
@@ -244,6 +245,11 @@ export type AssemblyAiTranscriptV1Input = {
   productionId: number
 }
 
+export type AssemblyAiUploadTranscriptV1Input = {
+  uploadId: number
+  userId?: number
+}
+
 export type MediaJobInputByType = {
   audio_master_v1: AudioMasterV1Input
   video_master_v1: VideoMasterV1Input
@@ -252,4 +258,5 @@ export type MediaJobInputByType = {
   upload_audio_envelope_v1: UploadAudioEnvelopeV1Input
   upload_freeze_frame_v1: UploadFreezeFrameV1Input
   assemblyai_transcript_v1: AssemblyAiTranscriptV1Input
+  assemblyai_upload_transcript_v1: AssemblyAiUploadTranscriptV1Input
 }

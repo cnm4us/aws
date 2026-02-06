@@ -15,6 +15,7 @@ export const loadAssets = () => import('../app/Assets')
 export const loadTimelines = () => import('../app/Timelines')
 export const loadLogoConfigs = () => import('../app/LogoConfigs')
 export const loadLowerThirds = () => import('../app/LowerThirds')
+export const loadLibrary = () => import('../app/Library')
 export const loadProfile = () => import('../app/Profile')
 export const loadProfileAvatar = () => import('../app/ProfileAvatar')
 export const loadHomePage = () => import('../app/HomePage')
@@ -35,6 +36,7 @@ export function prefetchForHref(href: string) {
     else if (href.startsWith('/create-video')) { void loadCreateVideo() }
     else if (href.startsWith('/exports')) { void loadExports() }
     else if (href.startsWith('/assets')) { void loadAssets() }
+    else if (href.startsWith('/library')) { void loadLibrary() }
     else if (href.startsWith('/timelines')) { void loadTimelines() }
     else if (href.startsWith('/logo-configs')) { void loadLogoConfigs() }
     else if (href.startsWith('/lower-thirds')) { void loadLowerThirds() }

@@ -633,6 +633,7 @@ type AdminNavKey =
   | 'cultures'
   | 'pages'
 	| 'audio'
+	| 'video_library'
 	| 'audio_tags'
 	| 'license_sources'
 	| 'lower_thirds'
@@ -651,6 +652,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; label: string; href: string }> 
   { key: 'cultures', label: 'Cultures', href: '/admin/cultures' },
   { key: 'pages', label: 'Pages', href: '/admin/pages' },
 	{ key: 'audio', label: 'Audio', href: '/admin/audio' },
+	{ key: 'video_library', label: 'Video Library', href: '/admin/video-library' },
 	{ key: 'audio_tags', label: 'Audio Tags', href: '/admin/audio-tags' },
 	{ key: 'license_sources', label: 'License Sources', href: '/admin/license-sources' },
 	{ key: 'lower_thirds', label: 'Lower Thirds', href: '/admin/lower-thirds' },
@@ -2966,6 +2968,7 @@ pagesRouter.get('/admin', async (_req: any, res: any) => {
     { title: 'Cultures', href: '/admin/cultures', desc: 'Create/update cultures and assign categories' },
     { title: 'Pages', href: '/admin/pages', desc: 'Edit CMS pages (Markdown)' },
     { title: 'Audio', href: '/admin/audio', desc: 'System audio library (curated, selectable by users)' },
+    { title: 'Video Library', href: '/admin/video-library', desc: 'System video library (source videos for clipping)' },
     { title: 'Lower Thirds', href: '/admin/lower-thirds', desc: 'Manage system lower third templates (SVG + descriptor)' },
     { title: 'Audio Configs', href: '/admin/audio-configs', desc: 'Presets for Mix/Replace + ducking (creators pick when producing)' },
     { title: 'Media Jobs', href: '/admin/media-jobs', desc: 'Debug ffmpeg mastering jobs (logs, retries, purge)' },
@@ -4837,6 +4840,88 @@ pagesRouter.get('/admin/settings', async (_req: any, res: any) => {
   res.set('Content-Type', 'text/html; charset=utf-8')
   res.send(doc)
 });
+
+pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
+  try {
+    const db = getPool()
+    const q = String(req.query?.q || '').trim()
+    const sourceOrg = String(req.query?.source_org || '').trim().toLowerCase()
+    const where: string[] = []
+    const args: any[] = []
+    where.push(`u.kind = 'video'`)
+    where.push(`u.is_system_library = 1`)
+    where.push(`u.status IN ('uploaded','completed')`)
+    where.push(`u.source_deleted_at IS NULL`)
+    if (q) {
+      where.push(`(COALESCE(u.modified_filename, u.original_filename) LIKE ? OR u.description LIKE ? OR u.original_filename LIKE ?)`)
+      const like = `%${q}%`
+      args.push(like, like, like)
+    }
+    if (sourceOrg && sourceOrg !== 'all') {
+      where.push(`LOWER(COALESCE(u.source_org,'')) = ?`)
+      args.push(sourceOrg)
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+    const [rows] = await db.query(
+      `SELECT u.id, u.modified_filename, u.original_filename, u.description, u.source_org, u.duration_seconds, u.size_bytes, u.width, u.height, u.created_at
+         FROM uploads u
+         ${whereSql}
+        ORDER BY u.id DESC
+        LIMIT 200`,
+      args
+    )
+    const items = rows as any[]
+    let body = '<h1>Video Library</h1>'
+    body += '<div class="toolbar"><div><span class="pill">System Library</span></div>'
+    body += `<div><a href="/uploads/new?kind=video&library=1&return=${encodeURIComponent('/admin/video-library')}" class="btn">Upload</a></div></div>`
+
+    body += `<form method="get" action="/admin/video-library" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px">`
+    body += `<input type="text" name="q" placeholder="Search name/description" value="${escapeHtml(q)}" style="flex:1; min-width:200px" />`
+    body += `<select name="source_org" style="min-width:160px">`
+    const sourceOptions = [
+      { value: 'all', label: 'All sources' },
+      { value: 'cspan', label: 'CSPAN' },
+      { value: 'other', label: 'Other' },
+    ]
+    for (const opt of sourceOptions) {
+      const selected = (sourceOrg || 'all') === opt.value ? 'selected' : ''
+      body += `<option value="${escapeHtml(opt.value)}" ${selected}>${escapeHtml(opt.label)}</option>`
+    }
+    body += `</select>`
+    body += `<button class="btn" type="submit">Filter</button>`
+    body += `</form>`
+
+    if (!items.length) {
+      body += '<p>No system library videos yet.</p>'
+    } else {
+      body += '<div class="section">'
+      body += '<div class="section-title">Videos</div>'
+      body += '<div style="display:grid; gap:12px">'
+      for (const row of items) {
+        const name = String(row.modified_filename || row.original_filename || `Video ${row.id}`)
+        const desc = String(row.description || '')
+        const src = String(row.source_org || 'other')
+        const dims = row.width && row.height ? `${row.width}×${row.height}` : ''
+        const duration = row.duration_seconds ? `${row.duration_seconds}s` : ''
+        const size = row.size_bytes ? `${Math.round(Number(row.size_bytes) / 1024 / 1024)} MB` : ''
+        const meta = [src.toUpperCase(), dims, duration, size].filter(Boolean).join(' · ')
+        body += `<div class="card">`
+        body += `<div class="card-title">${escapeHtml(name)}</div>`
+        if (meta) body += `<div class="field-hint">${escapeHtml(meta)}</div>`
+        if (desc) body += `<div style="opacity:.85; margin-top:6px">${escapeHtml(desc)}</div>`
+        body += `</div>`
+      }
+      body += '</div></div>'
+    }
+
+    const doc = renderAdminPage({ title: 'Video Library', bodyHtml: body, active: 'video_library' })
+    res.set('Content-Type', 'text/html; charset=utf-8')
+    res.send(doc)
+  } catch (err: any) {
+    console.error('admin video library error', err)
+    res.status(500).send(renderAdminPage({ title: 'Video Library', bodyHtml: `<div class=\"error\">${escapeHtml(String(err?.message || err))}</div>`, active: 'video_library' }))
+  }
+})
 
 pagesRouter.get('/admin/review', async (req: any, res: any) => {
   try {
@@ -6909,6 +6994,12 @@ pagesRouter.get('/assets/:type/*', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/assets/:type', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/library', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/library/', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
 pagesRouter.get('/timelines', (_req, res) => {

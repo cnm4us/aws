@@ -167,9 +167,10 @@ export async function getUploadFileStream(
 
   const kind = String(row.kind || 'video').toLowerCase()
   const isSystem = Number((row as any).is_system || 0) === 1
+  const isSystemLibrary = Number((row as any).is_system_library || 0) === 1
 
-  // System audio is selectable by any logged-in user.
-  if (!(isSystem && kind === 'audio')) {
+  // System audio and system library videos are selectable by any logged-in user.
+  if (!((isSystem && kind === 'audio') || (isSystemLibrary && kind === 'video'))) {
     const ownerId = row.user_id != null ? Number(row.user_id) : null
     const isOwner = ownerId != null && ownerId === Number(ctx.userId)
     const checker = await resolveChecker(Number(ctx.userId))
@@ -203,11 +204,14 @@ export async function getUploadEditProxyStream(
   const kind = String(row.kind || 'video').toLowerCase()
   if (kind !== 'video') throw new NotFoundError('not_found')
 
-  const ownerId = row.user_id != null ? Number(row.user_id) : null
-  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
-  const checker = await resolveChecker(Number(ctx.userId))
-  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
-  if (!isOwner && !isAdmin) throw new ForbiddenError()
+  const isSystemLibrary = Number((row as any).is_system_library || 0) === 1
+  if (!isSystemLibrary) {
+    const ownerId = row.user_id != null ? Number(row.user_id) : null
+    const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+    const checker = await resolveChecker(Number(ctx.userId))
+    const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+    if (!isOwner && !isAdmin) throw new ForbiddenError()
+  }
 
   const bucket = String(UPLOAD_BUCKET || '')
   const key = buildUploadEditProxyKey(Number(uploadId))
@@ -232,6 +236,7 @@ export async function getUploadEditProxyStream(
     try {
       const sourceDeletedAt = (row as any).source_deleted_at != null ? String((row as any).source_deleted_at) : null
       if (MEDIA_JOBS_ENABLED && !sourceDeletedAt) {
+        const ownerId = row?.user_id != null ? Number(row.user_id) : null
         let alreadyQueued = false
         try {
           const db = getPool()
@@ -363,9 +368,10 @@ export async function getUploadSignedCdnUrl(
 
   const rowKind = String(row.kind || 'video').toLowerCase()
   const isSystem = Number((row as any).is_system || 0) === 1
+  const isSystemLibrary = Number((row as any).is_system_library || 0) === 1
 
   // Permission checks (mirror the stream endpoints).
-  if (!(isSystem && rowKind === 'audio')) {
+  if (!((isSystem && rowKind === 'audio') || (isSystemLibrary && rowKind === 'video'))) {
     const ownerId = row.user_id != null ? Number(row.user_id) : null
     const isOwner = ownerId != null && ownerId === Number(ctx.userId)
     const checker = await resolveChecker(Number(ctx.userId))
@@ -1587,6 +1593,8 @@ export async function createSignedUpload(input: {
   modifiedFilename?: string
   description?: string
   artist?: string
+  sourceOrg?: string
+  systemLibrary?: boolean
   genreTagIds?: number[]
   moodTagIds?: number[]
   themeTagIds?: number[]
@@ -1609,6 +1617,9 @@ export async function createSignedUpload(input: {
   const description = rawDescription.length ? rawDescription : null
   const rawArtist = (input.artist || '').trim()
   const artist = rawArtist.length ? rawArtist.slice(0, 255) : null
+  const rawSourceOrg = (input.sourceOrg || '').trim().toLowerCase()
+  const sourceOrg = rawSourceOrg.length ? rawSourceOrg.slice(0, 64) : null
+  const systemLibrary = Boolean(input.systemLibrary)
   const safe = sanitizeFilename(filename)
   const lowerCt = String(contentType || '').toLowerCase()
   const extFromName = ((safe || '').match(/\.[^.]+$/) || [''])[0].toLowerCase()
@@ -1625,6 +1636,7 @@ export async function createSignedUpload(input: {
         return 1
       })()
     : 0
+  const ownerUserId = input.ownerUserId != null && Number.isFinite(input.ownerUserId) ? Number(input.ownerUserId) : (actorId ?? null)
 
   if (actorId) {
     try {
@@ -1664,6 +1676,17 @@ export async function createSignedUpload(input: {
     // System audio is curated by site_admin only (copyright risk).
     const ok = await can(actorId!, PERM.VIDEO_DELETE_ANY).catch(() => false)
     if (!ok) throw new ForbiddenError()
+  }
+  if (systemLibrary) {
+    // System library videos are curated by site_admin only.
+    if (kind !== 'video') throw new DomainError('invalid_library_kind', 'invalid_library_kind', 400)
+    const ok = await can(actorId!, PERM.VIDEO_DELETE_ANY).catch(() => false)
+    if (!ok) throw new ForbiddenError()
+    if (sourceOrg && !['cspan', 'other'].includes(sourceOrg)) {
+      const err: any = new DomainError('invalid_source_org', 'invalid_source_org', 400)
+      err.detail = { sourceOrg }
+      throw err
+    }
   }
 
   if (kind === 'image') {
@@ -1705,8 +1728,8 @@ export async function createSignedUpload(input: {
   let result: any
   try {
     ;[result] = await db.query(
-      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, image_role, is_system)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?)`,
+      `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, image_role, is_system, user_id, is_system_library, source_org)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?, ?, ?, ?)`,
       [
         UPLOAD_BUCKET,
         key,
@@ -1723,6 +1746,9 @@ export async function createSignedUpload(input: {
         kind,
         imageRole,
         isSystem,
+        ownerUserId,
+        systemLibrary ? 1 : 0,
+        systemLibrary ? sourceOrg : null,
       ]
     )
   } catch (e: any) {
@@ -1749,8 +1775,8 @@ export async function createSignedUpload(input: {
       )
     } else if (msg.includes('Unknown column') && msg.includes('image_role')) {
       ;[result] = await db.query(
-        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, is_system)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?)`,
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, is_system, user_id, is_system_library, source_org)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?, ?, ?, ?)`,
         [
           UPLOAD_BUCKET,
           key,
@@ -1766,12 +1792,15 @@ export async function createSignedUpload(input: {
           dateYmd,
           kind,
           isSystem,
+          ownerUserId,
+          systemLibrary ? 1 : 0,
+          systemLibrary ? sourceOrg : null,
         ]
       )
     } else if (msg.includes('Unknown column') && msg.includes('is_system')) {
       ;[result] = await db.query(
-        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?)`,
+        `INSERT INTO uploads (s3_bucket, s3_key, original_filename, modified_filename, description, content_type, size_bytes, width, height, duration_seconds, asset_uuid, date_ymd, status, kind, user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'signed', ?, ?)`,
         [
           UPLOAD_BUCKET,
           key,
@@ -1786,6 +1815,7 @@ export async function createSignedUpload(input: {
           assetUuid,
           dateYmd,
           kind,
+          ownerUserId,
         ]
       )
     } else {
@@ -1936,8 +1966,9 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
     const kind = String((prev as any).kind || 'video').toLowerCase()
     const ownerUserId = (prev as any).user_id != null ? Number((prev as any).user_id) : null
     const isSystem = Number((prev as any).is_system || 0) === 1
+    const isSystemLibrary = Number((prev as any).is_system_library || 0) === 1
     const sourceDeletedAt = (prev as any).source_deleted_at != null ? String((prev as any).source_deleted_at) : null
-	    if (!isSystem && !sourceDeletedAt && kind === 'video' && ownerUserId && prevStatus !== 'uploaded') {
+	    if (!sourceDeletedAt && kind === 'video' && ownerUserId && prevStatus !== 'uploaded') {
 	      try {
 	        await enqueueJob('upload_thumb_v1', {
 	          uploadId: Number(prev.id),
@@ -1964,6 +1995,17 @@ export async function markComplete(input: { id: number; etag?: string; sizeBytes
 	      } catch (e) {
 	        // Best-effort: proxy is optional; editor can show a "generating" state.
 	      }
+        // For system library videos, enqueue transcription as soon as upload completes.
+        if (isSystemLibrary) {
+          try {
+            await enqueueJob('assemblyai_upload_transcript_v1', {
+              uploadId: Number(prev.id),
+              userId: ownerUserId,
+            })
+          } catch {
+            // best-effort
+          }
+        }
 	    }
 
     // Narration (voice memo) uploads: generate an audio envelope from the audio file itself.
