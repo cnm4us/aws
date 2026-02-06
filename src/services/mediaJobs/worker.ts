@@ -156,6 +156,10 @@ async function runOne(job: any, attempt: any, workerId: string) {
     const s3BytesIn = s3Ops.reduce((sum, o) => sum + (o?.op === 'download' ? Number(o?.bytes) || 0 : 0), 0)
     const s3BytesOut = s3Ops.reduce((sum, o) => sum + (o?.op === 'upload' ? Number(o?.bytes) || 0 : 0), 0)
     const durationMs = Date.now() - startedMs
+    const durationSec = durationMs > 0 ? durationMs / 1000 : 0
+    const overheadMs = durationMs - ffmpegMs
+    const ioInBytesPerSec = durationSec > 0 ? s3BytesIn / durationSec : undefined
+    const ioOutBytesPerSec = durationSec > 0 ? s3BytesOut / durationSec : undefined
     const inputDurationSeconds = Number(metricsInput?.durationSeconds ?? inputSummary?.duration)
     const rtf =
       Number.isFinite(inputDurationSeconds) && inputDurationSeconds > 0 && durationMs > 0
@@ -172,8 +176,11 @@ async function runOne(job: any, attempt: any, workerId: string) {
       ffmpegCommands: trimmed,
       metrics: {
         ffmpegMs,
+        overheadMs: Number.isFinite(overheadMs) ? overheadMs : undefined,
         s3BytesIn,
         s3BytesOut,
+        ioInBytesPerSec,
+        ioOutBytesPerSec,
         rtf,
         input: metricsInputMerged,
         host: hostMetrics || undefined,

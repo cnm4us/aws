@@ -4524,7 +4524,16 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
           Number.isFinite(Number(input?.width)) && Number.isFinite(Number(input?.height))
             ? `${Number(input.width)}x${Number(input.height)}`
             : ''
-        const metricsLabel = [resLabel, inputDurLabel, rtfLabel].filter(Boolean).join(' • ') || '-'
+        const ioIn = Number(metrics?.ioInBytesPerSec)
+        const ioOut = Number(metrics?.ioOutBytesPerSec)
+        const ioLabel =
+          Number.isFinite(ioIn) || Number.isFinite(ioOut)
+            ? `IO ${Number.isFinite(ioIn) ? (ioIn / 1e6).toFixed(1) : '-'} / ${Number.isFinite(ioOut) ? (ioOut / 1e6).toFixed(1) : '-'} MB/s`
+            : ''
+        const overheadMs = Number(metrics?.overheadMs)
+        const overheadLabel = Number.isFinite(overheadMs) ? `OH ${(overheadMs / 1000).toFixed(1)}s` : ''
+        const metricsLabel = [resLabel, inputDurLabel, rtfLabel, ioLabel, overheadLabel].filter(Boolean).join(' • ') || '-'
+        const typePill = `<span class="pill" style="background:rgba(255,255,255,0.08); font-size:10px; padding:2px 6px">${escapeHtml(type)}</span>`
         body += `<tr>`
         body += `<td><a href="/admin/media-jobs/${id}">#${id}</a></td>`
         body += `<td>${statusPill(st)}</td>`
@@ -4533,7 +4542,7 @@ pagesRouter.get('/admin/media-jobs', async (req: any, res: any) => {
         body += `<td>${escapeHtml(created)}</td>`
         body += `<td>${escapeHtml(updated)}</td>`
         body += `<td>${escapeHtml(durLabel)}</td>`
-        body += `<td>${escapeHtml(metricsLabel)}</td>`
+        body += `<td><div style="display:flex; flex-direction:column; gap:4px">${typePill}<div>${escapeHtml(metricsLabel)}</div></div></td>`
 	        body += `<td style="white-space:nowrap">
 	          <a class="btn" href="/admin/media-jobs/${id}" style="padding:6px 10px; font-size:12px">View</a>
 	          <form method="post" action="/admin/media-jobs/${id}/retry" style="display:inline" onsubmit="return confirm('Retry media job #${id}?');">
@@ -4674,6 +4683,10 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
       const metricsHost = metrics?.host || {}
       const durationMs = summary.durationMs != null ? Number(summary.durationMs) : null
       const durationLabel = durationMs != null ? `${(durationMs / 1000).toFixed(2)}s` : ''
+      const ffmpegMs = Number(metrics?.ffmpegMs)
+      const ffmpegLabel = Number.isFinite(ffmpegMs) ? `${(ffmpegMs / 1000).toFixed(2)}s` : ''
+      const overheadMs = Number(metrics?.overheadMs)
+      const overheadLabel = Number.isFinite(overheadMs) ? `${(overheadMs / 1000).toFixed(2)}s` : ''
       const inputDuration = Number(metricsInput?.durationSeconds)
       const inputDurationLabel = Number.isFinite(inputDuration) ? `${inputDuration.toFixed(2)}s` : ''
       const inputRes =
@@ -4688,6 +4701,12 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
       const inputBitrateLabel = Number.isFinite(inputBitrate) ? `${inputBitrate} kbps` : ''
       const rtfVal = Number(metrics?.rtf)
       const rtfLabel = Number.isFinite(rtfVal) ? `${rtfVal.toFixed(3)}x` : ''
+      const ioIn = Number(metrics?.ioInBytesPerSec)
+      const ioOut = Number(metrics?.ioOutBytesPerSec)
+      const ioLabel =
+        Number.isFinite(ioIn) || Number.isFinite(ioOut)
+          ? `${Number.isFinite(ioIn) ? (ioIn / 1e6).toFixed(2) : '-'} / ${Number.isFinite(ioOut) ? (ioOut / 1e6).toFixed(2) : '-'} MB/s`
+          : ''
       const hostLabel = metricsHost?.instanceType
         ? `${metricsHost.instanceType} • ${metricsHost.cpuCores || '?'} cores • ${metricsHost.memGb || '?'}GB`
         : ''
@@ -4699,6 +4718,9 @@ pagesRouter.get('/admin/media-jobs/:id', async (req: any, res: any) => {
               Finished: ${escapeHtml(String(summary.finishedAt || ''))}<br/>
               Duration: ${escapeHtml(durationLabel)}<br/>
               ${rtfLabel ? `RTF: ${escapeHtml(rtfLabel)}<br/>` : ''}
+              ${ffmpegLabel ? `ffmpeg: ${escapeHtml(ffmpegLabel)}<br/>` : ''}
+              ${overheadLabel ? `Overhead: ${escapeHtml(overheadLabel)}<br/>` : ''}
+              ${ioLabel ? `IO: ${escapeHtml(ioLabel)}<br/>` : ''}
               ${inputDurationLabel || inputRes || inputCodec || inputBitrateLabel ? `Input: ${escapeHtml([inputRes, inputDurationLabel, inputCodec, inputBitrateLabel].filter(Boolean).join(' • '))}<br/>` : ''}
               ${hostLabel ? `Host: ${escapeHtml(hostLabel)}<br/>` : ''}
             </div>
