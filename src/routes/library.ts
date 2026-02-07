@@ -1,8 +1,18 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth'
 import * as librarySvc from '../features/library/service'
+import { librarySourceOptions } from '../config/librarySources'
 
 export const libraryRouter = Router()
+
+libraryRouter.get('/api/library/source-orgs', requireAuth, async (_req, res) => {
+  try {
+    return res.json({ items: librarySourceOptions })
+  } catch (err: any) {
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_list', detail: String(err?.message || err) })
+  }
+})
 
 libraryRouter.get('/api/library/videos', requireAuth, async (req, res) => {
   try {

@@ -26,6 +26,7 @@ import { buildUploadAudioEnvelopeKey } from '../../utils/uploadAudioEnvelope'
 import { buildUploadFreezeFrameKey } from '../../utils/uploadFreezeFrame'
 import { UPLOADS_CDN_DOMAIN, UPLOADS_CDN_SIGNED_URL_TTL_SECONDS, UPLOADS_CLOUDFRONT_KEY_PAIR_ID, UPLOADS_CLOUDFRONT_PRIVATE_KEY_PEM_BASE64 } from '../../config'
 import { buildCloudFrontSignedUrl } from '../../utils/cloudfrontSignedUrl'
+import { librarySourceValueSet } from '../../config/librarySources'
 
 export type ServiceContext = { userId?: number | null; ip?: string | null; userAgent?: string | null }
 
@@ -1682,7 +1683,7 @@ export async function createSignedUpload(input: {
     if (kind !== 'video') throw new DomainError('invalid_library_kind', 'invalid_library_kind', 400)
     const ok = await can(actorId!, PERM.VIDEO_DELETE_ANY).catch(() => false)
     if (!ok) throw new ForbiddenError()
-    if (sourceOrg && !['cspan', 'other'].includes(sourceOrg)) {
+    if (sourceOrg && !librarySourceValueSet.has(sourceOrg)) {
       const err: any = new DomainError('invalid_source_org', 'invalid_source_org', 400)
       err.detail = { sourceOrg }
       throw err

@@ -28,6 +28,11 @@ type AudioEnvelope = {
   points?: Array<{ t: number; v: number }>
 }
 
+type LibrarySourceOption = {
+  value: string
+  label: string
+}
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -65,6 +70,57 @@ function formatTime(seconds: number | null | undefined): string {
   return `${m}:${String(ss).padStart(2, '0')}`
 }
 
+const FALLBACK_LIBRARY_SOURCES: LibrarySourceOption[] = [
+  { value: 'cspan', label: 'CSPAN' },
+  { value: 'glenn kirschner', label: 'Glenn Kirschner' },
+  { value: 'other', label: 'Other' },
+]
+
+function normalizeLibrarySources(items: any): LibrarySourceOption[] {
+  if (!Array.isArray(items)) return []
+  const normalized: LibrarySourceOption[] = []
+  for (const item of items) {
+    if (!item) continue
+    const value = String(item.value || '').trim().toLowerCase()
+    const label = String(item.label || '').trim()
+    if (!value || !label) continue
+    normalized.push({ value, label })
+  }
+  return normalized
+}
+
+function getLibrarySourceLabel(value: string | null | undefined, options: LibrarySourceOption[]): string | null {
+  const v = String(value || '').trim().toLowerCase()
+  if (!v) return null
+  const hit = options.find((opt) => opt.value === v)
+  return hit ? hit.label : null
+}
+
+function useLibrarySourceOptions(): LibrarySourceOption[] {
+  const [options, setOptions] = useState<LibrarySourceOption[]>(FALLBACK_LIBRARY_SOURCES)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/library/source-orgs', { credentials: 'same-origin' })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+        const items = normalizeLibrarySources(json?.items)
+        if (!cancelled && items.length) setOptions(items)
+      } catch {
+        if (!cancelled) setOptions(FALLBACK_LIBRARY_SOURCES)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return options
+}
+
 const LibraryListPage: React.FC = () => {
   const [videos, setVideos] = useState<LibraryVideo[]>([])
   const [loading, setLoading] = useState(false)
@@ -72,6 +128,7 @@ const LibraryListPage: React.FC = () => {
   const [q, setQ] = useState('')
   const [sourceOrg, setSourceOrg] = useState('all')
   const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
+  const sourceOptions = useLibrarySourceOptions()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -118,6 +175,17 @@ const LibraryListPage: React.FC = () => {
     void loadVideos()
   }, [loadVideos])
 
+  useEffect(() => {
+    if (!sourceOrg || sourceOrg === 'all') return
+    const allowed = sourceOptions.some((opt) => opt.value === sourceOrg)
+    if (!allowed) setSourceOrg('all')
+  }, [sourceOrg, sourceOptions])
+
+  const filterOptions = useMemo(
+    () => [{ value: 'all', label: 'All sources' }, ...sourceOptions],
+    [sourceOptions]
+  )
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -153,9 +221,11 @@ const LibraryListPage: React.FC = () => {
                 color: '#fff',
               }}
             >
-              <option value="all">All sources</option>
-              <option value="cspan">CSPAN</option>
-              <option value="other">Other</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -182,8 +252,11 @@ const LibraryListPage: React.FC = () => {
             {!loading && !videos.length ? <div>No library videos found.</div> : null}
             {videos.map((v) => {
               const name = (v.modified_filename || v.original_filename || `Video ${v.id}`).toString()
+              const sourceLabel =
+                getLibrarySourceLabel(v.source_org, sourceOptions) ||
+                (v.source_org ? String(v.source_org).toUpperCase() : null)
               const meta = [
-                v.source_org ? String(v.source_org).toUpperCase() : null,
+                sourceLabel,
                 v.duration_seconds ? formatDuration(v.duration_seconds) : null,
                 v.width && v.height ? `${v.width}×${v.height}` : null,
               ]
@@ -337,6 +410,7 @@ const LibraryCreateClipPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const wavePollRef = useRef<number | null>(null)
+  const sourceOptions = useLibrarySourceOptions()
   const [isScrubbing, setIsScrubbing] = useState(false)
   const scrubPointerIdRef = useRef<number | null>(null)
   const scrubStartXRef = useRef(0)
@@ -771,14 +845,17 @@ const LibraryCreateClipPage: React.FC = () => {
 
   const meta = useMemo(() => {
     if (!selectedVideo) return ''
+    const sourceLabel =
+      getLibrarySourceLabel(selectedVideo.source_org, sourceOptions) ||
+      (selectedVideo.source_org ? String(selectedVideo.source_org).toUpperCase() : null)
     return [
-      selectedVideo.source_org ? String(selectedVideo.source_org).toUpperCase() : null,
+      sourceLabel,
       selectedVideo.duration_seconds ? formatDuration(selectedVideo.duration_seconds) : null,
       selectedVideo.width && selectedVideo.height ? `${selectedVideo.width}×${selectedVideo.height}` : null,
     ]
       .filter(Boolean)
       .join(' · ')
-  }, [selectedVideo])
+  }, [selectedVideo, sourceOptions])
 
   const progressPercent = useMemo(() => {
     if (!duration || duration <= 0) return 0

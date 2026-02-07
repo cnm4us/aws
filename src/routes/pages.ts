@@ -21,6 +21,7 @@ import { GetObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from '@a
 import { s3 } from '../services/s3'
 import { pipeline } from 'stream/promises'
 import { TERMS_UPLOAD_VERSION } from '../config'
+import { librarySourceOptions, getLibrarySourceLabel } from '../config/librarySources'
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -4880,8 +4881,7 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
     body += `<select name="source_org" style="min-width:160px">`
     const sourceOptions = [
       { value: 'all', label: 'All sources' },
-      { value: 'cspan', label: 'CSPAN' },
-      { value: 'other', label: 'Other' },
+      ...librarySourceOptions,
     ]
     for (const opt of sourceOptions) {
       const selected = (sourceOrg || 'all') === opt.value ? 'selected' : ''
@@ -4900,11 +4900,12 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
       for (const row of items) {
         const name = String(row.modified_filename || row.original_filename || `Video ${row.id}`)
         const desc = String(row.description || '')
-        const src = String(row.source_org || 'other')
+        const srcValue = String(row.source_org || 'other').trim().toLowerCase()
+        const srcLabel = getLibrarySourceLabel(srcValue) || srcValue.toUpperCase()
         const dims = row.width && row.height ? `${row.width}×${row.height}` : ''
         const duration = row.duration_seconds ? `${row.duration_seconds}s` : ''
         const size = row.size_bytes ? `${Math.round(Number(row.size_bytes) / 1024 / 1024)} MB` : ''
-        const meta = [src.toUpperCase(), dims, duration, size].filter(Boolean).join(' · ')
+        const meta = [srcLabel, dims, duration, size].filter(Boolean).join(' · ')
         body += `<div class="card">`
         body += `<div class="card-title">${escapeHtml(name)}</div>`
         if (meta) body += `<div class="field-hint">${escapeHtml(meta)}</div>`

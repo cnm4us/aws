@@ -9,6 +9,11 @@ type MeResponse = {
   uploadTermsVersion?: string
 }
 
+type LibrarySourceOption = {
+  value: string
+  label: string
+}
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -138,6 +143,25 @@ function acceptForKind(kind: 'video' | 'logo' | 'audio' | 'image'): string {
   return 'video/*'
 }
 
+const FALLBACK_LIBRARY_SOURCES: LibrarySourceOption[] = [
+  { value: 'cspan', label: 'CSPAN' },
+  { value: 'glenn kirschner', label: 'Glenn Kirschner' },
+  { value: 'other', label: 'Other' },
+]
+
+function normalizeLibrarySources(items: any): LibrarySourceOption[] {
+  if (!Array.isArray(items)) return []
+  const normalized: LibrarySourceOption[] = []
+  for (const item of items) {
+    if (!item) continue
+    const value = String(item.value || '').trim().toLowerCase()
+    const label = String(item.label || '').trim()
+    if (!value || !label) continue
+    normalized.push({ value, label })
+  }
+  return normalized
+}
+
 const UploadNewPage: React.FC = () => {
   const [me, setMe] = useState<MeResponse | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -161,6 +185,7 @@ const UploadNewPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [sourceOptions, setSourceOptions] = useState<LibrarySourceOption[]>(FALLBACK_LIBRARY_SOURCES)
   const [sourceOrg, setSourceOrg] = useState('cspan')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const returnHref = getReturnHref()
@@ -187,6 +212,39 @@ const UploadNewPage: React.FC = () => {
       return null
     }
   })()
+
+  useEffect(() => {
+    let cancelled = false
+    const loadSources = async () => {
+      try {
+        const res = await fetch('/api/library/source-orgs', { credentials: 'same-origin' })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+        const items = normalizeLibrarySources(json?.items)
+        if (!cancelled && items.length) {
+          setSourceOptions(items)
+          setSourceOrg((prev) => {
+            if (items.some((opt) => opt.value === prev)) return prev
+            const preferred = items.find((opt) => opt.value === 'cspan') || items[0]
+            return preferred ? preferred.value : prev
+          })
+        }
+      } catch {
+        if (!cancelled) {
+          setSourceOptions(FALLBACK_LIBRARY_SOURCES)
+          setSourceOrg((prev) => {
+            if (FALLBACK_LIBRARY_SOURCES.some((opt) => opt.value === prev)) return prev
+            const preferred = FALLBACK_LIBRARY_SOURCES.find((opt) => opt.value === 'cspan') || FALLBACK_LIBRARY_SOURCES[0]
+            return preferred ? preferred.value : prev
+          })
+        }
+      }
+    }
+    void loadSources()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -561,8 +619,11 @@ const UploadNewPage: React.FC = () => {
                   }}
                   disabled={uploading}
                 >
-                  <option value="cspan">CSPAN</option>
-                  <option value="other">Other</option>
+                  {sourceOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             ) : null}
