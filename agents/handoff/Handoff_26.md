@@ -30,6 +30,7 @@ Summary
 - Library list/create-clip metadata now uses source labels; upload form now loads options dynamically and defaults to CSPAN when available.
 - Updated `/library` list cards: add thumbnail preview, truncate description, right-align View/Create actions, and enhance modal with full description + X close.
 - Split `/library` modals: title opens description-only modal; “View Video” opens video-only modal; list description now truncated to 50 words.
+- Create-clip header description now truncates to 50 words with a “more/less” toggle.
 - Tests still pending.
 
 Decisions (carried + new)
@@ -67,6 +68,29 @@ Meta:
 
 Commit:
 - 8d2cce8
+
+Subject: feat(library): split list modals
+
+Context:
+- Refine library list UX to separate description vs video views.
+
+Approach:
+- Title now opens a description-only modal; “View Video” opens a video-only modal; list truncation reduced to 50 words.
+
+Impact:
+- Cleaner, purpose-specific modals with shorter list descriptions.
+
+Tests:
+- Not run (manual checks pending).
+
+Meta:
+- Affects: frontend/src/app/Library.tsx; agents/handoff/Handoff_26.md
+- Routes: none
+- DB: none
+- Flags: none
+
+Commit:
+- ff2b306
 
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])

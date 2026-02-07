@@ -216,6 +216,7 @@ const LibraryListPage: React.FC = () => {
                 border: '1px solid rgba(255,255,255,0.18)',
                 background: '#0b0b0b',
                 color: '#fff',
+                fontSize: 16,
               }}
             />
             <select
@@ -228,6 +229,7 @@ const LibraryListPage: React.FC = () => {
                 border: '1px solid rgba(255,255,255,0.18)',
                 background: '#0b0b0b',
                 color: '#fff',
+                fontSize: 16,
               }}
             >
               {filterOptions.map((opt) => (
@@ -506,6 +508,7 @@ const LibraryCreateClipPage: React.FC = () => {
   const [clipEnd, setClipEnd] = useState<number | null>(null)
   const [clipTitle, setClipTitle] = useState('')
   const [clipDescription, setClipDescription] = useState('')
+  const [showFullDescription, setShowFullDescription] = useState(false)
   const [clipError, setClipError] = useState<string | null>(null)
   const [clipSaving, setClipSaving] = useState(false)
   const [clipMessage, setClipMessage] = useState<string | null>(null)
@@ -571,6 +574,7 @@ const LibraryCreateClipPage: React.FC = () => {
     setSearchResults([])
     setSearchQuery('')
     setSearchError(null)
+    setShowFullDescription(false)
   }, [selectedVideo?.id])
 
   useEffect(() => {
@@ -989,9 +993,32 @@ const LibraryCreateClipPage: React.FC = () => {
           <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.14)', background: '#0c0c0c' }}>
             <div style={{ fontWeight: 900, fontSize: 18 }}>{selectedVideo.modified_filename || selectedVideo.original_filename}</div>
             {meta ? <div style={{ marginTop: 6, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
-            {selectedVideo.description ? (
-              <div style={{ marginTop: 6, color: '#a8a8a8', fontSize: 13 }}>{selectedVideo.description}</div>
-            ) : null}
+            {selectedVideo.description ? (() => {
+              const description = String(selectedVideo.description || '')
+              const truncated = truncateWords(description, 50)
+              return (
+                <div style={{ marginTop: 6, color: '#a8a8a8', fontSize: 13, lineHeight: 1.5 }}>
+                  <div>{showFullDescription ? description : truncated.text}</div>
+                  {truncated.truncated ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullDescription((prev) => !prev)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#9bbcff',
+                        fontWeight: 700,
+                        padding: 0,
+                        marginTop: 6,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {showFullDescription ? 'less' : 'more'}
+                    </button>
+                  ) : null}
+                </div>
+              )
+            })() : null}
             <div style={{ marginTop: 10, position: 'relative' }}>
               <video
                 ref={videoRef}
