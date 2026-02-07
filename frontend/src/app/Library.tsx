@@ -337,8 +337,6 @@ const LibraryCreateClipPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const wavePollRef = useRef<number | null>(null)
-  const captionsContainerRef = useRef<HTMLDivElement | null>(null)
-  const activeCaptionRef = useRef<HTMLButtonElement | null>(null)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const scrubPointerIdRef = useRef<number | null>(null)
   const scrubStartXRef = useRef(0)
@@ -704,40 +702,10 @@ const LibraryCreateClipPage: React.FC = () => {
     }
     return -1
   }, [captions, currentTime])
-
-  const visibleCaptions = useMemo(() => {
-    if (!captions.length) return []
-    const windowSize = 8
-    if (activeCaptionIndex < 0) {
-      return captions.slice(0, windowSize).map((cue, idx) => ({ cue, index: idx }))
-    }
-    let start = Math.max(0, activeCaptionIndex - 1)
-    if (start + windowSize > captions.length) {
-      start = Math.max(0, captions.length - windowSize)
-    }
-    const end = Math.min(captions.length, start + windowSize)
-    return captions.slice(start, end).map((cue, idx) => ({ cue, index: start + idx }))
+  const activeCaption = useMemo(() => {
+    if (activeCaptionIndex < 0) return null
+    return captions[activeCaptionIndex] || null
   }, [captions, activeCaptionIndex])
-
-  useEffect(() => {
-    if (!captionsEnabled) return
-    const container = captionsContainerRef.current
-    const active = activeCaptionRef.current
-    if (!container || !active) return
-    const handle = window.requestAnimationFrame(() => {
-      const gap = 6
-      const desiredOffset = active.offsetHeight + gap
-      const containerRect = container.getBoundingClientRect()
-      const activeRect = active.getBoundingClientRect()
-      const activeOffset = activeRect.top - containerRect.top + container.scrollTop
-      let target = activeOffset - desiredOffset
-      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-      if (!Number.isFinite(target)) target = 0
-      target = Math.min(maxScroll, Math.max(0, target))
-      container.scrollTop = target
-    })
-    return () => window.cancelAnimationFrame(handle)
-  }, [activeCaptionIndex, captionsEnabled, visibleCaptions.length])
 
   const setInPoint = useCallback(() => {
     const vid = videoRef.current
@@ -812,6 +780,17 @@ const LibraryCreateClipPage: React.FC = () => {
       .join(' · ')
   }, [selectedVideo])
 
+  const progressPercent = useMemo(() => {
+    if (!duration || duration <= 0) return 0
+    const pct = (currentTime / duration) * 100
+    return Math.min(100, Math.max(0, pct))
+  }, [currentTime, duration])
+
+  const clipLengthLabel = useMemo(() => {
+    if (clipStart == null || clipEnd == null) return '—'
+    return formatTime(clipEnd - clipStart)
+  }, [clipStart, clipEnd])
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -834,7 +813,7 @@ const LibraryCreateClipPage: React.FC = () => {
             {selectedVideo.description ? (
               <div style={{ marginTop: 6, color: '#a8a8a8', fontSize: 13 }}>{selectedVideo.description}</div>
             ) : null}
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, position: 'relative' }}>
               <video
                 ref={videoRef}
                 playsInline
@@ -856,165 +835,269 @@ const LibraryCreateClipPage: React.FC = () => {
                   setDuration(Number.isFinite(d) ? d : 0)
                 }}
               />
-            </div>
-
-            <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button
-                  type="button"
-                  onClick={handleTogglePlay}
+              <button
+                type="button"
+                onClick={() => setCaptionsEnabled((prev) => !prev)}
+                aria-pressed={captionsEnabled}
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  width: 44,
+                  height: 36,
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: captionsEnabled ? '#0a84ff' : 'rgba(0,0,0,0.55)',
+                  color: '#fff',
+                  fontWeight: 800,
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                CC
+              </button>
+              {captionsEnabled && activeCaption ? (
+                <div
                   style={{
-                    width: 44,
-                    height: 36,
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: '#111',
-                    color: '#fff',
-                    fontWeight: 900,
+                    position: 'absolute',
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
                   }}
                 >
-                  {isPlaying ? '❚❚' : '▶'}
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 0}
-                  step={0.1}
-                  value={Math.min(currentTime, duration || 0)}
-                  onChange={(e) => handleScrub(Number(e.target.value))}
-                  style={{ flex: 1 }}
-                />
-                <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCaptionsEnabled((prev) => !prev)}
-                  aria-pressed={captionsEnabled}
-                  style={{
-                    width: 44,
-                    height: 36,
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: captionsEnabled ? '#0a84ff' : '#111',
-                    color: '#fff',
-                    fontWeight: 800,
-                  }}
-                >
-                  CC
-                </button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button
-                  type="button"
-                  onPointerDown={handleNudgePointerDown(-10)}
-                  onPointerUp={handleNudgePointerUp}
-                  onPointerLeave={handleNudgePointerUp}
-                  onPointerCancel={handleNudgePointerUp}
-                  style={{
-                    minWidth: 56,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#161616',
-                    color: '#fff',
-                    fontWeight: 700,
-                  }}
-                >
-                  -10s
-                </button>
-                <div style={{ flex: 1, height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
-                  <canvas
-                    ref={waveCanvasRef}
-                    onPointerDown={handleWavePointerDown}
-                    onPointerMove={handleWavePointerMove}
-                    onPointerUp={endWaveScrub}
-                    onPointerCancel={endWaveScrub}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      display: 'block',
-                      cursor: isScrubbing ? 'grabbing' : 'grab',
-                      touchAction: 'none',
-                    }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onPointerDown={handleNudgePointerDown(10)}
-                  onPointerUp={handleNudgePointerUp}
-                  onPointerLeave={handleNudgePointerUp}
-                  onPointerCancel={handleNudgePointerUp}
-                  style={{
-                    minWidth: 56,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#161616',
-                    color: '#fff',
-                    fontWeight: 700,
-                  }}
-                >
-                  +10s
-                </button>
-              </div>
-              {waveStatus === 'pending' ? <div style={{ color: '#9aa0a6' }}>Waveform is generating…</div> : null}
-              {waveStatus === 'error' && waveError ? <div style={{ color: '#ffb3b3' }}>{waveError}</div> : null}
-            </div>
-
-            {captionsEnabled ? (
-              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontWeight: 800 }}>Captions</div>
-                  {captions.length ? <div style={{ color: '#888', fontSize: 12 }}>{captions.length} cues</div> : null}
-                </div>
-                {captionsStatus === 'loading' ? <div>Loading captions…</div> : null}
-                {captionsError ? <div style={{ color: '#ffb3b3' }}>{captionsError}</div> : null}
-                {!captionsError && captionsStatus === 'ready' && !captions.length ? (
-                  <div style={{ color: '#bbb' }}>No captions available.</div>
-                ) : null}
-                {visibleCaptions.length ? (
                   <div
-                    ref={captionsContainerRef}
                     style={{
-                      maxHeight: 200,
-                      overflow: 'auto',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      background: '#0f0f0f',
-                      padding: 8,
-                      display: 'grid',
-                      gap: 6,
+                      maxWidth: '100%',
+                      background: 'rgba(0,0,0,0.6)',
+                      color: '#fff',
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      fontSize: 14,
+                      lineHeight: 1.4,
+                      textAlign: 'center',
                     }}
                   >
-                    {visibleCaptions.map(({ cue, index }) => {
-                      const isActive = index === activeCaptionIndex
-                      return (
-                        <button
-                          key={`${cue.startSeconds}-${index}`}
-                          ref={isActive ? activeCaptionRef : undefined}
-                          type="button"
-                          onClick={() => setCurrentTime(cue.startSeconds)}
-                          style={{
-                            textAlign: 'left',
-                            padding: 8,
-                            borderRadius: 8,
-                            border: isActive ? '1px solid rgba(10,132,255,0.7)' : '1px solid rgba(255,255,255,0.08)',
-                            background: isActive ? 'rgba(10,132,255,0.15)' : '#111',
-                            color: '#fff',
-                          }}
-                        >
-                          <div style={{ fontWeight: 700, fontSize: 12, color: '#b8c6ff' }}>
-                            {formatTime(cue.startSeconds)} → {formatTime(cue.endSeconds)}
-                          </div>
-                          <div style={{ marginTop: 4, color: '#ddd', fontSize: 13 }}>{cue.text}</div>
-                        </button>
-                      )
-                    })}
+                    {activeCaption.text}
                   </div>
-                ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ marginTop: 6 }}>
+              <input
+                type="range"
+                min={0}
+                max={duration || 0}
+                step={0.1}
+                value={Math.min(currentTime, duration || 0)}
+                onChange={(e) => handleScrub(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  height: 6,
+                  borderRadius: 999,
+                  accentColor: '#f0c062',
+                  background: `linear-gradient(90deg, #f0c062 ${progressPercent}%, rgba(255,255,255,0.2) ${progressPercent}%)`,
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <div style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+                <canvas
+                  ref={waveCanvasRef}
+                  onPointerDown={handleWavePointerDown}
+                  onPointerMove={handleWavePointerMove}
+                  onPointerUp={endWaveScrub}
+                  onPointerCancel={endWaveScrub}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    cursor: isScrubbing ? 'grabbing' : 'grab',
+                    touchAction: 'none',
+                  }}
+                />
               </div>
-            ) : null}
+              {waveStatus === 'pending' ? <div style={{ color: '#9aa0a6', marginTop: 6 }}>Waveform is generating…</div> : null}
+              {waveStatus === 'error' && waveError ? <div style={{ color: '#ffb3b3', marginTop: 6 }}>{waveError}</div> : null}
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                color: '#bbb',
+                fontSize: 16,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <div>{formatTime(currentTime)} / {formatTime(duration)}</div>
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                Clip:{' '}
+                <span style={{ color: '#f0c062' }}>
+                  {clipStart != null ? formatTime(clipStart) : '—'} | {clipEnd != null ? formatTime(clipEnd) : '—'} | {clipLengthLabel}
+                </span>{' '}
+                (5s–180s)
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                columnGap: 8,
+                rowGap: 8,
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                onClick={setInPoint}
+                aria-label="Set In"
+                title="Set In"
+                style={{
+                  width: 44,
+                  height: 36,
+                  borderRadius: 10,
+                  border: `1px solid ${clipStart != null ? '#f0c062' : 'rgba(255,255,255,0.18)'}`,
+                  background: '#1a1a1a',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  justifySelf: 'start',
+                }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="36"
+                  height="36"
+                  viewBox="0 0 128 128"
+                  fill="none"
+                  style={{ display: 'block' }}
+                >
+                  <path
+                    d="M82.5 44L94.5147 56.0147C99.201 60.701 99.201 68.299 94.5147 72.9853L82.5 85M56 64.2279L96.4558 64.2279"
+                    stroke={clipStart != null ? '#f0c062' : '#fff'}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="7"
+                  />
+                  <path
+                    d="M41 36L41 92"
+                    stroke={clipStart != null ? '#f0c062' : '#fff'}
+                    strokeLinecap="round"
+                    strokeWidth="7"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onPointerDown={handleNudgePointerDown(-10)}
+                onPointerUp={handleNudgePointerUp}
+                onPointerLeave={handleNudgePointerUp}
+                onPointerCancel={handleNudgePointerUp}
+                style={{
+                  minWidth: 56,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#161616',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 16,
+                  lineHeight: 1,
+                  justifySelf: 'center',
+                }}
+              >
+                -10s
+              </button>
+              <button
+                type="button"
+                onClick={handleTogglePlay}
+                style={{
+                  width: 44,
+                  height: 36,
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: '#111',
+                  color: '#fff',
+                  fontWeight: 900,
+                  fontSize: 21,
+                  lineHeight: 1,
+                  justifySelf: 'center',
+                }}
+              >
+                {isPlaying ? '❚❚' : '▶'}
+              </button>
+              <button
+                type="button"
+                onPointerDown={handleNudgePointerDown(10)}
+                onPointerUp={handleNudgePointerUp}
+                onPointerLeave={handleNudgePointerUp}
+                onPointerCancel={handleNudgePointerUp}
+                style={{
+                  minWidth: 56,
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#161616',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 16,
+                  lineHeight: 1,
+                  justifySelf: 'center',
+                }}
+              >
+                +10s
+              </button>
+              <button
+                type="button"
+                onClick={setOutPoint}
+                aria-label="Set Out"
+                title="Set Out"
+                style={{
+                  width: 44,
+                  height: 36,
+                  borderRadius: 10,
+                  border: `1px solid ${clipEnd != null ? '#f0c062' : 'rgba(255,255,255,0.18)'}`,
+                  background: '#1a1a1a',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  justifySelf: 'end',
+                }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="36"
+                  height="36"
+                  viewBox="0 0 128 128"
+                  fill="none"
+                  style={{ display: 'block', transform: 'scaleX(-1)' }}
+                >
+                  <path
+                    d="M82.5 44L94.5147 56.0147C99.201 60.701 99.201 68.299 94.5147 72.9853L82.5 85M56 64.2279L96.4558 64.2279"
+                    stroke={clipEnd != null ? '#f0c062' : '#fff'}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="7"
+                  />
+                  <path
+                    d="M41 36L41 92"
+                    stroke={clipEnd != null ? '#f0c062' : '#fff'}
+                    strokeLinecap="round"
+                    strokeWidth="7"
+                  />
+                </svg>
+              </button>
+            </div>
 
             <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
               <div style={{ fontWeight: 800 }}>Transcript Search</div>
@@ -1082,39 +1165,6 @@ const LibraryCreateClipPage: React.FC = () => {
 
             <div style={{ marginTop: 20, display: 'grid', gap: 10 }}>
               <div style={{ fontWeight: 800 }}>Create Clip</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={setInPoint}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#1a1a1a',
-                    color: '#fff',
-                    fontWeight: 700,
-                  }}
-                >
-                  Set In ({clipStart != null ? formatTime(clipStart) : '—'})
-                </button>
-                <button
-                  type="button"
-                  onClick={setOutPoint}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#1a1a1a',
-                    color: '#fff',
-                    fontWeight: 700,
-                  }}
-                >
-                  Set Out ({clipEnd != null ? formatTime(clipEnd) : '—'})
-                </button>
-                <div style={{ alignSelf: 'center', color: '#bbb' }}>
-                  Length: {clipStart != null && clipEnd != null ? formatTime(clipEnd - clipStart) : '—'} (5s–180s)
-                </div>
-              </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 <input
                   type="text"
@@ -1156,22 +1206,24 @@ const LibraryCreateClipPage: React.FC = () => {
               </div>
               {clipError ? <div style={{ color: '#ffb3b3' }}>{clipError}</div> : null}
               {clipMessage ? <div style={{ color: '#9ef0b4' }}>{clipMessage}</div> : null}
-              <button
-                type="button"
-                onClick={() => void handleSaveClip()}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  background: '#0a84ff',
-                  color: '#fff',
-                  fontWeight: 700,
-                  width: 'fit-content',
-                }}
-                disabled={clipSaving}
-              >
-                Save Clip
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveClip()}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0a84ff',
+                    color: '#fff',
+                    fontWeight: 700,
+                    width: 'fit-content',
+                  }}
+                  disabled={clipSaving}
+                >
+                  Save Clip
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
