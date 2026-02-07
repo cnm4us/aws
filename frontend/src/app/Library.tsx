@@ -70,6 +70,14 @@ function formatTime(seconds: number | null | undefined): string {
   return `${m}:${String(ss).padStart(2, '0')}`
 }
 
+function truncateWords(text: string, limit: number): { text: string; truncated: boolean } {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return { text: '', truncated: false }
+  const words = trimmed.split(/\s+/)
+  if (words.length <= limit) return { text: trimmed, truncated: false }
+  return { text: `${words.slice(0, limit).join(' ')}…`, truncated: true }
+}
+
 const FALLBACK_LIBRARY_SOURCES: LibrarySourceOption[] = [
   { value: 'cspan', label: 'CSPAN' },
   { value: 'glenn kirschner', label: 'Glenn Kirschner' },
@@ -128,6 +136,7 @@ const LibraryListPage: React.FC = () => {
   const [q, setQ] = useState('')
   const [sourceOrg, setSourceOrg] = useState('all')
   const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
+  const [selectedInfo, setSelectedInfo] = useState<LibraryVideo | null>(null)
   const sourceOptions = useLibrarySourceOptions()
 
   useEffect(() => {
@@ -262,6 +271,8 @@ const LibraryListPage: React.FC = () => {
               ]
                 .filter(Boolean)
                 .join(' · ')
+              const description = v.description ? String(v.description) : ''
+              const clippedDescription = description ? truncateWords(description, 50).text : ''
               const backParams = new URLSearchParams()
               if (q.trim()) backParams.set('q', q.trim())
               if (sourceOrg && sourceOrg !== 'all') backParams.set('source_org', sourceOrg)
@@ -283,10 +294,46 @@ const LibraryListPage: React.FC = () => {
                     gap: 8,
                   }}
                 >
-                  <div style={{ fontWeight: 800 }}>{name}</div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInfo(v)}
+                    style={{
+                      padding: 0,
+                      margin: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#fff',
+                      textAlign: 'left',
+                      fontWeight: 800,
+                      fontSize: 16,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {name}
+                  </button>
                   {meta ? <div style={{ color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
-                  {v.description ? <div style={{ color: '#a8a8a8', fontSize: 13 }}>{v.description}</div> : null}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      width: '100%',
+                      aspectRatio: '16 / 9',
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      background: '#0b0b0b',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                    }}
+                  >
+                    <img
+                      src={`/api/uploads/${encodeURIComponent(String(v.id))}/thumb`}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={(event) => {
+                        const target = event.currentTarget
+                        target.style.display = 'none'
+                      }}
+                    />
+                  </div>
+                  {clippedDescription ? <div style={{ color: '#a8a8a8', fontSize: 13 }}>{clippedDescription}</div> : null}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
                       onClick={() => setSelectedView(v)}
@@ -299,7 +346,7 @@ const LibraryListPage: React.FC = () => {
                         fontWeight: 700,
                       }}
                     >
-                      View
+                      View Video
                     </button>
                     <a
                       href={clipHref}
@@ -359,10 +406,13 @@ const LibraryListPage: React.FC = () => {
                     background: '#1a1a1a',
                     color: '#fff',
                     borderRadius: 8,
-                    padding: '6px 10px',
+                    padding: '4px 10px',
+                    fontSize: 18,
+                    fontWeight: 700,
                   }}
+                  aria-label="Close"
                 >
-                  Close
+                  ×
                 </button>
               </div>
               <div style={{ marginTop: 12 }}>
@@ -374,6 +424,58 @@ const LibraryListPage: React.FC = () => {
                   style={{ width: '100%', maxHeight: '70vh', background: '#000', borderRadius: 10 }}
                 />
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {selectedInfo ? (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 50,
+              padding: 20,
+            }}
+            onClick={() => setSelectedInfo(null)}
+          >
+            <div
+              style={{
+                width: 'min(720px, 100%)',
+                background: '#0b0b0b',
+                borderRadius: 12,
+                padding: 16,
+                border: '1px solid rgba(255,255,255,0.12)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontWeight: 800 }}>{selectedInfo.modified_filename || selectedInfo.original_filename}</div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedInfo(null)}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    fontSize: 18,
+                    fontWeight: 700,
+                  }}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              {selectedInfo.description ? (
+                <div style={{ marginTop: 10, color: '#c8c8c8', fontSize: 14, lineHeight: 1.5 }}>
+                  {selectedInfo.description}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

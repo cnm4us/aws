@@ -26,8 +26,10 @@ Priority Backlog (Refactor Objectives)
   - [ ] Future: predictive preloading hooks
 
 Summary
-- Implemented Plan 92: centralized library source config (incl. Glenn Kirschner), backend validation + API list endpoint, admin filter labels, and frontend dropdown wiring with fallbacks.
+- Implemented Plan 92 via `feat(library)`: centralized library source config (incl. Glenn Kirschner), backend validation + API list endpoint, admin filter labels, and frontend dropdown wiring with fallbacks.
 - Library list/create-clip metadata now uses source labels; upload form now loads options dynamically and defaults to CSPAN when available.
+- Updated `/library` list cards: add thumbnail preview, truncate description, right-align View/Create actions, and enhance modal with full description + X close.
+- Split `/library` modals: title opens description-only modal; “View Video” opens video-only modal; list description now truncated to 50 words.
 - Tests still pending.
 
 Decisions (carried + new)
@@ -40,6 +42,31 @@ Changes Since Last
 - Flags: none
 
 Commit Messages (ready to paste)
+Subject: feat(library): configure source options
+
+Context:
+- Add Glenn Kirschner and make library source options configurable.
+
+Approach:
+- Centralized source list in config; reused for validation, API, admin filters, and frontend dropdowns with fallbacks.
+
+Impact:
+- New selectable source appears across library and upload flows.
+
+Tests:
+- Not run (manual checks pending).
+
+References:
+- agents/implementation/plan_92.md
+
+Meta:
+- Affects: src/config/librarySources.ts; src/features/uploads/service.ts; src/routes/library.ts; src/routes/pages.ts; frontend/src/app/Library.tsx; frontend/src/app/UploadNew.tsx; agents/implementation/plan_92.md; agents/handoff/Handoff_26.md
+- Routes: GET /api/library/source-orgs
+- DB: none
+- Flags: none
+
+Commit:
+- 8d2cce8
 
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])
