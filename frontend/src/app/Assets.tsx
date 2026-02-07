@@ -1518,6 +1518,40 @@ const GraphicAssetsListPage: React.FC<{
     }
   }, [load])
 
+  const sortedItems = React.useMemo(() => {
+    const next = items.slice()
+    const key = normalizeGraphicSort(sort)
+    if (key === 'recent') {
+      return next.sort((a, b) => {
+        const at = a.last_used_at ? Date.parse(String(a.last_used_at)) : 0
+        const bt = b.last_used_at ? Date.parse(String(b.last_used_at)) : 0
+        return bt - at || Number(b.id) - Number(a.id)
+      })
+    }
+    if (key === 'oldest') return next.sort((a, b) => Number(a.id) - Number(b.id))
+    if (key === 'name_asc') {
+      return next.sort((a, b) =>
+        String(a.modified_filename || a.original_filename || '').localeCompare(
+          String(b.modified_filename || b.original_filename || '')
+        ) || Number(b.id) - Number(a.id)
+      )
+    }
+    if (key === 'name_desc') {
+      return next.sort((a, b) =>
+        String(b.modified_filename || b.original_filename || '').localeCompare(
+          String(a.modified_filename || a.original_filename || '')
+        ) || Number(b.id) - Number(a.id)
+      )
+    }
+    if (key === 'size_asc') {
+      return next.sort((a, b) => Number(a.size_bytes || 0) - Number(b.size_bytes || 0) || Number(b.id) - Number(a.id))
+    }
+    if (key === 'size_desc') {
+      return next.sort((a, b) => Number(b.size_bytes || 0) - Number(a.size_bytes || 0) || Number(b.id) - Number(a.id))
+    }
+    return next.sort((a, b) => Number(b.id) - Number(a.id))
+  }, [items, sort])
+
   const onPick = React.useCallback(
     (u: UploadListItem) => {
       const href = buildReturnHref({ cvPickType: pickType || 'graphic', cvPickUploadId: String(u.id) })

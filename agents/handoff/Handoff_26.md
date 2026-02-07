@@ -31,6 +31,8 @@ Summary
 - Updated `/library` list cards: add thumbnail preview, truncate description, right-align View/Create actions, and enhance modal with full description + X close.
 - Split `/library` modals: title opens description-only modal; “View Video” opens video-only modal; list description now truncated to 50 words.
 - Create-clip header description now truncates to 50 words with a “more/less” toggle.
+- Fixed graphics assets crash by defining `sortedItems` sort memo in `GraphicAssetsListPage`.
+- Corrected `sortedItems` to live in `GraphicAssetsListPage` (was mistakenly added to video assets).
 - Tests still pending.
 
 Decisions (carried + new)
@@ -91,6 +93,29 @@ Meta:
 
 Commit:
 - ff2b306
+
+Subject: feat(library): add description toggle
+
+Context:
+- Reduce create-clip header height while keeping full description accessible; avoid iOS zoom on inputs.
+
+Approach:
+- Truncate create-clip description with “more/less” toggle; set 16px font sizes on library search and source select.
+
+Impact:
+- Shorter create-clip header with optional expansion; iOS input zoom mitigated.
+
+Tests:
+- Not run (manual checks pending).
+
+Meta:
+- Affects: frontend/src/app/Library.tsx; agents/handoff/Handoff_26.md
+- Routes: none
+- DB: none
+- Flags: none
+
+Commit:
+- 13f4f8d
 
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])
