@@ -4896,23 +4896,186 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
     } else {
       body += '<div class="section">'
       body += '<div class="section-title">Videos</div>'
-      body += '<div style="display:grid; gap:12px">'
+      body += '<div style="display:grid; gap:16px">'
       for (const row of items) {
+        const id = Number(row.id)
         const name = String(row.modified_filename || row.original_filename || `Video ${row.id}`)
         const desc = String(row.description || '')
+        const descTrim = desc.trim()
+        const descWords = descTrim ? descTrim.split(/\s+/) : []
+        const descTruncated = descWords.length > 20
+        const descShort = descTruncated ? `${descWords.slice(0, 20).join(' ')}…` : descTrim
         const srcValue = String(row.source_org || 'other').trim().toLowerCase()
         const srcLabel = getLibrarySourceLabel(srcValue) || srcValue.toUpperCase()
         const dims = row.width && row.height ? `${row.width}×${row.height}` : ''
         const duration = row.duration_seconds ? `${row.duration_seconds}s` : ''
         const size = row.size_bytes ? `${Math.round(Number(row.size_bytes) / 1024 / 1024)} MB` : ''
-        const meta = [srcLabel, dims, duration, size].filter(Boolean).join(' · ')
-        body += `<div class="card">`
-        body += `<div class="card-title">${escapeHtml(name)}</div>`
+        const meta = [srcLabel, duration, dims].filter(Boolean).join(' · ')
+        body += `<div class="card" data-upload-id="${escapeHtml(String(id))}">`
+        body += `<button type="button" class="js-video-title" data-title="${escapeHtml(name)}" data-desc="${escapeHtml(descTrim)}" style="padding:0; border:none; background:transparent; color:#fff; text-align:left; font-weight:900; font-size:16px; cursor:pointer;">${escapeHtml(name)}</button>`
         if (meta) body += `<div class="field-hint">${escapeHtml(meta)}</div>`
-        if (desc) body += `<div style="opacity:.85; margin-top:6px">${escapeHtml(desc)}</div>`
+        if (descTrim) {
+          body += `<div class="js-video-desc" data-expanded="0" style="opacity:.85; margin-top:6px; line-height:1.4;">`
+          body += `<span class="js-video-desc-short">${escapeHtml(descShort)}</span>`
+          body += `<span class="js-video-desc-full" style="display:none">${escapeHtml(descTrim)}</span>`
+          if (descTruncated) {
+            body += ` <button type="button" class="js-video-desc-toggle" style="padding:0; border:none; background:transparent; color:#9bbcff; font-weight:700; cursor:pointer;">more</button>`
+          }
+          body += `</div>`
+        }
+        body += `<div style="margin-top:10px">`
+        body += `<video controls playsinline preload="metadata" src="/api/uploads/${encodeURIComponent(String(id))}/edit-proxy#t=0.1" style="width:100%; max-height:360px; background:#000; border-radius:12px;"></video>`
+        body += `</div>`
+        body += `<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap">`
+        body += `<button type="button" class="btn js-video-edit" data-id="${escapeHtml(String(id))}" data-title="${escapeHtml(name)}" data-desc="${escapeHtml(descTrim)}">Edit</button>`
+        body += `<button type="button" class="btn js-video-delete" data-id="${escapeHtml(String(id))}">Delete</button>`
+        body += `</div>`
         body += `</div>`
       }
       body += '</div></div>'
+
+      body += `
+        <div id="video-desc-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:9999;">
+          <div style="width:min(720px, 100%); max-height:80vh; background:#0b0b0b; border-radius:12px; padding:16px; border:1px solid rgba(255,255,255,0.12); color:#fff; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+              <div id="video-desc-modal-title" style="font-weight:900;"></div>
+              <button type="button" id="video-desc-modal-close" style="border:1px solid rgba(255,255,255,0.18); background:#1a1a1a; color:#fff; border-radius:8px; padding:4px 10px; font-size:18px; font-weight:700; cursor:pointer;">×</button>
+            </div>
+            <div id="video-desc-modal-body" style="margin-top:10px; color:#c8c8c8; line-height:1.5; overflow:auto;"></div>
+          </div>
+        </div>
+        <script>
+          (function() {
+            function getCsrf() {
+              try {
+                var m = document.cookie.match(/(?:^|;)\\s*csrf=([^;]+)/);
+                return m ? decodeURIComponent(m[1]) : '';
+              } catch (e) { return ''; }
+            }
+            function truncateWords(text, limit) {
+              var trimmed = String(text || '').trim();
+              if (!trimmed) return { text: '', truncated: false };
+              var words = trimmed.split(/\\s+/);
+              if (words.length <= limit) return { text: trimmed, truncated: false };
+              return { text: words.slice(0, limit).join(' ') + '…', truncated: true };
+            }
+            var modal = document.getElementById('video-desc-modal');
+            var modalTitle = document.getElementById('video-desc-modal-title');
+            var modalBody = document.getElementById('video-desc-modal-body');
+            var modalClose = document.getElementById('video-desc-modal-close');
+            function closeModal() { if (modal) modal.style.display = 'none'; }
+            if (modalClose) modalClose.addEventListener('click', closeModal);
+            if (modal) modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+
+            document.querySelectorAll('.js-video-title').forEach(function(el) {
+              el.addEventListener('click', function() {
+                var title = el.getAttribute('data-title') || '';
+                var desc = el.getAttribute('data-desc') || '';
+                if (modalTitle) modalTitle.textContent = title;
+                if (modalBody) modalBody.textContent = desc || 'No description';
+                if (modal) modal.style.display = 'flex';
+              });
+            });
+
+            document.querySelectorAll('.js-video-desc-toggle').forEach(function(btn) {
+              btn.addEventListener('click', function() {
+                var wrapper = btn.closest('.js-video-desc');
+                if (!wrapper) return;
+                var expanded = wrapper.getAttribute('data-expanded') === '1';
+                var shortEl = wrapper.querySelector('.js-video-desc-short');
+                var fullEl = wrapper.querySelector('.js-video-desc-full');
+                if (shortEl) shortEl.style.display = expanded ? '' : 'none';
+                if (fullEl) fullEl.style.display = expanded ? 'none' : '';
+                wrapper.setAttribute('data-expanded', expanded ? '0' : '1');
+                btn.textContent = expanded ? 'more' : 'less';
+              });
+            });
+
+            document.querySelectorAll('.js-video-edit').forEach(function(btn) {
+              btn.addEventListener('click', async function() {
+                var id = btn.getAttribute('data-id') || '';
+                if (!id) return;
+                var currentTitle = btn.getAttribute('data-title') || '';
+                var currentDesc = btn.getAttribute('data-desc') || '';
+                var nextTitle = window.prompt('Title', currentTitle);
+                if (nextTitle == null) return;
+                var nextDesc = window.prompt('Description', currentDesc);
+                if (nextDesc == null) return;
+                try {
+                  var headers = { 'Content-Type': 'application/json' };
+                  var csrf = getCsrf();
+                  if (csrf) headers['x-csrf-token'] = csrf;
+                  var res = await fetch('/api/uploads/' + encodeURIComponent(id), {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: headers,
+                    body: JSON.stringify({ modified_filename: nextTitle, description: nextDesc })
+                  });
+                  var json = await res.json().catch(function() { return null; });
+                  if (!res.ok) throw new Error(String((json && (json.detail || json.error)) || 'Failed to update'));
+                  var card = btn.closest('.card');
+                  if (card) {
+                    var titleBtn = card.querySelector('.js-video-title');
+                    if (titleBtn) {
+                      titleBtn.textContent = nextTitle;
+                      titleBtn.setAttribute('data-title', nextTitle);
+                      titleBtn.setAttribute('data-desc', nextDesc);
+                    }
+                    btn.setAttribute('data-title', nextTitle);
+                    btn.setAttribute('data-desc', nextDesc);
+                    var descWrapper = card.querySelector('.js-video-desc');
+                    if (descWrapper) {
+                      var truncated = truncateWords(nextDesc, 20);
+                      var shortEl = descWrapper.querySelector('.js-video-desc-short');
+                      var fullEl = descWrapper.querySelector('.js-video-desc-full');
+                      var toggleBtn = descWrapper.querySelector('.js-video-desc-toggle');
+                      if (shortEl) shortEl.textContent = truncated.text;
+                      if (fullEl) fullEl.textContent = nextDesc;
+                      if (toggleBtn) {
+                        if (truncated.truncated) {
+                          toggleBtn.style.display = '';
+                          toggleBtn.textContent = 'more';
+                        } else {
+                          toggleBtn.style.display = 'none';
+                        }
+                      }
+                      descWrapper.setAttribute('data-expanded', '0');
+                      if (shortEl) shortEl.style.display = '';
+                      if (fullEl) fullEl.style.display = 'none';
+                    }
+                  }
+                } catch (err) {
+                  window.alert(err && err.message ? err.message : 'Failed to update');
+                }
+              });
+            });
+
+            document.querySelectorAll('.js-video-delete').forEach(function(btn) {
+              btn.addEventListener('click', async function() {
+                var id = btn.getAttribute('data-id') || '';
+                if (!id) return;
+                if (!window.confirm('Delete this video? This cannot be undone.')) return;
+                try {
+                  var headers = {};
+                  var csrf = getCsrf();
+                  if (csrf) headers['x-csrf-token'] = csrf;
+                  var res = await fetch('/api/uploads/' + encodeURIComponent(id), {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: headers
+                  });
+                  var json = await res.json().catch(function() { return null; });
+                  if (!res.ok) throw new Error(String((json && (json.detail || json.error)) || 'Failed to delete'));
+                  var card = btn.closest('.card');
+                  if (card && card.parentNode) card.parentNode.removeChild(card);
+                } catch (err) {
+                  window.alert(err && err.message ? err.message : 'Failed to delete');
+                }
+              });
+            });
+          })();
+        </script>
+      `
     }
 
     const doc = renderAdminPage({ title: 'Video Library', bodyHtml: body, active: 'video_library' })

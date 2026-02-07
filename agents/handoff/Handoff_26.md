@@ -33,6 +33,8 @@ Summary
 - Create-clip header description now truncates to 50 words with a “more/less” toggle.
 - Fixed graphics assets crash by defining `sortedItems` sort memo in `GraphicAssetsListPage`.
 - Corrected `sortedItems` to live in `GraphicAssetsListPage` (was mistakenly added to video assets).
+- Reworked `/admin/video-library` cards with title modal, 50-word description toggle, inline video player, and edit/delete actions.
+- Adjusted admin video-library description truncation to 20 words and made description modal scrollable.
 - Tests still pending.
 
 Decisions (carried + new)
@@ -116,6 +118,29 @@ Meta:
 
 Commit:
 - 13f4f8d
+
+Subject: fix(assets): restore graphics sorting
+
+Context:
+- Graphics picker crashed due to missing `sortedItems` in the graphics list.
+
+Approach:
+- Added `sortedItems` memo to `GraphicAssetsListPage` to sort and render graphics safely.
+
+Impact:
+- `/assets/graphic` no longer throws `ReferenceError` and loads normally.
+
+Tests:
+- Manual: verified user flow after rebuild (reported fixed).
+
+Meta:
+- Affects: frontend/src/app/Assets.tsx; agents/handoff/Handoff_26.md
+- Routes: none
+- DB: none
+- Flags: none
+
+Commit:
+- b259696
 
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])
