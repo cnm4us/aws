@@ -7002,6 +7002,12 @@ pagesRouter.get('/library', (_req, res) => {
 pagesRouter.get('/library/', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });
+pagesRouter.get('/library/create-clip/:id', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
+pagesRouter.get('/library/create-clip/:id/', (_req, res) => {
+  serveHtml(res, path.join('app', 'index.html'));
+});
 pagesRouter.get('/timelines', (_req, res) => {
   serveHtml(res, path.join('app', 'index.html'));
 });

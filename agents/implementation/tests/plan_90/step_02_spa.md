@@ -1,0 +1,26 @@
+### 2026-02-07T01:56:15+00:00
+- Base URL: http://localhost:3300
+- Request: GET /library/create-clip/874
+- Check: response contains SPA HTML shell (snippet below)
+```
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="manifest" href="/app/manifest.webmanifest">
+    <!-- Favicons (copy assets into public/): favicon.ico, favicon.svg, apple-touch-icon.png -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="preconnect" href="https://videos.bawebtech.com" crossorigin>
+    <title>AWS Media App</title>
+    <style>
+      html, body, #root { height: 100%; background: #000; }
+      body { margin: 0; }
+    </style>
+    <script type="module" crossorigin src="/app/assets/index-Mx1nQkVR.js"></script>
+```

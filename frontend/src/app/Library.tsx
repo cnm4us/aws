@@ -65,14 +65,254 @@ function formatTime(seconds: number | null | undefined): string {
   return `${m}:${String(ss).padStart(2, '0')}`
 }
 
-const LibraryPage: React.FC = () => {
-  const [me, setMe] = useState<MeResponse | null>(null)
+const LibraryListPage: React.FC = () => {
   const [videos, setVideos] = useState<LibraryVideo[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [sourceOrg, setSourceOrg] = useState('all')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const qParam = params.get('q') || ''
+    const sourceParam = params.get('source_org') || params.get('sourceOrg') || 'all'
+    setQ(qParam)
+    setSourceOrg(sourceParam || 'all')
+  }, [])
+
+  const syncUrl = useCallback((nextQ: string, nextSource: string) => {
+    const params = new URLSearchParams()
+    if (nextQ.trim()) params.set('q', nextQ.trim())
+    if (nextSource && nextSource !== 'all') params.set('source_org', nextSource)
+    const qs = params.toString()
+    const nextUrl = qs ? `/library?${qs}` : '/library'
+    window.history.replaceState(null, '', nextUrl)
+  }, [])
+
+  const loadVideos = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const user = await ensureLoggedIn()
+      if (!user?.userId) throw new Error('Please sign in to access the library.')
+      const params = new URLSearchParams()
+      const qTrim = q.trim()
+      if (qTrim) params.set('q', qTrim)
+      if (sourceOrg && sourceOrg !== 'all') params.set('source_org', sourceOrg)
+      params.set('limit', '200')
+      const res = await fetch(`/api/library/videos?${params.toString()}`, { credentials: 'same-origin' })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+      const items: LibraryVideo[] = Array.isArray(json?.items) ? json.items : []
+      setVideos(items)
+      syncUrl(qTrim, sourceOrg)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load library.')
+    } finally {
+      setLoading(false)
+    }
+  }, [q, sourceOrg, syncUrl])
+
+  useEffect(() => {
+    void loadVideos()
+  }, [loadVideos])
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ margin: 0, fontSize: 26 }}>Video Library</h1>
+        </div>
+
+        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name/description"
+              style={{
+                flex: '1 1 240px',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+              }}
+            />
+            <select
+              value={sourceOrg}
+              onChange={(e) => setSourceOrg(String(e.target.value))}
+              style={{
+                minWidth: 160,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+              }}
+            >
+              <option value="all">All sources</option>
+              <option value="cspan">CSPAN</option>
+              <option value="other">Other</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => void loadVideos()}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0a84ff',
+                color: '#fff',
+                fontWeight: 700,
+              }}
+              disabled={loading}
+            >
+              Refresh
+            </button>
+          </div>
+          {error ? <div style={{ color: '#ffb3b3' }}>{error}</div> : null}
+        </div>
+
+        <div style={{ marginTop: 18, display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {loading ? <div>Loading…</div> : null}
+            {!loading && !videos.length ? <div>No library videos found.</div> : null}
+            {videos.map((v) => {
+              const name = (v.modified_filename || v.original_filename || `Video ${v.id}`).toString()
+              const meta = [
+                v.source_org ? String(v.source_org).toUpperCase() : null,
+                v.duration_seconds ? formatDuration(v.duration_seconds) : null,
+                v.width && v.height ? `${v.width}×${v.height}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+              const backParams = new URLSearchParams()
+              if (q.trim()) backParams.set('q', q.trim())
+              if (sourceOrg && sourceOrg !== 'all') backParams.set('source_org', sourceOrg)
+              const qs = backParams.toString()
+              const clipHref = qs
+                ? `/library/create-clip/${encodeURIComponent(String(v.id))}?${qs}`
+                : `/library/create-clip/${encodeURIComponent(String(v.id))}`
+
+              return (
+                <div
+                  key={v.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'rgba(28,28,28,0.95)',
+                    color: '#fff',
+                    display: 'grid',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontWeight: 800 }}>{name}</div>
+                  {meta ? <div style={{ color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
+                  {v.description ? <div style={{ color: '#a8a8a8', fontSize: 13 }}>{v.description}</div> : null}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedView(v)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#1a1a1a',
+                        color: '#fff',
+                        fontWeight: 700,
+                      }}
+                    >
+                      View
+                    </button>
+                    <a
+                      href={clipHref}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0a84ff',
+                        color: '#fff',
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      Create clip
+                    </a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {selectedView ? (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 50,
+              padding: 20,
+            }}
+            onClick={() => setSelectedView(null)}
+          >
+            <div
+              style={{
+                width: 'min(960px, 100%)',
+                background: '#0b0b0b',
+                borderRadius: 12,
+                padding: 16,
+                border: '1px solid rgba(255,255,255,0.12)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontWeight: 800 }}>{selectedView.modified_filename || selectedView.original_filename}</div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedView(null)}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    borderRadius: 8,
+                    padding: '6px 10px',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={`/api/uploads/${encodeURIComponent(String(selectedView.id))}/edit-proxy#t=0.1`}
+                  style={{ width: '100%', maxHeight: '70vh', background: '#000', borderRadius: 10 }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+const LibraryCreateClipPage: React.FC = () => {
+  const [error, setError] = useState<string | null>(null)
+  const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null)
+  const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<TranscriptHit[]>([])
   const [searching, setSearching] = useState(false)
@@ -99,40 +339,65 @@ const LibraryPage: React.FC = () => {
   const wavePollRef = useRef<number | null>(null)
   const captionsContainerRef = useRef<HTMLDivElement | null>(null)
   const activeCaptionRef = useRef<HTMLButtonElement | null>(null)
+  const [isScrubbing, setIsScrubbing] = useState(false)
+  const scrubPointerIdRef = useRef<number | null>(null)
+  const scrubStartXRef = useRef(0)
+  const scrubStartTimeRef = useRef(0)
+  const scrubWasPlayingRef = useRef(false)
+  const nudgeTimeoutRef = useRef<number | null>(null)
+  const nudgeIntervalRef = useRef<number | null>(null)
 
-  const selectedVideo = useMemo(
-    () => (selectedId ? videos.find((v) => Number(v.id) === Number(selectedId)) || null : null),
-    [videos, selectedId]
-  )
+  const backHref = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    const qParam = params.get('q') || ''
+    const sourceParam = params.get('source_org') || params.get('sourceOrg') || ''
+    const backParams = new URLSearchParams()
+    if (qParam) backParams.set('q', qParam)
+    if (sourceParam) backParams.set('source_org', sourceParam)
+    const qs = backParams.toString()
+    return qs ? `/library?${qs}` : '/library'
+  }, [])
 
-  const loadVideos = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const user = await ensureLoggedIn()
-      setMe(user)
-      if (!user?.userId) throw new Error('Please sign in to access the library.')
-      const params = new URLSearchParams()
-      const qTrim = q.trim()
-      if (qTrim) params.set('q', qTrim)
-      if (sourceOrg && sourceOrg !== 'all') params.set('source_org', sourceOrg)
-      params.set('limit', '200')
-      const res = await fetch(`/api/library/videos?${params.toString()}`, { credentials: 'same-origin' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
-      const items: LibraryVideo[] = Array.isArray(json?.items) ? json.items : []
-      setVideos(items)
-      if (!selectedId && items.length) setSelectedId(Number(items[0].id))
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load library.')
-    } finally {
-      setLoading(false)
-    }
-  }, [q, sourceOrg, selectedId])
+  const selectedId = useMemo(() => {
+    const match = window.location.pathname.match(/\/library\/create-clip\/(\d+)/)
+    if (!match) return null
+    const id = Number(match[1])
+    if (!Number.isFinite(id) || id <= 0) return null
+    return id
+  }, [])
 
   useEffect(() => {
-    void loadVideos()
-  }, [loadVideos])
+    let cancelled = false
+    const loadVideo = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const user = await ensureLoggedIn()
+        if (!user?.userId) throw new Error('Please sign in to access the library.')
+        if (!selectedId) throw new Error('Invalid video id.')
+        const res = await fetch(`/api/library/videos/${encodeURIComponent(String(selectedId))}`, { credentials: 'same-origin' })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
+        if (cancelled) return
+        setSelectedVideo((json as any)?.upload || null)
+      } catch (e: any) {
+        if (cancelled) return
+        setError(e?.message || 'Failed to load video.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void loadVideo()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId])
+
+  useEffect(() => {
+    setSearchResults([])
+    setSearchQuery('')
+    setSearchError(null)
+  }, [selectedVideo?.id])
 
   useEffect(() => {
     if (!selectedVideo?.id) {
@@ -262,14 +527,21 @@ const LibraryPage: React.FC = () => {
     } catch {}
   }, [])
 
-  const getWaveWindow = useCallback((time: number, dur: number) => {
+  const getWaveWindow = useCallback((time: number) => {
     const windowLen = 10
-    const safeDur = dur > 0 ? dur : Math.max(0, time + 1)
-    let windowStart = Math.max(0, time - windowLen / 2)
-    if (windowStart + windowLen > safeDur) windowStart = Math.max(0, safeDur - windowLen)
+    const windowStart = time - windowLen / 2
     const windowEnd = windowStart + windowLen
-    return { windowLen, windowStart, windowEnd, safeDur }
+    return { windowLen, windowStart, windowEnd }
   }, [])
+
+  const clampTime = useCallback(
+    (t: number) => {
+      if (!Number.isFinite(t)) return 0
+      if (duration > 0) return Math.min(Math.max(0, t), duration)
+      return Math.max(0, t)
+    },
+    [duration]
+  )
 
   useEffect(() => {
     const canvas = waveCanvasRef.current
@@ -288,7 +560,7 @@ const LibraryPage: React.FC = () => {
     if (waveStatus !== 'ready' || !waveEnv || !Array.isArray(waveEnv.points)) return
     if (!waveEnv.points.length) return
 
-    const { windowLen, windowStart, windowEnd } = getWaveWindow(currentTime, duration)
+    const { windowLen, windowStart, windowEnd } = getWaveWindow(currentTime)
 
     ctx.strokeStyle = '#f0c062'
     ctx.lineWidth = 1
@@ -306,29 +578,123 @@ const LibraryPage: React.FC = () => {
       ctx.stroke()
     }
 
-    // playhead marker
     ctx.strokeStyle = 'rgba(255,64,0,0.9)'
     ctx.lineWidth = 2
-    const px = ((currentTime - windowStart) / windowLen) * rect.width
+    const px = rect.width / 2
     ctx.beginPath()
     ctx.moveTo(px, 0)
     ctx.lineTo(px, rect.height)
     ctx.stroke()
-  }, [waveEnv, waveStatus, currentTime, duration, getWaveWindow])
+  }, [waveEnv, waveStatus, currentTime, getWaveWindow])
 
-  const handleWaveClick = useCallback(
-    (event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleWavePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      event.preventDefault()
+      const canvas = waveCanvasRef.current
+      if (!canvas) return
+      if (scrubPointerIdRef.current != null) return
+      scrubPointerIdRef.current = event.pointerId
+      canvas.setPointerCapture(event.pointerId)
+      scrubStartXRef.current = event.clientX
+      const vid = videoRef.current
+      const baseTime = Number(vid?.currentTime ?? currentTime)
+      scrubStartTimeRef.current = Number.isFinite(baseTime) ? baseTime : 0
+      scrubWasPlayingRef.current = !!vid && !vid.paused
+      if (scrubWasPlayingRef.current) {
+        vid?.pause()
+      }
+      setIsScrubbing(true)
+    },
+    [currentTime]
+  )
+
+  const handleWavePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (scrubPointerIdRef.current !== event.pointerId) return
       const canvas = waveCanvasRef.current
       if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       if (!rect.width) return
-      const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
-      const { windowLen, windowStart } = getWaveWindow(currentTime, duration)
-      const target = windowStart + (x / rect.width) * windowLen
-      setCurrentTime(target)
+      const { windowLen } = getWaveWindow(scrubStartTimeRef.current)
+      const deltaX = event.clientX - scrubStartXRef.current
+      const deltaTime = (-deltaX / rect.width) * windowLen
+      const next = clampTime(scrubStartTimeRef.current + deltaTime)
+      const vid = videoRef.current
+      if (vid) {
+        try {
+          vid.currentTime = next
+        } catch {}
+      }
+      setCurrentTimeState(next)
     },
-    [currentTime, duration, getWaveWindow, setCurrentTime]
+    [clampTime, getWaveWindow]
   )
+
+  const endWaveScrub = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (scrubPointerIdRef.current !== event.pointerId) return
+    const canvas = waveCanvasRef.current
+    try {
+      canvas?.releasePointerCapture(event.pointerId)
+    } catch {}
+    scrubPointerIdRef.current = null
+    setIsScrubbing(false)
+    if (scrubWasPlayingRef.current) {
+      videoRef.current?.play().catch(() => {})
+    }
+    scrubWasPlayingRef.current = false
+  }, [])
+
+  const clearNudgeTimers = useCallback(() => {
+    if (nudgeTimeoutRef.current) {
+      window.clearTimeout(nudgeTimeoutRef.current)
+      nudgeTimeoutRef.current = null
+    }
+    if (nudgeIntervalRef.current) {
+      window.clearInterval(nudgeIntervalRef.current)
+      nudgeIntervalRef.current = null
+    }
+  }, [])
+
+  const nudgeTime = useCallback(
+    (deltaSeconds: number) => {
+      const vid = videoRef.current
+      const baseTime = Number(vid?.currentTime ?? currentTime)
+      const wasPlaying = !!vid && !vid.paused
+      const next = clampTime(baseTime + deltaSeconds)
+      if (vid) {
+        try {
+          vid.currentTime = next
+        } catch {}
+        if (wasPlaying) {
+          vid.play().catch(() => {})
+        }
+      }
+      setCurrentTimeState(next)
+    },
+    [clampTime, currentTime]
+  )
+
+  const handleNudgePointerDown = useCallback(
+    (deltaSeconds: number) => (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault()
+      clearNudgeTimers()
+      nudgeTime(deltaSeconds)
+      nudgeTimeoutRef.current = window.setTimeout(() => {
+        nudgeIntervalRef.current = window.setInterval(() => {
+          nudgeTime(deltaSeconds)
+        }, 120)
+      }, 320)
+    },
+    [clearNudgeTimers, nudgeTime]
+  )
+
+  const handleNudgePointerUp = useCallback(() => {
+    clearNudgeTimers()
+  }, [clearNudgeTimers])
+
+  useEffect(() => {
+    return () => clearNudgeTimers()
+  }, [clearNudgeTimers])
 
   const activeCaptionIndex = useMemo(() => {
     if (!captions.length) return -1
@@ -435,376 +801,244 @@ const LibraryPage: React.FC = () => {
     ? `/api/uploads/${encodeURIComponent(String(selectedVideo.id))}/edit-proxy#t=0.1`
     : ''
 
+  const meta = useMemo(() => {
+    if (!selectedVideo) return ''
+    return [
+      selectedVideo.source_org ? String(selectedVideo.source_org).toUpperCase() : null,
+      selectedVideo.duration_seconds ? formatDuration(selectedVideo.duration_seconds) : null,
+      selectedVideo.width && selectedVideo.height ? `${selectedVideo.width}×${selectedVideo.height}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }, [selectedVideo])
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <h1 style={{ margin: 0, fontSize: 26 }}>Video Library</h1>
-        </div>
-
-        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name/description"
-              style={{
-                flex: '1 1 240px',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0b0b0b',
-                color: '#fff',
-              }}
-            />
-            <select
-              value={sourceOrg}
-              onChange={(e) => setSourceOrg(String(e.target.value))}
-              style={{
-                minWidth: 160,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0b0b0b',
-                color: '#fff',
-              }}
-            >
-              <option value="all">All sources</option>
-              <option value="cspan">CSPAN</option>
-              <option value="other">Other</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => void loadVideos()}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 700,
-              }}
-              disabled={loading}
-            >
-              Refresh
-            </button>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <h1 style={{ margin: 0, fontSize: 26 }}>Create Clip</h1>
+            <a href={backHref} style={{ color: '#9bbcff', textDecoration: 'none', fontSize: 14 }}>
+              ← Back to library
+            </a>
           </div>
-          {error ? <div style={{ color: '#ffb3b3' }}>{error}</div> : null}
         </div>
 
-        <div style={{ marginTop: 18, display: 'grid', gap: 16 }}>
-          <div style={{ display: 'grid', gap: 12 }}>
-            {loading ? <div>Loading…</div> : null}
-            {!loading && !videos.length ? <div>No library videos found.</div> : null}
-            {videos.map((v) => {
-              const name = (v.modified_filename || v.original_filename || `Video ${v.id}`).toString()
-              const meta = [
-                v.source_org ? String(v.source_org).toUpperCase() : null,
-                v.duration_seconds ? formatDuration(v.duration_seconds) : null,
-                v.width && v.height ? `${v.width}×${v.height}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')
-              const selected = Number(v.id) === Number(selectedId)
-              return (
+        {error ? <div style={{ marginTop: 12, color: '#ffb3b3' }}>{error}</div> : null}
+        {loading ? <div style={{ marginTop: 12 }}>Loading…</div> : null}
+
+        {selectedVideo ? (
+          <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.14)', background: '#0c0c0c' }}>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>{selectedVideo.modified_filename || selectedVideo.original_filename}</div>
+            {meta ? <div style={{ marginTop: 6, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
+            {selectedVideo.description ? (
+              <div style={{ marginTop: 6, color: '#a8a8a8', fontSize: 13 }}>{selectedVideo.description}</div>
+            ) : null}
+            <div style={{ marginTop: 10 }}>
+              <video
+                ref={videoRef}
+                playsInline
+                preload="metadata"
+                src={playerSrc}
+                style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 12 }}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={() => {
+                  const vid = videoRef.current
+                  if (!vid) return
+                  const t = Number(vid.currentTime || 0)
+                  setCurrentTimeState(Number.isFinite(t) ? t : 0)
+                }}
+                onLoadedMetadata={() => {
+                  const vid = videoRef.current
+                  if (!vid) return
+                  const d = Number(vid.duration || 0)
+                  setDuration(Number.isFinite(d) ? d : 0)
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <button
-                  key={v.id}
                   type="button"
-                  onClick={() => {
-                    setSelectedId(Number(v.id))
-                    setSearchResults([])
-                    setSearchQuery('')
-                    setClipMessage(null)
-                    setClipError(null)
-                  }}
+                  onClick={handleTogglePlay}
                   style={{
-                    textAlign: 'left',
-                    padding: 12,
-                    borderRadius: 12,
-                    border: selected ? '1px solid rgba(10,132,255,0.7)' : '1px solid rgba(255,255,255,0.12)',
-                    background: 'rgba(28,28,28,0.95)',
+                    width: 44,
+                    height: 36,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: '#111',
                     color: '#fff',
+                    fontWeight: 900,
                   }}
                 >
-                  <div style={{ fontWeight: 800 }}>{name}</div>
-                  {meta ? <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
-                  {v.description ? <div style={{ marginTop: 6, color: '#a8a8a8', fontSize: 13 }}>{v.description}</div> : null}
+                  {isPlaying ? '❚❚' : '▶'}
                 </button>
-              )
-            })}
-          </div>
-
-          {selectedVideo ? (
-            <div style={{ marginTop: 20, padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.14)', background: '#0c0c0c' }}>
-              <div style={{ fontWeight: 900, fontSize: 18 }}>{selectedVideo.modified_filename || selectedVideo.original_filename}</div>
-              <div style={{ marginTop: 10 }}>
-                <video
-                  ref={videoRef}
-                  playsInline
-                  preload="metadata"
-                  src={playerSrc}
-                  style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 12 }}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  onTimeUpdate={() => {
-                    const vid = videoRef.current
-                    if (!vid) return
-                    const t = Number(vid.currentTime || 0)
-                    setCurrentTimeState(Number.isFinite(t) ? t : 0)
-                  }}
-                  onLoadedMetadata={() => {
-                    const vid = videoRef.current
-                    if (!vid) return
-                    const d = Number(vid.duration || 0)
-                    setDuration(Number.isFinite(d) ? d : 0)
-                  }}
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  step={0.1}
+                  value={Math.min(currentTime, duration || 0)}
+                  onChange={(e) => handleScrub(Number(e.target.value))}
+                  style={{ flex: 1 }}
                 />
+                <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCaptionsEnabled((prev) => !prev)}
+                  aria-pressed={captionsEnabled}
+                  style={{
+                    width: 44,
+                    height: 36,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: captionsEnabled ? '#0a84ff' : '#111',
+                    color: '#fff',
+                    fontWeight: 800,
+                  }}
+                >
+                  CC
+                </button>
               </div>
-
-              <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button
-                      type="button"
-                      onClick={handleTogglePlay}
-                    style={{
-                      width: 44,
-                      height: 36,
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      background: '#111',
-                      color: '#fff',
-                      fontWeight: 900,
-                    }}
-                    >
-                      {isPlaying ? '❚❚' : '▶'}
-                    </button>
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration || 0}
-                      step={0.1}
-                      value={Math.min(currentTime, duration || 0)}
-                      onChange={(e) => handleScrub(Number(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <div style={{ fontVariantNumeric: 'tabular-nums', color: '#bbb', minWidth: 90, textAlign: 'right' }}>
-                      {formatTime(currentTime)} / {formatTime(duration)}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCaptionsEnabled((prev) => !prev)}
-                      aria-pressed={captionsEnabled}
-                      style={{
-                        width: 44,
-                        height: 36,
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        background: captionsEnabled ? '#0a84ff' : '#111',
-                        color: '#fff',
-                        fontWeight: 800,
-                      }}
-                    >
-                      CC
-                    </button>
-                  </div>
-                <div style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onPointerDown={handleNudgePointerDown(-10)}
+                  onPointerUp={handleNudgePointerUp}
+                  onPointerLeave={handleNudgePointerUp}
+                  onPointerCancel={handleNudgePointerUp}
+                  style={{
+                    minWidth: 56,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#161616',
+                    color: '#fff',
+                    fontWeight: 700,
+                  }}
+                >
+                  -10s
+                </button>
+                <div style={{ flex: 1, height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', overflow: 'hidden' }}>
                   <canvas
                     ref={waveCanvasRef}
-                    onClick={handleWaveClick}
-                    style={{ width: '100%', height: '100%', display: 'block', cursor: 'pointer' }}
+                    onPointerDown={handleWavePointerDown}
+                    onPointerMove={handleWavePointerMove}
+                    onPointerUp={endWaveScrub}
+                    onPointerCancel={endWaveScrub}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'block',
+                      cursor: isScrubbing ? 'grabbing' : 'grab',
+                      touchAction: 'none',
+                    }}
                   />
                 </div>
-                {waveStatus === 'pending' ? <div style={{ color: '#9aa0a6' }}>Waveform is generating…</div> : null}
-                {waveStatus === 'error' && waveError ? <div style={{ color: '#ffb3b3' }}>{waveError}</div> : null}
+                <button
+                  type="button"
+                  onPointerDown={handleNudgePointerDown(10)}
+                  onPointerUp={handleNudgePointerUp}
+                  onPointerLeave={handleNudgePointerUp}
+                  onPointerCancel={handleNudgePointerUp}
+                  style={{
+                    minWidth: 56,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#161616',
+                    color: '#fff',
+                    fontWeight: 700,
+                  }}
+                >
+                  +10s
+                </button>
               </div>
+              {waveStatus === 'pending' ? <div style={{ color: '#9aa0a6' }}>Waveform is generating…</div> : null}
+              {waveStatus === 'error' && waveError ? <div style={{ color: '#ffb3b3' }}>{waveError}</div> : null}
+            </div>
 
-              {captionsEnabled ? (
-                <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 800 }}>Captions</div>
-                    {captions.length ? <div style={{ color: '#888', fontSize: 12 }}>{captions.length} cues</div> : null}
-                  </div>
-                  {captionsStatus === 'loading' ? <div>Loading captions…</div> : null}
-                  {captionsError ? <div style={{ color: '#ffb3b3' }}>{captionsError}</div> : null}
-                  {!captionsError && captionsStatus === 'ready' && !captions.length ? (
-                    <div style={{ color: '#bbb' }}>No captions available.</div>
-                  ) : null}
-                  {visibleCaptions.length ? (
-                    <div
-                      ref={captionsContainerRef}
-                      style={{
-                        maxHeight: 200,
-                        overflow: 'auto',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        background: '#0f0f0f',
-                        padding: 8,
-                        display: 'grid',
-                        gap: 6,
-                      }}
-                    >
-                      {visibleCaptions.map(({ cue, index }) => {
-                        const isActive = index === activeCaptionIndex
-                        return (
-                          <button
-                            key={`${cue.startSeconds}-${index}`}
-                            ref={isActive ? activeCaptionRef : undefined}
-                            type="button"
-                            onClick={() => setCurrentTime(cue.startSeconds)}
-                            style={{
-                              textAlign: 'left',
-                              padding: 8,
-                              borderRadius: 8,
-                              border: isActive ? '1px solid rgba(10,132,255,0.7)' : '1px solid rgba(255,255,255,0.08)',
-                              background: isActive ? 'rgba(10,132,255,0.15)' : '#111',
-                              color: '#fff',
-                            }}
-                          >
-                            <div style={{ fontWeight: 700, fontSize: 12, color: '#b8c6ff' }}>
-                              {formatTime(cue.startSeconds)} → {formatTime(cue.endSeconds)}
-                            </div>
-                            <div style={{ marginTop: 4, color: '#ddd', fontSize: 13 }}>{cue.text}</div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : null}
+            {captionsEnabled ? (
+              <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 800 }}>Captions</div>
+                  {captions.length ? <div style={{ color: '#888', fontSize: 12 }}>{captions.length} cues</div> : null}
                 </div>
-              ) : null}
-
-              <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>Transcript Search</div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search transcript…"
+                {captionsStatus === 'loading' ? <div>Loading captions…</div> : null}
+                {captionsError ? <div style={{ color: '#ffb3b3' }}>{captionsError}</div> : null}
+                {!captionsError && captionsStatus === 'ready' && !captions.length ? (
+                  <div style={{ color: '#bbb' }}>No captions available.</div>
+                ) : null}
+                {visibleCaptions.length ? (
+                  <div
+                    ref={captionsContainerRef}
                     style={{
-                      flex: '1 1 240px',
-                      padding: '10px 12px',
+                      maxHeight: 200,
+                      overflow: 'auto',
                       borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#0b0b0b',
-                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: '#0f0f0f',
+                      padding: 8,
+                      display: 'grid',
+                      gap: 6,
                     }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleSearch()}
-                    style={{
-                      padding: '10px 16px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#0a84ff',
-                      color: '#fff',
-                      fontWeight: 700,
-                    }}
-                    disabled={searching}
                   >
-                    Search
-                  </button>
-                </div>
-                {searchError ? <div style={{ color: '#ffb3b3' }}>{searchError}</div> : null}
-                {searching ? <div>Searching…</div> : null}
-                {searchResults.length ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {searchResults.map((hit, idx) => (
-                      <button
-                        key={`${hit.startSeconds}-${idx}`}
-                        type="button"
-                        onClick={() => setCurrentTime(hit.startSeconds)}
-                        style={{
-                          textAlign: 'left',
-                          padding: 10,
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.12)',
-                          background: '#121212',
-                          color: '#fff',
-                        }}
-                      >
-                        <div style={{ fontWeight: 800, fontSize: 13 }}>
-                          {formatTime(hit.startSeconds)} → {formatTime(hit.endSeconds)}
-                        </div>
-                        <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{hit.text}</div>
-                      </button>
-                    ))}
+                    {visibleCaptions.map(({ cue, index }) => {
+                      const isActive = index === activeCaptionIndex
+                      return (
+                        <button
+                          key={`${cue.startSeconds}-${index}`}
+                          ref={isActive ? activeCaptionRef : undefined}
+                          type="button"
+                          onClick={() => setCurrentTime(cue.startSeconds)}
+                          style={{
+                            textAlign: 'left',
+                            padding: 8,
+                            borderRadius: 8,
+                            border: isActive ? '1px solid rgba(10,132,255,0.7)' : '1px solid rgba(255,255,255,0.08)',
+                            background: isActive ? 'rgba(10,132,255,0.15)' : '#111',
+                            color: '#fff',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 12, color: '#b8c6ff' }}>
+                            {formatTime(cue.startSeconds)} → {formatTime(cue.endSeconds)}
+                          </div>
+                          <div style={{ marginTop: 4, color: '#ddd', fontSize: 13 }}>{cue.text}</div>
+                        </button>
+                      )
+                    })}
                   </div>
                 ) : null}
               </div>
+            ) : null}
 
-              <div style={{ marginTop: 20, display: 'grid', gap: 10 }}>
-                <div style={{ fontWeight: 800 }}>Create Clip</div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={setInPoint}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#1a1a1a',
-                      color: '#fff',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Set In ({clipStart != null ? formatTime(clipStart) : '—'})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={setOutPoint}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#1a1a1a',
-                      color: '#fff',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Set Out ({clipEnd != null ? formatTime(clipEnd) : '—'})
-                  </button>
-                  <div style={{ alignSelf: 'center', color: '#bbb' }}>
-                    Length: {clipStart != null && clipEnd != null ? formatTime(clipEnd - clipStart) : '—'} (5s–180s)
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <input
-                    type="text"
-                    value={clipTitle}
-                    onChange={(e) => setClipTitle(e.target.value)}
-                    placeholder="Clip title (optional)"
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#0b0b0b',
-                      color: '#fff',
-                    }}
-                  />
-                  <textarea
-                    value={clipDescription}
-                    onChange={(e) => setClipDescription(e.target.value)}
-                    placeholder="Clip description (optional)"
-                    rows={3}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      background: '#0b0b0b',
-                      color: '#fff',
-                      resize: 'vertical',
-                    }}
-                  />
-                </div>
-                {clipError ? <div style={{ color: '#ffb3b3' }}>{clipError}</div> : null}
-                {clipMessage ? <div style={{ color: '#9ef0b4' }}>{clipMessage}</div> : null}
+            <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+              <div style={{ fontWeight: 800 }}>Transcript Search</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search transcript…"
+                  style={{
+                    flex: '1 1 240px',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0b0b0b',
+                    color: '#fff',
+                    fontSize: 16,
+                    lineHeight: '1.4',
+                    boxSizing: 'border-box',
+                  }}
+                />
                 <button
                   type="button"
-                  onClick={() => void handleSaveClip()}
+                  onClick={() => void handleSearch()}
                   style={{
                     padding: '10px 16px',
                     borderRadius: 10,
@@ -812,19 +1046,146 @@ const LibraryPage: React.FC = () => {
                     background: '#0a84ff',
                     color: '#fff',
                     fontWeight: 700,
-                    width: 'fit-content',
                   }}
-                  disabled={clipSaving}
+                  disabled={searching}
                 >
-                  Save Clip
+                  Search
                 </button>
               </div>
+              {searchError ? <div style={{ color: '#ffb3b3' }}>{searchError}</div> : null}
+              {searching ? <div>Searching…</div> : null}
+              {searchResults.length ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {searchResults.map((hit, idx) => (
+                    <button
+                      key={`${hit.startSeconds}-${idx}`}
+                      type="button"
+                      onClick={() => setCurrentTime(hit.startSeconds)}
+                      style={{
+                        textAlign: 'left',
+                        padding: 10,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        background: '#121212',
+                        color: '#fff',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: 13 }}>
+                        {formatTime(hit.startSeconds)} → {formatTime(hit.endSeconds)}
+                      </div>
+                      <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{hit.text}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+
+            <div style={{ marginTop: 20, display: 'grid', gap: 10 }}>
+              <div style={{ fontWeight: 800 }}>Create Clip</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={setInPoint}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    fontWeight: 700,
+                  }}
+                >
+                  Set In ({clipStart != null ? formatTime(clipStart) : '—'})
+                </button>
+                <button
+                  type="button"
+                  onClick={setOutPoint}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    fontWeight: 700,
+                  }}
+                >
+                  Set Out ({clipEnd != null ? formatTime(clipEnd) : '—'})
+                </button>
+                <div style={{ alignSelf: 'center', color: '#bbb' }}>
+                  Length: {clipStart != null && clipEnd != null ? formatTime(clipEnd - clipStart) : '—'} (5s–180s)
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <input
+                  type="text"
+                  value={clipTitle}
+                  onChange={(e) => setClipTitle(e.target.value)}
+                  placeholder="Clip title (optional)"
+                  style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0b0b0b',
+                    color: '#fff',
+                    fontSize: 16,
+                    lineHeight: '1.4',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <textarea
+                  value={clipDescription}
+                  onChange={(e) => setClipDescription(e.target.value)}
+                  placeholder="Clip description (optional)"
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0b0b0b',
+                    color: '#fff',
+                    resize: 'vertical',
+                    fontSize: 16,
+                    lineHeight: '1.4',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              {clipError ? <div style={{ color: '#ffb3b3' }}>{clipError}</div> : null}
+              {clipMessage ? <div style={{ color: '#9ef0b4' }}>{clipMessage}</div> : null}
+              <button
+                type="button"
+                onClick={() => void handleSaveClip()}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0a84ff',
+                  color: '#fff',
+                  fontWeight: 700,
+                  width: 'fit-content',
+                }}
+                disabled={clipSaving}
+              >
+                Save Clip
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )
+}
+
+const LibraryPage: React.FC = () => {
+  const path = typeof window !== 'undefined' ? window.location.pathname : ''
+  if (path.startsWith('/library/create-clip/')) {
+    return <LibraryCreateClipPage />
+  }
+  return <LibraryListPage />
 }
 
 export default LibraryPage

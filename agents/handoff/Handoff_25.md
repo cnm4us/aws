@@ -26,14 +26,14 @@ Priority Backlog (Refactor Objectives)
   - [ ] Future: predictive preloading hooks
 
 Summary
-- Implemented Plan 89 core features: captions API + rolling captions panel, transcript search normalization, and waveform click-to-seek/polish in the Library player. Adjusted waveform window from 30s to 10s and updated captions list to keep active cue near the top; fixed scroll offset math to keep active cue visible. Updated Plan 89 statuses; API tests logged for captions/search, UI tests pending.
+- Implemented Plan 89 core features: captions API + rolling captions panel, transcript search normalization, and waveform click-to-seek/polish in the Library player. Adjusted waveform window from 30s to 10s and updated captions list to keep active cue near the top; fixed scroll offset math to keep active cue visible. Updated Plan 89 statuses; API tests logged for captions/search, UI tests pending. Started Plan 90 and completed Steps 1–4: SPA route for `/library/create-clip/:id`, Library frontend split into list vs create-clip views, list page includes View modal + Create clip action with URL state sync, and create-clip page includes header + metadata + back link preserving filters. Step 5 polish in progress: iOS input zoom mitigation plus waveform scrubber changes (fixed playhead, drag-to-scrub pause/resume, +/-10s long-press nudges). Added 16px font sizing + box-sizing for clip title/description to prevent iOS zoom and overflow. Curl tests logged, UI tests pending.
 
 Decisions (carried + new)
 - Library player must use custom controls only (no native `<video controls>`).
 
 Changes Since Last
-- Affects: frontend/src/app/Library.tsx; src/features/library/service.ts; src/routes/library.ts; agents/implementation/plan_89.md; agents/implementation/tests/plan_89/step_03_captions.md; agents/implementation/tests/plan_89/step_04_search.md
-- Routes: GET /api/library/videos/:id/captions; GET /api/library/videos/:id/search (matching behavior updated)
+- Affects: frontend/src/app/Library.tsx; src/features/library/service.ts; src/routes/library.ts; src/routes/pages.ts; agents/implementation/plan_89.md; agents/implementation/plan_90.md; agents/implementation/tests/plan_89/step_03_captions.md; agents/implementation/tests/plan_89/step_04_search.md; agents/implementation/tests/plan_90/step_01_route.md; agents/implementation/tests/plan_90/step_02_spa.md
+- Routes: GET /api/library/videos/:id/captions; GET /api/library/videos/:id/search (matching behavior updated); GET /library/create-clip/:id (SPA)
 - DB: none
 - Flags: none
 
