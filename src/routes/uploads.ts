@@ -451,6 +451,27 @@ uploadsRouter.get('/api/uploads/:id/cdn-url', requireAuth, async (req, res) => {
   }
 })
 
+uploadsRouter.post('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const timeSecondsRaw = (req.body as any)?.timeSeconds ?? (req.body as any)?.time_seconds
+    const timeSeconds = Number(timeSecondsRaw)
+    if (!Number.isFinite(timeSeconds) || timeSeconds < 0) return res.status(400).json({ error: 'bad_time' })
+    const result = await uploadsSvc.requestUploadThumbRefresh(
+      id,
+      { timeSeconds },
+      { userId: Number(req.user!.id) }
+    )
+    return res.json(result)
+  } catch (err: any) {
+    const status = err?.status || 500
+    if (status === 403) return res.status(403).json({ error: 'forbidden' })
+    if (status === 404) return res.status(404).json({ error: 'not_found' })
+    return res.status(status).json({ error: err?.code || 'failed', detail: String(err?.message || err) })
+  }
+})
+
 uploadsRouter.get('/api/uploads/:id/publish-options', requireAuth, async (req, res) => {
   try {
     const uploadId = Number(req.params.id)

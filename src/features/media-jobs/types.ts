@@ -208,6 +208,8 @@ export type UploadThumbV1Input = {
   outputBucket: string
   outputKey: string
   longEdgePx: number
+  seekSeconds?: number
+  force?: boolean
 }
 
 export type UploadEditProxyV1Input = {

@@ -35,6 +35,12 @@ Summary
 - Corrected `sortedItems` to live in `GraphicAssetsListPage` (was mistakenly added to video assets).
 - Reworked `/admin/video-library` cards with title modal, 50-word description toggle, inline video player, and edit/delete actions.
 - Adjusted admin video-library description truncation to 20 words and made description modal scrollable.
+- Added admin “New Preview” button to capture current video frame and enqueue a forced thumbnail refresh.
+- Admin video players now use thumb as `poster` and refresh it after “New Preview”.
+- Admin video cards now use `preload="none"` so poster stays visible until play.
+- Admin video-library delete button styled red and left-aligned apart from other actions.
+- Admin video-library cards now have explicit border/background styles so each video is visually distinct.
+- Removed the outer admin video-library wrapper card so only per-video cards remain.
 - Tests still pending.
 
 Decisions (carried + new)
@@ -141,6 +147,29 @@ Meta:
 
 Commit:
 - b259696
+
+Subject: feat(admin): enhance video library cards
+
+Context:
+- Admin video library descriptions could overflow modal and list truncation was too long.
+
+Approach:
+- Made modal body scrollable with max height and reduced list truncation to 20 words.
+
+Impact:
+- Long descriptions remain usable without overflowing the modal.
+
+Tests:
+- Manual: admin page updated in browser.
+
+Meta:
+- Affects: src/routes/pages.ts; agents/handoff/Handoff_26.md
+- Routes: GET /admin/video-library
+- DB: none
+- Flags: none
+
+Commit:
+- 7fa2ecb
 
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])

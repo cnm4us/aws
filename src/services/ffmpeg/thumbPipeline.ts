@@ -10,6 +10,7 @@ export async function createUploadThumbJpeg(opts: {
   video: { bucket: string; key: string }
   outKey: string
   longEdgePx?: number
+  seekSeconds?: number
   logPaths?: { stdoutPath?: string; stderrPath?: string; commandLog?: string[] }
 }): Promise<{ bucket: string; key: string; s3Url: string; metricsInput?: MediaInfo | null }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bacs-upload-thumb-'))
@@ -26,10 +27,11 @@ export async function createUploadThumbJpeg(opts: {
     // - Portrait:  scale=-2:longEdge
     const vf = `scale=w='if(gte(iw,ih),${longEdge},-2)':h='if(gte(iw,ih),-2,${longEdge})':flags=lanczos`
 
-    // Avoid black/empty first frames (common right at t=0); seek slightly in.
+    const seekSeconds = Number.isFinite(Number(opts.seekSeconds)) && Number(opts.seekSeconds) >= 0 ? Number(opts.seekSeconds) : 0.2
+    // Avoid black/empty first frames (common right at t=0); seek slightly in by default.
     const ffmpegArgs = [
       '-ss',
-      '0.2',
+      String(seekSeconds),
       '-i',
       videoPath,
       '-frames:v',

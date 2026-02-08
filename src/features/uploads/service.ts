@@ -533,6 +533,66 @@ async function ensureThumbEnqueued(uploadRow: any, ctx: ServiceContext): Promise
   }
 }
 
+export async function requestUploadThumbRefresh(
+  uploadId: number,
+  params: { timeSeconds: number },
+  ctx: ServiceContext
+): Promise<{ status: 'queued' | 'pending' }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  if (!MEDIA_JOBS_ENABLED) throw new DomainError('media_jobs_disabled', 'media_jobs_disabled', 503)
+
+  const id = Number(uploadId)
+  if (!Number.isFinite(id) || id <= 0) throw new DomainError('bad_id', 'bad_id', 400)
+  const timeSeconds = Number(params?.timeSeconds)
+  if (!Number.isFinite(timeSeconds) || timeSeconds < 0) throw new DomainError('bad_time', 'bad_time', 400)
+
+  const row = await repo.getById(id)
+  if (!row) throw new NotFoundError('not_found')
+  const kind = String(row.kind || 'video').toLowerCase()
+  if (kind !== 'video') throw new NotFoundError('not_found')
+  if (row?.source_deleted_at) throw new NotFoundError('not_found')
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const checker = await resolveChecker(Number(ctx.userId))
+  const isAdmin = await can(Number(ctx.userId), PERM.VIDEO_DELETE_ANY, { checker })
+  const isOwner = ownerId != null && ownerId === Number(ctx.userId)
+  if (!isAdmin && !isOwner) throw new ForbiddenError()
+
+  const bucket = String(row.s3_bucket || '')
+  const key = String(row.s3_key || '')
+  if (!bucket || !key) throw new NotFoundError('not_found')
+
+  let alreadyQueued = false
+  try {
+    const db = getPool()
+    const [rows] = await db.query(
+      `SELECT id
+         FROM media_jobs
+        WHERE type = 'upload_thumb_v1'
+          AND status IN ('pending','processing')
+          AND JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.uploadId')) = ?
+        ORDER BY id DESC
+        LIMIT 1`,
+      [String(id)]
+    )
+    alreadyQueued = (rows as any[]).length > 0
+  } catch {}
+  if (alreadyQueued) return { status: 'pending' }
+
+  await enqueueJob('upload_thumb_v1', {
+    uploadId: id,
+    userId: Number(ctx.userId),
+    video: { bucket, key },
+    outputBucket: String(UPLOAD_BUCKET),
+    outputKey: buildUploadThumbKey(id),
+    longEdgePx: 640,
+    seekSeconds: timeSeconds,
+    force: true,
+  })
+
+  return { status: 'queued' }
+}
+
 export async function getUploadAudioEnvelope(
   uploadId: number,
   ctx: ServiceContext

@@ -4894,8 +4894,6 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
     if (!items.length) {
       body += '<p>No system library videos yet.</p>'
     } else {
-      body += '<div class="section">'
-      body += '<div class="section-title">Videos</div>'
       body += '<div style="display:grid; gap:16px">'
       for (const row of items) {
         const id = Number(row.id)
@@ -4911,7 +4909,7 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
         const duration = row.duration_seconds ? `${row.duration_seconds}s` : ''
         const size = row.size_bytes ? `${Math.round(Number(row.size_bytes) / 1024 / 1024)} MB` : ''
         const meta = [srcLabel, duration, dims].filter(Boolean).join(' · ')
-        body += `<div class="card" data-upload-id="${escapeHtml(String(id))}">`
+        body += `<div class="card" data-upload-id="${escapeHtml(String(id))}" style="border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:14px; background:rgba(18,18,18,0.92);">`
         body += `<button type="button" class="js-video-title" data-title="${escapeHtml(name)}" data-desc="${escapeHtml(descTrim)}" style="padding:0; border:none; background:transparent; color:#fff; text-align:left; font-weight:900; font-size:16px; cursor:pointer;">${escapeHtml(name)}</button>`
         if (meta) body += `<div class="field-hint">${escapeHtml(meta)}</div>`
         if (descTrim) {
@@ -4924,15 +4922,19 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
           body += `</div>`
         }
         body += `<div style="margin-top:10px">`
-        body += `<video controls playsinline preload="metadata" src="/api/uploads/${encodeURIComponent(String(id))}/edit-proxy#t=0.1" style="width:100%; max-height:360px; background:#000; border-radius:12px;"></video>`
+        const thumbBase = `/api/uploads/${encodeURIComponent(String(id))}/thumb`
+        body += `<video controls playsinline preload="none" src="/api/uploads/${encodeURIComponent(String(id))}/edit-proxy#t=0.1" poster="${thumbBase}?ts=${Date.now()}" data-thumb-base="${escapeHtml(thumbBase)}" style="width:100%; max-height:360px; background:#000; border-radius:12px;"></video>`
         body += `</div>`
-        body += `<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap">`
+        body += `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap">`
+        body += `<button type="button" class="btn js-video-delete" data-id="${escapeHtml(String(id))}" style="background:#c62828; border-color:#c62828; color:#fff;">Delete</button>`
+        body += `<div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap">`
+        body += `<button type="button" class="btn js-video-preview" data-id="${escapeHtml(String(id))}">New Preview</button>`
         body += `<button type="button" class="btn js-video-edit" data-id="${escapeHtml(String(id))}" data-title="${escapeHtml(name)}" data-desc="${escapeHtml(descTrim)}">Edit</button>`
-        body += `<button type="button" class="btn js-video-delete" data-id="${escapeHtml(String(id))}">Delete</button>`
+        body += `</div>`
         body += `</div>`
         body += `</div>`
       }
-      body += '</div></div>'
+      body += '</div>'
 
       body += `
         <div id="video-desc-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:9999;">
@@ -5070,6 +5072,56 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
                   if (card && card.parentNode) card.parentNode.removeChild(card);
                 } catch (err) {
                   window.alert(err && err.message ? err.message : 'Failed to delete');
+                }
+              });
+            });
+
+            document.querySelectorAll('.js-video-preview').forEach(function(btn) {
+              btn.addEventListener('click', async function() {
+                var id = btn.getAttribute('data-id') || '';
+                if (!id) return;
+                var card = btn.closest('.card');
+                var video = card ? card.querySelector('video') : null;
+                if (!video) {
+                  window.alert('Video player not found.');
+                  return;
+                }
+                if (video.readyState < 1) {
+                  window.alert('Play the video briefly to load it, then pause on the frame you want.');
+                  return;
+                }
+                var t = Number(video.currentTime || 0);
+                if (!Number.isFinite(t) || t < 0) {
+                  window.alert('Pick a frame in the video first.');
+                  return;
+                }
+                var original = btn.textContent;
+                btn.textContent = 'Saving…';
+                btn.setAttribute('disabled', 'true');
+                try {
+                  var headers = { 'Content-Type': 'application/json' };
+                  var csrf = getCsrf();
+                  if (csrf) headers['x-csrf-token'] = csrf;
+                  var res = await fetch('/api/uploads/' + encodeURIComponent(id) + '/thumb', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: headers,
+                    body: JSON.stringify({ timeSeconds: Number(t.toFixed(2)) })
+                  });
+                  var json = await res.json().catch(function() { return null; });
+                  if (!res.ok) throw new Error(String((json && (json.detail || json.error)) || 'Failed to update preview'));
+                  if (video) {
+                    var base = video.getAttribute('data-thumb-base') || '';
+                    if (base) {
+                      video.setAttribute('poster', base + '?ts=' + Date.now());
+                    }
+                  }
+                  window.alert('Preview update queued.');
+                } catch (err) {
+                  window.alert(err && err.message ? err.message : 'Failed to update preview');
+                } finally {
+                  btn.textContent = original || 'New Preview';
+                  btn.removeAttribute('disabled');
                 }
               });
             });

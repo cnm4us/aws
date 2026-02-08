@@ -11,17 +11,20 @@ export async function runUploadThumbV1Job(
   const key = String(input.outputKey || '')
   if (!bucket || !key) throw new Error('missing_output_pointer')
   const ffmpegCommands: string[] = []
+  const force = Boolean(input.force)
 
   // Idempotency: if thumb already exists, skip re-rendering.
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
-    return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true, ffmpegCommands }
-  } catch (e: any) {
-    const status = Number(e?.$metadata?.httpStatusCode || 0)
-    const name = String(e?.name || e?.Code || '')
-    if (!(status === 404 || name === 'NotFound' || name === 'NoSuchKey')) {
-      // Unexpected (permissions/infra) - bubble up so the job can retry.
-      throw e
+  if (!force) {
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+      return { output: { bucket, key, s3Url: `s3://${bucket}/${key}` }, skipped: true, ffmpegCommands }
+    } catch (e: any) {
+      const status = Number(e?.$metadata?.httpStatusCode || 0)
+      const name = String(e?.name || e?.Code || '')
+      if (!(status === 404 || name === 'NotFound' || name === 'NoSuchKey')) {
+        // Unexpected (permissions/infra) - bubble up so the job can retry.
+        throw e
+      }
     }
   }
 
@@ -32,6 +35,7 @@ export async function runUploadThumbV1Job(
     video: input.video,
     outKey: key,
     longEdgePx,
+    seekSeconds: input.seekSeconds,
     logPaths: logPaths ? { ...logPaths, commandLog: ffmpegCommands } : undefined,
   })
   return { output: { bucket: result.bucket, key: result.key, s3Url: result.s3Url }, ffmpegCommands, metricsInput: result.metricsInput }
