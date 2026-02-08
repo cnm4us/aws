@@ -30,6 +30,17 @@ function normalizeSeconds(n: any): number {
   return roundToTenth(Math.max(0, v))
 }
 
+function clampTimelineRange(
+  startSeconds: number,
+  endSeconds: number
+): { startSeconds: number; endSeconds: number } | null {
+  const start = roundToTenth(Math.max(0, Number(startSeconds)))
+  if (!Number.isFinite(start) || start >= MAX_SECONDS - 1e-6) return null
+  const end = roundToTenth(Math.min(MAX_SECONDS, Number(endSeconds)))
+  if (!Number.isFinite(end) || end <= start + 1e-6) return null
+  return { startSeconds: start, endSeconds: end }
+}
+
 function isAllowedFreezeSeconds(v: number): boolean {
   const n = roundToTenth(Number(v))
   if (!(Number.isFinite(n) && n >= 0)) return false
@@ -562,6 +573,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const freezeEnd = freezeEndRaw != null && Number.isFinite(Number(freezeEndRaw)) ? roundToTenth(Math.max(0, Number(freezeEndRaw))) : 0
     const legacyFreezeSeconds = roundToTenth(Math.min(5, freezeStart) + Math.min(5, freezeEnd))
 
+    if (startSeconds >= MAX_SECONDS - 1e-6) continue
+
     const meta = await loadUploadMetaForUser(uploadId, ctx.userId)
     let end = sourceEndSeconds
     if (meta.durationSeconds != null) {
@@ -570,10 +583,14 @@ export async function validateAndNormalizeCreateVideoTimeline(
     }
 
     const baseLen = Math.max(0, end - sourceStartSeconds)
-    const legacyEndSeconds = roundToTenth(startSeconds + baseLen + legacyFreezeSeconds)
+    const availableSeconds = Math.max(0, roundToTenth(MAX_SECONDS - startSeconds))
+    const clampedBaseLen = Math.min(baseLen, availableSeconds)
+    if (clampedBaseLen <= 1e-6) continue
+
+    end = roundToTenth(sourceStartSeconds + clampedBaseLen)
+    const legacyEndSeconds = roundToTenth(startSeconds + clampedBaseLen + legacyFreezeSeconds)
     legacyVideoEndSeconds = Math.max(legacyVideoEndSeconds, legacyEndSeconds)
     sequentialCursorSeconds = Math.max(sequentialCursorSeconds, legacyEndSeconds)
-    if (legacyVideoEndSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
     if (legacyFreezeSeconds > 1e-6) legacyRemovalEvents.push({ t: legacyEndSeconds, delta: legacyFreezeSeconds })
 
@@ -679,11 +696,19 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((s as any).startSeconds)
     const endSeconds = normalizeSeconds((s as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const meta = await loadFreezeFrameImageMetaForUser(uploadId, ctx.userId)
     const sourceClipIdRaw = (s as any).sourceClipId
     const sourceClipId = sourceClipIdRaw != null ? String(sourceClipIdRaw).trim() : undefined
-    stills.push({ id, uploadId: meta.id, startSeconds, endSeconds, sourceClipId: sourceClipId || undefined })
+    stills.push({
+      id,
+      uploadId: meta.id,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
+      sourceClipId: sourceClipId || undefined,
+    })
   }
 
   stills.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
@@ -731,6 +756,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((g as any).startSeconds)
     const endSeconds = normalizeSeconds((g as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const meta = await loadOverlayImageMetaForUser(uploadId, ctx.userId)
 
@@ -757,7 +784,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const fade = fadeAllowed.has(fadeRaw) ? fadeRaw : 'none'
 
     if (!hasPlacementFields && !hasEffectsFields) {
-      graphics.push({ id, uploadId: meta.id, startSeconds, endSeconds })
+      graphics.push({ id, uploadId: meta.id, startSeconds: clamped.startSeconds, endSeconds: clamped.endSeconds })
       continue
     }
 
@@ -766,8 +793,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
       graphics.push({
         id,
         uploadId: meta.id,
-        startSeconds,
-        endSeconds,
+        startSeconds: clamped.startSeconds,
+        endSeconds: clamped.endSeconds,
         borderWidthPx,
         borderColor,
         fade,
@@ -793,8 +820,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     graphics.push({
       id,
       uploadId: meta.id,
-      startSeconds,
-      endSeconds,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
       fitMode,
       sizePctWidth,
       position,
@@ -810,7 +837,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
   graphics.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < graphics.length; i++) {
     const g = graphics[i]
-    if (g.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = graphics[i - 1]
       if (g.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('graphic_overlap', 'graphic_overlap', 400)
@@ -854,6 +880,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((s as any).startSeconds)
     const endSeconds = normalizeSeconds((s as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const meta = await loadFreezeFrameImageMetaForUser(uploadId, ctx.userId)
     const sourceVideoOverlayIdRaw = (s as any).sourceVideoOverlayId
@@ -870,8 +898,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     videoOverlayStills.push({
       id,
       uploadId: meta.id,
-      startSeconds,
-      endSeconds,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
       ...(sourceVideoOverlayId ? { sourceVideoOverlayId } : {}),
       ...(sizePctWidth != null ? { sizePctWidth } : {}),
       ...(position ? { position } : {}),
@@ -881,7 +909,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
   videoOverlayStills.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < videoOverlayStills.length; i++) {
     const s = videoOverlayStills[i] as any
-    if (s.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = videoOverlayStills[i - 1] as any
       if (s.startSeconds < Number(prev.endSeconds) - 1e-6) throw new DomainError('video_overlay_still_overlap', 'video_overlay_still_overlap', 400)
@@ -923,6 +950,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSecondsRaw = (o as any).startSeconds
     const startSeconds =
       startSecondsRaw != null ? normalizeSeconds(startSecondsRaw) : roundToTenth(Math.max(0, overlayCursorSeconds))
+    if (startSeconds >= MAX_SECONDS - 1e-6) continue
 
     const sourceStartSeconds = normalizeSeconds((o as any).sourceStartSeconds ?? 0)
     const sourceEndSeconds = normalizeSeconds((o as any).sourceEndSeconds)
@@ -959,9 +987,12 @@ export async function validateAndNormalizeCreateVideoTimeline(
     }
 
     const dur = roundToTenth(Math.max(0, end - sourceStartSeconds))
-    const endSeconds = roundToTenth(startSeconds + dur)
+    const availableSeconds = Math.max(0, roundToTenth(MAX_SECONDS - startSeconds))
+    const clampedDur = Math.min(dur, availableSeconds)
+    if (clampedDur <= 1e-6) continue
+    end = roundToTenth(sourceStartSeconds + clampedDur)
+    const endSeconds = roundToTenth(startSeconds + clampedDur)
     overlayCursorSeconds = Math.max(overlayCursorSeconds, endSeconds)
-    if (overlayCursorSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
     videoOverlays.push({
       id,
@@ -1052,6 +1083,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((l as any).startSeconds)
     const endSeconds = normalizeSeconds((l as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const meta = await loadLogoMetaForUser(uploadId, ctx.userId)
 
@@ -1073,13 +1106,23 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetXPxRaw))) : 100
     const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(9999, Math.round(insetYPxRaw))) : 100
 
-    logos.push({ id, uploadId: meta.id, startSeconds, endSeconds, sizePctWidth, position, opacityPct, fade, insetXPx, insetYPx })
+    logos.push({
+      id,
+      uploadId: meta.id,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
+      sizePctWidth,
+      position,
+      opacityPct,
+      fade,
+      insetXPx,
+      insetYPx,
+    })
   }
 
   logos.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < logos.length; i++) {
     const l = logos[i]
-    if (l.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = logos[i - 1]
       if (l.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('logo_overlap', 'logo_overlap', 400)
@@ -1111,18 +1154,26 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((lt as any).startSeconds)
     const endSeconds = normalizeSeconds((lt as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const meta = await loadLowerThirdImageMetaForUser(uploadId, ctx.userId)
     await lowerThirdConfigsSvc.getActiveForUser(configId, Number(ctx.userId))
     const configSnapshot = normalizeLowerThirdConfigSnapshot((lt as any).configSnapshot, configId)
 
-    lowerThirds.push({ id, uploadId: meta.id, startSeconds, endSeconds, configId, configSnapshot })
+    lowerThirds.push({
+      id,
+      uploadId: meta.id,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
+      configId,
+      configSnapshot,
+    })
   }
 
   lowerThirds.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < lowerThirds.length; i++) {
     const lt = lowerThirds[i]
-    if (lt.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = lowerThirds[i - 1]
       if (lt.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('lower_third_overlap', 'lower_third_overlap', 400)
@@ -1149,6 +1200,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((st as any).startSeconds)
     const endSeconds = normalizeSeconds((st as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
 
     const presetIdRaw = (st as any).presetId
     const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
@@ -1251,8 +1304,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     screenTitles.push({
       id,
-      startSeconds,
-      endSeconds,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
       presetId,
       presetSnapshot,
       customStyle: primaryInst?.customStyle || null,
@@ -1265,7 +1318,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
   screenTitles.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < screenTitles.length; i++) {
     const st = screenTitles[i]
-    if (st.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = screenTitles[i - 1]
       if (st.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('screen_title_overlap', 'screen_title_overlap', 400)
@@ -1294,6 +1346,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const startSeconds = normalizeSeconds((seg as any).startSeconds)
     const endSeconds = normalizeSeconds((seg as any).endSeconds)
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
     const sourceStartRaw = (seg as any).sourceStartSeconds
     const sourceStartSeconds = sourceStartRaw == null ? 0 : normalizeSeconds(sourceStartRaw)
     const gainRaw = (seg as any).gainDb
@@ -1309,8 +1363,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     narration.push({
       id,
       uploadId: meta.id,
-      startSeconds,
-      endSeconds,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
       sourceStartSeconds,
       gainDb,
       audioEnabled,
@@ -1320,7 +1374,6 @@ export async function validateAndNormalizeCreateVideoTimeline(
   narration.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
   for (let i = 0; i < narration.length; i++) {
     const n = narration[i]
-    if (n.endSeconds > MAX_SECONDS + 1e-6) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
     if (i > 0) {
       const prev = narration[i - 1]
       if (n.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('narration_overlap', 'narration_overlap', 400)
@@ -1329,21 +1382,22 @@ export async function validateAndNormalizeCreateVideoTimeline(
   const narrationTotalSeconds = narration.length ? Number(narration[narration.length - 1].endSeconds) : 0
 
   const totalForPlayhead = roundToTenth(
-    Math.max(
-      videoTotalSeconds,
-      graphicsTotalSeconds,
-      stillsTotalSeconds,
-      videoOverlaysTotalSeconds,
-      videoOverlayStillsTotalSeconds,
-      logosTotalSeconds,
-      lowerThirdsTotalSeconds,
-      screenTitlesTotalSeconds,
-      narrationTotalSeconds
+    Math.min(
+      MAX_SECONDS,
+      Math.max(
+        videoTotalSeconds,
+        graphicsTotalSeconds,
+        stillsTotalSeconds,
+        videoOverlaysTotalSeconds,
+        videoOverlayStillsTotalSeconds,
+        logosTotalSeconds,
+        lowerThirdsTotalSeconds,
+        screenTitlesTotalSeconds,
+        narrationTotalSeconds
+      )
     )
   )
   const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
-
-  if (totalForPlayhead > MAX_SECONDS) throw new DomainError('timeline_too_long', 'timeline_too_long', 413)
 
   const MAX_AUDIO_SEGMENTS = 200
   const audioSegments: any[] = []
@@ -1379,9 +1433,13 @@ export async function validateAndNormalizeCreateVideoTimeline(
         const startSeconds = normalizeSeconds((seg as any).startSeconds ?? 0)
         const endSecondsRaw = (seg as any).endSeconds
         const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
-        const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
-        const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
-        if (!(end > start)) throw new ValidationError('invalid_seconds')
+        const maxPlayhead = roundToTenth(totalForPlayhead)
+        const start = Math.min(startSeconds, maxPlayhead)
+        const end = Math.min(endSecondsInput, maxPlayhead)
+        if (!(end > start)) {
+          if (start >= maxPlayhead - 1e-6) continue
+          throw new ValidationError('invalid_seconds')
+        }
         const sourceStartRaw = (seg as any).sourceStartSeconds
         const sourceStartSeconds = sourceStartRaw == null ? 0 : normalizeSeconds(sourceStartRaw)
         audioSegments.push({

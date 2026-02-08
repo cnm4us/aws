@@ -41,13 +41,14 @@ Summary
 - Admin video-library delete button styled red and left-aligned apart from other actions.
 - Admin video-library cards now have explicit border/background styles so each video is visually distinct.
 - Removed the outer admin video-library wrapper card so only per-video cards remain.
+- Create-video timeline validation now clamps clips/segments to 20 minutes and skips out-of-range items instead of throwing `timeline_too_long`.
 - Tests still pending.
 
 Decisions (carried + new)
 - Library player must use custom controls only (no native `<video controls>`).
 
 Changes Since Last
-- Affects: src/config/librarySources.ts; src/features/uploads/service.ts; src/routes/library.ts; src/routes/pages.ts; frontend/src/app/Library.tsx; frontend/src/app/UploadNew.tsx; agents/implementation/plan_92.md
+- Affects: src/config/librarySources.ts; src/features/uploads/service.ts; src/routes/library.ts; src/routes/pages.ts; frontend/src/app/Library.tsx; frontend/src/app/UploadNew.tsx; agents/implementation/plan_92.md; src/features/create-video/validate.ts
 - Routes: GET /api/library/source-orgs
 - DB: none
 - Flags: none
@@ -171,7 +172,31 @@ Meta:
 Commit:
 - 7fa2ecb
 
+Subject: feat(admin): refresh video thumbnails
+
+Context:
+- Admin needs to update preview thumbnails from a chosen video frame.
+
+Approach:
+- Added thumb refresh endpoint + job support for seek/force; admin UI now supports “New Preview” and uses thumb as poster.
+
+Impact:
+- Admins can generate new previews without manual S3 edits; posters reflect updated thumbs.
+
+Tests:
+- Manual: New Preview triggers upload_thumb_v1 and thumb update observed in /library.
+
+Meta:
+- Affects: src/features/media-jobs/types.ts; src/features/uploads/service.ts; src/media/jobs/uploadThumbV1.ts; src/routes/pages.ts; src/routes/uploads.ts; src/services/ffmpeg/thumbPipeline.ts; agents/handoff/Handoff_26.md
+- Routes: POST /api/uploads/:id/thumb
+- DB: none
+- Flags: none
+
+Commit:
+- d677050
+
 Thread Plan (subset of Backlog)
 - [x] Implement Plan 92 frontend wiring + tests. ([P2.4])
 
 Work Log (optional, terse; reverse-chronological)
+- Adjusted create-video timeline validation to clamp overlength content to 20 minutes.
