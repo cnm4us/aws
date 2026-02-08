@@ -577,6 +577,10 @@ function computeFadeAlpha(cfg: { fade?: any }, tRelS: number, windowStartRelS: n
   return a
 }
 
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
+const easeOutCubic = (t: number): number => 1 - Math.pow(1 - clamp01(t), 3)
+const easeInCubic = (t: number): number => Math.pow(clamp01(t), 3)
+
 function migrateLegacyClipFreezeTimeline(tl: Timeline): { timeline: Timeline; changed: boolean } {
   const clips: any[] = Array.isArray((tl as any).clips) ? (((tl as any).clips as any) as any[]) : []
   if (!clips.length) return { timeline: tl, changed: false }
@@ -773,6 +777,7 @@ export default function CreateVideo() {
     id: string
     start: number
     end: number
+    mode: 'full' | 'positioned' | 'animated'
     fitMode: 'cover_full' | 'contain_transparent'
     sizePctWidth: number
     position:
@@ -790,6 +795,8 @@ export default function CreateVideo() {
     borderWidthPx: 0 | 2 | 4 | 6
     borderColor: string
     fade: 'none' | 'in' | 'out' | 'in_out'
+    animate: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+    animateDurationMs: number
   } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
   const [stillEditor, setStillEditor] = useState<{ id: string; start: number; end: number } | null>(null)
@@ -3025,6 +3032,17 @@ export default function CreateVideo() {
     const borderWidthAllowed = new Set([0, 2, 4, 6])
     const borderWidth = borderWidthAllowed.has(Number(g.borderWidthPx)) ? Number(g.borderWidthPx) : 0
     const borderColor = String(g.borderColor || '#000000')
+    const animateRaw = String(g.animate || 'none').trim().toLowerCase()
+    const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+    const animate = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+    const animateDurationRaw = Number(g.animateDurationMs)
+    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+    animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+    const segStart = Number(g.startSeconds || 0)
+    const segEnd = Number(g.endSeconds || 0)
+    const segMs = Math.max(0, Math.round((segEnd - segStart) * 1000))
+    const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
     const fitMode = g.fitMode != null ? String(g.fitMode) : ''
     // Legacy behavior: full-frame cover when placement fields are absent.
     if (!fitMode) {
@@ -3072,7 +3090,12 @@ export default function CreateVideo() {
     const widthPx = Number.isFinite(widthPxRaw) ? Math.max(1, widthPxRaw) : 1
 
     const posRaw = String(g.position || 'middle_center')
-    const pos = normalizeLegacyPosition(posRaw)
+    let pos = normalizeLegacyPosition(posRaw)
+    if (animate !== 'none') {
+      if (pos.includes('top')) pos = 'top_center'
+      else if (pos.includes('bottom')) pos = 'bottom_center'
+      else pos = 'middle_center'
+    }
     const style: any = {
       position: 'absolute',
       // Use % for width to avoid any chance of px math drifting from the actual preview box size.
@@ -3122,8 +3145,27 @@ export default function CreateVideo() {
       style.right = insetXStr
       style.bottom = insetYStr
     }
+    if (animate !== 'none' && segMs > 0 && animateDurationMs > 0) {
+      const tRelMs = (Number(playhead) - segStart) * 1000
+      const inDurMs = Math.max(1, Math.min(animateDurationMs, segMs))
+      const outDurMs = inDurMs
+      const outStartMs = Math.max(0, segMs - outDurMs)
+      const offscreenPx = Math.max(0, Math.round((previewW + widthPx) / 2 + 20))
+      let translateX = 0
+      if ((animate === 'slide_out' || animate === 'slide_in_out') && tRelMs >= outStartMs - 1e-6) {
+        const p = outDurMs > 0 ? (tRelMs - outStartMs) / outDurMs : 1
+        translateX = offscreenPx * easeInCubic(p)
+      } else if ((animate === 'slide_in' || animate === 'slide_in_out') && tRelMs <= inDurMs + 1e-6) {
+        const p = inDurMs > 0 ? tRelMs / inDurMs : 1
+        translateX = -offscreenPx + offscreenPx * easeOutCubic(p)
+      }
+      if (Math.abs(translateX) > 0.5) {
+        const baseTransform = String(style.transform || '').trim()
+        style.transform = `${baseTransform} translateX(${Math.round(translateX)}px)`.trim()
+      }
+    }
     return style as React.CSSProperties
-  }, [activeGraphicAtPlayhead, previewBoxSize.h, previewBoxSize.w])
+  }, [activeGraphicAtPlayhead, playhead, previewBoxSize.h, previewBoxSize.w])
 
   const activeGraphicPreviewIndicators = useMemo(() => {
     const g: any = activeGraphicAtPlayhead as any
@@ -3131,7 +3173,9 @@ export default function CreateVideo() {
     if (String((g as any).id || '') !== String(selectedGraphicId || '')) return { show: false, hasFade: false }
     const fade = String((g as any).fade || 'none')
     const hasFade = fade !== 'none'
-    return { show: hasFade, hasFade }
+    const animate = String((g as any).animate || 'none')
+    const hasAnimate = animate !== 'none'
+    return { show: hasFade || hasAnimate, hasFade, hasAnimate }
   }, [activeGraphicAtPlayhead, selectedGraphicId])
 
   const activeStillUrl = useMemo(() => {
@@ -7515,6 +7559,8 @@ export default function CreateVideo() {
         borderWidthPx: 0,
         borderColor: '#000000',
         fade: 'none',
+        animate: 'none',
+        animateDurationMs: 400,
       }
       snapshotUndo()
       setTimeline((prev) => {
@@ -12748,13 +12794,25 @@ export default function CreateVideo() {
       const currentHasPlacement =
         current?.fitMode != null || current?.sizePctWidth != null || current?.position != null || current?.insetXPx != null || current?.insetYPx != null
       const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.fade != null
+      const currentHasAnimation = current?.animate != null || current?.animateDurationMs != null
 
       const nextBase: any = { ...current, startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
-      const wantsPlacement = graphicEditor.fitMode === 'contain_transparent'
+      const mode = graphicEditor.mode || (graphicEditor.fitMode === 'contain_transparent' ? 'positioned' : 'full')
+      const wantsPlacement = mode !== 'full'
+      const fitMode: 'cover_full' | 'contain_transparent' = wantsPlacement ? 'contain_transparent' : 'cover_full'
+
+      const positionRaw = String(graphicEditor.position || 'middle_center')
+      let position = positionRaw as any
+      if (mode === 'animated') {
+        if (positionRaw.includes('top')) position = 'top_center'
+        else if (positionRaw.includes('bottom')) position = 'bottom_center'
+        else position = 'middle_center'
+      }
+
       const placement = {
-        fitMode: graphicEditor.fitMode,
+        fitMode,
         sizePctWidth: Math.round(clamp(Number.isFinite(Number(graphicEditor.sizePctWidth)) ? Number(graphicEditor.sizePctWidth) : 70, 10, 100)),
-        position: graphicEditor.position,
+        position,
         insetXPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetXPx)) ? Number(graphicEditor.insetXPx) : 24, 0, 300)),
         insetYPx: Math.round(clamp(Number.isFinite(Number(graphicEditor.insetYPx)) ? Number(graphicEditor.insetYPx) : 24, 0, 300)),
       }
@@ -12764,6 +12822,16 @@ export default function CreateVideo() {
       const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
       const fadeMode = fadeAllowed.has(fadeModeRaw) ? fadeModeRaw : 'none'
       const wantsEffects = borderWidth > 0 || fadeMode !== 'none'
+      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+      const animateRaw = String(graphicEditor.animate || 'none')
+      const animateMode = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+      const normalizedAnimateMode = mode === 'animated' && animateMode === 'none' ? 'slide_in_out' : animateMode
+      const wantsAnimation = mode === 'animated' && normalizedAnimateMode !== 'none'
+      const segMs = Math.max(0, Math.round((end - start) * 1000))
+      const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+      let animateDurationMs = Math.round(Number(graphicEditor.animateDurationMs) || 400)
+      animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+      if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
 
       // Backward compatibility:
       // - If the graphic has never had placement fields and the user keeps it as "Full Frame" (cover),
@@ -12778,7 +12846,11 @@ export default function CreateVideo() {
         updated = nextBase as Graphic
       } else {
         if (wantsPlacement) {
-          updated = { ...(nextBase as any), ...placement } as Graphic
+          if (mode === 'animated') {
+            updated = { ...(nextBase as any), ...placement, insetXPx: 0, insetYPx: 0 } as Graphic
+          } else {
+            updated = { ...(nextBase as any), ...placement } as Graphic
+          }
         } else {
           delete (nextBase as any).sizePctWidth
           delete (nextBase as any).position
@@ -12797,6 +12869,13 @@ export default function CreateVideo() {
         ;(nextGraphics[idx] as any).borderWidthPx = borderWidth
         ;(nextGraphics[idx] as any).borderColor = String(graphicEditor.borderColor || '#000000')
         ;(nextGraphics[idx] as any).fade = fadeMode
+      }
+      if (!currentHasAnimation && !wantsAnimation) {
+        delete (nextGraphics[idx] as any).animate
+        delete (nextGraphics[idx] as any).animateDurationMs
+      } else {
+        ;(nextGraphics[idx] as any).animate = wantsAnimation ? normalizedAnimateMode : 'none'
+        ;(nextGraphics[idx] as any).animateDurationMs = animateDurationMs
       }
       nextGraphics.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds))
       const nextTotal = computeTotalSecondsForTimeline({ ...(prev as any), graphics: nextGraphics } as any)
@@ -15198,6 +15277,7 @@ export default function CreateVideo() {
 	                      }}
 	                    >
 	                      {activeGraphicPreviewIndicators.hasFade ? <span>FADE</span> : null}
+	                      {activeGraphicPreviewIndicators.hasAnimate ? <span>ANIM</span> : null}
 	                    </div>
 	                  </div>
 	                ) : null}
@@ -17736,6 +17816,10 @@ export default function CreateVideo() {
                 const canStartInc01 = Number.isFinite(start) && Number.isFinite(end) && start + 0.1 <= end - minLen + 1e-9
                 const canEndDec01 = Number.isFinite(start) && Number.isFinite(end) && end - 0.1 >= start + minLen - 1e-9
                 const canEndInc01 = Number.isFinite(end) && end + 0.1 <= cap + 1e-9
+                const mode = graphicEditor.mode
+                const isFull = mode === 'full'
+                const isPositioned = mode === 'positioned'
+                const isAnimated = mode === 'animated'
 
 	                return (
 	                  <>
@@ -17776,7 +17860,7 @@ export default function CreateVideo() {
 
 		                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
 		                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-		                        <div style={{ fontSize: 14, fontWeight: 900 }}>Placement</div>
+		                        <div style={{ fontSize: 14, fontWeight: 900 }}>Mode</div>
 		                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           <button
                             type="button"
@@ -17785,7 +17869,9 @@ export default function CreateVideo() {
                                 p
                                   ? {
                                       ...p,
+                                      mode: 'full',
                                       fitMode: 'cover_full',
+                                      animate: 'none',
                                     }
                                   : p
                               )
@@ -17793,8 +17879,8 @@ export default function CreateVideo() {
                             style={{
                               padding: '8px 10px',
                               borderRadius: 10,
-                              border: graphicEditor.fitMode === 'cover_full' ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                              background: graphicEditor.fitMode === 'cover_full' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                              border: isFull ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                              background: isFull ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
                               color: '#fff',
                               fontWeight: 900,
                               cursor: 'pointer',
@@ -17809,7 +17895,9 @@ export default function CreateVideo() {
                                 p
                                   ? {
                                       ...p,
+                                      mode: 'positioned',
                                       fitMode: 'contain_transparent',
+                                      animate: 'none',
                                     }
                                   : p
                               )
@@ -17817,12 +17905,8 @@ export default function CreateVideo() {
                             style={{
                               padding: '8px 10px',
                               borderRadius: 10,
-                              border:
-                                graphicEditor.fitMode === 'contain_transparent'
-                                  ? '2px solid rgba(96,165,250,0.95)'
-                                  : '1px solid rgba(255,255,255,0.18)',
-                              background:
-                                graphicEditor.fitMode === 'contain_transparent' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                              border: isPositioned ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                              background: isPositioned ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
                               color: '#fff',
                               fontWeight: 900,
                               cursor: 'pointer',
@@ -17830,10 +17914,44 @@ export default function CreateVideo() {
                           >
 	                            Positioned
 	                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGraphicEditor((p) => {
+                                if (!p) return p
+                                const posRaw = String(p.position || 'middle_center')
+                                let position = posRaw
+                                if (posRaw.includes('top')) position = 'top_center'
+                                else if (posRaw.includes('bottom')) position = 'bottom_center'
+                                else position = 'middle_center'
+                                return {
+                                  ...p,
+                                  mode: 'animated',
+                                  fitMode: 'contain_transparent',
+                                  position,
+                                  insetXPx: 0,
+                                  insetYPx: 0,
+                                  animate: p.animate === 'none' ? 'slide_in_out' : p.animate,
+                                  animateDurationMs: Number.isFinite(Number(p.animateDurationMs)) ? Number(p.animateDurationMs) : 400,
+                                }
+                              })
+                            }
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              border: isAnimated ? '2px solid rgba(255,214,10,0.85)' : '1px solid rgba(255,255,255,0.18)',
+                              background: isAnimated ? 'rgba(255,214,10,0.18)' : 'rgba(255,255,255,0.04)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Animated
+                          </button>
 	                        </div>
 	                      </div>
 
-	                      {graphicEditor.fitMode === 'contain_transparent' ? (
+	                      {isPositioned ? (
 	                          <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
 	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
 	                            <div style={{ minWidth: 0 }}>
@@ -17963,7 +18081,74 @@ export default function CreateVideo() {
 	                            })()}
 	                          </div>
 	                        </div>
-	                      ) : (
+	                      ) : isAnimated ? (
+                          <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
+                                <select
+                                  value={String(graphicEditor.sizePctWidth)}
+                                  onChange={(e) => {
+                                    const v = Math.round(Number(e.target.value))
+                                    setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: 12,
+                                    border: '1px solid rgba(255,255,255,0.16)',
+                                    background: '#0c0c0c',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                  }}
+                                >
+                                  {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+                                    <option key={n} value={String(n)}>
+                                      {n}%
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Vertical placement</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                                  {[
+                                    { key: 'top_center', label: 'Top' },
+                                    { key: 'middle_center', label: 'Middle' },
+                                    { key: 'bottom_center', label: 'Bottom' },
+                                  ].map((c) => {
+                                    const selected = String(graphicEditor.position) === String(c.key)
+                                    return (
+                                      <button
+                                        key={String(c.key)}
+                                        type="button"
+                                        onClick={() => setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))}
+                                        style={{
+                                          height: 40,
+                                          borderRadius: 10,
+                                          border: selected ? '2px solid rgba(255,214,10,0.85)' : '1px solid rgba(255,255,255,0.18)',
+                                          background: selected ? 'rgba(255,214,10,0.18)' : 'rgba(255,255,255,0.04)',
+                                          color: '#fff',
+                                          fontWeight: 900,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          fontSize: 13,
+                                        }}
+                                      >
+                                        {c.label}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ color: '#888', fontSize: 12 }}>
+                              Animated graphics move left → right; vertical placement controls the lane.
+                            </div>
+                          </div>
+                        ) : (
 	                        <div style={{ marginTop: 10, color: '#888', fontSize: 13 }}>
 	                          Full-frame graphics fill the canvas and may crop to cover.
 	                        </div>
@@ -17973,6 +18158,51 @@ export default function CreateVideo() {
 	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
 	                      <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Effects</div>
 	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'end' }}>
+                          {isAnimated ? (
+                            <div>
+                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Animation</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center' }}>
+                                <select
+                                  value={String(graphicEditor.animate || 'none')}
+                                  onChange={(e) => setGraphicEditor((p) => (p ? { ...p, animate: e.target.value as any } : p))}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: 12,
+                                    border: '1px solid rgba(255,255,255,0.16)',
+                                    background: '#0c0c0c',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                  }}
+                                >
+                                  <option value="slide_in">Slide In</option>
+                                  <option value="slide_out">Slide Out</option>
+                                  <option value="slide_in_out">Slide In + Out</option>
+                                </select>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={String(graphicEditor.animateDurationMs || 400)}
+                                  onChange={(e) => {
+                                    const v = Math.round(Number(e.target.value))
+                                    setGraphicEditor((p) => (p ? { ...p, animateDurationMs: v } : p))
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: 12,
+                                    border: '1px solid rgba(255,255,255,0.16)',
+                                    background: '#0c0c0c',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                  }}
+                                  aria-label="Animation duration (ms)"
+                                  title="Animation duration (ms)"
+                                />
+                              </div>
+                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Duration in milliseconds (100–2000ms).</div>
+                            </div>
+                          ) : null}
 	                        <div>
 	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Fade</div>
 	                          <select
@@ -17996,7 +18226,7 @@ export default function CreateVideo() {
 	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Fixed duration: 0.35s</div>
 	                        </div>
 	                      </div>
-	                      {graphicEditor.fitMode === 'contain_transparent' ? (
+	                      {!isFull ? (
 	                        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
 	                          <div>
 	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Border</div>
@@ -20364,62 +20594,77 @@ export default function CreateVideo() {
 				                      if (g) {
 				                        const s = roundToTenth(Number((g as any).startSeconds || 0))
 				                        const e2 = roundToTenth(Number((g as any).endSeconds || 0))
-				                        const fitModeRaw = (g as any).fitMode != null ? String((g as any).fitMode) : ''
-				                        const fitMode: 'cover_full' | 'contain_transparent' =
-				                          fitModeRaw === 'contain_transparent' ? 'contain_transparent' : 'cover_full'
-				                        const sizePctWidthRaw = Number((g as any).sizePctWidth)
-				                        const sizePctWidth = Number.isFinite(sizePctWidthRaw)
-				                          ? Math.round(clamp(sizePctWidthRaw, 10, 100))
-				                          : fitMode === 'cover_full'
-				                            ? 100
-				                            : 70
-				                        const posRaw = String((g as any).position || 'middle_center')
-				                        const allowedPos = new Set([
-				                          'top_left',
-				                          'top_center',
-				                          'top_right',
-				                          'middle_left',
-				                          'middle_center',
-				                          'middle_right',
-				                          'bottom_left',
-				                          'bottom_center',
-				                          'bottom_right',
-				                        ])
-				                        const position = (allowedPos.has(posRaw) ? posRaw : 'middle_center') as any
-				                        const insetXPxRaw = Number((g as any).insetXPx)
-				                        const insetYPxRaw = Number((g as any).insetYPx)
-				                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
-				                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
-					                        const borderWidthAllowed = new Set([0, 2, 4, 6])
-					                        const borderWidthRaw = Number((g as any).borderWidthPx)
-					                        const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
-					                        const borderColor = String((g as any).borderColor || '#000000')
-					                        const fadeRaw = String((g as any).fade || 'none')
-					                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
-					                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
-				                        setSelectedGraphicId(String((g as any).id))
-				                        setSelectedClipId(null)
-				                        setSelectedLogoId(null)
+                        const fitModeRaw = (g as any).fitMode != null ? String((g as any).fitMode) : ''
+                        const fitMode: 'cover_full' | 'contain_transparent' =
+                          fitModeRaw === 'contain_transparent' ? 'contain_transparent' : 'cover_full'
+                        const sizePctWidthRaw = Number((g as any).sizePctWidth)
+                        const sizePctWidth = Number.isFinite(sizePctWidthRaw)
+                          ? Math.round(clamp(sizePctWidthRaw, 10, 100))
+                          : fitMode === 'cover_full'
+                            ? 100
+                            : 70
+                        const posRaw = String((g as any).position || 'middle_center')
+                        const allowedPos = new Set([
+                          'top_left',
+                          'top_center',
+                          'top_right',
+                          'middle_left',
+                          'middle_center',
+                          'middle_right',
+                          'bottom_left',
+                          'bottom_center',
+                          'bottom_right',
+                        ])
+                        let position = (allowedPos.has(posRaw) ? posRaw : 'middle_center') as any
+                        const insetXPxRaw = Number((g as any).insetXPx)
+                        const insetYPxRaw = Number((g as any).insetYPx)
+                        const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+                        const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+                        const borderWidthAllowed = new Set([0, 2, 4, 6])
+                        const borderWidthRaw = Number((g as any).borderWidthPx)
+                        const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
+                        const borderColor = String((g as any).borderColor || '#000000')
+                        const fadeRaw = String((g as any).fade || 'none')
+                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
+                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+                        const animateRaw = String((g as any).animate || 'none').trim().toLowerCase()
+                        const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+                        const animate = (animateAllowed.has(animateRaw) ? animateRaw : 'none') as any
+                        const animateDurationRaw = Number((g as any).animateDurationMs)
+                        const animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+                        const mode: 'full' | 'positioned' | 'animated' =
+                          animate !== 'none' ? 'animated' : fitMode === 'contain_transparent' ? 'positioned' : 'full'
+                        if (mode === 'animated') {
+                          if (position.includes('top')) position = 'top_center'
+                          else if (position.includes('bottom')) position = 'bottom_center'
+                          else position = 'middle_center'
+                        }
+                        setSelectedGraphicId(String((g as any).id))
+                        setSelectedClipId(null)
+                        setSelectedLogoId(null)
 				                        setSelectedLowerThirdId(null)
 				                        setSelectedScreenTitleId(null)
-				                        setSelectedNarrationId(null)
-				                        setSelectedStillId(null)
-				                        setSelectedAudioId(null)
-				                        setGraphicEditor({
-				                          id: String((g as any).id),
-				                          start: s,
-				                          end: e2,
-				                          fitMode,
-				                          sizePctWidth,
-				                          position,
-					                          insetXPx,
-					                          insetYPx,
-					                          borderWidthPx,
-					                          borderColor,
-					                          fade,
-					                        })
-					                        setGraphicEditorError(null)
-					                      }
+                        setSelectedNarrationId(null)
+                        setSelectedStillId(null)
+                        setSelectedAudioId(null)
+                        setGraphicEditor({
+                          id: String((g as any).id),
+                          start: s,
+                          end: e2,
+                          mode,
+                          fitMode,
+                          sizePctWidth,
+                          position,
+                          insetXPx: mode === 'animated' ? 0 : insetXPx,
+                          insetYPx: mode === 'animated' ? 0 : insetYPx,
+                          borderWidthPx,
+                          borderColor,
+                          fade,
+                          animate,
+                          animateDurationMs,
+                        })
+                        setGraphicEditorError(null)
+                      }
                     } else if (timelineCtxMenu.kind === 'logo') {
                       const l = logos.find((ll) => String((ll as any).id) === String(timelineCtxMenu.id)) as any
 	                      if (l) {

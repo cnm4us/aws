@@ -745,6 +745,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     'bottom_center',
     'bottom_right',
   ])
+  const allowedGraphicAnimations = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
   for (const g of graphicsRaw) {
     if (!g || typeof g !== 'object') continue
     const id = normalizeId((g as any).id)
@@ -758,6 +759,15 @@ export async function validateAndNormalizeCreateVideoTimeline(
     if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
     const clamped = clampTimelineRange(startSeconds, endSeconds)
     if (!clamped) continue
+    const segMs = Math.max(0, Math.round((endSeconds - startSeconds) * 1000))
+    const animateRaw = String((g as any).animate || 'none').trim().toLowerCase()
+    const animate = allowedGraphicAnimations.has(animateRaw) ? animateRaw : 'none'
+    const animateDurationRaw = Number((g as any).animateDurationMs)
+    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+    animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+    const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
+    const wantsAnimation = animate !== 'none'
 
     const meta = await loadOverlayImageMetaForUser(uploadId, ctx.userId)
 
@@ -773,6 +783,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       (g as any).borderWidthPx != null ||
       (g as any).borderColor != null ||
       (g as any).fade != null
+    const hasAnimationFields = wantsAnimation || (g as any).animateDurationMs != null
 
     const borderWidthRaw = Number((g as any).borderWidthPx)
     const borderWidthAllowed = new Set([0, 2, 4, 6])
@@ -783,13 +794,13 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
     const fade = fadeAllowed.has(fadeRaw) ? fadeRaw : 'none'
 
-    if (!hasPlacementFields && !hasEffectsFields) {
+    if (!hasPlacementFields && !hasEffectsFields && !hasAnimationFields) {
       graphics.push({ id, uploadId: meta.id, startSeconds: clamped.startSeconds, endSeconds: clamped.endSeconds })
       continue
     }
 
     // Effects-only (no placement) keeps legacy full-frame rendering, but persists effect fields.
-    if (!hasPlacementFields && hasEffectsFields) {
+    if (!hasPlacementFields && hasEffectsFields && !hasAnimationFields) {
       graphics.push({
         id,
         uploadId: meta.id,
@@ -803,19 +814,24 @@ export async function validateAndNormalizeCreateVideoTimeline(
     }
 
     const fitModeRaw = String((g as any).fitMode || 'contain_transparent').trim().toLowerCase()
-    const fitMode = fitModeRaw === 'cover_full' ? 'cover_full' : 'contain_transparent'
+    const fitMode = wantsAnimation ? 'contain_transparent' : (fitModeRaw === 'cover_full' ? 'cover_full' : 'contain_transparent')
 
     const sizePctWidthRaw = Number((g as any).sizePctWidth)
     const sizePctWidthNum = Number.isFinite(sizePctWidthRaw) ? sizePctWidthRaw : (fitMode === 'cover_full' ? 100 : 70)
     const sizePctWidth = Math.round(clamp(sizePctWidthNum, 10, 100))
 
     const positionRaw = String((g as any).position || 'middle_center').trim().toLowerCase()
-    const position = allowedGraphicPositions.has(positionRaw) ? positionRaw : 'middle_center'
+    let position = allowedGraphicPositions.has(positionRaw) ? positionRaw : 'middle_center'
+    if (wantsAnimation) {
+      if (position.includes('top')) position = 'top_center'
+      else if (position.includes('bottom')) position = 'bottom_center'
+      else position = 'middle_center'
+    }
 
     const insetXPxRaw = Number((g as any).insetXPx)
     const insetYPxRaw = Number((g as any).insetYPx)
-    const insetXPx = Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
-    const insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+    const insetXPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+    const insetYPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
 
     graphics.push({
       id,
@@ -830,6 +846,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       borderWidthPx,
       borderColor,
       fade,
+      ...(wantsAnimation ? { animate, animateDurationMs } : {}),
     })
   }
 

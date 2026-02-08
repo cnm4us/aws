@@ -44,6 +44,9 @@ export type Graphic = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  // Optional motion effects (v1.1).
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animateDurationMs?: number
 }
 
 export type VideoOverlay = {
@@ -300,6 +303,11 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           position: g.position != null ? (String(g.position) as any) : undefined,
           insetXPx: g.insetXPx != null ? Number(g.insetXPx) : undefined,
           insetYPx: g.insetYPx != null ? Number(g.insetYPx) : undefined,
+          borderWidthPx: g.borderWidthPx != null ? (Number(g.borderWidthPx) as any) : undefined,
+          borderColor: g.borderColor != null ? String(g.borderColor) : undefined,
+          fade: g.fade != null ? (String(g.fade) as any) : undefined,
+          animate: g.animate != null ? (String(g.animate) as any) : undefined,
+          animateDurationMs: g.animateDurationMs != null ? Number(g.animateDurationMs) : undefined,
         }))
       : [],
     guidelines: Array.isArray((timeline as any).guidelines)

@@ -27,6 +27,28 @@ export type CreateVideoGraphicV1 = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+  // Optional placement fields (v1).
+  fitMode?: 'cover_full' | 'contain_transparent'
+  sizePctWidth?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  insetXPx?: number
+  insetYPx?: number
+  // Optional presentation effects (v1).
+  borderWidthPx?: 0 | 2 | 4 | 6
+  borderColor?: string
+  fade?: 'none' | 'in' | 'out' | 'in_out'
+  // Optional motion effects (v1.1).
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animateDurationMs?: number
 }
 
 export type CreateVideoVideoOverlayV1 = {

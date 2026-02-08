@@ -51,6 +51,9 @@ type Graphic = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  // Optional motion effects (v1.1).
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animateDurationMs?: number
 }
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
 type VideoOverlayStill = {
@@ -830,6 +833,8 @@ async function overlayGraphics(opts: {
     borderWidthPx?: number
     borderColor?: string
     fade?: 'none' | 'in' | 'out' | 'in_out'
+    animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+    animateDurationMs?: number
   }>
   targetW: number
   targetH: number
@@ -908,9 +913,48 @@ async function overlayGraphics(opts: {
     if (fitMode === 'contain_transparent') {
       const insetXPx = Math.round(clamp(Number(g.insetXPx ?? 24), 0, 300))
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
-      const pos = String(g.position || 'middle_center')
+      const posRaw = String(g.position || 'middle_center')
+      const animateRaw = String(g.animate || 'none').trim().toLowerCase()
+      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+      const animate = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+      let pos = posRaw
+      if (animate !== 'none') {
+        if (posRaw.includes('top')) pos = 'top_center'
+        else if (posRaw.includes('bottom')) pos = 'bottom_center'
+        else pos = 'middle_center'
+      }
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
-      filters.push(`${current}[img${i}src]overlay=${xy.x}:${xy.y}:eof_action=repeat:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
+      let xExpr = xy.x
+      if (animate !== 'none') {
+        const segStart = Number(g.startSeconds)
+        const segEnd = Number(g.endSeconds)
+        const segDur = Math.max(0, segEnd - segStart)
+        const segMs = Math.max(0, Math.round(segDur * 1000))
+        let animateDurationMs = Number.isFinite(Number(g.animateDurationMs)) ? Math.round(Number(g.animateDurationMs)) : 400
+        animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+        const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+        if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
+        const animDur = segDur > 0 ? Math.min(segDur, animateDurationMs / 1000) : 0
+        if (animDur > 0) {
+          const inEnd = segStart + animDur
+          const outStart = Math.max(segStart, segEnd - animDur)
+          const offExpr = '((main_w+overlay_w)/2+20)'
+          const baseX = `(${xy.x})`
+          const inProgress = `((t-${segStart.toFixed(3)})/${animDur.toFixed(3)})`
+          const outProgress = `((t-${outStart.toFixed(3)})/${animDur.toFixed(3)})`
+          const inExpr = `${baseX}-${offExpr}+${offExpr}*(1-pow(1-(${inProgress}),3))`
+          const outExpr = `${baseX}+${offExpr}*pow(${outProgress},3)`
+          if (animate === 'slide_in_out') {
+            xExpr = `if(gte(t,${outStart.toFixed(3)}),${outExpr},if(lte(t,${inEnd.toFixed(3)}),${inExpr},${baseX}))`
+          } else if (animate === 'slide_in') {
+            xExpr = `if(lte(t,${inEnd.toFixed(3)}),${inExpr},${baseX})`
+          } else if (animate === 'slide_out') {
+            xExpr = `if(gte(t,${outStart.toFixed(3)}),${outExpr},${baseX})`
+          }
+        }
+      }
+      const xExprSafe = xExpr.replace(/,/g, '\\,')
+      filters.push(`${current}[img${i}src]overlay=${xExprSafe}:${xy.y}:eof_action=repeat:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
     } else {
       filters.push(`${current}[img${i}src]overlay=0:0:eof_action=repeat:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
     }
@@ -2122,6 +2166,8 @@ export async function runCreateVideoExportV1Job(
 	        borderWidthPx?: number
 	        borderColor?: string
 	        fade?: 'none' | 'in' | 'out' | 'in_out'
+	        animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+	        animateDurationMs?: number
 	      }> = []
       for (let i = 0; i < sorted.length; i++) {
         const g = sorted[i]
@@ -2150,6 +2196,8 @@ export async function runCreateVideoExportV1Job(
           borderWidthPx: (g as any).borderWidthPx != null ? Number((g as any).borderWidthPx) : undefined,
           borderColor: (g as any).borderColor != null ? String((g as any).borderColor) : undefined,
           fade: (g as any).fade != null ? (String((g as any).fade) as any) : undefined,
+          animate: (g as any).animate != null ? (String((g as any).animate) as any) : undefined,
+          animateDurationMs: (g as any).animateDurationMs != null ? Number((g as any).animateDurationMs) : undefined,
         })
       }
       const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
