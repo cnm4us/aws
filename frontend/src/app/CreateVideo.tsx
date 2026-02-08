@@ -7734,7 +7734,8 @@ export default function CreateVideo() {
 	  )
 
   const addScreenTitleFromPreset = useCallback(
-    (preset: ScreenTitlePresetItem) => {
+    (preset: ScreenTitlePresetItem, opts?: { openEditor?: boolean }) => {
+      const openEditor = opts?.openEditor !== false
       const presetId = Number((preset as any).id)
       if (!Number.isFinite(presetId) || presetId <= 0) return
       if (!(totalSeconds > 0)) {
@@ -7869,8 +7870,10 @@ export default function CreateVideo() {
       setSelectedLogoId(null)
       setSelectedLowerThirdId(null)
       setSelectedScreenTitleId(id)
-      setScreenTitleEditor({ id, start, end })
-      setScreenTitleEditorError(null)
+      if (openEditor) {
+        setScreenTitleEditor({ id, start, end })
+        setScreenTitleEditorError(null)
+      }
     },
     [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, playhead, rippleRightSimpleLane, screenTitles, snapshotUndo, totalSeconds]
   )
@@ -8316,7 +8319,7 @@ export default function CreateVideo() {
         } else if (t === 'screenTitle' && pickFromAssets.presetId) {
           const presets = await ensureScreenTitlePresets()
           const preset = presets.find((p: any) => Number((p as any).id) === Number(pickFromAssets.presetId)) as any
-          if (preset) addScreenTitleFromPreset(preset as any)
+          if (preset) addScreenTitleFromPreset(preset as any, { openEditor: false })
         }
       } finally {
         cleanUrl()
