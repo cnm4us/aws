@@ -918,6 +918,8 @@ export default function CreateVideo() {
   const playbackClockRef = useRef<'base' | 'overlay' | 'synthetic'>('base')
   const playheadRef = useRef(0)
   const playingRef = useRef(false)
+  const [previewPlayhead, setPreviewPlayhead] = useState(0)
+  const previewPlayheadRef = useRef(0)
   const activeClipIndexRef = useRef(0)
   const playheadFromVideoRef = useRef(false)
   const suppressNextVideoPauseRef = useRef(false)
@@ -1967,6 +1969,39 @@ export default function CreateVideo() {
     [MAX_TIMELINE_SECONDS, MIN_VIEWPORT_SECONDS]
   )
   const playhead = useMemo(() => clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, totalSeconds)), [timeline.playheadSeconds, totalSeconds])
+  useEffect(() => {
+    if (!playing) {
+      previewPlayheadRef.current = playhead
+      setPreviewPlayhead(playhead)
+    } else {
+      previewPlayheadRef.current = playhead
+    }
+  }, [playhead, playing])
+
+  useEffect(() => {
+    if (!playing) return
+    if (!(totalSeconds > 0)) return
+    let raf = 0
+    let last = performance.now()
+    let cur = Number(previewPlayheadRef.current || 0)
+    const tick = (now: number) => {
+      const dt = Math.max(0, (now - last) / 1000)
+      last = now
+      cur = clamp(cur + dt, 0, Math.max(0, totalSeconds))
+      const target = Number(playheadRef.current || 0)
+      if (Math.abs(target - cur) > 0.2) cur = target
+      if (Math.abs(cur - Number(previewPlayheadRef.current || 0)) >= 0.02) {
+        previewPlayheadRef.current = cur
+        setPreviewPlayhead(cur)
+      }
+      if (cur >= totalSeconds - 0.001) return
+      raf = window.requestAnimationFrame(tick)
+    }
+    raf = window.requestAnimationFrame(tick)
+    return () => {
+      window.cancelAnimationFrame(raf)
+    }
+  }, [playing, totalSeconds])
   const pxPerSecond = 48
   const visualTotalSeconds = useMemo(() => Math.max(10, totalSeconds), [totalSeconds])
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
@@ -3146,7 +3181,7 @@ export default function CreateVideo() {
       style.bottom = insetYStr
     }
     if (animate !== 'none' && segMs > 0 && animateDurationMs > 0) {
-      const tRelMs = (Number(playhead) - segStart) * 1000
+      const tRelMs = (Number(previewPlayhead) - segStart) * 1000
       const inDurMs = Math.max(1, Math.min(animateDurationMs, segMs))
       const outDurMs = inDurMs
       const outStartMs = Math.max(0, segMs - outDurMs)
@@ -3165,7 +3200,7 @@ export default function CreateVideo() {
       }
     }
     return style as React.CSSProperties
-  }, [activeGraphicAtPlayhead, playhead, previewBoxSize.h, previewBoxSize.w])
+  }, [activeGraphicAtPlayhead, previewBoxSize.h, previewBoxSize.w, previewPlayhead])
 
   const activeGraphicPreviewIndicators = useMemo(() => {
     const g: any = activeGraphicAtPlayhead as any
