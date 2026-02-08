@@ -983,7 +983,17 @@ const UploadNewPage: React.FC = () => {
 	                  (kind === 'audio' && me?.isSiteAdmin && selectedLicenseSourceId == null)
 	                }
 	              >
-	                {uploading ? 'Uploading…' : kind === 'video' ? 'Upload New Video' : kind === 'logo' ? 'Upload New Logo' : 'Upload New Audio'}
+	                {uploading
+	                  ? 'Uploading…'
+	                  : kind === 'video'
+	                    ? 'Upload New Video'
+	                    : kind === 'logo'
+	                      ? 'Upload New Logo'
+	                      : kind === 'image'
+	                        ? String(imageRole || '').trim().toLowerCase() === 'overlay'
+	                          ? 'Upload New Graphic'
+	                          : 'Upload New Image'
+	                        : 'Upload New Audio'}
 	              </button>
 	            </div>
           </div>
