@@ -149,6 +149,10 @@ export type AudioSegment = {
   // Offset into the audio file for where this segment begins (in seconds).
   // This enables split/trim to play the continuation instead of restarting at 0.
   sourceStartSeconds?: number
+  // Music mix behavior for this segment.
+  musicMode?: 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
+  musicLevel?: 'quiet' | 'medium' | 'loud'
+  duckingIntensity?: 'min' | 'medium' | 'max'
 }
 
 export type Narration = {
@@ -335,6 +339,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           startSeconds: Number(s.startSeconds),
           endSeconds: Number(s.endSeconds),
           sourceStartSeconds: s.sourceStartSeconds == null ? 0 : Number(s.sourceStartSeconds),
+          musicMode: s.musicMode == null ? undefined : String(s.musicMode),
+          musicLevel: s.musicLevel == null ? undefined : String(s.musicLevel),
+          duckingIntensity: s.duckingIntensity == null ? undefined : String(s.duckingIntensity),
         }))
       : [],
     screenTitles: Array.isArray((timeline as any).screenTitles)

@@ -838,7 +838,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const insetXPxRaw = Number((g as any).insetXPx)
     const insetYPxRaw = Number((g as any).insetYPx)
     let insetXPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
-    let insetYPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+    let insetYPx = Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
     if (animate === 'doc_reveal') {
       position = 'middle_center'
       insetXPx = 0

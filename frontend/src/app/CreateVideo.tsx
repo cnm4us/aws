@@ -12964,7 +12964,7 @@ export default function CreateVideo() {
       } else {
         if (wantsPlacement) {
           if (mode === 'animated') {
-            updated = { ...(nextBase as any), ...placement, insetXPx: 0, insetYPx: 0 } as Graphic
+            updated = { ...(nextBase as any), ...placement, insetXPx: 0, insetYPx: placement.insetYPx } as Graphic
           } else {
             updated = { ...(nextBase as any), ...placement } as Graphic
           }
@@ -18053,7 +18053,7 @@ export default function CreateVideo() {
                                   fitMode: 'contain_transparent',
                                   position,
                                   insetXPx: 0,
-                                  insetYPx: 0,
+                                  insetYPx: nextAnimate === 'doc_reveal' ? 0 : p.insetYPx,
                                   sizePctWidth: nextAnimate === 'doc_reveal' ? 100 : p.sizePctWidth,
                                   animate: nextAnimate,
                                   fadeDurationMs: Number.isFinite(Number(p.fadeDurationMs)) ? Number(p.fadeDurationMs) : 600,
@@ -20921,7 +20921,7 @@ export default function CreateVideo() {
                           sizePctWidth: animate === 'doc_reveal' ? 100 : sizePctWidth,
                           position,
                           insetXPx: mode === 'animated' ? 0 : insetXPx,
-                          insetYPx: mode === 'animated' ? 0 : insetYPx,
+                          insetYPx: animate === 'doc_reveal' ? 0 : insetYPx,
                           borderWidthPx,
                           borderColor,
                           fade,
