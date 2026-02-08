@@ -5,6 +5,7 @@ export type LibrarySourceOption = {
 
 export const librarySourceOptions: LibrarySourceOption[] = [
   { value: "cspan", label: "CSPAN" },
+  { value: "democracy docket", label: "Democracy Docket" },
   { value: "glenn kirschner", label: "Glenn Kirschner" },
   { value: "justice connection", label: "Justice Connection" },
   { value: "other", label: "Other" },
