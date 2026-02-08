@@ -44,8 +44,9 @@ export type Graphic = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  fadeDurationMs?: number
   // Optional motion effects (v1.1).
-  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
   animateDurationMs?: number
 }
 
@@ -306,6 +307,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           borderWidthPx: g.borderWidthPx != null ? (Number(g.borderWidthPx) as any) : undefined,
           borderColor: g.borderColor != null ? String(g.borderColor) : undefined,
           fade: g.fade != null ? (String(g.fade) as any) : undefined,
+          fadeDurationMs: g.fadeDurationMs != null ? Number(g.fadeDurationMs) : undefined,
           animate: g.animate != null ? (String(g.animate) as any) : undefined,
           animateDurationMs: g.animateDurationMs != null ? Number(g.animateDurationMs) : undefined,
         }))

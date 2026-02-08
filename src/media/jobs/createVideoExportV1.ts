@@ -51,8 +51,9 @@ type Graphic = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  fadeDurationMs?: number
   // Optional motion effects (v1.1).
-  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
   animateDurationMs?: number
 }
 type Still = { id: string; uploadId: number; startSeconds: number; endSeconds: number; sourceClipId?: string }
@@ -833,7 +834,8 @@ async function overlayGraphics(opts: {
     borderWidthPx?: number
     borderColor?: string
     fade?: 'none' | 'in' | 'out' | 'in_out'
-    animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+    fadeDurationMs?: number
+    animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
     animateDurationMs?: number
   }>
   targetW: number
@@ -853,7 +855,6 @@ async function overlayGraphics(opts: {
   }
 
   const filters: string[] = []
-  const fadeDur = 0.35
   const overlapSeconds = 0.1
   for (let i = 0; i < opts.graphics.length; i++) {
     const g = opts.graphics[i]
@@ -862,12 +863,28 @@ async function overlayGraphics(opts: {
     const rawEnd = Number(g.endSeconds)
     const trimEnd = Math.min(baseDur, rawEnd + overlapSeconds)
     const d = Math.max(0, trimEnd - s)
+    const segDur = Math.max(0, Number(g.endSeconds) - Number(g.startSeconds))
     const fitMode = g.fitMode || 'cover_full'
     const borderWidthAllowed = new Set([0, 2, 4, 6])
     const borderWidthRaw = Number(g.borderWidthPx)
     const borderWidthPx = borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0
     const borderColor = String(g.borderColor || '#000000')
     const borderFilter = borderWidthPx > 0 ? `,drawbox=x=0:y=0:w=iw:h=ih:color=${borderColor}:t=${borderWidthPx}` : ''
+    const animateRaw = String(g.animate || 'none').trim().toLowerCase()
+    const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
+    const animate = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+    const isDocReveal = animate === 'doc_reveal'
+    const segMs = Math.max(0, Math.round(segDur * 1000))
+    let animateDurationMs = Number.isFinite(Number(g.animateDurationMs)) ? Math.round(Number(g.animateDurationMs)) : 600
+    animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+    const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
+    const animDur = segDur > 0 ? Math.min(segDur, animateDurationMs / 1000) : 0
+    let fadeDurationMs = Number.isFinite(Number(g.fadeDurationMs)) ? Math.round(Number(g.fadeDurationMs)) : 600
+    fadeDurationMs = Math.round(clamp(fadeDurationMs, 100, 2000))
+    const maxFadeMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    if (maxFadeMs > 0) fadeDurationMs = Math.min(fadeDurationMs, maxFadeMs)
+    const fadeDur = d > 0 ? Math.min(d, fadeDurationMs / 1000) : 0
     const fadeRaw = String(g.fade || 'none')
     const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
     const fade = fadeAllowed.has(fadeRaw) ? (fadeRaw as 'none' | 'in' | 'out' | 'in_out') : 'none'
@@ -879,6 +896,35 @@ async function overlayGraphics(opts: {
     const fadeFilters =
       (fadeInDur > 0 ? `,fade=t=in:st=0:d=${fadeInDur}:alpha=1` : '') +
       (fadeOutDur > 0 ? `,fade=t=out:st=${fadeOutSt}:d=${fadeOutDur}:alpha=1` : '')
+
+    if (isDocReveal) {
+      let scaleExpr = '1'
+      if (animDur > 0 && segDur > 0) {
+        const inDur = animDur
+        const outStart = Math.max(0, segDur - animDur)
+        const outDur = animDur
+        const inExpr = `0.2+0.8*(1-pow(1-(t/${inDur.toFixed(3)}),3))`
+        const outExpr = `1-0.8*pow((t-${outStart.toFixed(3)})/${outDur.toFixed(3)},3)`
+        scaleExpr = `if(lte(t,${inDur.toFixed(3)}),${inExpr},if(gte(t,${outStart.toFixed(3)}),${outExpr},1))`
+      }
+      const scaleExprSafe = scaleExpr.replace(/,/g, '\\,')
+      const docScaleFilter =
+        animDur > 0
+          ? `,scale=w='iw*(${scaleExprSafe})':h='ih*(${scaleExprSafe})':eval=frame`
+          : ''
+      const fadeInDoc = segDur > 0 ? Math.min(fadeDurationMs / 1000, segDur) : 0
+      const fadeOutDoc = segDur > 0 ? Math.min(fadeDurationMs / 1000, segDur) : 0
+      const fadeOutDocSt = Math.max(0, segDur - fadeOutDoc)
+      const docFadeFilters =
+        (fadeInDoc > 0 ? `,fade=t=in:st=0:d=${fadeInDoc}:alpha=1` : '') +
+        (fadeOutDoc > 0 ? `,fade=t=out:st=${fadeOutDocSt}:d=${fadeOutDoc}:alpha=1` : '')
+      const baseScale = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2:color=0x00000000`
+      filters.push(
+        `[${inIdx}:v]${baseScale},format=rgba${borderFilter}[img${i}full];` +
+          `[img${i}full]trim=start=${s}:end=${trimEnd},setpts=PTS-STARTPTS${docScaleFilter}${docFadeFilters},setpts=PTS+${s}/TB[img${i}src]`
+      )
+      continue
+    }
 
     if (fitMode === 'contain_transparent') {
       const sizePctWidth = clamp(Number(g.sizePctWidth ?? 70), 10, 100)
@@ -915,22 +961,23 @@ async function overlayGraphics(opts: {
       const insetYPx = Math.round(clamp(Number(g.insetYPx ?? 24), 0, 300))
       const posRaw = String(g.position || 'middle_center')
       const animateRaw = String(g.animate || 'none').trim().toLowerCase()
-      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
       const animate = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+      const animateForX = animate === 'doc_reveal' ? 'slide_in_out' : animate
       let pos = posRaw
-      if (animate !== 'none') {
+      if (animateForX !== 'none') {
         if (posRaw.includes('top')) pos = 'top_center'
         else if (posRaw.includes('bottom')) pos = 'bottom_center'
         else pos = 'middle_center'
       }
       const xy = overlayXYForPositionPx(pos, insetXPx, insetYPx)
       let xExpr = xy.x
-      if (animate !== 'none') {
+      if (animateForX !== 'none') {
         const segStart = Number(g.startSeconds)
         const segEnd = Number(g.endSeconds)
         const segDur = Math.max(0, segEnd - segStart)
         const segMs = Math.max(0, Math.round(segDur * 1000))
-        let animateDurationMs = Number.isFinite(Number(g.animateDurationMs)) ? Math.round(Number(g.animateDurationMs)) : 400
+        let animateDurationMs = Number.isFinite(Number(g.animateDurationMs)) ? Math.round(Number(g.animateDurationMs)) : 600
         animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
         const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
         if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
@@ -944,11 +991,11 @@ async function overlayGraphics(opts: {
           const outProgress = `((t-${outStart.toFixed(3)})/${animDur.toFixed(3)})`
           const inExpr = `${baseX}-${offExpr}+${offExpr}*(1-pow(1-(${inProgress}),3))`
           const outExpr = `${baseX}+${offExpr}*pow(${outProgress},3)`
-          if (animate === 'slide_in_out') {
+          if (animateForX === 'slide_in_out') {
             xExpr = `if(gte(t,${outStart.toFixed(3)}),${outExpr},if(lte(t,${inEnd.toFixed(3)}),${inExpr},${baseX}))`
-          } else if (animate === 'slide_in') {
+          } else if (animateForX === 'slide_in') {
             xExpr = `if(lte(t,${inEnd.toFixed(3)}),${inExpr},${baseX})`
-          } else if (animate === 'slide_out') {
+          } else if (animateForX === 'slide_out') {
             xExpr = `if(gte(t,${outStart.toFixed(3)}),${outExpr},${baseX})`
           }
         }
@@ -2166,7 +2213,8 @@ export async function runCreateVideoExportV1Job(
 	        borderWidthPx?: number
 	        borderColor?: string
 	        fade?: 'none' | 'in' | 'out' | 'in_out'
-	        animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+	        fadeDurationMs?: number
+	        animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
 	        animateDurationMs?: number
 	      }> = []
       for (let i = 0; i < sorted.length; i++) {
@@ -2196,6 +2244,7 @@ export async function runCreateVideoExportV1Job(
           borderWidthPx: (g as any).borderWidthPx != null ? Number((g as any).borderWidthPx) : undefined,
           borderColor: (g as any).borderColor != null ? String((g as any).borderColor) : undefined,
           fade: (g as any).fade != null ? (String((g as any).fade) as any) : undefined,
+          fadeDurationMs: (g as any).fadeDurationMs != null ? Number((g as any).fadeDurationMs) : undefined,
           animate: (g as any).animate != null ? (String((g as any).animate) as any) : undefined,
           animateDurationMs: (g as any).animateDurationMs != null ? Number((g as any).animateDurationMs) : undefined,
         })

@@ -745,7 +745,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     'bottom_center',
     'bottom_right',
   ])
-  const allowedGraphicAnimations = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
+  const allowedGraphicAnimations = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
   for (const g of graphicsRaw) {
     if (!g || typeof g !== 'object') continue
     const id = normalizeId((g as any).id)
@@ -763,7 +763,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const animateRaw = String((g as any).animate || 'none').trim().toLowerCase()
     const animate = allowedGraphicAnimations.has(animateRaw) ? animateRaw : 'none'
     const animateDurationRaw = Number((g as any).animateDurationMs)
-    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 600
     animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
     const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
     if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
@@ -782,7 +782,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const hasEffectsFields =
       (g as any).borderWidthPx != null ||
       (g as any).borderColor != null ||
-      (g as any).fade != null
+      (g as any).fade != null ||
+      (g as any).fadeDurationMs != null
     const hasAnimationFields = wantsAnimation || (g as any).animateDurationMs != null
 
     const borderWidthRaw = Number((g as any).borderWidthPx)
@@ -793,6 +794,11 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const fadeRaw = String((g as any).fade || 'none').trim().toLowerCase()
     const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
     const fade = fadeAllowed.has(fadeRaw) ? fadeRaw : 'none'
+    const fadeDurationRaw = Number((g as any).fadeDurationMs)
+    let fadeDurationMs = Number.isFinite(fadeDurationRaw) ? Math.round(fadeDurationRaw) : 600
+    fadeDurationMs = Math.round(clamp(fadeDurationMs, 100, 2000))
+    const maxFadeMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    if (maxFadeMs > 0) fadeDurationMs = Math.min(fadeDurationMs, maxFadeMs)
 
     if (!hasPlacementFields && !hasEffectsFields && !hasAnimationFields) {
       graphics.push({ id, uploadId: meta.id, startSeconds: clamped.startSeconds, endSeconds: clamped.endSeconds })
@@ -809,6 +815,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
         borderWidthPx,
         borderColor,
         fade,
+        fadeDurationMs,
       })
       continue
     }
@@ -818,7 +825,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const sizePctWidthRaw = Number((g as any).sizePctWidth)
     const sizePctWidthNum = Number.isFinite(sizePctWidthRaw) ? sizePctWidthRaw : (fitMode === 'cover_full' ? 100 : 70)
-    const sizePctWidth = Math.round(clamp(sizePctWidthNum, 10, 100))
+    let sizePctWidth = Math.round(clamp(sizePctWidthNum, 10, 100))
 
     const positionRaw = String((g as any).position || 'middle_center').trim().toLowerCase()
     let position = allowedGraphicPositions.has(positionRaw) ? positionRaw : 'middle_center'
@@ -830,8 +837,17 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
     const insetXPxRaw = Number((g as any).insetXPx)
     const insetYPxRaw = Number((g as any).insetYPx)
-    const insetXPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
-    const insetYPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+    let insetXPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetXPxRaw) ? insetXPxRaw : 24, 0, 300))
+    let insetYPx = wantsAnimation ? 0 : Math.round(clamp(Number.isFinite(insetYPxRaw) ? insetYPxRaw : 24, 0, 300))
+    if (animate === 'doc_reveal') {
+      position = 'middle_center'
+      insetXPx = 0
+      insetYPx = 0
+    }
+
+    if (animate === 'doc_reveal') {
+      sizePctWidth = 100
+    }
 
     graphics.push({
       id,
@@ -846,6 +862,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       borderWidthPx,
       borderColor,
       fade,
+      fadeDurationMs,
       ...(wantsAnimation ? { animate, animateDurationMs } : {}),
     })
   }

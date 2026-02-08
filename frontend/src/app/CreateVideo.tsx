@@ -580,6 +580,13 @@ function computeFadeAlpha(cfg: { fade?: any }, tRelS: number, windowStartRelS: n
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - clamp01(t), 3)
 const easeInCubic = (t: number): number => Math.pow(clamp01(t), 3)
+const normalizeSpeedPresetMs = (valueRaw: number, fallback = 600): number => {
+  const raw = Number(valueRaw)
+  const value = Number.isFinite(raw) ? Math.round(raw) : fallback
+  if (value <= 500) return 400
+  if (value <= 700) return 600
+  return 800
+}
 
 function migrateLegacyClipFreezeTimeline(tl: Timeline): { timeline: Timeline; changed: boolean } {
   const clips: any[] = Array.isArray((tl as any).clips) ? (((tl as any).clips as any) as any[]) : []
@@ -795,7 +802,8 @@ export default function CreateVideo() {
     borderWidthPx: 0 | 2 | 4 | 6
     borderColor: string
     fade: 'none' | 'in' | 'out' | 'in_out'
-    animate: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+    fadeDurationMs: number
+    animate: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
     animateDurationMs: number
   } | null>(null)
   const [graphicEditorError, setGraphicEditorError] = useState<string | null>(null)
@@ -3068,16 +3076,23 @@ export default function CreateVideo() {
     const borderWidth = borderWidthAllowed.has(Number(g.borderWidthPx)) ? Number(g.borderWidthPx) : 0
     const borderColor = String(g.borderColor || '#000000')
     const animateRaw = String(g.animate || 'none').trim().toLowerCase()
-    const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
-    const animate = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+    const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
+    const animateModeRaw = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+    const animate = animateModeRaw === 'doc_reveal' ? 'doc_reveal' : animateModeRaw === 'none' ? 'none' : 'slide_in_out'
+    const fadeRaw = String(g.fade || 'none').trim().toLowerCase()
+    const fade = fadeRaw === 'none' ? 'none' : 'in_out'
     const animateDurationRaw = Number(g.animateDurationMs)
-    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+    let animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 600
     animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
+    let fadeDurationMs = Number.isFinite(Number(g.fadeDurationMs)) ? Math.round(Number(g.fadeDurationMs)) : 600
+    fadeDurationMs = Math.round(clamp(fadeDurationMs, 100, 2000))
     const segStart = Number(g.startSeconds || 0)
     const segEnd = Number(g.endSeconds || 0)
     const segMs = Math.max(0, Math.round((segEnd - segStart) * 1000))
     const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+    const maxFadeMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
     if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
+    if (maxFadeMs > 0) fadeDurationMs = Math.min(fadeDurationMs, maxFadeMs)
     const fitMode = g.fitMode != null ? String(g.fitMode) : ''
     // Legacy behavior: full-frame cover when placement fields are absent.
     if (!fitMode) {
@@ -3180,6 +3195,51 @@ export default function CreateVideo() {
       style.right = insetXStr
       style.bottom = insetYStr
     }
+    if (animate === 'doc_reveal' && segMs > 0 && animateDurationMs > 0) {
+      style.left = 0
+      style.right = 0
+      style.top = 0
+      style.bottom = 0
+      style.width = '100%'
+      style.height = '100%'
+      style.maxWidth = undefined
+      style.maxHeight = undefined
+      style.objectFit = 'contain'
+      const tRelMs = (Number(previewPlayhead) - segStart) * 1000
+      const inDurMs = Math.max(1, Math.min(animateDurationMs, segMs))
+      const outDurMs = inDurMs
+      const outStartMs = Math.max(0, segMs - outDurMs)
+      const fadeInDurMs = Math.max(1, Math.min(fadeDurationMs, segMs))
+      const fadeOutDurMs = fadeInDurMs
+      const fadeOutStartMs = Math.max(0, segMs - fadeOutDurMs)
+      const offscreenPx = Math.max(0, Math.round(previewW + 20))
+      let translateX = 0
+      let scale = 1
+      let alpha = 1
+      if (tRelMs <= inDurMs + 1e-6) {
+        const p = inDurMs > 0 ? tRelMs / inDurMs : 1
+        const eased = easeOutCubic(p)
+        scale = 0.2 + 0.8 * eased
+        alpha = eased
+        translateX = -offscreenPx + offscreenPx * eased
+      } else if (tRelMs >= outStartMs - 1e-6) {
+        const p = outDurMs > 0 ? (tRelMs - outStartMs) / outDurMs : 1
+        const eased = easeInCubic(p)
+        scale = 1 - 0.8 * eased
+        translateX = offscreenPx * eased
+      }
+      if (fadeInDurMs > 0 && tRelMs <= fadeInDurMs + 1e-6) {
+        alpha *= clamp01(tRelMs / fadeInDurMs)
+      }
+      if (fadeOutDurMs > 0 && tRelMs >= fadeOutStartMs - 1e-6) {
+        alpha *= clamp01(1 - (tRelMs - fadeOutStartMs) / fadeOutDurMs)
+      }
+      style.opacity = clamp01(alpha)
+      style.transformOrigin = 'center center'
+      style.transform = `translateX(${Math.round(translateX)}px) scale(${scale.toFixed(4)})`
+      return style as React.CSSProperties
+    }
+
     if (animate !== 'none' && segMs > 0 && animateDurationMs > 0) {
       const tRelMs = (Number(previewPlayhead) - segStart) * 1000
       const inDurMs = Math.max(1, Math.min(animateDurationMs, segMs))
@@ -3198,6 +3258,16 @@ export default function CreateVideo() {
         const baseTransform = String(style.transform || '').trim()
         style.transform = `${baseTransform} translateX(${Math.round(translateX)}px)`.trim()
       }
+    }
+    if (fade === 'in_out' && segMs > 0 && fadeDurationMs > 0) {
+      const tRelMs = (Number(previewPlayhead) - segStart) * 1000
+      const fadeInDurMs = Math.max(1, Math.min(fadeDurationMs, segMs))
+      const fadeOutDurMs = fadeInDurMs
+      const fadeOutStartMs = Math.max(0, segMs - fadeOutDurMs)
+      let alpha = 1
+      if (tRelMs <= fadeInDurMs + 1e-6) alpha *= clamp01(tRelMs / fadeInDurMs)
+      if (tRelMs >= fadeOutStartMs - 1e-6) alpha *= clamp01(1 - (tRelMs - fadeOutStartMs) / fadeOutDurMs)
+      style.opacity = clamp01(alpha)
     }
     return style as React.CSSProperties
   }, [activeGraphicAtPlayhead, previewBoxSize.h, previewBoxSize.w, previewPlayhead])
@@ -7594,8 +7664,9 @@ export default function CreateVideo() {
         borderWidthPx: 0,
         borderColor: '#000000',
         fade: 'none',
+        fadeDurationMs: 600,
         animate: 'none',
-        animateDurationMs: 400,
+        animateDurationMs: 600,
       }
       snapshotUndo()
       setTimeline((prev) => {
@@ -12828,7 +12899,7 @@ export default function CreateVideo() {
       const current = prevGraphics[idx] as any
       const currentHasPlacement =
         current?.fitMode != null || current?.sizePctWidth != null || current?.position != null || current?.insetXPx != null || current?.insetYPx != null
-      const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.fade != null
+      const currentHasEffects = current?.borderWidthPx != null || current?.borderColor != null || current?.fade != null || current?.fadeDurationMs != null
       const currentHasAnimation = current?.animate != null || current?.animateDurationMs != null
 
       const nextBase: any = { ...current, startSeconds: Math.max(0, start), endSeconds: Math.max(0, end) }
@@ -12856,17 +12927,28 @@ export default function CreateVideo() {
       const fadeModeRaw = String(graphicEditor.fade || 'none')
       const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
       const fadeMode = fadeAllowed.has(fadeModeRaw) ? fadeModeRaw : 'none'
-      const wantsEffects = borderWidth > 0 || fadeMode !== 'none'
-      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
-      const animateRaw = String(graphicEditor.animate || 'none')
-      const animateMode = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+      const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
+      const animateRaw = String(graphicEditor.animate || 'none').trim().toLowerCase()
+      const animateModeRaw = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+      const animateMode = animateModeRaw === 'doc_reveal' ? 'doc_reveal' : animateModeRaw === 'none' ? 'none' : 'slide_in_out'
       const normalizedAnimateMode = mode === 'animated' && animateMode === 'none' ? 'slide_in_out' : animateMode
+      const wantsEffects = borderWidth > 0 || fadeMode !== 'none' || normalizedAnimateMode === 'doc_reveal'
       const wantsAnimation = mode === 'animated' && normalizedAnimateMode !== 'none'
       const segMs = Math.max(0, Math.round((end - start) * 1000))
       const maxAnimMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
-      let animateDurationMs = Math.round(Number(graphicEditor.animateDurationMs) || 400)
+      let animateDurationMs = Math.round(Number(graphicEditor.animateDurationMs) || 600)
       animateDurationMs = Math.round(clamp(animateDurationMs, 100, 2000))
       if (maxAnimMs > 0) animateDurationMs = Math.min(animateDurationMs, maxAnimMs)
+      const maxFadeMs = segMs > 0 ? Math.round(segMs * 0.45) : 0
+      let fadeDurationMs = Math.round(Number(graphicEditor.fadeDurationMs) || 600)
+      fadeDurationMs = Math.round(clamp(fadeDurationMs, 100, 2000))
+      if (maxFadeMs > 0) fadeDurationMs = Math.min(fadeDurationMs, maxFadeMs)
+      if (mode === 'animated' && normalizedAnimateMode === 'doc_reveal') {
+        placement.sizePctWidth = 100
+        placement.position = 'middle_center'
+        placement.insetXPx = 0
+        placement.insetYPx = 0
+      }
 
       // Backward compatibility:
       // - If the graphic has never had placement fields and the user keeps it as "Full Frame" (cover),
@@ -12900,10 +12982,12 @@ export default function CreateVideo() {
         delete (nextGraphics[idx] as any).borderWidthPx
         delete (nextGraphics[idx] as any).borderColor
         delete (nextGraphics[idx] as any).fade
+        delete (nextGraphics[idx] as any).fadeDurationMs
       } else {
         ;(nextGraphics[idx] as any).borderWidthPx = borderWidth
         ;(nextGraphics[idx] as any).borderColor = String(graphicEditor.borderColor || '#000000')
         ;(nextGraphics[idx] as any).fade = fadeMode
+        ;(nextGraphics[idx] as any).fadeDurationMs = fadeDurationMs
       }
       if (!currentHasAnimation && !wantsAnimation) {
         delete (nextGraphics[idx] as any).animate
@@ -17855,6 +17939,7 @@ export default function CreateVideo() {
                 const isFull = mode === 'full'
                 const isPositioned = mode === 'positioned'
                 const isAnimated = mode === 'animated'
+                const isDocReveal = isAnimated && String(graphicEditor.animate || '') === 'doc_reveal'
 
 	                return (
 	                  <>
@@ -17959,6 +18044,9 @@ export default function CreateVideo() {
                                 if (posRaw.includes('top')) position = 'top_center'
                                 else if (posRaw.includes('bottom')) position = 'bottom_center'
                                 else position = 'middle_center'
+                                const currentAnimate = String(p.animate || 'none')
+                                const nextAnimate = currentAnimate === 'doc_reveal' ? 'doc_reveal' : currentAnimate !== 'none' ? 'slide_in_out' : 'slide_in_out'
+                                if (nextAnimate === 'doc_reveal') position = 'middle_center'
                                 return {
                                   ...p,
                                   mode: 'animated',
@@ -17966,20 +18054,22 @@ export default function CreateVideo() {
                                   position,
                                   insetXPx: 0,
                                   insetYPx: 0,
-                                  animate: p.animate === 'none' ? 'slide_in_out' : p.animate,
-                                  animateDurationMs: Number.isFinite(Number(p.animateDurationMs)) ? Number(p.animateDurationMs) : 400,
+                                  sizePctWidth: nextAnimate === 'doc_reveal' ? 100 : p.sizePctWidth,
+                                  animate: nextAnimate,
+                                  fadeDurationMs: Number.isFinite(Number(p.fadeDurationMs)) ? Number(p.fadeDurationMs) : 600,
+                                  animateDurationMs: Number.isFinite(Number(p.animateDurationMs)) ? Number(p.animateDurationMs) : 600,
                                 }
                               })
                             }
-                            style={{
-                              padding: '8px 10px',
-                              borderRadius: 10,
-                              border: isAnimated ? '2px solid rgba(255,214,10,0.85)' : '1px solid rgba(255,255,255,0.18)',
-                              background: isAnimated ? 'rgba(255,214,10,0.18)' : 'rgba(255,255,255,0.04)',
-                              color: '#fff',
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                            }}
+	                            style={{
+	                              padding: '8px 10px',
+	                              borderRadius: 10,
+	                              border: isAnimated ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                              background: isAnimated ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+	                              color: '#fff',
+	                              fontWeight: 900,
+	                              cursor: 'pointer',
+	                            }}
                           >
                             Animated
                           </button>
@@ -17988,78 +18078,81 @@ export default function CreateVideo() {
 
 	                      {isPositioned ? (
 	                          <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
-	                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-	                            <div style={{ minWidth: 0 }}>
-	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
-	                              <select
-	                                value={String(graphicEditor.sizePctWidth)}
-	                                onChange={(e) => {
-	                                  const v = Math.round(Number(e.target.value))
-	                                  setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
-	                                }}
-	                                style={{
-	                                  width: '100%',
-	                                  padding: '10px 12px',
-	                                  borderRadius: 12,
-	                                  border: '1px solid rgba(255,255,255,0.16)',
-	                                  background: '#0c0c0c',
-	                                  color: '#fff',
-	                                  fontWeight: 900,
-	                                }}
-	                              >
-	                                {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
-	                                  <option key={n} value={String(n)}>
-	                                    {n}%
-	                                  </option>
-	                                ))}
-	                              </select>
-	                            </div>
-	                            <div style={{ minWidth: 0 }}>
-	                              <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Insets (px)</div>
-	                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(graphicEditor.insetXPx)}
-	                                  onChange={(e) => {
-	                                    const v = Math.round(Number(e.target.value))
-	                                    setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '50px',
-	                                    padding: '10px 12px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                  aria-label="Horizontal inset px"
-	                                  title="Horizontal inset (px)"
-	                                />
-	                                <input
-	                                  type="number"
-	                                  inputMode="numeric"
-	                                  value={String(graphicEditor.insetYPx)}
-	                                  onChange={(e) => {
-	                                    const v = Math.round(Number(e.target.value))
-	                                    setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
-	                                  }}
-	                                  style={{
-	                                    width: '50px',
-	                                    padding: '10px 12px',
-	                                    borderRadius: 12,
-	                                    border: '1px solid rgba(255,255,255,0.16)',
-	                                    background: '#0c0c0c',
-	                                    color: '#fff',
-	                                    fontWeight: 900,
-	                                  }}
-	                                  aria-label="Vertical inset px"
-	                                  title="Vertical inset (px)"
-	                                />
-	                              </div>
-	                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Left/Right · Top/Bottom</div>
-	                            </div>
+	                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}>
+	                            <div />
+	                            <div style={{ gridColumn: '2 / 4', color: '#ddd', fontSize: 14, fontWeight: 900 }}>Insets (px)</div>
+	                            <div style={{ color: '#ddd', fontSize: 14, fontWeight: 900 }}>Size (% width)</div>
+	                            <div style={{ color: '#bbb', fontSize: 13, textAlign: 'left' }}>Left/Right</div>
+	                            <div style={{ color: '#bbb', fontSize: 13, textAlign: 'left' }}>Top/Bottom</div>
+	                            <select
+	                              value={String(graphicEditor.sizePctWidth)}
+	                              onChange={(e) => {
+	                                const v = Math.round(Number(e.target.value))
+	                                setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
+	                              }}
+	                              style={{
+	                                width: '100%',
+	                                padding: '10px 12px',
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                color: '#fff',
+	                                fontWeight: 900,
+                                  boxSizing: 'border-box',
+	                              }}
+	                            >
+	                              {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+	                                <option key={n} value={String(n)}>
+	                                  {n}%
+	                                </option>
+	                              ))}
+	                            </select>
+	                            <input
+	                              type="number"
+	                              inputMode="numeric"
+	                              min={0}
+	                              max={300}
+	                              value={String(graphicEditor.insetXPx)}
+	                              onChange={(e) => {
+	                                const v = Math.round(clamp(Number(e.target.value), 0, 300))
+	                                setGraphicEditor((p) => (p ? { ...p, insetXPx: v } : p))
+	                              }}
+	                              style={{
+	                                width: '100%',
+	                                padding: '10px 12px',
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                color: '#fff',
+	                                fontWeight: 900,
+                                  boxSizing: 'border-box',
+	                              }}
+	                              aria-label="Horizontal inset px"
+	                              title="Horizontal inset (px)"
+	                            />
+	                            <input
+	                              type="number"
+	                              inputMode="numeric"
+	                              min={0}
+	                              max={300}
+	                              value={String(graphicEditor.insetYPx)}
+	                              onChange={(e) => {
+	                                const v = Math.round(clamp(Number(e.target.value), 0, 300))
+	                                setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
+	                              }}
+	                              style={{
+	                                width: '100%',
+	                                padding: '10px 12px',
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                color: '#fff',
+	                                fontWeight: 900,
+                                  boxSizing: 'border-box',
+	                              }}
+	                              aria-label="Vertical inset px"
+	                              title="Vertical inset (px)"
+	                            />
 	                          </div>
 
 	                          <div>
@@ -18118,69 +18211,149 @@ export default function CreateVideo() {
 	                        </div>
 	                      ) : isAnimated ? (
                           <div style={{ marginTop: 10, display: 'grid', gap: 12 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Size (% width)</div>
-                                <select
-                                  value={String(graphicEditor.sizePctWidth)}
-                                  onChange={(e) => {
-                                    const v = Math.round(Number(e.target.value))
-                                    setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
-                                  }}
-                                  style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: 12,
-                                    border: '1px solid rgba(255,255,255,0.16)',
-                                    background: '#0c0c0c',
-                                    color: '#fff',
-                                    fontWeight: 900,
-                                  }}
-                                >
-                                  {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
-                                    <option key={n} value={String(n)}>
-                                      {n}%
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Vertical placement</div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                                  {[
-                                    { key: 'top_center', label: 'Top' },
-                                    { key: 'middle_center', label: 'Middle' },
-                                    { key: 'bottom_center', label: 'Bottom' },
-                                  ].map((c) => {
-                                    const selected = String(graphicEditor.position) === String(c.key)
+                            {!isDocReveal ? (
+                              <div style={{ display: 'grid', gap: 12 }}>
+	                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, alignItems: 'end' }}>
+	                                  <div />
+	                                  <div style={{ gridColumn: '2 / 4', color: '#ddd', fontSize: 14, fontWeight: 900 }}>Insets (px)</div>
+	                                  <div style={{ color: '#ddd', fontSize: 14, fontWeight: 900 }}>Size (% width)</div>
+	                                  <div style={{ color: '#bbb', fontSize: 13, textAlign: 'left' }}>Left/Right</div>
+	                                  <div style={{ color: '#bbb', fontSize: 13, textAlign: 'left' }}>Top/Bottom</div>
+	                                  <select
+	                                    value={String(graphicEditor.sizePctWidth)}
+	                                    onChange={(e) => {
+	                                      const v = Math.round(Number(e.target.value))
+	                                      setGraphicEditor((p) => (p ? { ...p, sizePctWidth: v } : p))
+	                                    }}
+	                                    style={{
+	                                      width: '100%',
+	                                      padding: '10px 12px',
+	                                      borderRadius: 12,
+	                                      border: '1px solid rgba(255,255,255,0.16)',
+	                                      background: '#0c0c0c',
+	                                      color: '#fff',
+	                                      fontWeight: 900,
+	                                      boxSizing: 'border-box',
+	                                    }}
+	                                  >
+	                                    {[25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+	                                      <option key={n} value={String(n)}>
+	                                        {n}%
+	                                      </option>
+	                                    ))}
+	                                  </select>
+	                                  <input
+	                                    type="number"
+	                                    inputMode="numeric"
+	                                    min={0}
+	                                    max={300}
+	                                    disabled
+	                                    value={String(graphicEditor.insetXPx)}
+	                                    style={{
+	                                      width: '100%',
+	                                      padding: '10px 12px',
+	                                      borderRadius: 12,
+	                                      border: '1px solid rgba(255,255,255,0.16)',
+	                                      background: '#0c0c0c',
+	                                      color: '#fff',
+	                                      fontWeight: 900,
+	                                      boxSizing: 'border-box',
+	                                      opacity: 0.45,
+	                                      cursor: 'not-allowed',
+	                                    }}
+	                                    aria-label="Horizontal inset px (disabled for slide animation)"
+	                                    title="Horizontal inset is locked for slide animation"
+	                                  />
+	                                  <input
+	                                    type="number"
+	                                    inputMode="numeric"
+	                                    min={0}
+	                                    max={300}
+	                                    value={String(graphicEditor.insetYPx)}
+	                                    onChange={(e) => {
+	                                      const v = Math.round(clamp(Number(e.target.value), 0, 300))
+	                                      setGraphicEditor((p) => (p ? { ...p, insetYPx: v } : p))
+	                                    }}
+	                                    style={{
+	                                      width: '100%',
+	                                      padding: '10px 12px',
+	                                      borderRadius: 12,
+	                                      border: '1px solid rgba(255,255,255,0.16)',
+	                                      background: '#0c0c0c',
+	                                      color: '#fff',
+	                                      fontWeight: 900,
+	                                      boxSizing: 'border-box',
+	                                    }}
+	                                    aria-label="Vertical inset px"
+	                                    title="Vertical inset (px)"
+	                                  />
+	                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Position</div>
+                                  {(() => {
+                                    const cells: Array<{ key: any; label: string }> = [
+                                      { key: 'top_left', label: '↖' },
+                                      { key: 'top_center', label: '↑' },
+                                      { key: 'top_right', label: '↗' },
+                                      { key: 'middle_left', label: '←' },
+                                      { key: 'middle_center', label: '•' },
+                                      { key: 'middle_right', label: '→' },
+                                      { key: 'bottom_left', label: '↙' },
+                                      { key: 'bottom_center', label: '↓' },
+                                      { key: 'bottom_right', label: '↘' },
+                                    ]
                                     return (
-                                      <button
-                                        key={String(c.key)}
-                                        type="button"
-                                        onClick={() => setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))}
+                                      <div
                                         style={{
-                                          height: 40,
-                                          borderRadius: 10,
-                                          border: selected ? '2px solid rgba(255,214,10,0.85)' : '1px solid rgba(255,255,255,0.18)',
-                                          background: selected ? 'rgba(255,214,10,0.18)' : 'rgba(255,255,255,0.04)',
-                                          color: '#fff',
-                                          fontWeight: 900,
-                                          cursor: 'pointer',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          fontSize: 13,
+                                          display: 'grid',
+                                          gridTemplateColumns: 'repeat(3, 1fr)',
+                                          gap: 8,
+                                          maxWidth: 240,
                                         }}
                                       >
-                                        {c.label}
-                                      </button>
+                                        {cells.map((c) => {
+                                          const key = String(c.key)
+                                          const selected = String(graphicEditor.position) === key
+                                          const enabled = key.endsWith('_center')
+                                          return (
+                                            <button
+                                              key={key}
+                                              type="button"
+                                              onClick={() => {
+                                                if (!enabled) return
+                                                setGraphicEditor((p) => (p ? { ...p, position: c.key as any } : p))
+                                              }}
+                                              disabled={!enabled}
+                                              style={{
+                                                height: 44,
+                                                borderRadius: 12,
+	                                                border: selected ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+	                                                background: selected ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                                                color: '#fff',
+                                                fontWeight: 900,
+                                                cursor: enabled ? 'pointer' : 'not-allowed',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: 18,
+                                                opacity: enabled ? 1 : 0.45,
+                                              }}
+                                              aria-label={`Position ${key}${enabled ? '' : ' (disabled for slide animation)'}`}
+                                            >
+                                              {c.label}
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
                                     )
-                                  })}
+                                  })()}
                                 </div>
                               </div>
-                            </div>
+                            ) : null}
                             <div style={{ color: '#888', fontSize: 12 }}>
-                              Animated graphics move left → right; vertical placement controls the lane.
+                              {isDocReveal
+                                ? 'Document Reveal is designed for portrait documents (1080×1920).'
+                                : 'Slide animation locks horizontal position; use the center column for top/middle/bottom placement.'}
                             </div>
                           </div>
                         ) : (
@@ -18193,13 +18366,29 @@ export default function CreateVideo() {
 	                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.10)', paddingTop: 12 }}>
 	                      <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10 }}>Effects</div>
 	                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, alignItems: 'end' }}>
-                          {isAnimated ? (
-                            <div>
+	                          {isAnimated ? (
+	                            <div>
                               <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Animation</div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10, alignItems: 'center' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'center' }}>
                                 <select
-                                  value={String(graphicEditor.animate || 'none')}
-                                  onChange={(e) => setGraphicEditor((p) => (p ? { ...p, animate: e.target.value as any } : p))}
+                                  value={String(graphicEditor.animate || 'none') === 'doc_reveal' ? 'doc_reveal' : 'slide_in_out'}
+                                  onChange={(e) =>
+                                    setGraphicEditor((p) => {
+                                      if (!p) return p
+                                      const next = e.target.value as any
+                                      if (next === 'doc_reveal') {
+                                        return {
+                                          ...p,
+                                          animate: next,
+                                          sizePctWidth: 100,
+                                          position: 'middle_center',
+                                          insetXPx: 0,
+                                          insetYPx: 0,
+                                        }
+                                      }
+                                      return { ...p, animate: next }
+                                    })
+                                  }
                                   style={{
                                     width: '100%',
                                     padding: '10px 12px',
@@ -18208,19 +18397,17 @@ export default function CreateVideo() {
                                     background: '#0c0c0c',
                                     color: '#fff',
                                     fontWeight: 900,
+                                    boxSizing: 'border-box',
                                   }}
                                 >
-                                  <option value="slide_in">Slide In</option>
-                                  <option value="slide_out">Slide Out</option>
                                   <option value="slide_in_out">Slide In + Out</option>
+                                  <option value="doc_reveal">Document Reveal</option>
                                 </select>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  value={String(graphicEditor.animateDurationMs || 400)}
-                                  onChange={(e) => {
-                                    const v = Math.round(Number(e.target.value))
-                                    setGraphicEditor((p) => (p ? { ...p, animateDurationMs: v } : p))
+	                                <select
+	                                  value={String(normalizeSpeedPresetMs(Number(graphicEditor.animateDurationMs), 600))}
+	                                  onChange={(e) => {
+	                                    const v = Math.round(Number(e.target.value))
+	                                    setGraphicEditor((p) => (p ? { ...p, animateDurationMs: v } : p))
                                   }}
                                   style={{
                                     width: '100%',
@@ -18230,39 +18417,75 @@ export default function CreateVideo() {
                                     background: '#0c0c0c',
                                     color: '#fff',
                                     fontWeight: 900,
+                                    boxSizing: 'border-box',
                                   }}
-                                  aria-label="Animation duration (ms)"
-                                  title="Animation duration (ms)"
-                                />
-                              </div>
-                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Duration in milliseconds (100–2000ms).</div>
-                            </div>
-                          ) : null}
+                                  aria-label="Animation speed"
+                                  title="Animation speed"
+                                >
+                                  <option value="400">Faster (400ms)</option>
+                                  <option value="600">Medium (600ms)</option>
+                                  <option value="800">Smoother (800ms)</option>
+                                </select>
+	                              </div>
+	                              <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Preset durations (400–800ms).</div>
+	                            </div>
+	                          ) : null}
 	                        <div>
 	                          <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Fade</div>
-	                          <select
-	                            value={String(graphicEditor.fade || 'none')}
-	                            onChange={(e) => setGraphicEditor((p) => (p ? { ...p, fade: e.target.value as any } : p))}
-	                            style={{
-	                              width: '100%',
-	                              padding: '10px 12px',
-	                              borderRadius: 12,
-	                              border: '1px solid rgba(255,255,255,0.16)',
-	                              background: '#0c0c0c',
-	                              color: '#fff',
-	                              fontWeight: 900,
-	                            }}
-	                          >
-	                            <option value="none">None</option>
-	                            <option value="in">Fade In</option>
-	                            <option value="out">Fade Out</option>
-	                            <option value="in_out">Fade In/Out</option>
-	                          </select>
-	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>Fixed duration: 0.35s</div>
-	                        </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'center' }}>
+	                            <select
+	                              value={isDocReveal ? 'in_out' : String(graphicEditor.fade || 'none') === 'none' ? 'none' : 'in_out'}
+                                disabled={isDocReveal}
+	                              onChange={(e) => setGraphicEditor((p) => (p ? { ...p, fade: e.target.value as any } : p))}
+	                              style={{
+	                                width: '100%',
+	                                padding: '10px 12px',
+	                                borderRadius: 12,
+	                                border: '1px solid rgba(255,255,255,0.16)',
+	                                background: '#0c0c0c',
+	                                color: '#fff',
+	                                fontWeight: 900,
+                                  boxSizing: 'border-box',
+                                  opacity: isDocReveal ? 0.65 : 1,
+                                  cursor: isDocReveal ? 'not-allowed' : 'pointer',
+	                              }}
+	                              aria-label={isDocReveal ? 'Fade type (locked for Document Reveal)' : 'Fade type'}
+	                              title={isDocReveal ? 'Document Reveal always uses Fade In/Out' : 'Fade type'}
+	                            >
+	                              <option value="none">None</option>
+	                              <option value="in_out">Fade In/Out</option>
+	                            </select>
+                              <select
+                                value={String(normalizeSpeedPresetMs(Number(graphicEditor.fadeDurationMs), 600))}
+                                onChange={(e) => {
+                                  const v = Math.round(Number(e.target.value))
+                                  setGraphicEditor((p) => (p ? { ...p, fadeDurationMs: v } : p))
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px 12px',
+                                  borderRadius: 12,
+                                  border: '1px solid rgba(255,255,255,0.16)',
+                                  background: '#0c0c0c',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  boxSizing: 'border-box',
+                                }}
+                                aria-label="Fade speed"
+                                title="Fade speed"
+                              >
+                                <option value="400">Faster (400ms)</option>
+                                <option value="600">Medium (600ms)</option>
+                                <option value="800">Smoother (800ms)</option>
+                              </select>
+                            </div>
+	                          <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
+                              {isDocReveal ? 'Document Reveal always uses fade in/out with this speed.' : 'Fade speed presets (400–800ms).'}
+                            </div>
+                          </div>
 	                      </div>
 	                      {!isFull ? (
-	                        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
+	                        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
 	                          <div>
 	                            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Border</div>
 	                            <select
@@ -18276,6 +18499,7 @@ export default function CreateVideo() {
 	                                background: '#0c0c0c',
 	                                color: '#fff',
 	                                fontWeight: 900,
+                                  boxSizing: 'border-box',
 	                              }}
 	                            >
 	                              <option value="0">None</option>
@@ -18300,6 +18524,7 @@ export default function CreateVideo() {
 	                                background: '#0c0c0c',
 	                                cursor: Number(graphicEditor.borderWidthPx || 0) <= 0 ? 'default' : 'pointer',
 	                                opacity: Number(graphicEditor.borderWidthPx || 0) <= 0 ? 0.5 : 1,
+                                  boxSizing: 'border-box',
 	                              }}
 	                            />
 	                            <div style={{ color: '#888', fontSize: 12, marginTop: 6 }}>
@@ -20659,20 +20884,25 @@ export default function CreateVideo() {
                         const borderWidthRaw = Number((g as any).borderWidthPx)
                         const borderWidthPx = (borderWidthAllowed.has(borderWidthRaw) ? borderWidthRaw : 0) as any
                         const borderColor = String((g as any).borderColor || '#000000')
-                        const fadeRaw = String((g as any).fade || 'none')
-                        const fadeAllowed = new Set(['none', 'in', 'out', 'in_out'])
-                        const fade = (fadeAllowed.has(fadeRaw) ? fadeRaw : 'none') as any
+                        const fadeRaw = String((g as any).fade || 'none').trim().toLowerCase()
+                        const fade = (fadeRaw === 'none' ? 'none' : 'in_out') as any
+                        const fadeDurationRaw = Number((g as any).fadeDurationMs)
+                        const fadeDurationMs = normalizeSpeedPresetMs(fadeDurationRaw, 600)
                         const animateRaw = String((g as any).animate || 'none').trim().toLowerCase()
-                        const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out'])
-                        const animate = (animateAllowed.has(animateRaw) ? animateRaw : 'none') as any
+                        const animateAllowed = new Set(['none', 'slide_in', 'slide_out', 'slide_in_out', 'doc_reveal'])
+                        const animateModeRaw = animateAllowed.has(animateRaw) ? animateRaw : 'none'
+                        const animate = (animateModeRaw === 'doc_reveal' ? 'doc_reveal' : animateModeRaw === 'none' ? 'none' : 'slide_in_out') as any
                         const animateDurationRaw = Number((g as any).animateDurationMs)
-                        const animateDurationMs = Number.isFinite(animateDurationRaw) ? Math.round(animateDurationRaw) : 400
+                        const animateDurationMs = normalizeSpeedPresetMs(animateDurationRaw, 600)
                         const mode: 'full' | 'positioned' | 'animated' =
                           animate !== 'none' ? 'animated' : fitMode === 'contain_transparent' ? 'positioned' : 'full'
                         if (mode === 'animated') {
                           if (position.includes('top')) position = 'top_center'
                           else if (position.includes('bottom')) position = 'bottom_center'
                           else position = 'middle_center'
+                        }
+                        if (mode === 'animated' && animate === 'doc_reveal') {
+                          position = 'middle_center'
                         }
                         setSelectedGraphicId(String((g as any).id))
                         setSelectedClipId(null)
@@ -20688,13 +20918,14 @@ export default function CreateVideo() {
                           end: e2,
                           mode,
                           fitMode,
-                          sizePctWidth,
+                          sizePctWidth: animate === 'doc_reveal' ? 100 : sizePctWidth,
                           position,
                           insetXPx: mode === 'animated' ? 0 : insetXPx,
                           insetYPx: mode === 'animated' ? 0 : insetYPx,
                           borderWidthPx,
                           borderColor,
                           fade,
+                          fadeDurationMs,
                           animate,
                           animateDurationMs,
                         })

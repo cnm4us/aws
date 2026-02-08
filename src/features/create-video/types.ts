@@ -46,8 +46,9 @@ export type CreateVideoGraphicV1 = {
   borderWidthPx?: 0 | 2 | 4 | 6
   borderColor?: string
   fade?: 'none' | 'in' | 'out' | 'in_out'
+  fadeDurationMs?: number
   // Optional motion effects (v1.1).
-  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out'
+  animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
   animateDurationMs?: number
 }
 
