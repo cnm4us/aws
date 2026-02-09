@@ -20,10 +20,12 @@ type Clip = {
   sourceEndSeconds: number
   audioEnabled?: boolean
   boostDb?: number
-  bgFillStyle?: 'none' | 'blur'
+  bgFillStyle?: 'none' | 'blur' | 'color' | 'image'
   bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillDim?: 'light' | 'medium' | 'strong'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
+  bgFillColor?: string
+  bgFillImageUploadId?: number | null
   freezeStartSeconds?: number
   freezeEndSeconds?: number
 }
@@ -1511,10 +1513,12 @@ async function renderSegmentMp4(opts: {
   endSeconds: number
   audioEnabled?: boolean
   boostDb?: number
-  bgFillStyle?: 'none' | 'blur'
+  bgFillStyle?: 'none' | 'blur' | 'color' | 'image'
   bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillDim?: 'light' | 'medium' | 'strong'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
+  bgFillColor?: string
+  bgFillImagePath?: string | null
   timelineBackgroundMode?: 'none' | 'color' | 'image'
   timelineBackgroundColor?: string
   timelineBackgroundImagePath?: string | null
@@ -1542,15 +1546,10 @@ async function renderSegmentMp4(opts: {
   const timelineBackgroundColor = normalizeFfmpegColor(normalizeHexColor(opts.timelineBackgroundColor, '#000000'))
   const timelineBackgroundImagePath =
     timelineBackgroundMode === 'image' && opts.timelineBackgroundImagePath ? String(opts.timelineBackgroundImagePath) : ''
-  const padColor = timelineBackgroundMode === 'color' ? timelineBackgroundColor : 'black'
-  const scalePad = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2:color=${padColor}`
-  const tpad = freezeStart > 0.01 || freezeEnd > 0.01
-    ? `,tpad=start_mode=clone:start_duration=${freezeStart.toFixed(3)}:stop_mode=clone:stop_duration=${freezeEnd.toFixed(3)}`
-    : ''
-  let v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p${tpad}`
-
-  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').toLowerCase()
-  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').trim().toLowerCase()
+  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : bgFillStyleRaw === 'color' ? 'color' : bgFillStyleRaw === 'image' ? 'image' : 'none'
+  const bgFillColor = normalizeFfmpegColor(normalizeHexColor(opts.bgFillColor, '#000000'))
+  const bgFillImagePath = bgFillStyle === 'image' && opts.bgFillImagePath ? String(opts.bgFillImagePath) : ''
   const bgFillBrightnessRaw = String(opts.bgFillBrightness || '').toLowerCase()
   const bgFillBrightness = bgFillBrightnessRaw === 'light3'
     ? 'light3'
@@ -1594,6 +1593,15 @@ async function renderSegmentMp4(opts: {
   const sourceIsLandscape = !!(sourceDims && sourceDims.width > sourceDims.height)
   const targetIsPortrait = opts.targetH >= opts.targetW
   const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
+  const useClipBackgroundColor = bgFillStyle === 'color'
+  const effectiveBackgroundImagePath = useBgFill || useClipBackgroundColor ? '' : bgFillImagePath || timelineBackgroundImagePath
+  const useEffectiveBackgroundImage = !!effectiveBackgroundImagePath
+  const padColor = useClipBackgroundColor ? bgFillColor : timelineBackgroundMode === 'color' ? timelineBackgroundColor : 'black'
+  const scalePad = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2:color=${padColor}`
+  const tpad = freezeStart > 0.01 || freezeEnd > 0.01
+    ? `,tpad=start_mode=clone:start_duration=${freezeStart.toFixed(3)}:stop_mode=clone:stop_duration=${freezeEnd.toFixed(3)}`
+    : ''
+  let v = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,${scalePad},fps=${fps},format=yuv420p${tpad}`
   if (useBgFill) {
     const blurSigma = bgFillBlur === 'soft' ? 12 : bgFillBlur === 'strong' ? 60 : bgFillBlur === 'very_strong' ? 80 : 32
     const brightness = resolvedBrightness === 'light3'
@@ -1626,12 +1634,11 @@ async function renderSegmentMp4(opts: {
   const a = hasAudio && audioEnabled
     ? `atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS${delay}${boostFilter},apad,atrim=0:${totalDur.toFixed(3)},asetpts=N/SR/TB`
     : `anullsrc=r=48000:cl=stereo,atrim=0:${totalDur.toFixed(3)},asetpts=PTS-STARTPTS`
-  const useTimelineBackgroundImage = !useBgFill && !!timelineBackgroundImagePath
   let filterComplex = `[0:v]${v}[v];${a}[a]`
   const ffmpegArgs: string[] = ['-i', opts.inPath]
-  if (useTimelineBackgroundImage) {
+  if (useEffectiveBackgroundImage) {
     const bgDur = Math.max(0.1, totalDur)
-    ffmpegArgs.push('-loop', '1', '-t', String(bgDur), '-i', timelineBackgroundImagePath)
+    ffmpegArgs.push('-loop', '1', '-t', String(bgDur), '-i', effectiveBackgroundImagePath)
     const fg = `trim=start=${start}:end=${end},setpts=PTS-STARTPTS,scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,fps=${fps},format=yuv420p${tpad}`
     const bg = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},fps=${fps},format=yuv420p`
     filterComplex = `[0:v]${fg}[fg];[1:v]${bg}[bg];[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[v];${a}[a]`
@@ -1674,10 +1681,12 @@ async function renderStillSegmentMp4(opts: {
   imagePath: string
   outPath: string
   durationSeconds: number
-  bgFillStyle?: 'none' | 'blur'
+  bgFillStyle?: 'none' | 'blur' | 'color' | 'image'
   bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillDim?: 'light' | 'medium' | 'strong'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
+  bgFillColor?: string
+  bgFillImagePath?: string | null
   timelineBackgroundMode?: 'none' | 'color' | 'image'
   timelineBackgroundColor?: string
   timelineBackgroundImagePath?: string | null
@@ -1696,8 +1705,10 @@ async function renderStillSegmentMp4(opts: {
   const timelineBackgroundImagePath =
     timelineBackgroundMode === 'image' && opts.timelineBackgroundImagePath ? String(opts.timelineBackgroundImagePath) : ''
 
-  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').toLowerCase()
-  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+  const bgFillStyleRaw = String(opts.bgFillStyle || 'none').trim().toLowerCase()
+  const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : bgFillStyleRaw === 'color' ? 'color' : bgFillStyleRaw === 'image' ? 'image' : 'none'
+  const bgFillColor = normalizeFfmpegColor(normalizeHexColor(opts.bgFillColor, '#000000'))
+  const bgFillImagePath = bgFillStyle === 'image' && opts.bgFillImagePath ? String(opts.bgFillImagePath) : ''
   const bgFillBrightnessRaw = String(opts.bgFillBrightness || '').toLowerCase()
   const bgFillBrightness = bgFillBrightnessRaw === 'light3'
     ? 'light3'
@@ -1741,8 +1752,10 @@ async function renderStillSegmentMp4(opts: {
   const sourceIsLandscape = !!(sourceDims && sourceDims.width > sourceDims.height)
   const targetIsPortrait = opts.targetH >= opts.targetW
   const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
-  const useTimelineBackgroundImage = !useBgFill && !!timelineBackgroundImagePath
-  const padColor = timelineBackgroundMode === 'color' ? timelineBackgroundColor : 'black'
+  const useClipBackgroundColor = bgFillStyle === 'color'
+  const effectiveBackgroundImagePath = useBgFill || useClipBackgroundColor ? '' : bgFillImagePath || timelineBackgroundImagePath
+  const useEffectiveBackgroundImage = !!effectiveBackgroundImagePath
+  const padColor = useClipBackgroundColor ? bgFillColor : timelineBackgroundMode === 'color' ? timelineBackgroundColor : 'black'
 
   // Match clip rendering default behavior: preserve source frame (contain) when blur fill is off.
   let v = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2:color=${padColor},fps=${fps},format=yuv420p`
@@ -1776,14 +1789,14 @@ async function renderStillSegmentMp4(opts: {
     '-i',
     opts.imagePath,
   ]
-  if (useTimelineBackgroundImage) {
+  if (useEffectiveBackgroundImage) {
     ffmpegArgs.push(
       '-loop',
       '1',
       '-t',
       String(dur),
       '-i',
-      timelineBackgroundImagePath
+      effectiveBackgroundImagePath
     )
   }
   ffmpegArgs.push(
@@ -1795,12 +1808,12 @@ async function renderStillSegmentMp4(opts: {
     'anullsrc=r=48000:cl=stereo',
     '-shortest'
   )
-  const filterComplex = useTimelineBackgroundImage
+  const filterComplex = useEffectiveBackgroundImage
     ? `[0:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,fps=${fps},format=yuv420p[fg];` +
       `[1:v]scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},fps=${fps},format=yuv420p[bg];` +
       `[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1[v]`
     : `[0:v]${v}[v]`
-  const audioMap = useTimelineBackgroundImage ? '2:a:0' : '1:a:0'
+  const audioMap = useEffectiveBackgroundImage ? '2:a:0' : '1:a:0'
   await runFfmpeg(
     [
       ...ffmpegArgs,
@@ -1983,6 +1996,7 @@ export async function runCreateVideoExportV1Job(
     new Set(
       [
         ...clips.map((c) => Number(c.uploadId)),
+        ...clips.map((c) => Number((c as any).bgFillImageUploadId)),
         ...stills.map((s) => Number((s as any).uploadId)),
         ...graphics.map((g) => Number(g.uploadId)),
         ...videoOverlays.map((o) => Number((o as any).uploadId)),
@@ -2024,6 +2038,28 @@ export async function runCreateVideoExportV1Job(
         seenDownloads.set(timelineBackgroundUploadId, inPath)
       }
       timelineBackgroundImagePath = inPath
+    }
+    const resolveClipBackgroundImagePath = async (clip: Clip | null | undefined): Promise<string | null> => {
+      if (!clip) return null
+      const styleRaw = String((clip as any).bgFillStyle || 'none').trim().toLowerCase()
+      if (styleRaw !== 'image') return null
+      const uploadIdRaw = Number((clip as any).bgFillImageUploadId)
+      if (!(Number.isFinite(uploadIdRaw) && uploadIdRaw > 0)) return null
+      const uploadId = Math.round(uploadIdRaw)
+      const row = byId.get(uploadId)
+      if (!row) throw new Error('upload_not_found')
+      if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
+      const ownerId = row.user_id != null ? Number(row.user_id) : null
+      if (!(ownerId === userId || ownerId == null)) throw new Error('forbidden')
+      const status = String(row.status || '').toLowerCase()
+      if (!(status === 'uploaded' || status === 'completed')) throw new Error('invalid_upload_status')
+      if (row.source_deleted_at) throw new Error('source_deleted')
+      const inPath = seenDownloads.get(uploadId) || path.join(tmpDir, `clip_bg_${uploadId}.img`)
+      if (!seenDownloads.has(uploadId)) {
+        await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
+        seenDownloads.set(uploadId, inPath)
+      }
+      return inPath
     }
 
     let target = { w: 1080, h: 1920 }
@@ -2196,6 +2232,7 @@ export async function runCreateVideoExportV1Job(
           }
 
           const outPath = path.join(tmpDir, `seg_clip_${String(i).padStart(3, '0')}.mp4`)
+          const clipBackgroundImagePath = await resolveClipBackgroundImagePath(c)
           await renderSegmentMp4({
             inPath,
             outPath,
@@ -2206,6 +2243,8 @@ export async function runCreateVideoExportV1Job(
             bgFillStyle: (c as any).bgFillStyle,
             bgFillBrightness: (c as any).bgFillBrightness,
             bgFillBlur: (c as any).bgFillBlur,
+            bgFillColor: (c as any).bgFillColor,
+            bgFillImagePath: clipBackgroundImagePath,
             timelineBackgroundMode,
             timelineBackgroundColor,
             timelineBackgroundImagePath,
@@ -2244,6 +2283,7 @@ export async function runCreateVideoExportV1Job(
         }
         const sourceClipId = (s as any).sourceClipId != null ? String((s as any).sourceClipId) : ''
         const sourceClip = sourceClipId ? clipById.get(sourceClipId) : undefined
+        const sourceClipBackgroundImagePath = await resolveClipBackgroundImagePath(sourceClip)
         const outPath = path.join(tmpDir, `seg_still_${String(i).padStart(3, '0')}.mp4`)
         await renderStillSegmentMp4({
           imagePath: inPath,
@@ -2252,6 +2292,8 @@ export async function runCreateVideoExportV1Job(
           bgFillStyle: sourceClip ? (sourceClip as any).bgFillStyle : undefined,
           bgFillBrightness: sourceClip ? (sourceClip as any).bgFillBrightness : undefined,
           bgFillBlur: sourceClip ? (sourceClip as any).bgFillBlur : undefined,
+          bgFillColor: sourceClip ? (sourceClip as any).bgFillColor : undefined,
+          bgFillImagePath: sourceClipBackgroundImagePath,
           timelineBackgroundMode,
           timelineBackgroundColor,
           timelineBackgroundImagePath,

@@ -7,9 +7,11 @@ export type Clip = {
   audioEnabled?: boolean
   freezeStartSeconds?: number
   freezeEndSeconds?: number
-  bgFillStyle?: 'none' | 'blur'
+  bgFillStyle?: 'none' | 'blur' | 'color' | 'image'
   bgFillBrightness?: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
   bgFillBlur?: 'soft' | 'medium' | 'strong' | 'very_strong'
+  bgFillColor?: string
+  bgFillImageUploadId?: number | null
 }
 
 export type Still = {
@@ -284,10 +286,24 @@ export function cloneTimeline(timeline: Timeline): Timeline {
       audioEnabled: (c as any).audioEnabled == null ? true : Boolean((c as any).audioEnabled),
       freezeStartSeconds: (c as any).freezeStartSeconds != null ? Number((c as any).freezeStartSeconds) : undefined,
       freezeEndSeconds: (c as any).freezeEndSeconds != null ? Number((c as any).freezeEndSeconds) : undefined,
-      bgFillStyle: (c as any).bgFillStyle == null ? undefined : ((String((c as any).bgFillStyle) as any) || undefined),
+      bgFillStyle: (() => {
+        const raw = String((c as any).bgFillStyle || 'none').trim().toLowerCase()
+        return raw === 'blur' ? 'blur' : raw === 'color' ? 'color' : raw === 'image' ? 'image' : 'none'
+      })(),
       bgFillBrightness:
         (c as any).bgFillBrightness == null ? undefined : ((String((c as any).bgFillBrightness) as any) || undefined),
       bgFillBlur: (c as any).bgFillBlur == null ? undefined : ((String((c as any).bgFillBlur) as any) || undefined),
+      bgFillColor: (() => {
+        const raw = String((c as any).bgFillColor || '#000000').trim()
+        if (/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith('#') ? raw : `#${raw}`
+        return '#000000'
+      })(),
+      bgFillImageUploadId:
+        (c as any).bgFillImageUploadId == null
+          ? null
+          : Number.isFinite(Number((c as any).bgFillImageUploadId)) && Number((c as any).bgFillImageUploadId) > 0
+            ? Number((c as any).bgFillImageUploadId)
+            : null,
     })),
     stills: Array.isArray((timeline as any).stills)
       ? (timeline as any).stills.map((s: any) => ({

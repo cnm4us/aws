@@ -539,9 +539,11 @@ export async function validateAndNormalizeCreateVideoTimeline(
     sourceEndSeconds: number
     audioEnabled: boolean
     boostDb: number
-    bgFillStyle: 'none' | 'blur'
+    bgFillStyle: 'none' | 'blur' | 'color' | 'image'
     bgFillBrightness: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
     bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
+    bgFillColor: string
+    bgFillImageUploadId: number | null
     metaId: number
     legacyFreezeSeconds: number
     legacyEndSeconds: number
@@ -575,7 +577,19 @@ export async function validateAndNormalizeCreateVideoTimeline(
     if (!Number.isFinite(boostDb) || !boostAllowed.has(Math.round(boostDb))) throw new ValidationError('invalid_boost_db')
 
     const bgFillStyleRaw = String((c as any).bgFillStyle || 'none').trim().toLowerCase()
-    const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+    let bgFillStyle: 'none' | 'blur' | 'color' | 'image' =
+      bgFillStyleRaw === 'blur' ? 'blur' : bgFillStyleRaw === 'color' ? 'color' : bgFillStyleRaw === 'image' ? 'image' : 'none'
+    const bgFillColor = normalizeHexColor((c as any).bgFillColor, '#000000')
+    let bgFillImageUploadId: number | null = null
+    if (bgFillStyle === 'image') {
+      const uploadId = Number((c as any).bgFillImageUploadId)
+      if (Number.isFinite(uploadId) && uploadId > 0) {
+        const meta = await loadImageMetaForUser(Math.round(uploadId), ctx.userId)
+        bgFillImageUploadId = meta.id
+      } else {
+        bgFillStyle = 'none'
+      }
+    }
     const bgFillBrightnessRaw = String((c as any).bgFillBrightness || '').trim().toLowerCase()
     const bgFillBrightness = bgFillBrightnessRaw === 'light3'
       ? 'light3'
@@ -650,6 +664,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
       bgFillStyle,
       bgFillBrightness: resolvedBgFillBrightness,
       bgFillBlur,
+      bgFillColor,
+      bgFillImageUploadId,
       metaId: meta.id,
       legacyFreezeSeconds,
       legacyEndSeconds,
@@ -701,6 +717,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
     bgFillStyle: c.bgFillStyle,
     bgFillBrightness: c.bgFillBrightness,
     bgFillBlur: c.bgFillBlur,
+    bgFillColor: c.bgFillColor,
+    bgFillImageUploadId: c.bgFillImageUploadId,
     freezeStartSeconds: 0,
     freezeEndSeconds: 0,
   }))

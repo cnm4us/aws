@@ -783,9 +783,11 @@ export default function CreateVideo() {
     start: number
     end: number
     boostDb: number
-    bgFillStyle: 'none' | 'blur'
+    bgFillStyle: 'none' | 'blur' | 'color' | 'image'
     bgFillBrightness: 'light3' | 'light2' | 'light1' | 'neutral' | 'dim1' | 'dim2' | 'dim3'
     bgFillBlur: 'soft' | 'medium' | 'strong' | 'very_strong'
+    bgFillColor: string
+    bgFillImageUploadId: number | null
   } | null>(null)
   const [clipEditorError, setClipEditorError] = useState<string | null>(null)
   const [freezeInsertSeconds, setFreezeInsertSeconds] = useState<number>(2)
@@ -3078,6 +3080,57 @@ export default function CreateVideo() {
     const blur = String(clip.bgFillBlur || 'medium')
     return { uploadId, brightness, blur }
   }, [activeClipAtPlayhead, baseVideoDims, dimsByUploadId])
+
+  const activeClipBgStatic = useMemo<null | { kind: 'color'; color: string } | { kind: 'image'; url: string }>(() => {
+    const clip: any = activeClipAtPlayhead as any
+    if (!clip) return null
+    const style = String((clip as any).bgFillStyle || 'none').trim().toLowerCase()
+    if (style === 'color') {
+      return { kind: 'color', color: normalizeHexColor((clip as any).bgFillColor, '#000000') }
+    }
+    if (style === 'image') {
+      const uploadId = Number((clip as any).bgFillImageUploadId)
+      if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
+      const id = Math.round(uploadId)
+      const url = graphicFileUrlByUploadId[id] || `/api/uploads/${encodeURIComponent(String(id))}/file`
+      return { kind: 'image', url }
+    }
+    return null
+  }, [activeClipAtPlayhead, graphicFileUrlByUploadId])
+
+  const activeStillBgStatic = useMemo<null | { kind: 'color'; color: string } | { kind: 'image'; url: string }>(() => {
+    const s: any = previewStillAtPlayhead as any
+    if (!s) return null
+    let clip: any | null = null
+    const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
+    if (sourceClipId) {
+      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
+    }
+    if (!clip && timeline.clips.length) {
+      const stillStart = roundToTenth(Number(s.startSeconds || 0))
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
+        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
+        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
+          clip = timeline.clips[i]
+          break
+        }
+      }
+    }
+    if (!clip) return null
+    const style = String((clip as any).bgFillStyle || 'none').trim().toLowerCase()
+    if (style === 'color') {
+      return { kind: 'color', color: normalizeHexColor((clip as any).bgFillColor, '#000000') }
+    }
+    if (style === 'image') {
+      const uploadId = Number((clip as any).bgFillImageUploadId)
+      if (!(Number.isFinite(uploadId) && uploadId > 0)) return null
+      const id = Math.round(uploadId)
+      const url = graphicFileUrlByUploadId[id] || `/api/uploads/${encodeURIComponent(String(id))}/file`
+      return { kind: 'image', url }
+    }
+    return null
+  }, [clipStarts, graphicFileUrlByUploadId, previewStillAtPlayhead, timeline.clips])
 
   const activeLogoUploadId = useMemo(() => {
     const l = activeLogoAtPlayhead
@@ -6123,6 +6176,9 @@ export default function CreateVideo() {
   // Fetch upload names for clip pills
 		  useEffect(() => {
 		    const clipIds = timeline.clips.map((c) => Number(c.uploadId)).filter((n) => Number.isFinite(n) && n > 0)
+        const clipBackgroundImageIds = timeline.clips
+          .map((c: any) => Number((c as any).bgFillImageUploadId))
+          .filter((n) => Number.isFinite(n) && n > 0)
         const videoOverlayIds = videoOverlays.map((o: any) => Number((o as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const graphicIds = graphics.map((g) => Number((g as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
@@ -6137,6 +6193,7 @@ export default function CreateVideo() {
 		    const ids = Array.from(
           new Set([
             ...clipIds,
+            ...clipBackgroundImageIds,
             ...videoOverlayIds,
             ...graphicIds,
             ...logoIds,
@@ -6570,6 +6627,9 @@ export default function CreateVideo() {
           ...logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...screenTitles.map((st: any) => Number((st as any).renderUploadId)).filter((n) => Number.isFinite(n) && n > 0),
+          ...timeline.clips
+            .map((c: any) => Number((c as any).bgFillImageUploadId))
+            .filter((n) => Number.isFinite(n) && n > 0),
           ...(timelineBackgroundMode === 'image' && timelineBackgroundUploadId != null ? [timelineBackgroundUploadId] : []),
           ...stills.map((s) => Number((s as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...videoOverlayStills.map((s: any) => Number((s as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
@@ -8427,6 +8487,7 @@ export default function CreateVideo() {
       const audioConfigId = Number(String(qp.get('cvPickAudioConfigId') || '0'))
       const presetId = Number(String(qp.get('cvPickPresetId') || '0'))
       const clipId = Number(String(qp.get('cvPickClipId') || '0'))
+      const targetClipIdRaw = String(qp.get('cvPickTargetClipId') || '').trim()
       return {
         type,
         uploadId: Number.isFinite(uploadId) && uploadId > 0 ? uploadId : null,
@@ -8434,6 +8495,7 @@ export default function CreateVideo() {
         audioConfigId: Number.isFinite(audioConfigId) && audioConfigId > 0 ? audioConfigId : null,
         presetId: Number.isFinite(presetId) && presetId > 0 ? presetId : null,
         clipId: Number.isFinite(clipId) && clipId > 0 ? clipId : null,
+        targetClipId: targetClipIdRaw || null,
       }
     } catch {
       return null
@@ -8457,6 +8519,7 @@ export default function CreateVideo() {
         url.searchParams.delete('cvPickAudioConfigId')
         url.searchParams.delete('cvPickPresetId')
         url.searchParams.delete('cvPickClipId')
+        url.searchParams.delete('cvPickTargetClipId')
         window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash || ''}`)
       } catch {}
     }
@@ -8551,6 +8614,37 @@ export default function CreateVideo() {
             }) as any)
             void markGraphicUsed(pickFromAssets.uploadId)
           }
+        } else if (t === 'clipBackground' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (up && String((up as any).kind || '').toLowerCase() === 'image') {
+            const targetClipId = String((pickFromAssets as any).targetClipId || (clipEditor as any)?.id || selectedClipId || '').trim()
+            if (targetClipId) {
+              snapshotUndo()
+              setTimeline((prev) => ({
+                ...(prev as any),
+                clips: (Array.isArray((prev as any).clips) ? ((prev as any).clips as any[]) : []).map((c: any) =>
+                  String((c as any).id) === targetClipId
+                    ? ({
+                        ...(c as any),
+                        bgFillStyle: 'image',
+                        bgFillImageUploadId: Number(pickFromAssets.uploadId),
+                      } as any)
+                    : c
+                ),
+              }) as any)
+              setSelectedClipId(targetClipId)
+            }
+            setClipEditor((prev) =>
+              prev && String((prev as any).id) === targetClipId
+                ? ({
+                    ...(prev as any),
+                    bgFillStyle: 'image',
+                    bgFillImageUploadId: Number(pickFromAssets.uploadId),
+                  } as any)
+                : prev
+            )
+            void markGraphicUsed(pickFromAssets.uploadId)
+          }
         } else if (t === 'narration' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) await addNarrationFromUpload(up as any)
@@ -8589,9 +8683,11 @@ export default function CreateVideo() {
     ensureAudioConfigs,
     ensureLowerThirdConfigs,
     ensureScreenTitlePresets,
+    clipEditor,
     loading,
     pickFromAssets,
     project?.id,
+    selectedClipId,
     snapshotUndo,
   ])
 
@@ -13001,7 +13097,8 @@ export default function CreateVideo() {
     const boostAllowed = new Set([0, 3, 6, 9])
     const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
     const bgFillStyleRaw = String((clipEditor as any).bgFillStyle || 'none').toLowerCase()
-    const bgFillStyle = bgFillStyleRaw === 'blur' ? 'blur' : 'none'
+    let bgFillStyle: 'none' | 'blur' | 'color' | 'image' =
+      bgFillStyleRaw === 'blur' ? 'blur' : bgFillStyleRaw === 'color' ? 'color' : bgFillStyleRaw === 'image' ? 'image' : 'none'
     const bgFillBrightnessRaw = String((clipEditor as any).bgFillBrightness || '').toLowerCase()
     const bgFillBrightness = bgFillBrightnessRaw === 'light3'
       ? 'light3'
@@ -13026,6 +13123,11 @@ export default function CreateVideo() {
         : bgFillBlurRaw === 'very_strong'
           ? 'very_strong'
           : 'medium'
+    const bgFillColor = normalizeHexColor((clipEditor as any).bgFillColor, '#000000')
+    const bgFillImageUploadIdRaw = Number((clipEditor as any).bgFillImageUploadId)
+    const bgFillImageUploadId =
+      Number.isFinite(bgFillImageUploadIdRaw) && bgFillImageUploadIdRaw > 0 ? Math.round(bgFillImageUploadIdRaw) : null
+    if (bgFillStyle === 'image' && bgFillImageUploadId == null) bgFillStyle = 'none'
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setClipEditorError('End must be after start.')
       return
@@ -13077,9 +13179,11 @@ export default function CreateVideo() {
       sourceStartSeconds: safeStart,
       sourceEndSeconds: safeEnd,
       boostDb,
-        bgFillStyle,
-        bgFillBrightness,
-        bgFillBlur,
+      bgFillStyle,
+      bgFillBrightness,
+      bgFillBlur,
+      bgFillColor,
+      bgFillImageUploadId,
     }
     const next = normalized.slice()
     next[idx] = updated
@@ -14134,6 +14238,25 @@ export default function CreateVideo() {
       window.location.href = '/assets/graphic?mode=pick&pickType=timelineBackground'
     }
   }, [])
+
+  const openClipBackgroundPicker = useCallback(() => {
+    const clipId = String((clipEditor as any)?.id || selectedClipId || '').trim()
+    if (!clipId) return
+    try {
+      const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+      const u = new URL('/assets/graphic', window.location.origin)
+      u.searchParams.set('mode', 'pick')
+      u.searchParams.set('return', ret)
+      u.searchParams.set('pickType', 'clipBackground')
+      u.searchParams.set('cvPickTargetClipId', clipId)
+      const qp = new URLSearchParams(window.location.search)
+      const projectQ = qp.get('project')
+      if (projectQ) u.searchParams.set('project', String(projectQ))
+      window.location.href = `${u.pathname}${u.search}`
+    } catch {
+      window.location.href = `/assets/graphic?mode=pick&pickType=clipBackground&cvPickTargetClipId=${encodeURIComponent(clipId)}`
+    }
+  }, [clipEditor, selectedClipId])
 
   // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
   useEffect(() => {
@@ -16023,6 +16146,58 @@ export default function CreateVideo() {
                   pointerEvents: 'none',
                   zIndex: 1,
                 }}
+                />
+              ) : null}
+            {activeClipBgStatic?.kind === 'color' ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: activeClipBgStatic.color,
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }}
+              />
+            ) : null}
+            {activeClipBgStatic?.kind === 'image' ? (
+              <img
+                src={activeClipBgStatic.url}
+                alt=""
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }}
+              />
+            ) : null}
+            {activeStillBgStatic?.kind === 'color' ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: activeStillBgStatic.color,
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }}
+              />
+            ) : null}
+            {activeStillBgStatic?.kind === 'image' ? (
+              <img
+                src={activeStillBgStatic.url}
+                alt=""
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }}
               />
             ) : null}
             <video
@@ -16058,7 +16233,7 @@ export default function CreateVideo() {
                   objectFit: activeStillObjectFit,
                   pointerEvents: 'none',
                   zIndex: 10,
-                  background: activeStillBgFill || hasTimelineBackgroundPreview ? 'transparent' : '#000',
+                  background: activeStillBgFill || activeStillBgStatic || hasTimelineBackgroundPreview ? 'transparent' : '#000',
                 }}
               />
             ) : null}
@@ -21232,8 +21407,10 @@ export default function CreateVideo() {
                             onChange={(e) => setClipEditor((p) => (p ? ({ ...p, bgFillStyle: e.target.value as any }) : p))}
                             style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
                           >
-                            <option value="none">None</option>
+                            <option value="none">Use Timeline Background</option>
                             <option value="blur">Blur</option>
+                            <option value="color">Color</option>
+                            <option value="image">Image</option>
                           </select>
                         </label>
                         {String(clipEditor.bgFillStyle || 'none') === 'blur' ? (
@@ -21269,9 +21446,109 @@ export default function CreateVideo() {
                             </label>
                           </>
                         ) : null}
-                        <div style={{ color: '#888', fontSize: 12 }}>
-                          Applies only when the source is landscape and the output is portrait.
-                        </div>
+                        {String(clipEditor.bgFillStyle || 'none') === 'color' ? (
+                          <label style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ color: '#bbb', fontSize: 13 }}>Color</div>
+                            <input
+                              type="color"
+                              value={normalizeHexColor((clipEditor as any).bgFillColor, '#000000')}
+                              onChange={(e) =>
+                                setClipEditor((p) => (p ? ({ ...p, bgFillColor: normalizeHexColor(e.target.value, '#000000') } as any) : p))
+                              }
+                              style={{
+                                width: '100%',
+                                height: 42,
+                                borderRadius: 10,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: '#0b0b0b',
+                                boxSizing: 'border-box',
+                                padding: 4,
+                              }}
+                            />
+                          </label>
+                        ) : null}
+                        {String(clipEditor.bgFillStyle || 'none') === 'image' ? (
+                          <div style={{ display: 'grid', gap: 8 }}>
+                            <label style={{ display: 'grid', gap: 6 }}>
+                              <div style={{ color: '#bbb', fontSize: 13 }}>Image Upload ID</div>
+                              <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={(clipEditor as any).bgFillImageUploadId != null ? String((clipEditor as any).bgFillImageUploadId) : ''}
+                                onChange={(e) => {
+                                  const raw = String(e.target.value || '').trim()
+                                  const next = Number(raw)
+                                  setClipEditor((p) =>
+                                    p
+                                      ? ({
+                                          ...p,
+                                          bgFillImageUploadId: Number.isFinite(next) && next > 0 ? Math.round(next) : null,
+                                        } as any)
+                                      : p
+                                  )
+                                }}
+                                style={{
+                                  width: '100%',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: '#0b0b0b',
+                                  color: '#fff',
+                                  padding: '10px 12px',
+                                  fontSize: 14,
+                                  fontWeight: 900,
+                                  boxSizing: 'border-box',
+                                }}
+                              />
+                            </label>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                onClick={openClipBackgroundPicker}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(96,165,250,0.95)',
+                                  background: 'rgba(96,165,250,0.14)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Pick Image
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setClipEditor((p) => (p ? ({ ...p, bgFillImageUploadId: null } as any) : p))}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: 'rgba(255,255,255,0.06)',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div style={{ color: '#9aa3ad', fontSize: 12 }}>
+                              {(clipEditor as any).bgFillImageUploadId != null
+                                ? `${namesByUploadId[Number((clipEditor as any).bgFillImageUploadId)] || `Upload ${Number((clipEditor as any).bgFillImageUploadId)}`}${
+                                    dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)]
+                                      ? ` • ${dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)].width}x${dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)].height}`
+                                      : ''
+                                  }`
+                                : 'No clip background image selected.'}
+                            </div>
+                          </div>
+                        ) : null}
+                        {String(clipEditor.bgFillStyle || 'none') === 'blur' ? (
+                          <div style={{ color: '#888', fontSize: 12 }}>
+                            Blur applies only when the source is landscape and the output is portrait.
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
@@ -21795,7 +22072,14 @@ export default function CreateVideo() {
 					                          start: clip.sourceStartSeconds,
 					                          end: clip.sourceEndSeconds,
 					                          boostDb: (clip as any).boostDb == null ? 0 : Number((clip as any).boostDb),
-					                          bgFillStyle: (String((clip as any).bgFillStyle || 'none').toLowerCase() === 'blur' ? 'blur' : 'none'),
+					                          bgFillStyle:
+					                            String((clip as any).bgFillStyle || 'none').toLowerCase() === 'blur'
+					                              ? 'blur'
+					                              : String((clip as any).bgFillStyle || 'none').toLowerCase() === 'color'
+					                                ? 'color'
+					                                : String((clip as any).bgFillStyle || 'none').toLowerCase() === 'image'
+					                                  ? 'image'
+					                                  : 'none',
 					                          bgFillBrightness:
 					                            String((clip as any).bgFillBrightness || 'neutral').toLowerCase() === 'light3'
 					                              ? 'light3'
@@ -21818,6 +22102,11 @@ export default function CreateVideo() {
 					                                : String((clip as any).bgFillBlur || 'medium').toLowerCase() === 'very_strong'
 					                                  ? 'very_strong'
 					                                  : 'medium',
+					                          bgFillColor: normalizeHexColor((clip as any).bgFillColor, '#000000'),
+					                          bgFillImageUploadId:
+					                            Number.isFinite(Number((clip as any).bgFillImageUploadId)) && Number((clip as any).bgFillImageUploadId) > 0
+					                              ? Number((clip as any).bgFillImageUploadId)
+					                              : null,
 					                        })
 				                        setClipEditorError(null)
 				                        setFreezeInsertError(null)

@@ -1447,7 +1447,7 @@ const GraphicAssetsListPage: React.FC<{
   title: string
   subtitle: string
   uploadHref: string
-  pickType?: 'graphic' | 'timelineBackground'
+  pickType?: 'graphic' | 'timelineBackground' | 'clipBackground'
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
   const [me, setMe] = React.useState<MeResponse | null>(null)
@@ -1461,6 +1461,10 @@ const GraphicAssetsListPage: React.FC<{
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [imagePreview, setImagePreview] = React.useState<{ title: string; src: string } | null>(null)
+  const clipBackgroundTargetId = React.useMemo(() => {
+    const raw = String(getQueryParam('cvPickTargetClipId') || '').trim()
+    return raw || ''
+  }, [])
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
 
@@ -1554,10 +1558,14 @@ const GraphicAssetsListPage: React.FC<{
 
   const onPick = React.useCallback(
     (u: UploadListItem) => {
-      const href = buildReturnHref({ cvPickType: pickType || 'graphic', cvPickUploadId: String(u.id) })
+      const extra: Record<string, string> = { cvPickType: pickType || 'graphic', cvPickUploadId: String(u.id) }
+      if ((pickType || 'graphic') === 'clipBackground' && clipBackgroundTargetId) {
+        extra.cvPickTargetClipId = clipBackgroundTargetId
+      }
+      const href = buildReturnHref(extra)
       if (href) window.location.href = href
     },
-    [pickType]
+    [clipBackgroundTargetId, pickType]
   )
 
   const toggleFavorite = React.useCallback(
@@ -3722,10 +3730,10 @@ export default function Assets() {
   const mode = useMemo(() => parseMode(), [])
   const pathname = useMemo(() => String(window.location.pathname || ''), [])
   const pickPassthrough = useMemo(() => getPickPassthrough(), [])
-  const graphicPickType = useMemo<'graphic' | 'timelineBackground'>(() => {
+  const graphicPickType = useMemo<'graphic' | 'timelineBackground' | 'clipBackground'>(() => {
     if (mode !== 'pick') return 'graphic'
     const raw = String(getQueryParam('pickType') || '').trim()
-    return raw === 'timelineBackground' ? 'timelineBackground' : 'graphic'
+    return raw === 'timelineBackground' ? 'timelineBackground' : raw === 'clipBackground' ? 'clipBackground' : 'graphic'
   }, [mode])
   const route = useMemo(() => {
     const p = pathname.replace(/\/+$/, '')
