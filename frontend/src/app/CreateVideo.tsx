@@ -46,6 +46,7 @@ const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
+const ACTION_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
 const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
 const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
 const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
@@ -21852,9 +21853,26 @@ export default function CreateVideo() {
 			                  if (edgeIntent === 'move') return null
 			                  const expandAction = edgeIntent === 'start' ? 'expand_start' : 'expand_end'
 			                  const contractAction = edgeIntent === 'start' ? 'contract_start' : 'contract_end'
-			                  const expandLabel = edgeIntent === 'start' ? 'Expand \u2190' : 'Expand \u2192'
-			                  const contractLabel = edgeIntent === 'start' ? 'Contract \u2192' : 'Contract \u2190'
-			                  const snapLabel = edgeIntent === 'start' ? 'Snap to \u2190' : 'Snap to \u2192'
+			                  const expandDir: 'left' | 'right' = edgeIntent === 'start' ? 'left' : 'right'
+			                  const contractDir: 'left' | 'right' = edgeIntent === 'start' ? 'right' : 'left'
+			                  const snapDir: 'left' | 'right' = edgeIntent === 'start' ? 'left' : 'right'
+                        const renderMenuArrowLabel = (text: string, dir: 'left' | 'right') => (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span>{text}</span>
+                            <img
+                              src={ACTION_ARROW_ICON_URL}
+                              alt=""
+                              aria-hidden
+                              style={{
+                                width: 20,
+                                height: 20,
+                                display: 'block',
+                                transform: dir === 'left' ? 'scaleX(-1)' : 'none',
+                                filter: 'brightness(0) invert(1)',
+                              }}
+                            />
+                          </span>
+                        )
 			                  const playheadGuidelinesOverride = [roundToTenth(playhead)]
                         const segEnd = getTimelineCtxSegmentEnd(timelineCtxMenu.kind, timelineCtxMenu.id)
                         const timelineExpandDisabled =
@@ -21876,7 +21894,7 @@ export default function CreateVideo() {
 						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
 						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
 						                          setTimelineCtxMenu(null)
-						                        }}
+			                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -21889,7 +21907,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {expandLabel}
+			                        {renderMenuArrowLabel('Expand', expandDir)}
 			                      </button>
 			                      <button
 			                        type="button"
@@ -21905,7 +21923,7 @@ export default function CreateVideo() {
 						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
 						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
 						                          setTimelineCtxMenu(null)
-						                        }}
+			                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -21918,7 +21936,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {contractLabel}
+			                        {renderMenuArrowLabel('Contract', contractDir)}
 			                      </button>
 			                      <button
 			                        type="button"
@@ -21934,7 +21952,7 @@ export default function CreateVideo() {
 						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
 						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
 						                          setTimelineCtxMenu(null)
-						                        }}
+			                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -21947,7 +21965,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {snapLabel}
+			                        {renderMenuArrowLabel('Snap to', snapDir)}
 			                      </button>
 
 			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
@@ -21981,7 +21999,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {expandLabel}
+			                        {renderMenuArrowLabel('Expand', expandDir)}
 			                      </button>
 			                      <button
 			                        type="button"
@@ -22011,7 +22029,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {contractLabel}
+			                        {renderMenuArrowLabel('Contract', contractDir)}
 			                      </button>
 			                      <button
 			                        type="button"
@@ -22041,7 +22059,7 @@ export default function CreateVideo() {
 			                          textAlign: 'left',
 			                        }}
 			                      >
-			                        {snapLabel}
+			                        {renderMenuArrowLabel('Snap to', snapDir)}
 			                      </button>
 
                             <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
@@ -22054,7 +22072,7 @@ export default function CreateVideo() {
                                 if (timelineExpandDisabled) return
                                 applyTimelineExpandEndAction(timelineCtxMenu.kind, timelineCtxMenu.id)
 				                          setTimelineCtxMenu(null)
-				                        }}
+			                        }}
 			                        style={{
 			                          width: '100%',
 			                          padding: '10px 12px',
@@ -22068,7 +22086,7 @@ export default function CreateVideo() {
                               opacity: timelineExpandDisabled ? 0.7 : 1,
 			                        }}
 			                      >
-			                        Expand {'\u2192'}
+			                        {renderMenuArrowLabel('Expand', 'right')}
 			                      </button>
 			                    </>
 			                  )
