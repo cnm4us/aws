@@ -1659,7 +1659,8 @@ async function renderStillSegmentMp4(opts: {
   const targetIsPortrait = opts.targetH >= opts.targetW
   const useBgFill = bgFillStyle === 'blur' && sourceIsLandscape && targetIsPortrait
 
-  let v = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=increase,crop=${opts.targetW}:${opts.targetH},fps=${fps},format=yuv420p`
+  // Match clip rendering default behavior: preserve source frame (contain) when blur fill is off.
+  let v = `scale=${opts.targetW}:${opts.targetH}:force_original_aspect_ratio=decrease,pad=${opts.targetW}:${opts.targetH}:(ow-iw)/2:(oh-ih)/2,fps=${fps},format=yuv420p`
   if (useBgFill) {
     const blurSigma = bgFillBlur === 'soft' ? 12 : bgFillBlur === 'strong' ? 60 : bgFillBlur === 'very_strong' ? 80 : 32
     const brightness = resolvedBrightness === 'light3'
