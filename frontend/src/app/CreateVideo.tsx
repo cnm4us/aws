@@ -581,6 +581,34 @@ function computeSegmentTimingWindow(cfg: { timingRule?: any; timingSeconds?: any
   return { startRelS: 0, endRelS: totalS }
 }
 
+function maybePromoteLowerThirdTimingOnExpand(prevSeg: any, nextSeg: any): any {
+  if (!prevSeg || !nextSeg) return nextSeg
+  const prevDur = Math.max(0, Number(prevSeg.endSeconds || 0) - Number(prevSeg.startSeconds || 0))
+  const nextDur = Math.max(0, Number(nextSeg.endSeconds || 0) - Number(nextSeg.startSeconds || 0))
+  if (!(nextDur > prevDur + 0.05)) return nextSeg
+
+  const cfg0 = prevSeg.configSnapshot
+  if (!cfg0 || typeof cfg0 !== 'object') return nextSeg
+  const rule = String((cfg0 as any).timingRule || 'entire').toLowerCase()
+  if (rule !== 'first_only') return nextSeg
+  const secsRaw = (cfg0 as any).timingSeconds
+  const secs = secsRaw == null ? null : Number(secsRaw)
+  if (!(secs != null && Number.isFinite(secs))) return nextSeg
+
+  const visiblePrev = Math.max(0, Math.min(secs, prevDur))
+  // Only auto-promote when the old first_only config effectively covered the entire old segment.
+  if (Math.abs(visiblePrev - prevDur) > 0.05) return nextSeg
+
+  return {
+    ...(nextSeg as any),
+    configSnapshot: {
+      ...(cfg0 as any),
+      timingRule: 'entire',
+      timingSeconds: null,
+    },
+  }
+}
+
 function computeFadeAlpha(cfg: { fade?: any }, tRelS: number, windowStartRelS: number, windowEndRelS: number): number {
   const fadeS = 0.5
   const fade = String(cfg.fade || 'none').toLowerCase()
@@ -2031,11 +2059,11 @@ export default function CreateVideo() {
   const WAVEFORM_H = 34
   const TRACK_H = 48
   const TRACKS_TOP = RULER_H + WAVEFORM_H
-  const LOGO_Y = TRACKS_TOP + 6
-  const LOWER_THIRD_Y = TRACKS_TOP + TRACK_H + 6
-  const SCREEN_TITLE_Y = TRACKS_TOP + TRACK_H * 2 + 6
-  const VIDEO_OVERLAY_Y = TRACKS_TOP + TRACK_H * 3 + 6
-  const GRAPHICS_Y = TRACKS_TOP + TRACK_H * 4 + 6
+  const GRAPHICS_Y = TRACKS_TOP + 6
+  const LOGO_Y = TRACKS_TOP + TRACK_H + 6
+  const LOWER_THIRD_Y = TRACKS_TOP + TRACK_H * 2 + 6
+  const SCREEN_TITLE_Y = TRACKS_TOP + TRACK_H * 3 + 6
+  const VIDEO_OVERLAY_Y = TRACKS_TOP + TRACK_H * 4 + 6
   const VIDEO_Y = TRACKS_TOP + TRACK_H * 5 + 6
   const NARRATION_Y = TRACKS_TOP + TRACK_H * 6 + 6
   const AUDIO_Y = TRACKS_TOP + TRACK_H * 7 + 6
@@ -3193,7 +3221,7 @@ export default function CreateVideo() {
         height: '100%',
         objectFit: 'cover',
         pointerEvents: 'none',
-        zIndex: 20,
+        zIndex: 60,
         boxSizing: 'border-box',
         border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
       }
@@ -3206,7 +3234,7 @@ export default function CreateVideo() {
         height: '100%',
         objectFit: 'cover',
         pointerEvents: 'none',
-        zIndex: 20,
+        zIndex: 60,
         boxSizing: 'border-box',
         border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
       }
@@ -3246,7 +3274,7 @@ export default function CreateVideo() {
       maxHeight: `${Number.isFinite(maxH) ? maxH : 0}px`,
       objectFit: 'contain',
       pointerEvents: 'none',
-      zIndex: 20,
+      zIndex: 60,
       boxSizing: 'border-box',
       border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : undefined,
     }
@@ -4850,11 +4878,11 @@ export default function CreateVideo() {
 	        const swatchW = 8
 	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
 	        const labels: Array<{ y: number; label: string; swatch: string }> = [
+	          { y: graphicsY + pillH / 2, label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
 	          { y: logoY + pillH / 2, label: 'LOGO', swatch: 'rgba(212,175,55,0.95)' },
 	          { y: lowerThirdY + pillH / 2, label: 'LOWER THIRD', swatch: 'rgba(94,92,230,0.90)' },
 	          { y: screenTitleY + pillH / 2, label: 'SCREEN TITLES', swatch: 'rgba(255,214,10,0.90)' },
 	          { y: videoOverlayY + pillH / 2, label: 'VIDEO OVERLAY', swatch: 'rgba(255,159,10,0.90)' },
-	          { y: graphicsY + pillH / 2, label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
 	          { y: videoY + pillH / 2, label: 'VIDEOS', swatch: 'rgba(212,175,55,0.75)' },
 	          { y: narrationY + pillH / 2, label: 'NARRATION', swatch: 'rgba(175,82,222,0.90)' },
 	          { y: audioY + pillH / 2, label: 'AUDIO/MUSIC', swatch: 'rgba(48,209,88,0.90)' },
@@ -4883,7 +4911,7 @@ export default function CreateVideo() {
 	      }
 	    }
 
-	    // Logo segments (topmost overlay lane; no overlaps)
+	    // Logo segments (logo lane; no overlaps)
 	    for (let i = 0; i < logos.length; i++) {
 	      const l: any = logos[i]
       const start = Math.max(0, Number(l?.startSeconds || 0))
@@ -10028,7 +10056,16 @@ export default function CreateVideo() {
       } else if (kind === 'lowerThird') {
         const res = applySimpleLane(Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : [], 0.2)
         if (res.message) message = res.message
-        else if (res.changed) nextTimeline = { ...(timeline as any), lowerThirds: res.items }
+        else if (res.changed) {
+          const prevSeg = (Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : []).find(
+            (s: any) => String((s as any)?.id) === targetId
+          ) as any
+          const nextItems = (res.items || []).map((s: any) => {
+            if (String((s as any)?.id) !== targetId) return s
+            return maybePromoteLowerThirdTimingOnExpand(prevSeg, s)
+          })
+          nextTimeline = { ...(timeline as any), lowerThirds: nextItems }
+        }
       } else if (kind === 'screenTitle') {
         const res = applySimpleLane(Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : [], 0.2)
         if (res.message) message = res.message
@@ -12760,7 +12797,7 @@ export default function CreateVideo() {
 
       snapshotUndo()
       const nextSegs = prevSegs.slice()
-      nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS }
+      nextSegs[idx] = maybePromoteLowerThirdTimingOnExpand(seg0, { ...seg0, startSeconds: startS, endSeconds: endS })
       nextSegs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
       const nextTimeline: any = { ...(timeline as any), lowerThirds: nextSegs }
       setTimeline(nextTimeline)
@@ -13959,13 +13996,15 @@ export default function CreateVideo() {
       const prevLts: LowerThird[] = Array.isArray((prev as any).lowerThirds) ? ((prev as any).lowerThirds as any) : []
       const idx = prevLts.findIndex((lt) => String((lt as any).id) === String(lowerThirdEditor.id))
       if (idx < 0) return prev
-      const updated: LowerThird = {
-        ...prevLts[idx],
+      const prevSeg: any = prevLts[idx] as any
+      const updatedBase: LowerThird = {
+        ...prevSeg,
         startSeconds: Math.max(0, start),
         endSeconds: Math.max(0, end),
         configId,
         configSnapshot: cfg as any,
       }
+      const updated = maybePromoteLowerThirdTimingOnExpand(prevSeg, updatedBase) as LowerThird
       const nextLts = prevLts.slice()
       nextLts[idx] = updated
       nextLts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
@@ -15044,7 +15083,7 @@ export default function CreateVideo() {
             startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
             endS = roundToTenth(startS + dur)
           }
-          nextLts[idx] = { ...lt0, startSeconds: startS, endSeconds: endS }
+          nextLts[idx] = maybePromoteLowerThirdTimingOnExpand(lt0, { ...lt0, startSeconds: startS, endSeconds: endS })
           nextLts.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
           const nextTimeline0: any = { ...(prev as any), lowerThirds: nextLts }
           const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
@@ -16266,7 +16305,7 @@ export default function CreateVideo() {
 	                      alignItems: 'center',
 	                      justifyContent: 'center',
 	                      pointerEvents: 'none',
-	                      zIndex: 25,
+	                      zIndex: 65,
 	                    }}
 	                  >
 	                    <div

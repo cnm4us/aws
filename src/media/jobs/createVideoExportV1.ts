@@ -2408,70 +2408,6 @@ export async function runCreateVideoExportV1Job(
     }
 
     let finalOut = baseOut
-    if (graphics.length) {
-      const imageDownloads = new Map<number, string>()
-      const sorted = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
-	      const overlays: Array<{
-	        startSeconds: number
-	        endSeconds: number
-	        imagePath: string
-	        fitMode?: 'cover_full' | 'contain_transparent'
-	        sizePctWidth?: number
-	        position?: string
-	        insetXPx?: number
-	        insetYPx?: number
-	        borderWidthPx?: number
-	        borderColor?: string
-	        fade?: 'none' | 'in' | 'out' | 'in_out'
-	        fadeDurationMs?: number
-	        animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
-	        animateDurationMs?: number
-	      }> = []
-      for (let i = 0; i < sorted.length; i++) {
-        const g = sorted[i]
-        const uploadId = Number(g.uploadId)
-        const row = byId.get(uploadId)
-        if (!row) throw new Error('upload_not_found')
-        if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
-        const oid = row.user_id != null ? Number(row.user_id) : null
-        if (!(oid === userId || oid == null)) throw new Error('forbidden')
-        const ext = path.extname(String(row.s3_key || '')).toLowerCase() || '.img'
-        // Avoid filenames ending in digits (e.g. img_84_000.jpg), because the image2 demuxer can interpret them as a numbered sequence.
-        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_still${ext}`)
-        if (!imageDownloads.has(uploadId)) {
-          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
-          imageDownloads.set(uploadId, inPath)
-        }
-        overlays.push({
-          startSeconds: Number(g.startSeconds),
-          endSeconds: Number(g.endSeconds),
-          imagePath: inPath,
-          fitMode: (g as any).fitMode != null ? String((g as any).fitMode) as any : undefined,
-          sizePctWidth: (g as any).sizePctWidth != null ? Number((g as any).sizePctWidth) : undefined,
-          position: (g as any).position != null ? String((g as any).position) : undefined,
-          insetXPx: (g as any).insetXPx != null ? Number((g as any).insetXPx) : undefined,
-          insetYPx: (g as any).insetYPx != null ? Number((g as any).insetYPx) : undefined,
-          borderWidthPx: (g as any).borderWidthPx != null ? Number((g as any).borderWidthPx) : undefined,
-          borderColor: (g as any).borderColor != null ? String((g as any).borderColor) : undefined,
-          fade: (g as any).fade != null ? (String((g as any).fade) as any) : undefined,
-          fadeDurationMs: (g as any).fadeDurationMs != null ? Number((g as any).fadeDurationMs) : undefined,
-          animate: (g as any).animate != null ? (String((g as any).animate) as any) : undefined,
-          animateDurationMs: (g as any).animateDurationMs != null ? Number((g as any).animateDurationMs) : undefined,
-        })
-      }
-      const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
-      await overlayGraphics({
-        baseMp4Path: baseOut,
-        outPath: overlayOut,
-        graphics: overlays,
-        targetW: target.w,
-        targetH: target.h,
-        durationSeconds: baseDurationSeconds,
-        logPaths,
-      })
-      finalOut = overlayOut
-    }
-
     if (sortedVideoOverlays.length) {
       const sorted = sortedVideoOverlays.slice()
       const overlays: Array<{
@@ -2862,6 +2798,70 @@ export async function runCreateVideoExportV1Job(
         })
         finalOut = outLogo
       }
+    }
+
+    if (graphics.length) {
+      const imageDownloads = new Map<number, string>()
+      const sorted = graphics.slice().sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds))
+      const overlays: Array<{
+        startSeconds: number
+        endSeconds: number
+        imagePath: string
+        fitMode?: 'cover_full' | 'contain_transparent'
+        sizePctWidth?: number
+        position?: string
+        insetXPx?: number
+        insetYPx?: number
+        borderWidthPx?: number
+        borderColor?: string
+        fade?: 'none' | 'in' | 'out' | 'in_out'
+        fadeDurationMs?: number
+        animate?: 'none' | 'slide_in' | 'slide_out' | 'slide_in_out' | 'doc_reveal'
+        animateDurationMs?: number
+      }> = []
+      for (let i = 0; i < sorted.length; i++) {
+        const g = sorted[i]
+        const uploadId = Number(g.uploadId)
+        const row = byId.get(uploadId)
+        if (!row) throw new Error('upload_not_found')
+        if (String(row.kind || '').toLowerCase() !== 'image') throw new Error('invalid_upload_kind')
+        const oid = row.user_id != null ? Number(row.user_id) : null
+        if (!(oid === userId || oid == null)) throw new Error('forbidden')
+        const ext = path.extname(String(row.s3_key || '')).toLowerCase() || '.img'
+        // Avoid filenames ending in digits (e.g. img_84_000.jpg), because the image2 demuxer can interpret them as a numbered sequence.
+        const inPath = imageDownloads.get(uploadId) || path.join(tmpDir, `img_${uploadId}_still${ext}`)
+        if (!imageDownloads.has(uploadId)) {
+          await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), inPath)
+          imageDownloads.set(uploadId, inPath)
+        }
+        overlays.push({
+          startSeconds: Number(g.startSeconds),
+          endSeconds: Number(g.endSeconds),
+          imagePath: inPath,
+          fitMode: (g as any).fitMode != null ? (String((g as any).fitMode) as any) : undefined,
+          sizePctWidth: (g as any).sizePctWidth != null ? Number((g as any).sizePctWidth) : undefined,
+          position: (g as any).position != null ? String((g as any).position) : undefined,
+          insetXPx: (g as any).insetXPx != null ? Number((g as any).insetXPx) : undefined,
+          insetYPx: (g as any).insetYPx != null ? Number((g as any).insetYPx) : undefined,
+          borderWidthPx: (g as any).borderWidthPx != null ? Number((g as any).borderWidthPx) : undefined,
+          borderColor: (g as any).borderColor != null ? String((g as any).borderColor) : undefined,
+          fade: (g as any).fade != null ? (String((g as any).fade) as any) : undefined,
+          fadeDurationMs: (g as any).fadeDurationMs != null ? Number((g as any).fadeDurationMs) : undefined,
+          animate: (g as any).animate != null ? (String((g as any).animate) as any) : undefined,
+          animateDurationMs: (g as any).animateDurationMs != null ? Number((g as any).animateDurationMs) : undefined,
+        })
+      }
+      const overlayOut = path.join(tmpDir, 'out_overlay.mp4')
+      await overlayGraphics({
+        baseMp4Path: finalOut,
+        outPath: overlayOut,
+        graphics: overlays,
+        targetW: target.w,
+        targetH: target.h,
+        durationSeconds: baseDurationSeconds,
+        logPaths,
+      })
+      finalOut = overlayOut
     }
 
     // Apply narration first so that Opener Cutoff can detect speech from narration (and any overlay audio already present in the timeline).
