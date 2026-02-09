@@ -2976,25 +2976,56 @@ export default function CreateVideo() {
   const hasTimelineBackgroundPreview =
     timelineBackgroundMode === 'color' || (timelineBackgroundMode === 'image' && !!timelineBackgroundImageUrl)
 
-  const activeStillBgFill = useMemo(() => {
-    const s: any = previewStillAtPlayhead as any
-    if (!s) return null
-    let clip: any | null = null
-    const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
-    if (sourceClipId) {
-      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
-    }
-    if (!clip && timeline.clips.length) {
-      const stillStart = roundToTenth(Number(s.startSeconds || 0))
+  const resolveClipForStill = useCallback(
+    (still: any): any | null => {
+      if (!still) return null
+      let clip: any | null = null
+      const sourceClipId = still.sourceClipId != null ? String(still.sourceClipId) : ''
+      if (sourceClipId) {
+        clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
+      }
+      if (clip || !timeline.clips.length) return clip
+
+      const stillStart = roundToTenth(Number(still.startSeconds || 0))
+      const stillEnd = roundToTenth(Number(still.endSeconds || stillStart))
       for (let i = 0; i < timeline.clips.length; i++) {
         const clipStart = roundToTenth(Number(clipStarts[i] || 0))
         const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
-        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
-          clip = timeline.clips[i]
-          break
+        if (
+          Math.abs(clipStart - stillStart) < 0.05 ||
+          Math.abs(clipEnd - stillStart) < 0.05 ||
+          Math.abs(clipStart - stillEnd) < 0.05 ||
+          Math.abs(clipEnd - stillEnd) < 0.05
+        ) {
+          return timeline.clips[i]
         }
       }
-    }
+
+      let bestClip: any | null = null
+      let bestDist = Number.POSITIVE_INFINITY
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
+        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
+        const dist = Math.min(
+          Math.abs(clipStart - stillStart),
+          Math.abs(clipEnd - stillStart),
+          Math.abs(clipStart - stillEnd),
+          Math.abs(clipEnd - stillEnd)
+        )
+        if (dist < bestDist) {
+          bestDist = dist
+          bestClip = timeline.clips[i]
+        }
+      }
+      return bestClip
+    },
+    [clipStarts, timeline.clips]
+  )
+
+  const activeStillBgFill = useMemo(() => {
+    const s: any = previewStillAtPlayhead as any
+    if (!s) return null
+    const clip = resolveClipForStill(s)
     if (!clip) return null
     const style = String(clip.bgFillStyle || 'none')
     if (style !== 'blur') return null
@@ -3007,27 +3038,13 @@ export default function CreateVideo() {
     const brightness = String(clip.bgFillBrightness || 'neutral')
     const blur = String(clip.bgFillBlur || 'medium')
     return { brightness, blur }
-  }, [baseVideoDims, clipStarts, dimsByUploadId, previewStillAtPlayhead, timeline.clips])
+  }, [baseVideoDims, dimsByUploadId, previewStillAtPlayhead, resolveClipForStill])
 
   const activeStillBgFillDebug = useMemo(() => {
     const s: any = previewStillAtPlayhead as any
     if (!s) return { ok: false, reason: 'no_still' }
     const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
-    let clip: any | null = null
-    if (sourceClipId) {
-      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
-    }
-    if (!clip && timeline.clips.length) {
-      const stillStart = roundToTenth(Number(s.startSeconds || 0))
-      for (let i = 0; i < timeline.clips.length; i++) {
-        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
-        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
-        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
-          clip = timeline.clips[i]
-          break
-        }
-      }
-    }
+    const clip = resolveClipForStill(s)
     if (!clip) return { ok: false, reason: 'clip_not_found', sourceClipId, stillStart: s.startSeconds }
     const style = String(clip.bgFillStyle || 'none')
     const uploadId = Number(clip.uploadId || 0)
@@ -3050,7 +3067,7 @@ export default function CreateVideo() {
       brightness: String(clip.bgFillBrightness || 'neutral'),
       blur: String(clip.bgFillBlur || 'medium'),
     }
-  }, [baseVideoDims, clipStarts, dimsByUploadId, previewStillAtPlayhead, timeline.clips])
+  }, [baseVideoDims, dimsByUploadId, previewStillAtPlayhead, resolveClipForStill])
 
   const activeStillObjectFit = useMemo<'cover' | 'contain'>(() => {
     if (!activeStillUploadId) return 'cover'
@@ -3101,22 +3118,7 @@ export default function CreateVideo() {
   const activeStillBgStatic = useMemo<null | { kind: 'color'; color: string } | { kind: 'image'; url: string }>(() => {
     const s: any = previewStillAtPlayhead as any
     if (!s) return null
-    let clip: any | null = null
-    const sourceClipId = s.sourceClipId != null ? String(s.sourceClipId) : ''
-    if (sourceClipId) {
-      clip = (timeline.clips || []).find((c: any) => String(c.id) === sourceClipId) || null
-    }
-    if (!clip && timeline.clips.length) {
-      const stillStart = roundToTenth(Number(s.startSeconds || 0))
-      for (let i = 0; i < timeline.clips.length; i++) {
-        const clipStart = roundToTenth(Number(clipStarts[i] || 0))
-        const clipEnd = roundToTenth(clipStart + clipSourceDurationSeconds(timeline.clips[i] as any))
-        if (Math.abs(clipStart - stillStart) < 0.05 || Math.abs(clipEnd - stillStart) < 0.05) {
-          clip = timeline.clips[i]
-          break
-        }
-      }
-    }
+    const clip = resolveClipForStill(s)
     if (!clip) return null
     const style = String((clip as any).bgFillStyle || 'none').trim().toLowerCase()
     if (style === 'color') {
@@ -3130,7 +3132,7 @@ export default function CreateVideo() {
       return { kind: 'image', url }
     }
     return null
-  }, [clipStarts, graphicFileUrlByUploadId, previewStillAtPlayhead, timeline.clips])
+  }, [graphicFileUrlByUploadId, previewStillAtPlayhead, resolveClipForStill])
 
   const activeLogoUploadId = useMemo(() => {
     const l = activeLogoAtPlayhead
@@ -8606,6 +8608,16 @@ export default function CreateVideo() {
         } else if (t === 'timelineBackground' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up && String((up as any).kind || '').toLowerCase() === 'image') {
+            const pickedId = Number(pickFromAssets.uploadId)
+            const pickedName = String((up as any).modified_filename || (up as any).original_filename || '').trim()
+            const pickedW = Number((up as any).width)
+            const pickedH = Number((up as any).height)
+            if (pickedName) {
+              setNamesByUploadId((prev) => ({ ...prev, [pickedId]: pickedName }))
+            }
+            if (Number.isFinite(pickedW) && Number.isFinite(pickedH) && pickedW > 0 && pickedH > 0) {
+              setDimsByUploadId((prev) => ({ ...prev, [pickedId]: { width: Math.round(pickedW), height: Math.round(pickedH) } }))
+            }
             snapshotUndo()
             setTimeline((prev) => ({
               ...(prev as any),
@@ -8617,6 +8629,16 @@ export default function CreateVideo() {
         } else if (t === 'clipBackground' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up && String((up as any).kind || '').toLowerCase() === 'image') {
+            const pickedId = Number(pickFromAssets.uploadId)
+            const pickedName = String((up as any).modified_filename || (up as any).original_filename || '').trim()
+            const pickedW = Number((up as any).width)
+            const pickedH = Number((up as any).height)
+            if (pickedName) {
+              setNamesByUploadId((prev) => ({ ...prev, [pickedId]: pickedName }))
+            }
+            if (Number.isFinite(pickedW) && Number.isFinite(pickedH) && pickedW > 0 && pickedH > 0) {
+              setDimsByUploadId((prev) => ({ ...prev, [pickedId]: { width: Math.round(pickedW), height: Math.round(pickedH) } }))
+            }
             const targetClipId = String((pickFromAssets as any).targetClipId || (clipEditor as any)?.id || selectedClipId || '').trim()
             if (targetClipId) {
               snapshotUndo()
@@ -16039,20 +16061,15 @@ export default function CreateVideo() {
               <div style={{ display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
                   <label style={{ display: 'grid', gap: 6, minWidth: 180, flex: '1 1 220px' }}>
-                    <div style={{ color: '#bbb', fontSize: 13 }}>Image Upload ID</div>
+                    <div style={{ color: '#bbb', fontSize: 13 }}>Image</div>
                     <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={timelineBackgroundUploadId != null ? String(timelineBackgroundUploadId) : ''}
-                      onChange={(e) => {
-                        const raw = String(e.target.value || '').trim()
-                        const next = Number(raw)
-                        setTimeline((prev) => ({
-                          ...(prev as any),
-                          timelineBackgroundUploadId: Number.isFinite(next) && next > 0 ? Math.round(next) : null,
-                        }) as any)
-                      }}
+                      type="text"
+                      readOnly
+                      value={
+                        timelineBackgroundUploadId != null
+                          ? namesByUploadId[timelineBackgroundUploadId] || 'Selected image'
+                          : 'No image selected'
+                      }
                       style={{
                         width: '100%',
                         borderRadius: 10,
@@ -16061,7 +16078,7 @@ export default function CreateVideo() {
                         color: '#fff',
                         padding: '10px 12px',
                         fontSize: 16,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         boxSizing: 'border-box',
                       }}
                     />
@@ -16099,7 +16116,7 @@ export default function CreateVideo() {
                 </div>
                 <div style={{ color: '#9aa3ad', fontSize: 12 }}>
                   {timelineBackgroundUploadId != null
-                    ? `${namesByUploadId[timelineBackgroundUploadId] || `Upload ${timelineBackgroundUploadId}`}${
+                    ? `${namesByUploadId[timelineBackgroundUploadId] || 'Selected image'}${
                         dimsByUploadId[timelineBackgroundUploadId]
                           ? ` • ${dimsByUploadId[timelineBackgroundUploadId].width}x${dimsByUploadId[timelineBackgroundUploadId].height}`
                           : ''
@@ -21470,24 +21487,15 @@ export default function CreateVideo() {
                         {String(clipEditor.bgFillStyle || 'none') === 'image' ? (
                           <div style={{ display: 'grid', gap: 8 }}>
                             <label style={{ display: 'grid', gap: 6 }}>
-                              <div style={{ color: '#bbb', fontSize: 13 }}>Image Upload ID</div>
+                              <div style={{ color: '#bbb', fontSize: 13 }}>Image</div>
                               <input
-                                type="number"
-                                min={1}
-                                step={1}
-                                value={(clipEditor as any).bgFillImageUploadId != null ? String((clipEditor as any).bgFillImageUploadId) : ''}
-                                onChange={(e) => {
-                                  const raw = String(e.target.value || '').trim()
-                                  const next = Number(raw)
-                                  setClipEditor((p) =>
-                                    p
-                                      ? ({
-                                          ...p,
-                                          bgFillImageUploadId: Number.isFinite(next) && next > 0 ? Math.round(next) : null,
-                                        } as any)
-                                      : p
-                                  )
-                                }}
+                                type="text"
+                                readOnly
+                                value={
+                                  (clipEditor as any).bgFillImageUploadId != null
+                                    ? namesByUploadId[Number((clipEditor as any).bgFillImageUploadId)] || 'Selected image'
+                                    : 'No image selected'
+                                }
                                 style={{
                                   width: '100%',
                                   borderRadius: 10,
@@ -21496,7 +21504,7 @@ export default function CreateVideo() {
                                   color: '#fff',
                                   padding: '10px 12px',
                                   fontSize: 14,
-                                  fontWeight: 900,
+                                  fontWeight: 800,
                                   boxSizing: 'border-box',
                                 }}
                               />
@@ -21535,7 +21543,7 @@ export default function CreateVideo() {
                             </div>
                             <div style={{ color: '#9aa3ad', fontSize: 12 }}>
                               {(clipEditor as any).bgFillImageUploadId != null
-                                ? `${namesByUploadId[Number((clipEditor as any).bgFillImageUploadId)] || `Upload ${Number((clipEditor as any).bgFillImageUploadId)}`}${
+                                ? `${namesByUploadId[Number((clipEditor as any).bgFillImageUploadId)] || 'Selected image'}${
                                     dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)]
                                       ? ` • ${dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)].width}x${dimsByUploadId[Number((clipEditor as any).bgFillImageUploadId)].height}`
                                       : ''

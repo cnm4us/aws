@@ -83,6 +83,7 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   const left: Clip = { ...clip, id: `${clip.id}_a`, startSeconds, sourceEndSeconds: cut }
   const leftDur = roundToTenth(cut - clip.sourceStartSeconds)
   const right: Clip = { ...clip, id: `${clip.id}_b`, startSeconds: roundToTenth(startSeconds + leftDur), sourceStartSeconds: cut }
+  const splitAtTimelineSeconds = roundToTenth(startSeconds + leftDur)
   const idx = timeline.clips.findIndex((c) => c.id === clip.id)
   if (idx < 0) return { timeline, selectedClipId }
   const normalizedExisting: Clip[] = timeline.clips.map((c, i) => ({
@@ -91,7 +92,14 @@ export function splitClipAtPlayhead(timeline: Timeline, selectedClipId: string |
   }))
   const next = [...normalizedExisting.slice(0, idx), left, right, ...normalizedExisting.slice(idx + 1)]
   next.sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0))
-  return { timeline: { ...timeline, clips: next }, selectedClipId: right.id }
+  const prevStills: Still[] = Array.isArray((timeline as any).stills) ? (((timeline as any).stills as any) as Still[]) : []
+  const nextStills: Still[] = prevStills.map((s: any) => {
+    if (String((s as any).sourceClipId || '') !== String(clip.id)) return s as Still
+    const stillStart = roundToTenth(Number((s as any).startSeconds || 0))
+    const mappedClipId = stillStart < splitAtTimelineSeconds - 1e-6 ? left.id : right.id
+    return { ...(s as any), sourceClipId: mappedClipId } as Still
+  })
+  return { timeline: { ...timeline, clips: next, stills: nextStills }, selectedClipId: right.id }
 }
 
 export function splitVideoOverlayAtPlayhead(

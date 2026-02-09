@@ -2088,6 +2088,26 @@ export async function runCreateVideoExportV1Job(
     for (const c of sortedClips) {
       clipById.set(String(c.id), c)
     }
+    const findClipForStillByTimelinePosition = (stillStartSeconds: number, stillEndSeconds: number): Clip | undefined => {
+      if (!sortedClips.length) return undefined
+      let best: Clip | undefined
+      let bestDist = Number.POSITIVE_INFINITY
+      for (const c of sortedClips) {
+        const clipStart = roundToTenth(Number((c as any).startSeconds || 0))
+        const clipEnd = roundToTenth(clipStart + clipTimelineDurationSeconds(c))
+        const dist = Math.min(
+          Math.abs(clipStart - stillStartSeconds),
+          Math.abs(clipEnd - stillStartSeconds),
+          Math.abs(clipStart - stillEndSeconds),
+          Math.abs(clipEnd - stillEndSeconds)
+        )
+        if (dist < bestDist) {
+          bestDist = dist
+          best = c
+        }
+      }
+      return best
+    }
     const sortedStills: Still[] = stills
       .map((s) => ({
         ...s,
@@ -2282,7 +2302,10 @@ export async function runCreateVideoExportV1Job(
           seenDownloads.set(uploadId, inPath)
         }
         const sourceClipId = (s as any).sourceClipId != null ? String((s as any).sourceClipId) : ''
-        const sourceClip = sourceClipId ? clipById.get(sourceClipId) : undefined
+        let sourceClip = sourceClipId ? clipById.get(sourceClipId) : undefined
+        if (!sourceClip) {
+          sourceClip = findClipForStillByTimelinePosition(startSeconds, endSeconds)
+        }
         const sourceClipBackgroundImagePath = await resolveClipBackgroundImagePath(sourceClip)
         const outPath = path.join(tmpDir, `seg_still_${String(i).padStart(3, '0')}.mp4`)
         await renderStillSegmentMp4({
