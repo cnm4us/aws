@@ -30,6 +30,12 @@ function normalizeSeconds(n: any): number {
   return roundToTenth(Math.max(0, v))
 }
 
+function normalizeHexColor(raw: any, fallback: string): string {
+  const s = String(raw == null ? fallback : raw).trim()
+  if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return fallback
+  return s.startsWith('#') ? s : `#${s}`
+}
+
 function clampTimelineRange(
   startSeconds: number,
   endSeconds: number
@@ -114,6 +120,31 @@ async function loadOverlayImageMetaForUser(uploadId: number, userId: number): Pr
   if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
   if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
   if (String(row.image_role || '').toLowerCase() !== 'overlay') throw new DomainError('invalid_upload_image_role', 'invalid_upload_image_role', 400)
+  if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
+
+  const status = String(row.status || '').toLowerCase()
+  if (status !== 'uploaded' && status !== 'completed') throw new DomainError('invalid_upload_state', 'invalid_upload_state', 409)
+
+  const ownerId = row.user_id != null ? Number(row.user_id) : null
+  const isOwner = ownerId != null && ownerId === Number(userId)
+  const isSystem = ownerId == null
+  if (!isOwner && !isSystem) throw new ForbiddenError()
+
+  return { id: Number(row.id) }
+}
+
+async function loadImageMetaForUser(uploadId: number, userId: number): Promise<{ id: number }> {
+  const db = getPool()
+  const [rows] = await db.query(
+    `SELECT id, user_id, kind, status, source_deleted_at
+       FROM uploads
+      WHERE id = ?
+      LIMIT 1`,
+    [uploadId]
+  )
+  const row = (rows as any[])[0]
+  if (!row) throw new DomainError('upload_not_found', 'upload_not_found', 404)
+  if (String(row.kind || '').toLowerCase() !== 'image') throw new DomainError('invalid_upload_kind', 'invalid_upload_kind', 400)
   if (row.source_deleted_at) throw new DomainError('source_deleted', 'source_deleted', 409)
 
   const status = String(row.status || '').toLowerCase()
@@ -474,6 +505,20 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
   const playheadSecondsRaw = (raw as any).playheadSeconds
   let playheadSeconds = playheadSecondsRaw != null ? normalizeSeconds(playheadSecondsRaw) : 0
+  const timelineBackgroundModeRaw = String((raw as any).timelineBackgroundMode || 'none').trim().toLowerCase()
+  let timelineBackgroundMode: 'none' | 'color' | 'image' =
+    timelineBackgroundModeRaw === 'color' ? 'color' : timelineBackgroundModeRaw === 'image' ? 'image' : 'none'
+  const timelineBackgroundColor = normalizeHexColor((raw as any).timelineBackgroundColor, '#000000')
+  let timelineBackgroundUploadId: number | null = null
+  if (timelineBackgroundMode === 'image') {
+    const uploadId = Number((raw as any).timelineBackgroundUploadId)
+    if (Number.isFinite(uploadId) && uploadId > 0) {
+      const meta = await loadImageMetaForUser(uploadId, ctx.userId)
+      timelineBackgroundUploadId = meta.id
+    } else {
+      timelineBackgroundMode = 'none'
+    }
+  }
 
   const clipsRaw = Array.isArray((raw as any).clips) ? ((raw as any).clips as any[]) : []
   if (clipsRaw.length > MAX_CLIPS) throw new DomainError('too_many_clips', 'too_many_clips', 400)
@@ -1565,6 +1610,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
   return {
     version: 'create_video_v1',
     playheadSeconds: safePlayheadSeconds,
+    timelineBackgroundMode,
+    timelineBackgroundColor,
+    timelineBackgroundUploadId,
     viewportEndSeconds,
     clips,
     stills,

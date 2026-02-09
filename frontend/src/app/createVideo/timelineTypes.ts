@@ -227,6 +227,10 @@ export type ScreenTitle = {
 export type Timeline = {
   version: 'create_video_v1'
   playheadSeconds: number
+  timelineBackgroundMode?: 'none' | 'color' | 'image'
+  timelineBackgroundColor?: string
+  timelineBackgroundUploadId?: number | null
+  viewportEndSeconds?: number
   clips: Clip[]
   stills?: Still[]
   videoOverlays?: VideoOverlay[]
@@ -248,6 +252,29 @@ export function cloneTimeline(timeline: Timeline): Timeline {
   return {
     version: 'create_video_v1',
     playheadSeconds: Number(timeline.playheadSeconds || 0),
+    timelineBackgroundMode:
+      String((timeline as any).timelineBackgroundMode || 'none').trim().toLowerCase() === 'color'
+        ? 'color'
+        : String((timeline as any).timelineBackgroundMode || 'none').trim().toLowerCase() === 'image'
+          ? 'image'
+          : 'none',
+    timelineBackgroundColor: (() => {
+      const raw = String((timeline as any).timelineBackgroundColor || '#000000').trim()
+      if (/^#?[0-9a-fA-F]{6}$/.test(raw)) return raw.startsWith('#') ? raw : `#${raw}`
+      return '#000000'
+    })(),
+    timelineBackgroundUploadId:
+      (timeline as any).timelineBackgroundUploadId == null
+        ? null
+        : Number.isFinite(Number((timeline as any).timelineBackgroundUploadId)) && Number((timeline as any).timelineBackgroundUploadId) > 0
+          ? Number((timeline as any).timelineBackgroundUploadId)
+          : null,
+    viewportEndSeconds:
+      (timeline as any).viewportEndSeconds == null
+        ? undefined
+        : Number.isFinite(Number((timeline as any).viewportEndSeconds))
+          ? Number((timeline as any).viewportEndSeconds)
+          : undefined,
     clips: timeline.clips.map((c) => ({
       id: String(c.id),
       uploadId: Number(c.uploadId),

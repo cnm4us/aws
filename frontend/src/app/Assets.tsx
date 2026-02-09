@@ -1447,7 +1447,7 @@ const GraphicAssetsListPage: React.FC<{
   title: string
   subtitle: string
   uploadHref: string
-  pickType?: 'graphic'
+  pickType?: 'graphic' | 'timelineBackground'
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
   const [me, setMe] = React.useState<MeResponse | null>(null)
@@ -3722,6 +3722,11 @@ export default function Assets() {
   const mode = useMemo(() => parseMode(), [])
   const pathname = useMemo(() => String(window.location.pathname || ''), [])
   const pickPassthrough = useMemo(() => getPickPassthrough(), [])
+  const graphicPickType = useMemo<'graphic' | 'timelineBackground'>(() => {
+    if (mode !== 'pick') return 'graphic'
+    const raw = String(getQueryParam('pickType') || '').trim()
+    return raw === 'timelineBackground' ? 'timelineBackground' : 'graphic'
+  }, [mode])
   const route = useMemo(() => {
     const p = pathname.replace(/\/+$/, '')
     if (p === '/assets') return null
@@ -3772,7 +3777,7 @@ export default function Assets() {
         title="Graphics"
         subtitle="Graphics (overlay images) for your timeline."
         uploadHref="/uploads/new?kind=image&image_role=overlay"
-        pickType="graphic"
+        pickType={graphicPickType}
       />
     )
   }

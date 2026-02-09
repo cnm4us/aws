@@ -217,6 +217,12 @@ const hexToRgba = (hex: string, alpha: number): string => {
   return `rgba(${r},${g},${b},${alpha})`
 }
 
+const normalizeHexColor = (raw: any, fallback = '#000000'): string => {
+  const s = String(raw == null ? fallback : raw).trim()
+  if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return fallback
+  return s.startsWith('#') ? s : `#${s}`
+}
+
 const FREEZE_OPTIONS_SECONDS = [
   0,
   0.1,
@@ -740,6 +746,9 @@ export default function CreateVideo() {
   const [timeline, setTimeline] = useState<Timeline>({
     version: 'create_video_v1',
     playheadSeconds: 0,
+    timelineBackgroundMode: 'none',
+    timelineBackgroundColor: '#000000',
+    timelineBackgroundUploadId: null,
     clips: [],
     stills: [],
     videoOverlays: [],
@@ -2941,6 +2950,29 @@ export default function CreateVideo() {
     const id = Number((s as any).uploadId)
     return Number.isFinite(id) && id > 0 ? id : null
   }, [previewStillAtPlayhead])
+
+  const timelineBackgroundMode = useMemo<'none' | 'color' | 'image'>(() => {
+    const raw = String((timeline as any).timelineBackgroundMode || 'none').trim().toLowerCase()
+    return raw === 'color' ? 'color' : raw === 'image' ? 'image' : 'none'
+  }, [timeline])
+
+  const timelineBackgroundColor = useMemo(() => normalizeHexColor((timeline as any).timelineBackgroundColor, '#000000'), [timeline])
+
+  const timelineBackgroundUploadId = useMemo(() => {
+    const id = Number((timeline as any).timelineBackgroundUploadId)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }, [timeline])
+
+  const timelineBackgroundImageUrl = useMemo(() => {
+    if (!timelineBackgroundUploadId) return null
+    return (
+      graphicFileUrlByUploadId[timelineBackgroundUploadId] ||
+      `/api/uploads/${encodeURIComponent(String(timelineBackgroundUploadId))}/file`
+    )
+  }, [graphicFileUrlByUploadId, timelineBackgroundUploadId])
+
+  const hasTimelineBackgroundPreview =
+    timelineBackgroundMode === 'color' || (timelineBackgroundMode === 'image' && !!timelineBackgroundImageUrl)
 
   const activeStillBgFill = useMemo(() => {
     const s: any = previewStillAtPlayhead as any
@@ -5649,6 +5681,19 @@ export default function CreateVideo() {
 			        const tl: Timeline = {
 			          version: 'create_video_v1',
 			          playheadSeconds: roundToTenth(Number(tlRaw?.playheadSeconds || 0)),
+                timelineBackgroundMode:
+                  String((tlRaw as any)?.timelineBackgroundMode || 'none').trim().toLowerCase() === 'color'
+                    ? 'color'
+                    : String((tlRaw as any)?.timelineBackgroundMode || 'none').trim().toLowerCase() === 'image'
+                      ? 'image'
+                      : 'none',
+                timelineBackgroundColor: normalizeHexColor((tlRaw as any)?.timelineBackgroundColor, '#000000'),
+                timelineBackgroundUploadId:
+                  (tlRaw as any)?.timelineBackgroundUploadId == null
+                    ? null
+                    : Number.isFinite(Number((tlRaw as any).timelineBackgroundUploadId)) && Number((tlRaw as any).timelineBackgroundUploadId) > 0
+                      ? Number((tlRaw as any).timelineBackgroundUploadId)
+                      : null,
 			          clips: Array.isArray(tlRaw?.clips) ? (tlRaw.clips as any) : [],
 			          stills: Array.isArray(tlRaw?.stills) ? (tlRaw.stills as any) : [],
 	              videoOverlays: Array.isArray((tlRaw as any)?.videoOverlays) ? (((tlRaw as any).videoOverlays as any) as any) : [],
@@ -6083,11 +6128,25 @@ export default function CreateVideo() {
 		    const logoIds = logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const lowerThirdIds = lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
 		    const narrationIds = narration.map((n: any) => Number((n as any).uploadId)).filter((x) => Number.isFinite(x) && x > 0)
+		    const timelineBackgroundIds =
+		      timelineBackgroundMode === 'image' && timelineBackgroundUploadId != null ? [timelineBackgroundUploadId] : []
 		    const stillIds = (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as any[]) : [])
 		      .map((s) => Number(s?.uploadId))
 		      .filter((n) => Number.isFinite(n) && n > 0)
 		    const audioIds = audioSegments.map((a: any) => Number((a as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0)
-		    const ids = Array.from(new Set([...clipIds, ...videoOverlayIds, ...graphicIds, ...logoIds, ...lowerThirdIds, ...narrationIds, ...stillIds, ...audioIds]))
+		    const ids = Array.from(
+          new Set([
+            ...clipIds,
+            ...videoOverlayIds,
+            ...graphicIds,
+            ...logoIds,
+            ...lowerThirdIds,
+            ...narrationIds,
+            ...timelineBackgroundIds,
+            ...stillIds,
+            ...audioIds,
+          ])
+        )
 		    if (!ids.length) return
 		    const durationNeeded = new Set<number>([...clipIds, ...videoOverlayIds, ...narrationIds, ...audioIds])
 		    const missing = ids.filter((id) => !namesByUploadId[id] || (durationNeeded.has(id) && !durationsByUploadId[id]))
@@ -6141,7 +6200,20 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-	  }, [audioSegments, durationsByUploadId, graphics, logos, lowerThirds, namesByUploadId, narration, timeline.clips, timeline.stills, videoOverlays])
+	  }, [
+      audioSegments,
+      durationsByUploadId,
+      graphics,
+      logos,
+      lowerThirds,
+      namesByUploadId,
+      narration,
+      timeline.clips,
+      timeline.stills,
+      timelineBackgroundMode,
+      timelineBackgroundUploadId,
+      videoOverlays,
+    ])
 
   const seek = useCallback(
     async (t: number, opts?: { autoPlay?: boolean }) => {
@@ -6498,6 +6570,7 @@ export default function CreateVideo() {
           ...logos.map((l) => Number((l as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...lowerThirds.map((lt) => Number((lt as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...screenTitles.map((st: any) => Number((st as any).renderUploadId)).filter((n) => Number.isFinite(n) && n > 0),
+          ...(timelineBackgroundMode === 'image' && timelineBackgroundUploadId != null ? [timelineBackgroundUploadId] : []),
           ...stills.map((s) => Number((s as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
           ...videoOverlayStills.map((s: any) => Number((s as any).uploadId)).filter((n) => Number.isFinite(n) && n > 0),
         ]
@@ -6527,7 +6600,17 @@ export default function CreateVideo() {
     return () => {
       alive = false
     }
-  }, [graphicFileUrlByUploadId, graphics, logos, lowerThirds, screenTitles, stills, videoOverlayStills])
+  }, [
+    graphicFileUrlByUploadId,
+    graphics,
+    logos,
+    lowerThirds,
+    screenTitles,
+    stills,
+    timelineBackgroundMode,
+    timelineBackgroundUploadId,
+    videoOverlayStills,
+  ])
 
   // Keep video position synced when playhead changes by UI
   useEffect(() => {
@@ -8457,6 +8540,17 @@ export default function CreateVideo() {
             addGraphicFromUpload(up as any)
             void markGraphicUsed(pickFromAssets.uploadId)
           }
+        } else if (t === 'timelineBackground' && pickFromAssets.uploadId) {
+          const up = await fetchUpload(pickFromAssets.uploadId)
+          if (up && String((up as any).kind || '').toLowerCase() === 'image') {
+            snapshotUndo()
+            setTimeline((prev) => ({
+              ...(prev as any),
+              timelineBackgroundMode: 'image',
+              timelineBackgroundUploadId: Number(pickFromAssets.uploadId),
+            }) as any)
+            void markGraphicUsed(pickFromAssets.uploadId)
+          }
         } else if (t === 'narration' && pickFromAssets.uploadId) {
           const up = await fetchUpload(pickFromAssets.uploadId)
           if (up) await addNarrationFromUpload(up as any)
@@ -8498,6 +8592,7 @@ export default function CreateVideo() {
     loading,
     pickFromAssets,
     project?.id,
+    snapshotUndo,
   ])
 
   const openAudioEditor = useCallback(async () => {
@@ -14024,6 +14119,22 @@ export default function CreateVideo() {
     }
   }, [])
 
+  const openTimelineBackgroundPicker = useCallback(() => {
+    try {
+      const ret = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`
+      const u = new URL('/assets/graphic', window.location.origin)
+      u.searchParams.set('mode', 'pick')
+      u.searchParams.set('return', ret)
+      u.searchParams.set('pickType', 'timelineBackground')
+      const qp = new URLSearchParams(window.location.search)
+      const projectQ = qp.get('project')
+      if (projectQ) u.searchParams.set('project', String(projectQ))
+      window.location.href = `${u.pathname}${u.search}`
+    } catch {
+      window.location.href = '/assets/graphic?mode=pick&pickType=timelineBackground'
+    }
+  }, [])
+
   // Global listeners (always attached) so quick drags can't miss the pointerup and leave the timeline "locked".
   useEffect(() => {
 	    const onMove = (e: PointerEvent) => {
@@ -15749,9 +15860,171 @@ export default function CreateVideo() {
         <div style={{ color: '#bbb', fontSize: 13 }}>
           Clips: {timeline.clips.length} • Stills: {stills.length} • Graphics: {graphics.length} • Total: {totalSeconds.toFixed(1)}s
         </div>
+        <div style={{ marginTop: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.04)', padding: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: '#bbb', marginBottom: 8 }}>Timeline Background</div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <div style={{ color: '#bbb', fontSize: 13 }}>Mode</div>
+              <select
+                value={timelineBackgroundMode}
+                onChange={(e) => {
+                  const mode = String(e.target.value || 'none').trim().toLowerCase()
+                  setTimeline((prev) => ({
+                    ...(prev as any),
+                    timelineBackgroundMode: mode === 'color' ? 'color' : mode === 'image' ? 'image' : 'none',
+                  }) as any)
+                }}
+                style={{
+                  width: '100%',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0b0b0b',
+                  color: '#fff',
+                  padding: '10px 12px',
+                  fontSize: 16,
+                  fontWeight: 900,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="none">None (Black)</option>
+                <option value="color">Color</option>
+                <option value="image">Image</option>
+              </select>
+            </label>
+            {timelineBackgroundMode === 'color' ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Color</div>
+                <input
+                  type="color"
+                  value={timelineBackgroundColor}
+                  onChange={(e) =>
+                    setTimeline((prev) => ({ ...(prev as any), timelineBackgroundColor: normalizeHexColor(e.target.value, '#000000') }) as any)
+                  }
+                  style={{
+                    width: '100%',
+                    height: 40,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                  }}
+                />
+              </label>
+            ) : null}
+            {timelineBackgroundMode === 'image' ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'grid', gap: 6, minWidth: 180, flex: '1 1 220px' }}>
+                    <div style={{ color: '#bbb', fontSize: 13 }}>Image Upload ID</div>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={timelineBackgroundUploadId != null ? String(timelineBackgroundUploadId) : ''}
+                      onChange={(e) => {
+                        const raw = String(e.target.value || '').trim()
+                        const next = Number(raw)
+                        setTimeline((prev) => ({
+                          ...(prev as any),
+                          timelineBackgroundUploadId: Number.isFinite(next) && next > 0 ? Math.round(next) : null,
+                        }) as any)
+                      }}
+                      style={{
+                        width: '100%',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0b0b0b',
+                        color: '#fff',
+                        padding: '10px 12px',
+                        fontSize: 16,
+                        fontWeight: 900,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openTimelineBackgroundPicker}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(96,165,250,0.95)',
+                      background: 'rgba(96,165,250,0.14)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Pick Image
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeline((prev) => ({ ...(prev as any), timelineBackgroundUploadId: null }) as any)}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div style={{ color: '#9aa3ad', fontSize: 12 }}>
+                  {timelineBackgroundUploadId != null
+                    ? `${namesByUploadId[timelineBackgroundUploadId] || `Upload ${timelineBackgroundUploadId}`}${
+                        dimsByUploadId[timelineBackgroundUploadId]
+                          ? ` • ${dimsByUploadId[timelineBackgroundUploadId].width}x${dimsByUploadId[timelineBackgroundUploadId].height}`
+                          : ''
+                      }`
+                    : 'No background image selected.'}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
 
         <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
-          <div ref={previewWrapRef} style={{ width: '100%', aspectRatio: '9 / 16', background: '#000', position: 'relative', overflow: 'hidden' }}>
+          <div
+            ref={previewWrapRef}
+            style={{
+              width: '100%',
+              aspectRatio: '9 / 16',
+              background: timelineBackgroundMode === 'color' ? timelineBackgroundColor : '#000',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            {timelineBackgroundMode === 'color' ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: timelineBackgroundColor,
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                }}
+              />
+            ) : null}
+            {timelineBackgroundMode === 'image' && timelineBackgroundImageUrl ? (
+              <img
+                src={timelineBackgroundImageUrl}
+                alt=""
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                }}
+              />
+            ) : null}
             <video
               ref={bgVideoRef}
               playsInline
@@ -15785,7 +16058,7 @@ export default function CreateVideo() {
                   objectFit: activeStillObjectFit,
                   pointerEvents: 'none',
                   zIndex: 10,
-                  background: activeStillBgFill ? 'transparent' : '#000',
+                  background: activeStillBgFill || hasTimelineBackgroundPreview ? 'transparent' : '#000',
                 }}
               />
             ) : null}

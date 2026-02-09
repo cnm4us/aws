@@ -19,6 +19,9 @@ function mapRow(row: CreateVideoProjectRow): CreateVideoProjectDto {
     timeline = {
       version: 'create_video_v1',
       playheadSeconds: 0,
+      timelineBackgroundMode: 'none',
+      timelineBackgroundColor: '#000000',
+      timelineBackgroundUploadId: null,
       clips: [],
       stills: [],
       graphics: [],
@@ -73,6 +76,9 @@ function emptyTimelineJson(): string {
   return JSON.stringify({
     version: 'create_video_v1',
     playheadSeconds: 0,
+    timelineBackgroundMode: 'none',
+    timelineBackgroundColor: '#000000',
+    timelineBackgroundUploadId: null,
     clips: [],
     stills: [],
     graphics: [],
