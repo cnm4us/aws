@@ -23769,10 +23769,10 @@ export default function CreateVideo() {
 			                    color: (timelineCtxMenu.view || 'main') === 'guidelines' ? '#0b0b0b' : '#bbb',
 			                  }}
 			                >
-					                  {(timelineCtxMenu.view || 'main') === 'guidelines'
-					                    ? 'Actions'
+				                  {(timelineCtxMenu.view || 'main') === 'guidelines'
+				                    ? 'Actions'
                               : (timelineCtxMenu.view || 'main') === 'screenTitlePlacementPick'
-                                ? 'Placement'
+                                ? 'Quick Changes'
 					                    : timelineCtxMenu.kind === 'audioSegment'
 					                      ? 'Audio'
 					                    : timelineCtxMenu.kind === 'still'
@@ -24338,7 +24338,7 @@ export default function CreateVideo() {
                                 textAlign: 'left',
                               }}
                             >
-                              Placement
+                              Quick Changes
                             </button>
                           </>
                         ) : null}
