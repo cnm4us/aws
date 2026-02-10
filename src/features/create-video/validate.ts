@@ -1334,6 +1334,16 @@ export async function validateAndNormalizeCreateVideoTimeline(
       const offsetYPxRaw = (customStyleRaw as any).offsetYPx
       const offsetXPx = offsetXPxRaw == null ? undefined : Number(offsetXPxRaw)
       const offsetYPx = offsetYPxRaw == null ? undefined : Number(offsetYPxRaw)
+      const placementRectRaw = (customStyleRaw as any).placementRect
+      const placementRect =
+        placementRectRaw && typeof placementRectRaw === 'object' && !Array.isArray(placementRectRaw)
+          ? {
+              xPct: Number((placementRectRaw as any).xPct),
+              yPct: Number((placementRectRaw as any).yPct),
+              wPct: Number((placementRectRaw as any).wPct),
+              hPct: Number((placementRectRaw as any).hPct),
+            }
+          : null
       const fontKeyRaw = (customStyleRaw as any).fontKey
       const fontKey = fontKeyRaw == null ? undefined : String(fontKeyRaw)
       const fontSizePctRaw = (customStyleRaw as any).fontSizePct
@@ -1355,6 +1365,28 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (Number.isFinite(marginYPx)) out.marginYPx = clamp(marginYPx as number, 0, 1000)
       if (Number.isFinite(offsetXPx)) out.offsetXPx = clamp(offsetXPx as number, -1000, 1000)
       if (Number.isFinite(offsetYPx)) out.offsetYPx = clamp(offsetYPx as number, -1000, 1000)
+      if (placementRect) {
+        const xRaw = placementRect.xPct
+        const yRaw = placementRect.yPct
+        const wRaw = placementRect.wPct
+        const hRaw = placementRect.hPct
+        if (Number.isFinite(xRaw) && Number.isFinite(yRaw) && Number.isFinite(wRaw) && Number.isFinite(hRaw)) {
+          let xPct = clamp(xRaw, 0, 100)
+          let yPct = clamp(yRaw, 0, 100)
+          let wPct = clamp(wRaw, 0, 100)
+          let hPct = clamp(hRaw, 0, 100)
+          wPct = Math.min(wPct, Math.max(0, 100 - xPct))
+          hPct = Math.min(hPct, Math.max(0, 100 - yPct))
+          if (wPct > 0.001 && hPct > 0.001) {
+            out.placementRect = {
+              xPct: Math.round(xPct * 1000) / 1000,
+              yPct: Math.round(yPct * 1000) / 1000,
+              wPct: Math.round(wPct * 1000) / 1000,
+              hPct: Math.round(hPct * 1000) / 1000,
+            }
+          }
+        }
+      }
       if (fontKey && fontKey.length <= 120) out.fontKey = fontKey
       if (Number.isFinite(fontSizePct)) out.fontSizePct = clamp(fontSizePct as number, 0.5, 20)
       if (fontColor && fontColor.length <= 32) out.fontColor = fontColor

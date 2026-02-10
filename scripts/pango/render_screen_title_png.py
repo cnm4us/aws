@@ -89,6 +89,29 @@ def normalize_alignment(aln):
   return "center"
 
 
+def normalize_placement_rect(raw):
+  if not isinstance(raw, dict):
+    return None
+  try:
+    x = float(raw.get("xPct"))
+    y = float(raw.get("yPct"))
+    w = float(raw.get("wPct"))
+    h = float(raw.get("hPct"))
+  except Exception:
+    return None
+  if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(w) and math.isfinite(h)):
+    return None
+  x = clamp(x, 0.0, 100.0)
+  y = clamp(y, 0.0, 100.0)
+  w = clamp(w, 0.0, 100.0)
+  h = clamp(h, 0.0, 100.0)
+  w = min(w, max(0.0, 100.0 - x))
+  h = min(h, max(0.0, 100.0 - y))
+  if not (w > 0.001 and h > 0.001):
+    return None
+  return {"xPct": x, "yPct": y, "wPct": w, "hPct": h}
+
+
 def rounded_rect(ctx, x, y, w, h, r):
   r = max(0.0, min(r, min(w, h) / 2.0))
   if r <= 0.0:
@@ -139,6 +162,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   margin_right_pct = normalize_margin_pct(preset.get("marginRightPct"), inset_x_pct)
   margin_top_pct = normalize_margin_pct(preset.get("marginTopPct"), inset_y_pct)
   margin_bottom_pct = normalize_margin_pct(preset.get("marginBottomPct"), inset_y_pct)
+  placement_rect = normalize_placement_rect(preset.get("placementRect"))
 
   font_color = str(preset.get("fontColor") or "#ffffff")
   shadow_color = str(preset.get("shadowColor") or "#000000")
@@ -286,7 +310,21 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
     pad_y0 = clamp(font_px * 0.30, 6.0, 28.0)
   margin_left_px0 = pct_to_px(margin_left_pct, width)
   margin_right_px0 = pct_to_px(margin_right_pct, width)
-  max_box_w_allowed0 = max(10.0, width - margin_left_px0 - margin_right_px0)
+  margin_top_px0 = pct_to_px(margin_top_pct, width)
+  margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
+  if placement_rect is not None:
+    region_x0 = clamp(pct_to_px(placement_rect.get("xPct"), width), 0.0, float(width))
+    region_y0 = clamp(pct_to_px(placement_rect.get("yPct"), height), 0.0, float(height))
+    region_w0 = clamp(pct_to_px(placement_rect.get("wPct"), width), 0.0, max(0.0, float(width) - region_x0))
+    region_h0 = clamp(pct_to_px(placement_rect.get("hPct"), height), 0.0, max(0.0, float(height) - region_y0))
+    if region_w0 < 1.0 or region_h0 < 1.0:
+      placement_rect = None
+  if placement_rect is None:
+    region_x0 = margin_left_px0
+    region_y0 = margin_top_px0
+    region_w0 = max(10.0, width - margin_left_px0 - margin_right_px0)
+    region_h0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
+  max_box_w_allowed0 = max(10.0, region_w0)
   max_layout_w_allowed0 = max(10.0, max_box_w_allowed0 - (2.0 * (pad_x0 + stroke_pad0)) - abs(shadow_dx0) - (2.0 * shadow_blur0))
   max_w = max_layout_w_allowed0
   # Legacy: if no explicit margins were provided, respect maxWidthPct.
@@ -304,9 +342,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   # Clamp layout height so the text box always fits within the vertical margins.
   # We clamp by pixel height (not “number of lines”) so paragraph breaks / blank
   # lines behave consistently and we don’t get clipping at the bottom edge.
-  margin_top_px0 = pct_to_px(margin_top_pct, width)
-  margin_bottom_px0 = pct_to_px(margin_bottom_pct, width)
-  max_box_h_allowed0 = max(10.0, height - margin_top_px0 - margin_bottom_px0)
+  max_box_h_allowed0 = max(10.0, region_h0)
   max_layout_h_allowed0 = max(10.0, max_box_h_allowed0 - (2.0 * (pad_y0 + stroke_pad0)) - abs(shadow_dy0) - (2.0 * shadow_blur0))
 
   # Text shaping on by default; allow \n.
@@ -375,6 +411,16 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   margin_right_px = pct_to_px(margin_right_pct, width)
   margin_top_px = pct_to_px(margin_top_pct, width)
   margin_bottom_px = pct_to_px(margin_bottom_pct, width)
+  if placement_rect is None:
+    region_x = margin_left_px
+    region_y = margin_top_px
+    region_w = max(10.0, width - margin_left_px - margin_right_px)
+    region_h = max(10.0, height - margin_top_px - margin_bottom_px)
+  else:
+    region_x = region_x0
+    region_y = region_y0
+    region_w = max(10.0, region_w0)
+    region_h = max(10.0, region_h0)
 
   # Compute a bounding box in layout coordinates that should fit on-screen.
   box_x0 = content_x - pad_x - stroke_pad
@@ -394,20 +440,20 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
 
   # Position the bounding box, then derive the layout draw origin.
   if aln == "left":
-    box_x = margin_left_px
+    box_x = region_x
   elif aln == "right":
-    box_x = width - box_w - margin_right_px
+    box_x = region_x + region_w - box_w
   else:
-    box_x = (width - box_w) / 2.0
-  box_x = clamp(box_x, margin_left_px, width - box_w - margin_right_px)
+    box_x = region_x + (region_w - box_w) / 2.0
+  box_x = clamp(box_x, region_x, region_x + region_w - box_w)
 
-  min_y = margin_top_px
-  max_y = height - box_h - margin_bottom_px
+  min_y = region_y
+  max_y = region_y + region_h - box_h
   if pos == "bottom":
-    base_y = (height * 2.0 / 3.0) + margin_top_px
+    base_y = region_y + (region_h * 2.0 / 3.0)
     box_y = base_y
   elif pos == "middle":
-    base_y = (height / 3.0) + margin_top_px
+    base_y = region_y + (region_h / 3.0)
     box_y = base_y
   else:
     box_y = min_y
@@ -417,17 +463,21 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   box_x = box_x + offset_x_px
   box_y = box_y + offset_y_px
 
-  # If no offsets are present, keep content fully within frame bounds.
-  # When offsets are used, allow some overflow so stacking/spacing isn't
-  # unintentionally compressed by clamping.
-  if abs(offset_x_px) < 0.001:
-    box_x = clamp(box_x, 0.0, width - box_w)
+  if placement_rect is not None:
+    box_x = clamp(box_x, region_x, region_x + max(0.0, region_w - box_w))
+    box_y = clamp(box_y, region_y, region_y + max(0.0, region_h - box_h))
   else:
-    box_x = clamp(box_x, -box_w, width)
-  if abs(offset_y_px) < 0.001:
-    box_y = clamp(box_y, 0.0, height - box_h)
-  else:
-    box_y = clamp(box_y, -box_h, height)
+    # If no offsets are present, keep content fully within frame bounds.
+    # When offsets are used, allow some overflow so stacking/spacing isn't
+    # unintentionally compressed by clamping.
+    if abs(offset_x_px) < 0.001:
+      box_x = clamp(box_x, 0.0, width - box_w)
+    else:
+      box_x = clamp(box_x, -box_w, width)
+    if abs(offset_y_px) < 0.001:
+      box_y = clamp(box_y, 0.0, height - box_h)
+    else:
+      box_y = clamp(box_y, -box_h, height)
 
   x_draw = box_x - box_x0
   y_draw = box_y - box_y0
@@ -444,9 +494,9 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
     rounded_rect(ctx, pill_x, pill_y, pill_w, pill_h, radius)
     ctx.fill()
   elif style == "strip":
-    # Full-width strip between left/right margins (text still aligns within via Pango alignment).
-    strip_x = margin_left_px
-    strip_w = max(10.0, width - margin_left_px - margin_right_px)
+    # Strip constrained to the active placement region.
+    strip_x = region_x
+    strip_w = max(10.0, region_w)
     rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
     ctx.set_source_rgba(rr, gg, bb, aa)
     ctx.rectangle(strip_x, box_y, strip_w, box_h)

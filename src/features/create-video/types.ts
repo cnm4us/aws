@@ -187,6 +187,12 @@ export type CreateVideoScreenTitleV1 = {
       marginYPx?: number
       offsetXPx?: number
       offsetYPx?: number
+      placementRect?: {
+        xPct: number
+        yPct: number
+        wPct: number
+        hPct: number
+      } | null
       fontKey?: string
       fontSizePct?: number
       fontColor?: string
@@ -200,6 +206,12 @@ export type CreateVideoScreenTitleV1 = {
     marginYPx?: number
     offsetXPx?: number
     offsetYPx?: number
+    placementRect?: {
+      xPct: number
+      yPct: number
+      wPct: number
+      hPct: number
+    } | null
     fontKey?: string
     fontSizePct?: number
     fontColor?: string

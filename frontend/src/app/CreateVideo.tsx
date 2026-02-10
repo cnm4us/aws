@@ -48,6 +48,12 @@ const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString(
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
 const ACTION_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
 const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
+const SCREEN_TITLE_SAFE_AREA_TOP_PCT = 3
+const SCREEN_TITLE_SAFE_AREA_RIGHT_PCT = 3
+const SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT = 3
+const SCREEN_TITLE_SAFE_AREA_LEFT_PCT = 3
+const SCREEN_TITLE_PLACEMENT_MIN_W_PCT = 12
+const SCREEN_TITLE_PLACEMENT_MIN_H_PCT = 8
 const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
 const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
   x_small: 'X-Small',
@@ -176,11 +182,16 @@ type ScreenTitleFontPresetsResponse = {
   >
 }
 
+type ScreenTitlePlacementRect = { xPct: number; yPct: number; wPct: number; hPct: number }
+
 type ScreenTitleCustomStyleDraft = {
   position?: 'top' | 'middle' | 'bottom'
   alignment?: 'left' | 'center' | 'right'
   marginXPx?: number
   marginYPx?: number
+  offsetXPx?: number
+  offsetYPx?: number
+  placementRect?: ScreenTitlePlacementRect | null
   fontKey?: string
   fontSizePct?: number
   fontColor?: string
@@ -296,6 +307,88 @@ const screenTitleMarginPctToPx = (pct: number): number => {
   return Math.round((pct / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)
 }
 
+const normalizeScreenTitlePlacementRect = (
+  raw: any
+): ScreenTitlePlacementRect | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const xRaw = Number((raw as any).xPct)
+  const yRaw = Number((raw as any).yPct)
+  const wRaw = Number((raw as any).wPct)
+  const hRaw = Number((raw as any).hPct)
+  if (!(Number.isFinite(xRaw) && Number.isFinite(yRaw) && Number.isFinite(wRaw) && Number.isFinite(hRaw))) return null
+  let xPct = clamp(xRaw, 0, 100)
+  let yPct = clamp(yRaw, 0, 100)
+  let wPct = clamp(wRaw, 0, 100)
+  let hPct = clamp(hRaw, 0, 100)
+  wPct = Math.min(wPct, Math.max(0, 100 - xPct))
+  hPct = Math.min(hPct, Math.max(0, 100 - yPct))
+  if (!(wPct > 0.001 && hPct > 0.001)) return null
+  const r3 = (n: number) => Math.round(n * 1000) / 1000
+  return { xPct: r3(xPct), yPct: r3(yPct), wPct: r3(wPct), hPct: r3(hPct) }
+}
+
+const defaultScreenTitlePlacementRect = (): ScreenTitlePlacementRect => ({
+  xPct: SCREEN_TITLE_SAFE_AREA_LEFT_PCT,
+  yPct: SCREEN_TITLE_SAFE_AREA_TOP_PCT,
+  wPct: 100 - SCREEN_TITLE_SAFE_AREA_LEFT_PCT - SCREEN_TITLE_SAFE_AREA_RIGHT_PCT,
+  hPct: 100 - SCREEN_TITLE_SAFE_AREA_TOP_PCT - SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT,
+})
+
+const normalizeScreenTitlePlacementRectForEditor = (raw: any): ScreenTitlePlacementRect => {
+  const base = normalizeScreenTitlePlacementRect(raw) || defaultScreenTitlePlacementRect()
+  const safeLeft = SCREEN_TITLE_SAFE_AREA_LEFT_PCT
+  const safeTop = SCREEN_TITLE_SAFE_AREA_TOP_PCT
+  const safeRight = 100 - SCREEN_TITLE_SAFE_AREA_RIGHT_PCT
+  const safeBottom = 100 - SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT
+  const maxW = Math.max(SCREEN_TITLE_PLACEMENT_MIN_W_PCT, safeRight - safeLeft)
+  const maxH = Math.max(SCREEN_TITLE_PLACEMENT_MIN_H_PCT, safeBottom - safeTop)
+  let wPct = clamp(base.wPct, SCREEN_TITLE_PLACEMENT_MIN_W_PCT, maxW)
+  let hPct = clamp(base.hPct, SCREEN_TITLE_PLACEMENT_MIN_H_PCT, maxH)
+  let xPct = clamp(base.xPct, safeLeft, safeRight - wPct)
+  let yPct = clamp(base.yPct, safeTop, safeBottom - hPct)
+  if (xPct + wPct > safeRight) xPct = safeRight - wPct
+  if (yPct + hPct > safeBottom) yPct = safeBottom - hPct
+  const r3 = (n: number) => Math.round(n * 1000) / 1000
+  return { xPct: r3(xPct), yPct: r3(yPct), wPct: r3(wPct), hPct: r3(hPct) }
+}
+
+const applyScreenTitlePlacementDrag = (
+  base: ScreenTitlePlacementRect,
+  mode: 'move' | 'left' | 'right' | 'top' | 'bottom',
+  dxPct: number,
+  dyPct: number
+): ScreenTitlePlacementRect => {
+  const safeLeft = SCREEN_TITLE_SAFE_AREA_LEFT_PCT
+  const safeTop = SCREEN_TITLE_SAFE_AREA_TOP_PCT
+  const safeRight = 100 - SCREEN_TITLE_SAFE_AREA_RIGHT_PCT
+  const safeBottom = 100 - SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT
+  const minW = SCREEN_TITLE_PLACEMENT_MIN_W_PCT
+  const minH = SCREEN_TITLE_PLACEMENT_MIN_H_PCT
+  let xPct = base.xPct
+  let yPct = base.yPct
+  let wPct = base.wPct
+  let hPct = base.hPct
+
+  if (mode === 'move') {
+    xPct = clamp(base.xPct + dxPct, safeLeft, safeRight - base.wPct)
+    yPct = clamp(base.yPct + dyPct, safeTop, safeBottom - base.hPct)
+  } else if (mode === 'left') {
+    const maxLeft = base.xPct + base.wPct - minW
+    xPct = clamp(base.xPct + dxPct, safeLeft, maxLeft)
+    wPct = base.wPct + (base.xPct - xPct)
+  } else if (mode === 'right') {
+    wPct = clamp(base.wPct + dxPct, minW, safeRight - base.xPct)
+  } else if (mode === 'top') {
+    const maxTop = base.yPct + base.hPct - minH
+    yPct = clamp(base.yPct + dyPct, safeTop, maxTop)
+    hPct = base.hPct + (base.yPct - yPct)
+  } else if (mode === 'bottom') {
+    hPct = clamp(base.hPct + dyPct, minH, safeBottom - base.yPct)
+  }
+
+  return normalizeScreenTitlePlacementRectForEditor({ xPct, yPct, wPct, hPct })
+}
+
 function buildScreenTitlePresetSnapshot(preset: ScreenTitlePresetItem) {
   const presetId = Number((preset as any).id)
   return {
@@ -373,6 +466,8 @@ function applyScreenTitleCustomStyle(snapshot: any, customStyle: ScreenTitleCust
   }
   if (hasOffsetX) next.offsetXPx = Number(customStyle.offsetXPx)
   if (hasOffsetY) next.offsetYPx = Number(customStyle.offsetYPx)
+  const placementRect = normalizeScreenTitlePlacementRect((customStyle as any).placementRect)
+  if (placementRect) next.placementRect = placementRect
   return next
 }
 
@@ -401,6 +496,8 @@ function buildScreenTitlePresetOverride(customStyle: ScreenTitleCustomStyleDraft
   }
   if (hasOffsetX) out.offsetXPx = Number(customStyle.offsetXPx)
   if (hasOffsetY) out.offsetYPx = Number(customStyle.offsetYPx)
+  const placementRect = normalizeScreenTitlePlacementRect((customStyle as any).placementRect)
+  if (placementRect) out.placementRect = placementRect
   return Object.keys(out).length ? out : null
 }
 
@@ -460,6 +557,17 @@ function normalizeScreenTitleCustomStyleForSave(customStyle: ScreenTitleCustomSt
   }
   if (offsetYPx != null && Math.abs(offsetYPx - Number(baseOffsetYPx || 0)) > 0.5) {
     out.offsetYPx = offsetYPx
+  }
+  const nextPlacementRect = normalizeScreenTitlePlacementRect((customStyle as any).placementRect)
+  const basePlacementRect = normalizeScreenTitlePlacementRect((basePreset as any)?.placementRect)
+  if (nextPlacementRect) {
+    const samePlacement =
+      basePlacementRect &&
+      Math.abs(Number(nextPlacementRect.xPct) - Number(basePlacementRect.xPct)) < 0.001 &&
+      Math.abs(Number(nextPlacementRect.yPct) - Number(basePlacementRect.yPct)) < 0.001 &&
+      Math.abs(Number(nextPlacementRect.wPct) - Number(basePlacementRect.wPct)) < 0.001 &&
+      Math.abs(Number(nextPlacementRect.hPct) - Number(basePlacementRect.hPct)) < 0.001
+    if (!samePlacement) out.placementRect = nextPlacementRect
   }
 
   return Object.keys(out).length ? out : null
@@ -913,9 +1021,39 @@ export default function CreateVideo() {
     activeInstanceId: string
   } | null>(null)
   const [screenTitleCustomizeError, setScreenTitleCustomizeError] = useState<string | null>(null)
+  const [screenTitlePlacementEditor, setScreenTitlePlacementEditor] = useState<{
+    id: string
+    presetId: number | null
+    instances: ScreenTitleInstanceDraft[]
+    activeInstanceId: string
+  } | null>(null)
+  const [screenTitlePlacementError, setScreenTitlePlacementError] = useState<string | null>(null)
+  const [screenTitlePlacementAdvancedOpen, setScreenTitlePlacementAdvancedOpen] = useState(false)
+  const [screenTitlePlacementControlMode, setScreenTitlePlacementControlMode] = useState<'move' | 'left' | 'right' | 'top' | 'bottom'>('move')
+  const [screenTitlePlacementStepPx, setScreenTitlePlacementStepPx] = useState<1 | 5>(1)
+  const [screenTitlePlacementPanelPos, setScreenTitlePlacementPanelPos] = useState<{ x: number; y: number }>({ x: 8, y: 126 })
   const [screenTitleLastInstanceById, setScreenTitleLastInstanceById] = useState<Record<string, string>>({})
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
+  const screenTitlePlacementStageRef = useRef<HTMLDivElement | null>(null)
+  const screenTitlePlacementPanelRef = useRef<HTMLDivElement | null>(null)
+  const screenTitlePlacementDragRef = useRef<{
+    mode: 'move' | 'left' | 'right' | 'top' | 'bottom'
+    startClientX: number
+    startClientY: number
+    stageW: number
+    stageH: number
+    baseRect: ScreenTitlePlacementRect
+  } | null>(null)
+  const screenTitlePlacementStopDragRef = useRef<(() => void) | null>(null)
+  const screenTitlePlacementPanelDragRef = useRef<{
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    baseX: number
+    baseY: number
+  } | null>(null)
+  const screenTitlePlacementPanelStopDragRef = useRef<(() => void) | null>(null)
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
   const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
   const musicPreviewRef = useRef<HTMLAudioElement | null>(null)
@@ -1029,7 +1167,7 @@ export default function CreateVideo() {
         id: string
         x: number
         y: number
-        view?: 'main' | 'guidelines'
+        view?: 'main' | 'guidelines' | 'screenTitlePlacementPick'
         edgeIntent?: 'move' | 'start' | 'end'
       }
   >(null)
@@ -2192,6 +2330,77 @@ export default function CreateVideo() {
       return true
     },
     [screenTitles]
+  )
+
+  const openScreenTitlePlacementById = useCallback(
+    (id: string, requestedInstanceId?: string | null): boolean => {
+      const st = screenTitles.find((ss: any) => String((ss as any).id) === String(id)) as any
+      if (!st) return false
+      const presetId = Number((st as any)?.presetId || 0)
+      if (!Number.isFinite(presetId) || presetId <= 0) {
+        setScreenTitlePlacementError('Pick a screen title style.')
+        return false
+      }
+      setSelectedScreenTitleId(String((st as any).id))
+      setSelectedClipId(null)
+      setSelectedVideoOverlayId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+      const rawInstances = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
+      const instances =
+        rawInstances.length > 0
+          ? rawInstances.map((inst: any, idx: number) => ({
+              id: String(inst?.id || `${String((st as any).id)}_i${idx + 1}`),
+              text: inst?.text == null ? '' : String(inst.text),
+              customStyle: inst?.customStyle ? { ...(inst.customStyle as any) } : null,
+            }))
+          : [
+              {
+                id: `${String((st as any).id)}_i1`,
+                text: String((st as any).text || ''),
+                customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
+              },
+            ]
+      const safeInstances = instances.map((inst: any) => ({
+        ...inst,
+        customStyle: {
+          ...(inst.customStyle || {}),
+          placementRect: normalizeScreenTitlePlacementRectForEditor((inst.customStyle as any)?.placementRect),
+        },
+      }))
+      const stId = String((st as any).id)
+      const requested = String(requestedInstanceId || '')
+      const requestedExists = requested && safeInstances.some((inst: any) => String(inst.id) === requested)
+      const preferred = screenTitleLastInstanceById[stId]
+      const preferredExists = preferred && safeInstances.some((inst: any) => String(inst.id) === String(preferred))
+      const activeInstanceId = String(
+        requestedExists ? requested : preferredExists ? preferred : safeInstances[0]?.id || ''
+      )
+
+      const stStart = roundToTenth(Math.max(0, Number((st as any).startSeconds || 0)))
+      try { videoRef.current?.pause?.() } catch {}
+      try { overlayVideoRef.current?.pause?.() } catch {}
+      setPlaying(false)
+      playheadFromVideoRef.current = true
+      setTimeline((prev) => ({ ...prev, playheadSeconds: stStart }))
+      setScreenTitlePlacementEditor({
+        id: stId,
+        presetId,
+        instances: safeInstances,
+        activeInstanceId,
+      })
+      setScreenTitlePlacementControlMode('move')
+      setScreenTitlePlacementStepPx(1)
+      setScreenTitlePlacementPanelPos({ x: 8, y: 126 })
+      setScreenTitlePlacementError(null)
+      setScreenTitlePlacementAdvancedOpen(false)
+      return true
+    },
+    [screenTitles, screenTitleLastInstanceById]
   )
 
   const returnToScreenTitleId = useMemo(() => {
@@ -3519,6 +3728,43 @@ export default function CreateVideo() {
     }
     return { url, style }
   }, [activeScreenTitleAtPlayhead, activeScreenTitleUrl, playhead, previewObjectFit])
+
+  const screenTitlePlacementSegment = useMemo(() => {
+    if (!screenTitlePlacementEditor?.id) return null
+    return (
+      screenTitles.find((st: any) => String((st as any).id) === String(screenTitlePlacementEditor.id)) ||
+      null
+    )
+  }, [screenTitlePlacementEditor?.id, screenTitles])
+
+  const screenTitlePlacementActiveRect = useMemo(() => {
+    const instances = Array.isArray(screenTitlePlacementEditor?.instances) ? screenTitlePlacementEditor?.instances : []
+    if (!instances.length) return null
+    const activeId = String(screenTitlePlacementEditor?.activeInstanceId || '')
+    const inst = instances.find((it: any) => String(it?.id) === activeId) || instances[0]
+    return normalizeScreenTitlePlacementRectForEditor((inst?.customStyle as any)?.placementRect)
+  }, [screenTitlePlacementEditor?.activeInstanceId, screenTitlePlacementEditor?.instances])
+
+  const screenTitlePlacementPassiveRects = useMemo(() => {
+    const instances = Array.isArray(screenTitlePlacementEditor?.instances) ? screenTitlePlacementEditor?.instances : []
+    if (!instances.length) return []
+    const activeId = String(screenTitlePlacementEditor?.activeInstanceId || '')
+    return instances
+      .filter((inst: any) => String(inst?.id) !== activeId)
+      .map((inst: any) => ({
+        id: String(inst?.id || ''),
+        rect: normalizeScreenTitlePlacementRectForEditor((inst?.customStyle as any)?.placementRect),
+      }))
+  }, [screenTitlePlacementEditor?.activeInstanceId, screenTitlePlacementEditor?.instances])
+
+  const screenTitlePlacementInRange = useMemo(() => {
+    const seg: any = screenTitlePlacementSegment as any
+    if (!seg) return false
+    const s = Number((seg as any).startSeconds || 0)
+    const e = Number((seg as any).endSeconds || 0)
+    const t = Number(playhead || 0)
+    return Number.isFinite(s) && Number.isFinite(e) && Number.isFinite(t) && t >= s - 1e-6 && t <= e + 1e-6
+  }, [playhead, screenTitlePlacementSegment])
 
   const activeVideoOverlayPreview = useMemo(() => {
     const o: any = activeVideoOverlayAtPlayhead as any
@@ -7351,6 +7597,11 @@ export default function CreateVideo() {
   }, [screenTitleCustomizeEditor, ensureScreenTitlePresets, ensureScreenTitleFonts, ensureScreenTitleGradients])
 
   useEffect(() => {
+    if (!screenTitlePlacementEditor) return
+    void ensureScreenTitlePresets()
+  }, [screenTitlePlacementEditor, ensureScreenTitlePresets])
+
+  useEffect(() => {
     if (!screenTitleCustomizeEditor?.id) return
     const stId = String(screenTitleCustomizeEditor.id)
     const activeId = String(screenTitleCustomizeEditor.activeInstanceId || '')
@@ -7360,6 +7611,44 @@ export default function CreateVideo() {
       return { ...prev, [stId]: activeId }
     })
   }, [screenTitleCustomizeEditor?.id, screenTitleCustomizeEditor?.activeInstanceId])
+
+  useEffect(() => {
+    if (!screenTitlePlacementEditor?.id) return
+    const stId = String(screenTitlePlacementEditor.id)
+    const activeId = String(screenTitlePlacementEditor.activeInstanceId || '')
+    if (!activeId) return
+    setScreenTitleLastInstanceById((prev) => {
+      if (prev[stId] === activeId) return prev
+      return { ...prev, [stId]: activeId }
+    })
+  }, [screenTitlePlacementEditor?.id, screenTitlePlacementEditor?.activeInstanceId])
+
+  useEffect(() => {
+    if (screenTitlePlacementEditor) return
+    setScreenTitlePlacementAdvancedOpen(false)
+    screenTitlePlacementPanelDragRef.current = null
+    if (screenTitlePlacementPanelStopDragRef.current) {
+      screenTitlePlacementPanelStopDragRef.current()
+      screenTitlePlacementPanelStopDragRef.current = null
+    }
+    if (screenTitlePlacementStopDragRef.current) {
+      screenTitlePlacementStopDragRef.current()
+      screenTitlePlacementStopDragRef.current = null
+    }
+  }, [screenTitlePlacementEditor])
+
+  useEffect(() => {
+    return () => {
+      if (screenTitlePlacementPanelStopDragRef.current) {
+        screenTitlePlacementPanelStopDragRef.current()
+        screenTitlePlacementPanelStopDragRef.current = null
+      }
+      if (screenTitlePlacementStopDragRef.current) {
+        screenTitlePlacementStopDragRef.current()
+        screenTitlePlacementStopDragRef.current = null
+      }
+    }
+  }, [])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
@@ -14112,13 +14401,24 @@ export default function CreateVideo() {
       if (!a && !b) return true
       if (!a || !b) return false
       const keys = ['position', 'alignment', 'marginXPx', 'marginYPx', 'offsetXPx', 'offsetYPx', 'fontKey', 'fontSizePct', 'fontColor', 'fontGradientKey']
-      return keys.every((k) => {
+      const base = keys.every((k) => {
         const av = (a as any)[k]
         const bv = (b as any)[k]
         if (av == null && bv == null) return true
         if (Number.isFinite(Number(av)) && Number.isFinite(Number(bv))) return Math.abs(Number(av) - Number(bv)) < 0.001
         return String(av || '') === String(bv || '')
       })
+      if (!base) return false
+      const ar = normalizeScreenTitlePlacementRect((a as any).placementRect)
+      const br = normalizeScreenTitlePlacementRect((b as any).placementRect)
+      if (!ar && !br) return true
+      if (!ar || !br) return false
+      return (
+        Math.abs(Number(ar.xPct) - Number(br.xPct)) < 0.001 &&
+        Math.abs(Number(ar.yPct) - Number(br.yPct)) < 0.001 &&
+        Math.abs(Number(ar.wPct) - Number(br.wPct)) < 0.001 &&
+        Math.abs(Number(ar.hPct) - Number(br.hPct)) < 0.001
+      )
     }
     const sameInstances = (a: any[], b: any[]): boolean => {
       if (a.length !== b.length) return false
@@ -14169,6 +14469,284 @@ export default function CreateVideo() {
     setScreenTitleCustomizeEditor(null)
     setScreenTitleCustomizeError(null)
   }, [screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
+
+  const beginScreenTitlePlacementDrag = useCallback(
+    (mode: 'move' | 'left' | 'right' | 'top' | 'bottom', baseRect: ScreenTitlePlacementRect, e: React.PointerEvent) => {
+      if (!screenTitlePlacementEditor) return
+      if (!screenTitlePlacementStageRef.current) return
+      const stageBounds = screenTitlePlacementStageRef.current.getBoundingClientRect()
+      if (!(stageBounds.width > 0 && stageBounds.height > 0)) return
+      if (screenTitlePlacementStopDragRef.current) {
+        screenTitlePlacementStopDragRef.current()
+        screenTitlePlacementStopDragRef.current = null
+      }
+      const safeBase = normalizeScreenTitlePlacementRectForEditor(baseRect)
+      screenTitlePlacementDragRef.current = {
+        mode,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        stageW: stageBounds.width,
+        stageH: stageBounds.height,
+        baseRect: safeBase,
+      }
+      const onMove = (ev: PointerEvent) => {
+        const drag = screenTitlePlacementDragRef.current
+        if (!drag) return
+        const dxPct = ((ev.clientX - drag.startClientX) / Math.max(1, drag.stageW)) * 100
+        const dyPct = ((ev.clientY - drag.startClientY) / Math.max(1, drag.stageH)) * 100
+        const nextRect = applyScreenTitlePlacementDrag(drag.baseRect, drag.mode, dxPct, dyPct)
+        setScreenTitlePlacementEditor((prev) => {
+          if (!prev) return prev
+          const activeId = String(prev.activeInstanceId || '')
+          const nextInstances = (prev.instances || []).map((inst) =>
+            String(inst.id) === activeId
+              ? { ...inst, customStyle: { ...(inst.customStyle || {}), placementRect: nextRect } }
+              : inst
+          )
+          return { ...prev, instances: nextInstances }
+        })
+      }
+      const stop = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onUp)
+        screenTitlePlacementDragRef.current = null
+      }
+      const onUp = () => {
+        stop()
+        if (screenTitlePlacementStopDragRef.current === stop) {
+          screenTitlePlacementStopDragRef.current = null
+        }
+      }
+      screenTitlePlacementStopDragRef.current = stop
+      window.addEventListener('pointermove', onMove, { passive: true })
+      window.addEventListener('pointerup', onUp, { once: true })
+      window.addEventListener('pointercancel', onUp, { once: true })
+      setScreenTitlePlacementError(null)
+      e.preventDefault()
+      e.stopPropagation()
+    },
+    [screenTitlePlacementEditor]
+  )
+
+  const beginScreenTitlePlacementPanelDrag = useCallback(
+    (e: React.PointerEvent) => {
+      if (!screenTitlePlacementEditor) return
+      if ((e as any).button != null && (e as any).button !== 0) return
+      if (screenTitlePlacementPanelStopDragRef.current) {
+        screenTitlePlacementPanelStopDragRef.current()
+        screenTitlePlacementPanelStopDragRef.current = null
+      }
+      screenTitlePlacementPanelDragRef.current = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        baseX: Number(screenTitlePlacementPanelPos.x || 0),
+        baseY: Number(screenTitlePlacementPanelPos.y || 0),
+      }
+      const onMove = (ev: PointerEvent) => {
+        const drag = screenTitlePlacementPanelDragRef.current
+        if (!drag || ev.pointerId !== drag.pointerId) return
+        const dx = ev.clientX - drag.startClientX
+        const dy = ev.clientY - drag.startClientY
+        const stageRect = screenTitlePlacementStageRef.current?.getBoundingClientRect()
+        const panelRect = screenTitlePlacementPanelRef.current?.getBoundingClientRect()
+        const stageW = Number(stageRect?.width || 0)
+        const stageH = Number(stageRect?.height || 0)
+        const panelW = Number(panelRect?.width || 236)
+        const panelH = Number(panelRect?.height || 228)
+        const minX = 8
+        const minY = 8
+        const maxX = stageW > 0 ? Math.max(minX, Math.round(stageW - panelW - 8)) : 9999
+        const maxY = stageH > 0 ? Math.max(minY, Math.round(stageH - panelH - 8)) : 9999
+        setScreenTitlePlacementPanelPos({
+          x: Math.round(clamp(drag.baseX + dx, minX, maxX)),
+          y: Math.round(clamp(drag.baseY + dy, minY, maxY)),
+        })
+      }
+      const stop = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointercancel', onUp)
+        screenTitlePlacementPanelDragRef.current = null
+      }
+      const onUp = (ev: PointerEvent) => {
+        const drag = screenTitlePlacementPanelDragRef.current
+        if (!drag || ev.pointerId !== drag.pointerId) return
+        stop()
+        if (screenTitlePlacementPanelStopDragRef.current === stop) {
+          screenTitlePlacementPanelStopDragRef.current = null
+        }
+      }
+      screenTitlePlacementPanelStopDragRef.current = stop
+      window.addEventListener('pointermove', onMove, { passive: true })
+      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointercancel', onUp)
+      e.preventDefault()
+      e.stopPropagation()
+    },
+    [screenTitlePlacementEditor, screenTitlePlacementPanelPos.x, screenTitlePlacementPanelPos.y]
+  )
+
+  const nudgeScreenTitlePlacement = useCallback(
+    (action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out') => {
+      if (!screenTitlePlacementEditor) return
+      const stageBounds = screenTitlePlacementStageRef.current?.getBoundingClientRect()
+      const stageW = Number(stageBounds?.width || 0)
+      const stageH = Number(stageBounds?.height || 0)
+      if (!(stageW > 0 && stageH > 0)) return
+      const stepPx = Number(screenTitlePlacementStepPx || 1)
+      const dxPct = (stepPx / stageW) * 100
+      const dyPct = (stepPx / stageH) * 100
+
+      setScreenTitlePlacementEditor((prev) => {
+        if (!prev) return prev
+        const activeId = String(prev.activeInstanceId || '')
+        const idx = (prev.instances || []).findIndex((inst) => String(inst.id) === activeId)
+        if (idx < 0) return prev
+        const current = (prev.instances || [])[idx] as any
+        const baseRect = normalizeScreenTitlePlacementRectForEditor((current?.customStyle as any)?.placementRect)
+        let nextRect = baseRect
+        if (screenTitlePlacementControlMode === 'move') {
+          if (action === 'move_left') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', -dxPct, 0)
+          if (action === 'move_right') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', dxPct, 0)
+          if (action === 'move_up') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, -dyPct)
+          if (action === 'move_down') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, dyPct)
+        } else {
+          if (action !== 'edge_in' && action !== 'edge_out') return prev
+          if (screenTitlePlacementControlMode === 'left') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'left', action === 'edge_out' ? -dxPct : dxPct, 0)
+          } else if (screenTitlePlacementControlMode === 'right') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'right', action === 'edge_out' ? dxPct : -dxPct, 0)
+          } else if (screenTitlePlacementControlMode === 'top') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'top', 0, action === 'edge_out' ? -dyPct : dyPct)
+          } else if (screenTitlePlacementControlMode === 'bottom') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'bottom', 0, action === 'edge_out' ? dyPct : -dyPct)
+          }
+        }
+        const nextInstances = (prev.instances || []).slice()
+        nextInstances[idx] = {
+          ...current,
+          customStyle: { ...(current?.customStyle || {}), placementRect: nextRect },
+        }
+        return { ...prev, instances: nextInstances }
+      })
+      setScreenTitlePlacementError(null)
+    },
+    [screenTitlePlacementControlMode, screenTitlePlacementEditor, screenTitlePlacementStepPx]
+  )
+
+  const saveScreenTitlePlacement = useCallback(async (closeEditorOnSuccess: boolean = true) => {
+    if (!screenTitlePlacementEditor) return
+    const presetIdRaw = screenTitlePlacementEditor.presetId
+    const presetId = presetIdRaw == null ? null : Number(presetIdRaw)
+    if (!presetId || !Number.isFinite(presetId) || presetId <= 0) {
+      setScreenTitlePlacementError('Pick a screen title style.')
+      return
+    }
+    const rawInstances = Array.isArray(screenTitlePlacementEditor.instances) ? screenTitlePlacementEditor.instances : []
+    if (!rawInstances.length) {
+      setScreenTitlePlacementError('Add a text instance.')
+      return
+    }
+
+    setScreenTitleRenderBusy(true)
+    setScreenTitlePlacementError(null)
+    try {
+      const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+      if (!preset) throw new Error('Screen title style not found.')
+      const snapshot = buildScreenTitlePresetSnapshot(preset)
+      const normalizedInstances: ScreenTitleInstanceDraft[] = []
+      for (const inst of rawInstances) {
+        const text = String(inst?.text || '').replace(/\r\n/g, '\n').trim()
+        if (!text) continue
+        if (text.length > 1000) throw new Error('Max 1000 characters.')
+        if (text.split('\n').length > 30) throw new Error('Max 30 lines.')
+        const safePlacementRect = normalizeScreenTitlePlacementRectForEditor((inst?.customStyle as any)?.placementRect)
+        const customStyle = normalizeScreenTitleCustomStyleForSave(
+          { ...(inst?.customStyle || {}), placementRect: safePlacementRect },
+          snapshot
+        )
+        normalizedInstances.push({
+          id: String(inst?.id || ''),
+          text,
+          customStyle,
+        })
+      }
+      if (!normalizedInstances.length) throw new Error('Enter text.')
+      const renderInstances = normalizedInstances.map((inst) => ({
+        text: inst.text,
+        presetOverride: buildScreenTitlePresetOverride(inst.customStyle || null),
+      }))
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const res = await fetch(`/api/create-video/screen-titles/render`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify({
+          presetId,
+          frameW: outputFrame.width,
+          frameH: outputFrame.height,
+          instances: renderInstances,
+        }),
+      })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || json?.message || 'internal_error'))
+      const uploadId = Number(json?.uploadId || 0)
+      if (!Number.isFinite(uploadId) || uploadId <= 0) throw new Error('bad_upload_id')
+
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+        const idx = prevSts.findIndex((st) => String((st as any).id) === String(screenTitlePlacementEditor.id))
+        if (idx < 0) return prev
+        const prevSeg: any = prevSts[idx] as any
+        const primaryInst = normalizedInstances[0] || { text: '', customStyle: null }
+        const updated: any = {
+          ...prevSeg,
+          presetId,
+          presetSnapshot: snapshot,
+          instances: normalizedInstances,
+          customStyle: primaryInst?.customStyle || null,
+          text: String(primaryInst?.text || ''),
+          renderUploadId: uploadId,
+        }
+        const nextSts = prevSts.slice()
+        nextSts[idx] = updated
+        nextSts.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { ...prev, screenTitles: nextSts }
+      })
+
+      try {
+        const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
+        if (url) {
+          setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
+        }
+      } catch {}
+
+      if (closeEditorOnSuccess) {
+        setScreenTitlePlacementEditor(null)
+      } else {
+        setScreenTitlePlacementEditor((prev) => {
+          if (!prev) return prev
+          if (String(prev.id) !== String(screenTitlePlacementEditor.id)) return prev
+          return {
+            ...prev,
+            presetId,
+            instances: normalizedInstances,
+          }
+        })
+      }
+      setScreenTitlePlacementError(null)
+    } catch (e: any) {
+      setScreenTitlePlacementError(e?.message || 'internal_error')
+    } finally {
+      setScreenTitleRenderBusy(false)
+    }
+  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
 
   const generateScreenTitle = useCallback(async () => {
     if (!screenTitleCustomizeEditor) return
@@ -16350,7 +16928,7 @@ export default function CreateVideo() {
                 </div>
               </>
             ) : null}
-	            {showPreviewToolbar && hasPlayablePreview ? (
+	            {showPreviewToolbar && hasPlayablePreview && !screenTitlePlacementEditor ? (
 	              <div
 	                ref={previewToolbarRef}
 	                style={{
@@ -16676,6 +17254,529 @@ export default function CreateVideo() {
 	                  alt=""
 	                  style={activeScreenTitlePreview.style}
                 />
+              ) : null}
+              {screenTitlePlacementEditor ? (
+                <div
+                  ref={screenTitlePlacementStageRef}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 120,
+                    pointerEvents: 'none',
+                    touchAction: 'none',
+                  }}
+                >
+                    <div
+                      ref={screenTitlePlacementPanelRef}
+                      style={{
+                        position: 'absolute',
+                        left: Math.round(screenTitlePlacementPanelPos.x),
+                        top: Math.round(screenTitlePlacementPanelPos.y),
+                        zIndex: 60,
+                        width: 236,
+                        borderRadius: 12,
+                        border: '1px solid rgba(255,255,255,0.20)',
+                        background: 'rgba(0,0,0,0.72)',
+                        backdropFilter: 'blur(6px)',
+                        pointerEvents: 'auto',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '7px 10px',
+                          borderBottom: '1px solid rgba(255,255,255,0.14)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          onPointerDown={beginScreenTitlePlacementPanelDrag}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            minWidth: 0,
+                            cursor: 'grab',
+                            touchAction: 'none',
+                          }}
+                          title="Drag panel"
+                        >
+                          <span style={{ color: '#dbeafe', fontSize: 12, fontWeight: 900 }}>Placement Tools</span>
+                          <span style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 900 }}>::</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScreenTitlePlacementEditor(null)
+                            setScreenTitlePlacementError(null)
+                            setScreenTitlePlacementAdvancedOpen(false)
+                          }}
+                          style={{
+                            borderRadius: 8,
+                            border: '1px solid rgba(255,255,255,0.22)',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: '#fff',
+                            width: 26,
+                            height: 26,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 13,
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                            flex: '0 0 auto',
+                          }}
+                          aria-label="Close placement tools"
+                        >
+                          X
+                        </button>
+                      </div>
+                      <div style={{ padding: 10, display: 'grid', gap: 10 }}>
+                        <label style={{ display: 'grid', gap: 4 }}>
+                          <span style={{ color: '#bbb', fontSize: 11, fontWeight: 900 }}>Instance</span>
+                          <select
+                            value={String(screenTitlePlacementEditor.activeInstanceId || '')}
+                            onChange={(e) => {
+                              const nextId = String(e.target.value || '')
+                              setScreenTitlePlacementEditor((p) => (p ? { ...p, activeInstanceId: nextId } : p))
+                              setScreenTitlePlacementError(null)
+                            }}
+                            style={{
+                              width: '100%',
+                              borderRadius: 8,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: '#0b0b0b',
+                              color: '#fff',
+                              padding: '6px 8px',
+                              fontSize: 12,
+                              fontWeight: 900,
+                              boxSizing: 'border-box',
+                            }}
+                          >
+                            {(screenTitlePlacementEditor.instances || []).map((inst: any, idx: number) => (
+                              <option key={String(inst?.id || idx)} value={String(inst?.id || '')}>
+                                {`Instance ${idx + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          <div
+                            style={{
+                              position: 'relative',
+                              width: 78,
+                              height: 78,
+                              borderRadius: 8,
+                              border: '1px solid rgba(255,255,255,0.22)',
+                              background: 'rgba(255,255,255,0.04)',
+                              overflow: 'hidden',
+                              flex: '0 0 auto',
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitlePlacementControlMode('top')}
+                              style={{
+                                position: 'absolute',
+                                left: 20,
+                                right: 20,
+                                top: 0,
+                                height: 20,
+                                border: 0,
+                                background: screenTitlePlacementControlMode === 'top' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                color: '#fff',
+                                cursor: 'pointer',
+                              }}
+                              aria-label="Select top edge"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitlePlacementControlMode('right')}
+                              style={{
+                                position: 'absolute',
+                                top: 20,
+                                right: 0,
+                                width: 20,
+                                bottom: 20,
+                                border: 0,
+                                background: screenTitlePlacementControlMode === 'right' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                color: '#fff',
+                                cursor: 'pointer',
+                              }}
+                              aria-label="Select right edge"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitlePlacementControlMode('bottom')}
+                              style={{
+                                position: 'absolute',
+                                left: 20,
+                                right: 20,
+                                bottom: 0,
+                                height: 20,
+                                border: 0,
+                                background: screenTitlePlacementControlMode === 'bottom' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                color: '#fff',
+                                cursor: 'pointer',
+                              }}
+                              aria-label="Select bottom edge"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitlePlacementControlMode('left')}
+                              style={{
+                                position: 'absolute',
+                                top: 20,
+                                left: 0,
+                                width: 20,
+                                bottom: 20,
+                                border: 0,
+                                background: screenTitlePlacementControlMode === 'left' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                color: '#fff',
+                                cursor: 'pointer',
+                              }}
+                              aria-label="Select left edge"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setScreenTitlePlacementControlMode('move')}
+                              style={{
+                                position: 'absolute',
+                                left: '50%',
+                                top: '50%',
+                                width: 24,
+                                height: 24,
+                                transform: 'translate(-50%, -50%)',
+                                borderRadius: 999,
+                                border: `1px solid ${screenTitlePlacementControlMode === 'move' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.4)'}`,
+                                background: screenTitlePlacementControlMode === 'move' ? 'rgba(96,165,250,0.30)' : 'rgba(255,255,255,0.08)',
+                                color: '#fff',
+                                cursor: 'pointer',
+                              }}
+                              aria-label="Select move mode"
+                            >
+                              •
+                            </button>
+                          </div>
+                          <div style={{ display: 'grid', gap: 6, minWidth: 0, flex: 1 }}>
+                            <div style={{ color: '#bbb', fontSize: 11, fontWeight: 900 }}>
+                              {screenTitlePlacementControlMode === 'move'
+                                ? 'Mode: Move'
+                                : `Mode: Edge ${screenTitlePlacementControlMode}`}
+                            </div>
+                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => setScreenTitlePlacementStepPx(1)}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: 8,
+                                  border: `1px solid ${screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                                  background: screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                                  color: '#fff',
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                1px
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setScreenTitlePlacementStepPx(5)}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: 8,
+                                  border: `1px solid ${screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                                  background: screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                                  color: '#fff',
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                5px
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        {screenTitlePlacementControlMode === 'move' ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_left')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              ←
+                            </button>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_up')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              ↑
+                            </button>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_down')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              ↓
+                            </button>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_right')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              →
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('edge_in')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              {screenTitlePlacementControlMode === 'left'
+                                ? '→ In'
+                                : screenTitlePlacementControlMode === 'right'
+                                  ? '← In'
+                                  : screenTitlePlacementControlMode === 'top'
+                                    ? '↓ In'
+                                    : '↑ In'}
+                            </button>
+                            <button type="button" onClick={() => nudgeScreenTitlePlacement('edge_out')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
+                              {screenTitlePlacementControlMode === 'left'
+                                ? '← Out'
+                                : screenTitlePlacementControlMode === 'right'
+                                  ? '→ Out'
+                                  : screenTitlePlacementControlMode === 'top'
+                                    ? '↑ Out'
+                                    : '↓ Out'}
+                            </button>
+                          </div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <button
+                            type="button"
+                            disabled={screenTitleRenderBusy}
+                            onClick={() => {
+                              setScreenTitlePlacementEditor(null)
+                              setScreenTitlePlacementError(null)
+                              setScreenTitlePlacementAdvancedOpen(false)
+                            }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(255,255,255,0.22)',
+                              background: 'rgba(255,255,255,0.08)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: screenTitleRenderBusy ? 'default' : 'pointer',
+                            }}
+                          >
+                            Done
+                          </button>
+                          <button
+                            type="button"
+                            disabled={screenTitleRenderBusy}
+                            onClick={() => { void saveScreenTitlePlacement(false) }}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: 8,
+                              border: '1px solid rgba(96,165,250,0.95)',
+                              background: screenTitleRenderBusy ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.24)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: screenTitleRenderBusy ? 'default' : 'pointer',
+                            }}
+                          >
+                            {screenTitleRenderBusy ? 'Rendering...' : 'Render'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+	                  {screenTitlePlacementError ? (
+	                    <div
+	                      style={{
+                        position: 'absolute',
+                        left: 8,
+                        right: 8,
+                        top: 62,
+                        color: '#ff9b9b',
+                        fontSize: 12,
+                        fontWeight: 900,
+                        background: 'rgba(0,0,0,0.52)',
+                        border: '1px solid rgba(255,155,155,0.35)',
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      {screenTitlePlacementError}
+                    </div>
+                  ) : null}
+                  {screenTitlePlacementInRange && screenTitlePlacementActiveRect ? (
+                    <>
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: `${SCREEN_TITLE_SAFE_AREA_LEFT_PCT}%`,
+                          top: `${SCREEN_TITLE_SAFE_AREA_TOP_PCT}%`,
+                          width: `${100 - SCREEN_TITLE_SAFE_AREA_LEFT_PCT - SCREEN_TITLE_SAFE_AREA_RIGHT_PCT}%`,
+                          height: `${100 - SCREEN_TITLE_SAFE_AREA_TOP_PCT - SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT}%`,
+                          border: '1px dashed rgba(180,200,220,0.75)',
+                          background: 'rgba(80,104,128,0.05)',
+                          boxSizing: 'border-box',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                      {screenTitlePlacementPassiveRects.map((item, idx) => (
+                        <div
+                          key={`st_place_passive_${String(item.id || idx)}`}
+                          style={{
+                            position: 'absolute',
+                            left: `${item.rect.xPct}%`,
+                            top: `${item.rect.yPct}%`,
+                            width: `${item.rect.wPct}%`,
+                            height: `${item.rect.hPct}%`,
+                            border: '1px solid rgba(200,220,245,0.55)',
+                            background: 'rgba(150,180,210,0.06)',
+                            borderRadius: 8,
+                            boxSizing: 'border-box',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      ))}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: `${screenTitlePlacementActiveRect.xPct}%`,
+                          top: `${screenTitlePlacementActiveRect.yPct}%`,
+                          width: `${screenTitlePlacementActiveRect.wPct}%`,
+                          height: `${screenTitlePlacementActiveRect.hPct}%`,
+                          border: '2px solid rgba(96,165,250,1)',
+                          background: 'rgba(96,165,250,0.16)',
+                          borderRadius: 8,
+                          boxSizing: 'border-box',
+                          cursor: 'move',
+                          touchAction: 'none',
+                          pointerEvents: 'auto',
+                        }}
+                        onPointerDown={(e) => {
+                          setScreenTitlePlacementControlMode('move')
+                          beginScreenTitlePlacementDrag('move', screenTitlePlacementActiveRect, e)
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 8,
+                            top: 6,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: '#dbeafe',
+                            textShadow: '0 1px 2px rgba(0,0,0,0.65)',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          Text Area
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Resize top"
+                          onPointerDown={(e) => {
+                            setScreenTitlePlacementControlMode('top')
+                            beginScreenTitlePlacementDrag('top', screenTitlePlacementActiveRect, e)
+                          }}
+                          style={{
+                            position: 'absolute',
+                            left: '50%',
+                            top: -8,
+                            transform: 'translateX(-50%)',
+                            width: 16,
+                            height: 16,
+                            borderRadius: 999,
+                            border: '2px solid rgba(96,165,250,1)',
+                            background: 'rgba(8,12,18,0.95)',
+                            cursor: 'ns-resize',
+                            touchAction: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Resize right"
+                          onPointerDown={(e) => {
+                            setScreenTitlePlacementControlMode('right')
+                            beginScreenTitlePlacementDrag('right', screenTitlePlacementActiveRect, e)
+                          }}
+                          style={{
+                            position: 'absolute',
+                            right: -8,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: 16,
+                            height: 16,
+                            borderRadius: 999,
+                            border: '2px solid rgba(96,165,250,1)',
+                            background: 'rgba(8,12,18,0.95)',
+                            cursor: 'ew-resize',
+                            touchAction: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Resize bottom"
+                          onPointerDown={(e) => {
+                            setScreenTitlePlacementControlMode('bottom')
+                            beginScreenTitlePlacementDrag('bottom', screenTitlePlacementActiveRect, e)
+                          }}
+                          style={{
+                            position: 'absolute',
+                            left: '50%',
+                            bottom: -8,
+                            transform: 'translateX(-50%)',
+                            width: 16,
+                            height: 16,
+                            borderRadius: 999,
+                            border: '2px solid rgba(96,165,250,1)',
+                            background: 'rgba(8,12,18,0.95)',
+                            cursor: 'ns-resize',
+                            touchAction: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label="Resize left"
+                          onPointerDown={(e) => {
+                            setScreenTitlePlacementControlMode('left')
+                            beginScreenTitlePlacementDrag('left', screenTitlePlacementActiveRect, e)
+                          }}
+                          style={{
+                            position: 'absolute',
+                            left: -8,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: 16,
+                            height: 16,
+                            borderRadius: 999,
+                            border: '2px solid rgba(96,165,250,1)',
+                            background: 'rgba(8,12,18,0.95)',
+                            cursor: 'ew-resize',
+                            touchAction: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 8,
+                        right: 8,
+                        bottom: 8,
+                        color: '#ffd24a',
+                        fontSize: 12,
+                        fontWeight: 900,
+                        background: 'rgba(0,0,0,0.62)',
+                        border: '1px solid rgba(212,175,55,0.5)',
+                        borderRadius: 8,
+                        padding: '6px 8px',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      Playhead is outside this screen title segment. Move playhead into the segment to adjust placement.
+                    </div>
+                  )}
+                </div>
               ) : null}
 	            {activeLowerThirdPreview ? (
 	              <img
@@ -20743,31 +21844,6 @@ export default function CreateVideo() {
                 Number((effective as any)?.fontSizePct ?? (baseSnapshot as any)?.fontSizePct ?? sizeOptions[0]?.fontSizePct),
                 sizeOptions
               )
-              const baseMarginXPct =
-                (effective as any)?.marginLeftPct != null
-                  ? Number((effective as any).marginLeftPct)
-                  : screenTitleInsetPresetToMarginPct((effective as any)?.insetXPreset)
-              const baseMarginYPct =
-                (effective as any)?.marginTopPct != null
-                  ? Number((effective as any).marginTopPct)
-                  : screenTitleInsetPresetToMarginPct((effective as any)?.insetYPreset)
-              const marginXDisplay = Number.isFinite(Number((customStyle as any)?.marginXPx))
-                ? Number((customStyle as any).marginXPx)
-                : screenTitleMarginPctToPx(baseMarginXPct)
-              const marginYDisplay = Number.isFinite(Number((customStyle as any)?.marginYPx))
-                ? Number((customStyle as any).marginYPx)
-                : screenTitleMarginPctToPx(baseMarginYPct)
-              const offsetXDisplay = Number.isFinite(Number((customStyle as any)?.offsetXPx))
-                ? Number((customStyle as any).offsetXPx)
-                : Number.isFinite(Number((customStyle as any)?.marginXPx))
-                  ? Number((customStyle as any).marginXPx)
-                  : 0
-              const offsetYDisplay = Number.isFinite(Number((customStyle as any)?.offsetYPx))
-                ? Number((customStyle as any).offsetYPx)
-                : Number.isFinite(Number((customStyle as any)?.marginYPx))
-                  ? Number((customStyle as any).marginYPx)
-                  : 0
-              const pos = String((effective as any)?.position || 'top') as 'top' | 'middle' | 'bottom'
               const align = String((effective as any)?.alignment || 'center') as 'left' | 'center' | 'right'
               const effectiveGradient =
                 customStyle && (customStyle as any).fontGradientKey !== undefined
@@ -20778,18 +21854,11 @@ export default function CreateVideo() {
                 (customStyle as any)?.fontColor != null && String((customStyle as any).fontColor).trim()
                   ? String((customStyle as any).fontColor)
                   : String((baseSnapshot as any)?.fontColor || '#ffffff')
-              const gridItems = [
-                { key: 'top_left', row: 'top', col: 'left' },
-                { key: 'top_center', row: 'top', col: 'center' },
-                { key: 'top_right', row: 'top', col: 'right' },
-                { key: 'middle_left', row: 'middle', col: 'left' },
-                { key: 'middle_center', row: 'middle', col: 'center' },
-                { key: 'middle_right', row: 'middle', col: 'right' },
-                { key: 'bottom_left', row: 'bottom', col: 'left' },
-                { key: 'bottom_center', row: 'bottom', col: 'center' },
-                { key: 'bottom_right', row: 'bottom', col: 'right' },
-              ] as const
-              const activeKey = `${pos}_${align}`
+              const alignItems: Array<{ key: 'left' | 'center' | 'right'; label: string }> = [
+                { key: 'left', label: 'Left' },
+                { key: 'center', label: 'Center' },
+                { key: 'right', label: 'Right' },
+              ]
 
               return (
                 <>
@@ -20830,7 +21899,7 @@ export default function CreateVideo() {
                       Close
                     </button>
                   </div>
-                  <div style={{ fontSize: 18, fontWeight: 900, marginTop: 8 }}>Customize Screen Title</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, marginTop: 8 }}>Customize Screen Title Style</div>
 
                   <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
@@ -20984,20 +22053,20 @@ export default function CreateVideo() {
                     </label>
 
                     <div style={{ display: 'grid', gap: 8 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Position</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                        {gridItems.map((g) => {
-                          const isActive = activeKey === g.key
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Text Align</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                        {alignItems.map((item) => {
+                          const isActive = align === item.key
                           return (
                             <button
-                              key={g.key}
+                              key={item.key}
                               type="button"
                               onClick={() => {
                                 setScreenTitleCustomizeEditor((p) => {
                                   if (!p) return p
                                   const nextInstances = (p.instances || []).map((inst) =>
                                     String(inst.id) === String(activeInstanceId)
-                                      ? { ...inst, customStyle: { ...(inst.customStyle || {}), position: g.row, alignment: g.col } }
+                                      ? { ...inst, customStyle: { ...(inst.customStyle || {}), alignment: item.key } }
                                       : inst
                                   )
                                   return { ...p, instances: nextInstances }
@@ -21013,83 +22082,11 @@ export default function CreateVideo() {
                                 fontWeight: 900,
                                 cursor: 'pointer',
                               }}
-                            />
+                            >
+                              {item.label}
+                            </button>
                           )
                         })}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div style={{ color: '#bbb', fontSize: 13 }}>Offset</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>X: {Math.round(offsetXDisplay)}px</div>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {[-5, -1, 1, 5].map((delta) => (
-                              <button
-                                key={`x_${delta}`}
-                                type="button"
-                                onClick={() => {
-                                  const nextVal = Math.max(-1000, Math.min(1000, (Number(offsetXDisplay) || 0) + delta))
-                                  setScreenTitleCustomizeEditor((p) => {
-                                    if (!p) return p
-                                    const nextInstances = (p.instances || []).map((inst) =>
-                                      String(inst.id) === String(activeInstanceId)
-                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetXPx: nextVal } }
-                                        : inst
-                                    )
-                                    return { ...p, instances: nextInstances }
-                                  })
-                                }}
-                                style={{
-                                  padding: '6px 10px',
-                                  borderRadius: 10,
-                                  border: '1px solid rgba(255,255,255,0.18)',
-                                  background: 'rgba(255,255,255,0.06)',
-                                  color: '#fff',
-                                  fontWeight: 900,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {delta > 0 ? `+${delta}` : `${delta}`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 700 }}>Y: {Math.round(offsetYDisplay)}px</div>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {[-5, -1, 1, 5].map((delta) => (
-                              <button
-                                key={`y_${delta}`}
-                                type="button"
-                                onClick={() => {
-                                  const nextVal = Math.max(-1000, Math.min(1000, (Number(offsetYDisplay) || 0) + delta))
-                                  setScreenTitleCustomizeEditor((p) => {
-                                    if (!p) return p
-                                    const nextInstances = (p.instances || []).map((inst) =>
-                                      String(inst.id) === String(activeInstanceId)
-                                        ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetYPx: nextVal } }
-                                        : inst
-                                    )
-                                    return { ...p, instances: nextInstances }
-                                  })
-                                }}
-                                style={{
-                                  padding: '6px 10px',
-                                  borderRadius: 10,
-                                  border: '1px solid rgba(255,255,255,0.18)',
-                                  background: 'rgba(255,255,255,0.06)',
-                                  color: '#fff',
-                                  fontWeight: 900,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {delta > 0 ? `+${delta}` : `${delta}`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
                       </div>
                     </div>
 
@@ -21110,57 +22107,6 @@ export default function CreateVideo() {
                       >
                         Reset to Base
                       </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
-                      <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-                        <div style={{ color: '#bbb', fontSize: 13 }}>Offset X (px)</div>
-                        <input
-                          type="number"
-                          min={-1000}
-                          max={1000}
-                          step={1}
-                          value={Number.isFinite(offsetXDisplay) ? String(Math.round(offsetXDisplay)) : '0'}
-                          onChange={(e) => {
-                            const next = Number(e.target.value)
-                            const clamped = Number.isFinite(next) ? Math.max(-1000, Math.min(1000, next)) : 0
-                            setScreenTitleCustomizeEditor((p) => {
-                              if (!p) return p
-                              const nextInstances = (p.instances || []).map((inst) =>
-                                String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetXPx: clamped } }
-                                  : inst
-                              )
-                              return { ...p, instances: nextInstances }
-                            })
-                          }}
-                          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                        />
-                      </label>
-                      <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-                        <div style={{ color: '#bbb', fontSize: 13 }}>Offset Y (px)</div>
-                        <input
-                          type="number"
-                          min={-1000}
-                          max={1000}
-                          step={1}
-                          value={Number.isFinite(offsetYDisplay) ? String(Math.round(offsetYDisplay)) : '0'}
-                          onChange={(e) => {
-                            const next = Number(e.target.value)
-                            const clamped = Number.isFinite(next) ? Math.max(-1000, Math.min(1000, next)) : 0
-                            setScreenTitleCustomizeEditor((p) => {
-                              if (!p) return p
-                              const nextInstances = (p.instances || []).map((inst) =>
-                                String(inst.id) === String(activeInstanceId)
-                                  ? { ...inst, customStyle: { ...(inst.customStyle || {}), offsetYPx: clamped } }
-                                  : inst
-                              )
-                              return { ...p, instances: nextInstances }
-                            })
-                          }}
-                          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900 }}
-                        />
-                      </label>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -21345,6 +22291,225 @@ export default function CreateVideo() {
                         {screenTitleRenderBusy ? 'Saving…' : 'Save'}
                       </button>
                     </div>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        </div>
+      ) : null}
+
+      {screenTitlePlacementEditor && screenTitlePlacementAdvancedOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.86)', zIndex: 1100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '64px 16px 96px' }}
+          onClick={() => { setScreenTitlePlacementAdvancedOpen(false); setScreenTitlePlacementError(null) }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 640,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
+            }}
+          >
+            {(() => {
+              const instances = Array.isArray(screenTitlePlacementEditor.instances) ? screenTitlePlacementEditor.instances : []
+              const activeInstanceId = String(screenTitlePlacementEditor.activeInstanceId || '')
+              const activeIndex = instances.findIndex((inst) => String(inst.id) === activeInstanceId)
+              const activeInstance = activeIndex >= 0 ? instances[activeIndex] : instances[0]
+              const activeRect = normalizeScreenTitlePlacementRectForEditor((activeInstance?.customStyle as any)?.placementRect)
+              const safeRect = defaultScreenTitlePlacementRect()
+              const handleStyle: React.CSSProperties = {
+                position: 'absolute',
+                width: 16,
+                height: 16,
+                borderRadius: 999,
+                border: '2px solid rgba(96,165,250,1)',
+                background: 'rgba(8,12,18,0.95)',
+                cursor: 'pointer',
+                touchAction: 'none',
+                boxSizing: 'border-box',
+              }
+
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontSize: 18, fontWeight: 900 }}>Customize Screen Title Placement</div>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenTitlePlacementAdvancedOpen(false); setScreenTitlePlacementError(null) }}
+                      style={{ color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.20)', padding: '8px 10px', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                    <div style={{ color: '#bbb', fontSize: 13, fontWeight: 800 }}>Instances</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {instances.map((inst, idx) => {
+                        const isActive = String(inst.id) === String(activeInstanceId)
+                        return (
+                          <button
+                            key={String(inst.id)}
+                            type="button"
+                            onClick={() => {
+                              setScreenTitlePlacementEditor((p) => (p ? { ...p, activeInstanceId: String(inst.id) } : p))
+                              setScreenTitlePlacementError(null)
+                            }}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 10,
+                              border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                              background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Instance {idx + 1}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, color: '#9aa3ad', fontSize: 13 }}>
+                    Drag the box to move. Drag side handles to resize. Placement is constrained to safe area.
+                  </div>
+
+                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ width: '100%', maxWidth: 360 }}>
+                      <div
+                        ref={screenTitlePlacementStageRef}
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          aspectRatio: '9 / 16',
+                          borderRadius: 12,
+                          border: '1px solid rgba(255,255,255,0.22)',
+                          background:
+                            'linear-gradient(180deg, rgba(23,29,36,0.96) 0%, rgba(8,12,18,0.96) 100%)',
+                          overflow: 'hidden',
+                          touchAction: 'none',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${safeRect.xPct}%`,
+                            top: `${safeRect.yPct}%`,
+                            width: `${safeRect.wPct}%`,
+                            height: `${safeRect.hPct}%`,
+                            border: '1px dashed rgba(180,200,220,0.85)',
+                            background: 'rgba(80,104,128,0.07)',
+                            pointerEvents: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        {activeInstance ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: `${activeRect.xPct}%`,
+                              top: `${activeRect.yPct}%`,
+                              width: `${activeRect.wPct}%`,
+                              height: `${activeRect.hPct}%`,
+                              border: '2px solid rgba(96,165,250,1)',
+                              background: 'rgba(96,165,250,0.16)',
+                              borderRadius: 8,
+                              boxSizing: 'border-box',
+                              cursor: 'move',
+                              touchAction: 'none',
+                              overflow: 'hidden',
+                            }}
+                            onPointerDown={(e) => {
+                              setScreenTitlePlacementControlMode('move')
+                              beginScreenTitlePlacementDrag('move', activeRect, e)
+                            }}
+                          >
+                            <div style={{ position: 'absolute', left: 8, top: 6, fontSize: 12, fontWeight: 900, color: '#dbeafe', textShadow: '0 1px 2px rgba(0,0,0,0.65)' }}>
+                              {String(activeInstance.text || '').trim() ? 'Text Area' : 'Empty'}
+                            </div>
+
+                            <button
+                              type="button"
+                              aria-label="Resize top"
+                              onPointerDown={(e) => {
+                                setScreenTitlePlacementControlMode('top')
+                                beginScreenTitlePlacementDrag('top', activeRect, e)
+                              }}
+                              style={{ ...handleStyle, left: '50%', top: -8, transform: 'translateX(-50%)', cursor: 'ns-resize' }}
+                            />
+                            <button
+                              type="button"
+                              aria-label="Resize right"
+                              onPointerDown={(e) => {
+                                setScreenTitlePlacementControlMode('right')
+                                beginScreenTitlePlacementDrag('right', activeRect, e)
+                              }}
+                              style={{ ...handleStyle, right: -8, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }}
+                            />
+                            <button
+                              type="button"
+                              aria-label="Resize bottom"
+                              onPointerDown={(e) => {
+                                setScreenTitlePlacementControlMode('bottom')
+                                beginScreenTitlePlacementDrag('bottom', activeRect, e)
+                              }}
+                              style={{ ...handleStyle, left: '50%', bottom: -8, transform: 'translateX(-50%)', cursor: 'ns-resize' }}
+                            />
+                            <button
+                              type="button"
+                              aria-label="Resize left"
+                              onPointerDown={(e) => {
+                                setScreenTitlePlacementControlMode('left')
+                                beginScreenTitlePlacementDrag('left', activeRect, e)
+                              }}
+                              style={{ ...handleStyle, left: -8, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, color: '#9aa3ad', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                    Min size: {SCREEN_TITLE_PLACEMENT_MIN_W_PCT}% W, {SCREEN_TITLE_PLACEMENT_MIN_H_PCT}% H
+                  </div>
+                  {screenTitlePlacementError ? <div style={{ marginTop: 10, color: '#ff9b9b', fontSize: 13 }}>{screenTitlePlacementError}</div> : null}
+
+                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenTitlePlacementAdvancedOpen(false); setScreenTitlePlacementError(null) }}
+                      style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={screenTitleRenderBusy}
+                      onClick={() => { void saveScreenTitlePlacement() }}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(96,165,250,0.95)',
+                        background: screenTitleRenderBusy ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.25)',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: screenTitleRenderBusy ? 'default' : 'pointer',
+                      }}
+                    >
+                      {screenTitleRenderBusy ? 'Saving…' : 'Save'}
+                    </button>
                   </div>
                 </>
               )
@@ -21823,6 +22988,8 @@ export default function CreateVideo() {
 			                >
 					                  {(timelineCtxMenu.view || 'main') === 'guidelines'
 					                    ? 'Actions'
+                              : (timelineCtxMenu.view || 'main') === 'screenTitlePlacementPick'
+                                ? 'Placement'
 					                    : timelineCtxMenu.kind === 'audioSegment'
 					                      ? 'Audio'
 					                    : timelineCtxMenu.kind === 'still'
@@ -22304,68 +23471,93 @@ export default function CreateVideo() {
                           </button>
                         ) : null}
                         {timelineCtxMenu.kind === 'screenTitle' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
-                              if (!st) return
-                              const presetId = Number((st as any)?.presetId || 0)
-                              if (!Number.isFinite(presetId) || presetId <= 0) {
-                                setScreenTitleCustomizeError('Pick a screen title style.')
-                                return
-                              }
-                              setSelectedScreenTitleId(String((st as any).id))
-                              setSelectedClipId(null)
-                              setSelectedVideoOverlayId(null)
-                              setSelectedGraphicId(null)
-                              setSelectedLogoId(null)
-                              setSelectedLowerThirdId(null)
-                              setSelectedNarrationId(null)
-                              setSelectedStillId(null)
-                              setSelectedAudioId(null)
-                              const rawInstances = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
-                              const instances =
-                                rawInstances.length > 0
-                                  ? rawInstances.map((inst: any, idx: number) => ({
-                                      id: String(inst?.id || `${String((st as any).id)}_i${idx + 1}`),
-                                      text: inst?.text == null ? '' : String(inst.text),
-                                      customStyle: inst?.customStyle ? { ...(inst.customStyle as any) } : null,
-                                    }))
-                                  : [
-                                      {
-                                        id: `${String((st as any).id)}_i1`,
-                                        text: String((st as any).text || ''),
-                                        customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
-                                      },
-                                    ]
-                              const stId = String((st as any).id)
-                              const preferred = screenTitleLastInstanceById[stId]
-                              const preferredExists = preferred && instances.some((inst: any) => String(inst.id) === String(preferred))
-                              setScreenTitleCustomizeEditor({
-                                id: stId,
-                                presetId,
-                                instances,
-                                activeInstanceId: String(preferredExists ? preferred : instances[0]?.id || ''),
-                              })
-                              setScreenTitleCustomizeError(null)
-                              void ensureScreenTitlePresets()
-                              void ensureScreenTitleFonts()
-                              setTimelineCtxMenu(null)
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: '10px 12px',
-                              borderRadius: 10,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              background: '#000',
-                              color: '#fff',
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                            }}
-                          >
-                            Customize Style
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
+                                if (!st) return
+                                const presetId = Number((st as any)?.presetId || 0)
+                                if (!Number.isFinite(presetId) || presetId <= 0) {
+                                  setScreenTitleCustomizeError('Pick a screen title style.')
+                                  return
+                                }
+                                setSelectedScreenTitleId(String((st as any).id))
+                                setSelectedClipId(null)
+                                setSelectedVideoOverlayId(null)
+                                setSelectedGraphicId(null)
+                                setSelectedLogoId(null)
+                                setSelectedLowerThirdId(null)
+                                setSelectedNarrationId(null)
+                                setSelectedStillId(null)
+                                setSelectedAudioId(null)
+                                const rawInstances = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
+                                const instances =
+                                  rawInstances.length > 0
+                                    ? rawInstances.map((inst: any, idx: number) => ({
+                                        id: String(inst?.id || `${String((st as any).id)}_i${idx + 1}`),
+                                        text: inst?.text == null ? '' : String(inst.text),
+                                        customStyle: inst?.customStyle ? { ...(inst.customStyle as any) } : null,
+                                      }))
+                                    : [
+                                        {
+                                          id: `${String((st as any).id)}_i1`,
+                                          text: String((st as any).text || ''),
+                                          customStyle: (st as any).customStyle ? { ...(st as any).customStyle } : null,
+                                        },
+                                      ]
+                                const stId = String((st as any).id)
+                                const preferred = screenTitleLastInstanceById[stId]
+                                const preferredExists = preferred && instances.some((inst: any) => String(inst.id) === String(preferred))
+                                setScreenTitleCustomizeEditor({
+                                  id: stId,
+                                  presetId,
+                                  instances,
+                                  activeInstanceId: String(preferredExists ? preferred : instances[0]?.id || ''),
+                                })
+                                setScreenTitleCustomizeError(null)
+                                void ensureScreenTitlePresets()
+                                void ensureScreenTitleFonts()
+                                setTimelineCtxMenu(null)
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: '#000',
+                                color: '#fff',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              Customize Style
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTimelineCtxMenu((prev) =>
+                                  prev
+                                    ? { ...prev, view: 'screenTitlePlacementPick' }
+                                    : prev
+                                )
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                background: '#000',
+                                color: '#fff',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              Placement
+                            </button>
+                          </>
                         ) : null}
 			                <button
 			                  type="button"
@@ -22455,7 +23647,76 @@ export default function CreateVideo() {
 			                  Delete
 			                </button>
 			              </>
-			            ) : (
+			            ) : (timelineCtxMenu.view === 'screenTitlePlacementPick' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTimelineCtxMenu((prev) => (prev ? { ...prev, view: 'main' } : prev))
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: '#000',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        Back
+                      </button>
+                      {(() => {
+                        if (timelineCtxMenu.kind !== 'screenTitle') return null
+                        const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
+                        if (!st) {
+                          return (
+                            <div style={{ color: '#ff9b9b', fontSize: 13, fontWeight: 800, padding: '4px 2px' }}>
+                              Screen title not found.
+                            </div>
+                          )
+                        }
+                        const rawInstances = Array.isArray((st as any).instances) ? ((st as any).instances as any[]) : []
+                        const instances =
+                          rawInstances.length > 0
+                            ? rawInstances.map((inst: any, idx: number) => ({
+                                id: String(inst?.id || `${String((st as any).id)}_i${idx + 1}`),
+                              }))
+                            : [{ id: `${String((st as any).id)}_i1` }]
+                        const stId = String((st as any).id)
+                        const preferred = String(screenTitleLastInstanceById[stId] || instances[0]?.id || '')
+                        return instances.map((inst: any, idx: number) => {
+                          const isPreferred = String(inst.id) === preferred
+                          return (
+                            <button
+                              key={String(inst.id)}
+                              type="button"
+                              onClick={() => {
+                                if (openScreenTitlePlacementById(String(stId), String(inst.id))) {
+                                  setTimelineCtxMenu(null)
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                borderRadius: 10,
+                                border: `1px solid ${isPreferred ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                                background: isPreferred ? 'rgba(96,165,250,0.14)' : '#000',
+                                color: '#fff',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                              }}
+                            >
+                              {`Instance ${idx + 1}`}
+                            </button>
+                          )
+                        })
+                      })()}
+                    </>
+                  ) : (
 			              <>
 			                {(() => {
 			                  const edgeIntent: any = timelineCtxMenu.edgeIntent || 'move'
@@ -22701,7 +23962,7 @@ export default function CreateVideo() {
 			                  )
 			                })()}
 			              </>
-			            )}
+			            ))}
 			          </div>
 			        </div>
 			      ) : null}

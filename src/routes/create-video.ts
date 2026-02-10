@@ -536,6 +536,23 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
     if (frameW > 3840 || frameH > 3840) throw new DomainError('bad_frame', 'bad_frame', 400)
 
     const presetBase = await screenTitlePresetsSvc.getActiveForUser(presetId, currentUserId)
+    const normalizePlacementRect = (raw: any): { xPct: number; yPct: number; wPct: number; hPct: number } | null => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+      const xRaw = Number((raw as any).xPct)
+      const yRaw = Number((raw as any).yPct)
+      const wRaw = Number((raw as any).wPct)
+      const hRaw = Number((raw as any).hPct)
+      if (!(Number.isFinite(xRaw) && Number.isFinite(yRaw) && Number.isFinite(wRaw) && Number.isFinite(hRaw))) return null
+      let xPct = Math.max(0, Math.min(100, xRaw))
+      let yPct = Math.max(0, Math.min(100, yRaw))
+      let wPct = Math.max(0, Math.min(100, wRaw))
+      let hPct = Math.max(0, Math.min(100, hRaw))
+      wPct = Math.min(wPct, Math.max(0, 100 - xPct))
+      hPct = Math.min(hPct, Math.max(0, 100 - yPct))
+      if (!(wPct > 0.001 && hPct > 0.001)) return null
+      const r3 = (n: number) => Math.round(n * 1000) / 1000
+      return { xPct: r3(xPct), yPct: r3(yPct), wPct: r3(wPct), hPct: r3(hPct) }
+    }
     const applyOverride = (base: any, override: any) => {
       const preset: any = { ...(base as any) }
       if (!override || typeof override !== 'object') return preset
@@ -555,6 +572,8 @@ createVideoRouter.post('/api/create-video/screen-titles/render', requireAuth, as
       if (override.marginBottomPct != null && Number.isFinite(Number(override.marginBottomPct))) preset.marginBottomPct = Math.max(0, Math.min(50, Number(override.marginBottomPct)))
       if (override.offsetXPx != null && Number.isFinite(Number(override.offsetXPx))) preset.offsetXPx = Math.max(-1000, Math.min(1000, Number(override.offsetXPx)))
       if (override.offsetYPx != null && Number.isFinite(Number(override.offsetYPx))) preset.offsetYPx = Math.max(-1000, Math.min(1000, Number(override.offsetYPx)))
+      const placementRect = normalizePlacementRect((override as any).placementRect)
+      if (placementRect) preset.placementRect = placementRect
       if (override.insetXPreset === null) preset.insetXPreset = null
       if (override.insetYPreset === null) preset.insetYPreset = null
       return preset

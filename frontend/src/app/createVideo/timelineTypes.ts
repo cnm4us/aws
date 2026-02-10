@@ -202,6 +202,12 @@ export type ScreenTitleCustomStyle = {
   marginYPx?: number
   offsetXPx?: number
   offsetYPx?: number
+  placementRect?: {
+    xPct: number
+    yPct: number
+    wPct: number
+    hPct: number
+  } | null
   fontKey?: string
   fontSizePct?: number
   fontColor?: string
@@ -391,6 +397,27 @@ export function cloneTimeline(timeline: Timeline): Timeline {
       ? (timeline as any).screenTitles.map((st: any) => {
           const mapCustomStyle = (raw: any): ScreenTitleCustomStyle | null => {
             if (!raw || typeof raw !== 'object') return null
+            const xRaw = Number((raw as any).placementRect?.xPct)
+            const yRaw = Number((raw as any).placementRect?.yPct)
+            const wRaw = Number((raw as any).placementRect?.wPct)
+            const hRaw = Number((raw as any).placementRect?.hPct)
+            let placementRect: { xPct: number; yPct: number; wPct: number; hPct: number } | null = null
+            if (Number.isFinite(xRaw) && Number.isFinite(yRaw) && Number.isFinite(wRaw) && Number.isFinite(hRaw)) {
+              let xPct = Math.min(100, Math.max(0, Number(xRaw)))
+              let yPct = Math.min(100, Math.max(0, Number(yRaw)))
+              let wPct = Math.min(100, Math.max(0, Number(wRaw)))
+              let hPct = Math.min(100, Math.max(0, Number(hRaw)))
+              wPct = Math.min(wPct, Math.max(0, 100 - xPct))
+              hPct = Math.min(hPct, Math.max(0, 100 - yPct))
+              if (wPct > 0.001 && hPct > 0.001) {
+                placementRect = {
+                  xPct: Math.round(xPct * 1000) / 1000,
+                  yPct: Math.round(yPct * 1000) / 1000,
+                  wPct: Math.round(wPct * 1000) / 1000,
+                  hPct: Math.round(hPct * 1000) / 1000,
+                }
+              }
+            }
             return {
               position:
                 String(raw.position || '').trim().toLowerCase() === 'bottom'
@@ -410,6 +437,9 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                       : undefined,
               marginXPx: raw.marginXPx == null ? undefined : Number(raw.marginXPx),
               marginYPx: raw.marginYPx == null ? undefined : Number(raw.marginYPx),
+              offsetXPx: raw.offsetXPx == null ? undefined : Number(raw.offsetXPx),
+              offsetYPx: raw.offsetYPx == null ? undefined : Number(raw.offsetYPx),
+              placementRect,
               fontKey: raw.fontKey == null ? undefined : String(raw.fontKey),
               fontSizePct: raw.fontSizePct == null ? undefined : Number(raw.fontSizePct),
               fontColor: raw.fontColor == null ? undefined : String(raw.fontColor),
