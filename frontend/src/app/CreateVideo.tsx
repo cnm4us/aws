@@ -389,6 +389,15 @@ const applyScreenTitlePlacementDrag = (
   return normalizeScreenTitlePlacementRectForEditor({ xPct, yPct, wPct, hPct })
 }
 
+const isSameScreenTitlePlacementRect = (a: ScreenTitlePlacementRect, b: ScreenTitlePlacementRect): boolean => {
+  return (
+    Math.abs(Number(a.xPct) - Number(b.xPct)) < 0.001 &&
+    Math.abs(Number(a.yPct) - Number(b.yPct)) < 0.001 &&
+    Math.abs(Number(a.wPct) - Number(b.wPct)) < 0.001 &&
+    Math.abs(Number(a.hPct) - Number(b.hPct)) < 0.001
+  )
+}
+
 function buildScreenTitlePresetSnapshot(preset: ScreenTitlePresetItem) {
   const presetId = Number((preset as any).id)
   return {
@@ -1032,6 +1041,7 @@ export default function CreateVideo() {
   const [screenTitlePlacementControlMode, setScreenTitlePlacementControlMode] = useState<'move' | 'left' | 'right' | 'top' | 'bottom'>('move')
   const [screenTitlePlacementStepPx, setScreenTitlePlacementStepPx] = useState<1 | 5>(1)
   const [screenTitlePlacementPanelPos, setScreenTitlePlacementPanelPos] = useState<{ x: number; y: number }>({ x: 8, y: 126 })
+  const [screenTitlePlacementDirty, setScreenTitlePlacementDirty] = useState(false)
   const [screenTitleLastInstanceById, setScreenTitleLastInstanceById] = useState<Record<string, string>>({})
   const [screenTitleRenderBusy, setScreenTitleRenderBusy] = useState(false)
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -1054,6 +1064,7 @@ export default function CreateVideo() {
     baseY: number
   } | null>(null)
   const screenTitlePlacementPanelStopDragRef = useRef<(() => void) | null>(null)
+  const saveScreenTitlePlacementRef = useRef<(closeEditorOnSuccess?: boolean) => Promise<void>>(async () => {})
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
   const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
   const musicPreviewRef = useRef<HTMLAudioElement | null>(null)
@@ -2396,6 +2407,7 @@ export default function CreateVideo() {
       setScreenTitlePlacementControlMode('move')
       setScreenTitlePlacementStepPx(1)
       setScreenTitlePlacementPanelPos({ x: 8, y: 126 })
+      setScreenTitlePlacementDirty(false)
       setScreenTitlePlacementError(null)
       setScreenTitlePlacementAdvancedOpen(false)
       return true
@@ -7626,6 +7638,7 @@ export default function CreateVideo() {
   useEffect(() => {
     if (screenTitlePlacementEditor) return
     setScreenTitlePlacementAdvancedOpen(false)
+    setScreenTitlePlacementDirty(false)
     screenTitlePlacementPanelDragRef.current = null
     if (screenTitlePlacementPanelStopDragRef.current) {
       screenTitlePlacementPanelStopDragRef.current()
@@ -14489,12 +14502,17 @@ export default function CreateVideo() {
         stageH: stageBounds.height,
         baseRect: safeBase,
       }
+      let placementChanged = false
       const onMove = (ev: PointerEvent) => {
         const drag = screenTitlePlacementDragRef.current
         if (!drag) return
         const dxPct = ((ev.clientX - drag.startClientX) / Math.max(1, drag.stageW)) * 100
         const dyPct = ((ev.clientY - drag.startClientY) / Math.max(1, drag.stageH)) * 100
         const nextRect = applyScreenTitlePlacementDrag(drag.baseRect, drag.mode, dxPct, dyPct)
+        if (!placementChanged && !isSameScreenTitlePlacementRect(nextRect, safeBase)) {
+          placementChanged = true
+          setScreenTitlePlacementDirty(true)
+        }
         setScreenTitlePlacementEditor((prev) => {
           if (!prev) return prev
           const activeId = String(prev.activeInstanceId || '')
@@ -14517,6 +14535,9 @@ export default function CreateVideo() {
         if (screenTitlePlacementStopDragRef.current === stop) {
           screenTitlePlacementStopDragRef.current = null
         }
+        if (placementChanged && !screenTitleRenderBusy) {
+          void saveScreenTitlePlacementRef.current(false)
+        }
       }
       screenTitlePlacementStopDragRef.current = stop
       window.addEventListener('pointermove', onMove, { passive: true })
@@ -14526,7 +14547,7 @@ export default function CreateVideo() {
       e.preventDefault()
       e.stopPropagation()
     },
-    [screenTitlePlacementEditor]
+    [screenTitlePlacementEditor, screenTitleRenderBusy]
   )
 
   const beginScreenTitlePlacementPanelDrag = useCallback(
@@ -14598,39 +14619,37 @@ export default function CreateVideo() {
       const stepPx = Number(screenTitlePlacementStepPx || 1)
       const dxPct = (stepPx / stageW) * 100
       const dyPct = (stepPx / stageH) * 100
-
-      setScreenTitlePlacementEditor((prev) => {
-        if (!prev) return prev
-        const activeId = String(prev.activeInstanceId || '')
-        const idx = (prev.instances || []).findIndex((inst) => String(inst.id) === activeId)
-        if (idx < 0) return prev
-        const current = (prev.instances || [])[idx] as any
-        const baseRect = normalizeScreenTitlePlacementRectForEditor((current?.customStyle as any)?.placementRect)
-        let nextRect = baseRect
-        if (screenTitlePlacementControlMode === 'move') {
-          if (action === 'move_left') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', -dxPct, 0)
-          if (action === 'move_right') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', dxPct, 0)
-          if (action === 'move_up') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, -dyPct)
-          if (action === 'move_down') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, dyPct)
-        } else {
-          if (action !== 'edge_in' && action !== 'edge_out') return prev
-          if (screenTitlePlacementControlMode === 'left') {
-            nextRect = applyScreenTitlePlacementDrag(baseRect, 'left', action === 'edge_out' ? -dxPct : dxPct, 0)
-          } else if (screenTitlePlacementControlMode === 'right') {
-            nextRect = applyScreenTitlePlacementDrag(baseRect, 'right', action === 'edge_out' ? dxPct : -dxPct, 0)
-          } else if (screenTitlePlacementControlMode === 'top') {
-            nextRect = applyScreenTitlePlacementDrag(baseRect, 'top', 0, action === 'edge_out' ? -dyPct : dyPct)
-          } else if (screenTitlePlacementControlMode === 'bottom') {
-            nextRect = applyScreenTitlePlacementDrag(baseRect, 'bottom', 0, action === 'edge_out' ? dyPct : -dyPct)
-          }
+      const activeId = String(screenTitlePlacementEditor.activeInstanceId || '')
+      const idx = (screenTitlePlacementEditor.instances || []).findIndex((inst) => String(inst.id) === activeId)
+      if (idx < 0) return
+      const current = (screenTitlePlacementEditor.instances || [])[idx] as any
+      const baseRect = normalizeScreenTitlePlacementRectForEditor((current?.customStyle as any)?.placementRect)
+      let nextRect = baseRect
+      if (screenTitlePlacementControlMode === 'move') {
+        if (action === 'move_left') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', -dxPct, 0)
+        if (action === 'move_right') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', dxPct, 0)
+        if (action === 'move_up') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, -dyPct)
+        if (action === 'move_down') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, dyPct)
+      } else {
+        if (action !== 'edge_in' && action !== 'edge_out') return
+        if (screenTitlePlacementControlMode === 'left') {
+          nextRect = applyScreenTitlePlacementDrag(baseRect, 'left', action === 'edge_out' ? -dxPct : dxPct, 0)
+        } else if (screenTitlePlacementControlMode === 'right') {
+          nextRect = applyScreenTitlePlacementDrag(baseRect, 'right', action === 'edge_out' ? dxPct : -dxPct, 0)
+        } else if (screenTitlePlacementControlMode === 'top') {
+          nextRect = applyScreenTitlePlacementDrag(baseRect, 'top', 0, action === 'edge_out' ? -dyPct : dyPct)
+        } else if (screenTitlePlacementControlMode === 'bottom') {
+          nextRect = applyScreenTitlePlacementDrag(baseRect, 'bottom', 0, action === 'edge_out' ? dyPct : -dyPct)
         }
-        const nextInstances = (prev.instances || []).slice()
-        nextInstances[idx] = {
-          ...current,
-          customStyle: { ...(current?.customStyle || {}), placementRect: nextRect },
-        }
-        return { ...prev, instances: nextInstances }
-      })
+      }
+      if (isSameScreenTitlePlacementRect(nextRect, baseRect)) return
+      const nextInstances = (screenTitlePlacementEditor.instances || []).slice()
+      nextInstances[idx] = {
+        ...current,
+        customStyle: { ...(current?.customStyle || {}), placementRect: nextRect },
+      }
+      setScreenTitlePlacementEditor({ ...screenTitlePlacementEditor, instances: nextInstances })
+      setScreenTitlePlacementDirty(true)
       setScreenTitlePlacementError(null)
     },
     [screenTitlePlacementControlMode, screenTitlePlacementEditor, screenTitlePlacementStepPx]
@@ -14740,6 +14759,7 @@ export default function CreateVideo() {
           }
         })
       }
+      setScreenTitlePlacementDirty(false)
       setScreenTitlePlacementError(null)
     } catch (e: any) {
       setScreenTitlePlacementError(e?.message || 'internal_error')
@@ -14747,6 +14767,30 @@ export default function CreateVideo() {
       setScreenTitleRenderBusy(false)
     }
   }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
+
+  saveScreenTitlePlacementRef.current = saveScreenTitlePlacement
+
+  const closeScreenTitlePlacement = useCallback(() => {
+    if (screenTitleRenderBusy) return
+    if (screenTitlePlacementDirty) {
+      let renderBeforeClose = false
+      try {
+        renderBeforeClose = window.confirm(
+          'Render placement changes before closing?\n\nOK = Render + Close\nCancel = Close without render'
+        )
+      } catch {
+        renderBeforeClose = false
+      }
+      if (renderBeforeClose) {
+        void saveScreenTitlePlacement(true)
+        return
+      }
+    }
+    setScreenTitlePlacementEditor(null)
+    setScreenTitlePlacementError(null)
+    setScreenTitlePlacementAdvancedOpen(false)
+    setScreenTitlePlacementDirty(false)
+  }, [saveScreenTitlePlacement, screenTitlePlacementDirty, screenTitleRenderBusy])
 
   const generateScreenTitle = useCallback(async () => {
     if (!screenTitleCustomizeEditor) return
@@ -17283,6 +17327,7 @@ export default function CreateVideo() {
                       }}
                     >
                       <div
+                        onPointerDown={beginScreenTitlePlacementPanelDrag}
                         style={{
                           padding: '7px 10px',
                           borderBottom: '1px solid rgba(255,255,255,0.14)',
@@ -17290,34 +17335,33 @@ export default function CreateVideo() {
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           gap: 8,
+                          cursor: 'grab',
+                          touchAction: 'none',
                         }}
+                        title="Drag panel"
                       >
                         <div
-                          onPointerDown={beginScreenTitlePlacementPanelDrag}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 6,
                             minWidth: 0,
-                            cursor: 'grab',
-                            touchAction: 'none',
                           }}
-                          title="Drag panel"
                         >
                           <span style={{ color: '#dbeafe', fontSize: 12, fontWeight: 900 }}>Placement Tools</span>
                           <span style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 900 }}>::</span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setScreenTitlePlacementEditor(null)
-                            setScreenTitlePlacementError(null)
-                            setScreenTitlePlacementAdvancedOpen(false)
+                          onPointerDown={(e) => {
+                            e.stopPropagation()
                           }}
+                          onClick={closeScreenTitlePlacement}
+                          disabled={screenTitleRenderBusy}
                           style={{
                             borderRadius: 8,
                             border: '1px solid rgba(255,255,255,0.22)',
-                            background: 'rgba(255,255,255,0.08)',
+                            background: screenTitleRenderBusy ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)',
                             color: '#fff',
                             width: 26,
                             height: 26,
@@ -17326,8 +17370,9 @@ export default function CreateVideo() {
                             justifyContent: 'center',
                             fontSize: 13,
                             fontWeight: 900,
-                            cursor: 'pointer',
+                            cursor: screenTitleRenderBusy ? 'default' : 'pointer',
                             flex: '0 0 auto',
+                            opacity: screenTitleRenderBusy ? 0.6 : 1,
                           }}
                           aria-label="Close placement tools"
                         >
@@ -17335,34 +17380,31 @@ export default function CreateVideo() {
                         </button>
                       </div>
                       <div style={{ padding: 10, display: 'grid', gap: 10 }}>
-                        <label style={{ display: 'grid', gap: 4 }}>
-                          <span style={{ color: '#bbb', fontSize: 11, fontWeight: 900 }}>Instance</span>
-                          <select
-                            value={String(screenTitlePlacementEditor.activeInstanceId || '')}
-                            onChange={(e) => {
-                              const nextId = String(e.target.value || '')
-                              setScreenTitlePlacementEditor((p) => (p ? { ...p, activeInstanceId: nextId } : p))
-                              setScreenTitlePlacementError(null)
-                            }}
-                            style={{
-                              width: '100%',
-                              borderRadius: 8,
-                              border: '1px solid rgba(255,255,255,0.18)',
-                              background: '#0b0b0b',
-                              color: '#fff',
-                              padding: '6px 8px',
-                              fontSize: 12,
-                              fontWeight: 900,
-                              boxSizing: 'border-box',
-                            }}
-                          >
-                            {(screenTitlePlacementEditor.instances || []).map((inst: any, idx: number) => (
-                              <option key={String(inst?.id || idx)} value={String(inst?.id || '')}>
-                                {`Instance ${idx + 1}`}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                        <select
+                          value={String(screenTitlePlacementEditor.activeInstanceId || '')}
+                          onChange={(e) => {
+                            const nextId = String(e.target.value || '')
+                            setScreenTitlePlacementEditor((p) => (p ? { ...p, activeInstanceId: nextId } : p))
+                            setScreenTitlePlacementError(null)
+                          }}
+                          style={{
+                            width: '100%',
+                            borderRadius: 8,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0b0b0b',
+                            color: '#fff',
+                            padding: '6px 8px',
+                            fontSize: 12,
+                            fontWeight: 900,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          {(screenTitlePlacementEditor.instances || []).map((inst: any, idx: number) => (
+                            <option key={String(inst?.id || idx)} value={String(inst?.id || '')}>
+                              {`Instance ${idx + 1}`}
+                            </option>
+                          ))}
+                        </select>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <div
                             style={{
@@ -17386,7 +17428,14 @@ export default function CreateVideo() {
                                 top: 0,
                                 height: 20,
                                 border: 0,
-                                background: screenTitlePlacementControlMode === 'top' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                boxShadow:
+                                  screenTitlePlacementControlMode === 'top'
+                                    ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
+                                    : 'none',
+                                background:
+                                  screenTitlePlacementControlMode === 'top'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
                               }}
@@ -17402,7 +17451,14 @@ export default function CreateVideo() {
                                 width: 20,
                                 bottom: 20,
                                 border: 0,
-                                background: screenTitlePlacementControlMode === 'right' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                boxShadow:
+                                  screenTitlePlacementControlMode === 'right'
+                                    ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
+                                    : 'none',
+                                background:
+                                  screenTitlePlacementControlMode === 'right'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
                               }}
@@ -17418,7 +17474,14 @@ export default function CreateVideo() {
                                 bottom: 0,
                                 height: 20,
                                 border: 0,
-                                background: screenTitlePlacementControlMode === 'bottom' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                boxShadow:
+                                  screenTitlePlacementControlMode === 'bottom'
+                                    ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
+                                    : 'none',
+                                background:
+                                  screenTitlePlacementControlMode === 'bottom'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
                               }}
@@ -17434,7 +17497,14 @@ export default function CreateVideo() {
                                 width: 20,
                                 bottom: 20,
                                 border: 0,
-                                background: screenTitlePlacementControlMode === 'left' ? 'rgba(96,165,250,0.26)' : 'transparent',
+                                boxShadow:
+                                  screenTitlePlacementControlMode === 'left'
+                                    ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
+                                    : 'none',
+                                background:
+                                  screenTitlePlacementControlMode === 'left'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
                               }}
@@ -17544,11 +17614,7 @@ export default function CreateVideo() {
                           <button
                             type="button"
                             disabled={screenTitleRenderBusy}
-                            onClick={() => {
-                              setScreenTitlePlacementEditor(null)
-                              setScreenTitlePlacementError(null)
-                              setScreenTitlePlacementAdvancedOpen(false)
-                            }}
+                            onClick={closeScreenTitlePlacement}
                             style={{
                               padding: '8px 10px',
                               borderRadius: 8,
@@ -17563,16 +17629,22 @@ export default function CreateVideo() {
                           </button>
                           <button
                             type="button"
-                            disabled={screenTitleRenderBusy}
+                            disabled={screenTitleRenderBusy || !screenTitlePlacementDirty}
                             onClick={() => { void saveScreenTitlePlacement(false) }}
                             style={{
                               padding: '8px 10px',
                               borderRadius: 8,
-                              border: '1px solid rgba(96,165,250,0.95)',
-                              background: screenTitleRenderBusy ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.24)',
+                              border: `1px solid ${screenTitlePlacementDirty ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                              background:
+                                screenTitleRenderBusy
+                                  ? 'rgba(96,165,250,0.08)'
+                                  : screenTitlePlacementDirty
+                                    ? 'rgba(96,165,250,0.24)'
+                                    : 'rgba(255,255,255,0.08)',
                               color: '#fff',
                               fontWeight: 900,
-                              cursor: screenTitleRenderBusy ? 'default' : 'pointer',
+                              cursor: screenTitleRenderBusy || !screenTitlePlacementDirty ? 'default' : 'pointer',
+                              opacity: screenTitleRenderBusy || !screenTitlePlacementDirty ? 0.7 : 1,
                             }}
                           >
                             {screenTitleRenderBusy ? 'Rendering...' : 'Render'}
@@ -17678,11 +17750,14 @@ export default function CreateVideo() {
                             left: '50%',
                             top: -8,
                             transform: 'translateX(-50%)',
-                            width: 16,
+                            width: 32,
                             height: 16,
-                            borderRadius: 999,
+                            borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
-                            background: 'rgba(8,12,18,0.95)',
+                            background:
+                              screenTitlePlacementControlMode === 'top'
+                                ? 'rgba(96,165,250,0.40)'
+                                : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
                             touchAction: 'none',
                             boxSizing: 'border-box',
@@ -17701,10 +17776,13 @@ export default function CreateVideo() {
                             top: '50%',
                             transform: 'translateY(-50%)',
                             width: 16,
-                            height: 16,
-                            borderRadius: 999,
+                            height: 32,
+                            borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
-                            background: 'rgba(8,12,18,0.95)',
+                            background:
+                              screenTitlePlacementControlMode === 'right'
+                                ? 'rgba(96,165,250,0.40)'
+                                : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
                             touchAction: 'none',
                             boxSizing: 'border-box',
@@ -17722,11 +17800,14 @@ export default function CreateVideo() {
                             left: '50%',
                             bottom: -8,
                             transform: 'translateX(-50%)',
-                            width: 16,
+                            width: 32,
                             height: 16,
-                            borderRadius: 999,
+                            borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
-                            background: 'rgba(8,12,18,0.95)',
+                            background:
+                              screenTitlePlacementControlMode === 'bottom'
+                                ? 'rgba(96,165,250,0.40)'
+                                : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
                             touchAction: 'none',
                             boxSizing: 'border-box',
@@ -17745,10 +17826,13 @@ export default function CreateVideo() {
                             top: '50%',
                             transform: 'translateY(-50%)',
                             width: 16,
-                            height: 16,
-                            borderRadius: 999,
+                            height: 32,
+                            borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
-                            background: 'rgba(8,12,18,0.95)',
+                            background:
+                              screenTitlePlacementControlMode === 'left'
+                                ? 'rgba(96,165,250,0.40)'
+                                : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
                             touchAction: 'none',
                             boxSizing: 'border-box',
@@ -22329,7 +22413,7 @@ export default function CreateVideo() {
                 position: 'absolute',
                 width: 16,
                 height: 16,
-                borderRadius: 999,
+                borderRadius: 8,
                 border: '2px solid rgba(96,165,250,1)',
                 background: 'rgba(8,12,18,0.95)',
                 cursor: 'pointer',
@@ -22446,7 +22530,19 @@ export default function CreateVideo() {
                                 setScreenTitlePlacementControlMode('top')
                                 beginScreenTitlePlacementDrag('top', activeRect, e)
                               }}
-                              style={{ ...handleStyle, left: '50%', top: -8, transform: 'translateX(-50%)', cursor: 'ns-resize' }}
+                              style={{
+                                ...handleStyle,
+                                left: '50%',
+                                top: -8,
+                                transform: 'translateX(-50%)',
+                                width: 32,
+                                height: 16,
+                                cursor: 'ns-resize',
+                                background:
+                                  screenTitlePlacementControlMode === 'top'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'rgba(8,12,18,0.95)',
+                              }}
                             />
                             <button
                               type="button"
@@ -22455,7 +22551,19 @@ export default function CreateVideo() {
                                 setScreenTitlePlacementControlMode('right')
                                 beginScreenTitlePlacementDrag('right', activeRect, e)
                               }}
-                              style={{ ...handleStyle, right: -8, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }}
+                              style={{
+                                ...handleStyle,
+                                right: -8,
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: 16,
+                                height: 32,
+                                cursor: 'ew-resize',
+                                background:
+                                  screenTitlePlacementControlMode === 'right'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'rgba(8,12,18,0.95)',
+                              }}
                             />
                             <button
                               type="button"
@@ -22464,7 +22572,19 @@ export default function CreateVideo() {
                                 setScreenTitlePlacementControlMode('bottom')
                                 beginScreenTitlePlacementDrag('bottom', activeRect, e)
                               }}
-                              style={{ ...handleStyle, left: '50%', bottom: -8, transform: 'translateX(-50%)', cursor: 'ns-resize' }}
+                              style={{
+                                ...handleStyle,
+                                left: '50%',
+                                bottom: -8,
+                                transform: 'translateX(-50%)',
+                                width: 32,
+                                height: 16,
+                                cursor: 'ns-resize',
+                                background:
+                                  screenTitlePlacementControlMode === 'bottom'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'rgba(8,12,18,0.95)',
+                              }}
                             />
                             <button
                               type="button"
@@ -22473,7 +22593,19 @@ export default function CreateVideo() {
                                 setScreenTitlePlacementControlMode('left')
                                 beginScreenTitlePlacementDrag('left', activeRect, e)
                               }}
-                              style={{ ...handleStyle, left: -8, top: '50%', transform: 'translateY(-50%)', cursor: 'ew-resize' }}
+                              style={{
+                                ...handleStyle,
+                                left: -8,
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                width: 16,
+                                height: 32,
+                                cursor: 'ew-resize',
+                                background:
+                                  screenTitlePlacementControlMode === 'left'
+                                    ? 'rgba(96,165,250,0.40)'
+                                    : 'rgba(8,12,18,0.95)',
+                              }}
                             />
                           </div>
                         ) : null}
