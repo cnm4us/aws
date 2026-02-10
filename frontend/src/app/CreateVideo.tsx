@@ -54,6 +54,14 @@ const SCREEN_TITLE_SAFE_AREA_BOTTOM_PCT = 3
 const SCREEN_TITLE_SAFE_AREA_LEFT_PCT = 3
 const SCREEN_TITLE_PLACEMENT_MIN_W_PCT = 12
 const SCREEN_TITLE_PLACEMENT_MIN_H_PCT = 8
+const SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX = 78
+const SCREEN_TITLE_PLACEMENT_COL_GAP_PX = 10
+const SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX = 6
+const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX = 36
+const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = 36
+const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
+const SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX =
+  20 + SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX * 2 + SCREEN_TITLE_PLACEMENT_COL_GAP_PX + 10
 const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
 const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
   x_small: 'X-Small',
@@ -14641,7 +14649,7 @@ export default function CreateVideo() {
         const panelRect = screenTitlePlacementPanelRef.current?.getBoundingClientRect()
         const stageW = Number(stageRect?.width || 0)
         const stageH = Number(stageRect?.height || 0)
-        const panelW = Number(panelRect?.width || 236)
+        const panelW = Number(panelRect?.width || SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX)
         const panelH = Number(panelRect?.height || 228)
         const minX = 8
         const minY = 8
@@ -17384,7 +17392,7 @@ export default function CreateVideo() {
                         left: Math.round(screenTitlePlacementPanelPos.x),
                         top: Math.round(screenTitlePlacementPanelPos.y),
                         zIndex: 60,
-                        width: 236,
+                        width: SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX,
                         borderRadius: 12,
                         border: '1px solid rgba(255,255,255,0.20)',
                         background: 'rgba(0,0,0,0.72)',
@@ -17472,12 +17480,12 @@ export default function CreateVideo() {
                             </option>
                           ))}
                         </select>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', gap: SCREEN_TITLE_PLACEMENT_COL_GAP_PX, alignItems: 'flex-start' }}>
                           <div
                             style={{
                               position: 'relative',
-                              width: 78,
-                              height: 78,
+                              width: SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX,
+                              height: SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX,
                               borderRadius: 8,
                               border: '1px solid rgba(255,255,255,0.22)',
                               background: 'rgba(255,255,255,0.04)',
@@ -17607,13 +17615,29 @@ export default function CreateVideo() {
                               •
                             </button>
                           </div>
-                          <div style={{ display: 'grid', gap: 6, minWidth: 0, flex: 1 }}>
-                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gap: SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX,
+                              minWidth: 0,
+                              width: SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX,
+                              height: SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX,
+                              flex: '0 0 auto',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(2, ${SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX}px)`,
+                                gap: SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX,
+                              }}
+                            >
                               <button
                                 type="button"
                                 onClick={() => setScreenTitlePlacementStepPx(1)}
                                 style={{
-                                  padding: '4px 8px',
+                                  width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
+                                  height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: `1px solid ${screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
                                   background: screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
@@ -17629,7 +17653,8 @@ export default function CreateVideo() {
                                 type="button"
                                 onClick={() => setScreenTitlePlacementStepPx(5)}
                                 style={{
-                                  padding: '4px 8px',
+                                  width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
+                                  height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: `1px solid ${screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
                                   background: screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
@@ -17642,12 +17667,19 @@ export default function CreateVideo() {
                                 5px
                               </button>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(2, ${SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX}px)`,
+                                gap: SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX,
+                              }}
+                            >
                               <button
                                 type="button"
                                 onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.firstAction)}
                                 style={{
-                                  padding: '6px 0',
+                                  width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
+                                  height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: '1px solid rgba(255,255,255,0.18)',
                                   background: '#0b0b0b',
@@ -17677,7 +17709,8 @@ export default function CreateVideo() {
                                 type="button"
                                 onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.secondAction)}
                                 style={{
-                                  padding: '6px 0',
+                                  width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
+                                  height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: '1px solid rgba(255,255,255,0.18)',
                                   background: '#0b0b0b',
@@ -17706,12 +17739,19 @@ export default function CreateVideo() {
                             </div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(2, ${SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX}px)`,
+                            gap: SCREEN_TITLE_PLACEMENT_COL_GAP_PX,
+                          }}
+                        >
                           <button
                             type="button"
                             disabled={screenTitleRenderBusy}
                             onClick={closeScreenTitlePlacement}
                             style={{
+                              width: SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
                               padding: '8px 10px',
                               borderRadius: 8,
                               border: '1px solid rgba(255,255,255,0.22)',
@@ -17728,6 +17768,7 @@ export default function CreateVideo() {
                             disabled={screenTitleRenderBusy || !screenTitlePlacementDirty}
                             onClick={() => { void saveScreenTitlePlacement(false) }}
                             style={{
+                              width: SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
                               padding: '8px 10px',
                               borderRadius: 8,
                               border: `1px solid ${screenTitlePlacementDirty ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
