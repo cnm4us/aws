@@ -62,6 +62,7 @@ const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = 36
 const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
 const SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX =
   20 + SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX * 2 + SCREEN_TITLE_PLACEMENT_COL_GAP_PX + 10
+const SCREEN_TITLE_STYLE_PANEL_WIDTH_PX = 244
 const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
 const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
   x_small: 'X-Small',
@@ -1044,6 +1045,8 @@ export default function CreateVideo() {
     instances: ScreenTitleInstanceDraft[]
     activeInstanceId: string
   } | null>(null)
+  const [screenTitleMiniPanelTab, setScreenTitleMiniPanelTab] = useState<'style' | 'placement'>('placement')
+  const [screenTitleStyleAlignMenuOpen, setScreenTitleStyleAlignMenuOpen] = useState(false)
   const [screenTitlePlacementError, setScreenTitlePlacementError] = useState<string | null>(null)
   const [screenTitlePlacementAdvancedOpen, setScreenTitlePlacementAdvancedOpen] = useState(false)
   const [screenTitlePlacementControlMode, setScreenTitlePlacementControlMode] = useState<'move' | 'left' | 'right' | 'top' | 'bottom'>('move')
@@ -1056,6 +1059,7 @@ export default function CreateVideo() {
   const screenTitleTextAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const screenTitlePlacementStageRef = useRef<HTMLDivElement | null>(null)
   const screenTitlePlacementPanelRef = useRef<HTMLDivElement | null>(null)
+  const screenTitleStyleAlignMenuRef = useRef<HTMLDivElement | null>(null)
   const screenTitlePlacementDragRef = useRef<{
     mode: 'move' | 'left' | 'right' | 'top' | 'bottom'
     startClientX: number
@@ -2413,6 +2417,7 @@ export default function CreateVideo() {
         instances: safeInstances,
         activeInstanceId,
       })
+      setScreenTitleMiniPanelTab('placement')
       setScreenTitlePlacementControlMode('move')
       setScreenTitlePlacementMoveAxis('vertical')
       setScreenTitlePlacementStepPx(1)
@@ -7685,7 +7690,9 @@ export default function CreateVideo() {
   useEffect(() => {
     if (!screenTitlePlacementEditor) return
     void ensureScreenTitlePresets()
-  }, [screenTitlePlacementEditor, ensureScreenTitlePresets])
+    void ensureScreenTitleFonts()
+    void ensureScreenTitleGradients()
+  }, [screenTitlePlacementEditor, ensureScreenTitleFonts, ensureScreenTitleGradients, ensureScreenTitlePresets])
 
   useEffect(() => {
     if (!screenTitleCustomizeEditor?.id) return
@@ -7711,6 +7718,8 @@ export default function CreateVideo() {
 
   useEffect(() => {
     if (screenTitlePlacementEditor) return
+    setScreenTitleMiniPanelTab('placement')
+    setScreenTitleStyleAlignMenuOpen(false)
     setScreenTitlePlacementAdvancedOpen(false)
     setScreenTitlePlacementMoveAxis('vertical')
     setScreenTitlePlacementDirty(false)
@@ -7737,6 +7746,18 @@ export default function CreateVideo() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!screenTitleStyleAlignMenuOpen) return
+    const onPointerDown = (ev: PointerEvent) => {
+      const root = screenTitleStyleAlignMenuRef.current
+      const target = ev.target as Node | null
+      if (root && target && root.contains(target)) return
+      setScreenTitleStyleAlignMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => window.removeEventListener('pointerdown', onPointerDown, true)
+  }, [screenTitleStyleAlignMenuOpen])
 
   const ensureAudioConfigs = useCallback(async (): Promise<AudioConfigItem[]> => {
     if (audioConfigsLoaded) return audioConfigs
@@ -14651,10 +14672,11 @@ export default function CreateVideo() {
         const stageH = Number(stageRect?.height || 0)
         const panelW = Number(panelRect?.width || SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX)
         const panelH = Number(panelRect?.height || 228)
-        const minX = 8
-        const minY = 8
-        const maxX = stageW > 0 ? Math.max(minX, Math.round(stageW - panelW - 8)) : 9999
-        const maxY = stageH > 0 ? Math.max(minY, Math.round(stageH - panelH - 8)) : 9999
+        // Keep at least 25% of the panel visible so it can't be fully lost off-canvas.
+        const minX = stageW > 0 ? Math.round(-panelW * 0.75) : -9999
+        const minY = stageH > 0 ? Math.round(-panelH * 0.75) : -9999
+        const maxX = stageW > 0 ? Math.round(stageW - panelW * 0.25) : 9999
+        const maxY = stageH > 0 ? Math.round(stageH - panelH * 0.25) : 9999
         setScreenTitlePlacementPanelPos({
           x: Math.round(clamp(drag.baseX + dx, minX, maxX)),
           y: Math.round(clamp(drag.baseY + dy, minY, maxY)),
@@ -16864,7 +16886,17 @@ export default function CreateVideo() {
           </div>
         </div>
 
-        <div style={{ marginTop: 14, borderRadius: 14, border: '1px solid rgba(255,255,255,0.14)', overflow: 'hidden', background: '#000' }}>
+        <div
+          style={{
+            marginTop: 14,
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.14)',
+            overflow: screenTitlePlacementEditor ? 'visible' : 'hidden',
+            background: '#000',
+            position: 'relative',
+            zIndex: screenTitlePlacementEditor ? 260 : 'auto',
+          }}
+        >
           <div
             ref={previewWrapRef}
             style={{
@@ -16872,7 +16904,7 @@ export default function CreateVideo() {
               aspectRatio: '9 / 16',
               background: timelineBackgroundMode === 'color' ? timelineBackgroundColor : '#000',
               position: 'relative',
-              overflow: 'hidden',
+              overflow: screenTitlePlacementEditor ? 'visible' : 'hidden',
             }}
           >
             {timelineBackgroundMode === 'color' ? (
@@ -17392,7 +17424,10 @@ export default function CreateVideo() {
                         left: Math.round(screenTitlePlacementPanelPos.x),
                         top: Math.round(screenTitlePlacementPanelPos.y),
                         zIndex: 60,
-                        width: SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX,
+                        width:
+                          screenTitleMiniPanelTab === 'style'
+                            ? SCREEN_TITLE_STYLE_PANEL_WIDTH_PX
+                            : SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX,
                         borderRadius: 12,
                         border: '1px solid rgba(255,255,255,0.20)',
                         background: 'rgba(0,0,0,0.72)',
@@ -17423,7 +17458,9 @@ export default function CreateVideo() {
                             minWidth: 0,
                           }}
                         >
-                          <span style={{ color: '#dbeafe', fontSize: 12, fontWeight: 900 }}>Placement Tools</span>
+                          <span style={{ color: '#dbeafe', fontSize: 12, fontWeight: 900 }}>
+                            {screenTitleMiniPanelTab === 'style' ? 'Style' : 'Placement'}
+                          </span>
                           <span style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 900 }}>::</span>
                         </div>
                         <button
@@ -17460,6 +17497,7 @@ export default function CreateVideo() {
                           onChange={(e) => {
                             const nextId = String(e.target.value || '')
                             setScreenTitlePlacementEditor((p) => (p ? { ...p, activeInstanceId: nextId } : p))
+                            setScreenTitleStyleAlignMenuOpen(false)
                             setScreenTitlePlacementError(null)
                           }}
                           style={{
@@ -17480,6 +17518,47 @@ export default function CreateVideo() {
                             </option>
                           ))}
                         </select>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScreenTitleMiniPanelTab('style')
+                              setScreenTitleStyleAlignMenuOpen(false)
+                            }}
+                            style={{
+                              padding: '6px 0',
+                              borderRadius: 8,
+                              border: `1px solid ${screenTitleMiniPanelTab === 'style' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                              background: screenTitleMiniPanelTab === 'style' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                              color: '#fff',
+                              fontSize: 12,
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Style
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScreenTitleMiniPanelTab('placement')
+                              setScreenTitleStyleAlignMenuOpen(false)
+                            }}
+                            style={{
+                              padding: '6px 0',
+                              borderRadius: 8,
+                              border: `1px solid ${screenTitleMiniPanelTab === 'placement' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                              background: screenTitleMiniPanelTab === 'placement' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                              color: '#fff',
+                              fontSize: 12,
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Placement
+                          </button>
+                        </div>
+                        {screenTitleMiniPanelTab === 'placement' ? (
                         <div style={{ display: 'flex', gap: SCREEN_TITLE_PLACEMENT_COL_GAP_PX, alignItems: 'flex-start' }}>
                           <div
                             style={{
@@ -17739,10 +17818,439 @@ export default function CreateVideo() {
                             </div>
                           </div>
                         </div>
+                        ) : (
+                          (() => {
+                            const presetId = Number(screenTitlePlacementEditor.presetId || 0)
+                            const instances = Array.isArray(screenTitlePlacementEditor.instances)
+                              ? screenTitlePlacementEditor.instances
+                              : []
+                            const activeInstanceId = String(screenTitlePlacementEditor.activeInstanceId || '')
+                            const activeInstance =
+                              instances.find((inst: any) => String(inst?.id || '') === activeInstanceId) || instances[0] || null
+                            if (!activeInstance) {
+                              return (
+                                <div
+                                  style={{
+                                    borderRadius: 10,
+                                    border: '1px solid rgba(255,255,255,0.16)',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    padding: '10px',
+                                    color: '#dbeafe',
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  Select an instance to edit style.
+                                </div>
+                              )
+                            }
+
+                            const preset = screenTitlePresets.find((p: any) => Number((p as any).id) === presetId) as any
+                            const baseSnapshot = preset ? buildScreenTitlePresetSnapshot(preset) : null
+                            const customStyle = activeInstance?.customStyle || null
+                            const effective = baseSnapshot ? applyScreenTitleCustomStyle(baseSnapshot, customStyle) : null
+                            const effectiveFontKey = String((effective as any)?.fontKey || (baseSnapshot as any)?.fontKey || '')
+                            const family = resolveScreenTitleFamilyForFontKey(effectiveFontKey)
+                            const familyKey = family?.familyKey || ''
+                            const sizeOptions = getScreenTitleSizeOptions(familyKey, effectiveFontKey)
+                            const sizeKey = pickScreenTitleSizeKey(
+                              Number((effective as any)?.fontSizePct ?? (baseSnapshot as any)?.fontSizePct ?? sizeOptions[0]?.fontSizePct),
+                              sizeOptions
+                            )
+                            const align = String((effective as any)?.alignment || 'center') as 'left' | 'center' | 'right'
+                            const alignItems: Array<{ key: 'left' | 'center' | 'right'; label: string }> = [
+                              { key: 'left', label: 'Align Left' },
+                              { key: 'center', label: 'Align Center' },
+                              { key: 'right', label: 'Align Right' },
+                            ]
+                            const renderAlignIcon = (key: 'left' | 'center' | 'right') => (
+                              <span
+                                style={{
+                                  display: 'grid',
+                                  gap: 2,
+                                  width: 15,
+                                  justifyItems: key === 'left' ? 'start' : key === 'center' ? 'center' : 'end',
+                                }}
+                              >
+                                <span style={{ width: 15, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+                                <span style={{ width: 11, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+                                <span style={{ width: 13, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+                              </span>
+                            )
+                            const effectiveGradient =
+                              customStyle && (customStyle as any).fontGradientKey !== undefined
+                                ? (customStyle as any).fontGradientKey
+                                : (effective as any)?.fontGradientKey ?? null
+                            const gradientValue = effectiveGradient == null ? '' : String(effectiveGradient)
+                            const fontColorValue =
+                              (customStyle as any)?.fontColor != null && String((customStyle as any).fontColor).trim()
+                                ? String((customStyle as any).fontColor)
+                                : String((baseSnapshot as any)?.fontColor || '#ffffff')
+
+                            return (
+                              <div style={{ display: 'grid', gap: 9 }}>
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+                                    gap: 8,
+                                    alignItems: 'end',
+                                  }}
+                                >
+                                  <label style={{ display: 'grid', gap: 4 }}>
+                                    <select
+                                      value={Number.isFinite(presetId) && presetId > 0 ? String(presetId) : ''}
+                                      onChange={(e) => {
+                                        const nextIdRaw = String(e.target.value || '')
+                                        const nextPresetId = nextIdRaw ? Number(nextIdRaw) : null
+                                        const currentPresetId = Number.isFinite(presetId) && presetId > 0 ? presetId : null
+                                        if (String(nextPresetId || '') === String(currentPresetId || '')) return
+                                        setScreenTitlePlacementEditor((prev) => {
+                                          if (!prev) return prev
+                                          const nextInstances = (prev.instances || []).map((inst) => {
+                                            const keepRect = normalizeScreenTitlePlacementRect((inst.customStyle as any)?.placementRect)
+                                            return {
+                                              ...inst,
+                                              customStyle: keepRect ? { placementRect: keepRect } : null,
+                                            }
+                                          })
+                                          return { ...prev, presetId: nextPresetId, instances: nextInstances }
+                                        })
+                                        setScreenTitleStyleAlignMenuOpen(false)
+                                        setScreenTitlePlacementDirty(true)
+                                        setScreenTitlePlacementError(null)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(255,255,255,0.18)',
+                                        background: '#0b0b0b',
+                                        color: '#fff',
+                                        padding: '8px 10px',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                        boxSizing: 'border-box',
+                                      }}
+                                    >
+                                      <option value="">Select...</option>
+                                      {screenTitlePresets.map((p: any) => (
+                                        <option key={String((p as any).id)} value={String((p as any).id)}>
+                                          {String((p as any).name || `Style ${String((p as any).id)}`)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <div ref={screenTitleStyleAlignMenuRef} style={{ position: 'relative', display: 'grid', gap: 4 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setScreenTitleStyleAlignMenuOpen((prev) => !prev)}
+                                      aria-haspopup="menu"
+                                      aria-expanded={screenTitleStyleAlignMenuOpen}
+                                      aria-label={`Text align: ${align}`}
+                                      style={{
+                                        width: '100%',
+                                        height: 34,
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(96,165,250,0.95)',
+                                        background: 'rgba(96,165,250,0.16)',
+                                        color: '#fff',
+                                        cursor: 'pointer',
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr auto',
+                                        alignItems: 'center',
+                                        justifyItems: 'center',
+                                        padding: '0 8px',
+                                      }}
+                                    >
+                                      {renderAlignIcon(align)}
+                                      <span style={{ fontSize: 10, color: '#dbeafe', marginLeft: 6 }}>▼</span>
+                                    </button>
+                                    {screenTitleStyleAlignMenuOpen ? (
+                                      <div
+                                        role="menu"
+                                        style={{
+                                          position: 'absolute',
+                                          top: '100%',
+                                          right: 0,
+                                          marginTop: 6,
+                                          zIndex: 10,
+                                          display: 'grid',
+                                          gap: 4,
+                                          minWidth: 84,
+                                          padding: 6,
+                                          borderRadius: 8,
+                                          border: '1px solid rgba(255,255,255,0.18)',
+                                          background: 'rgba(12,16,22,0.98)',
+                                          boxShadow: '0 8px 20px rgba(0,0,0,0.42)',
+                                        }}
+                                      >
+                                        {alignItems.map((item) => {
+                                          const isActive = align === item.key
+                                          return (
+                                            <button
+                                              key={item.key}
+                                              type="button"
+                                              role="menuitemradio"
+                                              aria-checked={isActive}
+                                              onClick={() => {
+                                                setScreenTitleStyleAlignMenuOpen(false)
+                                                if (align === item.key) return
+                                                setScreenTitlePlacementEditor((prev) => {
+                                                  if (!prev) return prev
+                                                  const activeId = String(prev.activeInstanceId || '')
+                                                  const nextInstances = (prev.instances || []).map((inst) =>
+                                                    String(inst.id) === activeId
+                                                      ? { ...inst, customStyle: { ...(inst.customStyle || {}), alignment: item.key } }
+                                                      : inst
+                                                  )
+                                                  return { ...prev, instances: nextInstances }
+                                                })
+                                                setScreenTitlePlacementDirty(true)
+                                                setScreenTitlePlacementError(null)
+                                              }}
+                                              aria-label={item.label}
+                                              style={{
+                                                height: 34,
+                                                borderRadius: 8,
+                                                border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                                                background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                                                color: '#fff',
+                                                cursor: 'pointer',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                              }}
+                                            >
+                                              {renderAlignIcon(item.key)}
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <label style={{ display: 'grid', gap: 4 }}>
+                                    <select
+                                      value={familyKey}
+                                      onChange={(e) => {
+                                        const nextFamily = String(e.target.value || '')
+                                        const fam =
+                                          screenTitleFontFamilies.find((f) => String(f.familyKey) === nextFamily) ||
+                                          screenTitleFontFamilies[0]
+                                        const nextVariant = fam?.variants?.[0]?.key || ''
+                                        if (!nextVariant || String(nextVariant) === String(effectiveFontKey)) return
+                                        setScreenTitlePlacementEditor((prev) => {
+                                          if (!prev) return prev
+                                          const activeId = String(prev.activeInstanceId || '')
+                                          const nextInstances = (prev.instances || []).map((inst) =>
+                                            String(inst.id) === activeId
+                                              ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontKey: nextVariant } }
+                                              : inst
+                                          )
+                                          return { ...prev, instances: nextInstances }
+                                        })
+                                        setScreenTitlePlacementDirty(true)
+                                        setScreenTitlePlacementError(null)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(255,255,255,0.18)',
+                                        background: '#0b0b0b',
+                                        color: '#fff',
+                                        padding: '8px 10px',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {screenTitleFontFamilies.map((f) => (
+                                        <option key={String(f.familyKey)} value={String(f.familyKey)}>
+                                          {String(f.label || f.familyKey)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label style={{ display: 'grid', gap: 4 }}>
+                                    <select
+                                      value={effectiveFontKey}
+                                      onChange={(e) => {
+                                        const nextKey = String(e.target.value || '')
+                                        if (!nextKey || nextKey === effectiveFontKey) return
+                                        setScreenTitlePlacementEditor((prev) => {
+                                          if (!prev) return prev
+                                          const activeId = String(prev.activeInstanceId || '')
+                                          const nextInstances = (prev.instances || []).map((inst) =>
+                                            String(inst.id) === activeId
+                                              ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontKey: nextKey } }
+                                              : inst
+                                          )
+                                          return { ...prev, instances: nextInstances }
+                                        })
+                                        setScreenTitlePlacementDirty(true)
+                                        setScreenTitlePlacementError(null)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(255,255,255,0.18)',
+                                        background: '#0b0b0b',
+                                        color: '#fff',
+                                        padding: '8px 10px',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {(family?.variants || []).map((v) => (
+                                        <option key={String(v.key)} value={String(v.key)}>
+                                          {String(v.label || v.key)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <label style={{ display: 'grid', gap: 4 }}>
+                                    <select
+                                      value={sizeKey}
+                                      onChange={(e) => {
+                                        const nextKey = String(e.target.value || '')
+                                        const opt = sizeOptions.find((o) => String(o.key) === nextKey)
+                                        if (!opt) return
+                                        if (Math.abs(Number(opt.fontSizePct) - Number((effective as any)?.fontSizePct || 0)) < 0.001) return
+                                        setScreenTitlePlacementEditor((prev) => {
+                                          if (!prev) return prev
+                                          const activeId = String(prev.activeInstanceId || '')
+                                          const nextInstances = (prev.instances || []).map((inst) =>
+                                            String(inst.id) === activeId
+                                              ? {
+                                                  ...inst,
+                                                  customStyle: { ...(inst.customStyle || {}), fontSizePct: Number(opt.fontSizePct) },
+                                                }
+                                              : inst
+                                          )
+                                          return { ...prev, instances: nextInstances }
+                                        })
+                                        setScreenTitlePlacementDirty(true)
+                                        setScreenTitlePlacementError(null)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(255,255,255,0.18)',
+                                        background: '#0b0b0b',
+                                        color: '#fff',
+                                        padding: '8px 10px',
+                                        fontSize: 12,
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      {sizeOptions.map((opt) => (
+                                        <option key={String(opt.key)} value={String(opt.key)}>
+                                          {String(opt.label || opt.key)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label style={{ display: 'grid', gap: 4 }}>
+                                    <input
+                                      type="color"
+                                      value={fontColorValue}
+                                      onChange={(e) => {
+                                        const nextColor = String(e.target.value || '#ffffff')
+                                        if (nextColor.toLowerCase() === fontColorValue.toLowerCase()) return
+                                        setScreenTitlePlacementEditor((prev) => {
+                                          if (!prev) return prev
+                                          const activeId = String(prev.activeInstanceId || '')
+                                          const nextInstances = (prev.instances || []).map((inst) =>
+                                            String(inst.id) === activeId
+                                              ? { ...inst, customStyle: { ...(inst.customStyle || {}), fontColor: nextColor } }
+                                              : inst
+                                          )
+                                          return { ...prev, instances: nextInstances }
+                                        })
+                                        setScreenTitlePlacementDirty(true)
+                                        setScreenTitlePlacementError(null)
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        height: 34,
+                                        borderRadius: 8,
+                                        border: '1px solid rgba(255,255,255,0.18)',
+                                        background: '#0b0b0b',
+                                        padding: 0,
+                                        cursor: 'pointer',
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+
+                                <label style={{ display: 'grid', gap: 4 }}>
+                                  <select
+                                    value={gradientValue}
+                                    onChange={(e) => {
+                                      const next = String(e.target.value || '')
+                                      const nextValue = next ? next : null
+                                      if (String(nextValue || '') === String(gradientValue || '')) return
+                                      setScreenTitlePlacementEditor((prev) => {
+                                        if (!prev) return prev
+                                        const activeId = String(prev.activeInstanceId || '')
+                                        const nextInstances = (prev.instances || []).map((inst) =>
+                                          String(inst.id) === activeId
+                                            ? {
+                                                ...inst,
+                                                customStyle: { ...(inst.customStyle || {}), fontGradientKey: nextValue },
+                                              }
+                                            : inst
+                                        )
+                                        return { ...prev, instances: nextInstances }
+                                      })
+                                      setScreenTitlePlacementDirty(true)
+                                      setScreenTitlePlacementError(null)
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      borderRadius: 8,
+                                      border: '1px solid rgba(255,255,255,0.18)',
+                                      background: '#0b0b0b',
+                                      color: '#fff',
+                                      padding: '8px 10px',
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    <option value="">None</option>
+                                    {screenTitleGradients.map((g) => (
+                                      <option key={String(g.key)} value={String(g.key)}>
+                                        {String(g.label || g.key)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            )
+                          })()
+                        )}
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: `repeat(2, ${SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX}px)`,
+                            gridTemplateColumns:
+                              screenTitleMiniPanelTab === 'style'
+                                ? 'repeat(2, minmax(0, 1fr))'
+                                : `repeat(2, ${SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX}px)`,
                             gap: SCREEN_TITLE_PLACEMENT_COL_GAP_PX,
                           }}
                         >
@@ -17751,7 +18259,10 @@ export default function CreateVideo() {
                             disabled={screenTitleRenderBusy}
                             onClick={closeScreenTitlePlacement}
                             style={{
-                              width: SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
+                              width:
+                                screenTitleMiniPanelTab === 'style'
+                                  ? '100%'
+                                  : SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
                               padding: '8px 10px',
                               borderRadius: 8,
                               border: '1px solid rgba(255,255,255,0.22)',
@@ -17768,7 +18279,10 @@ export default function CreateVideo() {
                             disabled={screenTitleRenderBusy || !screenTitlePlacementDirty}
                             onClick={() => { void saveScreenTitlePlacement(false) }}
                             style={{
-                              width: SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
+                              width:
+                                screenTitleMiniPanelTab === 'style'
+                                  ? '100%'
+                                  : SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
                               padding: '8px 10px',
                               borderRadius: 8,
                               border: `1px solid ${screenTitlePlacementDirty ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
