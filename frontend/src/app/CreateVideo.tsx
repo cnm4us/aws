@@ -1077,6 +1077,13 @@ export default function CreateVideo() {
     baseY: number
   } | null>(null)
   const screenTitlePlacementPanelStopDragRef = useRef<(() => void) | null>(null)
+  const screenTitleNudgeRepeatRef = useRef<{
+    pointerId: number | null
+    timeoutId: number | null
+    intervalId: number | null
+    repeating: boolean
+    active: boolean
+  }>({ pointerId: null, timeoutId: null, intervalId: null, repeating: false, active: false })
   const saveScreenTitlePlacementRef = useRef<(closeEditorOnSuccess?: boolean) => Promise<void>>(async () => {})
   const [screenTitleTextAreaHeight, setScreenTitleTextAreaHeight] = useState<number>(96)
   const screenTitleTextAreaDragRef = useRef<{ pointerId: number; startClientY: number; startHeight: number } | null>(null)
@@ -14708,7 +14715,6 @@ export default function CreateVideo() {
 
   const nudgeScreenTitlePlacement = useCallback(
     (action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out') => {
-      if (!screenTitlePlacementEditor) return
       const stageBounds = screenTitlePlacementStageRef.current?.getBoundingClientRect()
       const stageW = Number(stageBounds?.width || 0)
       const stageH = Number(stageBounds?.height || 0)
@@ -14716,41 +14722,178 @@ export default function CreateVideo() {
       const stepPx = Number(screenTitlePlacementStepPx || 1)
       const dxPct = (stepPx / stageW) * 100
       const dyPct = (stepPx / stageH) * 100
-      const activeId = String(screenTitlePlacementEditor.activeInstanceId || '')
-      const idx = (screenTitlePlacementEditor.instances || []).findIndex((inst) => String(inst.id) === activeId)
-      if (idx < 0) return
-      const current = (screenTitlePlacementEditor.instances || [])[idx] as any
-      const baseRect = normalizeScreenTitlePlacementRectForEditor((current?.customStyle as any)?.placementRect)
-      let nextRect = baseRect
-      if (screenTitlePlacementControlMode === 'move') {
-        if (action === 'move_left') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', -dxPct, 0)
-        if (action === 'move_right') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', dxPct, 0)
-        if (action === 'move_up') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, -dyPct)
-        if (action === 'move_down') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, dyPct)
-      } else {
-        if (action !== 'edge_in' && action !== 'edge_out') return
-        if (screenTitlePlacementControlMode === 'left') {
-          nextRect = applyScreenTitlePlacementDrag(baseRect, 'left', action === 'edge_out' ? -dxPct : dxPct, 0)
-        } else if (screenTitlePlacementControlMode === 'right') {
-          nextRect = applyScreenTitlePlacementDrag(baseRect, 'right', action === 'edge_out' ? dxPct : -dxPct, 0)
-        } else if (screenTitlePlacementControlMode === 'top') {
-          nextRect = applyScreenTitlePlacementDrag(baseRect, 'top', 0, action === 'edge_out' ? -dyPct : dyPct)
-        } else if (screenTitlePlacementControlMode === 'bottom') {
-          nextRect = applyScreenTitlePlacementDrag(baseRect, 'bottom', 0, action === 'edge_out' ? dyPct : -dyPct)
-        }
-      }
-      if (isSameScreenTitlePlacementRect(nextRect, baseRect)) return
-      const nextInstances = (screenTitlePlacementEditor.instances || []).slice()
-      nextInstances[idx] = {
-        ...current,
-        customStyle: { ...(current?.customStyle || {}), placementRect: nextRect },
-      }
-      setScreenTitlePlacementEditor({ ...screenTitlePlacementEditor, instances: nextInstances })
+      // Arrow nudges are explicit edit intent; mark dirty so Render is available.
       setScreenTitlePlacementDirty(true)
       setScreenTitlePlacementError(null)
+      setScreenTitlePlacementEditor((prev) => {
+        if (!prev) return prev
+        const activeId = String(prev.activeInstanceId || '')
+        const idx = (prev.instances || []).findIndex((inst) => String(inst.id) === activeId)
+        if (idx < 0) return prev
+        const current = (prev.instances || [])[idx] as any
+        const baseRect = normalizeScreenTitlePlacementRectForEditor((current?.customStyle as any)?.placementRect)
+        let nextRect = baseRect
+        if (screenTitlePlacementControlMode === 'move') {
+          if (action === 'move_left') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', -dxPct, 0)
+          if (action === 'move_right') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', dxPct, 0)
+          if (action === 'move_up') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, -dyPct)
+          if (action === 'move_down') nextRect = applyScreenTitlePlacementDrag(baseRect, 'move', 0, dyPct)
+        } else {
+          if (action !== 'edge_in' && action !== 'edge_out') return prev
+          if (screenTitlePlacementControlMode === 'left') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'left', action === 'edge_out' ? -dxPct : dxPct, 0)
+          } else if (screenTitlePlacementControlMode === 'right') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'right', action === 'edge_out' ? dxPct : -dxPct, 0)
+          } else if (screenTitlePlacementControlMode === 'top') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'top', 0, action === 'edge_out' ? -dyPct : dyPct)
+          } else if (screenTitlePlacementControlMode === 'bottom') {
+            nextRect = applyScreenTitlePlacementDrag(baseRect, 'bottom', 0, action === 'edge_out' ? dyPct : -dyPct)
+          }
+        }
+        if (isSameScreenTitlePlacementRect(nextRect, baseRect)) return prev
+        const nextInstances = (prev.instances || []).slice()
+        nextInstances[idx] = {
+          ...current,
+          customStyle: { ...(current?.customStyle || {}), placementRect: nextRect },
+        }
+        return { ...prev, instances: nextInstances }
+      })
     },
-    [screenTitlePlacementControlMode, screenTitlePlacementEditor, screenTitlePlacementStepPx]
+    [screenTitlePlacementControlMode, screenTitlePlacementStepPx]
   )
+
+  const stopScreenTitleNudgeRepeat = useCallback(() => {
+    const rep = screenTitleNudgeRepeatRef.current
+    if (rep.timeoutId != null) {
+      try { window.clearTimeout(rep.timeoutId) } catch {}
+      rep.timeoutId = null
+    }
+    if (rep.intervalId != null) {
+      try { window.clearInterval(rep.intervalId) } catch {}
+      rep.intervalId = null
+    }
+    rep.pointerId = null
+    rep.repeating = false
+    rep.active = false
+  }, [])
+
+  const startScreenTitleNudgeRepeat = useCallback(
+    (
+      action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out',
+      pointerId: number | null
+    ) => {
+      const rep = screenTitleNudgeRepeatRef.current
+      if (rep.active) return
+      stopScreenTitleNudgeRepeat()
+      rep.active = true
+      rep.pointerId = pointerId
+      rep.repeating = false
+      nudgeScreenTitlePlacement(action)
+      rep.timeoutId = window.setTimeout(() => {
+        rep.timeoutId = null
+        rep.repeating = true
+        rep.intervalId = window.setInterval(() => {
+          nudgeScreenTitlePlacement(action)
+        }, 55)
+      }, 240)
+    },
+    [nudgeScreenTitlePlacement, stopScreenTitleNudgeRepeat]
+  )
+
+  const beginScreenTitleNudgeRepeat = useCallback(
+    (action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out') =>
+      (e: React.PointerEvent<HTMLButtonElement>) => {
+        if ((e as any).button != null && (e as any).button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        startScreenTitleNudgeRepeat(action, e.pointerId)
+        try { (e.currentTarget as any).setPointerCapture?.(e.pointerId) } catch {}
+      },
+    [startScreenTitleNudgeRepeat]
+  )
+
+  const shouldUseLegacyNudgeEvents = useCallback((): boolean => {
+    try {
+      return !(typeof window !== 'undefined' && (window as any).PointerEvent)
+    } catch {
+      return true
+    }
+  }, [])
+
+  const beginScreenTitleNudgeRepeatMouse = useCallback(
+    (action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out') =>
+      (e: React.MouseEvent<HTMLButtonElement>) => {
+        if (!shouldUseLegacyNudgeEvents()) return
+        if (e.button != null && e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        startScreenTitleNudgeRepeat(action, null)
+      },
+    [shouldUseLegacyNudgeEvents, startScreenTitleNudgeRepeat]
+  )
+
+  const beginScreenTitleNudgeRepeatTouch = useCallback(
+    (action: 'move_left' | 'move_right' | 'move_up' | 'move_down' | 'edge_in' | 'edge_out') =>
+      (e: React.TouchEvent<HTMLButtonElement>) => {
+        if (!shouldUseLegacyNudgeEvents()) return
+        e.stopPropagation()
+        startScreenTitleNudgeRepeat(action, null)
+      },
+    [shouldUseLegacyNudgeEvents, startScreenTitleNudgeRepeat]
+  )
+
+  const endScreenTitleNudgeRepeat = useCallback((e?: React.PointerEvent<HTMLButtonElement> | PointerEvent) => {
+    const rep = screenTitleNudgeRepeatRef.current
+    const incomingPointerId =
+      e && typeof (e as any).pointerId === 'number' ? Number((e as any).pointerId) : null
+    if (incomingPointerId == null && rep.pointerId != null) return
+    if (incomingPointerId != null && rep.pointerId != null && incomingPointerId !== rep.pointerId) return
+    stopScreenTitleNudgeRepeat()
+  }, [stopScreenTitleNudgeRepeat])
+
+  const endScreenTitleNudgeRepeatLegacy = useCallback((e?: React.SyntheticEvent<HTMLButtonElement>) => {
+    if (!shouldUseLegacyNudgeEvents()) return
+    e?.stopPropagation?.()
+    endScreenTitleNudgeRepeat()
+  }, [endScreenTitleNudgeRepeat, shouldUseLegacyNudgeEvents])
+
+  useEffect(() => {
+    if (screenTitlePlacementEditor) return
+    stopScreenTitleNudgeRepeat()
+  }, [screenTitlePlacementEditor, stopScreenTitleNudgeRepeat])
+
+  useEffect(() => {
+    return () => {
+      stopScreenTitleNudgeRepeat()
+    }
+  }, [stopScreenTitleNudgeRepeat])
+
+  useEffect(() => {
+    const onPointerDone = (ev: PointerEvent) => {
+      const rep = screenTitleNudgeRepeatRef.current
+      if (rep.pointerId == null) return
+      if (ev.pointerId !== rep.pointerId) return
+      endScreenTitleNudgeRepeat(ev)
+    }
+    const onLegacyDone = () => {
+      const rep = screenTitleNudgeRepeatRef.current
+      if (!rep.active) return
+      if (rep.pointerId != null) return
+      endScreenTitleNudgeRepeat()
+    }
+    window.addEventListener('pointerup', onPointerDone, { passive: true })
+    window.addEventListener('pointercancel', onPointerDone, { passive: true })
+    window.addEventListener('mouseup', onLegacyDone, { passive: true })
+    window.addEventListener('touchend', onLegacyDone, { passive: true })
+    window.addEventListener('touchcancel', onLegacyDone, { passive: true })
+    return () => {
+      window.removeEventListener('pointerup', onPointerDone as any)
+      window.removeEventListener('pointercancel', onPointerDone as any)
+      window.removeEventListener('mouseup', onLegacyDone as any)
+      window.removeEventListener('touchend', onLegacyDone as any)
+      window.removeEventListener('touchcancel', onLegacyDone as any)
+    }
+  }, [endScreenTitleNudgeRepeat])
 
   const saveScreenTitlePlacement = useCallback(async (closeEditorOnSuccess: boolean = true) => {
     if (!screenTitlePlacementEditor) return
@@ -17419,6 +17562,9 @@ export default function CreateVideo() {
                 >
                     <div
                       ref={screenTitlePlacementPanelRef}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                      }}
                       style={{
                         position: 'absolute',
                         left: Math.round(screenTitlePlacementPanelPos.x),
@@ -17428,19 +17574,22 @@ export default function CreateVideo() {
                           screenTitleMiniPanelTab === 'style'
                             ? SCREEN_TITLE_STYLE_PANEL_WIDTH_PX
                             : SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX,
-                        borderRadius: 12,
-                        border: '1px solid rgba(255,255,255,0.20)',
-                        background: 'rgba(0,0,0,0.72)',
-                        backdropFilter: 'blur(6px)',
+                        borderRadius: 14,
+                        border: '1px solid rgba(96,165,250,0.95)',
+                        background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                        boxShadow: '0 10px 26px rgba(0,0,0,0.55)',
                         pointerEvents: 'auto',
                         boxSizing: 'border-box',
+                        userSelect: 'none',
+                        WebkitUserSelect: 'none',
+                        WebkitTouchCallout: 'none',
                       }}
                     >
                       <div
                         onPointerDown={beginScreenTitlePlacementPanelDrag}
                         style={{
-                          padding: '7px 10px',
-                          borderBottom: '1px solid rgba(255,255,255,0.14)',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid rgba(96,165,250,0.45)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
@@ -17458,7 +17607,7 @@ export default function CreateVideo() {
                             minWidth: 0,
                           }}
                         >
-                          <span style={{ color: '#dbeafe', fontSize: 12, fontWeight: 900 }}>
+                          <span style={{ color: '#fff', fontSize: 13, fontWeight: 900 }}>
                             {screenTitleMiniPanelTab === 'style' ? 'Style' : 'Placement'}
                           </span>
                           <span style={{ color: '#9aa3ad', fontSize: 12, fontWeight: 900 }}>::</span>
@@ -17471,17 +17620,17 @@ export default function CreateVideo() {
                           onClick={closeScreenTitlePlacement}
                           disabled={screenTitleRenderBusy}
                           style={{
-                            borderRadius: 8,
-                            border: '1px solid rgba(255,255,255,0.22)',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
                             background: screenTitleRenderBusy ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.08)',
                             color: '#fff',
-                            width: 26,
-                            height: 26,
+                            width: 28,
+                            height: 28,
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             fontSize: 13,
-                            fontWeight: 900,
+                            fontWeight: 800,
                             cursor: screenTitleRenderBusy ? 'default' : 'pointer',
                             flex: '0 0 auto',
                             opacity: screenTitleRenderBusy ? 0.6 : 1,
@@ -17491,7 +17640,7 @@ export default function CreateVideo() {
                           X
                         </button>
                       </div>
-                      <div style={{ padding: 10, display: 'grid', gap: 10 }}>
+                      <div style={{ padding: 12, display: 'grid', gap: 10 }}>
                         <select
                           value={String(screenTitlePlacementEditor.activeInstanceId || '')}
                           onChange={(e) => {
@@ -17502,12 +17651,13 @@ export default function CreateVideo() {
                           }}
                           style={{
                             width: '100%',
-                            borderRadius: 8,
+                            maxWidth: '100%',
+                            borderRadius: 10,
                             border: '1px solid rgba(255,255,255,0.18)',
                             background: '#0b0b0b',
                             color: '#fff',
-                            padding: '6px 8px',
-                            fontSize: 12,
+                            padding: '10px 12px',
+                            fontSize: 13,
                             fontWeight: 900,
                             boxSizing: 'border-box',
                           }}
@@ -17526,12 +17676,12 @@ export default function CreateVideo() {
                               setScreenTitleStyleAlignMenuOpen(false)
                             }}
                             style={{
-                              padding: '6px 0',
-                              borderRadius: 8,
+                              padding: '8px 0',
+                              borderRadius: 10,
                               border: `1px solid ${screenTitleMiniPanelTab === 'style' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
                               background: screenTitleMiniPanelTab === 'style' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
                               color: '#fff',
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: 900,
                               cursor: 'pointer',
                             }}
@@ -17545,12 +17695,12 @@ export default function CreateVideo() {
                               setScreenTitleStyleAlignMenuOpen(false)
                             }}
                             style={{
-                              padding: '6px 0',
-                              borderRadius: 8,
+                              padding: '8px 0',
+                              borderRadius: 10,
                               border: `1px solid ${screenTitleMiniPanelTab === 'placement' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
                               background: screenTitleMiniPanelTab === 'placement' ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
                               color: '#fff',
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: 900,
                               cursor: 'pointer',
                             }}
@@ -17755,7 +17905,18 @@ export default function CreateVideo() {
                             >
                               <button
                                 type="button"
-                                onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.firstAction)}
+                                onPointerDown={beginScreenTitleNudgeRepeat(screenTitlePlacementArrowControls.firstAction)}
+                                onPointerUp={endScreenTitleNudgeRepeat}
+                                onPointerCancel={endScreenTitleNudgeRepeat}
+                                onMouseDown={beginScreenTitleNudgeRepeatMouse(screenTitlePlacementArrowControls.firstAction)}
+                                onMouseUp={endScreenTitleNudgeRepeatLegacy}
+                                onMouseLeave={endScreenTitleNudgeRepeatLegacy}
+                                onTouchStart={beginScreenTitleNudgeRepeatTouch(screenTitlePlacementArrowControls.firstAction)}
+                                onTouchEnd={endScreenTitleNudgeRepeatLegacy}
+                                onTouchCancel={endScreenTitleNudgeRepeatLegacy}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                }}
                                 style={{
                                   width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
                                   height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
@@ -17768,6 +17929,7 @@ export default function CreateVideo() {
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
+                                  touchAction: 'none',
                                 }}
                                 aria-label={screenTitlePlacementArrowControls.firstAria}
                               >
@@ -17786,7 +17948,18 @@ export default function CreateVideo() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.secondAction)}
+                                onPointerDown={beginScreenTitleNudgeRepeat(screenTitlePlacementArrowControls.secondAction)}
+                                onPointerUp={endScreenTitleNudgeRepeat}
+                                onPointerCancel={endScreenTitleNudgeRepeat}
+                                onMouseDown={beginScreenTitleNudgeRepeatMouse(screenTitlePlacementArrowControls.secondAction)}
+                                onMouseUp={endScreenTitleNudgeRepeatLegacy}
+                                onMouseLeave={endScreenTitleNudgeRepeatLegacy}
+                                onTouchStart={beginScreenTitleNudgeRepeatTouch(screenTitlePlacementArrowControls.secondAction)}
+                                onTouchEnd={endScreenTitleNudgeRepeatLegacy}
+                                onTouchCancel={endScreenTitleNudgeRepeatLegacy}
+                                onContextMenu={(e) => {
+                                  e.preventDefault()
+                                }}
                                 style={{
                                   width: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX,
                                   height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
@@ -17799,6 +17972,7 @@ export default function CreateVideo() {
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
+                                  touchAction: 'none',
                                 }}
                                 aria-label={screenTitlePlacementArrowControls.secondAria}
                               >
@@ -17921,13 +18095,14 @@ export default function CreateVideo() {
                                       }}
                                       style={{
                                         width: '100%',
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        borderRadius: 10,
                                         border: '1px solid rgba(255,255,255,0.18)',
                                         background: '#0b0b0b',
                                         color: '#fff',
-                                        padding: '8px 10px',
-                                        fontSize: 12,
-                                        fontWeight: 800,
+                                        padding: '10px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 900,
                                         boxSizing: 'border-box',
                                       }}
                                     >
@@ -17948,8 +18123,9 @@ export default function CreateVideo() {
                                       aria-label={`Text align: ${align}`}
                                       style={{
                                         width: '100%',
-                                        height: 34,
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        height: 38,
+                                        borderRadius: 10,
                                         border: '1px solid rgba(96,165,250,0.95)',
                                         background: 'rgba(96,165,250,0.16)',
                                         color: '#fff',
@@ -17977,9 +18153,9 @@ export default function CreateVideo() {
                                           gap: 4,
                                           minWidth: 84,
                                           padding: 6,
-                                          borderRadius: 8,
+                                          borderRadius: 10,
                                           border: '1px solid rgba(255,255,255,0.18)',
-                                          background: 'rgba(12,16,22,0.98)',
+                                          background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
                                           boxShadow: '0 8px 20px rgba(0,0,0,0.42)',
                                         }}
                                       >
@@ -18009,8 +18185,8 @@ export default function CreateVideo() {
                                               }}
                                               aria-label={item.label}
                                               style={{
-                                                height: 34,
-                                                borderRadius: 8,
+                                                height: 38,
+                                                borderRadius: 10,
                                                 border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
                                                 background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
                                                 color: '#fff',
@@ -18061,13 +18237,15 @@ export default function CreateVideo() {
                                       }}
                                       style={{
                                         width: '100%',
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        borderRadius: 10,
                                         border: '1px solid rgba(255,255,255,0.18)',
                                         background: '#0b0b0b',
                                         color: '#fff',
-                                        padding: '8px 10px',
-                                        fontSize: 12,
-                                        fontWeight: 800,
+                                        padding: '10px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 900,
+                                        boxSizing: 'border-box',
                                       }}
                                     >
                                       {screenTitleFontFamilies.map((f) => (
@@ -18098,13 +18276,15 @@ export default function CreateVideo() {
                                       }}
                                       style={{
                                         width: '100%',
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        borderRadius: 10,
                                         border: '1px solid rgba(255,255,255,0.18)',
                                         background: '#0b0b0b',
                                         color: '#fff',
-                                        padding: '8px 10px',
-                                        fontSize: 12,
-                                        fontWeight: 800,
+                                        padding: '10px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 900,
+                                        boxSizing: 'border-box',
                                       }}
                                     >
                                       {(family?.variants || []).map((v) => (
@@ -18149,13 +18329,15 @@ export default function CreateVideo() {
                                       }}
                                       style={{
                                         width: '100%',
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        borderRadius: 10,
                                         border: '1px solid rgba(255,255,255,0.18)',
                                         background: '#0b0b0b',
                                         color: '#fff',
-                                        padding: '8px 10px',
-                                        fontSize: 12,
-                                        fontWeight: 800,
+                                        padding: '10px 12px',
+                                        fontSize: 13,
+                                        fontWeight: 900,
+                                        boxSizing: 'border-box',
                                       }}
                                     >
                                       {sizeOptions.map((opt) => (
@@ -18187,8 +18369,9 @@ export default function CreateVideo() {
                                       }}
                                       style={{
                                         width: '100%',
-                                        height: 34,
-                                        borderRadius: 8,
+                                        maxWidth: '100%',
+                                        height: 38,
+                                        borderRadius: 10,
                                         border: '1px solid rgba(255,255,255,0.18)',
                                         background: '#0b0b0b',
                                         padding: 0,
@@ -18223,13 +18406,15 @@ export default function CreateVideo() {
                                     }}
                                     style={{
                                       width: '100%',
-                                      borderRadius: 8,
+                                      maxWidth: '100%',
+                                      borderRadius: 10,
                                       border: '1px solid rgba(255,255,255,0.18)',
                                       background: '#0b0b0b',
                                       color: '#fff',
-                                      padding: '8px 10px',
-                                      fontSize: 12,
-                                      fontWeight: 800,
+                                      padding: '10px 12px',
+                                      fontSize: 13,
+                                      fontWeight: 900,
+                                      boxSizing: 'border-box',
                                     }}
                                   >
                                     <option value="">None</option>
@@ -18263,12 +18448,12 @@ export default function CreateVideo() {
                                 screenTitleMiniPanelTab === 'style'
                                   ? '100%'
                                   : SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
-                              padding: '8px 10px',
-                              borderRadius: 8,
-                              border: '1px solid rgba(255,255,255,0.22)',
-                              background: 'rgba(255,255,255,0.08)',
+                              padding: '10px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: 'rgba(255,255,255,0.06)',
                               color: '#fff',
-                              fontWeight: 900,
+                              fontWeight: 800,
                               cursor: screenTitleRenderBusy ? 'default' : 'pointer',
                             }}
                           >
@@ -18283,15 +18468,15 @@ export default function CreateVideo() {
                                 screenTitleMiniPanelTab === 'style'
                                   ? '100%'
                                   : SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX,
-                              padding: '8px 10px',
-                              borderRadius: 8,
+                              padding: '10px 12px',
+                              borderRadius: 10,
                               border: `1px solid ${screenTitlePlacementDirty ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
                               background:
                                 screenTitleRenderBusy
                                   ? 'rgba(96,165,250,0.08)'
                                   : screenTitlePlacementDirty
-                                    ? 'rgba(96,165,250,0.24)'
-                                    : 'rgba(255,255,255,0.08)',
+                                    ? 'rgba(96,165,250,0.14)'
+                                    : 'rgba(255,255,255,0.06)',
                               color: '#fff',
                               fontWeight: 900,
                               cursor: screenTitleRenderBusy || !screenTitlePlacementDirty ? 'default' : 'pointer',
