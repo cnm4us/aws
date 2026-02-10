@@ -1039,6 +1039,7 @@ export default function CreateVideo() {
   const [screenTitlePlacementError, setScreenTitlePlacementError] = useState<string | null>(null)
   const [screenTitlePlacementAdvancedOpen, setScreenTitlePlacementAdvancedOpen] = useState(false)
   const [screenTitlePlacementControlMode, setScreenTitlePlacementControlMode] = useState<'move' | 'left' | 'right' | 'top' | 'bottom'>('move')
+  const [screenTitlePlacementMoveAxis, setScreenTitlePlacementMoveAxis] = useState<'vertical' | 'horizontal'>('vertical')
   const [screenTitlePlacementStepPx, setScreenTitlePlacementStepPx] = useState<1 | 5>(1)
   const [screenTitlePlacementPanelPos, setScreenTitlePlacementPanelPos] = useState<{ x: number; y: number }>({ x: 8, y: 126 })
   const [screenTitlePlacementDirty, setScreenTitlePlacementDirty] = useState(false)
@@ -2405,6 +2406,7 @@ export default function CreateVideo() {
         activeInstanceId,
       })
       setScreenTitlePlacementControlMode('move')
+      setScreenTitlePlacementMoveAxis('vertical')
       setScreenTitlePlacementStepPx(1)
       setScreenTitlePlacementPanelPos({ x: 8, y: 126 })
       setScreenTitlePlacementDirty(false)
@@ -3777,6 +3779,70 @@ export default function CreateVideo() {
     const t = Number(playhead || 0)
     return Number.isFinite(s) && Number.isFinite(e) && Number.isFinite(t) && t >= s - 1e-6 && t <= e + 1e-6
   }, [playhead, screenTitlePlacementSegment])
+
+  const screenTitlePlacementMoveVertical = screenTitlePlacementControlMode === 'move' && screenTitlePlacementMoveAxis === 'vertical'
+  const screenTitlePlacementMoveHorizontal = screenTitlePlacementControlMode === 'move' && screenTitlePlacementMoveAxis === 'horizontal'
+
+  const screenTitlePlacementArrowControls = useMemo(() => {
+    if (screenTitlePlacementControlMode === 'move') {
+      if (screenTitlePlacementMoveAxis === 'vertical') {
+        return {
+          firstAction: 'move_up' as const,
+          secondAction: 'move_down' as const,
+          firstRotation: -90,
+          secondRotation: 90,
+          firstAria: 'Nudge up',
+          secondAria: 'Nudge down',
+        }
+      }
+      return {
+        firstAction: 'move_left' as const,
+        secondAction: 'move_right' as const,
+        firstRotation: 180,
+        secondRotation: 0,
+        firstAria: 'Nudge left',
+        secondAria: 'Nudge right',
+      }
+    }
+    if (screenTitlePlacementControlMode === 'left') {
+      return {
+        firstAction: 'edge_in' as const,
+        secondAction: 'edge_out' as const,
+        firstRotation: 0,
+        secondRotation: 180,
+        firstAria: 'Nudge edge in',
+        secondAria: 'Nudge edge out',
+      }
+    }
+    if (screenTitlePlacementControlMode === 'right') {
+      return {
+        firstAction: 'edge_in' as const,
+        secondAction: 'edge_out' as const,
+        firstRotation: 180,
+        secondRotation: 0,
+        firstAria: 'Nudge edge in',
+        secondAria: 'Nudge edge out',
+      }
+    }
+    if (screenTitlePlacementControlMode === 'top') {
+      return {
+        firstAction: 'edge_in' as const,
+        secondAction: 'edge_out' as const,
+        firstRotation: 90,
+        secondRotation: -90,
+        firstAria: 'Nudge edge in',
+        secondAria: 'Nudge edge out',
+      }
+    }
+    return {
+      firstAction: 'edge_in' as const,
+      secondAction: 'edge_out' as const,
+      firstRotation: -90,
+      secondRotation: 90,
+      firstAria: 'Nudge edge in',
+      secondAria: 'Nudge edge out',
+    }
+  }, [screenTitlePlacementControlMode, screenTitlePlacementMoveAxis])
 
   const activeVideoOverlayPreview = useMemo(() => {
     const o: any = activeVideoOverlayAtPlayhead as any
@@ -7638,6 +7704,7 @@ export default function CreateVideo() {
   useEffect(() => {
     if (screenTitlePlacementEditor) return
     setScreenTitlePlacementAdvancedOpen(false)
+    setScreenTitlePlacementMoveAxis('vertical')
     setScreenTitlePlacementDirty(false)
     screenTitlePlacementPanelDragRef.current = null
     if (screenTitlePlacementPanelStopDragRef.current) {
@@ -17405,7 +17472,7 @@ export default function CreateVideo() {
                             </option>
                           ))}
                         </select>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                           <div
                             style={{
                               position: 'relative',
@@ -17429,11 +17496,11 @@ export default function CreateVideo() {
                                 height: 20,
                                 border: 0,
                                 boxShadow:
-                                  screenTitlePlacementControlMode === 'top'
+                                  screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
                                     ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
                                     : 'none',
                                 background:
-                                  screenTitlePlacementControlMode === 'top'
+                                  screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'transparent',
                                 color: '#fff',
@@ -17452,11 +17519,11 @@ export default function CreateVideo() {
                                 bottom: 20,
                                 border: 0,
                                 boxShadow:
-                                  screenTitlePlacementControlMode === 'right'
+                                  screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
                                     ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
                                     : 'none',
                                 background:
-                                  screenTitlePlacementControlMode === 'right'
+                                  screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'transparent',
                                 color: '#fff',
@@ -17475,11 +17542,11 @@ export default function CreateVideo() {
                                 height: 20,
                                 border: 0,
                                 boxShadow:
-                                  screenTitlePlacementControlMode === 'bottom'
+                                  screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
                                     ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
                                     : 'none',
                                 background:
-                                  screenTitlePlacementControlMode === 'bottom'
+                                  screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'transparent',
                                 color: '#fff',
@@ -17498,11 +17565,11 @@ export default function CreateVideo() {
                                 bottom: 20,
                                 border: 0,
                                 boxShadow:
-                                  screenTitlePlacementControlMode === 'left'
+                                  screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
                                     ? 'inset 0 0 0 1px rgba(96,165,250,0.95)'
                                     : 'none',
                                 background:
-                                  screenTitlePlacementControlMode === 'left'
+                                  screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'transparent',
                                 color: '#fff',
@@ -17512,7 +17579,16 @@ export default function CreateVideo() {
                             />
                             <button
                               type="button"
-                              onClick={() => setScreenTitlePlacementControlMode('move')}
+                              onClick={() => {
+                                if (screenTitlePlacementControlMode === 'move') {
+                                  setScreenTitlePlacementMoveAxis((prev) =>
+                                    prev === 'vertical' ? 'horizontal' : 'vertical'
+                                  )
+                                } else {
+                                  setScreenTitlePlacementControlMode('move')
+                                  setScreenTitlePlacementMoveAxis('vertical')
+                                }
+                              }}
                               style={{
                                 position: 'absolute',
                                 left: '50%',
@@ -17532,12 +17608,7 @@ export default function CreateVideo() {
                             </button>
                           </div>
                           <div style={{ display: 'grid', gap: 6, minWidth: 0, flex: 1 }}>
-                            <div style={{ color: '#bbb', fontSize: 11, fontWeight: 900 }}>
-                              {screenTitlePlacementControlMode === 'move'
-                                ? 'Mode: Move'
-                                : `Mode: Edge ${screenTitlePlacementControlMode}`}
-                            </div>
-                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
                               <button
                                 type="button"
                                 onClick={() => setScreenTitlePlacementStepPx(1)}
@@ -17571,45 +17642,70 @@ export default function CreateVideo() {
                                 5px
                               </button>
                             </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.firstAction)}
+                                style={{
+                                  padding: '6px 0',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: '#0b0b0b',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                aria-label={screenTitlePlacementArrowControls.firstAria}
+                              >
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden="true"
+                                  style={{
+                                    width: 14,
+                                    height: 14,
+                                    display: 'block',
+                                    filter: 'brightness(0) invert(1)',
+                                    transform: `rotate(${screenTitlePlacementArrowControls.firstRotation}deg)`,
+                                  }}
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => nudgeScreenTitlePlacement(screenTitlePlacementArrowControls.secondAction)}
+                                style={{
+                                  padding: '6px 0',
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: '#0b0b0b',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                aria-label={screenTitlePlacementArrowControls.secondAria}
+                              >
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden="true"
+                                  style={{
+                                    width: 14,
+                                    height: 14,
+                                    display: 'block',
+                                    filter: 'brightness(0) invert(1)',
+                                    transform: `rotate(${screenTitlePlacementArrowControls.secondRotation}deg)`,
+                                  }}
+                                />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        {screenTitlePlacementControlMode === 'move' ? (
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_left')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              ←
-                            </button>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_up')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              ↑
-                            </button>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_down')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              ↓
-                            </button>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('move_right')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              →
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('edge_in')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              {screenTitlePlacementControlMode === 'left'
-                                ? '→ In'
-                                : screenTitlePlacementControlMode === 'right'
-                                  ? '← In'
-                                  : screenTitlePlacementControlMode === 'top'
-                                    ? '↓ In'
-                                    : '↑ In'}
-                            </button>
-                            <button type="button" onClick={() => nudgeScreenTitlePlacement('edge_out')} style={{ padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', fontWeight: 900, cursor: 'pointer' }}>
-                              {screenTitlePlacementControlMode === 'left'
-                                ? '← Out'
-                                : screenTitlePlacementControlMode === 'right'
-                                  ? '→ Out'
-                                  : screenTitlePlacementControlMode === 'top'
-                                    ? '↑ Out'
-                                    : '↓ Out'}
-                            </button>
-                          </div>
-                        )}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                           <button
                             type="button"
@@ -17755,7 +17851,7 @@ export default function CreateVideo() {
                             borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
                             background:
-                              screenTitlePlacementControlMode === 'top'
+                              screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
                                 ? 'rgba(96,165,250,0.40)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
@@ -17780,7 +17876,7 @@ export default function CreateVideo() {
                             borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
                             background:
-                              screenTitlePlacementControlMode === 'right'
+                              screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
                                 ? 'rgba(96,165,250,0.40)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
@@ -17805,7 +17901,7 @@ export default function CreateVideo() {
                             borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
                             background:
-                              screenTitlePlacementControlMode === 'bottom'
+                              screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
                                 ? 'rgba(96,165,250,0.40)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
@@ -17830,7 +17926,7 @@ export default function CreateVideo() {
                             borderRadius: 8,
                             border: '2px solid rgba(96,165,250,1)',
                             background:
-                              screenTitlePlacementControlMode === 'left'
+                              screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
                                 ? 'rgba(96,165,250,0.40)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
@@ -22539,7 +22635,7 @@ export default function CreateVideo() {
                                 height: 16,
                                 cursor: 'ns-resize',
                                 background:
-                                  screenTitlePlacementControlMode === 'top'
+                                  screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'rgba(8,12,18,0.95)',
                               }}
@@ -22560,7 +22656,7 @@ export default function CreateVideo() {
                                 height: 32,
                                 cursor: 'ew-resize',
                                 background:
-                                  screenTitlePlacementControlMode === 'right'
+                                  screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'rgba(8,12,18,0.95)',
                               }}
@@ -22581,7 +22677,7 @@ export default function CreateVideo() {
                                 height: 16,
                                 cursor: 'ns-resize',
                                 background:
-                                  screenTitlePlacementControlMode === 'bottom'
+                                  screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'rgba(8,12,18,0.95)',
                               }}
@@ -22602,7 +22698,7 @@ export default function CreateVideo() {
                                 height: 32,
                                 cursor: 'ew-resize',
                                 background:
-                                  screenTitlePlacementControlMode === 'left'
+                                  screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
                                     ? 'rgba(96,165,250,0.40)'
                                     : 'rgba(8,12,18,0.95)',
                               }}
