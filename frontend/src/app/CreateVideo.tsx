@@ -17852,7 +17852,7 @@ export default function CreateVideo() {
                             border: '2px solid rgba(96,165,250,1)',
                             background:
                               screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
-                                ? 'rgba(96,165,250,0.40)'
+                                ? 'rgba(96,165,250,1)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
                             touchAction: 'none',
@@ -17877,7 +17877,7 @@ export default function CreateVideo() {
                             border: '2px solid rgba(96,165,250,1)',
                             background:
                               screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
-                                ? 'rgba(96,165,250,0.40)'
+                                ? 'rgba(96,165,250,1)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
                             touchAction: 'none',
@@ -17902,7 +17902,7 @@ export default function CreateVideo() {
                             border: '2px solid rgba(96,165,250,1)',
                             background:
                               screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
-                                ? 'rgba(96,165,250,0.40)'
+                                ? 'rgba(96,165,250,1)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ns-resize',
                             touchAction: 'none',
@@ -17927,7 +17927,7 @@ export default function CreateVideo() {
                             border: '2px solid rgba(96,165,250,1)',
                             background:
                               screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
-                                ? 'rgba(96,165,250,0.40)'
+                                ? 'rgba(96,165,250,1)'
                                 : 'rgba(8,12,18,0.95)',
                             cursor: 'ew-resize',
                             touchAction: 'none',
