@@ -151,7 +151,7 @@ export default function TimelineContextMenu(props: any) {
 				                  {(timelineCtxMenu.view || 'main') === 'guidelines'
 				                    ? 'Actions'
                               : (timelineCtxMenu.view || 'main') === 'screenTitlePlacementPick'
-                                ? 'Quick Changes'
+                                ? 'Style/Placement'
 					                    : timelineCtxMenu.kind === 'audioSegment'
 					                      ? 'Audio'
 					                    : timelineCtxMenu.kind === 'still'
@@ -694,7 +694,7 @@ export default function TimelineContextMenu(props: any) {
                                 textAlign: 'left',
                               }}
                             >
-                              Customize Style
+                              Text
                             </button>
                             <button
                               type="button"
@@ -717,7 +717,7 @@ export default function TimelineContextMenu(props: any) {
                                 textAlign: 'left',
                               }}
                             >
-                              Quick Changes
+                              Style/Placement
                             </button>
                           </>
                         ) : null}
