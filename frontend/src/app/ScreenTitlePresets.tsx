@@ -162,6 +162,19 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 
 // iOS Safari auto-zooms focused inputs if font-size < 16px.
 const FORM_CONTROL_FONT_SIZE_PX = 16
+const PREVIEW_BG_COLOR_STORAGE_KEY = 'screen_title_presets.preview_bg_color'
+const PREVIEW_ALIGNMENT_STORAGE_KEY = 'screen_title_presets.preview_alignment'
+const OUTLINE_WIDTH_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 3, label: '3' },
+  { value: 5, label: '5' },
+  { value: 10, label: '10' },
+  { value: 15, label: '15' },
+  { value: 20, label: '20' },
+  ...Array.from({ length: 16 }, (_v, i) => {
+    const value = 25 + i * 5
+    return { value, label: String(value) }
+  }),
+]
 
 function styleLabel(s: any): string {
   const v = String(s || '').toLowerCase()
@@ -182,6 +195,40 @@ function timingLabel(rule: ScreenTitleTimingRule, seconds: number | null): strin
   if (rule === 'entire') return 'Till end'
   const s = seconds != null ? `${seconds}s` : '?'
   return `First ${s}`
+}
+
+function buildStylePreviewText(description: string | null | undefined): string {
+  const raw = String(description || '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+  if (!raw) return 'Screen title preview\nSecond line\nThird line'
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (!lines.length) return 'Screen title preview\nSecond line\nThird line'
+  return lines.join('\n').slice(0, 1000)
+}
+
+function readStoredPreviewBgColor(): string {
+  try {
+    if (typeof window === 'undefined') return '#111111'
+    const raw = String(window.localStorage.getItem(PREVIEW_BG_COLOR_STORAGE_KEY) || '').trim()
+    return /^#([0-9a-fA-F]{6})$/.test(raw) ? raw.toLowerCase() : '#111111'
+  } catch {
+    return '#111111'
+  }
+}
+
+function readStoredPreviewAlignment(): ScreenTitleAlignment | null {
+  try {
+    if (typeof window === 'undefined') return null
+    const raw = String(window.localStorage.getItem(PREVIEW_ALIGNMENT_STORAGE_KEY) || '').trim().toLowerCase()
+    if (raw === 'left' || raw === 'center' || raw === 'right') return raw
+    return null
+  } catch {
+    return null
+  }
 }
 
 function parseFromHref(): string | null {
@@ -319,11 +366,71 @@ export default function ScreenTitlePresetsPage() {
     outlineOpacityPct: number | null
     outlineColor: string | null
   }>({ outlineWidthPct: null, outlineOpacityPct: null, outlineColor: null })
+  const lastEnabledShadowRef = useRef<{
+    shadowColor: string
+    shadowOffsetPx: number
+    shadowBlurPx: number
+    shadowOpacityPct: number
+  }>({ shadowColor: '#000000', shadowOffsetPx: 2, shadowBlurPx: 0, shadowOpacityPct: 65 })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [previewBgColor, setPreviewBgColor] = useState(() => readStoredPreviewBgColor())
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewDirty, setPreviewDirty] = useState(true)
+  const [previewAlignMenuOpen, setPreviewAlignMenuOpen] = useState(false)
+  const previewAlignMenuRef = useRef<HTMLDivElement | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [cloningId, setCloningId] = useState<number | null>(null)
   const handledDeepLinkRef = useRef(false)
+  const shadowEnabled = Number(draft.shadowOpacityPct) > 0
+  const outlineDisabled = Number(draft.outlineWidthPct) === 0 || Number(draft.outlineOpacityPct) === 0
+  const outlineEnabled = !outlineDisabled
+
+  const clearPreview = useCallback(() => {
+    setPreviewError(null)
+    setPreviewDirty(true)
+    setPreviewAlignMenuOpen(false)
+    setPreviewImageUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (previewImageUrl) URL.revokeObjectURL(previewImageUrl)
+    }
+  }, [previewImageUrl])
+
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return
+      window.localStorage.setItem(PREVIEW_BG_COLOR_STORAGE_KEY, previewBgColor)
+    } catch {}
+  }, [previewBgColor])
+
+  useEffect(() => {
+    if (!previewAlignMenuOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const root = previewAlignMenuRef.current
+      const target = e.target as Node | null
+      if (!root || (target && root.contains(target))) return
+      setPreviewAlignMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [previewAlignMenuOpen])
+
+  useEffect(() => {
+    const align = String(draft.alignment || '').trim().toLowerCase()
+    if (align !== 'left' && align !== 'center' && align !== 'right') return
+    try {
+      if (typeof window === 'undefined') return
+      window.localStorage.setItem(PREVIEW_ALIGNMENT_STORAGE_KEY, align)
+    } catch {}
+  }, [draft.alignment])
 
   useEffect(() => {
     let cancelled = false
@@ -410,11 +517,16 @@ export default function ScreenTitlePresetsPage() {
   const activePresets = useMemo(() => presets.filter((p) => !p.archivedAt), [presets])
 
   const openNew = useCallback(() => {
+    const storedAlign = readStoredPreviewAlignment()
     setSelectedId(null)
-    setDraft(defaultDraft())
+    setDraft((prev) => ({
+      ...defaultDraft(),
+      alignment: storedAlign || prev.alignment || 'center',
+    }))
     setSaveError(null)
+    clearPreview()
     setView('edit')
-  }, [])
+  }, [clearPreview])
 
   const openEdit = useCallback((preset: ScreenTitlePreset) => {
     setSelectedId(preset.id)
@@ -445,18 +557,20 @@ export default function ScreenTitlePresetsPage() {
       fade: preset.fade,
     })
     setSaveError(null)
+    clearPreview()
     setView('edit')
-  }, [])
+  }, [clearPreview])
 
   const closeEdit = useCallback(() => {
     setView('list')
     setSelectedId(null)
     setDraft(defaultDraft())
     setSaveError(null)
+    clearPreview()
     setDeletingId(null)
     setCloningId(null)
     setSaving(false)
-  }, [])
+  }, [clearPreview])
 
   const selectedFontFamily = useMemo(() => {
     const currentKey = String(draft.fontKey || '').trim()
@@ -706,6 +820,150 @@ export default function ScreenTitlePresetsPage() {
       setSaving(false)
     }
   }, [me?.userId, backToTimelineHref, selectedId, draft])
+
+  useEffect(() => {
+    if (view !== 'edit') return
+    setPreviewDirty(true)
+    setPreviewError(null)
+  }, [draft, view])
+
+  const generatePreview = useCallback(async () => {
+    setPreviewLoading(true)
+    setPreviewError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const csrf = getCsrfToken()
+      if (csrf) headers['x-csrf-token'] = csrf
+      const payload: any = {
+        text: buildStylePreviewText(draft.description),
+        frame: { width: 1080, height: 1920 },
+        preset: draft,
+      }
+      const res = await fetch('/api/screen-title-presets/preview', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error || 'Failed to generate preview')
+      }
+      const blob = await res.blob()
+      const nextUrl = URL.createObjectURL(blob)
+      setPreviewImageUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return nextUrl
+      })
+      setPreviewDirty(false)
+    } catch (e: any) {
+      setPreviewError(e?.message || 'Failed to generate preview')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [draft])
+
+  useEffect(() => {
+    if (!shadowEnabled) return
+    const color = String(draft.shadowColor || '#000000').trim() || '#000000'
+    const offset = Number.isFinite(Number(draft.shadowOffsetPx)) ? Number(draft.shadowOffsetPx) : 2
+    const blur = Number.isFinite(Number(draft.shadowBlurPx)) ? Number(draft.shadowBlurPx) : 0
+    const opacity = Number.isFinite(Number(draft.shadowOpacityPct)) ? Number(draft.shadowOpacityPct) : 65
+    lastEnabledShadowRef.current = {
+      shadowColor: color,
+      shadowOffsetPx: offset,
+      shadowBlurPx: blur,
+      shadowOpacityPct: Math.max(1, Math.round(opacity)),
+    }
+  }, [draft.shadowBlurPx, draft.shadowColor, draft.shadowOffsetPx, draft.shadowOpacityPct, shadowEnabled])
+
+  const setShadowEnabled = useCallback((enabled: boolean) => {
+    setDraft((d) => {
+      if (!enabled) {
+        const currentOpacity = Number.isFinite(Number(d.shadowOpacityPct)) ? Number(d.shadowOpacityPct) : 65
+        if (currentOpacity > 0) {
+          lastEnabledShadowRef.current = {
+            shadowColor: String(d.shadowColor || '#000000').trim() || '#000000',
+            shadowOffsetPx: Number.isFinite(Number(d.shadowOffsetPx)) ? Number(d.shadowOffsetPx) : 2,
+            shadowBlurPx: Number.isFinite(Number(d.shadowBlurPx)) ? Number(d.shadowBlurPx) : 0,
+            shadowOpacityPct: Math.max(1, Math.round(currentOpacity)),
+          }
+        }
+        return { ...d, shadowOpacityPct: 0 }
+      }
+
+      const restore = lastEnabledShadowRef.current
+      return {
+        ...d,
+        shadowColor: String(d.shadowColor || '').trim() ? String(d.shadowColor) : restore.shadowColor,
+        shadowOffsetPx: Number.isFinite(Number(d.shadowOffsetPx)) ? Number(d.shadowOffsetPx) : restore.shadowOffsetPx,
+        shadowBlurPx: Number.isFinite(Number(d.shadowBlurPx)) ? Number(d.shadowBlurPx) : restore.shadowBlurPx,
+        shadowOpacityPct:
+          Number.isFinite(Number(d.shadowOpacityPct)) && Number(d.shadowOpacityPct) > 0
+            ? Number(d.shadowOpacityPct)
+            : restore.shadowOpacityPct,
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!outlineEnabled) return
+    const width = draft.outlineWidthPct == null ? null : Number(draft.outlineWidthPct)
+    const opacity = draft.outlineOpacityPct == null ? null : Number(draft.outlineOpacityPct)
+    const colorRaw = draft.outlineColor == null ? null : String(draft.outlineColor).trim()
+    lastNonNoneOutlineRef.current = {
+      outlineWidthPct: width != null && Number.isFinite(width) ? width : null,
+      outlineOpacityPct: opacity != null && Number.isFinite(opacity) ? opacity : null,
+      outlineColor: colorRaw || null,
+    }
+  }, [draft.outlineColor, draft.outlineOpacityPct, draft.outlineWidthPct, outlineEnabled])
+
+  const setOutlineEnabled = useCallback((enabled: boolean) => {
+    setDraft((d) => {
+      if (!enabled) {
+        const width = d.outlineWidthPct == null ? null : Number(d.outlineWidthPct)
+        const opacity = d.outlineOpacityPct == null ? null : Number(d.outlineOpacityPct)
+        const colorRaw = d.outlineColor == null ? null : String(d.outlineColor).trim()
+        const currentlyEnabled = !(Number(width) === 0 || Number(opacity) === 0)
+        if (currentlyEnabled) {
+          lastNonNoneOutlineRef.current = {
+            outlineWidthPct: width != null && Number.isFinite(width) ? width : null,
+            outlineOpacityPct: opacity != null && Number.isFinite(opacity) ? opacity : null,
+            outlineColor: colorRaw || null,
+          }
+        }
+        return { ...d, outlineWidthPct: 0, outlineOpacityPct: 0, outlineColor: null }
+      }
+      const restore = lastNonNoneOutlineRef.current
+      return {
+        ...d,
+        outlineWidthPct: restore.outlineWidthPct == null ? 5 : restore.outlineWidthPct,
+        outlineOpacityPct: restore.outlineOpacityPct == null ? 85 : restore.outlineOpacityPct,
+        outlineColor: restore.outlineColor ?? null,
+      }
+    })
+  }, [])
+
+  const previewAlign = (String(draft.alignment || 'center') as ScreenTitleAlignment)
+  const previewAlignItems: Array<{ key: ScreenTitleAlignment; label: string }> = [
+    { key: 'left', label: 'Align Left' },
+    { key: 'center', label: 'Align Center' },
+    { key: 'right', label: 'Align Right' },
+  ]
+  const renderPreviewAlignIcon = (key: ScreenTitleAlignment) => (
+    <span
+      style={{
+        display: 'grid',
+        gap: 2,
+        width: 15,
+        justifyItems: key === 'left' ? 'start' : key === 'center' ? 'center' : 'end',
+      }}
+    >
+      <span style={{ width: 15, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+      <span style={{ width: 11, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+      <span style={{ width: 13, height: 2, borderRadius: 2, background: '#fff', opacity: 0.95 }} />
+    </span>
+  )
 
   if (me === null) {
     return (
@@ -958,6 +1216,153 @@ export default function ScreenTitlePresetsPage() {
                 />
                 </label>
 
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Preview</div>
+                  <div
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
+                      minHeight: 220,
+                      maxHeight: 220,
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      background: previewBgColor,
+                      overflow: 'hidden',
+                      position: 'relative',
+                    }}
+                  >
+                    {previewImageUrl ? (
+                      <img
+                        src={previewImageUrl}
+                        alt="Screen title style preview"
+                        style={{ width: '100%', height: 'auto', display: 'block', userSelect: 'none' }}
+                      />
+                    ) : (
+                      <div style={{ color: '#9ca3af', fontSize: 13, padding: '12px', lineHeight: 1.45 }}>
+                        Generate preview to render style using Description text.
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#bbb', fontSize: 13, fontWeight: 700 }}>
+                      Background
+                      <input
+                        type="color"
+                        value={previewBgColor}
+                        onChange={(e) => setPreviewBgColor(e.target.value || '#111111')}
+                        style={{
+                          width: 34,
+                          height: 30,
+                          padding: 0,
+                          borderRadius: 8,
+                          border: '1px solid rgba(255,255,255,0.16)',
+                          background: '#0c0c0c',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    </label>
+                    <div ref={previewAlignMenuRef} style={{ position: 'relative', display: 'grid' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewAlignMenuOpen((prev) => !prev)}
+                        aria-haspopup="menu"
+                        aria-expanded={previewAlignMenuOpen}
+                        aria-label={`Text align: ${previewAlign}`}
+                        style={{
+                          height: 32,
+                          minWidth: 58,
+                          borderRadius: 10,
+                          border: '1px solid rgba(96,165,250,0.95)',
+                          background: 'rgba(96,165,250,0.16)',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          alignItems: 'center',
+                          justifyItems: 'center',
+                          padding: '0 8px',
+                        }}
+                      >
+                        {renderPreviewAlignIcon(previewAlign)}
+                        <span style={{ fontSize: 10, color: '#dbeafe', marginLeft: 6 }}>▼</span>
+                      </button>
+                      {previewAlignMenuOpen ? (
+                        <div
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            marginTop: 6,
+                            zIndex: 10,
+                            display: 'grid',
+                            gap: 4,
+                            minWidth: 84,
+                            padding: 6,
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                            boxShadow: '0 8px 20px rgba(0,0,0,0.42)',
+                          }}
+                        >
+                          {previewAlignItems.map((item) => {
+                            const isActive = previewAlign === item.key
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={isActive}
+                                onClick={() => {
+                                  setPreviewAlignMenuOpen(false)
+                                  if (previewAlign === item.key) return
+                                  setDraft((d) => ({ ...d, alignment: item.key }))
+                                }}
+                                aria-label={item.label}
+                                style={{
+                                  height: 36,
+                                  borderRadius: 10,
+                                  border: `1px solid ${isActive ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.18)'}`,
+                                  background: isActive ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                {renderPreviewAlignIcon(item.key)}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={generatePreview}
+                      disabled={previewLoading}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(96,165,250,0.95)',
+                        background: 'rgba(96,165,250,0.14)',
+                        color: '#fff',
+                        fontWeight: 850,
+                        cursor: previewLoading ? 'default' : 'pointer',
+                        opacity: previewLoading ? 0.75 : 1,
+                      }}
+                    >
+                      {previewLoading ? 'Generating…' : 'Generate'}
+                    </button>
+                  </div>
+                  {previewDirty && previewImageUrl ? (
+                    <div style={{ color: '#9ca3af', fontSize: 12 }}>Preview is out of date. Generate to refresh.</div>
+                  ) : null}
+                  {previewError ? <div style={{ color: '#ff9b9b', fontSize: 12 }}>{previewError}</div> : null}
+                </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Font family</div>
@@ -1104,269 +1509,292 @@ export default function ScreenTitlePresetsPage() {
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow color</div>
-                  <input
-                    type="color"
-                    value={draft.shadowColor || '#000000'}
-                    onChange={(e) => setDraft((d) => ({ ...d, shadowColor: e.target.value || '#000000' }))}
+              <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow</div>
+                  <button
+                    type="button"
+                    onClick={() => setShadowEnabled(!shadowEnabled)}
                     style={{
-                      width: '100%',
-                      height: 44,
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: 0,
+                      minWidth: 92,
+                      padding: '8px 12px',
                       borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
+                      border: `1px solid ${shadowEnabled ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                      background: shadowEnabled ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
                       color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                      fontWeight: 850,
+                      cursor: 'pointer',
                     }}
-                  />
-                </label>
+                  >
+                    {shadowEnabled ? 'On' : 'Off'}
+                  </button>
+                </div>
 
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow offset (px)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={-50}
-                    max={50}
-                    value={Number.isFinite(Number(draft.shadowOffsetPx)) ? String(draft.shadowOffsetPx) : '2'}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, shadowOffsetPx: Number.isFinite(n) ? n : 2 }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
-              </div>
+                {shadowEnabled ? (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow color</div>
+                        <input
+                          type="color"
+                          value={draft.shadowColor || '#000000'}
+                          onChange={(e) => setDraft((d) => ({ ...d, shadowColor: e.target.value || '#000000' }))}
+                          style={{
+                            width: '100%',
+                            height: 44,
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: 0,
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                          }}
+                        />
+                      </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow blur (px)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={20}
-                    value={Number.isFinite(Number(draft.shadowBlurPx)) ? String(draft.shadowBlurPx) : '0'}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, shadowBlurPx: Number.isFinite(n) ? n : 0 }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow offset (px)</div>
+                        <input
+                          type="number"
+                          step="1"
+                          min={-50}
+                          max={50}
+                          value={Number.isFinite(Number(draft.shadowOffsetPx)) ? String(draft.shadowOffsetPx) : '2'}
+                          onChange={(e) => {
+                            const n = Number(e.target.value)
+                            setDraft((d) => ({ ...d, shadowOffsetPx: Number.isFinite(n) ? n : 2 }))
+                          }}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        />
+                      </label>
+                    </div>
 
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow opacity (%)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={100}
-                    value={Number.isFinite(Number(draft.shadowOpacityPct)) ? String(draft.shadowOpacityPct) : '65'}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      setDraft((d) => ({ ...d, shadowOpacityPct: Number.isFinite(n) ? n : 65 }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow blur (px)</div>
+                        <input
+                          type="number"
+                          step="1"
+                          min={0}
+                          max={20}
+                          value={Number.isFinite(Number(draft.shadowBlurPx)) ? String(draft.shadowBlurPx) : '0'}
+                          onChange={(e) => {
+                            const n = Number(e.target.value)
+                            setDraft((d) => ({ ...d, shadowBlurPx: Number.isFinite(n) ? n : 0 }))
+                          }}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        />
+                      </label>
+
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Shadow opacity (%)</div>
+                        <input
+                          type="number"
+                          step="1"
+                          min={0}
+                          max={100}
+                          value={Number.isFinite(Number(draft.shadowOpacityPct)) ? String(draft.shadowOpacityPct) : '65'}
+                          onChange={(e) => {
+                            const n = Number(e.target.value)
+                            setDraft((d) => ({ ...d, shadowOpacityPct: Number.isFinite(n) ? n : 65 }))
+                          }}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
-                    <select
-                      value={
-                        Number(draft.outlineWidthPct) === 0 || Number(draft.outlineOpacityPct) === 0
-                          ? 'none'
-                          : draft.outlineColor
-                            ? 'custom'
-                            : 'auto'
-                      }
-                      onChange={(e) => {
-                        const mode = e.target.value
-                        setDraft((d) => {
-                          const wasNone = Number(d.outlineWidthPct) === 0 || Number(d.outlineOpacityPct) === 0
-
-                          if (mode === 'none') {
-                            if (!wasNone) {
-                              lastNonNoneOutlineRef.current = {
-                                outlineWidthPct: d.outlineWidthPct ?? null,
-                                outlineOpacityPct: d.outlineOpacityPct ?? null,
-                                outlineColor: d.outlineColor ?? null,
-                              }
-                            }
-                            return { ...d, outlineWidthPct: 0, outlineOpacityPct: 0, outlineColor: null }
-                          }
-
-                          const restore = wasNone ? lastNonNoneOutlineRef.current : null
-                          const nextWidthPct = restore ? restore.outlineWidthPct : d.outlineWidthPct
-                          const nextOpacityPct = restore ? restore.outlineOpacityPct : d.outlineOpacityPct
-                          const restoredColor = restore ? restore.outlineColor : d.outlineColor
-
-                          if (mode === 'custom') {
-                            return {
-                              ...d,
-                              outlineWidthPct: nextWidthPct == null ? 5 : nextWidthPct,
-                              outlineOpacityPct: nextOpacityPct == null ? 85 : nextOpacityPct,
-                              outlineColor: restoredColor || '#000000',
-                            }
-                          }
-
-                          // auto
-                          return {
-                            ...d,
-                            outlineWidthPct: nextWidthPct == null ? 5 : nextWidthPct,
-                            outlineOpacityPct: nextOpacityPct == null ? 85 : nextOpacityPct,
-                            outlineColor: null,
-                          }
-                        })
-                      }}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        outline: 'none',
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                        lineHeight: '20px',
-                      }}
-                    >
-                      <option value="none">None</option>
-                      <option value="auto">Auto</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                    <input
-                      type="color"
-                      value={draft.outlineColor || '#000000'}
-                      disabled={!draft.outlineColor || Number(draft.outlineWidthPct) === 0 || Number(draft.outlineOpacityPct) === 0}
-                      onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
-                      style={{
-                        width: 56,
-                        height: 44,
-                        padding: '6px 8px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.16)',
-                        background: '#0c0c0c',
-                        opacity: draft.outlineColor && Number(draft.outlineWidthPct) !== 0 && Number(draft.outlineOpacityPct) !== 0 ? 1 : 0.45,
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (%)</div>
-                  <select
-                    value={draft.outlineWidthPct == null ? '' : String(draft.outlineWidthPct)}
-                    onChange={(e) => {
-                      const raw = String(e.target.value || '').trim()
-                      if (!raw) return setDraft((d) => ({ ...d, outlineWidthPct: null }))
-                      const n = Number(raw)
-                      setDraft((d) => ({ ...d, outlineWidthPct: Number.isFinite(n) ? n : null }))
-                    }}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline</div>
+                  <button
+                    type="button"
+                    onClick={() => setOutlineEnabled(!outlineEnabled)}
                     style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
+                      minWidth: 92,
+                      padding: '8px 12px',
                       borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
+                      border: `1px solid ${outlineEnabled ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
+                      background: outlineEnabled ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
                       color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
+                      fontWeight: 850,
+                      cursor: 'pointer',
                     }}
                   >
-                    <option value="">Auto</option>
-                    <option value="3">X-Thin (3)</option>
-                    <option value="5">Thin (5)</option>
-                    <option value="10">Medium (10)</option>
-                    <option value="15">Thick (15)</option>
-                    <option value="20">X-Thick (20)</option>
-                  </select>
-                </label>
+                    {outlineEnabled ? 'On' : 'Off'}
+                  </button>
+                </div>
 
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Outline opacity (%)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={100}
-                    value={draft.outlineOpacityPct == null ? '' : String(draft.outlineOpacityPct)}
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      if (!raw) return setDraft((d) => ({ ...d, outlineOpacityPct: null }))
-                      const n = Number(raw)
-                      setDraft((d) => ({ ...d, outlineOpacityPct: Number.isFinite(n) ? n : null }))
-                    }}
-                    placeholder="Auto"
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
+                {outlineEnabled ? (
+                  <>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontWeight: 750 }}>Outline color</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
+                        <select
+                          value={draft.outlineColor ? 'custom' : 'auto'}
+                          onChange={(e) => {
+                            const mode = e.target.value
+                            setDraft((d) => {
+                              if (mode === 'custom') {
+                                return {
+                                  ...d,
+                                  outlineWidthPct: d.outlineWidthPct == null ? 5 : d.outlineWidthPct,
+                                  outlineOpacityPct: d.outlineOpacityPct == null ? 85 : d.outlineOpacityPct,
+                                  outlineColor: d.outlineColor || '#000000',
+                                }
+                              }
+                              return {
+                                ...d,
+                                outlineWidthPct: d.outlineWidthPct == null ? 5 : d.outlineWidthPct,
+                                outlineOpacityPct: d.outlineOpacityPct == null ? 85 : d.outlineOpacityPct,
+                                outlineColor: null,
+                              }
+                            })
+                          }}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        >
+                          <option value="auto">Auto</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        <input
+                          type="color"
+                          value={draft.outlineColor || '#000000'}
+                          disabled={!draft.outlineColor}
+                          onChange={(e) => setDraft((d) => ({ ...d, outlineColor: e.target.value || '#000000' }))}
+                          style={{
+                            width: 56,
+                            height: 44,
+                            padding: '6px 8px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            opacity: draft.outlineColor ? 1 : 0.45,
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Outline width (%)</div>
+                        <select
+                          value={draft.outlineWidthPct == null ? '' : String(draft.outlineWidthPct)}
+                          onChange={(e) => {
+                            const raw = String(e.target.value || '').trim()
+                            if (!raw) return setDraft((d) => ({ ...d, outlineWidthPct: null }))
+                            const n = Number(raw)
+                            setDraft((d) => ({ ...d, outlineWidthPct: Number.isFinite(n) ? n : null }))
+                          }}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        >
+                          <option value="">Auto</option>
+                          {OUTLINE_WIDTH_OPTIONS.map((opt) => (
+                            <option key={String(opt.value)} value={String(opt.value)}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ color: '#bbb', fontWeight: 750 }}>Outline opacity (%)</div>
+                        <input
+                          type="number"
+                          step="1"
+                          min={0}
+                          max={100}
+                          value={draft.outlineOpacityPct == null ? '' : String(draft.outlineOpacityPct)}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            if (!raw) return setDraft((d) => ({ ...d, outlineOpacityPct: null }))
+                            const n = Number(raw)
+                            setDraft((d) => ({ ...d, outlineOpacityPct: Number.isFinite(n) ? n : null }))
+                          }}
+                          placeholder="Auto"
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.16)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            outline: 'none',
+                            fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                            lineHeight: '20px',
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>

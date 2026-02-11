@@ -222,7 +222,7 @@ function normalizeOptionalOpacityPct(raw: any): number | null {
 function normalizeOutlineWidthPct(raw: any): number | null {
   if (raw == null || raw === '') return null
   const n = Number(raw)
-  if (!Number.isFinite(n) || n < 0 || n > 20) throw new DomainError('invalid_outline_width', 'invalid_outline_width', 400)
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw new DomainError('invalid_outline_width', 'invalid_outline_width', 400)
   return Math.round(n * 100) / 100
 }
 

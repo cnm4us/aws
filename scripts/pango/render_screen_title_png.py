@@ -264,7 +264,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
       outline_width_px = font_px * (outline_width_pct / 100.0)
     except Exception:
       outline_width_px = outline_width_px_default
-  outline_width_px = clamp(outline_width_px, 0.0, 12.0)
+  outline_width_px = clamp(outline_width_px, 0.0, 80.0)
 
   outline_opacity = outline_opacity_default
   if outline_opacity_pct_raw is not None and str(outline_opacity_pct_raw).strip() != "":
@@ -300,7 +300,9 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   # against one edge, producing visibly asymmetric margins.
   pad_x0 = 0.0
   pad_y0 = 0.0
-  stroke_pad0 = max(1.5, outline_width_px * 1.5)
+  # Stroke is centered on the glyph path, so outward bleed is ~half line width.
+  # Using 1.5x here over-constrains layout at large outline widths.
+  stroke_pad0 = max(1.5, (outline_width_px * 0.5) + 1.0)
   # Apply a single configured offset to both axes (diagonal shadow).
   shadow_dx0 = shadow_offset_px
   shadow_dy0 = shadow_offset_px
@@ -588,6 +590,10 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
     or_, og, ob, _oa = hex_to_rgba(outline_color, outline_opacity)
     ctx.set_source_rgba(or_, og, ob, outline_opacity)
     ctx.set_line_width(outline_width_px)
+    # Avoid miter spikes on thick strokes around sharp glyph corners.
+    ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+    ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+    ctx.set_miter_limit(2.0)
     ctx.stroke_preserve()
   if gradient_pattern is not None and gradient_surface is not None:
     gw = float(gradient_surface.get_width())
