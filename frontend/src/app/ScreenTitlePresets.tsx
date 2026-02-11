@@ -6,11 +6,9 @@ type MeResponse = {
   displayName: string | null
 }
 
-type InsetPreset = 'small' | 'medium' | 'large'
 type ScreenTitleStyle = 'none' | 'pill' | 'strip'
 type ScreenTitleFontKey = string
 type ScreenTitleAlignment = 'left' | 'center' | 'right'
-type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
 type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
 
@@ -75,14 +73,7 @@ type ScreenTitlePreset = {
   pillBgColor: string
   pillBgOpacityPct: number
   alignment: ScreenTitleAlignment
-  position: ScreenTitlePosition
   maxWidthPct: number
-  insetXPreset?: InsetPreset | null
-  insetYPreset?: InsetPreset | null
-  marginLeftPct?: number | null
-  marginRightPct?: number | null
-  marginTopPct?: number | null
-  marginBottomPct?: number | null
   timingRule: ScreenTitleTimingRule
   timingSeconds: number | null
   fade: ScreenTitleFade
@@ -90,12 +81,6 @@ type ScreenTitlePreset = {
   updatedAt: string
   archivedAt: string | null
 }
-
-const INSET_PRESETS: Array<{ label: string; value: InsetPreset }> = [
-  { label: 'Small', value: 'small' },
-  { label: 'Medium', value: 'medium' },
-  { label: 'Large', value: 'large' },
-]
 
 const DEFAULT_FONT_FAMILIES: Array<{
   familyKey: string
@@ -167,24 +152,13 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     pillBgColor: '#000000',
     pillBgOpacityPct: 55,
     alignment: 'center',
-    position: 'top',
     maxWidthPct: 90,
-    insetXPreset: null,
-    insetYPreset: null,
-    marginLeftPct: 10,
-    marginRightPct: 10,
-    marginTopPct: 10,
-    marginBottomPct: 10,
     timingRule: 'first_only',
     timingSeconds: 10,
     fade: 'out',
   }
 }
 
-// Margin inputs are treated as pixels at a baseline 1080px-wide frame (even for vertical),
-// and converted to pct-of-width for storage/rendering so equal numeric values look
-// visually comparable in X and Y.
-const SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX = 1080
 // iOS Safari auto-zooms focused inputs if font-size < 16px.
 const FORM_CONTROL_FONT_SIZE_PX = 16
 
@@ -195,12 +169,6 @@ const SIZE_OPTIONS: Array<{ value: FontSizeKey; label: string }> = [
   { value: 'large', label: 'Large' },
   { value: 'x_large', label: 'X-Large' },
 ]
-
-function positionLabel(p: ScreenTitlePosition): string {
-  if (p === 'top') return 'Top'
-  if (p === 'middle') return 'Middle'
-  return 'Bottom'
-}
 
 function styleLabel(s: any): string {
   const v = String(s || '').toLowerCase()
@@ -456,16 +424,6 @@ export default function ScreenTitlePresetsPage() {
   }, [])
 
   const openEdit = useCallback((preset: ScreenTitlePreset) => {
-    const presetInsetToMargin = (raw: any) => {
-      const s = String(raw || '').trim().toLowerCase()
-      if (s === 'small') return 6
-      if (s === 'large') return 14
-      return 10
-    }
-    const deriveMargin = (value: any, fallback: number) => {
-      const n = value == null ? NaN : Number(value)
-      return Number.isFinite(n) ? n : fallback
-    }
     setSelectedId(preset.id)
     setDraft({
       name: preset.name,
@@ -488,14 +446,7 @@ export default function ScreenTitlePresetsPage() {
       pillBgColor: preset.pillBgColor || '#000000',
       pillBgOpacityPct: preset.pillBgOpacityPct ?? 55,
       alignment: preset.alignment ?? 'center',
-      position: preset.position,
       maxWidthPct: preset.maxWidthPct,
-      insetXPreset: preset.insetXPreset ?? null,
-      insetYPreset: preset.insetYPreset ?? null,
-      marginLeftPct: deriveMargin((preset as any).marginLeftPct, presetInsetToMargin(preset.insetXPreset)),
-      marginRightPct: deriveMargin((preset as any).marginRightPct, presetInsetToMargin(preset.insetXPreset)),
-      marginTopPct: deriveMargin((preset as any).marginTopPct, presetInsetToMargin(preset.insetYPreset)),
-      marginBottomPct: deriveMargin((preset as any).marginBottomPct, presetInsetToMargin(preset.insetYPreset)),
       timingRule: preset.timingRule,
       timingSeconds: preset.timingSeconds ?? null,
       fade: preset.fade,
@@ -661,17 +612,10 @@ export default function ScreenTitlePresetsPage() {
         outlineWidthPct: preset.outlineWidthPct ?? null,
         outlineOpacityPct: preset.outlineOpacityPct ?? null,
         outlineColor: preset.outlineColor ?? null,
-        marginLeftPct: (preset as any).marginLeftPct ?? null,
-        marginRightPct: (preset as any).marginRightPct ?? null,
-        marginTopPct: (preset as any).marginTopPct ?? null,
-        marginBottomPct: (preset as any).marginBottomPct ?? null,
         pillBgColor: preset.pillBgColor,
         pillBgOpacityPct: preset.pillBgOpacityPct,
         alignment: preset.alignment ?? 'center',
-        position: preset.position,
         maxWidthPct: preset.maxWidthPct,
-        insetXPreset: preset.insetXPreset ?? null,
-        insetYPreset: preset.insetYPreset ?? null,
         timingRule: preset.timingRule,
         timingSeconds: preset.timingSeconds ?? null,
         fade: preset.fade,
@@ -1027,140 +971,6 @@ export default function ScreenTitlePresetsPage() {
                   }}
                 />
                 </label>
-
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Position</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                    {([
-                      { key: 'top_left', row: 'top', col: 'left' },
-                      { key: 'top_center', row: 'top', col: 'center' },
-                      { key: 'top_right', row: 'top', col: 'right' },
-                      { key: 'middle_left', row: 'middle', col: 'left' },
-                      { key: 'middle_center', row: 'middle', col: 'center' },
-                      { key: 'middle_right', row: 'middle', col: 'right' },
-                      { key: 'bottom_left', row: 'bottom', col: 'left' },
-                      { key: 'bottom_center', row: 'bottom', col: 'center' },
-                      { key: 'bottom_right', row: 'bottom', col: 'right' },
-                    ] as const).map((g) => {
-                      const active = `${draft.position}_${draft.alignment}` === g.key
-                      return (
-                        <button
-                          key={g.key}
-                          type="button"
-                          onClick={() => setDraft((d) => ({ ...d, position: g.row, alignment: g.col }))}
-                          style={{
-                            height: 34,
-                            borderRadius: 8,
-                            border: `1px solid ${active ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.16)'}`,
-                            background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
-                            color: '#fff',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                          }}
-                        />
-                      )
-                    })}
-                  </div>
-                </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Horizontal margin (px)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={Math.round((40 / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)}
-                    value={
-                      (draft.marginLeftPct ?? draft.marginRightPct) == null
-                        ? ''
-                        : String(
-                            Math.round(
-                              (((draft.marginLeftPct ?? draft.marginRightPct) as number) / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX,
-                            ),
-                          )
-                    }
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      const n = raw ? Number(raw) : null
-                      setDraft((d) => {
-                        const px = n != null && Number.isFinite(n) ? n : null
-                        const horizontalMarginPct =
-                          px != null ? Math.round(((px / SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX) * 100) * 100) / 100 : null
-                        const derivedMax =
-                          horizontalMarginPct != null
-                            ? Math.round(Math.min(Math.max(100 - horizontalMarginPct - horizontalMarginPct, 10), 100))
-                            : d.maxWidthPct
-                        return {
-                          ...d,
-                          marginLeftPct: horizontalMarginPct,
-                          marginRightPct: horizontalMarginPct,
-                          insetXPreset: null,
-                          maxWidthPct: derivedMax,
-                        }
-                      })
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 750 }}>Vertical margin (px)</div>
-                  <input
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={Math.round((40 / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX)}
-                    value={
-                      (draft.marginTopPct ?? draft.marginBottomPct) == null
-                        ? ''
-                        : String(
-                            Math.round(
-                              (((draft.marginTopPct ?? draft.marginBottomPct) as number) / 100) * SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX,
-                            ),
-                          )
-                    }
-                    onChange={(e) => {
-                      const raw = e.target.value
-                      const n = raw ? Number(raw) : null
-                      const px = n != null && Number.isFinite(n) ? n : null
-                      const verticalMarginPct =
-                        px != null ? Math.round(((px / SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX) * 100) * 100) / 100 : null
-                      setDraft((d) => ({
-                        ...d,
-                        marginTopPct: verticalMarginPct,
-                        marginBottomPct: verticalMarginPct,
-                        insetYPreset: null,
-                      }))
-                    }}
-                    style={{
-                      width: '100%',
-                      maxWidth: '100%',
-                      boxSizing: 'border-box',
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      background: '#0c0c0c',
-                      color: '#fff',
-                      outline: 'none',
-                      fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      lineHeight: '20px',
-                    }}
-                  />
-                </label>
-              </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12 }}>
                 <label style={{ display: 'grid', gap: 6 }}>

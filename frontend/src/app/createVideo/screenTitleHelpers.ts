@@ -157,18 +157,16 @@ export function buildScreenTitlePresetSnapshot(preset: any) {
       : String((preset as any).alignment || 'center').toLowerCase() === 'right'
         ? 'right'
         : 'center') as any,
-    position: (String((preset as any).position || 'top').toLowerCase() === 'bottom'
-      ? 'bottom'
-      : String((preset as any).position || 'top').toLowerCase() === 'middle'
-        ? 'middle'
-        : 'top') as any,
+    // Placement is now controlled per object/instance from timeline quick tools.
+    // Keep preset snapshot placement baseline deterministic.
+    position: 'top' as any,
     maxWidthPct: Number((preset as any).maxWidthPct),
-    insetXPreset: (preset as any).insetXPreset == null ? null : String((preset as any).insetXPreset),
-    insetYPreset: (preset as any).insetYPreset == null ? null : String((preset as any).insetYPreset),
-    marginLeftPct: (preset as any).marginLeftPct == null ? null : Number((preset as any).marginLeftPct),
-    marginRightPct: (preset as any).marginRightPct == null ? null : Number((preset as any).marginRightPct),
-    marginTopPct: (preset as any).marginTopPct == null ? null : Number((preset as any).marginTopPct),
-    marginBottomPct: (preset as any).marginBottomPct == null ? null : Number((preset as any).marginBottomPct),
+    insetXPreset: null,
+    insetYPreset: null,
+    marginLeftPct: null,
+    marginRightPct: null,
+    marginTopPct: null,
+    marginBottomPct: null,
     fade: (String((preset as any).fade || 'none').toLowerCase() === 'in_out'
       ? 'in_out'
       : String((preset as any).fade || 'none').toLowerCase() === 'in'
@@ -320,4 +318,3 @@ export const normalizeSpeedPresetMs = (valueRaw: number, fallback = 600): number
   if (value <= 700) return 600
   return 800
 }
-
