@@ -2723,7 +2723,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                             description: it?.description ?? null,
                             style: it?.style === 'outline' ? 'none' : it?.style,
                             fontKey: it?.fontKey,
-                            sizeKey: it?.sizeKey || 'medium',
+                            sizeKey: it?.sizeKey || '18',
                             fontSizePct: it?.fontSizePct,
                             trackingPct: it?.trackingPct ?? 0,
                             lineSpacingPct: Number.isFinite(Number(it?.lineSpacingPct)) ? Number(it?.lineSpacingPct) : 0,

@@ -74,6 +74,7 @@ import {
   roundRect,
 } from './createVideo/overlayHelpers'
 import { migrateLegacyAudioTrackToSegments, migrateLegacyClipFreezeTimeline } from './createVideo/timelineMigrations'
+import { normalizeScreenTitleSizeKey, resolveScreenTitleSizePresetForUi, SCREEN_TITLE_SIZE_OPTIONS } from './screenTitleSizeScale'
 
 const UNDO_ICON_URL = new URL('./icons/undo.svg', import.meta.url).toString()
 const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
@@ -98,22 +99,6 @@ const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX = Math.floor(
 )
 const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX
 const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
-const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
-const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
-  x_small: 'X-Small',
-  small: 'Small',
-  medium: 'Medium',
-  large: 'Large',
-  x_large: 'X-Large',
-}
-const DEFAULT_SCREEN_TITLE_SIZE_MAP: Record<string, number> = {
-  x_small: 3.0,
-  small: 3.8,
-  medium: 4.5,
-  large: 5.2,
-  x_large: 6.4,
-}
-
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
 type MeResponse = {
   userId: number | null
@@ -7249,24 +7234,20 @@ export default function CreateVideo() {
       const famKey = String(familyKey || '').trim()
       const fontKeyStr = String(fontKey || '').trim()
       const fam = famKey ? screenTitleFontPresets?.families?.[famKey] : null
-      const baseSizes = fam?.sizes || null
-      const variantSizes = fam?.variants?.[fontKeyStr]?.sizes || null
-      return SCREEN_TITLE_SIZE_KEYS.map((key) => {
-        const base = baseSizes && (baseSizes as any)[key] ? (baseSizes as any)[key] : null
-        const ov = variantSizes && (variantSizes as any)[key] ? (variantSizes as any)[key] : null
-        const fontSizePct =
-          (ov && Number((ov as any).fontSizePct)) ||
-          (base && Number((base as any).fontSizePct)) ||
-          DEFAULT_SCREEN_TITLE_SIZE_MAP[key]
-        return { key, label: SCREEN_TITLE_SIZE_LABELS[key], fontSizePct: Number(fontSizePct) }
+      return SCREEN_TITLE_SIZE_OPTIONS.map((opt) => {
+        const resolved = resolveScreenTitleSizePresetForUi(opt.value, fam as any, fontKeyStr)
+        return { key: opt.value, label: opt.label, fontSizePct: Number(resolved.fontSizePct) }
       })
     },
     [screenTitleFontPresets]
   )
 
   const pickScreenTitleSizeKey = useCallback((fontSizePct: number, options: Array<{ key: string; fontSizePct: number }>) => {
-    if (!Number.isFinite(fontSizePct)) return options[0]?.key || 'medium'
-    let bestKey = options[0]?.key || 'medium'
+    const fallback = String(
+      options.find((opt) => String(opt.key) === '18')?.key || options[0]?.key || '18'
+    )
+    if (!Number.isFinite(fontSizePct)) return fallback
+    let bestKey = fallback
     let bestDist = Number.POSITIVE_INFINITY
     for (const opt of options) {
       const d = Math.abs(Number(opt.fontSizePct) - Number(fontSizePct))
@@ -7275,7 +7256,7 @@ export default function CreateVideo() {
         bestKey = opt.key
       }
     }
-    return bestKey
+    return normalizeScreenTitleSizeKey(bestKey, 18)
   }, [])
 
 	  const addClipFromUpload = useCallback(

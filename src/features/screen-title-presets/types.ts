@@ -6,7 +6,7 @@ export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'
 export type ScreenTitleTimingRule = 'entire' | 'first_only'
 export type ScreenTitleFade = 'none' | 'in' | 'out' | 'in_out'
-export type ScreenTitleSizeKey = 'x_small' | 'small' | 'medium' | 'large' | 'x_large'
+export type ScreenTitleSizeKey = string
 
 export type ScreenTitlePresetRow = {
   id: number

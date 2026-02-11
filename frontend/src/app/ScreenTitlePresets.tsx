@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { normalizeScreenTitleSizeKey, resolveScreenTitleSizePresetForUi, SCREEN_TITLE_SIZE_OPTIONS } from './screenTitleSizeScale'
 
 type MeResponse = {
   userId: number | null
@@ -33,7 +34,7 @@ type RouteContext = {
   presetId: number | null
 }
 
-type FontSizeKey = 'x_small' | 'small' | 'medium' | 'large' | 'x_large'
+type FontSizeKey = string
 
 type ScreenTitleFontPresetsResponse = {
   schemaVersion: number
@@ -42,10 +43,10 @@ type ScreenTitleFontPresetsResponse = {
     string,
     {
       label: string
-      sizes: Record<FontSizeKey, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>
+      sizes: Record<string, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>
       variants?: Record<
         string,
-        { label: string; sizes?: Partial<Record<FontSizeKey, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>> }
+        { label: string; sizes?: Partial<Record<string, { fontSizePct: number; trackingPct: number; lineSpacingPct: number }>> }
       >
     }
   >
@@ -136,7 +137,7 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
     description: null,
     style: 'pill',
     fontKey: 'dejavu_sans_bold',
-    sizeKey: 'medium',
+    sizeKey: '18',
     fontSizePct: 4.5,
     trackingPct: 0,
     lineSpacingPct: 0,
@@ -161,14 +162,6 @@ function defaultDraft(): Omit<ScreenTitlePreset, 'id' | 'createdAt' | 'updatedAt
 
 // iOS Safari auto-zooms focused inputs if font-size < 16px.
 const FORM_CONTROL_FONT_SIZE_PX = 16
-
-const SIZE_OPTIONS: Array<{ value: FontSizeKey; label: string }> = [
-  { value: 'x_small', label: 'X-Small' },
-  { value: 'small', label: 'Small' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'large', label: 'Large' },
-  { value: 'x_large', label: 'X-Large' },
-]
 
 function styleLabel(s: any): string {
   const v = String(s || '').toLowerCase()
@@ -430,7 +423,7 @@ export default function ScreenTitlePresetsPage() {
       description: preset.description ?? null,
       style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
       fontKey: preset.fontKey,
-      sizeKey: (preset as any).sizeKey || 'medium',
+      sizeKey: normalizeScreenTitleSizeKey((preset as any).sizeKey, 18),
       fontSizePct: preset.fontSizePct ?? 4.5,
       trackingPct: preset.trackingPct ?? 0,
       lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
@@ -486,16 +479,9 @@ export default function ScreenTitlePresetsPage() {
     (next: { familyKey: string | null; fontKey: string; sizeKey: FontSizeKey }) => {
       setDraft((d) => {
         const baseUpdate: any = { ...d, sizeKey: next.sizeKey }
-        if (!fontPresets?.families) return baseUpdate
         const famKey = String(next.familyKey || '').trim()
-        const fam = famKey ? (fontPresets.families as any)[famKey] : null
-        if (!fam?.sizes) return baseUpdate
-        const base = fam.sizes[next.sizeKey]
-        if (!base) return baseUpdate
-        const v =
-          fam.variants && (fam.variants as any)[String(next.fontKey)] ? (fam.variants as any)[String(next.fontKey)] : null
-        const ov = v?.sizes && v.sizes[next.sizeKey] ? v.sizes[next.sizeKey] : null
-        const resolved = { ...base, ...(ov || {}) }
+        const fam = famKey && fontPresets?.families ? (fontPresets.families as any)[famKey] : null
+        const resolved = resolveScreenTitleSizePresetForUi(String(next.sizeKey || '18'), fam, next.fontKey)
         return {
           ...baseUpdate,
           fontSizePct: Number(resolved.fontSizePct),
@@ -599,7 +585,7 @@ export default function ScreenTitlePresetsPage() {
         description: preset.description ?? null,
         style: (preset.style === ('outline' as any) ? ('none' as any) : preset.style),
         fontKey: preset.fontKey,
-        sizeKey: (preset as any).sizeKey || 'medium',
+        sizeKey: normalizeScreenTitleSizeKey((preset as any).sizeKey, 18),
         fontSizePct: preset.fontSizePct,
         trackingPct: preset.trackingPct ?? 0,
         lineSpacingPct: Number.isFinite(Number((preset as any).lineSpacingPct)) ? Number((preset as any).lineSpacingPct) : 0,
@@ -982,7 +968,7 @@ export default function ScreenTitlePresetsPage() {
                       const fam = fontFamilies.find((f) => f.familyKey === familyKey) || fontFamilies[0] || DEFAULT_FONT_FAMILIES[0]
                       const nextKey = fam.variants[0]?.key || 'dejavu_sans_bold'
                       setDraft((d) => ({ ...d, fontKey: nextKey }))
-                      const sizeKey = ((draft as any).sizeKey as FontSizeKey) || 'medium'
+                      const sizeKey = normalizeScreenTitleSizeKey((draft as any).sizeKey, 18)
                       applySizePreset({ familyKey, fontKey: String(nextKey), sizeKey })
                     }}
                     style={{
@@ -1013,7 +999,7 @@ export default function ScreenTitlePresetsPage() {
                       const nextKey = e.target.value
                       setDraft((d) => ({ ...d, fontKey: nextKey }))
                       const familyKey = resolveFamilyKeyForFontKey(nextKey)
-                      const sizeKey = ((draft as any).sizeKey as FontSizeKey) || 'medium'
+                      const sizeKey = normalizeScreenTitleSizeKey((draft as any).sizeKey, 18)
                       applySizePreset({ familyKey, fontKey: String(nextKey), sizeKey })
                     }}
                     style={{
@@ -1041,9 +1027,9 @@ export default function ScreenTitlePresetsPage() {
                 <label style={{ display: 'grid', gap: 6 }}>
                   <div style={{ color: '#bbb', fontWeight: 750 }}>Text size</div>
                   <select
-                    value={String((draft as any).sizeKey || 'medium')}
+                    value={normalizeScreenTitleSizeKey((draft as any).sizeKey, 18)}
                     onChange={(e) => {
-                      const sizeKey = (e.target.value as FontSizeKey) || 'medium'
+                      const sizeKey = normalizeScreenTitleSizeKey(e.target.value, 18)
                       const familyKey = resolveFamilyKeyForFontKey(String(draft.fontKey || ''))
                       applySizePreset({ familyKey, fontKey: String(draft.fontKey || ''), sizeKey })
                     }}
@@ -1061,7 +1047,7 @@ export default function ScreenTitlePresetsPage() {
                       lineHeight: '20px',
                     }}
                   >
-                    {SIZE_OPTIONS.map((o) => (
+                    {SCREEN_TITLE_SIZE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>

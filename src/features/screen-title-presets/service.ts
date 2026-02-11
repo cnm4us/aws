@@ -3,13 +3,12 @@ import * as repo from './repo'
 import type { InsetPreset, ScreenTitleAlignment, ScreenTitleFade, ScreenTitleFontKey, ScreenTitlePosition, ScreenTitlePresetDto, ScreenTitlePresetRow, ScreenTitleSizeKey, ScreenTitleStyle, ScreenTitleTimingRule } from './types'
 import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
-import { resolveScreenTitleFontSizePreset } from '../../services/fonts/screenTitleFontPresets'
+import { normalizeScreenTitleSizeKey, resolveScreenTitleFontSizePreset } from '../../services/fonts/screenTitleFontPresets'
 
 const STYLES: readonly ScreenTitleStyle[] = ['none', 'pill', 'strip']
 const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
-const SIZE_KEYS: readonly ScreenTitleSizeKey[] = ['x_small', 'small', 'medium', 'large', 'x_large']
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -20,8 +19,7 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
   const fontKey: ScreenTitleFontKey = rawFont && isFontKeyAllowed(rawFont) ? rawFont : 'dejavu_sans_bold'
   const alignmentRaw = String((row as any).alignment || 'center').trim().toLowerCase()
   const alignment: ScreenTitleAlignment = isEnumValue(alignmentRaw, ALIGNMENTS) ? (alignmentRaw as any) : 'center'
-  const sizeKeyRaw = String((row as any).size_key || 'medium').trim().toLowerCase()
-  const sizeKey: ScreenTitleSizeKey = isEnumValue(sizeKeyRaw, SIZE_KEYS) ? (sizeKeyRaw as any) : 'medium'
+  const sizeKey: ScreenTitleSizeKey = normalizeScreenTitleSizeKey((row as any).size_key, 18)
   const resolved = resolveScreenTitleFontSizePreset(fontKey, sizeKey as any)
   const fontSizePctRaw = resolved?.fontSizePct ?? ((row as any).font_size_pct != null ? Number((row as any).font_size_pct) : 4.5)
   const fontSizePct = Number.isFinite(fontSizePctRaw) ? fontSizePctRaw : 4.5
@@ -148,10 +146,7 @@ function normalizeLineSpacingPct(raw: any): number {
 }
 
 function normalizeSizeKey(raw: any): ScreenTitleSizeKey {
-  const s = String(raw ?? '').trim().toLowerCase()
-  if (!s) return 'medium'
-  if (!isEnumValue(s, SIZE_KEYS)) throw new DomainError('invalid_size_key', 'invalid_size_key', 400)
-  return s as ScreenTitleSizeKey
+  return normalizeScreenTitleSizeKey(raw, 18)
 }
 
 function normalizeFontKey(raw: any): ScreenTitleFontKey {
