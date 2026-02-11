@@ -86,15 +86,18 @@ const LazyScreenTitleQuickPanelOverlay = React.lazy(() => import('./createVideo/
 const LazyTimelineContextMenu = React.lazy(() => import('./createVideo/modals/TimelineContextMenu'))
 const LazyGuidelineMenuModal = React.lazy(() => import('./createVideo/modals/GuidelineMenuModal'))
 const LazyPreviewFloatingToolbar = React.lazy(() => import('./createVideo/modals/PreviewFloatingToolbar'))
-const SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX = 78
-const SCREEN_TITLE_PLACEMENT_COL_GAP_PX = 10
-const SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX = 6
-const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX = 36
-const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = 36
-const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
-const SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX =
-  20 + SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX * 2 + SCREEN_TITLE_PLACEMENT_COL_GAP_PX + 10
 const SCREEN_TITLE_STYLE_PANEL_WIDTH_PX = 244
+const SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX = SCREEN_TITLE_STYLE_PANEL_WIDTH_PX
+const SCREEN_TITLE_PLACEMENT_COL_GAP_PX = 10
+const SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX = Math.floor(
+  (SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX - 24 - SCREEN_TITLE_PLACEMENT_COL_GAP_PX) / 2
+)
+const SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX = 7
+const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX = Math.floor(
+  (SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX - SCREEN_TITLE_PLACEMENT_CONTROL_GAP_PX) / 2
+)
+const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX
+const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
 const SCREEN_TITLE_SIZE_KEYS = ['x_small', 'small', 'medium', 'large', 'x_large'] as const
 const SCREEN_TITLE_SIZE_LABELS: Record<string, string> = {
   x_small: 'X-Small',
@@ -1752,6 +1755,31 @@ export default function CreateVideo() {
     [screenTitles]
   )
 
+  const getDefaultScreenTitlePanelPos = useCallback(
+    (panelWidthPx: number, panelHeightPx: number) => {
+      const stageRect = screenTitlePlacementStageRef.current?.getBoundingClientRect()
+      const previewRect = previewWrapRef.current?.getBoundingClientRect()
+      const stageWRaw = Number(stageRect?.width || previewRect?.width || previewBoxSize.w || 0)
+      const stageHRaw = Number(stageRect?.height || previewRect?.height || previewBoxSize.h || 0)
+      const stageW = stageWRaw > 0 ? stageWRaw : 1080
+      const stageH = stageHRaw > 0 ? stageHRaw : 1920
+      const panelW = Math.max(1, Number(panelWidthPx || SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX))
+      const panelH = Math.max(1, Number(panelHeightPx || 228))
+      // Keep at least 25% of the panel visible so it can't be fully lost off-canvas.
+      const minX = Math.round(-panelW * 0.75)
+      const minY = Math.round(-panelH * 0.75)
+      const maxX = Math.round(stageW - panelW * 0.25)
+      const maxY = Math.round(stageH - panelH * 0.25)
+      const centeredX = Math.round((stageW - panelW) / 2)
+      const bottomAnchorY = Math.round(stageH - panelH * 0.25)
+      return {
+        x: Math.round(clamp(centeredX, minX, maxX)),
+        y: Math.round(clamp(bottomAnchorY, minY, maxY)),
+      }
+    },
+    [previewBoxSize.h, previewBoxSize.w]
+  )
+
   const openScreenTitlePlacementById = useCallback(
     (id: string, requestedInstanceId?: string | null): boolean => {
       const st = screenTitles.find((ss: any) => String((ss as any).id) === String(id)) as any
@@ -1817,13 +1845,15 @@ export default function CreateVideo() {
       setScreenTitlePlacementControlMode('move')
       setScreenTitlePlacementMoveAxis('vertical')
       setScreenTitlePlacementStepPx(1)
-      setScreenTitlePlacementPanelPos({ x: 8, y: 126 })
+      setScreenTitlePlacementPanelPos(
+        getDefaultScreenTitlePanelPos(SCREEN_TITLE_PLACEMENT_PANEL_WIDTH_PX, 228)
+      )
       setScreenTitlePlacementDirty(false)
       setScreenTitlePlacementError(null)
       setScreenTitlePlacementAdvancedOpen(false)
       return true
     },
-    [screenTitles, screenTitleLastInstanceById]
+    [getDefaultScreenTitlePanelPos, screenTitles, screenTitleLastInstanceById]
   )
 
   const returnToScreenTitleId = useMemo(() => {
