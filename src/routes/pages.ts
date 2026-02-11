@@ -4946,6 +4946,29 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
             <div id="video-desc-modal-body" style="margin-top:10px; color:#c8c8c8; line-height:1.5; overflow:auto;"></div>
           </div>
         </div>
+        <div id="video-edit-modal" role="dialog" aria-modal="true" style="position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.86); display:none; overflow-y:auto; -webkit-overflow-scrolling:touch; align-items:flex-start; justify-content:center; padding:64px 16px 80px; box-sizing:border-box;">
+          <div style="width:100%; max-width:560px; margin:0 auto; border-radius:14px; padding:16px; box-sizing:border-box; border:1px solid rgba(96,165,250,0.95); background:linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%); color:#fff; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+              <div style="font-size:18px; font-weight:900;">Edit Video Properties</div>
+              <button type="button" id="video-edit-modal-close" style="border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.06); color:#fff; border-radius:10px; padding:6px 10px; font-size:14px; font-weight:800; cursor:pointer;">Close</button>
+            </div>
+            <div style="margin-top:12px; display:grid; gap:10px;">
+              <div>
+                <div style="font-size:13px; color:#bbb; margin-bottom:6px;">Title</div>
+                <input id="video-edit-title" type="text" style="width:100%; max-width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:#0b0b0b; color:#fff; font-size:14px; font-weight:900;" />
+              </div>
+              <div>
+                <div style="font-size:13px; color:#bbb; margin-bottom:6px;">Description</div>
+                <textarea id="video-edit-desc" rows="6" style="width:100%; max-width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:#0b0b0b; color:#fff; resize:vertical; font-size:14px; font-weight:900;"></textarea>
+              </div>
+              <div id="video-edit-error" style="display:none; color:#ff9b9b; font-size:13px;"></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+              <button type="button" id="video-edit-cancel" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.06); color:#fff; font-weight:800; cursor:pointer;">Cancel</button>
+              <button type="button" id="video-edit-save" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(96,165,250,0.95); background:rgba(96,165,250,0.14); color:#fff; font-weight:900; cursor:pointer;">Save</button>
+            </div>
+          </div>
+        </div>
         <script>
           (function() {
             function getCsrf() {
@@ -4979,6 +5002,126 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
               });
             });
 
+            var editModal = document.getElementById('video-edit-modal');
+            var editTitleInput = document.getElementById('video-edit-title');
+            var editDescInput = document.getElementById('video-edit-desc');
+            var editError = document.getElementById('video-edit-error');
+            var editSaveBtn = document.getElementById('video-edit-save');
+            var editCancelBtn = document.getElementById('video-edit-cancel');
+            var editCloseBtn = document.getElementById('video-edit-modal-close');
+            var editState = { id: '', btn: null, card: null };
+
+            function setEditError(msg) {
+              if (!editError) return;
+              var text = String(msg || '').trim();
+              editError.textContent = text;
+              editError.style.display = text ? 'block' : 'none';
+            }
+
+            function setEditBusy(isBusy) {
+              if (editSaveBtn) editSaveBtn.disabled = !!isBusy;
+              if (editCancelBtn) editCancelBtn.disabled = !!isBusy;
+              if (editCloseBtn) editCloseBtn.disabled = !!isBusy;
+            }
+
+            function closeEditModal() {
+              if (editModal) editModal.style.display = 'none';
+              setEditBusy(false);
+              setEditError('');
+              editState = { id: '', btn: null, card: null };
+            }
+
+            function openEditModal(btn) {
+              var id = btn.getAttribute('data-id') || '';
+              if (!id) return;
+              var currentTitle = btn.getAttribute('data-title') || '';
+              var currentDesc = btn.getAttribute('data-desc') || '';
+              editState = { id: id, btn: btn, card: btn.closest('.card') };
+              if (editTitleInput) editTitleInput.value = currentTitle;
+              if (editDescInput) editDescInput.value = currentDesc;
+              setEditError('');
+              setEditBusy(false);
+              if (editModal) editModal.style.display = 'flex';
+              if (editTitleInput && typeof editTitleInput.focus === 'function') {
+                editTitleInput.focus();
+                try {
+                  var len = String(editTitleInput.value || '').length;
+                  editTitleInput.setSelectionRange(len, len);
+                } catch (e) {}
+              }
+            }
+
+            async function saveEditModal() {
+              if (!editState.id) return;
+              var nextTitle = editTitleInput ? String(editTitleInput.value || '').trim() : '';
+              var nextDesc = editDescInput ? String(editDescInput.value || '') : '';
+              if (!nextTitle) {
+                setEditError('Title is required.');
+                return;
+              }
+              setEditBusy(true);
+              setEditError('');
+              try {
+                var headers = { 'Content-Type': 'application/json' };
+                var csrf = getCsrf();
+                if (csrf) headers['x-csrf-token'] = csrf;
+                var res = await fetch('/api/uploads/' + encodeURIComponent(editState.id), {
+                  method: 'PATCH',
+                  credentials: 'same-origin',
+                  headers: headers,
+                  body: JSON.stringify({ modified_filename: nextTitle, description: nextDesc })
+                });
+                var json = await res.json().catch(function() { return null; });
+                if (!res.ok) throw new Error(String((json && (json.detail || json.error)) || 'Failed to update'));
+                var card = editState.card;
+                var btn = editState.btn;
+                if (card) {
+                  var titleBtn = card.querySelector('.js-video-title');
+                  if (titleBtn) {
+                    titleBtn.textContent = nextTitle;
+                    titleBtn.setAttribute('data-title', nextTitle);
+                    titleBtn.setAttribute('data-desc', nextDesc);
+                  }
+                  if (btn) {
+                    btn.setAttribute('data-title', nextTitle);
+                    btn.setAttribute('data-desc', nextDesc);
+                  }
+                  var descWrapper = card.querySelector('.js-video-desc');
+                  if (descWrapper) {
+                    var truncated = truncateWords(nextDesc, 20);
+                    var shortEl = descWrapper.querySelector('.js-video-desc-short');
+                    var fullEl = descWrapper.querySelector('.js-video-desc-full');
+                    var toggleBtn = descWrapper.querySelector('.js-video-desc-toggle');
+                    if (shortEl) shortEl.textContent = truncated.text;
+                    if (fullEl) fullEl.textContent = nextDesc;
+                    if (toggleBtn) {
+                      if (truncated.truncated) {
+                        toggleBtn.style.display = '';
+                        toggleBtn.textContent = 'more';
+                      } else {
+                        toggleBtn.style.display = 'none';
+                      }
+                    }
+                    descWrapper.setAttribute('data-expanded', '0');
+                    if (shortEl) shortEl.style.display = '';
+                    if (fullEl) fullEl.style.display = 'none';
+                  }
+                }
+                closeEditModal();
+              } catch (err) {
+                setEditError(err && err.message ? err.message : 'Failed to update');
+                setEditBusy(false);
+              }
+            }
+
+            if (editSaveBtn) editSaveBtn.addEventListener('click', function() { void saveEditModal(); });
+            if (editCancelBtn) editCancelBtn.addEventListener('click', closeEditModal);
+            if (editCloseBtn) editCloseBtn.addEventListener('click', closeEditModal);
+            if (editModal) editModal.addEventListener('click', function(e) { if (e.target === editModal) closeEditModal(); });
+            document.addEventListener('keydown', function(e) {
+              if (e.key === 'Escape' && editModal && editModal.style.display === 'flex') closeEditModal();
+            });
+
             document.querySelectorAll('.js-video-desc-toggle').forEach(function(btn) {
               btn.addEventListener('click', function() {
                 var wrapper = btn.closest('.js-video-desc');
@@ -4994,61 +5137,8 @@ pagesRouter.get('/admin/video-library', async (req: any, res: any) => {
             });
 
             document.querySelectorAll('.js-video-edit').forEach(function(btn) {
-              btn.addEventListener('click', async function() {
-                var id = btn.getAttribute('data-id') || '';
-                if (!id) return;
-                var currentTitle = btn.getAttribute('data-title') || '';
-                var currentDesc = btn.getAttribute('data-desc') || '';
-                var nextTitle = window.prompt('Title', currentTitle);
-                if (nextTitle == null) return;
-                var nextDesc = window.prompt('Description', currentDesc);
-                if (nextDesc == null) return;
-                try {
-                  var headers = { 'Content-Type': 'application/json' };
-                  var csrf = getCsrf();
-                  if (csrf) headers['x-csrf-token'] = csrf;
-                  var res = await fetch('/api/uploads/' + encodeURIComponent(id), {
-                    method: 'PATCH',
-                    credentials: 'same-origin',
-                    headers: headers,
-                    body: JSON.stringify({ modified_filename: nextTitle, description: nextDesc })
-                  });
-                  var json = await res.json().catch(function() { return null; });
-                  if (!res.ok) throw new Error(String((json && (json.detail || json.error)) || 'Failed to update'));
-                  var card = btn.closest('.card');
-                  if (card) {
-                    var titleBtn = card.querySelector('.js-video-title');
-                    if (titleBtn) {
-                      titleBtn.textContent = nextTitle;
-                      titleBtn.setAttribute('data-title', nextTitle);
-                      titleBtn.setAttribute('data-desc', nextDesc);
-                    }
-                    btn.setAttribute('data-title', nextTitle);
-                    btn.setAttribute('data-desc', nextDesc);
-                    var descWrapper = card.querySelector('.js-video-desc');
-                    if (descWrapper) {
-                      var truncated = truncateWords(nextDesc, 20);
-                      var shortEl = descWrapper.querySelector('.js-video-desc-short');
-                      var fullEl = descWrapper.querySelector('.js-video-desc-full');
-                      var toggleBtn = descWrapper.querySelector('.js-video-desc-toggle');
-                      if (shortEl) shortEl.textContent = truncated.text;
-                      if (fullEl) fullEl.textContent = nextDesc;
-                      if (toggleBtn) {
-                        if (truncated.truncated) {
-                          toggleBtn.style.display = '';
-                          toggleBtn.textContent = 'more';
-                        } else {
-                          toggleBtn.style.display = 'none';
-                        }
-                      }
-                      descWrapper.setAttribute('data-expanded', '0');
-                      if (shortEl) shortEl.style.display = '';
-                      if (fullEl) fullEl.style.display = 'none';
-                    }
-                  }
-                } catch (err) {
-                  window.alert(err && err.message ? err.message : 'Failed to update');
-                }
+              btn.addEventListener('click', function() {
+                openEditModal(btn);
               });
             });
 
