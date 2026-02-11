@@ -618,7 +618,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                         boxSizing: 'border-box',
                                       }}
                                     >
-                                      <option value="">Select...</option>
+                                      <option value="">Select Style...</option>
                                       {screenTitlePresets.map((p: any) => (
                                         <option key={String((p as any).id)} value={String((p as any).id)}>
                                           {String((p as any).name || `Style ${String((p as any).id)}`)}
@@ -760,6 +760,9 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                         boxSizing: 'border-box',
                                       }}
                                     >
+                                      <option value="" disabled>
+                                        Select Font...
+                                      </option>
                                       {screenTitleFontFamilies.map((f) => (
                                         <option key={String(f.familyKey)} value={String(f.familyKey)}>
                                           {String(f.label || f.familyKey)}
@@ -799,6 +802,9 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                         boxSizing: 'border-box',
                                       }}
                                     >
+                                      <option value="" disabled>
+                                        Select Variant...
+                                      </option>
                                       {(family?.variants || []).map((v) => (
                                         <option key={String(v.key)} value={String(v.key)}>
                                           {String(v.label || v.key)}
@@ -852,6 +858,9 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                         boxSizing: 'border-box',
                                       }}
                                     >
+                                      <option value="" disabled>
+                                        Select Size...
+                                      </option>
                                       {sizeOptions.map((opt) => (
                                         <option key={String(opt.key)} value={String(opt.key)}>
                                           {String(opt.label || opt.key)}
@@ -929,7 +938,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                       boxSizing: 'border-box',
                                     }}
                                   >
-                                    <option value="">None</option>
+                                    <option value="">Select Gradient...</option>
                                     {screenTitleGradients.map((g) => (
                                       <option key={String(g.key)} value={String(g.key)}>
                                         {String(g.label || g.key)}
