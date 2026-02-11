@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import listCardBgImage from './images/list_bg.png'
+import './styles/card-list.css'
+import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 
 type ProjectListItem = {
   id: number
@@ -86,6 +88,19 @@ export default function Timelines() {
   const [items, setItems] = useState<ProjectListItem[]>([])
 
   const activeItems = useMemo(() => items.filter((p) => p.archivedAt == null), [items])
+  const timelineCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+          '--card-bg-image': `url(${listCardBgImage})`,
+        })
+      ),
+    []
+  )
+  const timelineCardTypeStyle = useMemo(
+    () => cardThemeStyle(mergeCardThemeVars(cardThemeTokens.byType.timeline)),
+    []
+  )
 
   const [createOpen, setCreateOpen] = useState(false)
   const [createDefaultName, setCreateDefaultName] = useState(() => fmtDefaultTimelineName())
@@ -459,43 +474,27 @@ export default function Timelines() {
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+        <div className="card-list" style={{ ...timelineCardListStyle, marginTop: 16 }}>
           {activeItems.map((p) => {
             const title = (p.name || '').trim() || `Timeline #${p.id}`
             return (
               <div
                 key={p.id}
-                style={{
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  borderRadius: 16,
-                  backgroundImage: `linear-gradient(180deg, rgba(5,8,12,0.39) 0%, rgba(5,8,12,0.44) 100%), url(${listCardBgImage})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                  padding: 14,
-                }}
+                className="card-item"
+                data-card-type="timeline"
+                style={timelineCardTypeStyle}
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 92 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, fontSize: 16, wordBreak: 'break-word' }}>{title}</div>
-                    <div style={{ color: '#9a9a9a', fontSize: 13, marginTop: 4 }}>
+                <div className="card-main">
+                  <div className="card-head">
+                    <div className="card-title">{title}</div>
+                    <div className="card-meta">
                       Updated: {fmtDate(p.updatedAt)} • Created: {fmtDate(p.createdAt)}
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 10,
-                      flexWrap: 'nowrap',
-                      justifyContent: 'flex-end',
-                      alignItems: 'center',
-                      marginTop: 'auto',
-                      overflowX: 'auto',
-                      WebkitOverflowScrolling: 'touch',
-                    }}
-                  >
+                  <div className="card-actions card-actions-right card-actions-scroll">
                     <button
+                      className="card-btn card-btn-open"
                       type="button"
                       onClick={() => {
                         const pid = Number(p.id)
@@ -504,48 +503,20 @@ export default function Timelines() {
                           ? buildReturnHref(returnBase, pid)
                           : `/create-video?project=${encodeURIComponent(String(pid))}`
                       }}
-                      style={{
-                        padding: '8px 10px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: 'rgba(10,132,255,0.16)',
-                        color: '#fff',
-                        fontWeight: 900,
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                      }}
                     >
                       Open
                     </button>
                     <button
+                      className="card-btn card-btn-edit"
                       type="button"
                       onClick={() => openEdit(p.id)}
-                      style={{
-                        padding: '8px 10px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        fontWeight: 900,
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                      }}
                     >
                       Edit
                     </button>
                     <button
+                      className="card-btn card-btn-delete"
                       type="button"
                       onClick={() => deleteTimeline(p.id)}
-                      style={{
-                        padding: '8px 10px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,155,155,0.40)',
-                        background: 'rgba(255,0,0,0.14)',
-                        color: '#fff',
-                        fontWeight: 900,
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                      }}
                     >
                       Delete
                     </button>

@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react'
 import ScreenTitlePresetsPage from './ScreenTitlePresets'
+import './styles/card-list.css'
+import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 
 type UploadListItem = {
   id: number
@@ -1450,6 +1452,14 @@ const GraphicAssetsListPage: React.FC<{
   pickType?: 'graphic' | 'timelineBackground' | 'clipBackground'
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
+  const graphicCardListStyle = useMemo(
+    () => cardThemeStyle(mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGraphic)),
+    []
+  )
+  const graphicCardTypeStyle = useMemo(
+    () => cardThemeStyle(mergeCardThemeVars(cardThemeTokens.byType.graphic)),
+    []
+  )
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [recent, setRecent] = React.useState<UploadListItem[]>([])
@@ -1615,18 +1625,15 @@ const GraphicAssetsListPage: React.FC<{
     return (
       <div
         key={u.id}
-        style={{
-          border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(28,28,28,0.96)',
-          borderRadius: 16,
-          padding: 14,
-        }}
+        className="card-item"
+        data-card-type="graphic"
+        style={graphicCardTypeStyle}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ fontWeight: 900, fontSize: 18, wordBreak: 'break-word' }}>{name}</div>
-            {fileLine ? <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{fileLine}</div> : null}
-            <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div>
+          <div className="card-head" style={{ flex: '1 1 auto' }}>
+            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+            {fileLine ? <div className="card-meta">{fileLine}</div> : null}
+            <div className="card-meta">{meta}</div>
           </div>
           <button
             type="button"
@@ -1681,26 +1688,19 @@ const GraphicAssetsListPage: React.FC<{
         </div>
 
         {isPick ? (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <div className="card-actions card-actions-right" style={{ marginTop: 10 }}>
             <button
+              className="card-btn card-btn-open"
               type="button"
               onClick={() => onPick(u)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
             >
               Select
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+          <div className="card-actions card-actions-spread" style={{ marginTop: 10, flexWrap: 'wrap' }}>
             <button
+              className="card-btn card-btn-delete"
               type="button"
               onClick={async () => {
                 const ok = window.confirm('Delete this asset? This cannot be undone.')
@@ -1718,30 +1718,13 @@ const GraphicAssetsListPage: React.FC<{
                   window.alert(e?.message || 'Failed to delete')
                 }
               }}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,155,155,0.40)',
-                background: 'rgba(128,0,0,1)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
             >
               Delete
             </button>
             <button
+              className="card-btn card-btn-edit"
               type="button"
               onClick={() => setEditUpload(u)}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0c0c0c',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
             >
               Edit
             </button>
@@ -1842,14 +1825,16 @@ const GraphicAssetsListPage: React.FC<{
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
+        <div style={{ ...graphicCardListStyle }}>
         {!q.trim() && !favoritesOnly && recent.length ? (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
-            <div style={{ display: 'grid', gap: 14 }}>{recent.map(renderCard)}</div>
+            <div className="card-list">{recent.map(renderCard)}</div>
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>{sortedItems.map(renderCard)}</div>
+        <div className="card-list" style={{ marginTop: 16 }}>{sortedItems.map(renderCard)}</div>
+        </div>
 
         {editUpload ? (
           <EditUploadModal

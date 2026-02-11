@@ -1,0 +1,90 @@
+.card-list {
+  display: grid;
+  gap: var(--card-list-gap, 12px);
+}
+
+.card-item {
+  border: var(--card-border, 1px solid rgba(255, 255, 255, 0.14));
+  border-radius: var(--card-radius, 16px);
+  padding: var(--card-padding, 14px);
+  background-color: var(--card-bg-solid, rgba(255, 255, 255, 0.03));
+  background-image:
+    linear-gradient(
+      180deg,
+      var(--card-overlay-start, rgba(5, 8, 12, 0.24)) 0%,
+      var(--card-overlay-end, rgba(5, 8, 12, 0.34)) 100%
+    ),
+    var(--card-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 92px;
+}
+
+.card-head {
+  min-width: 0;
+}
+
+.card-title {
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--card-title-color, #fff);
+  word-break: break-word;
+}
+
+.card-meta {
+  margin-top: 4px;
+  color: var(--card-meta-color, #bbb);
+  font-size: 13px;
+}
+
+.card-actions {
+  display: flex;
+  gap: var(--card-action-gap, 10px);
+  align-items: center;
+}
+
+.card-actions-right {
+  justify-content: flex-end;
+}
+
+.card-actions-spread {
+  justify-content: space-between;
+}
+
+.card-actions-scroll {
+  margin-top: auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.card-btn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.card-btn-open {
+  border: var(--card-btn-open-border, 1px solid rgba(10, 132, 255, 0.55));
+  background: var(--card-btn-open-bg, rgba(10, 132, 255, 0.16));
+}
+
+.card-btn-edit {
+  border: var(--card-btn-edit-border, 1px solid rgba(255, 255, 255, 0.18));
+  background: var(--card-btn-edit-bg, #0c0c0c);
+}
+
+.card-btn-delete {
+  border: var(--card-btn-delete-border, 1px solid rgba(255, 155, 155, 0.4));
+  background: var(--card-btn-delete-bg, rgba(128, 0, 0, 1));
+}
