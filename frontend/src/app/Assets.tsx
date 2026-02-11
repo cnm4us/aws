@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import ScreenTitlePresetsPage from './ScreenTitlePresets'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
+import listCardBgImage from './images/list_bg.png'
 
 type UploadListItem = {
   id: number
@@ -124,6 +125,13 @@ function getPickPassthrough(): Record<string, string> {
   if (ret) out.return = String(ret)
   return out
 }
+
+const timelineStyleCardListTheme = cardThemeStyle(
+  mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+    '--card-list-gap': '14px',
+    '--card-bg-image': `url(${listCardBgImage})`,
+  })
+)
 
 function formatBytes(bytes: number | null): string {
   if (bytes == null) return ''
@@ -416,6 +424,7 @@ const AssetUploadsListPage: React.FC<{
   onPick?: (u: UploadListItem) => void
 }> = ({ title, subtitle, kind, imageRole, uploadHref, showDuration, filterFn, allowDelete, onPick }) => {
   const mode = useMemo(() => parseMode(), [])
+  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -520,7 +529,7 @@ const AssetUploadsListPage: React.FC<{
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
         {deleteError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{deleteError}</div> : null}
 
-	        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+	        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 16 }}>
 	          {items.map((u) => {
 	            const name = (u.modified_filename || u.original_filename || `Upload ${u.id}`).trim()
 	            const originalName = (u.original_filename || '').trim()
@@ -534,16 +543,8 @@ const AssetUploadsListPage: React.FC<{
 	            const thumbSrc = thumbOrFile(u)
 	            const isImageLike = kind === 'logo' || kind === 'image'
 	            return (
-	              <div
-	                key={u.id}
-	                style={{
-	                  border: '1px solid rgba(255,255,255,0.14)',
-	                  background: 'rgba(255,255,255,0.04)',
-	                  borderRadius: 16,
-	                  overflow: 'hidden',
-	                }}
-	              >
-	                <div style={{ padding: 12, display: 'grid', gap: 8 }}>
+              <div key={u.id} className="card-item" data-card-type={kind}>
+                <div style={{ display: 'grid', gap: 8 }}>
 	                  <button
 	                    type="button"
 	                    onClick={() => {
@@ -605,10 +606,11 @@ const AssetUploadsListPage: React.FC<{
 	                    </div>
 	                  </button>
 
-	                  {mode !== 'pick' ? (
-	                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
-	                      <button
-	                        type="button"
+		                  {mode !== 'pick' ? (
+		                    <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 6 }}>
+		                      <button
+                        className="card-btn card-btn-delete"
+		                        type="button"
                         disabled={!allowDelete || isDeleting}
                         onClick={async () => {
                           if (!allowDelete) return
@@ -635,59 +637,35 @@ const AssetUploadsListPage: React.FC<{
                             })
                           }
                         }}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid rgba(255,155,155,0.40)',
-                          background: allowDelete ? 'rgba(128,0,0,1)' : 'rgba(255,255,255,0.06)',
-                          color: '#fff',
-                          fontWeight: 900,
-                          cursor: allowDelete && !isDeleting ? 'pointer' : 'default',
-                          opacity: allowDelete ? (isDeleting ? 0.7 : 1) : 0.5,
-                        }}
-                      >
-                        {isDeleting ? 'Deleting…' : 'Delete'}
-                      </button>
+	                        style={{ cursor: allowDelete && !isDeleting ? 'pointer' : 'default', opacity: allowDelete ? (isDeleting ? 0.7 : 1) : 0.5 }}
+	                      >
+	                        {isDeleting ? 'Deleting…' : 'Delete'}
+	                      </button>
 
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          onClick={() => setEditUpload(u)}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: 12,
-                            border: '1px solid rgba(10,132,255,0.55)',
-                            background: '#0c0c0c',
-                            color: '#fff',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (typeof onPick === 'function') onPick(u)
-                          else window.alert('Pick mode is not wired for this asset type yet.')
-                        }}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid rgba(10,132,255,0.55)',
-                          background: '#0a84ff',
-                          color: '#fff',
-                          fontWeight: 900,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Select
-                      </button>
-                    </div>
+	                      <div className="card-actions card-actions-right" style={{ flexWrap: 'wrap' }}>
+	                        <button
+                            className="card-btn card-btn-edit"
+	                          type="button"
+	                          onClick={() => setEditUpload(u)}
+	                        >
+	                          Edit
+	                        </button>
+	                      </div>
+	                    </div>
+	                  ) : (
+	                    <div className="card-actions card-actions-right" style={{ marginTop: 6 }}>
+	                      <button
+                          className="card-btn card-btn-open"
+	                        type="button"
+	                        onClick={() => {
+	                          if (typeof onPick === 'function') onPick(u)
+	                          else window.alert('Pick mode is not wired for this asset type yet.')
+	                        }}
+                          style={{ cursor: 'pointer' }}
+	                      >
+	                        Select
+	                      </button>
+	                    </div>
                   )}
                 </div>
               </div>
@@ -809,6 +787,7 @@ const VideoAssetsListPage: React.FC<{
   pickType?: 'video' | 'videoOverlay'
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
+  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [clipItems, setClipItems] = React.useState<LibraryClipItem[]>([])
@@ -1017,19 +996,11 @@ const VideoAssetsListPage: React.FC<{
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (
-      <div
-        key={u.id}
-        style={{
-          border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(28,28,28,0.96)',
-          borderRadius: 16,
-          padding: 14,
-        }}
-      >
+      <div key={u.id} className="card-item" data-card-type="video">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ fontWeight: 900, fontSize: 18, wordBreak: 'break-word' }}>{name}</div>
-            <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div>
+            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+            <div className="card-meta">{meta}</div>
           </div>
           <button
             type="button"
@@ -1081,26 +1052,20 @@ const VideoAssetsListPage: React.FC<{
         </div>
 
         {isPick ? (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <div className="card-actions card-actions-right" style={{ marginTop: 10 }}>
             <button
+              className="card-btn card-btn-open"
               type="button"
               onClick={() => onPick(u)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
+              style={{ cursor: 'pointer' }}
             >
               Select
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+          <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 10 }}>
             <button
+              className="card-btn card-btn-delete"
               type="button"
               onClick={async () => {
                 const ok = window.confirm('Delete this asset? This cannot be undone.')
@@ -1118,30 +1083,15 @@ const VideoAssetsListPage: React.FC<{
                   window.alert(e?.message || 'Failed to delete')
                 }
               }}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,155,155,0.40)',
-                background: 'rgba(128,0,0,1)',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
+              style={{ cursor: 'pointer' }}
             >
               Delete
             </button>
             <button
+              className="card-btn card-btn-edit"
               type="button"
               onClick={() => setEditUpload(u)}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0c0c0c',
-                color: '#fff',
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
+              style={{ cursor: 'pointer' }}
             >
               Edit
             </button>
@@ -1169,38 +1119,22 @@ const VideoAssetsListPage: React.FC<{
     const previewSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy#t=${(start + 0.1).toFixed(1)}`
     const isPick = mode === 'pick'
     return (
-      <div
-        key={`clip-${c.id}`}
-        style={{
-          border: '1px solid rgba(255,255,255,0.14)',
-          background: 'rgba(28,28,28,0.96)',
-          borderRadius: 16,
-          padding: 14,
-        }}
-      >
+      <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ fontWeight: 900, fontSize: 18, wordBreak: 'break-word' }}>{name}</div>
-            {meta ? <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
+            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+            {meta ? <div className="card-meta">{meta}</div> : null}
           </div>
           {isPick ? (
             <button
+              className="card-btn card-btn-open"
               type="button"
               onClick={() => {
                 const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
                 const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id) })
                 if (href) window.location.href = href
               }}
-              style={{
-                flex: '0 0 auto',
-                padding: '8px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
+              style={{ flex: '0 0 auto', cursor: 'pointer' }}
             >
               Select
             </button>
@@ -1357,15 +1291,17 @@ const VideoAssetsListPage: React.FC<{
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
+        <div style={sharedCardListStyle}>
         {!isClipMode && !q.trim() && !favoritesOnly && recent.length ? (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
-            <div style={{ display: 'grid', gap: 14 }}>{recent.map(renderCard)}</div>
+            <div className="card-list">{recent.map(renderCard)}</div>
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+        <div className="card-list" style={{ marginTop: 16 }}>
           {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
+        </div>
         </div>
 
         {editUpload ? (
@@ -1453,11 +1389,13 @@ const GraphicAssetsListPage: React.FC<{
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
   const graphicCardListStyle = useMemo(
-    () => cardThemeStyle(mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGraphic)),
-    []
-  )
-  const graphicCardTypeStyle = useMemo(
-    () => cardThemeStyle(mergeCardThemeVars(cardThemeTokens.byType.graphic)),
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': `url(${listCardBgImage})`,
+        })
+      ),
     []
   )
   const [me, setMe] = React.useState<MeResponse | null>(null)
@@ -1623,12 +1561,7 @@ const GraphicAssetsListPage: React.FC<{
     const fav = Boolean(u.is_favorite)
     const isPick = mode === 'pick'
     return (
-      <div
-        key={u.id}
-        className="card-item"
-        data-card-type="graphic"
-        style={graphicCardTypeStyle}
-      >
+      <div key={u.id} className="card-item" data-card-type="graphic">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div className="card-head" style={{ flex: '1 1 auto' }}>
             <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
@@ -2316,6 +2249,7 @@ const LowerThirdConfigPickPage: React.FC = () => {
 const NarrationAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
+  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
   const isNew = mode !== 'pick' && (getQueryParam('new') === '1' || getQueryParam('new') === 'true')
 
   const backHref = useMemo(() => {
@@ -2448,7 +2382,7 @@ const NarrationAssetsPage: React.FC = () => {
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
         {deleteError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{deleteError}</div> : null}
 
-        <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 14 }}>
           {items.map((it: any) => {
             const id = Number(it?.id || 0)
             if (!Number.isFinite(id) || id <= 0) return null
@@ -2459,18 +2393,7 @@ const NarrationAssetsPage: React.FC = () => {
             const meta = [date, size, dur].filter(Boolean).join(' · ')
             const description = String(it?.description || '').trim()
             return (
-              <div
-                key={`nar-${id}`}
-                style={{
-                  padding: 12,
-                  borderRadius: 14,
-                  border: '1px solid rgba(191,90,242,0.55)',
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#fff',
-                  display: 'grid',
-                  gap: 10,
-                }}
-              >
+              <div key={`nar-${id}`} className="card-item" data-card-type="narration" style={{ color: '#fff', display: 'grid', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
                   <button
                     type="button"
@@ -2498,29 +2421,23 @@ const NarrationAssetsPage: React.FC = () => {
                 <audio controls preload="none" style={{ width: '100%' }} src={`/api/uploads/${id}/file`} />
 
                 {mode === 'pick' ? (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div className="card-actions card-actions-right">
                     <button
+                      className="card-btn card-btn-open"
                       type="button"
                       onClick={() => {
                         const href = buildReturnHref({ cvPickType: 'narration', cvPickUploadId: String(id) })
                         if (href) window.location.href = href
                       }}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: '#0a84ff',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                      }}
+                      style={{ cursor: 'pointer' }}
                     >
                       Select
                     </button>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+                  <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 2 }}>
                     <button
+                      className="card-btn card-btn-delete"
                       type="button"
                       disabled={deleting === id}
                       onClick={async () => {
@@ -2528,33 +2445,17 @@ const NarrationAssetsPage: React.FC = () => {
                         if (!ok) return
                         await deleteOne(id)
                       }}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(255,155,155,0.40)',
-                        background: 'rgba(128,0,0,1)',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: deleting === id ? 'default' : 'pointer',
-                        opacity: deleting === id ? 0.7 : 1,
-                      }}
+                      style={{ cursor: deleting === id ? 'default' : 'pointer', opacity: deleting === id ? 0.7 : 1 }}
                     >
                       {deleting === id ? 'Deleting…' : 'Delete'}
                     </button>
 
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <div className="card-actions card-actions-right" style={{ flexWrap: 'wrap' }}>
                       <button
+                        className="card-btn card-btn-edit"
                         type="button"
                         onClick={() => setEdit({ id, name, description })}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid rgba(191,90,242,0.65)',
-                          background: '#0c0c0c',
-                          color: '#fff',
-                          fontWeight: 900,
-                          cursor: 'pointer',
-                        }}
+                        style={{ cursor: 'pointer' }}
                       >
                         Edit
                       </button>
@@ -2693,6 +2594,7 @@ const NarrationAssetsPage: React.FC = () => {
 const ScreenTitleStylesAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
+  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
   const returnHref = useMemo(() => getQueryParam('return'), [])
   const [items, setItems] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -2759,29 +2661,20 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
-        <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 14 }}>
           {items.map((it) => {
             const id = Number(it?.id || 0)
             const name = String(it?.name || `Style ${id}`).trim()
             const desc = String(it?.description || '').trim()
             const isDeleting = deletingId === id
             return (
-              <div
-                key={`st-style-${id}`}
-                style={{
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,214,10,0.55)',
-                  background: 'rgba(28,28,28,0.96)',
-                  padding: 12,
-                  display: 'grid',
-                  gap: 8,
-                }}
-              >
-                <div style={{ fontWeight: 900 }}>{name}</div>
-                {desc ? <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>{desc}</div> : null}
+              <div key={`st-style-${id}`} className="card-item" data-card-type="screen-title-style" style={{ display: 'grid', gap: 8 }}>
+                <div className="card-title">{name}</div>
+                {desc ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{desc}</div> : null}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginTop: 6 }}>
+                <div className="card-actions card-actions-spread" style={{ marginTop: 6 }}>
                   <button
+                    className="card-btn card-btn-delete"
                     type="button"
                     disabled={isDeleting}
                     onClick={async () => {
@@ -2807,22 +2700,14 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                         setDeletingId(null)
                       }
                     }}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,155,155,0.40)',
-                      background: 'rgba(128,0,0,1)',
-                      color: '#fff',
-                      fontWeight: 900,
-                      cursor: isDeleting ? 'default' : 'pointer',
-                      opacity: isDeleting ? 0.7 : 1,
-                    }}
+                    style={{ cursor: isDeleting ? 'default' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}
                   >
                     {isDeleting ? 'Deleting…' : 'Delete'}
                   </button>
 
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div className="card-actions" style={{ gap: 8 }}>
                     <button
+                      className="card-btn card-btn-edit"
                       type="button"
                       disabled={cloningId === id}
                       onClick={async () => {
@@ -2878,34 +2763,15 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
                           setCloningId(null)
                         }
                       }}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: cloningId === id ? 'default' : 'pointer',
-                        opacity: cloningId === id ? 0.7 : 1,
-                      }}
+                      style={{ cursor: cloningId === id ? 'default' : 'pointer', opacity: cloningId === id ? 0.7 : 1 }}
                     >
                       {cloningId === id ? 'Cloning…' : 'Clone'}
                     </button>
 
                     <a
+                      className="card-btn card-btn-edit"
                       href={makeHref(`/assets/screen-titles/${encodeURIComponent(String(id))}/edit`)}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: '#0c0c0c',
-                        color: '#fff',
-                        fontWeight: 900,
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                       Edit
                     </a>
@@ -2924,43 +2790,25 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
     <PickListShell title="Select Screen Title Style" subtitle="Pick a style to add to your timeline." backHref={backHref}>
       {loading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
       {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div className="card-list" style={sharedCardListStyle}>
         {items.map((p: any) => {
           const id = Number(p?.id || 0)
           if (!Number.isFinite(id) || id <= 0) return null
           const name = String(p?.name || `Style ${id}`)
           const desc = String(p?.description || '').trim()
           return (
-            <div
-              key={`st-style-${id}`}
-              style={{
-                padding: 12,
-                borderRadius: 14,
-                border: '1px solid rgba(255,214,10,0.55)',
-                background: 'rgba(28,28,28,0.96)',
-                color: '#fff',
-                display: 'grid',
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 900 }}>{name}</div>
-              {desc ? <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>{desc}</div> : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div key={`st-style-${id}`} className="card-item" data-card-type="screen-title-style" style={{ color: '#fff', display: 'grid', gap: 8 }}>
+              <div className="card-title">{name}</div>
+              {desc ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{desc}</div> : null}
+              <div className="card-actions card-actions-right">
                 <button
+                  className="card-btn card-btn-open"
                   type="button"
                   onClick={() => {
                     const href = buildReturnHref({ cvPickType: 'screenTitle', cvPickPresetId: String(id) })
                     if (href) window.location.href = href
                   }}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: '#0a84ff',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
+                  style={{ cursor: 'pointer' }}
                 >
                   Select
                 </button>
@@ -3138,6 +2986,7 @@ const GoldAudioPreviewPlayer: React.FC<{
 const AudioMusicAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
+  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
   const scopeRaw = (getQueryParam('scope') || '').trim().toLowerCase()
   const scope: 'system' | 'search' | 'my' = scopeRaw === 'my' ? 'my' : scopeRaw === 'search' ? 'search' : 'system'
   const isNew = mode !== 'pick' && scope === 'my' && (getQueryParam('new') === '1' || getQueryParam('new') === 'true')
@@ -3470,7 +3319,7 @@ const AudioMusicAssetsPage: React.FC = () => {
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
         {deleteError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{deleteError}</div> : null}
 
-        <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+        <div className="card-list" style={{ ...sharedCardListStyle, marginTop: 14 }}>
           {items.map((it: any) => {
             const id = Number(it?.id || 0)
             if (!Number.isFinite(id) || id <= 0) return null
@@ -3480,21 +3329,8 @@ const AudioMusicAssetsPage: React.FC = () => {
             const dur = formatDuration(it?.duration_seconds)
             const meta = [date, size, dur].filter(Boolean).join(' · ')
             const description = String(it?.description || '').trim()
-            const isSystem = scope !== 'my'
-            const border = isSystem ? '1px solid rgba(255,214,10,0.55)' : '1px solid rgba(255,255,255,0.14)'
             return (
-              <div
-                key={`aud-${scope}-${id}`}
-                style={{
-                  padding: 12,
-                  borderRadius: 14,
-                  border,
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#fff',
-                  display: 'grid',
-                  gap: 10,
-                }}
-              >
+              <div key={`aud-${scope}-${id}`} className="card-item" data-card-type={`audio-${scope}`} style={{ color: '#fff', display: 'grid', gap: 10 }}>
                 <button
                   type="button"
                   onClick={() => setDescModal({ title: name, description })}
@@ -3525,26 +3361,20 @@ const AudioMusicAssetsPage: React.FC = () => {
                 />
 
                 {mode === 'pick' ? (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div className="card-actions card-actions-right">
                     <button
+                      className="card-btn card-btn-open"
                       type="button"
                       onClick={() => selectTrack(id)}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(10,132,255,0.55)',
-                        background: '#0a84ff',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                      }}
+                      style={{ cursor: 'pointer' }}
                     >
                       Select
                     </button>
                   </div>
                 ) : scope === 'my' ? (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap' }}>
                     <button
+                      className="card-btn card-btn-delete"
                       type="button"
                       disabled={deleting === id}
                       onClick={async () => {
@@ -3552,32 +3382,16 @@ const AudioMusicAssetsPage: React.FC = () => {
                         if (!ok) return
                         await deleteOne(id)
                       }}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 12,
-                        border: '1px solid rgba(255,155,155,0.40)',
-                        background: 'rgba(128,0,0,1)',
-                        color: '#fff',
-                        fontWeight: 900,
-                        cursor: deleting === id ? 'default' : 'pointer',
-                        opacity: deleting === id ? 0.7 : 1,
-                      }}
+                      style={{ cursor: deleting === id ? 'default' : 'pointer', opacity: deleting === id ? 0.7 : 1 }}
                     >
                       {deleting === id ? 'Deleting…' : 'Delete'}
                     </button>
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div className="card-actions">
                       <button
+                        className="card-btn card-btn-edit"
                         type="button"
                         onClick={() => setEdit({ id, name, description })}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: '1px solid rgba(10,132,255,0.55)',
-                          background: '#0c0c0c',
-                          color: '#fff',
-                          fontWeight: 900,
-                          cursor: 'pointer',
-                        }}
+                        style={{ cursor: 'pointer' }}
                       >
                         Edit
                       </button>
@@ -3887,6 +3701,17 @@ export default function Assets() {
     )
   }, [mode, passthrough.return])
 
+  const assetsTypeCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': `url(${listCardBgImage})`,
+        })
+      ),
+    []
+  )
+
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
@@ -3899,26 +3724,24 @@ export default function Assets() {
           {mode === 'pick' ? 'Select an asset type to add to your timeline.' : 'Browse and manage your assets.'}
         </p>
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+        <div className="card-list" style={{ ...assetsTypeCardListStyle, marginTop: 16 }}>
 	          {types.map((t) => (
 	            <a
 	              key={t.key}
 	              href={t.href}
+                className="card-item"
+                data-card-type={`asset-${t.key}`}
 	              style={{
 	                display: 'block',
 	                textDecoration: 'none',
 	                color: '#fff',
-	                borderRadius: 16,
-	                border: '1px solid rgba(212,175,55,0.55)',
-	                background: 'rgba(28,28,28,0.96)',
-	                padding: 14,
 	              }}
 	            >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 900 }}>{t.label}</div>
+                <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
                 <div style={{ color: '#d4af37', fontWeight: 900 }}>→</div>
               </div>
-              <div style={{ marginTop: 6, color: '#bbb', lineHeight: 1.35 }}>{t.description}</div>
+              <div className="card-meta" style={{ marginTop: 6, lineHeight: 1.35 }}>{t.description}</div>
             </a>
           ))}
         </div>
