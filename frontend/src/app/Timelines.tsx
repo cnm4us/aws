@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import listCardBgImage from './images/list_bg.png'
 
 type ProjectListItem = {
   id: number
@@ -9,6 +10,13 @@ type ProjectListItem = {
   createdAt: string
   updatedAt: string
   archivedAt: string | null
+}
+
+type UploadImageOption = {
+  id: number
+  name: string
+  width: number | null
+  height: number | null
 }
 
 function getCsrfToken(): string | null {
@@ -28,6 +36,12 @@ function getCsrfToken(): string | null {
   } catch {
     return null
   }
+}
+
+function normalizeHexColor(value: unknown, fallback = '#000000'): string {
+  const raw = String(value || '').trim()
+  const m = raw.match(/^#?([0-9a-fA-F]{6})$/)
+  return m ? `#${m[1].toLowerCase()}` : fallback
 }
 
 function fmtDate(s: string | null | undefined): string {
@@ -81,6 +95,183 @@ export default function Timelines() {
   const [editId, setEditId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editTimelineLoading, setEditTimelineLoading] = useState(false)
+  const [editTimelineError, setEditTimelineError] = useState<string | null>(null)
+  const [editTimelineRaw, setEditTimelineRaw] = useState<any | null>(null)
+  const [editTimelineBackgroundMode, setEditTimelineBackgroundMode] = useState<'none' | 'color' | 'image'>('none')
+  const [editTimelineBackgroundColor, setEditTimelineBackgroundColor] = useState('#000000')
+  const [editTimelineBackgroundUploadId, setEditTimelineBackgroundUploadId] = useState<number | null>(null)
+  const [editImageOptions, setEditImageOptions] = useState<UploadImageOption[]>([])
+  const [editImageOptionsLoading, setEditImageOptionsLoading] = useState(false)
+  const [editImageOptionsError, setEditImageOptionsError] = useState<string | null>(null)
+  const [pendingTimelineBackgroundPick, setPendingTimelineBackgroundPick] = useState<{ timelineId: number; uploadId: number } | null>(null)
+
+  const selectedEditImage = useMemo(
+    () => (editTimelineBackgroundUploadId == null ? null : editImageOptions.find((it) => Number(it.id) === Number(editTimelineBackgroundUploadId)) || null),
+    [editImageOptions, editTimelineBackgroundUploadId]
+  )
+
+  const pickFromAssets = useMemo(() => {
+    try {
+      const qp = new URLSearchParams(window.location.search || '')
+      const type = String(qp.get('cvPickType') || '').trim()
+      if (!type) return null
+      const uploadId = Number(String(qp.get('cvPickUploadId') || '0'))
+      const timelineId = Number(String(qp.get('tlEditId') || '0'))
+      return {
+        type,
+        uploadId: Number.isFinite(uploadId) && uploadId > 0 ? Math.round(uploadId) : null,
+        timelineId: Number.isFinite(timelineId) && timelineId > 0 ? Math.round(timelineId) : null,
+      }
+    } catch {
+      return null
+    }
+  }, [])
+
+  const openTimelineBackgroundPicker = React.useCallback(() => {
+    if (!editId) return
+    try {
+      const current = new URL(window.location.href)
+      current.searchParams.set('tlEditId', String(editId))
+      current.searchParams.delete('cvPickType')
+      current.searchParams.delete('cvPickUploadId')
+      const ret = `${current.pathname}${current.search}${current.hash || ''}`
+      const u = new URL('/assets/graphic', window.location.origin)
+      u.searchParams.set('mode', 'pick')
+      u.searchParams.set('pickType', 'timelineBackground')
+      u.searchParams.set('return', ret)
+      window.location.href = `${u.pathname}${u.search}`
+    } catch {
+      window.location.href = `/assets/graphic?mode=pick&pickType=timelineBackground&return=${encodeURIComponent(`/timelines?tlEditId=${editId}`)}`
+    }
+  }, [editId])
+
+  const handledPickFromAssetsRef = React.useRef(false)
+  useEffect(() => {
+    if (handledPickFromAssetsRef.current) return
+    if (!pickFromAssets) return
+    if (loading) return
+    handledPickFromAssetsRef.current = true
+
+    const cleanUrl = () => {
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('cvPickType')
+        url.searchParams.delete('cvPickUploadId')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash || ''}`)
+      } catch {}
+    }
+
+    if (pickFromAssets.type === 'timelineBackground' && pickFromAssets.uploadId && pickFromAssets.timelineId) {
+      setPendingTimelineBackgroundPick({
+        timelineId: pickFromAssets.timelineId,
+        uploadId: pickFromAssets.uploadId,
+      })
+      openEdit(pickFromAssets.timelineId)
+    }
+    cleanUrl()
+  }, [loading, pickFromAssets, items])
+
+  useEffect(() => {
+    if (!pendingTimelineBackgroundPick) return
+    if (!editOpen) return
+    if (!editId || Number(editId) !== Number(pendingTimelineBackgroundPick.timelineId)) return
+    if (editTimelineLoading) return
+    if (!editTimelineRaw || typeof editTimelineRaw !== 'object') return
+
+    setEditTimelineBackgroundMode('image')
+    setEditTimelineBackgroundUploadId(Number(pendingTimelineBackgroundPick.uploadId))
+    void hydrateEditSelectedImage(Number(pendingTimelineBackgroundPick.uploadId))
+    void loadEditImageOptions(false)
+    setPendingTimelineBackgroundPick(null)
+  }, [pendingTimelineBackgroundPick, editOpen, editId, editTimelineLoading, editTimelineRaw, editImageOptions])
+
+  async function loadEditImageOptions(force = false) {
+    if (editImageOptionsLoading) return
+    if (!force && editImageOptions.length > 0) return
+    try {
+      setEditImageOptionsLoading(true)
+      setEditImageOptionsError(null)
+      const res = await fetch('/api/uploads?kind=image&image_role=overlay&limit=200', { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load_images'))
+      const rawItems: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json?.uploads) ? json.uploads : Array.isArray(json) ? json : []
+      const next: UploadImageOption[] = []
+      for (const raw of rawItems) {
+        const id = Number((raw as any)?.id)
+        if (!Number.isFinite(id) || id <= 0) continue
+        const name = String((raw as any)?.modified_filename || (raw as any)?.original_filename || `Image ${id}`).trim() || `Image ${id}`
+        const width = Number((raw as any)?.width)
+        const height = Number((raw as any)?.height)
+        next.push({
+          id,
+          name,
+          width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
+          height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
+        })
+      }
+      next.sort((a, b) => a.name.localeCompare(b.name))
+      setEditImageOptions(next)
+    } catch (e: any) {
+      setEditImageOptionsError(e?.message || 'Failed to load images')
+    } finally {
+      setEditImageOptionsLoading(false)
+    }
+  }
+
+  async function hydrateEditSelectedImage(uploadId: number) {
+    try {
+      if (editImageOptions.some((it) => Number(it.id) === Number(uploadId))) return
+      const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) return
+      const up = json?.upload && typeof json.upload === 'object' ? json.upload : json
+      const id = Number((up as any)?.id)
+      if (!Number.isFinite(id) || id <= 0) return
+      const name = String((up as any)?.modified_filename || (up as any)?.original_filename || `Image ${id}`).trim() || `Image ${id}`
+      const width = Number((up as any)?.width)
+      const height = Number((up as any)?.height)
+      setEditImageOptions((prev) => {
+        if (prev.some((it) => Number(it.id) === id)) return prev
+        return prev.concat({
+          id,
+          name,
+          width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
+          height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
+        })
+      })
+    } catch {}
+  }
+
+  async function loadEditTimeline(projectId: number) {
+    try {
+      setEditTimelineLoading(true)
+      setEditTimelineError(null)
+      const res = await fetch(`/api/create-video/projects/${encodeURIComponent(String(projectId))}`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load_timeline'))
+      const project = json?.project && typeof json.project === 'object' ? json.project : null
+      const tl = project?.timeline && typeof project.timeline === 'object' ? project.timeline : null
+      setEditTimelineRaw(tl)
+      const modeRaw = String((tl as any)?.timelineBackgroundMode || 'none').trim().toLowerCase()
+      const mode: 'none' | 'color' | 'image' = modeRaw === 'color' ? 'color' : modeRaw === 'image' ? 'image' : 'none'
+      const uploadIdRaw = Number((tl as any)?.timelineBackgroundUploadId)
+      const uploadId = Number.isFinite(uploadIdRaw) && uploadIdRaw > 0 ? Math.round(uploadIdRaw) : null
+      setEditTimelineBackgroundMode(mode)
+      setEditTimelineBackgroundColor(normalizeHexColor((tl as any)?.timelineBackgroundColor, '#000000'))
+      setEditTimelineBackgroundUploadId(uploadId)
+      if (uploadId != null) void hydrateEditSelectedImage(uploadId)
+    } catch (e: any) {
+      setEditTimelineError(e?.message || 'Failed to load timeline settings')
+      setEditTimelineRaw(null)
+      setEditTimelineBackgroundMode('none')
+      setEditTimelineBackgroundColor('#000000')
+      setEditTimelineBackgroundUploadId(null)
+    } finally {
+      setEditTimelineLoading(false)
+    }
+  }
 
   async function refresh() {
     setLoading(true)
@@ -116,7 +307,15 @@ export default function Timelines() {
     setEditId(Number(current.id))
     setEditName((current.name || '').trim() || `Timeline #${current.id}`)
     setEditDescription((current.description || '').trim())
+    setEditSaving(false)
+    setEditTimelineError(null)
+    setEditTimelineRaw(null)
+    setEditTimelineBackgroundMode('none')
+    setEditTimelineBackgroundColor('#000000')
+    setEditTimelineBackgroundUploadId(null)
     setEditOpen(true)
+    void loadEditTimeline(Number(current.id))
+    void loadEditImageOptions(false)
   }
 
   async function createNew() {
@@ -147,12 +346,14 @@ export default function Timelines() {
   }
 
   async function saveEdit() {
-    if (!editId) return
+    if (!editId || editSaving) return
     try {
+      setEditSaving(true)
       const name = String(editName || '').trim()
       const description = String(editDescription || '').trim()
       if (!name) {
         window.alert('Name is required')
+        setEditSaving(false)
         return
       }
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -166,12 +367,38 @@ export default function Timelines() {
       })
       const json: any = await res.json().catch(() => null)
       if (!res.ok) throw new Error(String(json?.error || 'failed_to_rename'))
+      if (editTimelineRaw && typeof editTimelineRaw === 'object') {
+        const mode: 'none' | 'color' | 'image' =
+          editTimelineBackgroundMode === 'image' && editTimelineBackgroundUploadId == null
+            ? 'none'
+            : editTimelineBackgroundMode === 'color'
+              ? 'color'
+              : editTimelineBackgroundMode === 'image'
+                ? 'image'
+                : 'none'
+        const nextTimeline = {
+          ...(editTimelineRaw as any),
+          timelineBackgroundMode: mode,
+          timelineBackgroundColor: normalizeHexColor(editTimelineBackgroundColor, '#000000'),
+          timelineBackgroundUploadId: mode === 'image' ? Number(editTimelineBackgroundUploadId) : null,
+        }
+        const tlRes = await fetch(`/api/create-video/projects/${encodeURIComponent(String(editId))}/timeline`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ timeline: nextTimeline }),
+        })
+        const tlJson: any = await tlRes.json().catch(() => null)
+        if (!tlRes.ok) throw new Error(String(tlJson?.error || 'failed_to_save_timeline'))
+      }
       setItems((prev) =>
         prev.map((p) => (Number(p.id) === Number(editId) ? { ...p, name, description: description || null } : p))
       )
       setEditOpen(false)
     } catch (e: any) {
       window.alert(e?.message || 'Failed to save timeline')
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -241,7 +468,10 @@ export default function Timelines() {
                 style={{
                   border: '1px solid rgba(255,255,255,0.14)',
                   borderRadius: 16,
-                  background: 'rgba(255,255,255,0.03)',
+                  backgroundImage: `linear-gradient(180deg, rgba(5,8,12,0.39) 0%, rgba(5,8,12,0.44) 100%), url(${listCardBgImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
                   padding: 14,
                 }}
               >
@@ -448,29 +678,30 @@ export default function Timelines() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-            zIndex: 50,
+            zIndex: 1100,
+            background: 'rgba(0,0,0,0.86)',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            padding: '64px 16px 80px',
           }}
           onClick={() => setEditOpen(false)}
         >
           <div
             style={{
               width: '100%',
-              maxWidth: 520,
-              borderRadius: 16,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0b0b0b',
-              padding: 14,
+              maxWidth: 560,
+              margin: '0 auto',
+              borderRadius: 14,
+              border: '1px solid rgba(96,165,250,0.95)',
+              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+              padding: 16,
+              boxSizing: 'border-box',
               color: '#fff',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <div style={{ fontWeight: 900, fontSize: 18 }}>Edit Timeline</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 900, fontSize: 18 }}>Timeline Properties</div>
               <button
                 type="button"
                 onClick={() => setEditOpen(false)}
@@ -480,10 +711,11 @@ export default function Timelines() {
                   color: '#fff',
                   borderRadius: 10,
                   padding: '6px 10px',
+                  fontWeight: 800,
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                Close
               </button>
             </div>
 
@@ -495,13 +727,15 @@ export default function Timelines() {
                   onChange={(e) => setEditName(e.target.value)}
                   style={{
                     width: '100%',
+                    maxWidth: '100%',
                     boxSizing: 'border-box',
                     padding: '10px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.16)',
-                    background: '#050505',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0b0b0b',
                     color: '#fff',
-                    fontWeight: 800,
+                    fontSize: 14,
+                    fontWeight: 900,
                   }}
                 />
               </div>
@@ -515,15 +749,169 @@ export default function Timelines() {
                   rows={4}
                   style={{
                     width: '100%',
+                    maxWidth: '100%',
                     boxSizing: 'border-box',
                     padding: '10px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.16)',
-                    background: '#050505',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#0b0b0b',
                     color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 900,
                     resize: 'vertical',
                   }}
                 />
+              </div>
+
+              <div style={{ border: '1px solid rgba(96,165,250,0.35)', borderRadius: 12, padding: 10, background: 'rgba(255,255,255,0.03)' }}>
+                <div style={{ fontSize: 13, color: '#bbb', marginBottom: 8, fontWeight: 900 }}>Timeline Background</div>
+                {editTimelineLoading ? <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Loading timeline settings…</div> : null}
+                {editTimelineError ? <div style={{ color: '#ff9b9b', fontSize: 13, marginBottom: 8 }}>{editTimelineError}</div> : null}
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#bbb', fontSize: 13 }}>Mode</div>
+                    <select
+                      value={editTimelineBackgroundMode}
+                      onChange={(e) => {
+                        const mode = String(e.target.value || 'none').trim().toLowerCase()
+                        setEditTimelineBackgroundMode(mode === 'color' ? 'color' : mode === 'image' ? 'image' : 'none')
+                      }}
+                      disabled={editTimelineLoading}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#0b0b0b',
+                        color: '#fff',
+                        padding: '10px 12px',
+                        fontSize: 14,
+                        fontWeight: 900,
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <option value="none">None (Black)</option>
+                      <option value="color">Color</option>
+                      <option value="image">Image</option>
+                    </select>
+                  </label>
+
+                  {editTimelineBackgroundMode === 'color' ? (
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Color</div>
+                      <input
+                        type="color"
+                        value={editTimelineBackgroundColor}
+                        onChange={(e) => setEditTimelineBackgroundColor(normalizeHexColor(e.target.value, '#000000'))}
+                        disabled={editTimelineLoading}
+                        style={{
+                          width: '100%',
+                          height: 40,
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          background: 'transparent',
+                          padding: 0,
+                          cursor: 'pointer',
+                        }}
+                      />
+                    </label>
+                  ) : null}
+
+                  {editTimelineBackgroundMode === 'image' ? (
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Image</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+                        <select
+                          value={editTimelineBackgroundUploadId != null ? String(editTimelineBackgroundUploadId) : ''}
+                          onChange={(e) => {
+                            const raw = Number(e.target.value)
+                            setEditTimelineBackgroundUploadId(Number.isFinite(raw) && raw > 0 ? Math.round(raw) : null)
+                          }}
+                          disabled={editTimelineLoading}
+                          style={{
+                            width: '100%',
+                            maxWidth: '100%',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0b0b0b',
+                            color: '#fff',
+                            padding: '10px 12px',
+                            fontSize: 14,
+                            fontWeight: 900,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <option value="">No image selected</option>
+                          {editTimelineBackgroundUploadId != null && !selectedEditImage ? (
+                            <option value={String(editTimelineBackgroundUploadId)}>Image #{editTimelineBackgroundUploadId}</option>
+                          ) : null}
+                          {editImageOptions.map((it) => (
+                            <option key={it.id} value={String(it.id)}>
+                              {it.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void loadEditImageOptions(true)}
+                          disabled={editImageOptionsLoading || editTimelineLoading}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 800,
+                            cursor: editImageOptionsLoading || editTimelineLoading ? 'default' : 'pointer',
+                          }}
+                        >
+                          {editImageOptionsLoading ? 'Loading…' : 'Refresh'}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={openTimelineBackgroundPicker}
+                          disabled={editTimelineLoading}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(96,165,250,0.95)',
+                            background: 'rgba(96,165,250,0.14)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: editTimelineLoading ? 'default' : 'pointer',
+                          }}
+                        >
+                          Pick Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditTimelineBackgroundUploadId(null)}
+                          disabled={editTimelineLoading}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 800,
+                            cursor: editTimelineLoading ? 'default' : 'pointer',
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      {editImageOptionsError ? <div style={{ color: '#ff9b9b', fontSize: 12 }}>{editImageOptionsError}</div> : null}
+                      {selectedEditImage ? (
+                        <div style={{ color: '#9aa3ad', fontSize: 12 }}>
+                          {selectedEditImage.name}
+                          {selectedEditImage.width && selectedEditImage.height ? ` • ${selectedEditImage.width}x${selectedEditImage.height}` : ''}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -531,17 +919,18 @@ export default function Timelines() {
               <button
                 type="button"
                 onClick={() => void saveEdit()}
+                disabled={editSaving || editTimelineLoading}
                 style={{
                   padding: '10px 14px',
                   borderRadius: 12,
-                  border: '1px solid rgba(10,132,255,0.55)',
-                  background: '#0a84ff',
+                  border: '1px solid rgba(96,165,250,0.95)',
+                  background: editSaving ? 'rgba(96,165,250,0.08)' : 'rgba(96,165,250,0.14)',
                   color: '#fff',
                   fontWeight: 900,
-                  cursor: 'pointer',
+                  cursor: editSaving || editTimelineLoading ? 'default' : 'pointer',
                 }}
               >
-                Save
+                {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
