@@ -254,8 +254,8 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   outline_opacity_pct_raw = preset.get("outlineOpacityPct")
   outline_color_raw = preset.get("outlineColor")
 
-  outline_width_px_default = 1.0 if style == "outline" else (0.9 if style in ("pill", "strip") else 0.0)
-  outline_opacity_default = 0.45 if style == "outline" else (0.25 if style in ("pill", "strip") else 0.0)
+  outline_width_px_default = 1.0 if style == "outline" else (0.9 if style in ("pill", "strip", "merged_pill") else 0.0)
+  outline_opacity_default = 0.45 if style == "outline" else (0.25 if style in ("pill", "strip", "merged_pill") else 0.0)
 
   outline_width_px = outline_width_px_default
   if outline_width_pct_raw is not None and str(outline_width_pct_raw).strip() != "":
@@ -307,7 +307,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   shadow_dx0 = shadow_offset_px
   shadow_dy0 = shadow_offset_px
   shadow_blur0 = shadow_blur_px
-  if style in ("pill", "strip"):
+  if style in ("pill", "strip", "merged_pill"):
     pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y0 = clamp(font_px * 0.30, 6.0, 28.0)
   margin_left_px0 = pct_to_px(margin_left_pct, width)
@@ -395,7 +395,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   # Padding around text for pill background.
   pad_x = 0.0
   pad_y = 0.0
-  if style in ("pill", "strip"):
+  if style in ("pill", "strip", "merged_pill"):
     pad_x = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y = clamp(font_px * 0.30, 6.0, 28.0)
 
@@ -495,6 +495,57 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
     ctx.set_source_rgba(rr, gg, bb, aa)
     rounded_rect(ctx, pill_x, pill_y, pill_w, pill_h, radius)
     ctx.fill()
+  elif style == "merged_pill":
+    # Draw a merged pill: per-line rounded rects that overlap into one blob.
+    rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
+    ctx.set_source_rgba(rr, gg, bb, aa)
+    try:
+      line_count = layout.get_line_count()
+    except Exception:
+      line_count = 0
+    if line_count <= 0:
+      # Fallback to single pill using the overall bounding box.
+      pill_x = box_x
+      pill_y = box_y
+      pill_w = box_w
+      pill_h = box_h
+      radius = clamp(font_px * 0.45, 6.0, 22.0)
+      rounded_rect(ctx, pill_x, pill_y, pill_w, pill_h, radius)
+      ctx.fill()
+    else:
+      radius = clamp(font_px * 0.45, 6.0, 22.0)
+      merge_overlap = clamp(font_px * 0.12, 1.0, 8.0)
+      rects = []
+      try:
+        it = layout.get_iter()
+        while True:
+          ink_l, logical_l = it.get_line_extents()
+          lx = float(logical_l.x) / Pango.SCALE
+          ly = float(logical_l.y) / Pango.SCALE
+          lw = max(float(ink_l.width), float(logical_l.width)) / Pango.SCALE
+          lh = max(float(ink_l.height), float(logical_l.height)) / Pango.SCALE
+          if lw > 0 and lh > 0:
+            line_x = x_draw + lx - pad_x - stroke_pad
+            line_y = y_draw + ly - pad_y - stroke_pad
+            line_w = lw + 2.0 * (pad_x + stroke_pad)
+            line_h = lh + 2.0 * (pad_y + stroke_pad)
+            # Clamp within placement region horizontally so multi-line blobs stay inside safe bounds.
+            line_x = clamp(line_x, region_x, region_x + max(0.0, region_w - line_w))
+            rects.append([line_x, line_y, line_w, line_h])
+          if not it.next_line():
+            break
+      except Exception:
+        rects = []
+      # Expand each line downward into the gap to merge into a single blob.
+      for i in range(len(rects) - 1):
+        curr = rects[i]
+        nxt = rects[i + 1]
+        gap = nxt[1] - (curr[1] + curr[3])
+        if gap > 0:
+          curr[3] += gap + merge_overlap
+      for (rx, ry, rw, rh) in rects:
+        rounded_rect(ctx, rx, ry, rw, rh, radius)
+        ctx.fill()
   elif style == "strip":
     # Strip constrained to the active placement region.
     strip_x = region_x
@@ -505,7 +556,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
     ctx.fill()
 
   # Shadow (configurable offset/blur/opacity).
-  if style in ("pill", "none", "strip") and shadow_opacity > 0.0:
+  if style in ("pill", "none", "strip", "merged_pill") and shadow_opacity > 0.0:
     sr, sg, sb, _sa = hex_to_rgba(shadow_color, shadow_opacity)
 
     def shadow_samples(blur):
