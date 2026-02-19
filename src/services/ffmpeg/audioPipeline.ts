@@ -12,7 +12,7 @@ import { renderScreenTitlePngWithPango } from '../pango/screenTitlePng'
 type ScreenTitleV1 = {
   text: string
   preset: {
-    style?: 'pill' | 'outline' | 'strip'
+    style?: 'pill' | 'merged_pill' | 'outline'
     fontKey?: string
     fontSizePct?: number
     fontColor?: string
@@ -651,7 +651,8 @@ async function burnScreenTitleWithDrawtext(opts: {
   try {
     const preset = opts.screenTitle.preset || {}
     const pos = normalizeScreenTitlePosition(preset.position)
-    const style = String(preset.style || 'pill').toLowerCase()
+    const rawStyle = String(preset.style || 'pill').toLowerCase()
+    const style = rawStyle === 'strip' || rawStyle === 'merged_pill' ? 'pill' : rawStyle
     const initialFontSizePct = clampNum(preset.fontSizePct ?? 4.5, 1, 12)
     const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
     const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
@@ -765,10 +766,7 @@ async function burnScreenTitleWithDrawtext(opts: {
 
     const drawTextPrimary = [`drawtext=fontfile=${fontFile}`, ...commonText, `x=${xExpr}`, ...extrasPrimary].join(':')
     const drawTextBoldPass = [`drawtext=fontfile=${fontFile}`, ...commonText, `x=${xExprBold}`].join(':')
-    const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
-    const vf = style === 'strip'
-      ? `drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawTextPrimary},${drawTextBoldPass}`
-      : `${drawTextPrimary},${drawTextBoldPass}`
+    const vf = `${drawTextPrimary},${drawTextBoldPass}`
 
     await runFfmpeg([
       '-i',
@@ -816,7 +814,8 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
 
   const preset = opts.screenTitle.preset || {}
   const pos = normalizeScreenTitlePosition(preset.position)
-  const style = String(preset.style || 'pill').toLowerCase()
+  const rawStyle = String(preset.style || 'pill').toLowerCase()
+  const style = rawStyle === 'strip' ? 'pill' : rawStyle
   const fontSizePct = clampNum(preset.fontSizePct ?? 4.5, 2, 12)
   const fontColorHex = normalizeHexColor(preset.fontColor) ?? '#ffffff'
   const pillBgColorHex = normalizeHexColor(preset.pillBgColor) ?? '#000000'
@@ -869,10 +868,7 @@ export async function renderScreenTitleOverlayPngsToS3(opts: {
     }
 
     const drawText = [...baseText, ...extras].join(':')
-    const stripY = pos === 'bottom' ? 'h-h*0.12' : pos === 'middle' ? '(h-h*0.12)/2' : '0'
-    const vf = style === 'strip'
-      ? `format=rgba,colorchannelmixer=aa=0,drawbox=x=0:y=${stripY}:w=w:h=h*0.12:color=black@0.40:t=fill,${drawText}`
-      : `format=rgba,colorchannelmixer=aa=0,${drawText}`
+    const vf = `format=rgba,colorchannelmixer=aa=0,${drawText}`
 
     await runFfmpeg(
       [

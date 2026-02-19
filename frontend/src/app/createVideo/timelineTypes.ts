@@ -172,7 +172,7 @@ export type ScreenTitlePresetSnapshot = {
   id: number
   name: string
   // Legacy: some stored timelines may still contain style='outline' (used to mean "no background + outline").
-  style: 'none' | 'pill' | 'strip' | 'outline'
+  style: 'none' | 'pill' | 'merged_pill' | 'outline'
   fontKey: string
   fontSizePct: number
   trackingPct: number
@@ -480,9 +480,11 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                     name: String(st.presetSnapshot.name || ''),
                     style: (String(st.presetSnapshot.style || 'outline').toLowerCase() === 'pill'
                       ? 'pill'
-                      : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'strip'
-                        ? 'strip'
-                        : 'outline') as any,
+                      : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'merged_pill'
+                        ? 'merged_pill'
+                        : String(st.presetSnapshot.style || 'outline').toLowerCase() === 'strip'
+                          ? 'pill'
+                          : 'outline') as any,
                     fontKey: String(st.presetSnapshot.fontKey || 'dejavu_sans_bold'),
                     fontSizePct: Number(st.presetSnapshot.fontSizePct),
                     trackingPct: Number(st.presetSnapshot.trackingPct),

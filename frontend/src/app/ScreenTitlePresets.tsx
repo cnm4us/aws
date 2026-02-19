@@ -7,7 +7,7 @@ type MeResponse = {
   displayName: string | null
 }
 
-type ScreenTitleStyle = 'none' | 'pill' | 'strip'
+type ScreenTitleStyle = 'none' | 'pill' | 'merged_pill'
 type ScreenTitleFontKey = string
 type ScreenTitleAlignment = 'left' | 'center' | 'right'
 type ScreenTitleTimingRule = 'entire' | 'first_only'
@@ -180,7 +180,7 @@ function styleLabel(s: any): string {
   const v = String(s || '').toLowerCase()
   if (v === 'none' || v === 'outline') return 'None'
   if (v === 'pill') return 'Pill'
-  if (v === 'strip') return 'Strip'
+  if (v === 'merged_pill') return 'Merged Pill'
   return 'None'
 }
 
@@ -1819,7 +1819,7 @@ export default function ScreenTitlePresetsPage() {
                   >
                     <option value="none">None</option>
                     <option value="pill">Pill</option>
-                    <option value="strip">Strip</option>
+                    <option value="merged_pill">Merged Pill</option>
                   </select>
                 </label>
               </div>

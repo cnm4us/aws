@@ -7925,9 +7925,11 @@ export default function CreateVideo() {
         name: String((preset as any).name || ''),
         style: (String((preset as any).style || 'none').toLowerCase() === 'pill'
           ? 'pill'
-          : String((preset as any).style || 'none').toLowerCase() === 'strip'
-            ? 'strip'
-            : 'none') as any,
+          : String((preset as any).style || 'none').toLowerCase() === 'merged_pill'
+            ? 'merged_pill'
+            : String((preset as any).style || 'none').toLowerCase() === 'strip'
+              ? 'pill'
+              : 'none') as any,
         fontKey: String((preset as any).fontKey || 'dejavu_sans_bold'),
         fontSizePct: Number((preset as any).fontSizePct),
         trackingPct: Number((preset as any).trackingPct),

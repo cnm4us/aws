@@ -36,7 +36,12 @@ function normalizeFrame(raw: any): { width: number; height: number } {
 
 function sanitizePresetDraft(raw: any): any {
   const styleRaw = String(raw?.style || 'pill').trim().toLowerCase()
-  const style = styleRaw === 'none' || styleRaw === 'strip' || styleRaw === 'pill' ? styleRaw : 'pill'
+  const style =
+    styleRaw === 'none' || styleRaw === 'pill' || styleRaw === 'merged_pill'
+      ? styleRaw
+      : styleRaw === 'strip'
+        ? 'pill'
+        : 'pill'
   const alignmentRaw = String(raw?.alignment || 'center').trim().toLowerCase()
   const alignment = alignmentRaw === 'left' || alignmentRaw === 'right' || alignmentRaw === 'center' ? alignmentRaw : 'center'
   const fadeRaw = String(raw?.fade || 'out').trim().toLowerCase()

@@ -169,7 +169,7 @@ type ScreenTitlePreset = {
   id: number
   name: string
   description?: string | null
-  style: 'none' | 'pill' | 'outline' | 'strip'
+  style: 'none' | 'pill' | 'merged_pill' | 'outline'
   fontKey: string
   fontSizePct?: number
   trackingPct?: number
@@ -2429,27 +2429,20 @@ export default function ProducePage() {
 	                      ...computeScreenTitleOverlayCss(selectedScreenTitlePreset),
 	                      zIndex: 3,
 	                      boxSizing: 'border-box',
-	                      padding:
-	                        selectedScreenTitlePreset.style === 'strip'
-	                          ? '10px 12px'
-	                          : selectedScreenTitlePreset.style === 'pill'
-	                            ? '8px 10px'
-	                            : '0px',
-	                      borderRadius: selectedScreenTitlePreset.style === 'pill' ? 12 : 0,
-	                      background:
-	                        selectedScreenTitlePreset.style === 'strip'
-	                          ? 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 100%)'
-	                          : selectedScreenTitlePreset.style === 'pill'
-	                            ? (() => {
-	                                const hex = String(selectedScreenTitlePreset.pillBgColor || '#000000').trim() || '#000000'
-	                                const m = hex.match(/^#([0-9a-fA-F]{6})$/)
-	                                const rr = m ? parseInt(m[1].slice(0, 2), 16) : 0
-	                                const gg = m ? parseInt(m[1].slice(2, 4), 16) : 0
-	                                const bb = m ? parseInt(m[1].slice(4, 6), 16) : 0
-	                                const a = clampNumber((selectedScreenTitlePreset.pillBgOpacityPct ?? 55) / 100, 0, 1)
-	                                return `rgba(${rr},${gg},${bb},${a})`
-	                              })()
-	                            : 'transparent',
+                      padding: selectedScreenTitlePreset.style === 'pill' || selectedScreenTitlePreset.style === 'merged_pill' ? '8px 10px' : '0px',
+                      borderRadius: selectedScreenTitlePreset.style === 'pill' || selectedScreenTitlePreset.style === 'merged_pill' ? 12 : 0,
+                      background:
+                        selectedScreenTitlePreset.style === 'pill' || selectedScreenTitlePreset.style === 'merged_pill'
+                          ? (() => {
+                              const hex = String(selectedScreenTitlePreset.pillBgColor || '#000000').trim() || '#000000'
+                              const m = hex.match(/^#([0-9a-fA-F]{6})$/)
+                              const rr = m ? parseInt(m[1].slice(0, 2), 16) : 0
+                              const gg = m ? parseInt(m[1].slice(2, 4), 16) : 0
+                              const bb = m ? parseInt(m[1].slice(4, 6), 16) : 0
+                              const a = clampNumber((selectedScreenTitlePreset.pillBgOpacityPct ?? 55) / 100, 0, 1)
+                              return `rgba(${rr},${gg},${bb},${a})`
+                            })()
+                          : 'transparent',
 	                      color: selectedScreenTitlePreset.fontColor || '#ffffff',
 	                      fontWeight: 850,
 	                      fontSize: (() => {

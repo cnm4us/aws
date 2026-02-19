@@ -86,7 +86,7 @@ export type LowerThirdImageOverlayV1 = {
 export type ScreenTitlePresetSnapshotV1 = {
   id?: number
   name?: string
-  style?: 'none' | 'pill' | 'strip' | 'outline'
+  style?: 'none' | 'pill' | 'merged_pill' | 'outline'
   fontKey?: string
   fontSizePct?: number
   trackingPct?: number

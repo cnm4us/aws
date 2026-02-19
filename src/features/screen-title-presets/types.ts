@@ -1,6 +1,6 @@
 export type InsetPreset = 'small' | 'medium' | 'large'
 
-export type ScreenTitleStyle = 'none' | 'pill' | 'strip'
+export type ScreenTitleStyle = 'none' | 'pill' | 'merged_pill'
 export type ScreenTitleFontKey = string
 export type ScreenTitleAlignment = 'left' | 'center' | 'right'
 export type ScreenTitlePosition = 'top' | 'middle' | 'bottom'

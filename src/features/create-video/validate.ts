@@ -383,7 +383,15 @@ function normalizeScreenTitlePresetSnapshot(raw: any, presetId: number) {
   const name = String((raw as any).name || '').trim()
   if (!name || name.length > 200) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const styleRaw = String((raw as any).style || 'none').trim().toLowerCase()
-  const style = (styleRaw === 'pill' ? 'pill' : styleRaw === 'strip' ? 'strip' : 'none') as 'none' | 'pill' | 'strip'
+  const style = (
+    styleRaw === 'pill'
+      ? 'pill'
+      : styleRaw === 'strip'
+        ? 'pill'
+        : styleRaw === 'merged_pill'
+          ? 'merged_pill'
+          : 'none'
+  ) as 'none' | 'pill' | 'merged_pill'
   const fontKey = String((raw as any).fontKey || '').trim()
   if (!fontKey || fontKey.length > 100) throw new ValidationError('invalid_screen_title_preset_snapshot')
   const fontSizePct = Number((raw as any).fontSizePct)

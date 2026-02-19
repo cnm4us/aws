@@ -134,6 +134,8 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   # We now model this as style='none' with explicit outline settings.
   if style == "outline":
     style = "none"
+  if style == "strip":
+    style = "pill"
   pos = normalize_position(preset.get("position"))
   aln = normalize_alignment(preset.get("alignment"))
   font_size_pct = float(preset.get("fontSizePct") or 4.5)
@@ -254,8 +256,8 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   outline_opacity_pct_raw = preset.get("outlineOpacityPct")
   outline_color_raw = preset.get("outlineColor")
 
-  outline_width_px_default = 1.0 if style == "outline" else (0.9 if style in ("pill", "strip", "merged_pill") else 0.0)
-  outline_opacity_default = 0.45 if style == "outline" else (0.25 if style in ("pill", "strip", "merged_pill") else 0.0)
+  outline_width_px_default = 1.0 if style == "outline" else (0.9 if style in ("pill", "merged_pill") else 0.0)
+  outline_opacity_default = 0.45 if style == "outline" else (0.25 if style in ("pill", "merged_pill") else 0.0)
 
   outline_width_px = outline_width_px_default
   if outline_width_pct_raw is not None and str(outline_width_pct_raw).strip() != "":
@@ -307,7 +309,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   shadow_dx0 = shadow_offset_px
   shadow_dy0 = shadow_offset_px
   shadow_blur0 = shadow_blur_px
-  if style in ("pill", "strip", "merged_pill"):
+  if style in ("pill", "merged_pill"):
     pad_x0 = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y0 = clamp(font_px * 0.30, 6.0, 28.0)
   margin_left_px0 = pct_to_px(margin_left_pct, width)
@@ -395,7 +397,7 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
   # Padding around text for pill background.
   pad_x = 0.0
   pad_y = 0.0
-  if style in ("pill", "strip", "merged_pill"):
+  if style in ("pill", "merged_pill"):
     pad_x = clamp(font_px * 0.45, 8.0, 40.0)
     pad_y = clamp(font_px * 0.30, 6.0, 28.0)
 
@@ -546,17 +548,8 @@ def render_instance(ctx, width, height, text, preset, Pango, PangoCairo, cairo, 
       for (rx, ry, rw, rh) in rects:
         rounded_rect(ctx, rx, ry, rw, rh, radius)
         ctx.fill()
-  elif style == "strip":
-    # Strip constrained to the active placement region.
-    strip_x = region_x
-    strip_w = max(10.0, region_w)
-    rr, gg, bb, aa = hex_to_rgba(bg_color, bg_opacity)
-    ctx.set_source_rgba(rr, gg, bb, aa)
-    ctx.rectangle(strip_x, box_y, strip_w, box_h)
-    ctx.fill()
-
   # Shadow (configurable offset/blur/opacity).
-  if style in ("pill", "none", "strip", "merged_pill") and shadow_opacity > 0.0:
+  if style in ("pill", "none", "merged_pill") and shadow_opacity > 0.0:
     sr, sg, sb, _sa = hex_to_rgba(shadow_color, shadow_opacity)
 
     def shadow_samples(blur):

@@ -5,7 +5,7 @@ import { isFontKeyAllowed } from '../../services/fonts/screenTitleFonts'
 import { isGradientKeyAllowed } from '../../services/fonts/screenTitleGradients'
 import { normalizeScreenTitleSizeKey, resolveScreenTitleFontSizePreset } from '../../services/fonts/screenTitleFontPresets'
 
-const STYLES: readonly ScreenTitleStyle[] = ['none', 'pill', 'strip']
+const STYLES: readonly ScreenTitleStyle[] = ['none', 'pill', 'merged_pill']
 const ALIGNMENTS: readonly ScreenTitleAlignment[] = ['left', 'center', 'right']
 const TIMING_RULES: readonly ScreenTitleTimingRule[] = ['entire', 'first_only']
 const FADES: readonly ScreenTitleFade[] = ['none', 'in', 'out', 'in_out']
@@ -56,7 +56,15 @@ function mapRow(row: ScreenTitlePresetRow): ScreenTitlePresetDto {
 
   const styleRaw = String((row as any).style || 'pill').trim().toLowerCase()
   const style: ScreenTitleStyle =
-    styleRaw === 'strip' ? 'strip' : styleRaw === 'none' ? 'none' : styleRaw === 'outline' ? 'none' : 'pill'
+    styleRaw === 'strip'
+      ? 'pill'
+      : styleRaw === 'merged_pill'
+        ? 'merged_pill'
+        : styleRaw === 'none'
+          ? 'none'
+          : styleRaw === 'outline'
+            ? 'none'
+            : 'pill'
 
   return {
     id: Number(row.id),
@@ -334,8 +342,8 @@ export async function createForUser(input: {
     marginRightPct: null,
     marginTopPct: null,
     marginBottomPct: null,
-    pillBgColor: style === 'pill' || style === 'strip' ? pillBgColor : '#000000',
-    pillBgOpacityPct: style === 'pill' || style === 'strip' ? pillBgOpacityPct : 55,
+    pillBgColor: style === 'pill' || style === 'merged_pill' ? pillBgColor : '#000000',
+    pillBgOpacityPct: style === 'pill' || style === 'merged_pill' ? pillBgOpacityPct : 55,
     alignment,
     position,
     maxWidthPct,
@@ -411,6 +419,7 @@ export async function updateForUser(
   }
 
   if (typeof next.style === 'string' && String(next.style).trim().toLowerCase() === 'outline') next.style = 'none'
+  if (typeof next.style === 'string' && String(next.style).trim().toLowerCase() === 'strip') next.style = 'pill'
   if (!isEnumValue(next.style, STYLES)) throw new DomainError('invalid_style', 'invalid_style', 400)
   next.fontKey = normalizeFontKey(next.fontKey)
   const sizeKey: ScreenTitleSizeKey = normalizeSizeKey(next.sizeKey)
@@ -459,8 +468,8 @@ export async function updateForUser(
     marginRightPct: null,
     marginTopPct: null,
     marginBottomPct: null,
-    pillBgColor: next.style === 'pill' || next.style === 'strip' ? pillBgColor : '#000000',
-    pillBgOpacityPct: next.style === 'pill' || next.style === 'strip' ? pillBgOpacityPct : 55,
+    pillBgColor: next.style === 'pill' || next.style === 'merged_pill' ? pillBgColor : '#000000',
+    pillBgOpacityPct: next.style === 'pill' || next.style === 'merged_pill' ? pillBgOpacityPct : 55,
     alignment,
     position,
     maxWidthPct,
