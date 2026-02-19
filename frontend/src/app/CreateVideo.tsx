@@ -700,6 +700,7 @@ export default function CreateVideo() {
       window.localStorage.setItem('cv_ripple_v1', JSON.stringify({ enabled: rippleEnabled }))
     } catch {}
   }, [rippleEnabled])
+  const [showEmptyLanes, setShowEmptyLanes] = useState(false)
   const [timelineZoom, setTimelineZoom] = useState(1)
   const setTimelineZoomValue = useCallback((next: number) => {
     setTimelineZoom(clamp(Math.round(next * 100) / 100, TIMELINE_ZOOM_MIN, TIMELINE_ZOOM_MAX))
@@ -1684,17 +1685,9 @@ export default function CreateVideo() {
   const WAVEFORM_H = 34
   const TRACK_H = 48
   const TRACKS_TOP = RULER_H + WAVEFORM_H
-  const GRAPHICS_Y = TRACKS_TOP + 6
-  const LOGO_Y = TRACKS_TOP + TRACK_H + 6
-  const LOWER_THIRD_Y = TRACKS_TOP + TRACK_H * 2 + 6
-  const SCREEN_TITLE_Y = TRACKS_TOP + TRACK_H * 3 + 6
-  const VIDEO_OVERLAY_Y = TRACKS_TOP + TRACK_H * 4 + 6
-  const VIDEO_Y = TRACKS_TOP + TRACK_H * 5 + 6
-  const NARRATION_Y = TRACKS_TOP + TRACK_H * 6 + 6
-  const AUDIO_Y = TRACKS_TOP + TRACK_H * 7 + 6
+  const LANE_TOP_PAD = 6
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 18
-  const TIMELINE_H = TRACKS_TOP + TRACK_H * 8
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
@@ -1986,6 +1979,80 @@ export default function CreateVideo() {
     }
     return []
   }, [audioTrack, timeline])
+
+  type LaneKey = 'graphics' | 'logo' | 'lowerThird' | 'screenTitle' | 'videoOverlay' | 'video' | 'narration' | 'audio'
+  const laneMeta = useMemo<Record<LaneKey, { label: string; swatch: string }>>(
+    () => ({
+      graphics: { label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
+      logo: { label: 'LOGO', swatch: 'rgba(212,175,55,0.95)' },
+      lowerThird: { label: 'LOWER THIRD', swatch: 'rgba(94,92,230,0.90)' },
+      screenTitle: { label: 'SCREEN TITLES', swatch: 'rgba(255,214,10,0.90)' },
+      videoOverlay: { label: 'VIDEO OVERLAY', swatch: 'rgba(255,159,10,0.90)' },
+      video: { label: 'VIDEOS', swatch: 'rgba(212,175,55,0.75)' },
+      narration: { label: 'NARRATION', swatch: 'rgba(175,82,222,0.90)' },
+      audio: { label: 'AUDIO/MUSIC', swatch: 'rgba(48,209,88,0.90)' },
+    }),
+    []
+  )
+  const laneVisibility = useMemo(
+    () => ({
+      graphics: showEmptyLanes || graphics.length > 0,
+      logo: showEmptyLanes || logos.length > 0,
+      lowerThird: showEmptyLanes || lowerThirds.length > 0,
+      screenTitle: showEmptyLanes || screenTitles.length > 0,
+      videoOverlay: showEmptyLanes || videoOverlays.length > 0 || videoOverlayStills.length > 0,
+      video: showEmptyLanes || timeline.clips.length > 0 || stills.length > 0,
+      narration: showEmptyLanes || narration.length > 0,
+      audio: showEmptyLanes || audioSegments.length > 0,
+    }),
+    [
+      showEmptyLanes,
+      graphics.length,
+      logos.length,
+      lowerThirds.length,
+      screenTitles.length,
+      videoOverlays.length,
+      videoOverlayStills.length,
+      timeline.clips.length,
+      stills.length,
+      narration.length,
+      audioSegments.length,
+    ]
+  )
+  const laneLayout = useMemo(() => {
+    const order: LaneKey[] = ['graphics', 'logo', 'lowerThird', 'screenTitle', 'videoOverlay', 'video', 'narration', 'audio']
+    const yByLane: Record<LaneKey, number | null> = {
+      graphics: null,
+      logo: null,
+      lowerThird: null,
+      screenTitle: null,
+      videoOverlay: null,
+      video: null,
+      narration: null,
+      audio: null,
+    }
+    const visibleKeys: LaneKey[] = []
+    let y = TRACKS_TOP + LANE_TOP_PAD
+    for (const key of order) {
+      if (!laneVisibility[key]) continue
+      yByLane[key] = y
+      visibleKeys.push(key)
+      y += TRACK_H
+    }
+    const visibleRows = Math.max(visibleKeys.length, 1)
+    const height = TRACKS_TOP + LANE_TOP_PAD + TRACK_H * visibleRows
+    return { yByLane, visibleKeys, height }
+  }, [LANE_TOP_PAD, TRACKS_TOP, TRACK_H, laneVisibility])
+  const GRAPHICS_Y = laneLayout.yByLane.graphics
+  const LOGO_Y = laneLayout.yByLane.logo
+  const LOWER_THIRD_Y = laneLayout.yByLane.lowerThird
+  const SCREEN_TITLE_Y = laneLayout.yByLane.screenTitle
+  const VIDEO_OVERLAY_Y = laneLayout.yByLane.videoOverlay
+  const VIDEO_Y = laneLayout.yByLane.video
+  const NARRATION_Y = laneLayout.yByLane.narration
+  const AUDIO_Y = laneLayout.yByLane.audio
+  const TIMELINE_H = laneLayout.height
+  const showEmptyState = !showEmptyLanes && laneLayout.visibleKeys.length === 0
 
   // If we learn the true audio duration after a segment was created, clamp its visible duration
   // to avoid implying "looping" behavior.
@@ -4648,16 +4715,13 @@ export default function CreateVideo() {
 	      if (Number.isFinite(gutterRight) && gutterRight > 80) {
 	        const swatchW = 8
 	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
-	        const labels: Array<{ y: number; label: string; swatch: string }> = [
-	          { y: graphicsY + pillH / 2, label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
-	          { y: logoY + pillH / 2, label: 'LOGO', swatch: 'rgba(212,175,55,0.95)' },
-	          { y: lowerThirdY + pillH / 2, label: 'LOWER THIRD', swatch: 'rgba(94,92,230,0.90)' },
-	          { y: screenTitleY + pillH / 2, label: 'SCREEN TITLES', swatch: 'rgba(255,214,10,0.90)' },
-	          { y: videoOverlayY + pillH / 2, label: 'VIDEO OVERLAY', swatch: 'rgba(255,159,10,0.90)' },
-	          { y: videoY + pillH / 2, label: 'VIDEOS', swatch: 'rgba(212,175,55,0.75)' },
-	          { y: narrationY + pillH / 2, label: 'NARRATION', swatch: 'rgba(175,82,222,0.90)' },
-	          { y: audioY + pillH / 2, label: 'AUDIO/MUSIC', swatch: 'rgba(48,209,88,0.90)' },
-	        ]
+	        const labels: Array<{ y: number; label: string; swatch: string }> = laneLayout.visibleKeys
+	          .map((key) => {
+	            const y = laneLayout.yByLane[key]
+	            if (y == null) return null
+	            return { y: y + pillH / 2, label: laneMeta[key].label, swatch: laneMeta[key].swatch }
+	          })
+	          .filter((row): row is { y: number; label: string; swatch: string } => Boolean(row))
 
 	        ctx.save()
 	        ctx.globalAlpha = 0.92
@@ -4683,8 +4747,9 @@ export default function CreateVideo() {
 	    }
 
 	    // Logo segments (logo lane; no overlaps)
-	    for (let i = 0; i < logos.length; i++) {
-	      const l: any = logos[i]
+	    if (logoY != null) {
+	      for (let i = 0; i < logos.length; i++) {
+	        const l: any = logos[i]
       const start = Math.max(0, Number(l?.startSeconds || 0))
       const end = Math.max(0, Number(l?.endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -4740,19 +4805,21 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = logoY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = logoY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Lower-third segments (below logos; no overlaps)
-    for (let i = 0; i < lowerThirds.length; i++) {
-      const lt: any = lowerThirds[i]
+    if (lowerThirdY != null) {
+      for (let i = 0; i < lowerThirds.length; i++) {
+        const lt: any = lowerThirds[i]
       const start = Math.max(0, Number(lt?.startSeconds || 0))
       const end = Math.max(0, Number(lt?.endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -4810,19 +4877,21 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = lowerThirdY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = lowerThirdY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Screen-title segments (below lower thirds; no overlaps)
-    for (let i = 0; i < screenTitles.length; i++) {
-      const st: any = screenTitles[i]
+    if (screenTitleY != null) {
+      for (let i = 0; i < screenTitles.length; i++) {
+        const st: any = screenTitles[i]
       const start = Math.max(0, Number(st?.startSeconds || 0))
       const end = Math.max(0, Number(st?.endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -4882,19 +4951,21 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = screenTitleY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = screenTitleY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Freeze-frame still segments (video overlay lane)
-    for (let i = 0; i < (videoOverlayStills as any[]).length; i++) {
-      const s: any = (videoOverlayStills as any[])[i]
+    if (videoOverlayY != null) {
+      for (let i = 0; i < (videoOverlayStills as any[]).length; i++) {
+        const s: any = (videoOverlayStills as any[])[i]
       const start = Math.max(0, Number(s?.startSeconds || 0))
       const end = Math.max(0, Number(s?.endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -4953,18 +5024,19 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = videoOverlayY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = videoOverlayY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Video overlay segments (PiP videos; no overlaps)
-    if (videoOverlays.length) {
+    if (videoOverlayY != null && videoOverlays.length) {
       const starts = computeClipStarts(videoOverlays as any)
       for (let i = 0; i < videoOverlays.length; i++) {
         const o: any = videoOverlays[i]
@@ -5047,8 +5119,9 @@ export default function CreateVideo() {
       }
     }
 
-    for (let i = 0; i < graphics.length; i++) {
-      const g = graphics[i]
+    if (graphicsY != null) {
+      for (let i = 0; i < graphics.length; i++) {
+        const g = graphics[i]
       const start = Math.max(0, Number((g as any).startSeconds || 0))
       const end = Math.max(0, Number((g as any).endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -5105,19 +5178,21 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = graphicsY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = graphicsY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Freeze-frame still segments (base track)
-    for (let i = 0; i < stills.length; i++) {
-      const s: any = stills[i]
+    if (videoY != null) {
+      for (let i = 0; i < stills.length; i++) {
+        const s: any = stills[i]
       const start = Math.max(0, Number(s?.startSeconds || 0))
       const end = Math.max(0, Number(s?.endSeconds || 0))
       const len = Math.max(0, end - start)
@@ -5173,17 +5248,19 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = videoY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = videoY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
-    for (let i = 0; i < timeline.clips.length; i++) {
-      const clip = timeline.clips[i]
+    if (videoY != null) {
+      for (let i = 0; i < timeline.clips.length; i++) {
+        const clip = timeline.clips[i]
       const start = (clipStarts[i] || 0)
       const len = Math.max(0, clipDurationSeconds(clip))
       const x = padPx + start * pxPerSecond - scrollLeft
@@ -5246,19 +5323,21 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = videoY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = videoY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
     // Narration segments (above music; no overlaps)
-    for (let i = 0; i < narration.length; i++) {
-      const n: any = narration[i]
+    if (narrationY != null) {
+      for (let i = 0; i < narration.length; i++) {
+        const n: any = narration[i]
       const start = clamp(Number((n as any).startSeconds || 0), 0, Math.max(0, totalSeconds))
       const end = clamp(Number((n as any).endSeconds || 0), 0, Math.max(0, totalSeconds))
       const len = Math.max(0, end - start)
@@ -5332,18 +5411,20 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = narrationY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = narrationY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
 
-    for (let i = 0; i < audioSegments.length; i++) {
-      const seg: any = audioSegments[i]
+    if (audioY != null) {
+      for (let i = 0; i < audioSegments.length; i++) {
+        const seg: any = audioSegments[i]
       const start = clamp(Number(seg.startSeconds || 0), 0, Math.max(0, totalSeconds))
       const end = clamp(Number(seg.endSeconds || 0), 0, Math.max(0, totalSeconds))
       const len = Math.max(0, end - start)
@@ -5412,13 +5493,14 @@ export default function CreateVideo() {
         ctx.fill()
       }
 
-      if (isResizing) {
-        ctx.fillStyle = 'rgba(212,175,55,0.95)'
-        const barW = 5
-        const by = audioY + 3
-        const bh = pillH - 6
-        if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
-        if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = audioY + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+        }
       }
     }
   }, [
@@ -5428,6 +5510,8 @@ export default function CreateVideo() {
     audioSegments,
     clipStarts,
     graphics,
+    laneLayout,
+    laneMeta,
     logos,
     lowerThirds,
     screenTitles,
@@ -16732,6 +16816,27 @@ export default function CreateVideo() {
                   boxShadow: '0 0 0 1px rgba(0,0,0,0.75)',
                 }}
               />
+              {showEmptyState ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: TRACKS_TOP + LANE_TOP_PAD,
+                    height: TRACK_H,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: 'rgba(255,255,255,0.7)',
+                    pointerEvents: 'none',
+                    zIndex: 6,
+                  }}
+                >
+                  No layers yet — add an asset
+                </div>
+              ) : null}
               <div
                 ref={setTimelineScrollContainerRef}
                 onScroll={() => {
@@ -16758,14 +16863,14 @@ export default function CreateVideo() {
 	                  if (isMouse && e.button != null && e.button !== 0) return
 	                  const rect = sc.getBoundingClientRect()
 	                  const y = e.clientY - rect.top
-	                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
-	                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-	                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
-	                  const withinVideoOverlay = y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
-	                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
-	                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
-	                  const withinNarration = y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
-	                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+	                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
+	                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+	                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+	                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
+	                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+	                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+	                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
+	                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
 		                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
@@ -17751,14 +17856,14 @@ export default function CreateVideo() {
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
-		                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
-		                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-		                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
-		                  const withinVideoOverlay = y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
-		                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
-		                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
-		                  const withinNarration = y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
-		                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+		                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
+		                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+		                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+		                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
+		                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+		                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+		                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
+		                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
 
 	                  if (withinLogo) {
 	                    const l = findLogoAtTime(t)
@@ -17836,14 +17941,14 @@ export default function CreateVideo() {
 		                  const x = clickXInScroll - padPx
 		                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 		                  const EDGE_HIT_PX = Math.max(24, Math.min(72, Math.round(pxPerSecond * 0.6)))
-		                  const withinLogo = y >= LOGO_Y && y <= LOGO_Y + PILL_H
-		                  const withinLowerThird = y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-		                  const withinScreenTitle = y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
-		                  const withinVideoOverlay = y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
-		                  const withinGraphics = y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
-		                  const withinVideo = y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
-		                  const withinNarration = y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
-		                  const withinAudio = y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+		                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
+		                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+		                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+		                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
+		                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+		                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+		                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
+		                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
 		                  if (!withinLogo && !withinLowerThird && !withinScreenTitle && !withinVideoOverlay && !withinGraphics && !withinVideo && !withinNarration && !withinAudio) {
 		                    setSelectedClipId(null)
 		                    setSelectedVideoOverlayId(null)
@@ -18480,6 +18585,26 @@ export default function CreateVideo() {
                           <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
 			                  </button>
 			                ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setShowEmptyLanes((v) => !v)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: showEmptyLanes ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                          background: showEmptyLanes ? 'rgba(96,165,250,0.18)' : '#0c0c0c',
+                          color: '#fff',
+                          fontWeight: 800,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          flex: '0 0 auto',
+                          lineHeight: 1,
+                        }}
+                        title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
+                        aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
+                      >
+                        Empty Lanes
+                      </button>
                       <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
                         <button
                           type="button"
