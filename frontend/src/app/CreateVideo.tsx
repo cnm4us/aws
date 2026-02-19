@@ -18440,8 +18440,8 @@ export default function CreateVideo() {
 			                    style={{
 			                      padding: '10px 12px',
 			                      borderRadius: 10,
-			                      border: '1px solid rgba(212,175,55,0.65)',
-			                      background: showPreviewToolbar ? 'rgba(212,175,55,0.22)' : 'rgba(212,175,55,0.08)',
+			                      border: showPreviewToolbar ? '1px solid rgba(48,209,88,0.85)' : '1px solid rgba(255,255,255,0.18)',
+			                      background: showPreviewToolbar ? 'rgba(48,209,88,0.18)' : '#0c0c0c',
 			                      color: '#fff',
 			                      fontWeight: 900,
 			                      cursor: 'pointer',
@@ -18450,7 +18450,7 @@ export default function CreateVideo() {
 			                      lineHeight: 1,
 			                    }}
 			                    title="Toggle floating preview controls"
-			                    aria-label="Toggle floating preview controls"
+			                    aria-label={showPreviewToolbar ? 'Floating preview controls enabled' : 'Floating preview controls disabled'}
 			                  >
                           <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 26, height: 26, display: 'block' }} />
 			                  </button>
