@@ -99,6 +99,9 @@ const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX = Math.floor(
 )
 const SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX = SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_WIDTH_PX
 const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MODEL_SIZE_PX
+const TIMELINE_ZOOM_MIN = 0.25
+const TIMELINE_ZOOM_MAX = 2
+const TIMELINE_ZOOM_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
 type MeResponse = {
   userId: number | null
@@ -697,6 +700,24 @@ export default function CreateVideo() {
       window.localStorage.setItem('cv_ripple_v1', JSON.stringify({ enabled: rippleEnabled }))
     } catch {}
   }, [rippleEnabled])
+  const [timelineZoom, setTimelineZoom] = useState(1)
+  const setTimelineZoomValue = useCallback((next: number) => {
+    setTimelineZoom(clamp(Math.round(next * 100) / 100, TIMELINE_ZOOM_MIN, TIMELINE_ZOOM_MAX))
+  }, [])
+  const timelineZoomLabel = useMemo(() => `${Math.round(timelineZoom * 100)}%`, [timelineZoom])
+  const [showTimelineZoomMenu, setShowTimelineZoomMenu] = useState(false)
+  const timelineZoomMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!showTimelineZoomMenu) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (timelineZoomMenuRef.current && timelineZoomMenuRef.current.contains(target)) return
+      setShowTimelineZoomMenu(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [showTimelineZoomMenu])
 	  const lastSavedRef = useRef<string>('')
 	  const timelineSaveAbortRef = useRef<AbortController | null>(null)
 	  const hydratingRef = useRef(false)
@@ -707,6 +728,7 @@ export default function CreateVideo() {
   const playheadFromScrollRef = useRef(false)
   const ignoreScrollRef = useRef(false)
   const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
+  const timelineZoomRef = useRef(timelineZoom)
   const primedFrameSrcRef = useRef<string>('')
   const primedOverlayFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
@@ -1654,7 +1676,8 @@ export default function CreateVideo() {
       window.cancelAnimationFrame(raf)
     }
   }, [playing, totalSeconds])
-  const pxPerSecond = 48
+  const pxPerSecondBase = 48
+  const pxPerSecond = pxPerSecondBase * timelineZoom
   const visualTotalSeconds = useMemo(() => Math.max(10, totalSeconds), [totalSeconds])
   const stripContentW = useMemo(() => Math.max(0, Math.ceil(visualTotalSeconds * pxPerSecond)), [pxPerSecond, visualTotalSeconds])
   const RULER_H = 16
@@ -5442,10 +5465,12 @@ export default function CreateVideo() {
   useEffect(() => {
     const sc = timelineScrollRef.current
     if (!sc) return
-    if (playheadFromScrollRef.current) {
+    const zoomChanged = timelineZoomRef.current !== timelineZoom
+    if (playheadFromScrollRef.current && !zoomChanged) {
       playheadFromScrollRef.current = false
       return
     }
+    if (zoomChanged) timelineZoomRef.current = timelineZoom
     const target = clamp(Math.round(playhead * pxPerSecond), 0, Math.max(0, stripContentW))
     ignoreScrollRef.current = true
     sc.scrollLeft = target
@@ -5453,7 +5478,7 @@ export default function CreateVideo() {
     window.requestAnimationFrame(() => {
       ignoreScrollRef.current = false
     })
-  }, [playhead, pxPerSecond, stripContentW, timelinePadPx])
+  }, [playhead, pxPerSecond, stripContentW, timelinePadPx, timelineZoom])
 
   useEffect(() => {
     let cancelled = false
@@ -18452,9 +18477,79 @@ export default function CreateVideo() {
 			                    title="Toggle floating preview controls"
 			                    aria-label={showPreviewToolbar ? 'Floating preview controls enabled' : 'Floating preview controls disabled'}
 			                  >
-                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 26, height: 26, display: 'block' }} />
+                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
 			                  </button>
 			                ) : null}
+                      <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setShowTimelineZoomMenu((v) => !v)}
+                          style={{
+                            padding: '0 12px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            background: '#0c0c0c',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                            flex: '0 0 auto',
+                            minWidth: 44,
+                            lineHeight: 1,
+                            height: 44,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          title="Zoom timeline"
+                          aria-label="Zoom timeline"
+                        >
+                          {timelineZoomLabel}
+                        </button>
+                        {showTimelineZoomMenu ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              bottom: 'calc(100% + 6px)',
+                              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                              border: '1px solid rgba(96,165,250,0.95)',
+                              borderRadius: 14,
+                              padding: 8,
+                              display: 'grid',
+                              gap: 6,
+                              minWidth: 120,
+                              zIndex: 60,
+                              boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+                            }}
+                          >
+                            {TIMELINE_ZOOM_OPTIONS.map((opt) => {
+                              const active = Math.abs(opt - timelineZoom) < 1e-6
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => {
+                                    setTimelineZoomValue(opt)
+                                    setShowTimelineZoomMenu(false)
+                                  }}
+                                  style={{
+                                    padding: '8px 10px',
+                                    borderRadius: 8,
+                                    border: active ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                                    background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                                    color: '#fff',
+                                    fontWeight: 900,
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {Math.round(opt * 100)}%
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
 					              </div>
 			            </div>
 
