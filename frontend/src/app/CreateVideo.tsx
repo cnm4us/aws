@@ -1033,7 +1033,7 @@ export default function CreateVideo() {
       const h = el.getBoundingClientRect().height
       const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
       const min = Math.floor(-barH)
-      const max = Math.max(min, Math.floor(h - barH - 8))
+      const max = Math.max(min, Math.floor(h))
       const dy = e.clientY - cur.startY
       const next = clamp(cur.startBottom - dy, min, max)
       setPreviewToolbarBottomPx(next)
@@ -1323,7 +1323,7 @@ export default function CreateVideo() {
       const h = rect.height
       const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
       const min = Math.floor(-barH)
-      const max = Math.max(min, Math.floor(h - barH - 8))
+      const max = Math.max(min, Math.floor(h))
       setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
       if (Number.isFinite(rect.width) && Number.isFinite(rect.height)) {
         setPreviewSize({ w: rect.width, h: rect.height })
