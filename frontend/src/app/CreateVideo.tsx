@@ -2058,7 +2058,10 @@ export default function CreateVideo() {
   const layerToggleTop = Math.max(0, Math.floor((TRACKS_TOP - layerToggleSize) / 2))
   const layerToggleGutterRight = Math.round((timelinePadPx || 0) - timelineScrollLeftPx - 10)
   const layerToggleVisible = layerToggleGutterRight > 80
-  const layerToggleLeft = Math.max(8, layerToggleGutterRight - layerToggleSize)
+  const layerToggleLabel = showEmptyLanes ? 'Compact Layers' : 'Expand Layers'
+  const layerToggleSwatchH = Math.min(16, Math.max(10, Math.floor(PILL_H * 0.45)))
+  const layerToggleWidth = Math.min(240, Math.max(140, layerToggleLabel.length * 8 + 28))
+  const layerToggleLeft = layerToggleGutterRight - layerToggleWidth
 
   // If we learn the true audio duration after a segment was created, clamp its visible duration
   // to avoid implying "looping" behavior.
@@ -16820,36 +16823,51 @@ export default function CreateVideo() {
                 }}
               />
               {layerToggleVisible ? (
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setShowEmptyLanes((v) => !v)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setShowEmptyLanes((v) => !v)
+                    }
+                  }}
                   style={{
                     position: 'absolute',
                     left: layerToggleLeft,
                     top: layerToggleTop,
-                    width: layerToggleSize,
+                    width: layerToggleWidth,
                     height: layerToggleSize,
-                    padding: 0,
-                    borderRadius: 10,
-                    border: showEmptyLanes ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                    background: showEmptyLanes ? 'rgba(96,165,250,0.18)' : '#0c0c0c',
-                    color: '#fff',
+                    color: 'rgba(187,187,187,0.95)',
                     cursor: 'pointer',
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    justifyContent: 'flex-end',
                     zIndex: 55,
+                    fontSize: 11,
+                    fontWeight: 900,
+                    fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
                   }}
                   title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                   aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                 >
-                  <img
-                    src={LAYER_ICON_URL}
-                    alt=""
-                    aria-hidden="true"
-                    style={{ width: 23, height: 23, display: 'block', filter: 'invert(1)' }}
-                  />
-                </button>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span>{layerToggleLabel}</span>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        display: 'inline-block',
+                        width: 8,
+                        height: layerToggleSwatchH,
+                        background: '#ffffff',
+                      }}
+                    />
+                  </span>
+                </div>
               ) : null}
               {showEmptyState ? (
                 <div
