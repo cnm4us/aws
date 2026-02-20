@@ -11,6 +11,7 @@ export default function PreviewFloatingToolbar(props: any) {
     jumpPrevBoundary,
     musicPreviewPlaying,
     narrationPreviewPlaying,
+    narrationButtonSwatch,
     nudgePlayhead,
     overlayVideoRef,
     playPauseGlyph,
@@ -32,12 +33,16 @@ export default function PreviewFloatingToolbar(props: any) {
     setPreviewToolbarDragging,
     setTimeline,
     sortedNarration,
+    audioButtonSwatch,
     toggleMusicPlay,
     toggleNarrationPlay,
     togglePlay,
     totalSeconds,
     videoRef,
   } = ctx as any
+
+  const narrationSwatch = narrationButtonSwatch || 'rgba(175,82,222,0.90)'
+  const audioSwatch = audioButtonSwatch || 'rgba(48,209,88,0.90)'
 
   React.useEffect(() => {
     const c = previewMiniTimelineRef.current
@@ -100,7 +105,7 @@ export default function PreviewFloatingToolbar(props: any) {
         left: '50%',
         transform: 'translateX(-50%)',
         bottom: previewToolbarBottomPx,
-        zIndex: 70,
+        zIndex: 4000,
         width: 'min(94vw, 560px)',
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -229,8 +234,8 @@ export default function PreviewFloatingToolbar(props: any) {
             style={{
               padding: '10px 12px',
               borderRadius: 10,
-              border: '1px solid rgba(175,82,222,0.65)',
-              background: narrationPreviewPlaying ? 'rgba(175,82,222,0.22)' : 'rgba(175,82,222,0.12)',
+              border: `1px solid ${narrationSwatch}`,
+              background: narrationPreviewPlaying ? 'rgba(175,82,222,0.18)' : narrationSwatch,
               color: '#fff',
               fontWeight: 900,
               cursor: sortedNarration.length ? 'pointer' : 'default',
@@ -256,8 +261,8 @@ export default function PreviewFloatingToolbar(props: any) {
             style={{
               padding: '10px 12px',
               borderRadius: 10,
-              border: '1px solid rgba(48,209,88,0.65)',
-              background: musicPreviewPlaying ? 'rgba(48,209,88,0.22)' : 'rgba(48,209,88,0.12)',
+              border: `1px solid ${audioSwatch}`,
+              background: musicPreviewPlaying ? 'rgba(48,209,88,0.18)' : audioSwatch,
               color: '#fff',
               fontWeight: 900,
               cursor: audioSegments.length ? 'pointer' : 'default',

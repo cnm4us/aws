@@ -1032,7 +1032,7 @@ export default function CreateVideo() {
       if (!el) return
       const h = el.getBoundingClientRect().height
       const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
-      const min = 8
+      const min = Math.floor(-barH)
       const max = Math.max(min, Math.floor(h - barH - 8))
       const dy = e.clientY - cur.startY
       const next = clamp(cur.startBottom - dy, min, max)
@@ -1322,7 +1322,7 @@ export default function CreateVideo() {
       const rect = el.getBoundingClientRect()
       const h = rect.height
       const barH = previewToolbarRef.current?.getBoundingClientRect().height || 56
-      const min = 8
+      const min = Math.floor(-barH)
       const max = Math.max(min, Math.floor(h - barH - 8))
       setPreviewToolbarBottomPx((b) => clamp(Number(b || 0), min, max))
       if (Number.isFinite(rect.width) && Number.isFinite(rect.height)) {
@@ -1995,6 +1995,14 @@ export default function CreateVideo() {
     }),
     []
   )
+  const laneSwatchForButton = (swatch: string) => {
+    const match = swatch.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)/i)
+    if (!match) return swatch
+    const nextAlpha = Math.min(1, Math.max(0, Number(match[4]) * 0.92))
+    return `rgba(${match[1]},${match[2]},${match[3]},${nextAlpha})`
+  }
+  const narrationButtonSwatch = laneSwatchForButton(laneMeta.narration.swatch)
+  const audioButtonSwatch = laneSwatchForButton(laneMeta.audio.swatch)
   const laneVisibility = useMemo(
     () => ({
       graphics: showEmptyLanes || graphics.length > 0,
@@ -16413,7 +16421,7 @@ export default function CreateVideo() {
             marginTop: 14,
             borderRadius: 14,
             border: '1px solid rgba(255,255,255,0.14)',
-            overflow: screenTitlePlacementEditor ? 'visible' : 'hidden',
+            overflow: screenTitlePlacementEditor || showPreviewToolbar ? 'visible' : 'hidden',
             background: '#000',
             position: 'relative',
             zIndex: screenTitlePlacementEditor ? 260 : 'auto',
@@ -16426,7 +16434,7 @@ export default function CreateVideo() {
               aspectRatio: '9 / 16',
               background: timelineBackgroundMode === 'color' ? timelineBackgroundColor : '#000',
               position: 'relative',
-              overflow: screenTitlePlacementEditor ? 'visible' : 'hidden',
+              overflow: screenTitlePlacementEditor || showPreviewToolbar ? 'visible' : 'hidden',
             }}
           >
             {timelineBackgroundMode === 'color' ? (
@@ -16634,6 +16642,8 @@ export default function CreateVideo() {
                     setPreviewToolbarDragging,
                     setTimeline,
                     sortedNarration,
+                    narrationButtonSwatch,
+                    audioButtonSwatch,
                     toggleMusicPlay,
                     toggleNarrationPlay,
                     togglePlay,
@@ -18822,8 +18832,10 @@ export default function CreateVideo() {
 				                  style={{
 				                    padding: '10px 12px',
 				                    borderRadius: 10,
-				                    border: '1px solid rgba(175,82,222,0.65)',
-				                    background: narrationPreviewPlaying ? 'rgba(175,82,222,0.18)' : '#af52de',
+				                    border: `1px solid ${laneSwatchForButton(laneMeta.narration.swatch)}`,
+				                    background: narrationPreviewPlaying
+				                      ? 'rgba(175,82,222,0.18)'
+				                      : laneSwatchForButton(laneMeta.narration.swatch),
 				                    color: '#fff',
 				                    fontWeight: 900,
 				                    cursor: sortedNarration.length ? 'pointer' : 'default',
@@ -18846,8 +18858,10 @@ export default function CreateVideo() {
 				                  style={{
 				                    padding: '10px 12px',
 				                    borderRadius: 10,
-				                    border: '1px solid rgba(48,209,88,0.65)',
-				                    background: musicPreviewPlaying ? 'rgba(48,209,88,0.18)' : '#30d158',
+				                    border: `1px solid ${laneSwatchForButton(laneMeta.audio.swatch)}`,
+				                    background: musicPreviewPlaying
+				                      ? 'rgba(48,209,88,0.18)'
+				                      : laneSwatchForButton(laneMeta.audio.swatch),
 				                    color: '#fff',
 				                    fontWeight: 900,
 				                    cursor: audioSegments.length ? 'pointer' : 'default',
