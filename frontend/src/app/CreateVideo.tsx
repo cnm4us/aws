@@ -2054,6 +2054,11 @@ export default function CreateVideo() {
   const AUDIO_Y = laneLayout.yByLane.audio
   const TIMELINE_H = laneLayout.height
   const showEmptyState = !showEmptyLanes && laneLayout.visibleKeys.length === 0
+  const layerToggleSize = 44
+  const layerToggleTop = Math.max(0, Math.floor((TRACKS_TOP - layerToggleSize) / 2))
+  const layerToggleGutterRight = Math.round((timelinePadPx || 0) - timelineScrollLeftPx - 10)
+  const layerToggleVisible = layerToggleGutterRight > 80
+  const layerToggleLeft = Math.max(8, layerToggleGutterRight - layerToggleSize)
 
   // If we learn the true audio duration after a segment was created, clamp its visible duration
   // to avoid implying "looping" behavior.
@@ -4578,10 +4583,7 @@ export default function CreateVideo() {
     const clip = clipIdx >= 0 ? timeline.clips[clipIdx] : null
     const hasAnyTarget = Boolean(selectedOverlay) || Boolean(selectedNarration) || Boolean(selectedAudioSeg) || Boolean(clip)
     if (!hasAnyTarget) {
-      ctx.fillStyle = 'rgba(255,255,255,0.55)'
-      ctx.font = '700 12px system-ui, -apple-system, Segoe UI, sans-serif'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('Select a clip, overlay, narration, or audio segment to see waveform', 10, rulerH + waveformH / 2)
+      // No waveform target selected; keep the waveform area empty.
     } else {
       const kind: 'videoOverlay' | 'narration' | 'audio' | 'clip' =
         selectedOverlay ? 'videoOverlay' : selectedNarration ? 'narration' : selectedAudioSeg ? 'audio' : 'clip'
@@ -16817,6 +16819,38 @@ export default function CreateVideo() {
                   boxShadow: '0 0 0 1px rgba(0,0,0,0.75)',
                 }}
               />
+              {layerToggleVisible ? (
+                <button
+                  type="button"
+                  onClick={() => setShowEmptyLanes((v) => !v)}
+                  style={{
+                    position: 'absolute',
+                    left: layerToggleLeft,
+                    top: layerToggleTop,
+                    width: layerToggleSize,
+                    height: layerToggleSize,
+                    padding: 0,
+                    borderRadius: 10,
+                    border: showEmptyLanes ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                    background: showEmptyLanes ? 'rgba(96,165,250,0.18)' : '#0c0c0c',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 55,
+                  }}
+                  title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
+                  aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
+                >
+                  <img
+                    src={LAYER_ICON_URL}
+                    alt=""
+                    aria-hidden="true"
+                    style={{ width: 23, height: 23, display: 'block', filter: 'invert(1)' }}
+                  />
+                </button>
+              ) : null}
               {showEmptyState ? (
                 <div
                   style={{
@@ -18586,34 +18620,6 @@ export default function CreateVideo() {
                           <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 25, height: 25, display: 'block' }} />
 			                  </button>
 			                ) : null}
-                      <button
-                        type="button"
-                        onClick={() => setShowEmptyLanes((v) => !v)}
-                        style={{
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: showEmptyLanes ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                          background: showEmptyLanes ? 'rgba(96,165,250,0.18)' : '#0c0c0c',
-                          color: '#fff',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          flex: '0 0 auto',
-                          lineHeight: 1,
-                          minWidth: 44,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                        title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
-                        aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
-                      >
-                        <img
-                          src={LAYER_ICON_URL}
-                          alt=""
-                          aria-hidden="true"
-                          style={{ width: 23, height: 23, display: 'block', filter: 'invert(1)' }}
-                        />
-                      </button>
                       <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
                         <button
                           type="button"
