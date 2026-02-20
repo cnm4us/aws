@@ -81,7 +81,7 @@ const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
-const LAYER_ICON_URL = new URL('./icons/layer.svg', import.meta.url).toString()
+const EXPAND_ICON_URL = new URL('./icons/expand.svg', import.meta.url).toString()
 const ACTION_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
 const LazyEditorModalHost = React.lazy(() => import('./createVideo/modals/EditorModalHost'))
 const LazyScreenTitleQuickPanelOverlay = React.lazy(() => import('./createVideo/modals/ScreenTitleQuickPanelOverlay'))
@@ -2067,8 +2067,8 @@ export default function CreateVideo() {
   const layerToggleGutterRight = Math.round((timelinePadPx || 0) - timelineScrollLeftPx - 10)
   const layerToggleVisible = layerToggleGutterRight > 80
   const layerToggleLabel = showEmptyLanes ? 'Compact Layers' : 'Expand Layers'
-  const layerToggleSwatchH = Math.min(16, Math.max(10, Math.floor(PILL_H * 0.45)))
-  const layerToggleWidth = Math.min(240, Math.max(140, layerToggleLabel.length * 8 + 28))
+  const layerToggleIconSize = Math.min(32, Math.max(20, Math.floor(PILL_H * 0.9)))
+  const layerToggleWidth = Math.max(layerToggleIconSize * 3, 72)
   const layerToggleLeft = layerToggleGutterRight - layerToggleWidth
 
   // If we learn the true audio duration after a segment was created, clamp its visible duration
@@ -16849,34 +16849,32 @@ export default function CreateVideo() {
                     top: layerToggleTop,
                     width: layerToggleWidth,
                     height: layerToggleSize,
-                    color: 'rgba(187,187,187,0.95)',
                     cursor: 'pointer',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'flex-end',
                     zIndex: 55,
-                    fontSize: 11,
-                    fontWeight: 900,
-                    fontFamily: 'system-ui, -apple-system, Segoe UI, sans-serif',
-                    textTransform: 'uppercase',
                     whiteSpace: 'nowrap',
                     userSelect: 'none',
                   }}
                   title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                   aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                 >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span>{layerToggleLabel}</span>
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        display: 'inline-block',
-                        width: 8,
-                        height: layerToggleSwatchH,
-                        background: '#ffffff',
-                      }}
-                    />
-                  </span>
+                  <img
+                    src={EXPAND_ICON_URL}
+                    alt=""
+                    aria-hidden="true"
+                    style={{
+                      width: layerToggleIconSize,
+                      height: layerToggleIconSize,
+                      display: 'block',
+                      filter: 'brightness(0) invert(1)',
+                      opacity: 0.95,
+                      transform: showEmptyLanes ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transformOrigin: '50% 50%',
+                      pointerEvents: 'none',
+                    }}
+                  />
                 </div>
               ) : null}
               {showEmptyState ? (
