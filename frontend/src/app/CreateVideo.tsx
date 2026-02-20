@@ -81,6 +81,7 @@ const REDO_ICON_URL = new URL('./icons/redo.svg', import.meta.url).toString()
 const PLUS_ICON_URL = new URL('./icons/plus.svg', import.meta.url).toString()
 const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString()
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
+const LAYER_ICON_URL = new URL('./icons/layer.svg', import.meta.url).toString()
 const ACTION_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
 const LazyEditorModalHost = React.lazy(() => import('./createVideo/modals/EditorModalHost'))
 const LazyScreenTitleQuickPanelOverlay = React.lazy(() => import('./createVideo/modals/ScreenTitleQuickPanelOverlay'))
@@ -18595,15 +18596,23 @@ export default function CreateVideo() {
                           background: showEmptyLanes ? 'rgba(96,165,250,0.18)' : '#0c0c0c',
                           color: '#fff',
                           fontWeight: 800,
-                          fontSize: 12,
                           cursor: 'pointer',
                           flex: '0 0 auto',
                           lineHeight: 1,
+                          minWidth: 44,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                         title={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                         aria-label={showEmptyLanes ? 'Hide empty lanes' : 'Show empty lanes'}
                       >
-                        Empty Lanes
+                        <img
+                          src={LAYER_ICON_URL}
+                          alt=""
+                          aria-hidden="true"
+                          style={{ width: 18, height: 18, display: 'block', filter: 'invert(1)' }}
+                        />
                       </button>
                       <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
                         <button
