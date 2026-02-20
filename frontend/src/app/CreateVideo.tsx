@@ -4741,7 +4741,7 @@ export default function CreateVideo() {
 	        ctx.globalAlpha = 0.92
 	        ctx.textAlign = 'right'
 	        ctx.textBaseline = 'middle'
-	        ctx.font = '900 11px system-ui, -apple-system, Segoe UI, sans-serif'
+	        ctx.font = '900 14px system-ui, -apple-system, Segoe UI, sans-serif'
 	        for (const row of labels) {
 	          const y = Math.round(row.y)
 	          const swatchX = gutterRight - swatchW
