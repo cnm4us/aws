@@ -18583,7 +18583,7 @@ export default function CreateVideo() {
 			                    title="Toggle floating preview controls"
 			                    aria-label={showPreviewToolbar ? 'Floating preview controls enabled' : 'Floating preview controls disabled'}
 			                  >
-                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 20, height: 20, display: 'block' }} />
+                          <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 25, height: 25, display: 'block' }} />
 			                  </button>
 			                ) : null}
                       <button
@@ -18611,7 +18611,7 @@ export default function CreateVideo() {
                           src={LAYER_ICON_URL}
                           alt=""
                           aria-hidden="true"
-                          style={{ width: 18, height: 18, display: 'block', filter: 'invert(1)' }}
+                          style={{ width: 23, height: 23, display: 'block', filter: 'invert(1)' }}
                         />
                       </button>
                       <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
