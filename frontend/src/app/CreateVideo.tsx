@@ -18648,9 +18648,14 @@ export default function CreateVideo() {
                         {showTimelineZoomMenu ? (
                           <div
                             style={{
-                              position: 'absolute',
-                              right: 0,
-                              bottom: 'calc(100% + 6px)',
+                              position: 'fixed',
+                              left: '50%',
+                              top: (() => {
+                                const rect = timelineScrollEl?.getBoundingClientRect()
+                                if (!rect) return 120
+                                return Math.max(8, Math.round(rect.top + 8))
+                              })(),
+                              transform: 'translateX(-50%)',
                               background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
                               border: '1px solid rgba(96,165,250,0.95)',
                               borderRadius: 14,
@@ -18658,7 +18663,7 @@ export default function CreateVideo() {
                               display: 'grid',
                               gap: 6,
                               minWidth: 120,
-                              zIndex: 60,
+                              zIndex: 2000,
                               boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
                             }}
                           >
