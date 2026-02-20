@@ -148,190 +148,202 @@ export default function PreviewFloatingToolbar(props: any) {
         >
           <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', padding: 10 }}>
-          <button
-            type="button"
-            onClick={jumpPrevBoundary}
-            disabled={totalSeconds <= 0 || !canJumpPrev}
-            style={{
-              padding: 0,
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
-              color: '#ffd24a',
-              fontWeight: 900,
-              fontSize: 26,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-            }}
-            title="Jump to previous boundary"
-            aria-label="Jump to previous boundary"
-          >
-            «
-          </button>
-          <button
-            type="button"
-            onClick={() => nudgePlayhead(-0.1)}
-            disabled={totalSeconds <= 0}
-            style={{
-              padding: 0,
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0c0c0c',
-              color: '#ffd24a',
-              fontWeight: 900,
-              fontSize: 26,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-            }}
-            title="Nudge backward 0.1s"
-            aria-label="Nudge backward 0.1 seconds"
-          >
-            ‹
-          </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center', padding: 10 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-start' }}>
+            <button
+              type="button"
+              onClick={jumpPrevBoundary}
+              disabled={totalSeconds <= 0 || !canJumpPrev}
+              style={{
+                padding: 0,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+                color: '#ffd24a',
+                fontWeight: 900,
+                fontSize: 26,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: totalSeconds <= 0 || !canJumpPrev ? 'default' : 'pointer',
+                flex: '0 0 auto',
+                minWidth: 40,
+                height: 40,
+              }}
+              title="Jump to previous boundary"
+              aria-label="Jump to previous boundary"
+            >
+              «
+            </button>
+            <button
+              type="button"
+              onClick={() => nudgePlayhead(-0.1)}
+              disabled={totalSeconds <= 0}
+              style={{
+                padding: 0,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0c0c0c',
+                color: '#ffd24a',
+                fontWeight: 900,
+                fontSize: 26,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                flex: '0 0 auto',
+                minWidth: 40,
+                height: 40,
+              }}
+              title="Nudge backward 0.1s"
+              aria-label="Nudge backward 0.1 seconds"
+            >
+              ‹
+            </button>
+          </div>
 
-          <button
-            type="button"
-            onClick={togglePlay}
-            disabled={totalSeconds <= 0}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: '1px solid rgba(10,132,255,0.55)',
-              background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-              color: '#fff',
-              fontWeight: 900,
-              cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={playing ? 'Pause' : 'Play'}
-            aria-label={playing ? 'Pause' : 'Play'}
-          >
-            <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>{playPauseGlyph(playing)}</span>
-          </button>
-          <button
-            type="button"
-            onClick={toggleNarrationPlay}
-            disabled={!sortedNarration.length}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: `1px solid ${narrationSwatch}`,
-              background: narrationPreviewPlaying ? 'rgba(175,82,222,0.18)' : narrationSwatch,
-              color: '#fff',
-              fontWeight: 900,
-              cursor: sortedNarration.length ? 'pointer' : 'default',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title="Play narration (voice memo)"
-            aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
-          >
-            <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-              {playPauseGlyph(narrationPreviewPlaying)}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={toggleMusicPlay}
-            disabled={!audioSegments.length}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              border: `1px solid ${audioSwatch}`,
-              background: musicPreviewPlaying ? 'rgba(48,209,88,0.18)' : audioSwatch,
-              color: '#fff',
-              fontWeight: 900,
-              cursor: audioSegments.length ? 'pointer' : 'default',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title="Play music"
-            aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
-          >
-            <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>{playPauseGlyph(musicPreviewPlaying)}</span>
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={togglePlay}
+              disabled={totalSeconds <= 0}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                flex: '0 0 auto',
+                minWidth: 40,
+                height: 40,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title={playing ? 'Pause' : 'Play'}
+              aria-label={playing ? 'Pause' : 'Play'}
+            >
+              <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                {playPauseGlyph(playing)}
+              </span>
+            </button>
+            {sortedNarration.length ? (
+              <button
+                type="button"
+                onClick={toggleNarrationPlay}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: `1px solid ${narrationSwatch}`,
+                  background: narrationPreviewPlaying ? 'rgba(175,82,222,0.18)' : narrationSwatch,
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                  minWidth: 40,
+                  height: 40,
+                  lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                title="Play narration (voice memo)"
+                aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+              >
+                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+                  {playPauseGlyph(narrationPreviewPlaying)}
+                </span>
+              </button>
+            ) : null}
+            {audioSegments.length ? (
+              <button
+                type="button"
+                onClick={toggleMusicPlay}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: `1px solid ${audioSwatch}`,
+                  background: musicPreviewPlaying ? 'rgba(48,209,88,0.18)' : audioSwatch,
+                  color: '#fff',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                  minWidth: 40,
+                  height: 40,
+                  lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                title="Play music"
+                aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+              >
+                <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+                  {playPauseGlyph(musicPreviewPlaying)}
+                </span>
+              </button>
+            ) : null}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => nudgePlayhead(0.1)}
-            disabled={totalSeconds <= 0}
-            style={{
-              padding: 0,
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0c0c0c',
-              color: '#ffd24a',
-              fontWeight: 900,
-              fontSize: 26,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-            }}
-            title="Nudge forward 0.1s"
-            aria-label="Nudge forward 0.1 seconds"
-          >
-            ›
-          </button>
-          <button
-            type="button"
-            onClick={jumpNextBoundary}
-            disabled={totalSeconds <= 0 || !canJumpNext}
-            style={{
-              padding: 0,
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
-              color: '#ffd24a',
-              fontWeight: 900,
-              fontSize: 26,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
-              flex: '0 0 auto',
-              minWidth: 40,
-              height: 40,
-            }}
-            title="Jump to next boundary"
-            aria-label="Jump to next boundary"
-          >
-            »
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => nudgePlayhead(0.1)}
+              disabled={totalSeconds <= 0}
+              style={{
+                padding: 0,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0c0c0c',
+                color: '#ffd24a',
+                fontWeight: 900,
+                fontSize: 26,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                flex: '0 0 auto',
+                minWidth: 40,
+                height: 40,
+              }}
+              title="Nudge forward 0.1s"
+              aria-label="Nudge forward 0.1 seconds"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              onClick={jumpNextBoundary}
+              disabled={totalSeconds <= 0 || !canJumpNext}
+              style={{
+                padding: 0,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+                color: '#ffd24a',
+                fontWeight: 900,
+                fontSize: 26,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: totalSeconds <= 0 || !canJumpNext ? 'default' : 'pointer',
+                flex: '0 0 auto',
+                minWidth: 40,
+                height: 40,
+              }}
+              title="Jump to next boundary"
+              aria-label="Jump to next boundary"
+            >
+              »
+            </button>
+          </div>
         </div>
         <div style={{ padding: '0 10px 10px' }}>
           <div

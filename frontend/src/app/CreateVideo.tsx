@@ -18825,57 +18825,59 @@ export default function CreateVideo() {
 				                  </span>
 				                </button>
 
-				                <button
-				                  type="button"
-				                  onClick={toggleNarrationPlay}
-				                  disabled={!sortedNarration.length}
-				                  style={{
-				                    padding: '10px 12px',
-				                    borderRadius: 10,
-				                    border: `1px solid ${laneSwatchForButton(laneMeta.narration.swatch)}`,
-				                    background: narrationPreviewPlaying
-				                      ? 'rgba(175,82,222,0.18)'
-				                      : laneSwatchForButton(laneMeta.narration.swatch),
-				                    color: '#fff',
-				                    fontWeight: 900,
-				                    cursor: sortedNarration.length ? 'pointer' : 'default',
-				                    flex: '0 0 auto',
-				                    minWidth: 44,
-				                    lineHeight: 1,
-				                  }}
-				                  title="Play narration (voice memo)"
-				                  aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
-				                >
-				                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-				                    {playPauseGlyph(narrationPreviewPlaying)}
-				                  </span>
-				                </button>
+				                {sortedNarration.length ? (
+				                  <button
+				                    type="button"
+				                    onClick={toggleNarrationPlay}
+				                    style={{
+				                      padding: '10px 12px',
+				                      borderRadius: 10,
+				                      border: `1px solid ${laneSwatchForButton(laneMeta.narration.swatch)}`,
+				                      background: narrationPreviewPlaying
+				                        ? 'rgba(175,82,222,0.18)'
+				                        : laneSwatchForButton(laneMeta.narration.swatch),
+				                      color: '#fff',
+				                      fontWeight: 900,
+				                      cursor: 'pointer',
+				                      flex: '0 0 auto',
+				                      minWidth: 44,
+				                      lineHeight: 1,
+				                    }}
+				                    title="Play narration (voice memo)"
+				                    aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
+				                  >
+				                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+				                      {playPauseGlyph(narrationPreviewPlaying)}
+				                    </span>
+				                  </button>
+				                ) : null}
 
-				                <button
-				                  type="button"
-				                  onClick={toggleMusicPlay}
-				                  disabled={!audioSegments.length}
-				                  style={{
-				                    padding: '10px 12px',
-				                    borderRadius: 10,
-				                    border: `1px solid ${laneSwatchForButton(laneMeta.audio.swatch)}`,
-				                    background: musicPreviewPlaying
-				                      ? 'rgba(48,209,88,0.18)'
-				                      : laneSwatchForButton(laneMeta.audio.swatch),
-				                    color: '#fff',
-				                    fontWeight: 900,
-				                    cursor: audioSegments.length ? 'pointer' : 'default',
-				                    flex: '0 0 auto',
-				                    minWidth: 44,
-				                    lineHeight: 1,
-				                  }}
-				                  title="Play music"
-				                  aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
-				                >
-				                  <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
-				                    {playPauseGlyph(musicPreviewPlaying)}
-				                  </span>
-				                </button>
+				                {audioSegments.length ? (
+				                  <button
+				                    type="button"
+				                    onClick={toggleMusicPlay}
+				                    style={{
+				                      padding: '10px 12px',
+				                      borderRadius: 10,
+				                      border: `1px solid ${laneSwatchForButton(laneMeta.audio.swatch)}`,
+				                      background: musicPreviewPlaying
+				                        ? 'rgba(48,209,88,0.18)'
+				                        : laneSwatchForButton(laneMeta.audio.swatch),
+				                      color: '#fff',
+				                      fontWeight: 900,
+				                      cursor: 'pointer',
+				                      flex: '0 0 auto',
+				                      minWidth: 44,
+				                      lineHeight: 1,
+				                    }}
+				                    title="Play music"
+				                    aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}
+				                  >
+				                    <span style={{ display: 'inline-block', width: 18, textAlign: 'center', fontSize: 18 }}>
+				                      {playPauseGlyph(musicPreviewPlaying)}
+				                    </span>
+				                  </button>
+				                ) : null}
 				              </div>
 
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' }}>
