@@ -21,6 +21,8 @@
   background-repeat: no-repeat;
   backdrop-filter: var(--card-blur, none);
   -webkit-backdrop-filter: var(--card-blur, none);
+  transform: translateZ(0);
+  will-change: transform, backdrop-filter;
   box-shadow: var(--card-shadow, none);
   overflow: hidden;
 }

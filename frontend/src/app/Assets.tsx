@@ -12,6 +12,25 @@ const nebulaShellStyle: React.CSSProperties = {
   backgroundAttachment: 'fixed',
 }
 
+const nebulaShellBaseStyle: React.CSSProperties = {
+  minHeight: '100vh',
+  color: '#fff',
+  fontFamily: 'system-ui, sans-serif',
+  position: 'relative',
+  background: '#050508',
+}
+
+const nebulaBackgroundLayerStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  backgroundImage: `url(${nebulaBgImage})`,
+  backgroundPosition: 'center',
+  backgroundRepeat: 'no-repeat',
+  backgroundSize: 'cover',
+  zIndex: 0,
+  pointerEvents: 'none',
+}
+
 type UploadListItem = {
   id: number
   original_filename: string
@@ -498,8 +517,9 @@ const AssetUploadsListPage: React.FC<{
 	  }
 
   return (
-    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ ...nebulaShellBaseStyle }}>
+      <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Assets
@@ -1181,8 +1201,9 @@ const VideoAssetsListPage: React.FC<{
   }
 
   return (
-    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ ...nebulaShellBaseStyle }}>
+      <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Assets
@@ -1679,8 +1700,9 @@ const GraphicAssetsListPage: React.FC<{
   }
 
   return (
-    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ ...nebulaShellBaseStyle }}>
+      <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Assets
@@ -2068,17 +2090,42 @@ const PickListShell: React.FC<{
   children: React.ReactNode
   shellStyle?: React.CSSProperties
 }> = ({ title, subtitle, backHref, children, shellStyle }) => {
+  const {
+    backgroundImage,
+    backgroundPosition,
+    backgroundRepeat,
+    backgroundSize,
+    backgroundAttachment,
+    ...restShellStyle
+  } = shellStyle || {}
+  const hasFixedBackground = Boolean(backgroundImage)
   return (
     <div
       style={{
         minHeight: '100vh',
-        background: '#050505',
         color: '#fff',
         fontFamily: 'system-ui, sans-serif',
-        ...(shellStyle || {}),
+        position: 'relative',
+        background: '#050505',
+        ...(restShellStyle || {}),
       }}
     >
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+      {hasFixedBackground ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundImage,
+            backgroundPosition: backgroundPosition || 'center',
+            backgroundRepeat: backgroundRepeat || 'no-repeat',
+            backgroundSize: backgroundSize || 'cover',
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        />
+      ) : null}
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Back
@@ -2369,8 +2416,9 @@ const NarrationAssetsPage: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ ...nebulaShellBaseStyle }}>
+      <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Assets
@@ -3271,8 +3319,9 @@ const AudioMusicAssetsPage: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ ...nebulaShellBaseStyle }}>
+      <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Assets
@@ -3763,10 +3812,21 @@ export default function Assets() {
         minHeight: '100vh',
         color: '#fff',
         fontFamily: 'system-ui, sans-serif',
-        ...nebulaShellStyle,
+        position: 'relative',
+        background: '#050508',
       }}
     >
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: `url(${nebulaBgImage}) center / cover no-repeat`,
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         {mode === 'pick' ? (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>{headerRight}</div>
         ) : null}
@@ -3777,21 +3837,23 @@ export default function Assets() {
         </p>
 
         <div className="card-list" style={{ ...assetsTypeCardListStyle, marginTop: 16 }}>
-	          {types.map((t) => (
-            <a
-              key={t.key}
-              href={t.href}
-              className="card-item"
-              data-card-type={`asset-${t.key}`}
-              style={{
-                display: 'block',
-                textDecoration: 'none',
-                color: '#fff',
-              }}
-            >
-              <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
-              <div className="card-meta" style={{ marginTop: 6, lineHeight: 1.35 }}>{t.description}</div>
-            </a>
+          {types.map((t) => (
+            <div key={t.key} className="card-item" data-card-type={`asset-${t.key}`}>
+              <a
+                href={t.href}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  textDecoration: 'none',
+                  color: '#fff',
+                  minHeight: '100%',
+                }}
+              >
+                <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
+                <div className="card-meta" style={{ lineHeight: 1.35 }}>{t.description}</div>
+              </a>
+            </div>
           ))}
         </div>
       </div>
