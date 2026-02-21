@@ -40,7 +40,7 @@ export const cardThemeTokens = {
   assetsGlass: {
     '--card-list-gap': '14px',
     '--card-border': '1px solid transparent',
-    '--card-bg-solid': 'rgba(6,8,12,0.15)',
+    '--card-bg-solid': 'rgba(6,8,12,0.5)',
     '--card-overlay-start': 'rgba(8,12,18,0.30)',
     '--card-overlay-end': 'rgba(8,12,18,0.48)',
     '--card-meta-color': '#c2c7cf',

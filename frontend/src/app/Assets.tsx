@@ -425,7 +425,16 @@ const AssetUploadsListPage: React.FC<{
   onPick?: (u: UploadListItem) => void
 }> = ({ title, subtitle, kind, imageRole, uploadHref, showDuration, filterFn, allowDelete, onPick }) => {
   const mode = useMemo(() => parseMode(), [])
-  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
+  const sharedCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -489,7 +498,14 @@ const AssetUploadsListPage: React.FC<{
 	  }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: `url(${nebulaBgImage}) center / cover no-repeat`,
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
