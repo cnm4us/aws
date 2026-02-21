@@ -3,6 +3,7 @@ import ScreenTitlePresetsPage from './ScreenTitlePresets'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 import listCardBgImage from './images/list_bg.png'
+import nebulaBgImage from './images/nebula_bg.jpg'
 
 type UploadListItem = {
   id: number
@@ -3704,16 +3705,23 @@ export default function Assets() {
   const assetsTypeCardListStyle = useMemo(
     () =>
       cardThemeStyle(
-        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
           '--card-list-gap': '14px',
-          '--card-bg-image': `url(${listCardBgImage})`,
+          '--card-bg-image': 'none',
         })
       ),
     []
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: `url(${nebulaBgImage}) center / cover no-repeat`,
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         {mode === 'pick' ? (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>{headerRight}</div>
@@ -3726,21 +3734,18 @@ export default function Assets() {
 
         <div className="card-list" style={{ ...assetsTypeCardListStyle, marginTop: 16 }}>
 	          {types.map((t) => (
-	            <a
-	              key={t.key}
-	              href={t.href}
-                className="card-item"
-                data-card-type={`asset-${t.key}`}
-	              style={{
-	                display: 'block',
-	                textDecoration: 'none',
-	                color: '#fff',
-	              }}
-	            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
-                <div style={{ color: '#d4af37', fontWeight: 900 }}>→</div>
-              </div>
+            <a
+              key={t.key}
+              href={t.href}
+              className="card-item"
+              data-card-type={`asset-${t.key}`}
+              style={{
+                display: 'block',
+                textDecoration: 'none',
+                color: '#fff',
+              }}
+            >
+              <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
               <div className="card-meta" style={{ marginTop: 6, lineHeight: 1.35 }}>{t.description}</div>
             </a>
           ))}

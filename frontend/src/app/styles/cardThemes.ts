@@ -37,6 +37,19 @@ export const cardThemeTokens = {
     '--card-meta-color': '#bbb',
     '--card-btn-open-bg': '#0a84ff',
   } as CardThemeVars,
+  assetsGlass: {
+    '--card-list-gap': '14px',
+    '--card-border': '1px solid transparent',
+    '--card-bg-solid': 'rgba(6,8,12,0.15)',
+    '--card-overlay-start': 'rgba(8,12,18,0.30)',
+    '--card-overlay-end': 'rgba(8,12,18,0.48)',
+    '--card-meta-color': '#c2c7cf',
+    '--card-blur': 'blur(10px)',
+    '--card-shadow': '0 18px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
+    '--card-border-gradient': 'linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0.08) 100%)',
+    '--card-border-gradient-opacity': '1',
+    '--card-btn-open-bg': 'rgba(10,132,255,0.24)',
+  } as CardThemeVars,
   byType: {
     timeline: {
       '--card-overlay-start': 'rgba(5,8,12,0.39)',
