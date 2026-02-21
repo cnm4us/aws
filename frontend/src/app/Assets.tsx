@@ -585,6 +585,7 @@ const AssetUploadsListPage: React.FC<{
                       background: 'transparent',
                       color: '#d4af37',
                       fontWeight: 900,
+                      fontSize: 17,
                       textAlign: 'left',
                       cursor: 'pointer',
                     }}
@@ -1034,7 +1035,7 @@ const VideoAssetsListPage: React.FC<{
       <div key={u.id} className="card-item" data-card-type="video">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+          <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
             <div className="card-meta">{meta}</div>
           </div>
           <button
@@ -1157,7 +1158,7 @@ const VideoAssetsListPage: React.FC<{
       <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+            <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
             {meta ? <div className="card-meta">{meta}</div> : null}
           </div>
           {isPick ? (
@@ -1596,7 +1597,7 @@ const GraphicAssetsListPage: React.FC<{
       <div key={u.id} className="card-item" data-card-type="graphic">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div className="card-head" style={{ flex: '1 1 auto' }}>
-            <div className="card-title" style={{ fontSize: 18 }}>{name}</div>
+          <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
             {fileLine ? <div className="card-meta">{fileLine}</div> : null}
             <div className="card-meta">{meta}</div>
           </div>
@@ -2474,8 +2475,9 @@ const NarrationAssetsPage: React.FC = () => {
                       padding: 0,
                       border: 'none',
                       background: 'transparent',
-                      color: '#ffd60a',
+                      color: '#d4af37',
                       fontWeight: 900,
+                      fontSize: 17,
                       cursor: 'pointer',
                       textAlign: 'left',
                       maxWidth: '100%',
@@ -3432,8 +3434,9 @@ const AudioMusicAssetsPage: React.FC = () => {
                     padding: 0,
                     border: 'none',
                     background: 'transparent',
-                    color: '#ffd60a',
+                    color: '#d4af37',
                     fontWeight: 900,
+                    fontSize: 17,
                     cursor: 'pointer',
                     textAlign: 'left',
                     maxWidth: '100%',
@@ -3850,7 +3853,7 @@ export default function Assets() {
                   minHeight: '100%',
                 }}
               >
-                <div className="card-title" style={{ fontSize: 18 }}>{t.label}</div>
+                <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{t.label}</div>
                 <div className="card-meta" style={{ lineHeight: 1.35 }}>{t.description}</div>
               </a>
             </div>
