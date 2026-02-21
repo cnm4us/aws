@@ -2,8 +2,15 @@ import React, { useMemo } from 'react'
 import ScreenTitlePresetsPage from './ScreenTitlePresets'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
-import listCardBgImage from './images/list_bg.png'
 import nebulaBgImage from './images/nebula_bg.jpg'
+
+const nebulaShellStyle: React.CSSProperties = {
+  backgroundImage: `url(${nebulaBgImage})`,
+  backgroundPosition: 'center',
+  backgroundRepeat: 'no-repeat',
+  backgroundSize: 'cover',
+  backgroundAttachment: 'fixed',
+}
 
 type UploadListItem = {
   id: number
@@ -126,13 +133,6 @@ function getPickPassthrough(): Record<string, string> {
   if (ret) out.return = String(ret)
   return out
 }
-
-const timelineStyleCardListTheme = cardThemeStyle(
-  mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
-    '--card-list-gap': '14px',
-    '--card-bg-image': `url(${listCardBgImage})`,
-  })
-)
 
 function formatBytes(bytes: number | null): string {
   if (bytes == null) return ''
@@ -498,14 +498,7 @@ const AssetUploadsListPage: React.FC<{
 	  }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: `url(${nebulaBgImage}) center / cover no-repeat`,
-        color: '#fff',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -804,7 +797,16 @@ const VideoAssetsListPage: React.FC<{
   pickType?: 'video' | 'videoOverlay'
 }> = ({ title, subtitle, uploadHref, pickType }) => {
   const mode = useMemo(() => parseMode(), [])
-  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
+  const sharedCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [clipItems, setClipItems] = React.useState<LibraryClipItem[]>([])
@@ -1054,7 +1056,7 @@ const VideoAssetsListPage: React.FC<{
             style={{
               position: 'relative',
               aspectRatio: previewAspect,
-              background: '#0b0b0b',
+              background: 'transparent',
               borderRadius: 12,
               overflow: 'hidden',
               width: '100%',
@@ -1164,7 +1166,7 @@ const VideoAssetsListPage: React.FC<{
             aspectRatio: previewAspect,
             borderRadius: 14,
             border: '1px solid rgba(255,255,255,0.18)',
-            background: '#000',
+            background: 'transparent',
             overflow: 'hidden',
             cursor: 'pointer',
           }}
@@ -1183,7 +1185,7 @@ const VideoAssetsListPage: React.FC<{
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -1408,9 +1410,9 @@ const GraphicAssetsListPage: React.FC<{
   const graphicCardListStyle = useMemo(
     () =>
       cardThemeStyle(
-        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
           '--card-list-gap': '14px',
-          '--card-bg-image': `url(${listCardBgImage})`,
+          '--card-bg-image': 'none',
         })
       ),
     []
@@ -1627,7 +1629,7 @@ const GraphicAssetsListPage: React.FC<{
               style={{
                 position: 'relative',
                 aspectRatio: '1 / 1',
-                background: '#0b0b0b',
+                background: 'transparent',
                 borderRadius: 12,
                 overflow: 'hidden',
               }}
@@ -1685,7 +1687,7 @@ const GraphicAssetsListPage: React.FC<{
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -2071,14 +2073,23 @@ const AudioUploadForm: React.FC<{
   )
 }
 
-const PickListShell: React.FC<{ title: string; subtitle?: string; backHref: string; children: React.ReactNode }> = ({
-  title,
-  subtitle,
-  backHref,
-  children,
-}) => {
+const PickListShell: React.FC<{
+  title: string
+  subtitle?: string
+  backHref: string
+  children: React.ReactNode
+  shellStyle?: React.CSSProperties
+}> = ({ title, subtitle, backHref, children, shellStyle }) => {
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#050505',
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+        ...(shellStyle || {}),
+      }}
+    >
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -2266,7 +2277,16 @@ const LowerThirdConfigPickPage: React.FC = () => {
 const NarrationAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
-  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
+  const sharedCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const isNew = mode !== 'pick' && (getQueryParam('new') === '1' || getQueryParam('new') === 'true')
 
   const backHref = useMemo(() => {
@@ -2361,7 +2381,7 @@ const NarrationAssetsPage: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -2611,7 +2631,16 @@ const NarrationAssetsPage: React.FC = () => {
 const ScreenTitleStylesAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
-  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
+  const sharedCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const returnHref = useMemo(() => getQueryParam('return'), [])
   const [items, setItems] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(false)
@@ -2654,6 +2683,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
         title="Screen Title Styles"
         subtitle="Manage reusable screen title styles."
         backHref={returnHref ? String(returnHref) : '/assets'}
+        shellStyle={nebulaShellStyle}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>Create and edit reusable Screen Title styles.</div>
@@ -2804,7 +2834,12 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
   }
 
   return (
-    <PickListShell title="Select Screen Title Style" subtitle="Pick a style to add to your timeline." backHref={backHref}>
+    <PickListShell
+      title="Select Screen Title Style"
+      subtitle="Pick a style to add to your timeline."
+      backHref={backHref}
+      shellStyle={nebulaShellStyle}
+    >
       {loading ? <div style={{ color: '#bbb' }}>Loading…</div> : null}
       {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
       <div className="card-list" style={sharedCardListStyle}>
@@ -3003,7 +3038,16 @@ const GoldAudioPreviewPlayer: React.FC<{
 const AudioMusicAssetsPage: React.FC = () => {
   const mode = useMemo(() => parseMode(), [])
   const passthrough = useMemo(() => getPickPassthrough(), [])
-  const sharedCardListStyle = useMemo(() => timelineStyleCardListTheme, [])
+  const sharedCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const scopeRaw = (getQueryParam('scope') || '').trim().toLowerCase()
   const scope: 'system' | 'search' | 'my' = scopeRaw === 'my' ? 'my' : scopeRaw === 'search' ? 'search' : 'system'
   const isNew = mode !== 'pick' && scope === 'my' && (getQueryParam('new') === '1' || getQueryParam('new') === 'true')
@@ -3242,7 +3286,7 @@ const AudioMusicAssetsPage: React.FC = () => {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', ...nebulaShellStyle }}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
@@ -3733,9 +3777,9 @@ export default function Assets() {
     <div
       style={{
         minHeight: '100vh',
-        background: `url(${nebulaBgImage}) center / cover no-repeat`,
         color: '#fff',
         fontFamily: 'system-ui, sans-serif',
+        ...nebulaShellStyle,
       }}
     >
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
