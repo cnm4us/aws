@@ -219,42 +219,42 @@ const YellowModal: React.FC<{ title: string; body: string; onClose: () => void }
         position: 'fixed',
         inset: 0,
         zIndex: 22000,
-        background: 'rgba(0,0,0,0.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: 16,
-        paddingTop: 'calc(72px + env(safe-area-inset-top))',
+        background: 'rgba(0,0,0,0.86)',
+        display: 'block',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: '64px 16px 80px',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(720px, 100%)',
-          borderRadius: 16,
-          border: '1px solid rgba(255,214,10,0.20)',
-          background: 'linear-gradient(180deg, rgba(92, 62, 24, 0.98), rgba(40, 28, 14, 0.98))',
+          maxWidth: 560,
+          margin: '0 auto',
+          borderRadius: 14,
+          border: '1px solid rgba(96,165,250,0.95)',
+          background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
           color: '#fff',
           padding: 16,
+          boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-          <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>{title}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+          <div style={{ fontWeight: 900, fontSize: 18, lineHeight: 1.2 }}>{title}</div>
           <button
             type="button"
             onClick={onClose}
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: 999,
+              padding: '8px 12px',
+              borderRadius: 10,
               border: '1px solid rgba(255,255,255,0.18)',
-              background: '#000',
+              background: 'rgba(255,255,255,0.06)',
               color: '#fff',
-              fontWeight: 900,
+              fontWeight: 800,
               cursor: 'pointer',
             }}
           >
-            ✕
+            Close
           </button>
         </div>
         <div style={{ marginTop: 10, whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{body || 'No description'}</div>
@@ -583,7 +583,7 @@ const AssetUploadsListPage: React.FC<{
                       margin: 0,
                       border: 'none',
                       background: 'transparent',
-                      color: '#d4af37',
+                      color: '#ffd60a',
                       fontWeight: 900,
                       fontSize: 17,
                       textAlign: 'left',
@@ -1035,7 +1035,7 @@ const VideoAssetsListPage: React.FC<{
       <div key={u.id} className="card-item" data-card-type="video">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
+          <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
             <div className="card-meta">{meta}</div>
           </div>
           <button
@@ -1158,7 +1158,7 @@ const VideoAssetsListPage: React.FC<{
       <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
+            <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
             {meta ? <div className="card-meta">{meta}</div> : null}
           </div>
           {isPick ? (
@@ -1597,7 +1597,7 @@ const GraphicAssetsListPage: React.FC<{
       <div key={u.id} className="card-item" data-card-type="graphic">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div className="card-head" style={{ flex: '1 1 auto' }}>
-          <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{name}</div>
+          <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
             {fileLine ? <div className="card-meta">{fileLine}</div> : null}
             <div className="card-meta">{meta}</div>
           </div>
@@ -2475,7 +2475,7 @@ const NarrationAssetsPage: React.FC = () => {
                       padding: 0,
                       border: 'none',
                       background: 'transparent',
-                      color: '#d4af37',
+                      color: '#ffd60a',
                       fontWeight: 900,
                       fontSize: 17,
                       cursor: 'pointer',
@@ -3434,7 +3434,7 @@ const AudioMusicAssetsPage: React.FC = () => {
                     padding: 0,
                     border: 'none',
                     background: 'transparent',
-                    color: '#d4af37',
+                    color: '#ffd60a',
                     fontWeight: 900,
                     fontSize: 17,
                     cursor: 'pointer',
@@ -3853,7 +3853,7 @@ export default function Assets() {
                   minHeight: '100%',
                 }}
               >
-                <div className="card-title" style={{ fontSize: 17, color: '#d4af37' }}>{t.label}</div>
+                <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{t.label}</div>
                 <div className="card-meta" style={{ lineHeight: 1.35 }}>{t.description}</div>
               </a>
             </div>

@@ -43,6 +43,7 @@ export const cardThemeTokens = {
     '--card-bg-solid': 'rgba(6,8,12,0.5)',
     '--card-overlay-start': 'rgba(8,12,18,0.30)',
     '--card-overlay-end': 'rgba(8,12,18,0.48)',
+    '--card-title-color': '#ffd60a',
     '--card-meta-color': '#c2c7cf',
     '--card-blur': 'blur(10px)',
     '--card-shadow': '0 18px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.18)',
