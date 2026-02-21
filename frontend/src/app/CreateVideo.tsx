@@ -16899,6 +16899,88 @@ export default function CreateVideo() {
                 </div>
               ) : null}
               <div
+                ref={timelineZoomMenuRef}
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: Math.max(0, Math.round(RULER_H + 10)),
+                  zIndex: 60,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowTimelineZoomMenu((v) => !v)}
+                  style={{
+                    padding: '4px 6px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#fff',
+                    fontWeight: 900,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                    letterSpacing: 0.2,
+                    opacity: 0.5,
+                  }}
+                  title="Zoom timeline"
+                  aria-label="Zoom timeline"
+                >
+                  {timelineZoomLabel}
+                </button>
+                {showTimelineZoomMenu ? (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: '50%',
+                      top: (() => {
+                        const rect = timelineScrollEl?.getBoundingClientRect()
+                        if (!rect) return 120
+                        return Math.max(8, Math.round(rect.top + 8))
+                      })(),
+                      transform: 'translateX(-50%)',
+                      background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                      border: '1px solid rgba(96,165,250,0.95)',
+                      borderRadius: 14,
+                      padding: 8,
+                      display: 'grid',
+                      gap: 6,
+                      minWidth: 120,
+                      zIndex: 2000,
+                      boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+                    }}
+                  >
+                    {TIMELINE_ZOOM_OPTIONS.map((opt) => {
+                      const active = Math.abs(opt - timelineZoom) < 1e-6
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => {
+                            setTimelineZoomValue(opt)
+                            setShowTimelineZoomMenu(false)
+                          }}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            border: active ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                            background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {Math.round(opt * 100)}%
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+              <div
                 ref={setTimelineScrollContainerRef}
                 onScroll={() => {
                   const sc = timelineScrollRef.current
@@ -18646,81 +18728,6 @@ export default function CreateVideo() {
                           <img src={FLOAT_ICON_URL} alt="" aria-hidden="true" style={{ width: 25, height: 25, display: 'block' }} />
 			                  </button>
 			                ) : null}
-                      <div style={{ position: 'relative' }} ref={timelineZoomMenuRef}>
-                        <button
-                          type="button"
-                          onClick={() => setShowTimelineZoomMenu((v) => !v)}
-                          style={{
-                            padding: '0 12px',
-                            borderRadius: 10,
-                            border: '1px solid rgba(255,255,255,0.18)',
-                            background: '#0c0c0c',
-                            color: '#fff',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                            flex: '0 0 auto',
-                            minWidth: 44,
-                            lineHeight: 1,
-                            height: 44,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                          title="Zoom timeline"
-                          aria-label="Zoom timeline"
-                        >
-                          {timelineZoomLabel}
-                        </button>
-                        {showTimelineZoomMenu ? (
-                          <div
-                            style={{
-                              position: 'fixed',
-                              left: '50%',
-                              top: (() => {
-                                const rect = timelineScrollEl?.getBoundingClientRect()
-                                if (!rect) return 120
-                                return Math.max(8, Math.round(rect.top + 8))
-                              })(),
-                              transform: 'translateX(-50%)',
-                              background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
-                              border: '1px solid rgba(96,165,250,0.95)',
-                              borderRadius: 14,
-                              padding: 8,
-                              display: 'grid',
-                              gap: 6,
-                              minWidth: 120,
-                              zIndex: 2000,
-                              boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
-                            }}
-                          >
-                            {TIMELINE_ZOOM_OPTIONS.map((opt) => {
-                              const active = Math.abs(opt - timelineZoom) < 1e-6
-                              return (
-                                <button
-                                  key={opt}
-                                  type="button"
-                                  onClick={() => {
-                                    setTimelineZoomValue(opt)
-                                    setShowTimelineZoomMenu(false)
-                                  }}
-                                  style={{
-                                    padding: '8px 10px',
-                                    borderRadius: 8,
-                                    border: active ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                                    background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
-                                    color: '#fff',
-                                    fontWeight: 900,
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {Math.round(opt * 100)}%
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
 					              </div>
 			            </div>
 
