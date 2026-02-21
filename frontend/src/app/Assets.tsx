@@ -517,17 +517,13 @@ const AssetUploadsListPage: React.FC<{
           {mode !== 'pick' ? (
             <a
               href={withParams(uploadHref, { return: returnTo })}
+              className="card-btn card-btn-open"
               style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
                 textDecoration: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                marginLeft: 'auto',
               }}
             >
               Upload
@@ -1204,17 +1200,13 @@ const VideoAssetsListPage: React.FC<{
           {mode !== 'pick' ? (
             <a
               href={withParams(uploadHref, { return: returnTo })}
+              className="card-btn card-btn-open"
               style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
                 textDecoration: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                marginLeft: 'auto',
               }}
             >
               Upload
@@ -1706,17 +1698,13 @@ const GraphicAssetsListPage: React.FC<{
           {mode !== 'pick' ? (
             <a
               href={withParams(uploadHref, { return: returnTo })}
+              className="card-btn card-btn-open"
               style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
                 textDecoration: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                marginLeft: 'auto',
               }}
             >
               Upload
@@ -2400,17 +2388,16 @@ const NarrationAssetsPage: React.FC = () => {
           {mode !== 'pick' ? (
             <a
               href="/assets/narration?new=1"
+              className="card-btn card-btn-open"
               style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
                 textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: 'auto',
               }}
             >
-              New Audio
+              New
             </a>
           ) : null}
         </div>
@@ -2689,18 +2676,16 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
           <div style={{ color: '#bbb', fontSize: 13, lineHeight: 1.35 }}>Create and edit reusable Screen Title styles.</div>
           <a
             href={makeHref('/assets/screen-titles/new')}
+            className="card-btn card-btn-open"
             style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid rgba(10,132,255,0.55)',
-              background: '#0a84ff',
-              color: '#fff',
-              fontWeight: 900,
               textDecoration: 'none',
               display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: 'auto',
             }}
           >
-            New Style
+            New
           </a>
         </div>
 
@@ -3305,17 +3290,16 @@ const AudioMusicAssetsPage: React.FC = () => {
           {mode !== 'pick' && scope === 'my' ? (
             <a
               href="/assets/audio?scope=my&new=1"
+              className="card-btn card-btn-open"
               style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 900,
                 textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: 'auto',
               }}
             >
-              New Audio
+              New
             </a>
           ) : null}
         </div>

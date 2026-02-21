@@ -49,6 +49,10 @@ export const cardThemeTokens = {
     '--card-border-gradient': 'linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0.08) 100%)',
     '--card-border-gradient-opacity': '1',
     '--card-btn-open-bg': 'rgba(10,132,255,0.24)',
+    '--card-btn-edit-border': '1px solid rgba(235, 235, 235, 0.6)',
+    '--card-btn-edit-bg': 'rgba(235, 235, 235, 0.12)',
+    '--card-btn-delete-border': '1px solid rgba(255, 99, 99, 0.7)',
+    '--card-btn-delete-bg': 'rgba(255, 69, 58, 0.22)',
   } as CardThemeVars,
   byType: {
     timeline: {
