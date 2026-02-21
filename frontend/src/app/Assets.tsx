@@ -2340,6 +2340,15 @@ const NarrationAssetsPage: React.FC = () => {
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState<number | null>(null)
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
+  const [activePreviewKey, setActivePreviewKey] = React.useState<string | null>(null)
+  const activePreviewAudioRef = React.useRef<HTMLAudioElement | null>(null)
+
+  React.useEffect(() => {
+    return () => {
+      activePreviewAudioRef.current?.pause()
+      activePreviewAudioRef.current = null
+    }
+  }, [])
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -2492,7 +2501,13 @@ const NarrationAssetsPage: React.FC = () => {
                 </div>
 
                 {meta ? <div style={{ color: '#bbb', fontSize: 12 }}>{meta}</div> : null}
-                <audio controls preload="none" style={{ width: '100%' }} src={`/api/uploads/${id}/file`} />
+                <GoldAudioPreviewPlayer
+                  playerKey={`nar-${id}`}
+                  src={`/api/uploads/${id}/file`}
+                  activePlayerKey={activePreviewKey}
+                  setActivePlayerKey={setActivePreviewKey}
+                  activeAudioRef={activePreviewAudioRef}
+                />
 
                 {mode === 'pick' ? (
                   <div className="card-actions card-actions-right">
@@ -3009,17 +3024,17 @@ const GoldAudioPreviewPlayer: React.FC<{
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       <audio ref={audioRef} preload="metadata" src={src} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '28px 1fr', columnGap: 10, rowGap: 6, alignItems: 'center' }}>
         <button
           type="button"
           onClick={togglePlay}
           aria-label={isPlaying ? 'Pause audio preview' : 'Play audio preview'}
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: 999,
+            width: 28,
+            height: 28,
+            borderRadius: 0,
             border: 'none',
-            background: '#0c0c0c',
+            background: 'transparent',
             cursor: 'pointer',
             display: 'grid',
             placeItems: 'center',
@@ -3027,43 +3042,46 @@ const GoldAudioPreviewPlayer: React.FC<{
           }}
         >
           {isPlaying ? (
-            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
-              <rect x="4" y="3" width="4" height="12" fill="#ffd60a" rx="1" />
-              <rect x="10" y="3" width="4" height="12" fill="#ffd60a" rx="1" />
+            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true" style={{ display: 'block' }}>
+              <rect x="4" y="2" width="4" height="14" fill="#ffd60a" rx="1" />
+              <rect x="10" y="2" width="4" height="14" fill="#ffd60a" rx="1" />
             </svg>
           ) : (
-            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M6 4 L14 9 L6 14 Z" fill="#ffd60a" />
+            <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true" style={{ display: 'block' }}>
+              <path d="M6 3 L14 9 L6 15 Z" fill="#ffd60a" />
             </svg>
           )}
         </button>
-        <div style={{ flex: 1, display: 'grid', gap: 6 }}>
-          <input
-            type="range"
-            min={0}
-            max={max || 0}
-            step={0.01}
-            value={safeTime}
-            onInput={(e) => {
-              const audio = audioRef.current
-              if (!audio) return
-              const v = Number((e.target as HTMLInputElement).value || 0)
-              audio.currentTime = Number.isFinite(v) ? v : 0
-              setCurrentTime(audio.currentTime || 0)
-            }}
-            disabled={!max}
-            aria-label="Audio preview position"
-            style={{
-              width: '100%',
-              height: 10,
-              borderRadius: 999,
-              background: `linear-gradient(90deg, rgba(255,214,10,0.95) 0%, rgba(255,214,10,0.95) ${pct}%, rgba(255,255,255,0.18) ${pct}%, rgba(255,255,255,0.18) 100%)`,
-              accentColor: '#ffd60a',
-            }}
-          />
-          <div style={{ textAlign: 'center', fontSize: 12, color: '#ffd60a', fontWeight: 800 }}>
-            {fmtTime(safeTime)} / {fmtTime(max)}
-          </div>
+        <input
+          type="range"
+          min={0}
+          max={max || 0}
+          step={0.01}
+          value={safeTime}
+          onInput={(e) => {
+            const audio = audioRef.current
+            if (!audio) return
+            const v = Number((e.target as HTMLInputElement).value || 0)
+            audio.currentTime = Number.isFinite(v) ? v : 0
+            setCurrentTime(audio.currentTime || 0)
+          }}
+          disabled={!max}
+          aria-label="Audio preview position"
+          className="audio-progress"
+          style={{
+            width: '100%',
+            height: 4,
+            borderRadius: 999,
+            background: `linear-gradient(90deg, rgba(255,214,10,0.95) 0%, rgba(255,214,10,0.95) ${pct}%, rgba(255,255,255,0.35) ${pct}%, rgba(255,255,255,0.35) 100%)`,
+            border: 'none',
+            outline: 'none',
+            padding: 0,
+            appearance: 'none',
+            WebkitAppearance: 'none',
+          }}
+        />
+        <div style={{ gridColumn: 2, textAlign: 'center', fontSize: 12, color: '#ffd60a', fontWeight: 800 }}>
+          {fmtTime(safeTime)} / {fmtTime(max)}
         </div>
       </div>
     </div>
