@@ -2067,8 +2067,8 @@ export default function CreateVideo() {
   const layerToggleGutterRight = Math.round((timelinePadPx || 0) - timelineScrollLeftPx - 10)
   const layerToggleVisible = layerToggleGutterRight > 80
   const layerToggleLabel = showEmptyLanes ? 'Compact Layers' : 'Expand Layers'
-  const layerToggleIconSize = Math.min(32, Math.max(20, Math.floor(PILL_H * 0.9)))
-  const layerToggleWidth = Math.max(layerToggleIconSize * 3, 72)
+  const layerToggleIconSize = Math.min(24, Math.max(16, Math.floor(PILL_H * 0.675)))
+  const layerToggleWidth = Math.max(layerToggleIconSize * 3, 60)
   const layerToggleLeft = layerToggleGutterRight - layerToggleWidth
 
   // If we learn the true audio duration after a segment was created, clamp its visible duration
