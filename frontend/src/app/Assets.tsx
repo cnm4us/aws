@@ -1027,7 +1027,7 @@ const VideoAssetsListPage: React.FC<{
               width: 40,
               height: 40,
               borderRadius: 12,
-              border: '1px solid rgba(10,132,255,0.35)',
+              border: '1px solid rgba(212,175,55,0.7)',
               background: '#0c0c0c',
               color: fav ? '#ffd35a' : '#bbb',
               fontSize: 18,
@@ -1589,7 +1589,7 @@ const GraphicAssetsListPage: React.FC<{
               width: 40,
               height: 40,
               borderRadius: 12,
-              border: '1px solid rgba(10,132,255,0.35)',
+              border: '1px solid rgba(212,175,55,0.7)',
               background: '#0c0c0c',
               color: fav ? '#ffd35a' : '#bbb',
               fontSize: 18,
@@ -2739,7 +2739,7 @@ const ScreenTitleStylesAssetsPage: React.FC = () => {
 
                   <div className="card-actions" style={{ gap: 8 }}>
                     <button
-                      className="card-btn card-btn-edit"
+                      className="card-btn card-btn-open"
                       type="button"
                       disabled={cloningId === id}
                       onClick={async () => {
