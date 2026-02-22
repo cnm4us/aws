@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react'
 import ScreenTitlePresetsPage from './ScreenTitlePresets'
+import { LibraryCreateClipPage, LibraryListPage } from './Library'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 import nebulaBgImage from './images/nebula_bg.jpg'
@@ -817,9 +818,10 @@ function normalizeGraphicSort(raw: string): string {
   return allowed.has(s) ? s : 'recent'
 }
 
-function normalizeClipScope(raw: string | null): 'uploads' | 'system' | 'mine' | 'shared' {
+function normalizeClipScope(raw: string | null): 'uploads' | 'mine' | 'shared' {
   const s = String(raw || '').trim().toLowerCase()
-  if (s === 'system' || s === 'mine' || s === 'shared') return s
+  if (s === 'mine') return 'mine'
+  if (s === 'shared' || s === 'system') return 'shared'
   return 'uploads'
 }
 
@@ -848,14 +850,16 @@ const VideoAssetsListPage: React.FC<{
   const [q, setQ] = React.useState('')
   const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
-  const [clipScope, setClipScope] = React.useState<'uploads' | 'system' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
+  const [clipScope, setClipScope] = React.useState<'uploads' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
   const allowClips = pickType === 'video' || pickType === 'videoOverlay'
-  const isClipMode = allowClips && clipScope !== 'uploads'
+  const isSharedMode = allowClips && clipScope === 'shared'
+  const isClipMode = allowClips && clipScope === 'mine'
+  const isUploadMode = clipScope === 'uploads'
 
   React.useEffect(() => {
     if (!allowClips) setClipScope('uploads')
@@ -872,8 +876,8 @@ const VideoAssetsListPage: React.FC<{
   }, [allowClips, clipScope])
 
   React.useEffect(() => {
-    if (isClipMode && favoritesOnly) setFavoritesOnly(false)
-  }, [isClipMode, favoritesOnly])
+    if (!isUploadMode && favoritesOnly) setFavoritesOnly(false)
+  }, [isUploadMode, favoritesOnly])
 
   const backHref = useMemo(() => {
     const base = '/assets'
@@ -889,6 +893,13 @@ const VideoAssetsListPage: React.FC<{
 
   const load = React.useCallback(
     async (opts?: { signal?: AbortSignal }) => {
+      if (isSharedMode) {
+        setItems([])
+        setClipItems([])
+        setLoading(false)
+        setError(null)
+        return
+      }
       setLoading(true)
       setError(null)
       try {
@@ -899,7 +910,7 @@ const VideoAssetsListPage: React.FC<{
         if (isClipMode) {
           const params = new URLSearchParams()
           if (qTrim) params.set('q', qTrim)
-          params.set('scope', clipScope)
+          params.set('scope', 'mine')
           params.set('limit', '200')
           const res = await fetch(`/api/library/clips?${params.toString()}`, {
             credentials: 'same-origin',
@@ -928,10 +939,10 @@ const VideoAssetsListPage: React.FC<{
         if (String(e?.name || '') === 'AbortError') return
         setError(e?.message || 'Failed to load')
       } finally {
-        setLoading(false)
+        if (!isSharedMode) setLoading(false)
       }
     },
-    [favoritesOnly, q, sort, isClipMode, clipScope]
+    [favoritesOnly, q, sort, isClipMode, isSharedMode]
   )
 
   const sortedUploadItems = React.useMemo(() => {
@@ -1257,170 +1268,180 @@ const VideoAssetsListPage: React.FC<{
         </div>
 
         {allowClips ? (
-          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {[
-              { key: 'uploads', label: 'Uploads' },
-              { key: 'system', label: 'System Clips' },
-              { key: 'mine', label: 'My Clips' },
-              { key: 'shared', label: 'Other Users' },
-            ].map((opt) => {
-              const active = clipScope === opt.key
-              return (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setClipScope(opt.key as any)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 999,
-                    border: active ? '1px solid rgba(10,132,255,0.6)' : '1px solid rgba(255,255,255,0.18)',
-                    background: active ? 'rgba(10,132,255,0.2)' : '#0c0c0c',
-                    color: '#fff',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {opt.label}
-                </button>
-              )
-            })}
-          </div>
-        ) : null}
-
-        <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <input
-            value={q}
-            onChange={(e) => setQ(String((e.target as any).value || ''))}
-            placeholder="Search name or description…"
-            style={{
-              flex: '1 1 220px',
-              minWidth: 200,
-              padding: '10px 12px',
-              borderRadius: 12,
-              border: '1px solid rgba(255,255,255,0.14)',
-              background: '#0c0c0c',
-              color: '#fff',
-              outline: 'none',
-            }}
-          />
-
-          <select
-            value={sort}
-            onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'recent')))}
-            style={{
-              flex: '0 0 auto',
-              padding: '10px 12px',
-              borderRadius: 12,
-              border: '1px solid rgba(255,255,255,0.14)',
-              background: '#0c0c0c',
-              color: '#fff',
-              outline: 'none',
-              fontWeight: 900,
-            }}
-          >
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="name_asc">Name A→Z</option>
-            <option value="name_desc">Name Z→A</option>
-            <option value="duration_asc">Duration (short→long)</option>
-            <option value="duration_desc">Duration (long→short)</option>
-            <option value="size_asc">Size (small→large)</option>
-            <option value="size_desc">Size (large→small)</option>
-            <option value="recent">Recently Used</option>
-          </select>
-
-          {!isClipMode ? (
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
-              <input
-                type="checkbox"
-                checked={favoritesOnly}
-                onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
-              />
-              Favorites
-            </label>
-          ) : null}
-        </div>
-
-        {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
-        {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
-
-        <div style={sharedCardListStyle}>
-          <div className="card-list" style={{ marginTop: 16 }}>
-            {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
-          </div>
-        </div>
-
-        {editUpload ? (
-          <EditUploadModal
-            upload={editUpload}
-            onClose={() => setEditUpload(null)}
-            onSaved={({ name, description }) => {
-              setItems((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
-            }}
-          />
-        ) : null}
-
-        {videoPreview ? (
-          <div
-            role="dialog"
-            aria-modal="true"
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
-            onClick={() => setVideoPreview(null)}
-          >
-            <div
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <select
+              value={clipScope}
+              onChange={(e) => setClipScope(normalizeClipScope(String((e.target as any).value || 'uploads')))}
               style={{
-                position: 'fixed',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'min(92vw, 900px)',
-                maxHeight: '82vh',
-                background: '#0b0b0b',
-                border: '1px solid rgba(255,255,255,0.18)',
-                borderRadius: 16,
-                padding: 12,
-                boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+                flex: '0 0 auto',
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: '#0c0c0c',
+                color: '#fff',
+                outline: 'none',
+                fontWeight: 900,
               }}
-              onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{videoPreview.title}</div>
-                <button
-                  type="button"
-                  onClick={() => setVideoPreview(null)}
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(0,0,0,0.35)',
-                    color: '#fff',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <video
-                  controls
-                  playsInline
-                  preload="metadata"
-                  src={videoPreview.src}
-                  style={{
-                    width: '100%',
-                    maxHeight: '72vh',
-                    background: '#000',
-                    borderRadius: 12,
-                    objectFit: 'contain',
-                    display: 'block',
-                  }}
+              <option value="uploads">Uploads</option>
+              <option value="mine">My Clips</option>
+              <option value="shared">Shared Videos</option>
+            </select>
+          </div>
+        ) : null}
+
+        {!isSharedMode ? (
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(String((e.target as any).value || ''))}
+              placeholder="Search name or description…"
+              style={{
+                flex: '1 1 220px',
+                minWidth: 200,
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: '#0c0c0c',
+                color: '#fff',
+                outline: 'none',
+              }}
+            />
+
+            <select
+              value={sort}
+              onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'recent')))}
+              style={{
+                flex: '0 0 auto',
+                padding: '10px 12px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: '#0c0c0c',
+                color: '#fff',
+                outline: 'none',
+                fontWeight: 900,
+              }}
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name_asc">Name A→Z</option>
+              <option value="name_desc">Name Z→A</option>
+              <option value="duration_asc">Duration (short→long)</option>
+              <option value="duration_desc">Duration (long→short)</option>
+              <option value="size_asc">Size (small→large)</option>
+              <option value="size_desc">Size (large→small)</option>
+              <option value="recent">Recently Used</option>
+            </select>
+
+            {isUploadMode ? (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
+                <input
+                  type="checkbox"
+                  checked={favoritesOnly}
+                  onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
                 />
+                Favorites
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isSharedMode ? (
+          <div style={{ marginTop: 14 }}>
+            <LibraryListPage
+              embedded
+              basePath="/assets/video"
+              clipBasePath="/assets/shared/create-clip"
+              showSharedScope
+              defaultSharedScope="system"
+            />
+          </div>
+        ) : (
+          <>
+            {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
+            {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
+
+            <div style={sharedCardListStyle}>
+              <div className="card-list" style={{ marginTop: 16 }}>
+                {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
               </div>
             </div>
-          </div>
-        ) : null}
+
+            {editUpload ? (
+              <EditUploadModal
+                upload={editUpload}
+                onClose={() => setEditUpload(null)}
+                onSaved={({ name, description }) => {
+                  setItems((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
+                }}
+              />
+            ) : null}
+
+            {videoPreview ? (
+              <div
+                role="dialog"
+                aria-modal="true"
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+                onClick={() => setVideoPreview(null)}
+              >
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: 'min(92vw, 900px)',
+                    maxHeight: '82vh',
+                    background: '#0b0b0b',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    borderRadius: 16,
+                    padding: 12,
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {videoPreview.title}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVideoPreview(null)}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: 'rgba(0,0,0,0.35)',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <video
+                      controls
+                      playsInline
+                      preload="metadata"
+                      src={videoPreview.src}
+                      style={{
+                        width: '100%',
+                        maxHeight: '72vh',
+                        background: '#000',
+                        borderRadius: 12,
+                        objectFit: 'contain',
+                        display: 'block',
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   )
@@ -3685,6 +3706,16 @@ export default function Assets() {
     return <ScreenTitlePresetsPage />
   }
 
+  if (route?.type === 'shared') {
+    if (route.rest[0] === 'create-clip') {
+      return <LibraryCreateClipPage />
+    }
+    const qs = window.location.search || ''
+    const target = qs ? `/assets/video?scope=shared&${qs.replace(/^\?/, '')}` : '/assets/video?scope=shared'
+    window.location.replace(target)
+    return null
+  }
+
   if (route?.type === 'video-overlay') {
     // “Video overlay” is a timeline lane concept; the underlying asset type is still a source video.
     // Manage mode should not present a separate video-overlay library.
@@ -3706,7 +3737,7 @@ export default function Assets() {
     return (
       <VideoAssetsListPage
         title="Videos"
-        subtitle="Raw uploaded source videos. Use scope filters to switch between uploads and clips."
+        subtitle="Raw uploaded source videos. Use scope filters to switch between uploads, clips, and shared videos."
         uploadHref="/uploads/new?kind=video"
         pickType="video"
       />

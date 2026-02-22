@@ -132,12 +132,27 @@ function useLibrarySourceOptions(): LibrarySourceOption[] {
   return options
 }
 
-const LibraryListPage: React.FC = () => {
+type LibraryListPageProps = {
+  embedded?: boolean
+  basePath?: string
+  clipBasePath?: string
+  showSharedScope?: boolean
+  defaultSharedScope?: 'system' | 'users'
+}
+
+export const LibraryListPage: React.FC<LibraryListPageProps> = ({
+  embedded = false,
+  basePath,
+  clipBasePath = '/library/create-clip',
+  showSharedScope = false,
+  defaultSharedScope = 'system',
+}) => {
   const [videos, setVideos] = useState<LibraryVideo[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [sourceOrg, setSourceOrg] = useState('all')
+  const [sharedScope, setSharedScope] = useState<'system' | 'users'>(defaultSharedScope)
   const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
   const [selectedInfo, setSelectedInfo] = useState<LibraryVideo | null>(null)
   const sourceOptions = useLibrarySourceOptions()
@@ -146,23 +161,43 @@ const LibraryListPage: React.FC = () => {
     const params = new URLSearchParams(window.location.search)
     const qParam = params.get('q') || ''
     const sourceParam = params.get('source_org') || params.get('sourceOrg') || 'all'
+    const sharedParam = params.get('shared_scope') || params.get('sharedScope') || ''
     setQ(qParam)
     setSourceOrg(sourceParam || 'all')
+    if (showSharedScope) {
+      const nextShared = String(sharedParam || defaultSharedScope).trim().toLowerCase()
+      setSharedScope(nextShared === 'users' ? 'users' : 'system')
+    }
   }, [])
 
-  const syncUrl = useCallback((nextQ: string, nextSource: string) => {
-    const params = new URLSearchParams()
-    if (nextQ.trim()) params.set('q', nextQ.trim())
-    if (nextSource && nextSource !== 'all') params.set('source_org', nextSource)
-    const qs = params.toString()
-    const nextUrl = qs ? `/library?${qs}` : '/library'
-    window.history.replaceState(null, '', nextUrl)
-  }, [])
+  const syncUrl = useCallback(
+    (nextQ: string, nextSource: string, nextSharedScope: 'system' | 'users') => {
+      const params = new URLSearchParams(window.location.search)
+      params.delete('q')
+      params.delete('source_org')
+      params.delete('sourceOrg')
+      params.delete('shared_scope')
+      params.delete('sharedScope')
+      if (nextQ.trim()) params.set('q', nextQ.trim())
+      if (nextSource && nextSource !== 'all') params.set('source_org', nextSource)
+      if (showSharedScope && nextSharedScope && nextSharedScope !== 'system') params.set('shared_scope', nextSharedScope)
+      const qs = params.toString()
+      const targetPath = basePath || window.location.pathname || '/library'
+      const nextUrl = qs ? `${targetPath}?${qs}` : targetPath
+      window.history.replaceState(null, '', nextUrl)
+    },
+    [basePath, showSharedScope]
+  )
 
   const loadVideos = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      if (showSharedScope && sharedScope === 'users') {
+        setVideos([])
+        syncUrl(q, sourceOrg, sharedScope)
+        return
+      }
       const user = await ensureLoggedIn()
       if (!user?.userId) throw new Error('Please sign in to access the library.')
       const params = new URLSearchParams()
@@ -175,13 +210,13 @@ const LibraryListPage: React.FC = () => {
       if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
       const items: LibraryVideo[] = Array.isArray(json?.items) ? json.items : []
       setVideos(items)
-      syncUrl(qTrim, sourceOrg)
+      syncUrl(qTrim, sourceOrg, sharedScope)
     } catch (e: any) {
       setError(e?.message || 'Failed to load library.')
     } finally {
       setLoading(false)
     }
-  }, [q, sourceOrg, syncUrl])
+  }, [q, sourceOrg, sharedScope, showSharedScope, syncUrl])
 
   useEffect(() => {
     void loadVideos()
@@ -208,28 +243,42 @@ const LibraryListPage: React.FC = () => {
     []
   )
 
-  return (
-    <div style={{ minHeight: '100vh', color: '#fff', padding: 20, position: 'relative', background: '#050508' }}>
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundImage: `url(${nebulaBgImage})`,
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: 'cover',
-          zIndex: 0,
-          pointerEvents: 'none',
-        }}
-      />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto' }}>
+  const sharedScopeOptions = [
+    { value: 'system', label: 'System' },
+    { value: 'users', label: 'Other Users' },
+  ]
+
+  const content = (
+    <>
+      {!embedded ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 26 }}>Video Library</h1>
         </div>
+      ) : null}
 
-        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ marginTop: embedded ? 0 : 16, display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {showSharedScope ? (
+            <select
+              value={sharedScope}
+              onChange={(e) => setSharedScope(String(e.target.value) === 'users' ? 'users' : 'system')}
+              style={{
+                minWidth: 160,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                fontSize: 16,
+              }}
+            >
+              {sharedScopeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
             <input
               type="text"
               value={q}
@@ -286,7 +335,9 @@ const LibraryListPage: React.FC = () => {
         <div style={{ marginTop: 18, display: 'grid', gap: 16 }}>
           <div className="card-list" style={cardListStyle}>
             {loading ? <div>Loading…</div> : null}
-            {!loading && !videos.length ? <div>No library videos found.</div> : null}
+            {!loading && !videos.length ? (
+              <div>{showSharedScope && sharedScope === 'users' ? 'No shared videos yet.' : 'No system videos found.'}</div>
+            ) : null}
             {videos.map((v) => {
               const name = (v.modified_filename || v.original_filename || `Video ${v.id}`).toString()
               const sourceLabel =
@@ -302,12 +353,20 @@ const LibraryListPage: React.FC = () => {
               const description = v.description ? String(v.description) : ''
               const clippedDescription = description ? truncateWords(description, 50).text : ''
               const backParams = new URLSearchParams()
+              const baseParams = new URLSearchParams(window.location.search)
+              baseParams.delete('q')
+              baseParams.delete('source_org')
+              baseParams.delete('sourceOrg')
+              baseParams.delete('shared_scope')
+              baseParams.delete('sharedScope')
+              for (const [key, value] of baseParams.entries()) backParams.set(key, value)
               if (q.trim()) backParams.set('q', q.trim())
               if (sourceOrg && sourceOrg !== 'all') backParams.set('source_org', sourceOrg)
+              if (showSharedScope && sharedScope !== 'system') backParams.set('shared_scope', sharedScope)
               const qs = backParams.toString()
               const clipHref = qs
-                ? `/library/create-clip/${encodeURIComponent(String(v.id))}?${qs}`
-                : `/library/create-clip/${encodeURIComponent(String(v.id))}`
+                ? `${clipBasePath}/${encodeURIComponent(String(v.id))}?${qs}`
+                : `${clipBasePath}/${encodeURIComponent(String(v.id))}`
 
               return (
                 <div key={v.id} className="card-item">
@@ -476,12 +535,34 @@ const LibraryListPage: React.FC = () => {
             </div>
           </div>
         ) : null}
+    </>
+  )
+
+  if (embedded) return <>{content}</>
+
+  return (
+    <div style={{ minHeight: '100vh', color: '#fff', padding: 20, position: 'relative', background: '#050508' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundImage: `url(${nebulaBgImage})`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto' }}>
+        {content}
       </div>
     </div>
   )
 }
 
-const LibraryCreateClipPage: React.FC = () => {
+const LibraryCreateClipPageInner: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null)
   const [loading, setLoading] = useState(false)
@@ -519,21 +600,30 @@ const LibraryCreateClipPage: React.FC = () => {
   const nudgeTimeoutRef = useRef<number | null>(null)
   const nudgeIntervalRef = useRef<number | null>(null)
 
+  const isSharedRoute = useMemo(() => {
+    const path = window.location.pathname || ''
+    return path.startsWith('/assets/shared/create-clip/')
+  }, [])
+
   const backHref = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
     const qParam = params.get('q') || ''
     const sourceParam = params.get('source_org') || params.get('sourceOrg') || ''
+    const sharedScopeParam = params.get('shared_scope') || params.get('sharedScope') || ''
     const backParams = new URLSearchParams()
+    if (isSharedRoute) backParams.set('scope', 'shared')
     if (qParam) backParams.set('q', qParam)
     if (sourceParam) backParams.set('source_org', sourceParam)
+    if (sharedScopeParam && sharedScopeParam !== 'system') backParams.set('shared_scope', sharedScopeParam)
     const qs = backParams.toString()
-    return qs ? `/library?${qs}` : '/library'
-  }, [])
+    const basePath = isSharedRoute ? '/assets/video' : '/library'
+    return qs ? `${basePath}?${qs}` : basePath
+  }, [isSharedRoute])
 
   const selectedId = useMemo(() => {
-    const match = window.location.pathname.match(/\/library\/create-clip\/(\d+)/)
+    const match = window.location.pathname.match(/\/(library|assets\/shared)\/create-clip\/(\d+)/)
     if (!match) return null
-    const id = Number(match[1])
+    const id = Number(match[2])
     if (!Number.isFinite(id) || id <= 0) return null
     return id
   }, [])
@@ -976,7 +1066,7 @@ const LibraryCreateClipPage: React.FC = () => {
           <div style={{ display: 'grid', gap: 6 }}>
             <h1 style={{ margin: 0, fontSize: 26 }}>Create Clip</h1>
             <a href={backHref} style={{ color: '#9bbcff', textDecoration: 'none', fontSize: 14 }}>
-              ← Back to library
+              {isSharedRoute ? '← Back to shared videos' : '← Back to library'}
             </a>
           </div>
         </div>
@@ -1433,10 +1523,22 @@ const LibraryCreateClipPage: React.FC = () => {
   )
 }
 
+export const LibraryCreateClipPage: React.FC = () => {
+  return <LibraryCreateClipPageInner />
+}
+
 const LibraryPage: React.FC = () => {
   const path = typeof window !== 'undefined' ? window.location.pathname : ''
   if (path.startsWith('/library/create-clip/')) {
-    return <LibraryCreateClipPage />
+    const target = path.replace('/library/create-clip/', '/assets/shared/create-clip/')
+    window.location.replace(`${target}${window.location.search || ''}`)
+    return null
+  }
+  if (path.startsWith('/library')) {
+    const qs = window.location.search || ''
+    const base = '/assets/video?scope=shared'
+    window.location.replace(qs ? `${base}&${qs.replace(/^\?/, '')}` : base)
+    return null
   }
   return <LibraryListPage />
 }
