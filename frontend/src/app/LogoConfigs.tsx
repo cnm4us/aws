@@ -438,7 +438,7 @@ export default function LogoConfigsPage() {
               New configuration
             </button>
             <a
-              href="/uploads?kind=logo"
+              href="/assets/logo"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',

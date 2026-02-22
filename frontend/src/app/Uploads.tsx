@@ -347,6 +347,22 @@ const UploadsPage: React.FC = () => {
           </div>
         </header>
 
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid rgba(255,255,255,0.16)',
+            background: 'rgba(255,255,255,0.06)',
+            color: '#cfd6e3',
+            fontSize: 13,
+            lineHeight: 1.4,
+          }}
+        >
+          Browsing uploads has moved to <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none', fontWeight: 800 }}>Assets</a>. Upload links
+          still work here.
+        </div>
+
         {loading ? (
           <div style={{ color: '#888', padding: '12px 0' }}>Loading…</div>
         ) : error ? (
@@ -704,4 +720,3 @@ const UploadsPage: React.FC = () => {
 }
 
 export default UploadsPage
-

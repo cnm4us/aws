@@ -383,7 +383,7 @@ const ProductionsPage: React.FC = () => {
       <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
         <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px 16px 80px' }}>
           <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
+            <a href="/assets/video" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to videos</a>
             <div>
               <h1 style={{ margin: 0, fontSize: 28 }}>Build Production</h1>
               {uploadDetailLoading ? (
@@ -598,7 +598,7 @@ const ProductionsPage: React.FC = () => {
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 16px 80px' }}>
         <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to uploads</a>
+          <a href="/assets/video" style={{ color: '#0a84ff', textDecoration: 'none' }}>← Back to videos</a>
           <div>
             <h1 style={{ margin: 0, fontSize: 28 }}>Productions</h1>
             <p style={{ margin: '4px 0 0 0', color: '#a0a0a0' }}>

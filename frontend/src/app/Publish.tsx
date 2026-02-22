@@ -478,7 +478,7 @@ const PublishPage: React.FC = () => {
     return (
       <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', color: '#fff', background: '#050505', minHeight: '100vh' }}>
         <h1>Publish</h1>
-        <p>No upload or production selected. Return to <a href="/uploads" style={{ color: '#0a84ff' }}>Uploads</a>.</p>
+        <p>No upload or production selected. Return to <a href="/assets/video" style={{ color: '#0a84ff' }}>Videos</a>.</p>
       </div>
     )
   }
@@ -497,7 +497,7 @@ const PublishPage: React.FC = () => {
       <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', color: '#fff', background: '#050505', minHeight: '100vh' }}>
         <h1>Publish</h1>
         <p style={{ color: '#ff6b6b' }}>{error || 'Upload not found.'}</p>
-        <p><a href="/uploads" style={{ color: '#0a84ff' }}>Back to uploads</a></p>
+        <p><a href="/assets/video" style={{ color: '#0a84ff' }}>Back to videos</a></p>
       </div>
     )
   }
@@ -507,7 +507,7 @@ const PublishPage: React.FC = () => {
   const master = String(upload.cdn_master || upload.s3_master || '').trim()
   const title = productionId ? (productionName || displayName) : displayName
 
-  const backHref = fromHref || (productionId ? `/productions?upload=${encodeURIComponent(String(upload.id))}` : '/uploads')
+  const backHref = fromHref || (productionId ? `/productions?upload=${encodeURIComponent(String(upload.id))}` : '/assets/video')
   const currentHref = `${window.location.pathname}${window.location.search}`
 
   return (

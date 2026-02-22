@@ -399,8 +399,8 @@ export default function Exports() {
           <a href="/create-video" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Back to Timeline
           </a>
-          <a href="/uploads" style={{ color: '#0a84ff', textDecoration: 'none' }}>
-            Uploads
+          <a href="/assets" style={{ color: '#0a84ff', textDecoration: 'none' }}>
+            Assets
           </a>
         </div>
 

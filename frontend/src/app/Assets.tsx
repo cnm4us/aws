@@ -475,7 +475,7 @@ const AssetUploadsListPage: React.FC<{
   const [deleting, setDeleting] = React.useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
   const [imagePreview, setImagePreview] = React.useState<{ title: string; src: string } | null>(null)
-  const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
+  const returnTo = useMemo(() => window.location.pathname + window.location.search, [clipScope])
 
   const backHref = useMemo(() => {
     const base = '/assets'
@@ -817,6 +817,12 @@ function normalizeGraphicSort(raw: string): string {
   return allowed.has(s) ? s : 'recent'
 }
 
+function normalizeClipScope(raw: string | null): 'uploads' | 'system' | 'mine' | 'shared' {
+  const s = String(raw || '').trim().toLowerCase()
+  if (s === 'system' || s === 'mine' || s === 'shared') return s
+  return 'uploads'
+}
+
 const VideoAssetsListPage: React.FC<{
   title: string
   subtitle: string
@@ -842,18 +848,28 @@ const VideoAssetsListPage: React.FC<{
   const [q, setQ] = React.useState('')
   const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
-  const [clipScope, setClipScope] = React.useState<'uploads' | 'system' | 'mine' | 'shared'>('uploads')
+  const [clipScope, setClipScope] = React.useState<'uploads' | 'system' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
-  const allowClips = mode === 'pick' && (pickType === 'video' || pickType === 'videoOverlay')
+  const allowClips = pickType === 'video' || pickType === 'videoOverlay'
   const isClipMode = allowClips && clipScope !== 'uploads'
 
   React.useEffect(() => {
     if (!allowClips) setClipScope('uploads')
   }, [allowClips])
+
+  React.useEffect(() => {
+    if (!allowClips) return
+    try {
+      const qs = new URLSearchParams(window.location.search)
+      qs.set('scope', clipScope)
+      const next = `${window.location.pathname}?${qs.toString()}${window.location.hash || ''}`
+      window.history.replaceState({}, '', next)
+    } catch {}
+  }, [allowClips, clipScope])
 
   React.useEffect(() => {
     if (isClipMode && favoritesOnly) setFavoritesOnly(false)
@@ -3688,7 +3704,12 @@ export default function Assets() {
 
   if (route?.type === 'video') {
     return (
-      <VideoAssetsListPage title="Videos" subtitle="Raw uploaded source videos." uploadHref="/uploads/new?kind=video" pickType="video" />
+      <VideoAssetsListPage
+        title="Videos"
+        subtitle="Raw uploaded source videos. Use scope filters to switch between uploads and clips."
+        uploadHref="/uploads/new?kind=video"
+        pickType="video"
+      />
     )
   }
 
