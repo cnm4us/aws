@@ -798,13 +798,13 @@ function normalizeVideoSort(raw: string): string {
     'size_desc',
     'recent',
   ])
-  return allowed.has(s) ? s : 'newest'
+  return allowed.has(s) ? s : 'recent'
 }
 
 function normalizeGraphicSort(raw: string): string {
   const s = String(raw || '').trim()
   const allowed = new Set(['newest', 'oldest', 'name_asc', 'name_desc', 'size_asc', 'size_desc', 'recent'])
-  return allowed.has(s) ? s : 'newest'
+  return allowed.has(s) ? s : 'recent'
 }
 
 const VideoAssetsListPage: React.FC<{
@@ -827,11 +827,10 @@ const VideoAssetsListPage: React.FC<{
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
   const [clipItems, setClipItems] = React.useState<LibraryClipItem[]>([])
-  const [recent, setRecent] = React.useState<UploadListItem[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [q, setQ] = React.useState('')
-  const [sort, setSort] = React.useState<string>('newest')
+  const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
   const [clipScope, setClipScope] = React.useState<'uploads' | 'system' | 'mine' | 'shared'>('uploads')
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
@@ -884,13 +883,11 @@ const VideoAssetsListPage: React.FC<{
           if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
           setClipItems(Array.isArray(json?.items) ? json.items : [])
           setItems([])
-          setRecent([])
         } else {
           const params = new URLSearchParams()
           if (qTrim) params.set('q', qTrim)
           params.set('sort', normalizeVideoSort(sort))
           if (favoritesOnly) params.set('favorites_only', '1')
-          if (!qTrim && !favoritesOnly && normalizeVideoSort(sort) === 'newest') params.set('include_recent', '1')
           params.set('limit', '200')
           const res = await fetch(`/api/assets/videos?${params.toString()}`, {
             credentials: 'same-origin',
@@ -899,7 +896,6 @@ const VideoAssetsListPage: React.FC<{
           const json: VideoAssetsResponse | any = await res.json().catch(() => null)
           if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
           setItems(Array.isArray(json?.items) ? json.items : [])
-          setRecent(Array.isArray(json?.recent) ? json.recent : [])
           setClipItems([])
         }
       } catch (e: any) {
@@ -1005,7 +1001,6 @@ const VideoAssetsListPage: React.FC<{
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed')
         setItems((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
-        setRecent((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
       } catch (e: any) {
         window.alert(e?.message || 'Failed to favorite')
       } finally {
@@ -1114,7 +1109,6 @@ const VideoAssetsListPage: React.FC<{
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
                   setItems((prev) => prev.filter((x) => x.id !== u.id))
-                  setRecent((prev) => prev.filter((x) => x.id !== u.id))
                 } catch (e: any) {
                   window.alert(e?.message || 'Failed to delete')
                 }
@@ -1286,7 +1280,7 @@ const VideoAssetsListPage: React.FC<{
 
           <select
             value={sort}
-            onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'newest')))}
+            onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'recent')))}
             style={{
               flex: '0 0 auto',
               padding: '10px 12px',
@@ -1306,7 +1300,7 @@ const VideoAssetsListPage: React.FC<{
             <option value="duration_desc">Duration (long→short)</option>
             <option value="size_asc">Size (small→large)</option>
             <option value="size_desc">Size (large→small)</option>
-            <option value="recent">Recent</option>
+            <option value="recent">Recently Used</option>
           </select>
 
           {!isClipMode ? (
@@ -1325,16 +1319,9 @@ const VideoAssetsListPage: React.FC<{
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
         <div style={sharedCardListStyle}>
-        {!isClipMode && !q.trim() && !favoritesOnly && recent.length ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
-            <div className="card-list">{recent.map(renderCard)}</div>
+          <div className="card-list" style={{ marginTop: 16 }}>
+            {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
           </div>
-        ) : null}
-
-        <div className="card-list" style={{ marginTop: 16 }}>
-          {isClipMode ? sortedClipItems.map(renderClipCard) : sortedUploadItems.map(renderCard)}
-        </div>
         </div>
 
         {editUpload ? (
@@ -1343,7 +1330,6 @@ const VideoAssetsListPage: React.FC<{
             onClose={() => setEditUpload(null)}
             onSaved={({ name, description }) => {
               setItems((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
-              setRecent((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
             }}
           />
         ) : null}
@@ -1433,11 +1419,10 @@ const GraphicAssetsListPage: React.FC<{
   )
   const [me, setMe] = React.useState<MeResponse | null>(null)
   const [items, setItems] = React.useState<UploadListItem[]>([])
-  const [recent, setRecent] = React.useState<UploadListItem[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [q, setQ] = React.useState('')
-  const [sort, setSort] = React.useState<string>('newest')
+  const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
@@ -1474,7 +1459,6 @@ const GraphicAssetsListPage: React.FC<{
         if (qTrim) params.set('q', qTrim)
         params.set('sort', normalizeGraphicSort(sort))
         if (favoritesOnly) params.set('favorites_only', '1')
-        if (!qTrim && !favoritesOnly && normalizeGraphicSort(sort) === 'newest') params.set('include_recent', '1')
         params.set('limit', '200')
         const res = await fetch(`/api/assets/graphics?${params.toString()}`, {
           credentials: 'same-origin',
@@ -1483,7 +1467,6 @@ const GraphicAssetsListPage: React.FC<{
         const json: VideoAssetsResponse | any = await res.json().catch(() => null)
         if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
         setItems(Array.isArray(json?.items) ? json.items : [])
-        setRecent(Array.isArray(json?.recent) ? json.recent : [])
       } catch (e: any) {
         if (String(e?.name || '') === 'AbortError') return
         setError(e?.message || 'Failed to load')
@@ -1568,7 +1551,6 @@ const GraphicAssetsListPage: React.FC<{
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed')
         setItems((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
-        setRecent((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_favorite: nextFav } : x)))
       } catch (e: any) {
         window.alert(e?.message || 'Failed to favorite')
       } finally {
@@ -1679,7 +1661,6 @@ const GraphicAssetsListPage: React.FC<{
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
                   setItems((prev) => prev.filter((x) => x.id !== u.id))
-                  setRecent((prev) => prev.filter((x) => x.id !== u.id))
                 } catch (e: any) {
                   window.alert(e?.message || 'Failed to delete')
                 }
@@ -1754,7 +1735,7 @@ const GraphicAssetsListPage: React.FC<{
 
           <select
             value={sort}
-            onChange={(e) => setSort(normalizeGraphicSort(String((e.target as any).value || 'newest')))}
+            onChange={(e) => setSort(normalizeGraphicSort(String((e.target as any).value || 'recent')))}
             style={{
               flex: '0 0 auto',
               padding: '10px 12px',
@@ -1772,7 +1753,7 @@ const GraphicAssetsListPage: React.FC<{
             <option value="name_desc">Name Z→A</option>
             <option value="size_asc">Size (small→large)</option>
             <option value="size_desc">Size (large→small)</option>
-            <option value="recent">Recent</option>
+            <option value="recent">Recently Used</option>
           </select>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
@@ -1789,14 +1770,7 @@ const GraphicAssetsListPage: React.FC<{
         {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
 
         <div style={{ ...graphicCardListStyle }}>
-        {!q.trim() && !favoritesOnly && recent.length ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 900, color: '#ffd35a', marginBottom: 8 }}>Recent</div>
-            <div className="card-list">{recent.map(renderCard)}</div>
-          </div>
-        ) : null}
-
-        <div className="card-list" style={{ marginTop: 16 }}>{sortedItems.map(renderCard)}</div>
+          <div className="card-list" style={{ marginTop: 16 }}>{sortedItems.map(renderCard)}</div>
         </div>
 
         {editUpload ? (
@@ -1805,7 +1779,6 @@ const GraphicAssetsListPage: React.FC<{
             onClose={() => setEditUpload(null)}
             onSaved={({ name, description }) => {
               setItems((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
-              setRecent((prev) => prev.map((x) => (x.id === editUpload.id ? { ...x, modified_filename: name, description } : x)))
             }}
           />
         ) : null}
