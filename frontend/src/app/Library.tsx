@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import './styles/card-list.css'
+import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
+import nebulaBgImage from './images/nebula_bg.jpg'
 
 type MeResponse = {
   userId: number | null
@@ -194,10 +197,33 @@ const LibraryListPage: React.FC = () => {
     () => [{ value: 'all', label: 'All sources' }, ...sourceOptions],
     [sourceOptions]
   )
+  const cardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', padding: 20, position: 'relative', background: '#050508' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundImage: `url(${nebulaBgImage})`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 26 }}>Video Library</h1>
         </div>
@@ -258,7 +284,7 @@ const LibraryListPage: React.FC = () => {
         </div>
 
         <div style={{ marginTop: 18, display: 'grid', gap: 16 }}>
-          <div style={{ display: 'grid', gap: 12 }}>
+          <div className="card-list" style={cardListStyle}>
             {loading ? <div>Loading…</div> : null}
             {!loading && !videos.length ? <div>No library videos found.</div> : null}
             {videos.map((v) => {
@@ -284,18 +310,7 @@ const LibraryListPage: React.FC = () => {
                 : `/library/create-clip/${encodeURIComponent(String(v.id))}`
 
               return (
-                <div
-                  key={v.id}
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    background: 'rgba(28,28,28,0.95)',
-                    color: '#fff',
-                    display: 'grid',
-                    gap: 8,
-                  }}
-                >
+                <div key={v.id} className="card-item">
                   <button
                     type="button"
                     onClick={() => setSelectedInfo(v)}
@@ -304,14 +319,11 @@ const LibraryListPage: React.FC = () => {
                       margin: 0,
                       border: 'none',
                       background: 'transparent',
-                      color: '#fff',
                       textAlign: 'left',
-                      fontWeight: 800,
-                      fontSize: 16,
                       cursor: 'pointer',
                     }}
                   >
-                    {name}
+                    <div className="card-title" style={{ fontSize: 17 }}>{name}</div>
                   </button>
                   {meta ? <div style={{ color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
                   <div
@@ -334,36 +346,19 @@ const LibraryListPage: React.FC = () => {
                       }}
                     />
                   </div>
-                  {clippedDescription ? <div style={{ color: '#a8a8a8', fontSize: 13 }}>{clippedDescription}</div> : null}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {clippedDescription ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{clippedDescription}</div> : null}
+                  <div className="card-actions card-actions-right" style={{ flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={() => setSelectedView(v)}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: '#1a1a1a',
-                        color: '#fff',
-                        fontWeight: 700,
-                      }}
+                      className="card-btn card-btn-edit"
                     >
                       View Video
                     </button>
                     <a
                       href={clipHref}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: '#0a84ff',
-                        color: '#fff',
-                        fontWeight: 700,
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
+                      className="card-btn card-btn-open"
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     >
                       Create clip
                     </a>
