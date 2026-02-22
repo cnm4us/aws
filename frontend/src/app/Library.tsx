@@ -1060,8 +1060,21 @@ const LibraryCreateClipPageInner: React.FC = () => {
   }, [clipStart, clipEnd])
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', padding: 20 }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', background: '#050508', color: '#fff', position: 'relative' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundImage: `url(${nebulaBgImage})`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'grid', gap: 6 }}>
             <h1 style={{ margin: 0, fontSize: 26 }}>Create Clip</h1>
@@ -1075,7 +1088,18 @@ const LibraryCreateClipPageInner: React.FC = () => {
         {loading ? <div style={{ marginTop: 12 }}>Loading…</div> : null}
 
         {selectedVideo ? (
-          <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.14)', background: '#0c0c0c' }}>
+          <div
+            style={{
+              marginTop: 16,
+              padding: 16,
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.22)',
+              background: 'rgba(6,8,12,0.5)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              boxShadow: '0 18px 40px rgba(0,0,0,0.45)',
+            }}
+          >
             <div style={{ fontWeight: 900, fontSize: 18 }}>{selectedVideo.modified_filename || selectedVideo.original_filename}</div>
             {meta ? <div style={{ marginTop: 6, color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
             {selectedVideo.description ? (() => {
