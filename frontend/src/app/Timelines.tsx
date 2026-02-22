@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import listCardBgImage from './images/list_bg.png'
+import nebulaBgImage from './images/nebula_bg.jpg'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 
@@ -91,8 +91,8 @@ export default function Timelines() {
   const timelineCardListStyle = useMemo(
     () =>
       cardThemeStyle(
-        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.timelines, {
-          '--card-bg-image': `url(${listCardBgImage})`,
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, cardThemeTokens.timelines, {
+          '--card-bg-image': 'none',
         })
       ),
     []
@@ -438,8 +438,21 @@ export default function Timelines() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', position: 'relative', background: '#050508' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundImage: `url(${nebulaBgImage})`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/create-video" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Create Video
@@ -457,17 +470,15 @@ export default function Timelines() {
           <button
             type="button"
             onClick={openCreate}
+            className="card-btn card-btn-open"
             style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid rgba(10,132,255,0.55)',
-              background: '#0a84ff',
-              color: '#fff',
-              fontWeight: 900,
-              cursor: 'pointer',
+              marginLeft: 'auto',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            New Timeline
+            New
           </button>
         </div>
 
