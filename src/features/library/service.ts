@@ -391,3 +391,48 @@ export async function getLibraryClip(
   if (!canAccess) throw new ForbiddenError()
   return row
 }
+
+export async function updateLibraryClip(
+  clipId: number,
+  input: { title?: string | null; description?: string | null },
+  ctx: ServiceContext
+): Promise<{ id: number; title: string | null; description: string | null }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const id = Number(clipId)
+  if (!Number.isFinite(id) || id <= 0) throw new ValidationError('bad_id')
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM library_clips WHERE id = ? LIMIT 1`, [id])
+  const row = (rows as any[])[0]
+  if (!row) throw new NotFoundError('clip_not_found')
+  const userId = Number(ctx.userId)
+  if (Number(row.owner_user_id) !== userId) throw new ForbiddenError()
+  if (Number(row.is_system) === 1) throw new ForbiddenError()
+
+  const title = String(input.title || '').trim().slice(0, 255) || null
+  const description = String(input.description || '').trim().slice(0, 4000) || null
+  await db.query(
+    `UPDATE library_clips
+        SET title = ?, description = ?
+      WHERE id = ?`,
+    [title, description, id]
+  )
+  return { id, title, description }
+}
+
+export async function deleteLibraryClip(
+  clipId: number,
+  ctx: ServiceContext
+): Promise<{ ok: true }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const id = Number(clipId)
+  if (!Number.isFinite(id) || id <= 0) throw new ValidationError('bad_id')
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM library_clips WHERE id = ? LIMIT 1`, [id])
+  const row = (rows as any[])[0]
+  if (!row) throw new NotFoundError('clip_not_found')
+  const userId = Number(ctx.userId)
+  if (Number(row.owner_user_id) !== userId) throw new ForbiddenError()
+  if (Number(row.is_system) === 1) throw new ForbiddenError()
+  await db.query(`DELETE FROM library_clips WHERE id = ?`, [id])
+  return { ok: true }
+}

@@ -83,6 +83,190 @@ type MeResponse = {
   displayName: string | null
 }
 
+type EditClipModalProps = {
+  clip: LibraryClipItem
+  onClose: () => void
+  onSaved: (next: { title: string | null; description: string | null }) => void
+}
+
+const EditClipModal: React.FC<EditClipModalProps> = ({ clip, onClose, onSaved }) => {
+  const [name, setName] = React.useState<string>(clip.title || '')
+  const [description, setDescription] = React.useState<string>(clip.description || '')
+  const [saving, setSaving] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.72)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 24000,
+      }}
+      onClick={() => {
+        if (saving) return
+        onClose()
+      }}
+    >
+      <div
+        style={{
+          width: 'min(560px, 92vw)',
+          background: '#0b0b0b',
+          borderRadius: 16,
+          border: '1px solid rgba(255,255,255,0.18)',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          padding: 18,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>Edit Clip</div>
+            <div style={{ color: '#b9c1cc', fontSize: 13 }}>Update the clip title and description.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (saving) return
+              onClose()
+            }}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'rgba(0,0,0,0.35)',
+              color: '#fff',
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: saving ? 'default' : 'pointer',
+            }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 6, color: '#dfe5ee', fontSize: 13, fontWeight: 800 }}>
+            Title
+            <input
+              value={name}
+              onChange={(e) => setName(String((e.target as any).value || ''))}
+              placeholder="Clip title (optional)"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 900,
+                boxSizing: 'border-box',
+              }}
+              maxLength={255}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6, color: '#dfe5ee', fontSize: 13, fontWeight: 800 }}>
+            Description
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(String((e.target as any).value || ''))}
+              placeholder="Clip description (optional)"
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                resize: 'vertical',
+                fontSize: 14,
+                fontWeight: 900,
+                boxSizing: 'border-box',
+              }}
+              maxLength={2000}
+            />
+          </label>
+
+          {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: saving ? 'default' : 'pointer',
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                setError(null)
+                try {
+                  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                  const csrf = getCsrfToken()
+                  if (csrf) headers['x-csrf-token'] = csrf
+                  const res = await fetch(`/api/library/clips/${encodeURIComponent(String(clip.id))}`, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers,
+                    body: JSON.stringify({
+                      title: name.trim() || null,
+                      description: description.trim() || null,
+                    }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to save')
+                  onSaved({ title: name.trim() || null, description: description.trim() || null })
+                  onClose()
+                } catch (e: any) {
+                  setError(e?.message || 'Failed to save changes')
+                } finally {
+                  setSaving(false)
+                }
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(96,165,250,0.95)',
+                background: 'rgba(96,165,250,0.14)',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: saving ? 'default' : 'pointer',
+                opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type Mode = 'manage' | 'pick'
 
 type AssetType = {
@@ -853,13 +1037,23 @@ const VideoAssetsListPage: React.FC<{
   const [clipScope, setClipScope] = React.useState<'uploads' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
-  const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string } | null>(null)
+  const [editClip, setEditClip] = React.useState<LibraryClipItem | null>(null)
+  const [videoPreview, setVideoPreview] = React.useState<{ title: string; src: string; clipStart?: number; clipEnd?: number } | null>(null)
+  const clipVideoRef = React.useRef<HTMLVideoElement | null>(null)
+  const [clipPreviewTime, setClipPreviewTime] = React.useState(0)
+  const [clipPreviewPlaying, setClipPreviewPlaying] = React.useState(false)
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
   const allowClips = pickType === 'video' || pickType === 'videoOverlay'
   const isSharedMode = allowClips && clipScope === 'shared'
   const isClipMode = allowClips && clipScope === 'mine'
   const isUploadMode = clipScope === 'uploads'
+
+  const clipPreviewStart = videoPreview?.clipStart
+  const clipPreviewEnd = videoPreview?.clipEnd
+  const clipPreviewDuration =
+    clipPreviewStart != null && clipPreviewEnd != null ? Math.max(0, clipPreviewEnd - clipPreviewStart) : null
+  const isClipPreview = clipPreviewDuration != null
 
   React.useEffect(() => {
     if (!allowClips) setClipScope('uploads')
@@ -878,6 +1072,49 @@ const VideoAssetsListPage: React.FC<{
   React.useEffect(() => {
     if (!isUploadMode && favoritesOnly) setFavoritesOnly(false)
   }, [isUploadMode, favoritesOnly])
+
+  React.useEffect(() => {
+    if (!isClipPreview) {
+      setClipPreviewTime(0)
+      setClipPreviewPlaying(false)
+      return
+    }
+    const video = clipVideoRef.current
+    if (!video || clipPreviewStart == null || clipPreviewEnd == null) return
+    const handleLoaded = () => {
+      try {
+        video.currentTime = clipPreviewStart
+        setClipPreviewTime(0)
+      } catch {}
+    }
+    const handleTime = () => {
+      if (!Number.isFinite(video.currentTime)) return
+      if (video.currentTime < clipPreviewStart) {
+        video.currentTime = clipPreviewStart
+      }
+      if (video.currentTime >= clipPreviewEnd - 0.01) {
+        video.pause()
+        video.currentTime = clipPreviewEnd
+        setClipPreviewPlaying(false)
+        setClipPreviewTime(clipPreviewDuration || 0)
+        return
+      }
+      const next = Math.max(0, Math.min(clipPreviewDuration || 0, video.currentTime - clipPreviewStart))
+      setClipPreviewTime(next)
+    }
+    const handlePlay = () => setClipPreviewPlaying(true)
+    const handlePause = () => setClipPreviewPlaying(false)
+    video.addEventListener('loadedmetadata', handleLoaded)
+    video.addEventListener('timeupdate', handleTime)
+    video.addEventListener('play', handlePlay)
+    video.addEventListener('pause', handlePause)
+    return () => {
+      video.removeEventListener('loadedmetadata', handleLoaded)
+      video.removeEventListener('timeupdate', handleTime)
+      video.removeEventListener('play', handlePlay)
+      video.removeEventListener('pause', handlePause)
+    }
+  }, [isClipPreview, clipPreviewStart, clipPreviewEnd, clipPreviewDuration])
 
   const backHref = useMemo(() => {
     const base = '/assets'
@@ -1183,7 +1420,9 @@ const VideoAssetsListPage: React.FC<{
     const previewAspect = isPortrait ? '9 / 16' : '16 / 9'
     const previewFit = isPortrait ? 'contain' : 'cover'
     const start = Number(c.start_seconds || 0)
+    const end = Number(c.end_seconds || 0)
     const previewSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy#t=${(start + 0.1).toFixed(1)}`
+    const playbackSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy`
     const isPick = mode === 'pick'
     return (
       <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
@@ -1218,7 +1457,7 @@ const VideoAssetsListPage: React.FC<{
             overflow: 'hidden',
             cursor: 'pointer',
           }}
-          onClick={() => setVideoPreview({ title: name, src: previewSrc })}
+          onClick={() => setVideoPreview({ title: name, src: playbackSrc, clipStart: start, clipEnd: end })}
         >
           <video
             preload="metadata"
@@ -1228,6 +1467,44 @@ const VideoAssetsListPage: React.FC<{
           />
         </div>
         {c.description ? <div style={{ marginTop: 8, color: '#a8a8a8', fontSize: 13 }}>{c.description}</div> : null}
+        {!isPick ? (
+          <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 10 }}>
+            <button
+              className="card-btn card-btn-delete"
+              type="button"
+              onClick={async () => {
+                const ok = window.confirm('Delete this clip? This cannot be undone.')
+                if (!ok) return
+                try {
+                  const headers: Record<string, string> = {}
+                  const csrf = getCsrfToken()
+                  if (csrf) headers['x-csrf-token'] = csrf
+                  const res = await fetch(`/api/library/clips/${encodeURIComponent(String(c.id))}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers,
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                  setClipItems((prev) => prev.filter((x) => x.id !== c.id))
+                } catch (e: any) {
+                  window.alert(e?.message || 'Failed to delete')
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              Delete
+            </button>
+            <button
+              className="card-btn card-btn-edit"
+              type="button"
+              onClick={() => setEditClip(c)}
+              style={{ cursor: 'pointer' }}
+            >
+              Edit
+            </button>
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -1377,6 +1654,18 @@ const VideoAssetsListPage: React.FC<{
               />
             ) : null}
 
+            {editClip ? (
+              <EditClipModal
+                clip={editClip}
+                onClose={() => setEditClip(null)}
+                onSaved={({ title, description }) => {
+                  setClipItems((prev) =>
+                    prev.map((x) => (x.id === editClip.id ? { ...x, title, description } : x))
+                  )
+                }}
+              />
+            ) : null}
+
             {videoPreview ? (
               <div
                 role="dialog"
@@ -1422,20 +1711,88 @@ const VideoAssetsListPage: React.FC<{
                     </button>
                   </div>
                   <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <video
-                      controls
-                      playsInline
-                      preload="metadata"
-                      src={videoPreview.src}
-                      style={{
-                        width: '100%',
-                        maxHeight: '72vh',
-                        background: '#000',
-                        borderRadius: 12,
-                        objectFit: 'contain',
-                        display: 'block',
-                      }}
-                    />
+                    {isClipPreview ? (
+                      <div style={{ width: '100%' }}>
+                        <video
+                          ref={clipVideoRef}
+                          playsInline
+                          preload="metadata"
+                          src={videoPreview.src}
+                          style={{
+                            width: '100%',
+                            maxHeight: '60vh',
+                            background: '#000',
+                            borderRadius: 12,
+                            objectFit: 'contain',
+                            display: 'block',
+                          }}
+                        />
+                        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const vid = clipVideoRef.current
+                              if (!vid) return
+                              if (vid.paused) {
+                                if (clipPreviewStart != null && vid.currentTime < clipPreviewStart) {
+                                  vid.currentTime = clipPreviewStart
+                                }
+                                vid.play().catch(() => {})
+                              } else {
+                                vid.pause()
+                              }
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: 10,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              background: 'rgba(255,255,255,0.06)',
+                              color: '#fff',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {clipPreviewPlaying ? 'Pause' : 'Play'}
+                          </button>
+                          <div style={{ color: '#cfd6e3', fontSize: 13, minWidth: 120 }}>
+                            {formatDuration(Math.floor(clipPreviewTime))} / {formatDuration(Math.floor(clipPreviewDuration || 0))}
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(0.1, clipPreviewDuration || 0)}
+                            step={0.1}
+                            value={Math.min(clipPreviewTime, clipPreviewDuration || 0)}
+                            onChange={(e) => {
+                              const vid = clipVideoRef.current
+                              if (!vid || clipPreviewStart == null) return
+                              const next = Number((e.target as any).value || 0)
+                              const seekTo = clipPreviewStart + next
+                              try {
+                                vid.currentTime = seekTo
+                              } catch {}
+                              setClipPreviewTime(next)
+                            }}
+                            style={{ flex: '1 1 180px' }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <video
+                        controls
+                        playsInline
+                        preload="metadata"
+                        src={videoPreview.src}
+                        style={{
+                          width: '100%',
+                          maxHeight: '72vh',
+                          background: '#000',
+                          borderRadius: 12,
+                          objectFit: 'contain',
+                          display: 'block',
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>

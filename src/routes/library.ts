@@ -105,6 +105,38 @@ libraryRouter.get('/api/library/clips/:id', requireAuth, async (req, res) => {
   }
 })
 
+libraryRouter.patch('/api/library/clips/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const body = (req.body || {}) as any
+    const data = await librarySvc.updateLibraryClip(
+      id,
+      {
+        title: body.title != null ? String(body.title) : undefined,
+        description: body.description != null ? String(body.description) : undefined,
+      },
+      { userId: Number(req.user!.id) }
+    )
+    return res.json({ clip: data })
+  } catch (err: any) {
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_update', detail: String(err?.message || err) })
+  }
+})
+
+libraryRouter.delete('/api/library/clips/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const data = await librarySvc.deleteLibraryClip(id, { userId: Number(req.user!.id) })
+    return res.json(data)
+  } catch (err: any) {
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_delete', detail: String(err?.message || err) })
+  }
+})
+
 libraryRouter.post('/api/library/clips', requireAuth, async (req, res) => {
   try {
     const body = (req.body || {}) as any
