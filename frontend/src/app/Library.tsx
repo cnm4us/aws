@@ -36,6 +36,190 @@ type LibrarySourceOption = {
   label: string
 }
 
+type EditLibraryVideoModalProps = {
+  video: LibraryVideo
+  onClose: () => void
+  onSaved: (next: { title: string | null; description: string | null }) => void
+}
+
+const EditLibraryVideoModal: React.FC<EditLibraryVideoModalProps> = ({ video, onClose, onSaved }) => {
+  const [name, setName] = useState<string>(String(video.modified_filename || video.original_filename || ''))
+  const [description, setDescription] = useState<string>(String(video.description || ''))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.72)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 24000,
+      }}
+      onClick={() => {
+        if (saving) return
+        onClose()
+      }}
+    >
+      <div
+        style={{
+          width: 'min(560px, 92vw)',
+          background: '#0b0b0b',
+          borderRadius: 16,
+          border: '1px solid rgba(255,255,255,0.18)',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          padding: 18,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>Edit Video</div>
+            <div style={{ color: '#b9c1cc', fontSize: 13 }}>Update the title and description.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (saving) return
+              onClose()
+            }}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.2)',
+              background: 'rgba(0,0,0,0.35)',
+              color: '#fff',
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: saving ? 'default' : 'pointer',
+            }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 6, color: '#dfe5ee', fontSize: 13, fontWeight: 800 }}>
+            Title
+            <input
+              value={name}
+              onChange={(e) => setName(String((e.target as any).value || ''))}
+              placeholder="Video title (optional)"
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 900,
+                boxSizing: 'border-box',
+              }}
+              maxLength={255}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6, color: '#dfe5ee', fontSize: 13, fontWeight: 800 }}>
+            Description
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(String((e.target as any).value || ''))}
+              placeholder="Video description (optional)"
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                resize: 'vertical',
+                fontSize: 14,
+                fontWeight: 900,
+                boxSizing: 'border-box',
+              }}
+              maxLength={2000}
+            />
+          </label>
+
+          {error ? <div style={{ color: '#ff9b9b' }}>{error}</div> : null}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: saving ? 'default' : 'pointer',
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                setError(null)
+                try {
+                  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                  const csrf = getCsrfToken()
+                  if (csrf) headers['x-csrf-token'] = csrf
+                  const res = await fetch(`/api/uploads/${encodeURIComponent(String(video.id))}`, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers,
+                    body: JSON.stringify({
+                      name: name.trim() || null,
+                      description: description.trim() || null,
+                    }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to save')
+                  onSaved({ title: name.trim() || null, description: description.trim() || null })
+                  onClose()
+                } catch (e: any) {
+                  setError(e?.message || 'Failed to save changes')
+                } finally {
+                  setSaving(false)
+                }
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(96,165,250,0.95)',
+                background: 'rgba(96,165,250,0.14)',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: saving ? 'default' : 'pointer',
+                opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 async function ensureLoggedIn(): Promise<MeResponse | null> {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' })
@@ -155,6 +339,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
   const [sharedScope, setSharedScope] = useState<'system' | 'users'>(defaultSharedScope)
   const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
   const [selectedInfo, setSelectedInfo] = useState<LibraryVideo | null>(null)
+  const [editVideo, setEditVideo] = useState<LibraryVideo | null>(null)
   const sourceOptions = useLibrarySourceOptions()
 
   useEffect(() => {
@@ -406,21 +591,55 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                     />
                   </div>
                   {clippedDescription ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{clippedDescription}</div> : null}
-                  <div className="card-actions card-actions-right" style={{ flexWrap: 'wrap' }}>
+                  <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      onClick={() => setSelectedView(v)}
-                      className="card-btn card-btn-edit"
+                      onClick={async () => {
+                        const ok = window.confirm('Delete this video? This cannot be undone.')
+                        if (!ok) return
+                        try {
+                          const headers: Record<string, string> = {}
+                          const csrf = getCsrfToken()
+                          if (csrf) headers['x-csrf-token'] = csrf
+                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(v.id))}`, {
+                            method: 'DELETE',
+                            credentials: 'same-origin',
+                            headers,
+                          })
+                          const data = await res.json().catch(() => ({}))
+                          if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                          setVideos((prev) => prev.filter((x) => x.id !== v.id))
+                        } catch (e: any) {
+                          window.alert(e?.message || 'Failed to delete')
+                        }
+                      }}
+                      className="card-btn card-btn-delete"
                     >
-                      View Video
+                      Delete
                     </button>
-                    <a
-                      href={clipHref}
-                      className="card-btn card-btn-open"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                    >
-                      Create clip
-                    </a>
+                    <div className="card-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditVideo(v)}
+                        className="card-btn card-btn-edit"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedView(v)}
+                        className="card-btn card-btn-edit"
+                      >
+                        View
+                      </button>
+                      <a
+                        href={clipHref}
+                        className="card-btn card-btn-open"
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        Clip
+                      </a>
+                    </div>
                   </div>
                 </div>
               )
@@ -535,6 +754,22 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
             </div>
           </div>
         ) : null}
+
+        {editVideo ? (
+          <EditLibraryVideoModal
+            video={editVideo}
+            onClose={() => setEditVideo(null)}
+            onSaved={({ title, description }) => {
+              setVideos((prev) =>
+                prev.map((x) =>
+                  x.id === editVideo.id
+                    ? { ...x, modified_filename: title || x.modified_filename, description }
+                    : x
+                )
+              )
+            }}
+          />
+        ) : null}
     </>
   )
 
@@ -588,6 +823,9 @@ const LibraryCreateClipPageInner: React.FC = () => {
   const [clipError, setClipError] = useState<string | null>(null)
   const [clipSaving, setClipSaving] = useState(false)
   const [clipMessage, setClipMessage] = useState<string | null>(null)
+  const [editVideo, setEditVideo] = useState<LibraryVideo | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const clipEditorRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const waveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const wavePollRef = useRef<number | null>(null)
@@ -605,20 +843,27 @@ const LibraryCreateClipPageInner: React.FC = () => {
     return path.startsWith('/assets/shared/create-clip/')
   }, [])
 
+  const backScope = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    const scope = String(params.get('scope') || '').trim().toLowerCase()
+    if (scope === 'uploads' || scope === 'mine' || scope === 'shared') return scope
+    return null
+  }, [])
+
   const backHref = useMemo(() => {
     const params = new URLSearchParams(window.location.search)
     const qParam = params.get('q') || ''
     const sourceParam = params.get('source_org') || params.get('sourceOrg') || ''
     const sharedScopeParam = params.get('shared_scope') || params.get('sharedScope') || ''
     const backParams = new URLSearchParams()
-    if (isSharedRoute) backParams.set('scope', 'shared')
+    if (isSharedRoute) backParams.set('scope', backScope || 'shared')
     if (qParam) backParams.set('q', qParam)
     if (sourceParam) backParams.set('source_org', sourceParam)
     if (sharedScopeParam && sharedScopeParam !== 'system') backParams.set('shared_scope', sharedScopeParam)
     const qs = backParams.toString()
     const basePath = isSharedRoute ? '/assets/video' : '/library'
     return qs ? `${basePath}?${qs}` : basePath
-  }, [isSharedRoute])
+  }, [isSharedRoute, backScope])
 
   const selectedId = useMemo(() => {
     const match = window.location.pathname.match(/\/(library|assets\/shared)\/create-clip\/(\d+)/)
@@ -1033,6 +1278,9 @@ const LibraryCreateClipPageInner: React.FC = () => {
   const playerSrc = selectedVideo?.id
     ? `/api/uploads/${encodeURIComponent(String(selectedVideo.id))}/edit-proxy#t=0.1`
     : ''
+  const previewSrc = selectedVideo?.id
+    ? `/api/uploads/${encodeURIComponent(String(selectedVideo.id))}/edit-proxy#t=0.1`
+    : ''
 
   const meta = useMemo(() => {
     if (!selectedVideo) return ''
@@ -1079,7 +1327,13 @@ const LibraryCreateClipPageInner: React.FC = () => {
           <div style={{ display: 'grid', gap: 6 }}>
             <h1 style={{ margin: 0, fontSize: 26 }}>Create Clip</h1>
             <a href={backHref} style={{ color: '#9bbcff', textDecoration: 'none', fontSize: 14 }}>
-              {isSharedRoute ? '← Back to shared videos' : '← Back to library'}
+              {isSharedRoute
+                ? backScope === 'uploads'
+                  ? '← Back to uploads'
+                  : backScope === 'mine'
+                    ? '← Back to my clips'
+                    : '← Back to shared videos'
+                : '← Back to library'}
             </a>
           </div>
         </div>
@@ -1216,6 +1470,58 @@ const LibraryCreateClipPageInner: React.FC = () => {
                   background: `linear-gradient(90deg, #f0c062 ${progressPercent}%, rgba(255,255,255,0.2) ${progressPercent}%)`,
                 }}
               />
+            </div>
+
+            <div className="card-actions card-actions-spread" style={{ flexWrap: 'wrap', marginTop: 10 }}>
+              <button
+                type="button"
+                className="card-btn card-btn-delete"
+                onClick={async () => {
+                  if (!selectedVideo?.id) return
+                  const ok = window.confirm('Delete this video? This cannot be undone.')
+                  if (!ok) return
+                  try {
+                    const headers: Record<string, string> = {}
+                    const csrf = getCsrfToken()
+                    if (csrf) headers['x-csrf-token'] = csrf
+                    const res = await fetch(`/api/uploads/${encodeURIComponent(String(selectedVideo.id))}`, {
+                      method: 'DELETE',
+                      credentials: 'same-origin',
+                      headers,
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed to delete')
+                    window.location.href = backHref
+                  } catch (e: any) {
+                    window.alert(e?.message || 'Failed to delete')
+                  }
+                }}
+              >
+                Delete
+              </button>
+              <div className="card-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="card-btn card-btn-edit"
+                  onClick={() => setEditVideo(selectedVideo)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="card-btn card-btn-edit"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  View
+                </button>
+                <button
+                  type="button"
+                  className="card-btn card-btn-open"
+                  onClick={() => clipEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                >
+                  Clip
+                </button>
+              </div>
             </div>
 
             <div style={{ marginTop: 10 }}>
@@ -1478,7 +1784,7 @@ const LibraryCreateClipPageInner: React.FC = () => {
               ) : null}
             </div>
 
-            <div style={{ marginTop: 20, display: 'grid', gap: 10 }}>
+            <div ref={clipEditorRef} style={{ marginTop: 20, display: 'grid', gap: 10 }}>
               <div style={{ fontWeight: 800 }}>Create Clip</div>
               <div style={{ display: 'grid', gap: 8 }}>
                 <input
@@ -1541,6 +1847,84 @@ const LibraryCreateClipPageInner: React.FC = () => {
               </div>
             </div>
           </div>
+        ) : null}
+
+        {previewOpen && selectedVideo ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+            onClick={() => setPreviewOpen(false)}
+          >
+            <div
+              style={{
+                position: 'fixed',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 'min(92vw, 900px)',
+                maxHeight: '82vh',
+                background: '#0b0b0b',
+                border: '1px solid rgba(255,255,255,0.18)',
+                borderRadius: 16,
+                padding: 12,
+                boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedVideo.modified_filename || selectedVideo.original_filename}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(0,0,0,0.35)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={previewSrc}
+                  style={{
+                    width: '100%',
+                    maxHeight: '72vh',
+                    background: '#000',
+                    borderRadius: 12,
+                    objectFit: 'contain',
+                    display: 'block',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {editVideo ? (
+          <EditLibraryVideoModal
+            video={editVideo}
+            onClose={() => setEditVideo(null)}
+            onSaved={({ title, description }) => {
+              setSelectedVideo((prev) =>
+                prev && prev.id === editVideo.id
+                  ? { ...prev, modified_filename: title || prev.modified_filename, description }
+                  : prev
+              )
+            }}
+          />
         ) : null}
       </div>
     </div>

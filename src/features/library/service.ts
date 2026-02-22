@@ -145,18 +145,19 @@ async function readS3ObjectText(bucket: string, key: string): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-async function ensureSystemLibraryUpload(uploadId: number): Promise<void> {
+async function ensureLibraryVideoAccess(uploadId: number, ctx: ServiceContext): Promise<void> {
+  if (!ctx.userId) throw new ForbiddenError()
   const db = getPool()
   const [rows] = await db.query(
     `SELECT id
        FROM uploads
       WHERE id = ?
-        AND is_system_library = 1
         AND kind = 'video'
         AND status IN ('uploaded','completed')
         AND source_deleted_at IS NULL
+        AND (is_system_library = 1 OR user_id = ?)
       LIMIT 1`,
-    [uploadId]
+    [uploadId, Number(ctx.userId)]
   )
   const row = (rows as any[])[0]
   if (!row) throw new NotFoundError('upload_not_found')
@@ -203,7 +204,17 @@ export async function listSystemLibraryVideos(
 export async function getSystemLibraryVideo(uploadId: number, ctx: ServiceContext): Promise<any> {
   if (!ctx.userId) throw new ForbiddenError()
   const db = getPool()
-  const [rows] = await db.query(`SELECT * FROM uploads WHERE id = ? AND is_system_library = 1 LIMIT 1`, [uploadId])
+  const [rows] = await db.query(
+    `SELECT *
+       FROM uploads
+      WHERE id = ?
+        AND kind = 'video'
+        AND status IN ('uploaded','completed')
+        AND source_deleted_at IS NULL
+        AND (is_system_library = 1 OR user_id = ?)
+      LIMIT 1`,
+    [uploadId, Number(ctx.userId)]
+  )
   const row = (rows as any[])[0]
   if (!row) throw new NotFoundError('not_found')
   return row
@@ -218,7 +229,7 @@ export async function searchLibraryTranscript(
   if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('bad_id')
   const q = String(input.q || '').trim()
   if (!q) return { items: [] }
-  await ensureSystemLibraryUpload(uploadId)
+  await ensureLibraryVideoAccess(uploadId, ctx)
   const queryTokens = normalizeTokens(q)
   if (!queryTokens.length) return { items: [] }
 
@@ -252,7 +263,7 @@ export async function getLibraryCaptions(
   if (!ctx.userId) throw new ForbiddenError()
   const id = Number(uploadId)
   if (!Number.isFinite(id) || id <= 0) throw new ValidationError('bad_id')
-  await ensureSystemLibraryUpload(id)
+  await ensureLibraryVideoAccess(id, ctx)
   const caps = await captionsRepo.getByUploadId(id)
   if (!caps || !caps.s3_bucket || !caps.s3_key || caps.status !== 'ready') return { items: [] }
   const vtt = await readS3ObjectText(String(caps.s3_bucket), String(caps.s3_key))

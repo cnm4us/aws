@@ -1391,14 +1391,36 @@ const VideoAssetsListPage: React.FC<{
             >
               Delete
             </button>
-            <button
-              className="card-btn card-btn-edit"
-              type="button"
-              onClick={() => setEditUpload(u)}
-              style={{ cursor: 'pointer' }}
-            >
-              Edit
-            </button>
+            <div className="card-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                className="card-btn card-btn-edit"
+                type="button"
+                onClick={() => setEditUpload(u)}
+                style={{ cursor: 'pointer' }}
+              >
+                Edit
+              </button>
+              <button
+                className="card-btn card-btn-edit"
+                type="button"
+                onClick={() =>
+                  setVideoPreview({
+                    title: name,
+                    src: `/api/uploads/${encodeURIComponent(String(u.id))}/edit-proxy#t=0.1`,
+                  })
+                }
+                style={{ cursor: 'pointer' }}
+              >
+                View
+              </button>
+              <a
+                href={withParams(`/assets/shared/create-clip/${encodeURIComponent(String(u.id))}`, { scope: 'uploads' })}
+                className="card-btn card-btn-open"
+                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                Clip
+              </a>
+            </div>
           </div>
         )}
       </div>
