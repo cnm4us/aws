@@ -285,77 +285,87 @@ const EditUploadModal: React.FC<{
         position: 'fixed',
         inset: 0,
         zIndex: 22000,
-        background: 'rgba(0,0,0,0.65)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
+        background: 'rgba(0,0,0,0.86)',
+        display: 'block',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: '64px 16px 80px',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(720px, 100%)',
-          borderRadius: 16,
-          background: '#0b0b0b',
-          border: '1px solid rgba(255,255,255,0.14)',
+          maxWidth: 560,
+          margin: '0 auto',
+          borderRadius: 14,
+          border: '1px solid rgba(96,165,250,0.95)',
+          background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
           padding: 16,
           color: '#fff',
+          boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Edit</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>Edit</div>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
             style={{
-              padding: '8px 10px',
+              padding: '8px 12px',
               borderRadius: 10,
               border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0c0c0c',
+              background: 'rgba(255,255,255,0.06)',
               color: '#fff',
-              fontWeight: 700,
+              fontWeight: 800,
               cursor: saving ? 'default' : 'pointer',
               opacity: saving ? 0.6 : 1,
             }}
           >
-            ✕
+            Close
           </button>
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
           <label style={{ display: 'grid', gap: 6 }}>
-            <div style={{ color: '#bbb', fontWeight: 700 }}>Name</div>
+            <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Name</div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{
                 width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
                 padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: '#0c0c0c',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
                 color: '#fff',
+                fontSize: 14,
+                fontWeight: 900,
               }}
               maxLength={512}
             />
           </label>
 
           <label style={{ display: 'grid', gap: 6 }}>
-            <div style={{ color: '#bbb', fontWeight: 700 }}>Description</div>
+            <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Description</div>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               style={{
                 width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
                 padding: '10px 12px',
                 minHeight: 120,
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: '#0c0c0c',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
                 color: '#fff',
                 resize: 'vertical',
+                fontSize: 14,
+                fontWeight: 900,
               }}
               maxLength={2000}
             />
@@ -370,9 +380,9 @@ const EditUploadModal: React.FC<{
               onClick={onClose}
               style={{
                 padding: '10px 12px',
-                borderRadius: 12,
+                borderRadius: 10,
                 border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0c0c0c',
+                background: 'rgba(255,255,255,0.06)',
                 color: '#fff',
                 fontWeight: 800,
                 cursor: saving ? 'default' : 'pointer',
@@ -414,9 +424,9 @@ const EditUploadModal: React.FC<{
               }}
               style={{
                 padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: '#0a84ff',
+                borderRadius: 10,
+                border: '1px solid rgba(96,165,250,0.95)',
+                background: 'rgba(96,165,250,0.14)',
                 color: '#fff',
                 fontWeight: 900,
                 cursor: saving ? 'default' : 'pointer',
@@ -2547,79 +2557,87 @@ const NarrationAssetsPage: React.FC = () => {
               position: 'fixed',
               inset: 0,
               zIndex: 22000,
-              background: 'rgba(0,0,0,0.65)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 16,
+              background: 'rgba(0,0,0,0.86)',
+              display: 'block',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: '64px 16px 80px',
             }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                width: 'min(720px, 100%)',
-                borderRadius: 16,
-                background: '#0b0b0b',
-                border: '1px solid rgba(255,255,255,0.14)',
+                maxWidth: 560,
+                margin: '0 auto',
+                borderRadius: 14,
+                background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                border: '1px solid rgba(96,165,250,0.95)',
                 padding: 16,
                 color: '#fff',
+                boxSizing: 'border-box',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 900 }}>Edit narration</div>
                 <button
                   type="button"
                   onClick={() => setEdit(null)}
                   disabled={saving}
                   style={{
-                    padding: '8px 10px',
+                    padding: '8px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#0c0c0c',
+                    background: 'rgba(255,255,255,0.06)',
                     color: '#fff',
                     fontWeight: 800,
                     cursor: saving ? 'default' : 'pointer',
                     opacity: saving ? 0.7 : 1,
                   }}
                 >
-                  ✕
+                  Close
                 </button>
               </div>
 
               {saveError ? <div style={{ color: '#ff9b9b', marginBottom: 10 }}>{saveError}</div> : null}
               <div style={{ display: 'grid', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 800 }}>Name</div>
+                  <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Name</div>
                   <input
                     value={edit.name}
                     onChange={(e) => setEdit((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      background: '#0c0c0c',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
                       color: '#fff',
-                      fontSize: 16,
+                      fontSize: 14,
+                      fontWeight: 900,
                     }}
                     maxLength={512}
                   />
                 </label>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 800 }}>Description</div>
+                  <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Description</div>
                   <textarea
                     value={edit.description}
                     onChange={(e) => setEdit((prev) => (prev ? { ...prev, description: e.target.value } : prev))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       minHeight: 120,
                       padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      background: '#0c0c0c',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
                       color: '#fff',
                       resize: 'vertical',
-                      fontSize: 16,
+                      fontSize: 14,
+                      fontWeight: 900,
                     }}
                     maxLength={2000}
                   />
@@ -2632,10 +2650,10 @@ const NarrationAssetsPage: React.FC = () => {
                   disabled={saving}
                   onClick={editSave}
                   style={{
-                    padding: '10px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: '#0a84ff',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    background: 'rgba(96,165,250,0.14)',
                     color: '#fff',
                     fontWeight: 900,
                     cursor: saving ? 'default' : 'pointer',
@@ -3507,79 +3525,87 @@ const AudioMusicAssetsPage: React.FC = () => {
               position: 'fixed',
               inset: 0,
               zIndex: 22000,
-              background: 'rgba(0,0,0,0.65)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 16,
+              background: 'rgba(0,0,0,0.86)',
+              display: 'block',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: '64px 16px 80px',
             }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                width: 'min(720px, 100%)',
-                borderRadius: 16,
-                background: '#0b0b0b',
-                border: '1px solid rgba(255,255,255,0.14)',
+                maxWidth: 560,
+                margin: '0 auto',
+                borderRadius: 14,
+                background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                border: '1px solid rgba(96,165,250,0.95)',
                 padding: 16,
                 color: '#fff',
+                boxSizing: 'border-box',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 900 }}>Edit audio</div>
                 <button
                   type="button"
                   onClick={() => setEdit(null)}
                   disabled={saving}
                   style={{
-                    padding: '8px 10px',
+                    padding: '8px 12px',
                     borderRadius: 10,
                     border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#0c0c0c',
+                    background: 'rgba(255,255,255,0.06)',
                     color: '#fff',
                     fontWeight: 800,
                     cursor: saving ? 'default' : 'pointer',
                     opacity: saving ? 0.7 : 1,
                   }}
                 >
-                  ✕
+                  Close
                 </button>
               </div>
 
               {saveError ? <div style={{ color: '#ff9b9b', marginBottom: 10 }}>{saveError}</div> : null}
               <div style={{ display: 'grid', gap: 10 }}>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 800 }}>Name</div>
+                  <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Name</div>
                   <input
                     value={edit.name}
                     onChange={(e) => setEdit((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      background: '#0c0c0c',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
                       color: '#fff',
-                      fontSize: 16,
+                      fontSize: 14,
+                      fontWeight: 900,
                     }}
                     maxLength={512}
                   />
                 </label>
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#bbb', fontWeight: 800 }}>Description</div>
+                  <div style={{ color: '#bbb', fontWeight: 900, fontSize: 13 }}>Description</div>
                   <textarea
                     value={edit.description}
                     onChange={(e) => setEdit((prev) => (prev ? { ...prev, description: e.target.value } : prev))}
                     style={{
                       width: '100%',
+                      maxWidth: '100%',
+                      boxSizing: 'border-box',
                       minHeight: 120,
                       padding: '10px 12px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      background: '#0c0c0c',
+                      borderRadius: 10,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      background: '#0b0b0b',
                       color: '#fff',
                       resize: 'vertical',
-                      fontSize: 16,
+                      fontSize: 14,
+                      fontWeight: 900,
                     }}
                     maxLength={2000}
                   />
@@ -3592,10 +3618,10 @@ const AudioMusicAssetsPage: React.FC = () => {
                   disabled={saving}
                   onClick={editSave}
                   style={{
-                    padding: '10px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(10,132,255,0.55)',
-                    background: '#0a84ff',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    background: 'rgba(96,165,250,0.14)',
                     color: '#fff',
                     fontWeight: 900,
                     cursor: saving ? 'default' : 'pointer',
