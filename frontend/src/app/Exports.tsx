@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import './styles/card-list.css'
+import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
+import nebulaBgImage from './images/nebula_bg.jpg'
 
 type MeResponse = {
   userId: number | null
@@ -75,6 +78,16 @@ function getCsrfToken(): string | null {
 }
 
 export default function Exports() {
+  const exportsCardListStyle = useMemo(
+    () =>
+      cardThemeStyle(
+        mergeCardThemeVars(cardThemeTokens.base, cardThemeTokens.assetsGlass, {
+          '--card-list-gap': '14px',
+          '--card-bg-image': 'none',
+        })
+      ),
+    []
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [me, setMe] = useState<MeResponse | null>(null)
@@ -319,9 +332,22 @@ export default function Exports() {
   }
 
   if (loading) {
-	  return (
-	    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-	      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    return (
+      <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', position: 'relative', background: '#050508' }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundImage: `url(${nebulaBgImage})`,
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: 'cover',
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        />
+        <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>Exports</h1>
           <p style={{ color: '#bbb' }}>Loading…</p>
         </div>
@@ -331,8 +357,21 @@ export default function Exports() {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+      <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', position: 'relative', background: '#050508' }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundImage: `url(${nebulaBgImage})`,
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: 'cover',
+            zIndex: 0,
+            pointerEvents: 'none',
+          }}
+        />
+        <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>Exports</h1>
           <p style={{ color: '#ff9b9b' }}>{error}</p>
         </div>
@@ -341,8 +380,21 @@ export default function Exports() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+    <div style={{ minHeight: '100vh', color: '#fff', fontFamily: 'system-ui, sans-serif', position: 'relative', background: '#050508' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundImage: `url(${nebulaBgImage})`,
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <a href="/create-video" style={{ color: '#0a84ff', textDecoration: 'none' }}>
             ← Back to Timeline
@@ -355,7 +407,7 @@ export default function Exports() {
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Exports</h1>
 	        <p style={{ margin: 0, color: '#bbb' }}>Rendered MP4s from Create Video. Prep for Publish (HLS) when ready.</p>
 
-	        <div style={{ marginTop: 16, display: 'grid', gap: 14 }}>
+	        <div className="card-list" style={{ ...exportsCardListStyle, marginTop: 16 }}>
           {exportsList.map((u) => {
             const projectId = u.create_video_project_id != null ? Number(u.create_video_project_id) : null
             const project = projectId != null ? projectsById.get(projectId) : undefined
@@ -383,17 +435,8 @@ export default function Exports() {
                     ? { label: 'Prep: Failed', tone: 'red' as const }
                     : { label: 'Prep: Not started', tone: 'gray' as const }
             const pubChip = hls.publishedCount > 0 ? { label: 'Published: Yes', tone: 'green' as const } : { label: 'Published: No', tone: 'gray' as const }
-            return (
-              <div
-                key={u.id}
-                style={{
-                  border: cardBorderFor(u),
-                  background: 'linear-gradient(180deg, rgba(128,0,32,0.42) 0%, rgba(80,0,18,0.24) 100%)',
-                  borderRadius: 12,
-                  overflow: 'hidden',
-                  position: 'relative',
-                }}
-              >
+              return (
+              <div key={u.id} className="card-item" style={{ border: cardBorderFor(u), position: 'relative' }}>
                 <button
                   type="button"
                   aria-label="Export actions"
@@ -430,8 +473,8 @@ export default function Exports() {
                   ⚙
                 </button>
                 <div style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>{title}</div>
-                  <div style={{ color: '#9a9a9a', fontSize: 13 }}>
+                  <div className="card-title" style={{ fontSize: 17 }}>{title}</div>
+                  <div className="card-meta">
                     {String(u.created_at || '').slice(0, 10)} · {fmtSize(u.size_bytes)} · {fmtDuration(u.duration_seconds)}
                     {timelineLabel ? ` · ${timelineLabel}` : ''}
                   </div>
