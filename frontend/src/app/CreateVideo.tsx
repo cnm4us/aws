@@ -599,6 +599,7 @@ export default function CreateVideo() {
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
+  const timelineCtxSnapTargetRef = useRef<'timeline' | 'guideline' | 'object_lane' | 'object_any'>('guideline')
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
   const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
   const previewToolbarRef = useRef<HTMLDivElement | null>(null)
@@ -1134,6 +1135,36 @@ export default function CreateVideo() {
     },
     [dbg]
   )
+  const openTimelineCtxMenuForEdge = useCallback(
+    (kind: TimelineCtxKind, id: string, edgeIntent: 'move' | 'start' | 'end') => {
+      const w = window.innerWidth || 0
+      const h = window.innerHeight || 0
+      const menuW = 170
+      const menuH = 188
+      const pad = 10
+      const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
+      const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+      timelineCtxMenuOpenedAtRef.current = performance.now()
+      setTimelineCtxMenu((prev) => ({
+        kind,
+        id,
+        x: prev?.x ?? x,
+        y: prev?.y ?? y,
+        view: edgeIntent === 'move' ? 'main' : 'guidelines',
+        edgeIntent,
+      }))
+    },
+    [clamp]
+  )
+
+  const openTimelineCtxMenu = useCallback(
+    (target: { kind: 'graphic' | 'logo'; id: string }, clientX: number, clientY: number) => {
+      openTimelineCtxMenuForEdge(target.kind as any, target.id, 'move')
+    },
+    [openTimelineCtxMenuForEdge]
+  )
+
+
 
   const primePausedFrame = useCallback(async (v: HTMLVideoElement) => {
     try {
@@ -1690,6 +1721,22 @@ export default function CreateVideo() {
   const LANE_TOP_PAD = 6
   const PILL_H = Math.max(18, TRACK_H - 12)
   const HANDLE_HIT_PX = 18
+  const pickTrimEdge = (
+    clickX: number,
+    leftX: number,
+    rightX: number,
+    nearLeft: boolean,
+    nearRight: boolean
+  ): 'start' | 'end' => {
+    if (nearLeft && nearRight) {
+      const handleSize = Math.max(10, Math.min(18, Math.floor(PILL_H - 10)))
+      const inset = 6
+      const leftCenter = leftX + inset + handleSize / 2
+      const rightCenter = rightX - inset - handleSize / 2
+      return Math.abs(clickX - leftCenter) <= Math.abs(clickX - rightCenter) ? 'start' : 'end'
+    }
+    return nearLeft ? 'start' : 'end'
+  }
 
   const selectedClip = useMemo(() => {
     if (!selectedClipId) return null
@@ -4845,6 +4892,30 @@ export default function CreateVideo() {
 	    const pillH = PILL_H
 	    const HANDLE_GOLD = 'rgba(212,175,55,0.95)'
 	    const HANDLE_GREEN = 'rgba(48,209,88,0.95)'
+	    const HANDLE_BOUND = 'rgba(96,165,250,0.95)'
+	    const boundHandleEdge: 'start' | 'end' | null =
+	      timelineCtxMenu?.edgeIntent === 'start' || timelineCtxMenu?.edgeIntent === 'end'
+	        ? (timelineCtxMenu.edgeIntent as any)
+	        : null
+	    const boundHandleKind = boundHandleEdge ? String((timelineCtxMenu as any)?.kind || '') : null
+	    const boundHandleId = boundHandleEdge ? String((timelineCtxMenu as any)?.id || '') : null
+	    const drawHandle = (hx: number, hy: number, hs: number, color: string, bound: boolean) => {
+	      if (!bound) {
+	        ctx.fillStyle = color
+	        roundRect(ctx, hx, hy, hs, hs, 4)
+	        ctx.fill()
+	        return
+	      }
+	      const ds = Math.max(6, Math.floor(hs * 0.9))
+	      const cx = hx + hs / 2
+	      const cy = hy + hs / 2
+	      ctx.save()
+	      ctx.translate(cx, cy)
+	      ctx.rotate(Math.PI / 4)
+	      ctx.fillStyle = HANDLE_BOUND
+	      ctx.fillRect(-ds / 2, -ds / 2, ds, ds)
+	      ctx.restore()
+	    }
     const hasNoOffset = (value: unknown, eps = 0.05) => {
       const n = Number(value)
       return Number.isFinite(n) && Math.abs(n) <= eps
@@ -4945,15 +5016,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = logoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'logo' && String((l as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5017,15 +5087,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = lowerThirdY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'lowerThird' && String((lt as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5091,15 +5160,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = screenTitleY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'screenTitle' && String((st as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5164,15 +5232,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = videoOverlayY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'videoOverlayStill' && String((s as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5251,12 +5318,10 @@ export default function CreateVideo() {
           const hy = videoOverlayY + Math.floor((pillH - handleSize) / 2)
           const hxL = x + 6
           const hxR = x + w - 6 - hs
-          ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-          roundRect(ctx, hxL, hy, hs, hs, 4)
-          ctx.fill()
-          ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-          roundRect(ctx, hxR, hy, hs, hs, 4)
-          ctx.fill()
+          const boundEdge =
+            boundHandleEdge && boundHandleKind === 'videoOverlay' && String((o as any)?.id) === boundHandleId ? boundHandleEdge : null
+          drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
+          drawHandle(hxR, hy, hs, rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'end')
         }
 
         if (isResizing) {
@@ -5318,15 +5383,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = graphicsY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'graphic' && String((g as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5388,15 +5452,14 @@ export default function CreateVideo() {
       }
 
       if (showHandles) {
-        ctx.fillStyle = HANDLE_GREEN
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'still' && String((s as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5466,12 +5529,10 @@ export default function CreateVideo() {
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'clip' && String((clip as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5554,12 +5615,10 @@ export default function CreateVideo() {
         const hy = narrationY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'narration' && String((n as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5636,12 +5695,10 @@ export default function CreateVideo() {
         const hy = audioY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
         const hxR = x + w - 6 - hs
-        ctx.fillStyle = leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxL, hy, hs, hs, 4)
-        ctx.fill()
-        ctx.fillStyle = rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD
-        roundRect(ctx, hxR, hy, hs, hs, 4)
-        ctx.fill()
+        const boundEdge =
+          boundHandleEdge && boundHandleKind === 'audioSegment' && String((seg as any)?.id) === boundHandleId ? boundHandleEdge : null
+        drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
+        drawHandle(hxR, hy, hs, rightIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'end')
       }
 
         if (isResizing) {
@@ -5684,6 +5741,7 @@ export default function CreateVideo() {
     selectedStillId,
     trimDragging,
     timeline.clips,
+    timelineCtxMenu,
     timelinePadPx,
     timelineScrollLeftPx,
     totalSeconds,
@@ -16356,24 +16414,9 @@ export default function CreateVideo() {
       // For graphics: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'graphic' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any =
             drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'graphic',
-            id: String((drag as any).graphicId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('graphic', String((drag as any).graphicId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16386,23 +16429,8 @@ export default function CreateVideo() {
       // For logos: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'logo' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'logo',
-            id: String((drag as any).logoId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('logo', String((drag as any).logoId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16415,23 +16443,8 @@ export default function CreateVideo() {
       // For lower thirds: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'lowerThird' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'lowerThird',
-            id: String((drag as any).lowerThirdId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('lowerThird', String((drag as any).lowerThirdId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16444,23 +16457,8 @@ export default function CreateVideo() {
       // For screen titles: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'screenTitle' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'screenTitle',
-            id: String((drag as any).screenTitleId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('screenTitle', String((drag as any).screenTitleId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16473,23 +16471,8 @@ export default function CreateVideo() {
       // For video overlays: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'videoOverlay' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'videoOverlay',
-            id: String((drag as any).videoOverlayId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('videoOverlay', String((drag as any).videoOverlayId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16502,23 +16485,8 @@ export default function CreateVideo() {
       // For clips: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'clip' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'clip',
-            id: String((drag as any).clipId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('clip', String((drag as any).clipId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16531,23 +16499,8 @@ export default function CreateVideo() {
       // For narration: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'narration' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'narration',
-            id: String((drag as any).narrationId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('narration', String((drag as any).narrationId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16560,23 +16513,8 @@ export default function CreateVideo() {
       // For audio: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'audioSegment' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'audioSegment',
-            id: String((drag as any).audioSegmentId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('audioSegment', String((drag as any).audioSegmentId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16589,23 +16527,8 @@ export default function CreateVideo() {
       // For freeze stills: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'still' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'still',
-            id: String((drag as any).stillId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('still', String((drag as any).stillId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16618,23 +16541,8 @@ export default function CreateVideo() {
       // For overlay freeze stills: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'videoOverlayStill' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
-          const w = window.innerWidth || 0
-          const h = window.innerHeight || 0
-          const menuW = 170
-          const menuH = 188
-          const pad = 10
-          const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-          const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
           const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
-          timelineCtxMenuOpenedAtRef.current = performance.now()
-          setTimelineCtxMenu({
-            kind: 'videoOverlayStill',
-            id: String((drag as any).videoOverlayStillId),
-            x,
-            y,
-          view: edgeIntent === 'move' ? 'main' : 'guidelines',
-            edgeIntent,
-          })
+          openTimelineCtxMenuForEdge('videoOverlayStill', String((drag as any).videoOverlayStillId), edgeIntent)
           suppressNextTimelineClickRef.current = true
           window.setTimeout(() => {
             suppressNextTimelineClickRef.current = false
@@ -16772,7 +16680,7 @@ export default function CreateVideo() {
       window.removeEventListener('pointercancel', onCancel as any)
       window.removeEventListener('blur', onBlur as any)
     }
-  }, [pxPerSecond, stopTrimDrag, trimDragging])
+  }, [openTimelineCtxMenuForEdge, pxPerSecond, stopTrimDrag, trimDragging])
 
   useEffect(() => {
     dbg('state', {
@@ -16870,19 +16778,6 @@ export default function CreateVideo() {
       window.removeEventListener('pointercancel', onUp as any)
     }
   }, [cancelTimelineLongPress, panDragging, trimDragging])
-
-  const openTimelineCtxMenu = useCallback((target: { kind: 'graphic' | 'logo'; id: string }, clientX: number, clientY: number) => {
-    const w = window.innerWidth || 0
-    const h = window.innerHeight || 0
-    const menuW = 170
-    const menuH = 188
-    const pad = 10
-    // Always center the menu; mobile long-press is imprecise and we want a predictable location.
-    const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-    const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
-    timelineCtxMenuOpenedAtRef.current = performance.now()
-    setTimelineCtxMenu({ kind: target.kind, id: target.id, x, y, view: 'main', edgeIntent: 'move' })
-  }, [])
 
   const beginGraphicLongPress = useCallback(
     (e: React.PointerEvent, graphicId: string) => {
@@ -17836,7 +17731,7 @@ export default function CreateVideo() {
 		                    trimDragRef.current = {
 		                      kind: 'logo',
 		                      logoId: String((l as any).id),
-		                      edge: nearLeft ? 'start' : 'end',
+		                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 		                      pointerId: e.pointerId,
 		                      startClientX: e.clientX,
 		                      startClientY: e.clientY,
@@ -17848,7 +17743,7 @@ export default function CreateVideo() {
 		                      moved: false,
 		                    }
 		                    try { sc.setPointerCapture(e.pointerId) } catch {}
-		                    dbg('armTrimDrag', { kind: 'logo', edge: nearLeft ? 'start' : 'end', id: String((l as any).id) })
+		                    dbg('armTrimDrag', { kind: 'logo', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((l as any).id) })
 		                    return
 		                  }
 
@@ -17911,7 +17806,7 @@ export default function CreateVideo() {
                     trimDragRef.current = {
                       kind: 'lowerThird',
                       lowerThirdId: String((lt as any).id),
-                      edge: nearLeft ? 'start' : 'end',
+                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
                       pointerId: e.pointerId,
                       startClientX: e.clientX,
                       startClientY: e.clientY,
@@ -17923,7 +17818,7 @@ export default function CreateVideo() {
                       moved: false,
                     }
                     try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('armTrimDrag', { kind: 'lowerThird', edge: nearLeft ? 'start' : 'end', id: String((lt as any).id) })
+                    dbg('armTrimDrag', { kind: 'lowerThird', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((lt as any).id) })
                     return
                   }
 
@@ -18000,7 +17895,7 @@ export default function CreateVideo() {
                     trimDragRef.current = {
                       kind: 'screenTitle',
                       screenTitleId: String((st as any).id),
-                      edge: nearLeft ? 'start' : 'end',
+                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
                       pointerId: e.pointerId,
                       startClientX: e.clientX,
                       startClientY: e.clientY,
@@ -18012,7 +17907,7 @@ export default function CreateVideo() {
                       moved: false,
                     }
                     try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('armTrimDrag', { kind: 'screenTitle', edge: nearLeft ? 'start' : 'end', id: String((st as any).id) })
+                    dbg('armTrimDrag', { kind: 'screenTitle', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((st as any).id) })
 	                    return
 	                  }
 
@@ -18087,7 +17982,7 @@ export default function CreateVideo() {
                       trimDragRef.current = {
                         kind: 'videoOverlayStill',
                         videoOverlayStillId: String((overlayStill as any).id),
-                        edge: nearLeft ? 'start' : nearRight ? 'end' : 'move',
+                        edge: nearLeft || nearRight ? pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight) : 'move',
                         pointerId: e.pointerId,
                         startClientX: e.clientX,
                         startClientY: e.clientY,
@@ -18102,7 +17997,7 @@ export default function CreateVideo() {
                       if (nearLeft || nearRight) {
                         setTrimDragging(true)
                         try { sc.setPointerCapture(e.pointerId) } catch {}
-                        dbg('startTrimDrag', { kind: 'videoOverlayStill', edge: nearLeft ? 'start' : 'end', id: String((overlayStill as any).id) })
+                        dbg('startTrimDrag', { kind: 'videoOverlayStill', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((overlayStill as any).id) })
                       } else {
                         try { sc.setPointerCapture(e.pointerId) } catch {}
                         dbg('armTrimDrag', { kind: 'videoOverlayStill', edge: 'move', id: String((overlayStill as any).id) })
@@ -18208,7 +18103,7 @@ export default function CreateVideo() {
 	                    trimDragRef.current = {
 	                      kind: 'videoOverlay',
 	                      videoOverlayId: String((o as any).id),
-	                      edge: nearLeft ? 'start' : 'end',
+	                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 	                      pointerId: e.pointerId,
 	                      startClientX: e.clientX,
 	                      startClientY: e.clientY,
@@ -18223,7 +18118,7 @@ export default function CreateVideo() {
 	                      moved: false,
 	                    }
 	                    try { sc.setPointerCapture(e.pointerId) } catch {}
-	                    dbg('armTrimDrag', { kind: 'videoOverlay', edge: nearLeft ? 'start' : 'end', id: String((o as any).id) })
+	                    dbg('armTrimDrag', { kind: 'videoOverlay', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((o as any).id) })
 	                    return
 	                  }
 
@@ -18282,7 +18177,7 @@ export default function CreateVideo() {
 		                      trimDragRef.current = {
 		                        kind: 'graphic',
 		                        graphicId: g.id,
-		                        edge: nearLeft ? 'start' : 'end',
+		                        edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 		                        pointerId: e.pointerId,
 		                        startClientX: e.clientX,
 		                        startStartSeconds: s,
@@ -18294,7 +18189,7 @@ export default function CreateVideo() {
 		                      }
 		                      setTrimDragging(true)
 		                      try { sc.setPointerCapture(e.pointerId) } catch {}
-		                      dbg('startTrimDrag', { kind: 'graphic', edge: nearLeft ? 'start' : 'end', id: g.id })
+		                      dbg('startTrimDrag', { kind: 'graphic', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: g.id })
 		                      return
 		                    }
 
@@ -18400,7 +18295,7 @@ export default function CreateVideo() {
 	                    trimDragRef.current = {
 	                      kind: 'narration',
 	                      narrationId: String((n as any).id),
-	                      edge: nearLeft ? 'start' : 'end',
+	                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 	                      pointerId: e.pointerId,
 	                      startClientX: e.clientX,
 	                      startClientY: e.clientY,
@@ -18414,7 +18309,7 @@ export default function CreateVideo() {
 	                      moved: false,
 	                    }
 	                    try { sc.setPointerCapture(e.pointerId) } catch {}
-	                    dbg('armTrimDrag', { kind: 'narration', edge: nearLeft ? 'start' : 'end', id: String((n as any).id) })
+	                    dbg('armTrimDrag', { kind: 'narration', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((n as any).id) })
 	                    return
 	                  }
 
@@ -18500,7 +18395,7 @@ export default function CreateVideo() {
 		                    trimDragRef.current = {
 		                      kind: 'audioSegment',
 		                      audioSegmentId: String(seg.id),
-		                      edge: nearLeft ? 'start' : 'end',
+		                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 		                      pointerId: e.pointerId,
 		                      startClientX: e.clientX,
 		                      startClientY: e.clientY,
@@ -18517,7 +18412,7 @@ export default function CreateVideo() {
 		                    try {
 		                      sc.setPointerCapture(e.pointerId)
 		                    } catch {}
-		                    dbg('armTrimDrag', { kind: 'audioSegment', edge: nearLeft ? 'start' : 'end', id: String(seg.id) })
+		                    dbg('armTrimDrag', { kind: 'audioSegment', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String(seg.id) })
 		                    return
 		                  }
 
@@ -18590,7 +18485,7 @@ export default function CreateVideo() {
                       trimDragRef.current = {
                         kind: 'still',
                         stillId: String((still as any).id),
-                        edge: nearLeft ? 'start' : nearRight ? 'end' : 'move',
+                        edge: nearLeft || nearRight ? pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight) : 'move',
                         pointerId: e.pointerId,
                         startClientX: e.clientX,
                         startClientY: e.clientY,
@@ -18605,7 +18500,7 @@ export default function CreateVideo() {
                       if (nearLeft || nearRight) {
                         setTrimDragging(true)
                         try { sc.setPointerCapture(e.pointerId) } catch {}
-                        dbg('startTrimDrag', { kind: 'still', edge: nearLeft ? 'start' : 'end', id: String((still as any).id) })
+                        dbg('startTrimDrag', { kind: 'still', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((still as any).id) })
                       } else {
                         try { sc.setPointerCapture(e.pointerId) } catch {}
                         dbg('armTrimDrag', { kind: 'still', edge: 'move', id: String((still as any).id) })
@@ -18702,7 +18597,7 @@ export default function CreateVideo() {
 	                  trimDragRef.current = {
 	                    kind: 'clip',
 	                    clipId: clip.id,
-	                    edge: nearLeft ? 'start' : 'end',
+	                    edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
 	                    pointerId: e.pointerId,
 	                    startClientX: e.clientX,
 	                    startClientY: e.clientY,
@@ -18717,7 +18612,7 @@ export default function CreateVideo() {
 	                    moved: false,
 	                  }
                   try { sc.setPointerCapture(e.pointerId) } catch {}
-                  dbg('armTrimDrag', { kind: 'clip', edge: nearLeft ? 'start' : 'end', id: clip.id })
+                  dbg('armTrimDrag', { kind: 'clip', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: clip.id })
                   return
                 }}
 	                onPointerDownCapture={(e) => {
@@ -20010,6 +19905,7 @@ export default function CreateVideo() {
               timeline,
               timelineCtxMenu,
               timelineCtxMenuOpenedAtRef,
+              timelineCtxSnapTargetRef,
               totalSeconds,
               videoOverlayStills,
               videoOverlays,

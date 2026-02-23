@@ -113,7 +113,13 @@ export default function TimelineContextMenu(props: any) {
     x: timelineCtxMenu?.x ?? 0,
     y: timelineCtxMenu?.y ?? 0,
   }))
-  const [snapTarget, setSnapTarget] = React.useState<'timeline' | 'guideline' | 'object_lane' | 'object_any'>('guideline')
+  const snapTargetRef = (ctx as any).timelineCtxSnapTargetRef as
+    | React.MutableRefObject<'timeline' | 'guideline' | 'object_lane' | 'object_any'>
+    | undefined
+  const [snapTarget, setSnapTarget] = React.useState<'timeline' | 'guideline' | 'object_lane' | 'object_any'>(() => {
+    const initial = snapTargetRef?.current
+    return initial || 'guideline'
+  })
   const dragRef = React.useRef<{
     pointerId: number
     startX: number
@@ -123,8 +129,9 @@ export default function TimelineContextMenu(props: any) {
   } | null>(null)
 
   React.useEffect(() => {
-    setSnapTarget('guideline')
-  }, [menuKey])
+    if (!snapTargetRef) return
+    snapTargetRef.current = snapTarget
+  }, [snapTarget, snapTargetRef])
 
   React.useLayoutEffect(() => {
     if (!timelineCtxMenu) return
@@ -147,6 +154,15 @@ export default function TimelineContextMenu(props: any) {
       setMenuPos({ x: nextX, y: nextY })
     }
   }, [timelineCtxMenu, menuKey, menuPos.x, menuPos.y])
+
+  React.useEffect(() => {
+    if (!timelineCtxMenu) return
+    setTimelineCtxMenu((prev: any) => {
+      if (!prev) return prev
+      if (prev.x === menuPos.x && prev.y === menuPos.y) return prev
+      return { ...prev, x: menuPos.x, y: menuPos.y }
+    })
+  }, [menuPos.x, menuPos.y, setTimelineCtxMenu, timelineCtxMenu])
 
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button != null && e.button !== 0) return
@@ -948,28 +964,27 @@ export default function TimelineContextMenu(props: any) {
                         const resizeEdge: 'start' | 'end' | null =
                           edgeIntentRaw === 'start' || edgeIntentRaw === 'end' ? edgeIntentRaw : null
                         const snapLabel =
-                          snapTarget === 'timeline' ? 'T' : snapTarget === 'guideline' ? 'G' : snapTarget === 'object_lane' ? 'O' : 'O*'
-                        const snapTitle =
-                          snapTarget === 'timeline'
-                            ? 'Timeline'
-                            : snapTarget === 'guideline'
-                              ? 'Guidelines'
-                              : snapTarget === 'object_lane'
-                                ? 'Object boundaries (lane)'
-                                : 'Object boundaries (any lane)'
+                          snapTarget === 'guideline'
+                            ? 'Guidelines'
+                            : snapTarget === 'object_lane'
+                              ? 'Objects'
+                              : snapTarget === 'object_any'
+                                ? 'Objects *'
+                                : 'Timeline'
+                        const snapTitle = snapLabel
                         const cycleSnapTarget = () => {
                           setSnapTarget((prev) => {
-                            if (prev === 'timeline') return 'guideline'
                             if (prev === 'guideline') return 'object_lane'
                             if (prev === 'object_lane') return 'object_any'
-                            return 'timeline'
+                            if (prev === 'object_any') return 'timeline'
+                            return 'guideline'
                           })
                         }
                         const arrowButtonStyle = (disabled?: boolean) => ({
                           width: '100%',
                           height: 44,
                           borderRadius: 12,
-                          border: '2px solid rgba(212,175,55,0.92)',
+                          border: '1px solid rgba(96,165,250,0.95)',
                           background: '#000',
                           color: '#fff',
                           fontWeight: 900,
@@ -989,29 +1004,31 @@ export default function TimelineContextMenu(props: any) {
                             snapTarget,
                             resizeEdge || undefined
                           )
-                          setTimelineCtxMenu(null)
                         }
                         return (
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 2px 0' }}>
-                              <div style={{ fontSize: 12, fontWeight: 900, color: '#fff' }}>Move</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 2px 0' }}>
                               <button
                                 type="button"
                                 onClick={cycleSnapTarget}
                                 title={`Target: ${snapTitle}`}
                                 style={{
                                   borderRadius: 10,
-                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  border: '1px solid rgba(212,175,55,0.92)',
                                   background: '#000',
-                                  color: '#fff',
+                                  color: 'rgba(212,175,55,0.95)',
                                   fontWeight: 900,
                                   padding: '6px 10px',
                                   cursor: 'pointer',
-                                  minWidth: 40,
+                                  minWidth: 90,
+                                  textAlign: 'center',
                                 }}
                               >
                                 {snapLabel}
                               </button>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 2px 0' }}>
+                              <div style={{ fontSize: 12, fontWeight: 900, color: '#fff' }}>Move</div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
                               <button type="button" onClick={() => handleAction('move', 'left')} style={arrowButtonStyle()}>
