@@ -1035,6 +1035,10 @@ const VideoAssetsListPage: React.FC<{
   const [sort, setSort] = React.useState<string>('recent')
   const [favoritesOnly, setFavoritesOnly] = React.useState(false)
   const [clipScope, setClipScope] = React.useState<'uploads' | 'mine' | 'shared'>(() => normalizeClipScope(getQueryParam('scope')))
+  const [sharedScope, setSharedScope] = React.useState<'system' | 'users'>(() => {
+    const raw = String(getQueryParam('shared_scope') || getQueryParam('sharedScope') || '').trim().toLowerCase()
+    return raw === 'users' ? 'users' : 'system'
+  })
   const [togglingFav, setTogglingFav] = React.useState<Record<number, boolean>>({})
   const [editUpload, setEditUpload] = React.useState<UploadListItem | null>(null)
   const [editClip, setEditClip] = React.useState<LibraryClipItem | null>(null)
@@ -1567,12 +1571,21 @@ const VideoAssetsListPage: React.FC<{
         </div>
 
         {allowClips ? (
-          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <div
+            style={{
+              marginTop: 14,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+              gap: 10,
+              alignItems: 'center',
+            }}
+          >
             <select
               value={clipScope}
               onChange={(e) => setClipScope(normalizeClipScope(String((e.target as any).value || 'uploads')))}
               style={{
-                flex: '0 0 auto',
+                minWidth: 0,
+                width: '100%',
                 padding: '10px 12px',
                 borderRadius: 12,
                 border: '1px solid rgba(255,255,255,0.14)',
@@ -1586,6 +1599,26 @@ const VideoAssetsListPage: React.FC<{
               <option value="mine">My Clips</option>
               <option value="shared">Shared Videos</option>
             </select>
+            {clipScope === 'shared' ? (
+              <select
+                value={sharedScope}
+                onChange={(e) => setSharedScope(String((e.target as any).value) === 'users' ? 'users' : 'system')}
+                style={{
+                  minWidth: 0,
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  outline: 'none',
+                  fontWeight: 900,
+                }}
+              >
+                <option value="system">System</option>
+                <option value="users">Other Users</option>
+              </select>
+            ) : null}
           </div>
         ) : null}
 
@@ -1666,6 +1699,9 @@ const VideoAssetsListPage: React.FC<{
               basePath="/assets/video"
               clipBasePath="/assets/shared/create-clip"
               showSharedScope
+              showSharedScopeSelect={false}
+              sharedScopeValue={sharedScope}
+              onSharedScopeChange={setSharedScope}
               defaultSharedScope="system"
             />
           </div>

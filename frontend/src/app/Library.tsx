@@ -324,6 +324,9 @@ type LibraryListPageProps = {
   clipBasePath?: string
   showSharedScope?: boolean
   defaultSharedScope?: 'system' | 'users'
+  showSharedScopeSelect?: boolean
+  sharedScopeValue?: 'system' | 'users'
+  onSharedScopeChange?: (next: 'system' | 'users') => void
 }
 
 export const LibraryListPage: React.FC<LibraryListPageProps> = ({
@@ -332,6 +335,9 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
   clipBasePath = '/library/create-clip',
   showSharedScope = false,
   defaultSharedScope = 'system',
+  showSharedScopeSelect = true,
+  sharedScopeValue,
+  onSharedScopeChange,
 }) => {
   const [videos, setVideos] = useState<LibraryVideo[]>([])
   const [loading, setLoading] = useState(false)
@@ -343,8 +349,20 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
   const [selectedInfo, setSelectedInfo] = useState<LibraryVideo | null>(null)
   const [editVideo, setEditVideo] = useState<LibraryVideo | null>(null)
   const sourceOptions = useLibrarySourceOptions()
+  const effectiveSharedScope = sharedScopeValue ?? sharedScope
+  const handleSharedScopeChange = useCallback(
+    (next: 'system' | 'users') => {
+      if (sharedScopeValue != null) {
+        onSharedScopeChange?.(next)
+      } else {
+        setSharedScope(next)
+      }
+    },
+    [sharedScopeValue, onSharedScopeChange]
+  )
 
   useEffect(() => {
+    if (sharedScopeValue != null) return
     const params = new URLSearchParams(window.location.search)
     const qParam = params.get('q') || ''
     const sourceParam = params.get('source_org') || params.get('sourceOrg') || 'all'
@@ -355,7 +373,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
       const nextShared = String(sharedParam || defaultSharedScope).trim().toLowerCase()
       setSharedScope(nextShared === 'users' ? 'users' : 'system')
     }
-  }, [])
+  }, [defaultSharedScope, showSharedScope, sharedScopeValue])
 
   const syncUrl = useCallback(
     (nextQ: string, nextSource: string, nextSharedScope: 'system' | 'users') => {
@@ -380,9 +398,9 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     setLoading(true)
     setError(null)
     try {
-      if (showSharedScope && sharedScope === 'users') {
+      if (showSharedScope && effectiveSharedScope === 'users') {
         setVideos([])
-        syncUrl(q, sourceOrg, sharedScope)
+        syncUrl(q, sourceOrg, effectiveSharedScope)
         return
       }
       const user = await ensureLoggedIn()
@@ -397,13 +415,13 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
       if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_load'))
       const items: LibraryVideo[] = Array.isArray(json?.items) ? json.items : []
       setVideos(items)
-      syncUrl(qTrim, sourceOrg, sharedScope)
+      syncUrl(qTrim, sourceOrg, effectiveSharedScope)
     } catch (e: any) {
       setError(e?.message || 'Failed to load library.')
     } finally {
       setLoading(false)
     }
-  }, [q, sourceOrg, sharedScope, showSharedScope, syncUrl])
+  }, [q, sourceOrg, effectiveSharedScope, showSharedScope, syncUrl])
 
   useEffect(() => {
     void loadVideos()
@@ -416,7 +434,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
   }, [sourceOrg, sourceOptions])
 
   const filterOptions = useMemo(
-    () => [{ value: 'all', label: 'All sources' }, ...sourceOptions],
+    () => [{ value: 'all', label: 'All Sources' }, ...sourceOptions],
     [sourceOptions]
   )
   const cardListStyle = useMemo(
@@ -434,6 +452,8 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     { value: 'system', label: 'System' },
     { value: 'users', label: 'Other Users' },
   ]
+  const showSourceSelect = !showSharedScope || effectiveSharedScope === 'system'
+  const showSourceRow = embedded && showSharedScope && showSourceSelect
 
   const content = (
     <>
@@ -444,11 +464,44 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
       ) : null}
 
       <div style={{ marginTop: embedded ? 0 : 16, display: 'grid', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {showSharedScope ? (
+        {showSourceRow ? (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+              gap: 10,
+              alignItems: 'center',
+            }}
+          >
             <select
-              value={sharedScope}
-              onChange={(e) => setSharedScope(String(e.target.value) === 'users' ? 'users' : 'system')}
+              value={sourceOrg}
+              onChange={(e) => setSourceOrg(String(e.target.value))}
+              style={{
+                width: '100%',
+                minWidth: 0,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: '#0b0b0b',
+                color: '#fff',
+                fontWeight: 900,
+              }}
+            >
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <div />
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {showSharedScope && showSharedScopeSelect ? (
+            <select
+              value={effectiveSharedScope}
+              onChange={(e) => handleSharedScopeChange(String(e.target.value) === 'users' ? 'users' : 'system')}
               style={{
                 minWidth: 160,
                 padding: '10px 12px',
@@ -466,21 +519,22 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               ))}
             </select>
           ) : null}
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name/description"
-              style={{
-                flex: '1 1 240px',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0b0b0b',
-                color: '#fff',
-                fontSize: 16,
-              }}
-            />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name/description"
+            style={{
+              flex: '1 1 240px',
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0b0b0b',
+              color: '#fff',
+              fontSize: 16,
+            }}
+          />
+          {!showSourceRow && showSourceSelect ? (
             <select
               value={sourceOrg}
               onChange={(e) => setSourceOrg(String(e.target.value))}
@@ -491,7 +545,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                 border: '1px solid rgba(255,255,255,0.18)',
                 background: '#0b0b0b',
                 color: '#fff',
-                fontSize: 16,
+                fontWeight: 900,
               }}
             >
               {filterOptions.map((opt) => (
@@ -500,30 +554,33 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={() => void loadVideos()}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0a84ff',
-                color: '#fff',
-                fontWeight: 700,
-              }}
-              disabled={loading}
-            >
-              Refresh
-            </button>
-          </div>
-          {error ? <div style={{ color: '#ffb3b3' }}>{error}</div> : null}
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void loadVideos()}
+            style={{
+              padding: '10px 16px',
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0a84ff',
+              color: '#fff',
+              fontWeight: 700,
+            }}
+            disabled={loading}
+          >
+            Refresh
+          </button>
         </div>
+        {error ? <div style={{ color: '#ffb3b3' }}>{error}</div> : null}
+      </div>
 
         <div style={{ marginTop: 18, display: 'grid', gap: 16 }}>
           <div className="card-list" style={cardListStyle}>
             {loading ? <div>Loading…</div> : null}
             {!loading && !videos.length ? (
-              <div>{showSharedScope && sharedScope === 'users' ? 'No shared videos yet.' : 'No system videos found.'}</div>
+              <div>
+                {showSharedScope && effectiveSharedScope === 'users' ? 'No shared videos yet.' : 'No system videos found.'}
+              </div>
             ) : null}
             {videos.map((v) => {
               const name = (v.modified_filename || v.original_filename || `Video ${v.id}`).toString()
@@ -549,7 +606,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               for (const [key, value] of baseParams.entries()) backParams.set(key, value)
               if (q.trim()) backParams.set('q', q.trim())
               if (sourceOrg && sourceOrg !== 'all') backParams.set('source_org', sourceOrg)
-              if (showSharedScope && sharedScope !== 'system') backParams.set('shared_scope', sharedScope)
+              if (showSharedScope && effectiveSharedScope !== 'system') backParams.set('shared_scope', effectiveSharedScope)
               const qs = backParams.toString()
               const clipHref = qs
                 ? `${clipBasePath}/${encodeURIComponent(String(v.id))}?${qs}`
