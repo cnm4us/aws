@@ -12,8 +12,7 @@ export default function TimelineContextMenu(props: any) {
     applyNarrationGuidelineAction,
     applyScreenTitleGuidelineAction,
     applyStillGuidelineAction,
-    applyTimelineExpandEndAction,
-    applyTimelineExpandStartAction,
+    applyTimelineArrowAction,
     applyVideoOverlayGuidelineAction,
     applyVideoOverlayStillGuidelineAction,
     audioSegments,
@@ -41,8 +40,6 @@ export default function TimelineContextMenu(props: any) {
     ensureAudioConfigs,
     ensureScreenTitleFonts,
     ensureScreenTitlePresets,
-    getTimelineCtxSegmentEnd,
-    getTimelineCtxSegmentStart,
     graphics,
     logos,
     lowerThirds,
@@ -116,6 +113,18 @@ export default function TimelineContextMenu(props: any) {
     x: timelineCtxMenu?.x ?? 0,
     y: timelineCtxMenu?.y ?? 0,
   }))
+  const [snapTarget, setSnapTarget] = React.useState<'timeline' | 'guideline' | 'object_lane' | 'object_any'>('guideline')
+  const dragRef = React.useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startLeft: number
+    startTop: number
+  } | null>(null)
+
+  React.useEffect(() => {
+    setSnapTarget('guideline')
+  }, [menuKey])
 
   React.useLayoutEffect(() => {
     if (!timelineCtxMenu) return
@@ -139,21 +148,50 @@ export default function TimelineContextMenu(props: any) {
     }
   }, [timelineCtxMenu, menuKey, menuPos.x, menuPos.y])
 
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    try {
+      ;(e.currentTarget as any).setPointerCapture?.(e.pointerId)
+    } catch {}
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: menuPos.x,
+      startTop: menuPos.y,
+    }
+  }
+
+  const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const dx = e.clientX - drag.startX
+    const dy = e.clientY - drag.startY
+    setMenuPos({ x: drag.startLeft + dx, y: drag.startTop + dy })
+  }
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    dragRef.current = null
+  }
+
   return (
-		        <div
-		          role="dialog"
-		          aria-modal="true"
-		          style={{ position: 'fixed', inset: 0, zIndex: 1400 }}
-		          onClickCapture={(e) => {
-		            const openedAt = timelineCtxMenuOpenedAtRef.current
-		            if (openedAt == null) return
-		            if (performance.now() - openedAt < 120) {
+		          <div
+		            role="dialog"
+		            aria-modal="true"
+		            style={{ position: 'fixed', inset: 0, zIndex: 1400, pointerEvents: 'none' }}
+		            onClickCapture={(e) => {
+		              const openedAt = timelineCtxMenuOpenedAtRef.current
+		              if (openedAt == null) return
+		              if (performance.now() - openedAt < 120) {
 		              timelineCtxMenuOpenedAtRef.current = null
 		              e.preventDefault()
 		              e.stopPropagation()
 		            }
 		          }}
-		          onPointerDown={() => setTimelineCtxMenu(null)}
 		        >
 		          <div
                 ref={menuRef}
@@ -162,7 +200,9 @@ export default function TimelineContextMenu(props: any) {
 		              left: menuPos.x,
 		              top: menuPos.y,
 		              width: 170,
-		              background: (timelineCtxMenu.view || 'main') === 'guidelines' ? 'rgba(48,209,88,0.95)' : '#0756a6',
+		              background: 'rgba(0,0,0,0.55)',
+                  backdropFilter: 'blur(6px)',
+                  WebkitBackdropFilter: 'blur(6px)',
 		              border: '1px solid rgba(255,255,255,0.18)',
 		              borderRadius: 12,
 		              padding: 8,
@@ -171,62 +211,50 @@ export default function TimelineContextMenu(props: any) {
 		              boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
                   maxHeight: 'calc(100vh - 16px)',
                   overflowY: 'auto',
+                  pointerEvents: 'auto',
 		            }}
 		            onPointerDown={(e) => e.stopPropagation()}
 			          >
-			            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 4px 4px' }}>
-			              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-			                <div
-			                  style={{
-			                    fontSize: 13,
-			                    fontWeight: 900,
-			                    color: (timelineCtxMenu.view || 'main') === 'guidelines' ? '#0b0b0b' : '#bbb',
-			                  }}
-			                >
-				                  {(timelineCtxMenu.view || 'main') === 'guidelines'
-				                    ? 'Actions'
-                              : (timelineCtxMenu.view || 'main') === 'screenTitlePlacementPick'
-                                ? 'Style/Placement'
-					                    : timelineCtxMenu.kind === 'audioSegment'
-					                      ? 'Audio'
-					                    : timelineCtxMenu.kind === 'still'
-					                      ? 'Freeze Frame'
-					                    : timelineCtxMenu.kind === 'videoOverlayStill'
-					                      ? 'Overlay Freeze'
-					                    : timelineCtxMenu.kind === 'logo'
-					                      ? 'Logo'
-					                      : timelineCtxMenu.kind === 'lowerThird'
-				                        ? 'Lower Third'
-				                        : timelineCtxMenu.kind === 'screenTitle'
-				                          ? 'Screen Title'
-						                    : timelineCtxMenu.kind === 'narration'
-						                            ? 'Narration'
-						                          : timelineCtxMenu.kind === 'clip'
-						                            ? 'Video'
-						                          : timelineCtxMenu.kind === 'videoOverlay'
-						                            ? 'Video Overlay'
-					                        : 'Graphic'}
-					                </div>
-			              </div>
-			              <button
-			                type="button"
-			                onClick={() => setTimelineCtxMenu(null)}
-			                style={{
-			                  width: 28,
-			                  height: 28,
-			                  borderRadius: 10,
-			                  border: '1px solid rgba(255,255,255,0.18)',
-			                  background: '#000',
-			                  color: '#fff',
-			                  fontWeight: 900,
-			                  cursor: 'pointer',
-			                  lineHeight: '26px',
-			                  textAlign: 'center',
-			                }}
-			              >
-			                ×
-			              </button>
-			            </div>
+                  <div
+                    onPointerDown={startDrag}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    style={{
+                      height: 18,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'grab',
+                      touchAction: 'none',
+                      position: 'relative',
+                    }}
+                    title="Drag panel"
+                  >
+                    <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
+                    <button
+                      type="button"
+                      onClick={() => setTimelineCtxMenu(null)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: -6,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: '#000',
+                        color: '#fff',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        lineHeight: '26px',
+                        textAlign: 'center',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
 
 			            {(timelineCtxMenu.view || 'main') === 'main' ? (
 			              <>
@@ -914,278 +942,130 @@ export default function TimelineContextMenu(props: any) {
                       })()}
                     </>
                   ) : (
-			              <>
-			                {(() => {
-			                  const edgeIntent: any = timelineCtxMenu.edgeIntent || 'move'
-			                  if (edgeIntent === 'move') return null
-			                  const expandAction = edgeIntent === 'start' ? 'expand_start' : 'expand_end'
-			                  const contractAction = edgeIntent === 'start' ? 'contract_start' : 'contract_end'
-			                  const expandDir: 'left' | 'right' = edgeIntent === 'start' ? 'left' : 'right'
-			                  const contractDir: 'left' | 'right' = edgeIntent === 'start' ? 'right' : 'left'
-			                  const snapDir: 'left' | 'right' = edgeIntent === 'start' ? 'left' : 'right'
-                        const renderMenuArrowLabel = (text: string, dir: 'left' | 'right') => (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span>{text}</span>
-                            <img
-                              src={ACTION_ARROW_ICON_URL}
-                              alt=""
-                              aria-hidden
-                              style={{
-                                width: 20,
-                                height: 20,
-                                display: 'block',
-                                transform: dir === 'left' ? 'scaleX(-1)' : 'none',
-                                filter: 'brightness(0) invert(1)',
-                              }}
-                            />
-                          </span>
-                        )
-			                  const playheadGuidelinesOverride = [roundToTenth(playhead)]
-                        const segEnd = getTimelineCtxSegmentEnd(timelineCtxMenu.kind, timelineCtxMenu.id)
-                        const segStart = getTimelineCtxSegmentStart(timelineCtxMenu.kind, timelineCtxMenu.id)
-                        const timelineExpandDisabled =
-                          edgeIntent !== 'end' || segEnd == null || Number(segEnd) >= roundToTenth(Number(totalSeconds) || 0) - 1e-6
-                        const timelineExpandStartDisabled =
-                          edgeIntent !== 'start' || segStart == null || Number(segStart) <= 1e-6
-			                  return (
-			                    <>
-			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0' }}>Guidelines</div>
-			                      <button
-			                        type="button"
-						                        onClick={() => {
-						                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, expandAction as any, { edgeIntent })
-						                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(212,175,55,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Expand', expandDir)}
-			                      </button>
-			                      <button
-			                        type="button"
-						                        onClick={() => {
-						                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, contractAction as any, { edgeIntent })
-						                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(212,175,55,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Contract', contractDir)}
-			                      </button>
-			                      <button
-			                        type="button"
-						                        onClick={() => {
-						                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, 'snap', { edgeIntent })
-						                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(212,175,55,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Snap to', snapDir)}
-			                      </button>
-
-			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
-			                        Playhead
-			                      </div>
-			                      <button
-			                        type="button"
-				                        onClick={() => {
-				                          const opts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, expandAction as any, opts)
-				                          setTimelineCtxMenu(null)
-				                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(255,59,48,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Expand', expandDir)}
-			                      </button>
-			                      <button
-			                        type="button"
-				                        onClick={() => {
-				                          const opts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, contractAction as any, opts)
-				                          setTimelineCtxMenu(null)
-				                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(255,59,48,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Contract', contractDir)}
-			                      </button>
-			                      <button
-			                        type="button"
-				                        onClick={() => {
-				                          const opts = { edgeIntent, guidelinesOverride: playheadGuidelinesOverride, noopIfNoCandidate: true }
-				                          if (timelineCtxMenu.kind === 'graphic') applyGraphicGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'still') applyStillGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlayStill') applyVideoOverlayStillGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'logo') applyLogoGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'lowerThird') applyLowerThirdGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'screenTitle') applyScreenTitleGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'videoOverlay') applyVideoOverlayGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'clip') applyClipGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'narration') applyNarrationGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          if (timelineCtxMenu.kind === 'audioSegment') applyAudioSegmentGuidelineAction(timelineCtxMenu.id, 'snap', opts)
-				                          setTimelineCtxMenu(null)
-				                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(255,59,48,0.92)',
-			                          background: '#000',
-			                          color: '#fff',
-			                          fontWeight: 900,
-			                          cursor: 'pointer',
-			                          textAlign: 'left',
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Snap to', snapDir)}
-			                      </button>
-
-                            <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
-                              Timeline
+                    <>
+                      {(() => {
+                        const edgeIntentRaw: any = timelineCtxMenu.edgeIntent || 'move'
+                        const resizeEdge: 'start' | 'end' | null =
+                          edgeIntentRaw === 'start' || edgeIntentRaw === 'end' ? edgeIntentRaw : null
+                        const snapLabel =
+                          snapTarget === 'timeline' ? 'T' : snapTarget === 'guideline' ? 'G' : snapTarget === 'object_lane' ? 'O' : 'O*'
+                        const snapTitle =
+                          snapTarget === 'timeline'
+                            ? 'Timeline'
+                            : snapTarget === 'guideline'
+                              ? 'Guidelines'
+                              : snapTarget === 'object_lane'
+                                ? 'Object boundaries (lane)'
+                                : 'Object boundaries (any lane)'
+                        const cycleSnapTarget = () => {
+                          setSnapTarget((prev) => {
+                            if (prev === 'timeline') return 'guideline'
+                            if (prev === 'guideline') return 'object_lane'
+                            if (prev === 'object_lane') return 'object_any'
+                            return 'timeline'
+                          })
+                        }
+                        const arrowButtonStyle = (disabled?: boolean) => ({
+                          width: '100%',
+                          height: 44,
+                          borderRadius: 12,
+                          border: '2px solid rgba(212,175,55,0.92)',
+                          background: '#000',
+                          color: '#fff',
+                          fontWeight: 900,
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: disabled ? 0.45 : 1,
+                        })
+                        const handleAction = (mode: 'move' | 'resize', dir: 'left' | 'right') => {
+                          if (mode === 'resize' && !resizeEdge) return
+                          applyTimelineArrowAction(
+                            timelineCtxMenu.kind,
+                            timelineCtxMenu.id,
+                            mode,
+                            dir,
+                            snapTarget,
+                            resizeEdge || undefined
+                          )
+                          setTimelineCtxMenu(null)
+                        }
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 2px 0' }}>
+                              <div style={{ fontSize: 12, fontWeight: 900, color: '#fff' }}>Move</div>
+                              <button
+                                type="button"
+                                onClick={cycleSnapTarget}
+                                title={`Target: ${snapTitle}`}
+                                style={{
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(255,255,255,0.18)',
+                                  background: '#000',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  padding: '6px 10px',
+                                  cursor: 'pointer',
+                                  minWidth: 40,
+                                }}
+                              >
+                                {snapLabel}
+                              </button>
                             </div>
-			                      <button
-			                        type="button"
-                              disabled={timelineExpandStartDisabled}
-				                        onClick={() => {
-                                if (timelineExpandStartDisabled) return
-                                applyTimelineExpandStartAction(timelineCtxMenu.kind, timelineCtxMenu.id)
-				                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(56,142,255,0.92)',
-			                          background: '#000',
-			                          color: timelineExpandStartDisabled ? 'rgba(255,255,255,0.45)' : '#fff',
-			                          fontWeight: 900,
-			                          cursor: timelineExpandStartDisabled ? 'not-allowed' : 'pointer',
-			                          textAlign: 'left',
-                              opacity: timelineExpandStartDisabled ? 0.7 : 1,
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Expand', 'left')}
-			                      </button>
-			                      <button
-			                        type="button"
-                              disabled={timelineExpandDisabled}
-				                        onClick={() => {
-                                if (timelineExpandDisabled) return
-                                applyTimelineExpandEndAction(timelineCtxMenu.kind, timelineCtxMenu.id)
-				                          setTimelineCtxMenu(null)
-			                        }}
-			                        style={{
-			                          width: '100%',
-			                          padding: '10px 12px',
-			                          borderRadius: 10,
-			                          border: '2px solid rgba(56,142,255,0.92)',
-			                          background: '#000',
-			                          color: timelineExpandDisabled ? 'rgba(255,255,255,0.45)' : '#fff',
-			                          fontWeight: 900,
-			                          cursor: timelineExpandDisabled ? 'not-allowed' : 'pointer',
-			                          textAlign: 'left',
-                              opacity: timelineExpandDisabled ? 0.7 : 1,
-			                        }}
-			                      >
-			                        {renderMenuArrowLabel('Expand', 'right')}
-			                      </button>
-			                    </>
-			                  )
-			                })()}
-			              </>
-			            ))}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
+                              <button type="button" onClick={() => handleAction('move', 'left')} style={arrowButtonStyle()}>
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden
+                                  style={{ width: 22, height: 22, display: 'block', transform: 'scaleX(-1)', filter: 'brightness(0) invert(1)' }}
+                                />
+                              </button>
+                              <button type="button" onClick={() => handleAction('move', 'right')} style={arrowButtonStyle()}>
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden
+                                  style={{ width: 22, height: 22, display: 'block', filter: 'brightness(0) invert(1)' }}
+                                />
+                              </button>
+                            </div>
+
+                            <div style={{ fontSize: 12, fontWeight: 900, color: '#fff', padding: '6px 2px 0' }}>Expand/Contract</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                disabled={!resizeEdge}
+                                onClick={() => handleAction('resize', 'left')}
+                                style={arrowButtonStyle(!resizeEdge)}
+                              >
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden
+                                  style={{ width: 22, height: 22, display: 'block', transform: 'scaleX(-1)', filter: 'brightness(0) invert(1)' }}
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!resizeEdge}
+                                onClick={() => handleAction('resize', 'right')}
+                                style={arrowButtonStyle(!resizeEdge)}
+                              >
+                                <img
+                                  src={ACTION_ARROW_ICON_URL}
+                                  alt=""
+                                  aria-hidden
+                                  style={{ width: 22, height: 22, display: 'block', filter: 'brightness(0) invert(1)' }}
+                                />
+                              </button>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </>
+                  ))}
 			          </div>
 			        </div>
   )

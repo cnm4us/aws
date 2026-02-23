@@ -595,6 +595,7 @@ export default function CreateVideo() {
   const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [exportJobId, setExportJobId] = useState<number | null>(null)
   const [timelineMessage, setTimelineMessage] = useState<string | null>(null)
+  const [timelineErrorModal, setTimelineErrorModal] = useState<string | null>(null)
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
@@ -2117,7 +2118,7 @@ export default function CreateVideo() {
   const canUndo = undoDepth > 0
   const canRedo = redoDepth > 0
 
-	  const boundaries = useMemo(() => {
+  const boundaries = useMemo(() => {
 	    const out: number[] = []
 	    out.push(0)
 	    for (let i = 0; i < timeline.clips.length; i++) {
@@ -2179,8 +2180,143 @@ export default function CreateVideo() {
 	      const tt = roundToTenth(Number(t) || 0)
 	      uniq.set(tt.toFixed(1), tt)
 	    }
-	    return Array.from(uniq.values()).sort((a, b) => a - b)
-	  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, narration, screenTitles, stills, timeline, totalSeconds, videoOverlays])
+    return Array.from(uniq.values()).sort((a, b) => a - b)
+  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, narration, screenTitles, stills, timeline, totalSeconds, videoOverlays])
+
+  const { laneBoundariesByKind, objectBoundariesAll, timelineGuidelines } = useMemo(() => {
+    const push = (arr: number[], all: number[], start: number, end: number) => {
+      const s = roundToTenth(Number(start))
+      const e = roundToTenth(Number(end))
+      if (!(e > s)) return
+      arr.push(s, e)
+      all.push(s, e)
+    }
+
+    const baseLane: number[] = []
+    const overlayLane: number[] = []
+    const graphicLane: number[] = []
+    const logoLane: number[] = []
+    const lowerThirdLane: number[] = []
+    const screenTitleLane: number[] = []
+    const narrationLane: number[] = []
+    const audioLane: number[] = []
+    const all: number[] = []
+
+    for (let i = 0; i < timeline.clips.length; i++) {
+      const start = roundToTenth(clipStarts[i] || 0)
+      const len = clipDurationSeconds(timeline.clips[i])
+      const end = roundToTenth(start + len)
+      push(baseLane, all, start, end)
+    }
+    for (const s of stills) {
+      const a = roundToTenth(Number((s as any).startSeconds || 0))
+      const b = roundToTenth(Number((s as any).endSeconds || 0))
+      push(baseLane, all, a, b)
+    }
+    const overlayStarts = computeClipStarts(videoOverlays as any)
+    for (let i = 0; i < videoOverlays.length; i++) {
+      const start = roundToTenth(overlayStarts[i] || 0)
+      const len = clipDurationSeconds(videoOverlays[i] as any)
+      const end = roundToTenth(start + len)
+      push(overlayLane, all, start, end)
+    }
+    for (const s of videoOverlayStills) {
+      const a = roundToTenth(Number((s as any).startSeconds || 0))
+      const b = roundToTenth(Number((s as any).endSeconds || 0))
+      push(overlayLane, all, a, b)
+    }
+    for (const g of graphics) {
+      push(graphicLane, all, Number((g as any).startSeconds || 0), Number((g as any).endSeconds || 0))
+    }
+    for (const l of logos) {
+      push(logoLane, all, Number((l as any).startSeconds || 0), Number((l as any).endSeconds || 0))
+    }
+    for (const lt of lowerThirds) {
+      push(lowerThirdLane, all, Number((lt as any).startSeconds || 0), Number((lt as any).endSeconds || 0))
+    }
+    for (const st of screenTitles) {
+      push(screenTitleLane, all, Number((st as any).startSeconds || 0), Number((st as any).endSeconds || 0))
+    }
+    for (const n of narration) {
+      push(narrationLane, all, Number((n as any).startSeconds || 0), Number((n as any).endSeconds || 0))
+    }
+    for (const a of audioSegments) {
+      push(audioLane, all, Number((a as any).startSeconds || 0), Number((a as any).endSeconds || 0))
+    }
+
+    const uniqSorted = (arr: number[]) => {
+      const uniq = new Map<string, number>()
+      for (const t of arr) {
+        const tt = roundToTenth(Number(t) || 0)
+        uniq.set(tt.toFixed(1), tt)
+      }
+      return Array.from(uniq.values()).sort((a, b) => a - b)
+    }
+
+    const laneBoundaries: Record<string, number[]> = {
+      clip: uniqSorted(baseLane),
+      still: uniqSorted(baseLane),
+      videoOverlay: uniqSorted(overlayLane),
+      videoOverlayStill: uniqSorted(overlayLane),
+      graphic: uniqSorted(graphicLane),
+      logo: uniqSorted(logoLane),
+      lowerThird: uniqSorted(lowerThirdLane),
+      screenTitle: uniqSorted(screenTitleLane),
+      narration: uniqSorted(narrationLane),
+      audioSegment: uniqSorted(audioLane),
+    }
+
+    const objectBoundariesAll = uniqSorted(all)
+
+    const guidelineRaw: any[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
+    const guidelineSorted = uniqSorted(
+      guidelineRaw
+        .map((t) => roundToTenth(Number(t)))
+        .filter((t) => Number.isFinite(t) && t >= 0)
+    )
+
+    return { laneBoundariesByKind: laneBoundaries, objectBoundariesAll, timelineGuidelines: guidelineSorted }
+  }, [
+    audioSegments,
+    clipStarts,
+    graphics,
+    logos,
+    lowerThirds,
+    narration,
+    screenTitles,
+    stills,
+    timeline,
+    videoOverlayStills,
+    videoOverlays,
+  ])
+
+  const isBlockingTimelineMessage = useCallback((msg: string) => {
+    const text = String(msg || '').toLowerCase()
+    const blockingHints = [
+      'no room',
+      'cannot',
+      'not enough',
+      'invalid',
+      'missing',
+      'no more',
+      'exceeds',
+      'overlap',
+      'resulting duration is too small',
+      'timeline max length reached',
+      'no available slot',
+      'no more source',
+      'no more source video',
+      'no more source audio',
+    ]
+    return blockingHints.some((hint) => text.includes(hint))
+  }, [])
+
+  useEffect(() => {
+    if (!timelineMessage) return
+    if (!isBlockingTimelineMessage(timelineMessage)) return
+    setTimelineErrorModal(timelineMessage)
+    setTimelineMessage(null)
+  }, [isBlockingTimelineMessage, timelineMessage])
 
   const dragHud = useMemo(() => {
     if (!trimDragging) return null
@@ -13540,6 +13676,123 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds]
   )
 
+  const applyTimelineGuidelineActionByKind = useCallback(
+    (
+      kind: TimelineCtxKind,
+      id: string,
+      action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
+      opts?: GuidelineActionOpts
+    ) => {
+      if (kind === 'graphic') return applyGraphicGuidelineAction(id, action, opts)
+      if (kind === 'still') return applyStillGuidelineAction(id, action, opts)
+      if (kind === 'videoOverlayStill') return applyVideoOverlayStillGuidelineAction(id, action, opts)
+      if (kind === 'logo') return applyLogoGuidelineAction(id, action, opts)
+      if (kind === 'lowerThird') return applyLowerThirdGuidelineAction(id, action, opts)
+      if (kind === 'screenTitle') return applyScreenTitleGuidelineAction(id, action, opts)
+      if (kind === 'videoOverlay') return applyVideoOverlayGuidelineAction(id, action, opts)
+      if (kind === 'clip') return applyClipGuidelineAction(id, action, opts)
+      if (kind === 'narration') return applyNarrationGuidelineAction(id, action, opts)
+      if (kind === 'audioSegment') return applyAudioSegmentGuidelineAction(id, action, opts)
+    },
+    [
+      applyAudioSegmentGuidelineAction,
+      applyClipGuidelineAction,
+      applyGraphicGuidelineAction,
+      applyLogoGuidelineAction,
+      applyLowerThirdGuidelineAction,
+      applyNarrationGuidelineAction,
+      applyScreenTitleGuidelineAction,
+      applyStillGuidelineAction,
+      applyVideoOverlayGuidelineAction,
+      applyVideoOverlayStillGuidelineAction,
+    ]
+  )
+
+  const resolveTimelineTargetTime = useCallback(
+    (
+      targetType: 'timeline' | 'guideline' | 'object_lane' | 'object_any',
+      direction: 'left' | 'right',
+      anchorTime: number,
+      kind: TimelineCtxKind
+    ): number | null => {
+      const total = roundToTenth(Math.max(0, Number(totalSeconds) || 0))
+      if (!Number.isFinite(anchorTime)) return null
+      const eps = 0.05
+      const prevStrict = (list: number[], t: number) => {
+        for (let i = list.length - 1; i >= 0; i--) {
+          const v = list[i]
+          if (v < t - eps) return v
+        }
+        return null
+      }
+      const nextStrict = (list: number[], t: number) => {
+        for (let i = 0; i < list.length; i++) {
+          const v = list[i]
+          if (v > t + eps) return v
+        }
+        return null
+      }
+      const list =
+        targetType === 'timeline'
+          ? [roundToTenth(Number(playhead) || 0)]
+          : targetType === 'guideline'
+            ? timelineGuidelines
+            : targetType === 'object_lane'
+              ? laneBoundariesByKind[kind] || []
+              : objectBoundariesAll
+      const target = direction === 'left' ? prevStrict(list, anchorTime) : nextStrict(list, anchorTime)
+      if (target == null) return direction === 'left' ? 0 : total
+      return target
+    },
+    [laneBoundariesByKind, objectBoundariesAll, playhead, timelineGuidelines, totalSeconds]
+  )
+
+  const applyTimelineArrowAction = useCallback(
+    (
+      kind: TimelineCtxKind,
+      id: string,
+      mode: 'move' | 'resize',
+      direction: 'left' | 'right',
+      targetType: 'timeline' | 'guideline' | 'object_lane' | 'object_any',
+      edgeIntent?: 'start' | 'end' | 'move'
+    ) => {
+      const start = getTimelineCtxSegmentStart(kind, id)
+      const end = getTimelineCtxSegmentEnd(kind, id)
+      if (start == null || end == null) return
+      const anchor =
+        mode === 'move' ? (direction === 'left' ? start : end) : edgeIntent === 'end' ? end : start
+      const target = resolveTimelineTargetTime(targetType, direction, anchor, kind)
+      if (target == null || Math.abs(target - anchor) <= 0.05) {
+        setTimelineMessage('No target in that direction.')
+        return
+      }
+      if (mode === 'move') {
+        const moveEdge: any = direction === 'left' ? 'start' : 'end'
+        applyTimelineGuidelineActionByKind(kind, id, 'snap', {
+          edgeIntent: moveEdge,
+          guidelinesOverride: [target],
+          noopIfNoCandidate: true,
+        })
+        return
+      }
+      const edge: any = edgeIntent === 'end' ? 'end' : 'start'
+      const action =
+        edge === 'start'
+          ? direction === 'left'
+            ? 'expand_start'
+            : 'contract_start'
+          : direction === 'left'
+            ? 'contract_end'
+            : 'expand_end'
+      applyTimelineGuidelineActionByKind(kind, id, action, {
+        edgeIntent: edge,
+        guidelinesOverride: [target],
+        noopIfNoCandidate: true,
+      })
+    },
+    [applyTimelineGuidelineActionByKind, getTimelineCtxSegmentEnd, getTimelineCtxSegmentStart, resolveTimelineTargetTime]
+  )
+
   const saveClipEditor = useCallback(() => {
     if (!clipEditor) return
     const start = roundToTenth(Number(clipEditor.start))
@@ -16118,7 +16371,7 @@ export default function CreateVideo() {
             id: String((drag as any).graphicId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16147,7 +16400,7 @@ export default function CreateVideo() {
             id: String((drag as any).logoId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16176,7 +16429,7 @@ export default function CreateVideo() {
             id: String((drag as any).lowerThirdId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16205,7 +16458,7 @@ export default function CreateVideo() {
             id: String((drag as any).screenTitleId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16234,7 +16487,7 @@ export default function CreateVideo() {
             id: String((drag as any).videoOverlayId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16263,7 +16516,7 @@ export default function CreateVideo() {
             id: String((drag as any).clipId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16292,7 +16545,7 @@ export default function CreateVideo() {
             id: String((drag as any).narrationId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16321,7 +16574,7 @@ export default function CreateVideo() {
             id: String((drag as any).audioSegmentId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16350,7 +16603,7 @@ export default function CreateVideo() {
             id: String((drag as any).stillId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -16379,7 +16632,7 @@ export default function CreateVideo() {
             id: String((drag as any).videoOverlayStillId),
             x,
             y,
-            view: edgeIntent === 'move' ? 'main' : 'guidelines',
+          view: edgeIntent === 'move' ? 'main' : 'guidelines',
             edgeIntent,
           })
           suppressNextTimelineClickRef.current = true
@@ -19459,6 +19712,58 @@ export default function CreateVideo() {
                 {timelineMessage}
               </div>
             ) : null}
+
+            {timelineErrorModal ? (
+              <div
+                role="dialog"
+                aria-modal="true"
+                onClick={() => setTimelineErrorModal(null)}
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 5600,
+                  background: 'rgba(0,0,0,0.86)',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  padding: '64px 16px 80px',
+                }}
+              >
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    maxWidth: 560,
+                    margin: '0 auto',
+                    borderRadius: 14,
+                    padding: 16,
+                    boxSizing: 'border-box',
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                    color: '#fff',
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                    <div style={{ fontSize: 18, fontWeight: 900 }}>Timeline Alert</div>
+                    <button
+                      type="button"
+                      onClick={() => setTimelineErrorModal(null)}
+                      style={{
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#fff',
+                        fontWeight: 800,
+                        padding: '6px 10px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 14, fontWeight: 700, color: '#fff' }}>{timelineErrorModal}</div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -19612,6 +19917,7 @@ export default function CreateVideo() {
               applyNarrationGuidelineAction,
               applyScreenTitleGuidelineAction,
               applyStillGuidelineAction,
+              applyTimelineArrowAction,
               applyTimelineExpandEndAction,
               applyTimelineExpandStartAction,
               applyVideoOverlayGuidelineAction,
