@@ -13,6 +13,7 @@ export default function TimelineContextMenu(props: any) {
     applyScreenTitleGuidelineAction,
     applyStillGuidelineAction,
     applyTimelineExpandEndAction,
+    applyTimelineExpandStartAction,
     applyVideoOverlayGuidelineAction,
     applyVideoOverlayStillGuidelineAction,
     audioSegments,
@@ -41,6 +42,7 @@ export default function TimelineContextMenu(props: any) {
     ensureScreenTitleFonts,
     ensureScreenTitlePresets,
     getTimelineCtxSegmentEnd,
+    getTimelineCtxSegmentStart,
     graphics,
     logos,
     lowerThirds,
@@ -106,6 +108,36 @@ export default function TimelineContextMenu(props: any) {
     videoOverlayStills,
     videoOverlays,
   } = ctx as any
+  const menuRef = React.useRef<HTMLDivElement | null>(null)
+  const menuKey = `${String(timelineCtxMenu?.kind || '')}:${String(timelineCtxMenu?.id || '')}:${String(
+    timelineCtxMenu?.view || 'main',
+  )}:${String(timelineCtxMenu?.edgeIntent || '')}`
+  const [menuPos, setMenuPos] = React.useState(() => ({
+    x: timelineCtxMenu?.x ?? 0,
+    y: timelineCtxMenu?.y ?? 0,
+  }))
+
+  React.useLayoutEffect(() => {
+    if (!timelineCtxMenu) return
+    setMenuPos({ x: timelineCtxMenu.x, y: timelineCtxMenu.y })
+  }, [timelineCtxMenu, menuKey])
+
+  React.useLayoutEffect(() => {
+    if (!timelineCtxMenu) return
+    const el = menuRef.current
+    if (!el) return
+    const margin = 8
+    const rect = el.getBoundingClientRect()
+    const viewportW = window.innerWidth || 0
+    const viewportH = window.innerHeight || 0
+    const maxX = Math.max(margin, viewportW - rect.width - margin)
+    const maxY = Math.max(margin, viewportH - rect.height - margin)
+    const nextX = Math.min(maxX, Math.max(margin, menuPos.x))
+    const nextY = Math.min(maxY, Math.max(margin, menuPos.y))
+    if (nextX !== menuPos.x || nextY !== menuPos.y) {
+      setMenuPos({ x: nextX, y: nextY })
+    }
+  }, [timelineCtxMenu, menuKey, menuPos.x, menuPos.y])
 
   return (
 		        <div
@@ -124,10 +156,11 @@ export default function TimelineContextMenu(props: any) {
 		          onPointerDown={() => setTimelineCtxMenu(null)}
 		        >
 		          <div
+                ref={menuRef}
 		            style={{
 		              position: 'fixed',
-		              left: timelineCtxMenu.x,
-		              top: timelineCtxMenu.y,
+		              left: menuPos.x,
+		              top: menuPos.y,
 		              width: 170,
 		              background: (timelineCtxMenu.view || 'main') === 'guidelines' ? 'rgba(48,209,88,0.95)' : '#0756a6',
 		              border: '1px solid rgba(255,255,255,0.18)',
@@ -136,6 +169,8 @@ export default function TimelineContextMenu(props: any) {
 		              display: 'grid',
 		              gap: 8,
 		              boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+                  maxHeight: 'calc(100vh - 16px)',
+                  overflowY: 'auto',
 		            }}
 		            onPointerDown={(e) => e.stopPropagation()}
 			          >
@@ -907,8 +942,11 @@ export default function TimelineContextMenu(props: any) {
                         )
 			                  const playheadGuidelinesOverride = [roundToTenth(playhead)]
                         const segEnd = getTimelineCtxSegmentEnd(timelineCtxMenu.kind, timelineCtxMenu.id)
+                        const segStart = getTimelineCtxSegmentStart(timelineCtxMenu.kind, timelineCtxMenu.id)
                         const timelineExpandDisabled =
                           edgeIntent !== 'end' || segEnd == null || Number(segEnd) >= roundToTenth(Number(totalSeconds) || 0) - 1e-6
+                        const timelineExpandStartDisabled =
+                          edgeIntent !== 'start' || segStart == null || Number(segStart) <= 1e-6
 			                  return (
 			                    <>
 			                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0' }}>Guidelines</div>
@@ -1097,6 +1135,29 @@ export default function TimelineContextMenu(props: any) {
                             <div style={{ fontSize: 12, fontWeight: 900, color: '#0b0b0b', padding: '2px 2px 0', marginTop: 6 }}>
                               Timeline
                             </div>
+			                      <button
+			                        type="button"
+                              disabled={timelineExpandStartDisabled}
+				                        onClick={() => {
+                                if (timelineExpandStartDisabled) return
+                                applyTimelineExpandStartAction(timelineCtxMenu.kind, timelineCtxMenu.id)
+				                          setTimelineCtxMenu(null)
+			                        }}
+			                        style={{
+			                          width: '100%',
+			                          padding: '10px 12px',
+			                          borderRadius: 10,
+			                          border: '2px solid rgba(56,142,255,0.92)',
+			                          background: '#000',
+			                          color: timelineExpandStartDisabled ? 'rgba(255,255,255,0.45)' : '#fff',
+			                          fontWeight: 900,
+			                          cursor: timelineExpandStartDisabled ? 'not-allowed' : 'pointer',
+			                          textAlign: 'left',
+                              opacity: timelineExpandStartDisabled ? 0.7 : 1,
+			                        }}
+			                      >
+			                        {renderMenuArrowLabel('Expand', 'left')}
+			                      </button>
 			                      <button
 			                        type="button"
                               disabled={timelineExpandDisabled}

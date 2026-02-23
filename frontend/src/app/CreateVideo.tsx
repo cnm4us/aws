@@ -9714,6 +9714,70 @@ export default function CreateVideo() {
     [clipStarts, timeline, videoOverlayStarts]
   )
 
+  const getTimelineCtxSegmentStart = useCallback(
+    (kind: TimelineCtxKind, id: string): number | null => {
+      const targetId = String(id || '')
+      if (!targetId) return null
+      if (kind === 'clip') {
+        const idx = timeline.clips.findIndex((c: any) => String(c?.id) === targetId)
+        if (idx < 0) return null
+        return roundToTenth(Number((clipStarts as any)[idx] || 0))
+      }
+      if (kind === 'still') {
+        const seg = (Array.isArray((timeline as any).stills) ? (timeline as any).stills : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'videoOverlay') {
+        const list: any[] = Array.isArray((timeline as any).videoOverlays) ? (timeline as any).videoOverlays : []
+        const idx = list.findIndex((s: any) => String(s?.id) === targetId)
+        if (idx < 0) return null
+        return roundToTenth(Number((videoOverlayStarts as any)[idx] || 0))
+      }
+      if (kind === 'videoOverlayStill') {
+        const seg = (Array.isArray((timeline as any).videoOverlayStills) ? (timeline as any).videoOverlayStills : []).find(
+          (s: any) => String(s?.id) === targetId
+        )
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'graphic') {
+        const seg = (Array.isArray((timeline as any).graphics) ? (timeline as any).graphics : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'logo') {
+        const seg = (Array.isArray((timeline as any).logos) ? (timeline as any).logos : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'lowerThird') {
+        const seg = (Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'screenTitle') {
+        const seg = (Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'narration') {
+        const seg = (Array.isArray((timeline as any).narration) ? (timeline as any).narration : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'audioSegment') {
+        const seg = (Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []).find(
+          (s: any) => String(s?.id) === targetId
+        )
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      return null
+    },
+    [clipStarts, timeline, videoOverlayStarts]
+  )
+
   const applyTimelineExpandEndAction = useCallback(
     (kind: TimelineCtxKind, id: string) => {
       const targetId = String(id || '')
@@ -10077,6 +10141,369 @@ export default function CreateVideo() {
     [clipStarts, durationsByUploadId, playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds, videoOverlayStarts]
   )
 
+  const applyTimelineExpandStartAction = useCallback(
+    (kind: TimelineCtxKind, id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const laneStart = 0
+      const rippleOn = Boolean(rippleEnabledRef.current)
+      const eps = 1e-6
+      const noRoomMessage = 'No room to expand on this lane.'
+
+      const computeTargetAndPlacements = (
+        targetStart0: number,
+        leftSegs: Array<{ key: string; start: number; end: number; dur: number }>
+      ): { targetStart: number; placements: Map<string, { start: number; end: number }>; movedLeft: boolean; message: string | null } => {
+        const placements = new Map<string, { start: number; end: number }>()
+        let movedLeft = false
+        let targetStart = roundToTenth(targetStart0)
+
+        if (rippleOn) {
+          if (leftSegs.length > 0) {
+            const totalLeftDur = roundToTenth(leftSegs.reduce((sum, seg) => sum + Math.max(0, Number(seg.dur) || 0), 0))
+            const packedEnd = roundToTenth(totalLeftDur)
+            if (packedEnd > targetStart0 + eps) {
+              return { targetStart: targetStart0, placements, movedLeft, message: 'No room to expand to timeline start on this lane.' }
+            }
+            targetStart = packedEnd
+            let cursor = laneStart
+            for (const seg of leftSegs) {
+              const ns = roundToTenth(cursor)
+              const ne = roundToTenth(ns + seg.dur)
+              if (Math.abs(ns - seg.start) > eps || Math.abs(ne - seg.end) > eps) movedLeft = true
+              placements.set(seg.key, { start: ns, end: ne })
+              cursor = ne
+            }
+          } else {
+            targetStart = laneStart
+          }
+        } else {
+          if (leftSegs.length > 0) {
+            targetStart = roundToTenth(Math.max(laneStart, leftSegs[leftSegs.length - 1].end))
+          } else {
+            targetStart = laneStart
+          }
+        }
+        return { targetStart: roundToTenth(clamp(targetStart, laneStart, Math.max(laneStart, Number(totalSeconds) || 0))), placements, movedLeft, message: null }
+      }
+
+      const applySimpleLaneStart = (
+        itemsRaw: any[],
+        minLen: number,
+        canExtend?: (item: any, targetStart: number) => string | null
+      ): { items: any[]; changed: boolean; message: string | null } => {
+        const items = (itemsRaw || [])
+          .map((seg: any) => ({
+            ...(seg as any),
+            startSeconds: roundToTenth(Number((seg as any).startSeconds || 0)),
+            endSeconds: roundToTenth(Number((seg as any).endSeconds || 0)),
+          }))
+          .filter((seg: any) => Number(seg.endSeconds) > Number(seg.startSeconds))
+        const sorted = items
+          .slice()
+          .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+        const idx = sorted.findIndex((seg: any) => String(seg?.id) === targetId)
+        if (idx < 0) return { items: itemsRaw || [], changed: false, message: null }
+        const target = sorted[idx] as any
+        const targetStart0 = roundToTenth(Number(target.startSeconds || 0))
+        const targetEnd0 = roundToTenth(Number(target.endSeconds || 0))
+        const leftSegs = sorted
+          .slice(0, idx)
+          .filter((seg: any) => Number(seg.endSeconds || 0) <= targetStart0 + eps)
+          .map((seg: any) => ({
+            key: String(seg.id),
+            start: roundToTenth(Number(seg.startSeconds || 0)),
+            end: roundToTenth(Number(seg.endSeconds || 0)),
+            dur: roundToTenth(Math.max(0, Number(seg.endSeconds || 0) - Number(seg.startSeconds || 0))),
+          }))
+
+        const packed = computeTargetAndPlacements(targetStart0, leftSegs)
+        if (packed.message) return { items: itemsRaw || [], changed: false, message: packed.message }
+        const targetStart = packed.targetStart
+        if (targetStart > targetEnd0 - minLen + eps) {
+          return { items: itemsRaw || [], changed: false, message: 'Resulting duration is too small.' }
+        }
+        if (canExtend) {
+          const err = canExtend(target, targetStart)
+          if (err) return { items: itemsRaw || [], changed: false, message: err }
+        }
+        const didExtend = targetStart < targetStart0 - eps
+        if (!didExtend && !packed.movedLeft) {
+          return { items: itemsRaw || [], changed: false, message: targetStart0 <= laneStart + eps ? 'Already at timeline start.' : noRoomMessage }
+        }
+
+        const next = items.slice()
+        for (let i = 0; i < next.length; i++) {
+          const cur = next[i] as any
+          const placement = packed.placements.get(String(cur.id))
+          if (placement) {
+            next[i] = { ...(cur as any), startSeconds: placement.start, endSeconds: placement.end }
+          }
+        }
+        const ti = next.findIndex((seg: any) => String(seg?.id) === targetId)
+        if (ti < 0) return { items: itemsRaw || [], changed: false, message: null }
+        next[ti] = { ...(next[ti] as any), startSeconds: targetStart }
+        next.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+        return { items: next, changed: true, message: null }
+      }
+
+      let nextTimeline: any | null = null
+      let message: string | null = null
+
+      if (kind === 'clip' || kind === 'still') {
+        const nextClips = timeline.clips.map((clip, i) => ({ ...clip, startSeconds: roundToTenth(Number(clipStarts[i] || 0)) }))
+        const nextStills = (Array.isArray((timeline as any).stills) ? (timeline as any).stills : []).map((s: any) => ({
+          ...(s as any),
+          startSeconds: roundToTenth(Number((s as any).startSeconds || 0)),
+          endSeconds: roundToTenth(Number((s as any).endSeconds || 0)),
+        }))
+
+        const segments: Array<{ key: string; kind: 'clip' | 'still'; id: string; start: number; end: number; dur: number }> = []
+        for (const c of nextClips as any[]) {
+          const start = roundToTenth(Number((c as any).startSeconds || 0))
+          const dur = roundToTenth(Math.max(0.2, clipDurationSeconds(c as any)))
+          const end = roundToTenth(start + dur)
+          if (end > start) segments.push({ key: `clip:${String((c as any).id)}`, kind: 'clip', id: String((c as any).id), start, end, dur })
+        }
+        for (const s of nextStills as any[]) {
+          const start = roundToTenth(Number((s as any).startSeconds || 0))
+          const end = roundToTenth(Number((s as any).endSeconds || 0))
+          const dur = roundToTenth(Math.max(0, end - start))
+          if (end > start) segments.push({ key: `still:${String((s as any).id)}`, kind: 'still', id: String((s as any).id), start, end, dur })
+        }
+        segments.sort((a, b) => a.start - b.start || a.end - b.end || a.key.localeCompare(b.key))
+        const targetLaneKind: 'clip' | 'still' = kind === 'clip' ? 'clip' : 'still'
+        const targetIdx = segments.findIndex((seg) => seg.kind === targetLaneKind && seg.id === targetId)
+        if (targetIdx < 0) return
+        const target = segments[targetIdx]
+        const leftSegs = segments.slice(0, targetIdx).filter((seg) => seg.end <= target.start + eps)
+        const packed = computeTargetAndPlacements(target.start, leftSegs)
+        if (packed.message) {
+          setTimelineMessage(packed.message)
+          return
+        }
+        const targetStart = packed.targetStart
+        const didExtend = targetStart < target.start - eps
+        if (!didExtend && !packed.movedLeft) {
+          setTimelineMessage(target.start <= laneStart + eps ? 'Already at timeline start.' : noRoomMessage)
+          return
+        }
+
+        for (const seg of leftSegs) {
+          const placement = packed.placements.get(seg.key)
+          if (!placement) continue
+          if (seg.kind === 'clip') {
+            const ci = nextClips.findIndex((c: any) => String(c?.id) === seg.id)
+            if (ci >= 0) nextClips[ci] = { ...(nextClips[ci] as any), startSeconds: placement.start }
+          } else {
+            const si = nextStills.findIndex((s: any) => String(s?.id) === seg.id)
+            if (si >= 0) nextStills[si] = { ...(nextStills[si] as any), startSeconds: placement.start, endSeconds: placement.end }
+          }
+        }
+
+        if (targetLaneKind === 'clip') {
+          const ci = nextClips.findIndex((c: any) => String(c?.id) === target.id)
+          if (ci < 0) return
+          const clip0: any = nextClips[ci]
+          const sourceStart = roundToTenth(Number((clip0 as any).sourceStartSeconds || 0))
+          const delta = roundToTenth(target.start - targetStart)
+          if (delta > 0 && sourceStart < delta - eps) {
+            setTimelineMessage('No more source video available to expand to timeline start.')
+            return
+          }
+          nextClips[ci] = {
+            ...(clip0 as any),
+            startSeconds: targetStart,
+            sourceStartSeconds: roundToTenth(Math.max(0, sourceStart - Math.max(0, delta))),
+          }
+        } else {
+          const si = nextStills.findIndex((s: any) => String(s?.id) === target.id)
+          if (si < 0) return
+          const end = roundToTenth(Number((nextStills[si] as any).endSeconds || 0))
+          if (!(end > targetStart + 0.1 - eps)) {
+            setTimelineMessage('Resulting duration is too small.')
+            return
+          }
+          nextStills[si] = { ...(nextStills[si] as any), startSeconds: targetStart }
+        }
+
+        nextClips.sort(
+          (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+        )
+        nextStills.sort(
+          (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+        )
+        nextTimeline = { ...(timeline as any), clips: nextClips, stills: nextStills }
+      } else if (kind === 'videoOverlay' || kind === 'videoOverlayStill') {
+        const prevOs: any[] = Array.isArray((timeline as any).videoOverlays) ? (timeline as any).videoOverlays : []
+        const nextOverlays = prevOs.map((o: any, i: number) => ({ ...(o as any), startSeconds: roundToTenth(Number((videoOverlayStarts as any)[i] || 0)) }))
+        const nextOverlayStills = (Array.isArray((timeline as any).videoOverlayStills) ? (timeline as any).videoOverlayStills : []).map((s: any) => ({
+          ...(s as any),
+          startSeconds: roundToTenth(Number((s as any).startSeconds || 0)),
+          endSeconds: roundToTenth(Number((s as any).endSeconds || 0)),
+        }))
+        const segments: Array<
+          { key: string; kind: 'videoOverlay'; id: string; start: number; end: number; dur: number } | { key: string; kind: 'videoOverlayStill'; id: string; start: number; end: number; dur: number }
+        > = []
+        for (const o of nextOverlays as any[]) {
+          const start = roundToTenth(Number((o as any).startSeconds || 0))
+          const dur = roundToTenth(Math.max(0.2, clipDurationSeconds(o as any)))
+          const end = roundToTenth(start + dur)
+          if (end > start) segments.push({ key: `videoOverlay:${String((o as any).id)}`, kind: 'videoOverlay', id: String((o as any).id), start, end, dur })
+        }
+        for (const s of nextOverlayStills as any[]) {
+          const start = roundToTenth(Number((s as any).startSeconds || 0))
+          const end = roundToTenth(Number((s as any).endSeconds || 0))
+          const dur = roundToTenth(Math.max(0, end - start))
+          if (end > start) {
+            segments.push({ key: `videoOverlayStill:${String((s as any).id)}`, kind: 'videoOverlayStill', id: String((s as any).id), start, end, dur })
+          }
+        }
+        segments.sort((a, b) => a.start - b.start || a.end - b.end || a.key.localeCompare(b.key))
+        const targetLaneKind: 'videoOverlay' | 'videoOverlayStill' = kind === 'videoOverlay' ? 'videoOverlay' : 'videoOverlayStill'
+        const targetIdx = segments.findIndex((seg) => seg.kind === targetLaneKind && seg.id === targetId)
+        if (targetIdx < 0) return
+        const target = segments[targetIdx]
+        const leftSegs = segments.slice(0, targetIdx).filter((seg) => seg.end <= target.start + eps)
+        const packed = computeTargetAndPlacements(target.start, leftSegs)
+        if (packed.message) {
+          setTimelineMessage(packed.message)
+          return
+        }
+        const targetStart = packed.targetStart
+        const didExtend = targetStart < target.start - eps
+        if (!didExtend && !packed.movedLeft) {
+          setTimelineMessage(target.start <= laneStart + eps ? 'Already at timeline start.' : noRoomMessage)
+          return
+        }
+
+        for (const seg of leftSegs) {
+          const placement = packed.placements.get(seg.key)
+          if (!placement) continue
+          if (seg.kind === 'videoOverlay') {
+            const oi = nextOverlays.findIndex((o: any) => String(o?.id) === seg.id)
+            if (oi >= 0) nextOverlays[oi] = { ...(nextOverlays[oi] as any), startSeconds: placement.start }
+          } else {
+            const si = nextOverlayStills.findIndex((s: any) => String(s?.id) === seg.id)
+            if (si >= 0) nextOverlayStills[si] = { ...(nextOverlayStills[si] as any), startSeconds: placement.start, endSeconds: placement.end }
+          }
+        }
+
+        if (targetLaneKind === 'videoOverlay') {
+          const oi = nextOverlays.findIndex((o: any) => String(o?.id) === target.id)
+          if (oi < 0) return
+          const overlay0: any = nextOverlays[oi]
+          const sourceStart = roundToTenth(Number((overlay0 as any).sourceStartSeconds || 0))
+          const delta = roundToTenth(target.start - targetStart)
+          if (delta > 0 && sourceStart < delta - eps) {
+            setTimelineMessage('No more source video available to expand to timeline start.')
+            return
+          }
+          nextOverlays[oi] = {
+            ...(overlay0 as any),
+            startSeconds: targetStart,
+            sourceStartSeconds: roundToTenth(Math.max(0, sourceStart - Math.max(0, delta))),
+          }
+        } else {
+          const si = nextOverlayStills.findIndex((s: any) => String(s?.id) === target.id)
+          if (si < 0) return
+          const end = roundToTenth(Number((nextOverlayStills[si] as any).endSeconds || 0))
+          if (!(end > targetStart + 0.1 - eps)) {
+            setTimelineMessage('Resulting duration is too small.')
+            return
+          }
+          nextOverlayStills[si] = { ...(nextOverlayStills[si] as any), startSeconds: targetStart }
+        }
+
+        nextOverlays.sort(
+          (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+        )
+        nextOverlayStills.sort(
+          (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+        )
+        nextTimeline = { ...(timeline as any), videoOverlays: nextOverlays, videoOverlayStills: nextOverlayStills }
+      } else if (kind === 'graphic') {
+        const res = applySimpleLaneStart(Array.isArray((timeline as any).graphics) ? (timeline as any).graphics : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) nextTimeline = { ...(timeline as any), graphics: res.items }
+      } else if (kind === 'logo') {
+        const res = applySimpleLaneStart(Array.isArray((timeline as any).logos) ? (timeline as any).logos : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) nextTimeline = { ...(timeline as any), logos: res.items }
+      } else if (kind === 'lowerThird') {
+        const res = applySimpleLaneStart(Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) {
+          const prevSeg = (Array.isArray((timeline as any).lowerThirds) ? (timeline as any).lowerThirds : []).find(
+            (s: any) => String((s as any)?.id) === targetId
+          ) as any
+          const nextItems = (res.items || []).map((s: any) => {
+            if (String((s as any)?.id) !== targetId) return s
+            return maybePromoteLowerThirdTimingOnExpand(prevSeg, s)
+          })
+          nextTimeline = { ...(timeline as any), lowerThirds: nextItems }
+        }
+      } else if (kind === 'screenTitle') {
+        const res = applySimpleLaneStart(Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) nextTimeline = { ...(timeline as any), screenTitles: res.items }
+      } else if (kind === 'narration') {
+        const prev = Array.isArray((timeline as any).narration) ? (timeline as any).narration : []
+        const res = applySimpleLaneStart(prev, 0.2, (seg, targetStart) => {
+          const sourceStart = roundToTenth(Number((seg as any).sourceStartSeconds || 0))
+          const delta = roundToTenth(Number((seg as any).startSeconds || 0) - targetStart)
+          if (delta > 0 && sourceStart < delta - eps) return 'No more source audio available to expand to timeline start.'
+          return null
+        })
+        if (res.message) message = res.message
+        else if (res.changed) {
+          const prevSeg = (prev as any[]).find((x: any) => String(x?.id) === targetId) as any
+          const prevStart = roundToTenth(Number((prevSeg as any)?.startSeconds || 0))
+          const nextItems = (res.items || []).map((s: any) => {
+            if (String((s as any)?.id) !== targetId) return s
+            const nextStart = roundToTenth(Number((s as any).startSeconds || 0))
+            const shift = roundToTenth(prevStart - nextStart)
+            if (!(shift > 0)) return s
+            const sourceStart = roundToTenth(Number((s as any).sourceStartSeconds || 0))
+            return { ...(s as any), sourceStartSeconds: roundToTenth(Math.max(0, sourceStart - shift)) }
+          })
+          nextTimeline = { ...(timeline as any), narration: nextItems }
+        }
+      } else if (kind === 'audioSegment') {
+        const prev = Array.isArray((timeline as any).audioSegments) ? (timeline as any).audioSegments : []
+        const res = applySimpleLaneStart(prev, 0.2, (seg, targetStart) => {
+          const sourceStart = roundToTenth(Number((seg as any).sourceStartSeconds || 0))
+          const delta = roundToTenth(Number((seg as any).startSeconds || 0) - targetStart)
+          if (delta > 0 && sourceStart < delta - eps) return 'No more source audio available to expand to timeline start.'
+          return null
+        })
+        if (res.message) message = res.message
+        else if (res.changed) {
+          const prevSeg = (prev as any[]).find((x: any) => String(x?.id) === targetId) as any
+          const prevStart = roundToTenth(Number((prevSeg as any)?.startSeconds || 0))
+          const nextItems = (res.items || []).map((s: any) => {
+            if (String((s as any)?.id) !== targetId) return s
+            const nextStart = roundToTenth(Number((s as any).startSeconds || 0))
+            const shift = roundToTenth(prevStart - nextStart)
+            if (!(shift > 0)) return s
+            const sourceStart = roundToTenth(Number((s as any).sourceStartSeconds || 0))
+            return { ...(s as any), sourceStartSeconds: roundToTenth(Math.max(0, sourceStart - shift)) }
+          })
+          nextTimeline = { ...(timeline as any), audioSegments: nextItems, audioTrack: null }
+        }
+      }
+
+      if (message) {
+        setTimelineMessage(message)
+        return
+      }
+      if (!nextTimeline) return
+      snapshotUndo()
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+    },
+    [clipStarts, durationsByUploadId, playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds, videoOverlayStarts]
+  )
   const applyClipGuidelineAction = useCallback(
     (
       id: string,
@@ -19186,6 +19613,7 @@ export default function CreateVideo() {
               applyScreenTitleGuidelineAction,
               applyStillGuidelineAction,
               applyTimelineExpandEndAction,
+              applyTimelineExpandStartAction,
               applyVideoOverlayGuidelineAction,
               applyVideoOverlayStillGuidelineAction,
               audioSegments,
@@ -19214,6 +19642,7 @@ export default function CreateVideo() {
               ensureScreenTitleFonts,
               ensureScreenTitlePresets,
               getTimelineCtxSegmentEnd,
+              getTimelineCtxSegmentStart,
               graphics,
               logos,
               lowerThirds,
