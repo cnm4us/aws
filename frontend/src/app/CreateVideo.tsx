@@ -17715,17 +17715,27 @@ export default function CreateVideo() {
 	                      return
 	                    }
 
-		                    // Resize only when already selected.
-		                    if (selectedLogoId !== String((l as any).id)) return
-		                    e.preventDefault()
-		                    setSelectedLogoId(String((l as any).id))
-		                    setSelectedClipId(null)
-		                    setSelectedGraphicId(null)
-		                    setSelectedLowerThirdId(null)
-		                    setSelectedScreenTitleId(null)
-		                    setSelectedNarrationId(null)
-		                    setSelectedStillId(null)
-		                    setSelectedAudioId(null)
+	                    // Resize only when already selected.
+	                    if (selectedLogoId !== String((l as any).id)) {
+	                      setSelectedLogoId(String((l as any).id))
+	                      setSelectedClipId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
+	                      setSelectedNarrationId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudioId(null)
+	                      return
+	                    }
+	                    e.preventDefault()
+	                    setSelectedLogoId(String((l as any).id))
+	                    setSelectedClipId(null)
+	                    setSelectedGraphicId(null)
+	                    setSelectedLowerThirdId(null)
+	                    setSelectedScreenTitleId(null)
+	                    setSelectedNarrationId(null)
+	                    setSelectedStillId(null)
+	                    setSelectedAudioId(null)
 
 		                    // Arm the drag; we only enter "dragging" state once pointer movement crosses a threshold.
 		                    trimDragRef.current = {
@@ -17801,7 +17811,17 @@ export default function CreateVideo() {
                     }
 
                     // Resize only when already selected.
-                    if (selectedLowerThirdId !== String((lt as any).id)) return
+                    if (selectedLowerThirdId !== String((lt as any).id)) {
+                      setSelectedLowerThirdId(String((lt as any).id))
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      return
+                    }
                     e.preventDefault()
                     trimDragRef.current = {
                       kind: 'lowerThird',
@@ -17890,7 +17910,17 @@ export default function CreateVideo() {
                     }
 
                     // Resize only when already selected.
-                    if (selectedScreenTitleId !== String((st as any).id)) return
+                    if (selectedScreenTitleId !== String((st as any).id)) {
+                      setSelectedScreenTitleId(String((st as any).id))
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      return
+                    }
                     e.preventDefault()
                     trimDragRef.current = {
                       kind: 'screenTitle',
@@ -18971,7 +19001,7 @@ export default function CreateVideo() {
 			                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 			                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 			                    }
-			                    if (nearLeft || nearRight) return
+			                    if ((nearLeft || nearRight) && selectedNarrationId === String((n as any).id)) return
 
 			                    // Narration properties are opened via the context menu (not by tapping).
 			                    if (selectedNarrationId === String((n as any).id)) return
@@ -19074,7 +19104,7 @@ export default function CreateVideo() {
 	                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
-	                    if (nearLeft || nearRight) return
+	                    if ((nearLeft || nearRight) && String(selectedAudioId || '') === String(seg.id)) return
 
 				                    // Audio properties are opened via the context menu (not by tapping).
 				                    if (String(selectedAudioId || '') === String(seg.id)) return
@@ -19162,7 +19192,7 @@ export default function CreateVideo() {
 	                    nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 	                    nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                  }
-	                  if (nearLeft || nearRight) return
+	                  if ((nearLeft || nearRight) && selectedClipId === clip.id) return
 
                   if (selectedClipId === clip.id) {
                     // Video properties are opened via the context menu (not by tapping).
