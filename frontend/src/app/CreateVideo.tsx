@@ -13405,7 +13405,27 @@ export default function CreateVideo() {
         const nextStills = [...prevStills, still].sort(
           (a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
         )
-        setTimeline({ ...(shifted as any), stills: nextStills } as any)
+        let nextTimeline: any = { ...(shifted as any), stills: nextStills }
+        if (which === 'first') {
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
+          const excess = roundToTenth(Math.max(0, nextTotal - MAX_TIMELINE_SECONDS))
+          if (excess > 0.01) {
+            const nextClips = Array.isArray((nextTimeline as any).clips) ? (nextTimeline as any).clips.slice() : []
+            const ci = nextClips.findIndex((c: any) => String(c?.id) === String(clip.id))
+            if (ci >= 0) {
+              const clip0: any = { ...(nextClips[ci] as any) }
+              const sourceStart = roundToTenth(Number(clip0.sourceStartSeconds || 0))
+              const sourceEnd0 = roundToTenth(Number(clip0.sourceEndSeconds || 0))
+              const newSourceEnd = roundToTenth(Math.max(sourceStart + 0.2, sourceEnd0 - excess))
+              if (newSourceEnd < sourceEnd0 - 1e-6) {
+                clip0.sourceEndSeconds = newSourceEnd
+                nextClips[ci] = clip0
+                nextTimeline = { ...(nextTimeline as any), clips: nextClips }
+              }
+            }
+          }
+        }
+        setTimeline(nextTimeline as any)
         setSelectedStillId(stillId)
         setSelectedClipId(null)
         setSelectedGraphicId(null)
@@ -13426,6 +13446,7 @@ export default function CreateVideo() {
       clipStarts,
       freezeInsertBusy,
       freezeInsertSeconds,
+      computeTotalSecondsForTimeline,
       rippleInsert,
       snapshotUndo,
       timeline,
