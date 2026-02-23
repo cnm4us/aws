@@ -2415,6 +2415,7 @@ export default function CreateVideo() {
 	  ])
 
   const nudgePlayhead = useCallback((deltaSeconds: number) => {
+    playheadFromScrollRef.current = false
     setTimeline((prev) => {
       const total = computeTotalSecondsForTimeline(prev as any)
       const next = clamp(roundToTenth(Number(prev.playheadSeconds || 0) + deltaSeconds), 0, Math.max(0, total))
@@ -7382,6 +7383,20 @@ export default function CreateVideo() {
     return normalizeScreenTitleSizeKey(bestKey, 18)
   }, [])
 
+  const clampClipToTimeline = useCallback(
+    (clip: Clip, startSeconds: number) => {
+      const maxDur = roundToTenth(Math.max(0, MAX_TIMELINE_SECONDS - startSeconds))
+      if (maxDur <= 0.05) return null
+      const dur = clipDurationSeconds(clip)
+      if (dur > maxDur + 1e-6) {
+        const srcStart = Number((clip as any).sourceStartSeconds || 0)
+        return { ...(clip as any), sourceEndSeconds: roundToTenth(srcStart + maxDur) } as Clip
+      }
+      return clip
+    },
+    [MAX_TIMELINE_SECONDS]
+  )
+
 	  const addClipFromUpload = useCallback(
 	    (upload: UploadListItem) => {
 	      const dur = upload.duration_seconds != null ? Number(upload.duration_seconds) : null
@@ -7408,7 +7423,7 @@ export default function CreateVideo() {
 	      }
 	      snapshotUndo()
 	      setTimeline((prev) => {
-	        if (!rippleEnabledRef.current) return insertClipAtPlayhead(prev, newClip)
+	        if (!rippleEnabledRef.current) return insertClipAtPlayhead(prev, newClip, MAX_TIMELINE_SECONDS)
 	        // Insert at (or after) the playhead, allowing overlap to the right (ripple-right only).
 	        const clipStarts = computeClipStarts(prev.clips)
 	        const prevClips: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(Number((c as any).startSeconds ?? clipStarts[i] ?? 0)) }))
@@ -7435,7 +7450,12 @@ export default function CreateVideo() {
 	          }
 	        }
 
-	        const placed: Clip = { ...newClip, startSeconds }
+	        const capped = clampClipToTimeline(newClip, startSeconds)
+	        if (!capped) {
+	          setTimelineMessage('Timeline max length reached.')
+	          return prev
+	        }
+	        const placed: Clip = { ...capped, startSeconds }
 	        const nextClips = [...prevClips, placed].sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
 
 	        const ripple = rippleRightBaseLane(nextClips as any, prevStills as any, 'clip', placed.id)
@@ -7495,7 +7515,7 @@ export default function CreateVideo() {
       }
       snapshotUndo()
       setTimeline((prev) => {
-        if (!rippleEnabledRef.current) return insertClipAtPlayhead(prev, newClip)
+        if (!rippleEnabledRef.current) return insertClipAtPlayhead(prev, newClip, MAX_TIMELINE_SECONDS)
         // Insert at (or after) the playhead, allowing overlap to the right (ripple-right only).
         const clipStarts = computeClipStarts(prev.clips)
         const prevClips: Clip[] = prev.clips.map((c, i) => ({ ...c, startSeconds: roundToTenth(Number((c as any).startSeconds ?? clipStarts[i] ?? 0)) }))
@@ -7522,7 +7542,12 @@ export default function CreateVideo() {
           }
         }
 
-        const placed: Clip = { ...newClip, startSeconds }
+        const capped = clampClipToTimeline(newClip, startSeconds)
+        if (!capped) {
+          setTimelineMessage('Timeline max length reached.')
+          return prev
+        }
+        const placed: Clip = { ...capped, startSeconds }
         const nextClips = [...prevClips, placed].sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
 
         const ripple = rippleRightBaseLane(nextClips as any, prevStills as any, 'clip', placed.id)
@@ -7589,7 +7614,7 @@ export default function CreateVideo() {
       }
       snapshotUndo()
       setTimeline((prev) => {
-        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any
+        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any, MAX_TIMELINE_SECONDS) as any
         const prevOs0: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
         const starts = computeClipStarts(prevOs0 as any)
         const prevOs = prevOs0.map((o: any, i: number) => ({ ...(o as any), startSeconds: roundToTenth(Number((o as any).startSeconds ?? starts[i] ?? 0)) }))
@@ -7606,7 +7631,12 @@ export default function CreateVideo() {
         for (const r of ranges) {
           if (startSeconds < r.end - 1e-6 && startSeconds > r.start + 1e-6) startSeconds = roundToTenth(r.end)
         }
-        const placed: any = { ...(overlay as any), startSeconds }
+        const capped = clampClipToTimeline(overlay as any, startSeconds)
+        if (!capped) {
+          setTimelineMessage('Timeline max length reached.')
+          return prev
+        }
+        const placed: any = { ...(capped as any), startSeconds }
         const nextOs = [...prevOs, placed].sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
         const ripple = rippleRightDerivedLane(nextOs as any, String(placed.id), { getDurationSeconds: (x: any) => clipDurationSeconds(x as any) })
         if (!ripple) {
@@ -7664,7 +7694,7 @@ export default function CreateVideo() {
       }
       snapshotUndo()
       setTimeline((prev) => {
-        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any) as any
+        if (!rippleEnabledRef.current) return insertVideoOverlayAtPlayhead(prev as any, overlay as any, MAX_TIMELINE_SECONDS) as any
         const prevOs0: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
         const starts = computeClipStarts(prevOs0 as any)
         const prevOs = prevOs0.map((o: any, i: number) => ({ ...(o as any), startSeconds: roundToTenth(Number((o as any).startSeconds ?? starts[i] ?? 0)) }))
@@ -7681,7 +7711,12 @@ export default function CreateVideo() {
         for (const r of ranges) {
           if (startSeconds < r.end - 1e-6 && startSeconds > r.start + 1e-6) startSeconds = roundToTenth(r.end)
         }
-        const placed: any = { ...(overlay as any), startSeconds }
+        const capped = clampClipToTimeline(overlay as any, startSeconds)
+        if (!capped) {
+          setTimelineMessage('Timeline max length reached.')
+          return prev
+        }
+        const placed: any = { ...(capped as any), startSeconds }
         const nextOs = [...prevOs, placed].sort((a: any, b: any) => Number(a.startSeconds || 0) - Number(b.startSeconds || 0) || String(a.id).localeCompare(String(b.id)))
         const ripple = rippleRightDerivedLane(nextOs as any, String(placed.id), { getDurationSeconds: (x: any) => clipDurationSeconds(x as any) })
         if (!ripple) {

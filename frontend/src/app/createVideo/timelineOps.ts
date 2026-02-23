@@ -1,7 +1,7 @@
 import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline, VideoOverlay, VideoOverlayStill } from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
-export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
+export function insertClipAtPlayhead(timeline: Timeline, clip: Clip, maxEndSeconds?: number): Timeline {
   const starts = computeClipStarts(timeline.clips)
   const endSeconds = computeTimelineEndSecondsFromClips(timeline.clips, starts)
   const t = clamp(roundToTenth(timeline.playheadSeconds || 0), 0, Math.max(0, endSeconds))
@@ -28,12 +28,20 @@ export function insertClipAtPlayhead(timeline: Timeline, clip: Clip): Timeline {
     if (overlaps) startSeconds = roundToTenth(r.end)
   }
 
-  const placed: Clip = { ...clip, startSeconds }
+  let placed: Clip = { ...clip, startSeconds }
+  if (maxEndSeconds != null && Number.isFinite(Number(maxEndSeconds))) {
+    const maxDur = roundToTenth(Math.max(0, Number(maxEndSeconds) - startSeconds))
+    if (maxDur <= 0.05) return timeline
+    if (dur > maxDur + 1e-6) {
+      const srcStart = Number((placed as any).sourceStartSeconds || 0)
+      placed = { ...placed, sourceEndSeconds: roundToTenth(srcStart + maxDur) }
+    }
+  }
   const nextClips = [...normalizedExisting, placed].sort((a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0))
   return { ...timeline, clips: nextClips }
 }
 
-export function insertVideoOverlayAtPlayhead(timeline: Timeline, overlay: VideoOverlay): Timeline {
+export function insertVideoOverlayAtPlayhead(timeline: Timeline, overlay: VideoOverlay, maxEndSeconds?: number): Timeline {
   const existing: VideoOverlay[] = Array.isArray((timeline as any).videoOverlays) ? ((timeline as any).videoOverlays as any) : []
   const starts = computeClipStarts(existing as any)
   const endSeconds = computeTimelineEndSecondsFromClips(existing as any, starts)
@@ -59,7 +67,15 @@ export function insertVideoOverlayAtPlayhead(timeline: Timeline, overlay: VideoO
     if (overlaps) startSeconds = roundToTenth(r.end)
   }
 
-  const placed: VideoOverlay = { ...(overlay as any), startSeconds }
+  let placed: VideoOverlay = { ...(overlay as any), startSeconds }
+  if (maxEndSeconds != null && Number.isFinite(Number(maxEndSeconds))) {
+    const maxDur = roundToTenth(Math.max(0, Number(maxEndSeconds) - startSeconds))
+    if (maxDur <= 0.05) return timeline
+    if (dur > maxDur + 1e-6) {
+      const srcStart = Number((placed as any).sourceStartSeconds || 0)
+      placed = { ...(placed as any), sourceEndSeconds: roundToTenth(srcStart + maxDur) } as any
+    }
+  }
   const next = [...normalizedExisting, placed].sort(
     (a, b) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String((a as any).id).localeCompare(String((b as any).id))
   )
