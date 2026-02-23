@@ -1633,14 +1633,28 @@ const VideoAssetsListPage: React.FC<{
             </select>
 
             {isUploadMode ? (
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#bbb', fontWeight: 900 }}>
-                <input
-                  type="checkbox"
-                  checked={favoritesOnly}
-                  onChange={(e) => setFavoritesOnly(Boolean((e.target as any).checked))}
-                />
-                Favorites
-              </label>
+              <button
+                type="button"
+                onClick={() => setFavoritesOnly((prev) => !prev)}
+                aria-pressed={favoritesOnly}
+                title={favoritesOnly ? 'Show all videos' : 'Show favorites only'}
+                style={{
+                  flex: '0 0 auto',
+                  width: 40,
+                  height: 40,
+                  marginLeft: 'auto',
+                  marginRight: 15,
+                  borderRadius: 12,
+                  border: '1px solid rgba(212,175,55,0.7)',
+                  background: '#0c0c0c',
+                  color: favoritesOnly ? '#ffd35a' : '#bbb',
+                  fontSize: 18,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                {favoritesOnly ? '★' : '☆'}
+              </button>
             ) : null}
           </div>
         ) : null}
