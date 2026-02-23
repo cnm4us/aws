@@ -1692,27 +1692,41 @@ const VideoAssetsListPage: React.FC<{
               <div
                 role="dialog"
                 aria-modal="true"
-                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.86)',
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  padding: '64px 16px 80px',
+                  zIndex: 24000,
+                }}
                 onClick={() => setVideoPreview(null)}
               >
                 <div
                   style={{
-                    position: 'fixed',
-                    left: '50%',
-                    top: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: 'min(92vw, 900px)',
-                    maxHeight: '82vh',
-                    background: '#0b0b0b',
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    borderRadius: 16,
-                    padding: 12,
-                    boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+                    width: '100%',
+                    maxWidth: 560,
+                    margin: '0 auto',
+                    background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                    borderRadius: 14,
+                    border: '1px solid rgba(96,165,250,0.95)',
+                    boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+                    padding: 16,
+                    boxSizing: 'border-box',
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                    <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 900,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {videoPreview.title}
                     </div>
                     <button
@@ -1722,17 +1736,18 @@ const VideoAssetsListPage: React.FC<{
                         width: 34,
                         height: 34,
                         borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        background: 'rgba(0,0,0,0.35)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        background: 'rgba(255,255,255,0.06)',
                         color: '#fff',
-                        fontWeight: 900,
+                        fontSize: 18,
+                        fontWeight: 800,
                         cursor: 'pointer',
                       }}
                     >
-                      ✕
+                      ×
                     </button>
                   </div>
-                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                     {isClipPreview ? (
                       <div style={{ width: '100%' }}>
                         <video

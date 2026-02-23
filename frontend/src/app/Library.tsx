@@ -55,11 +55,10 @@ const EditLibraryVideoModal: React.FC<EditLibraryVideoModalProps> = ({ video, on
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.72)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
+        background: 'rgba(0,0,0,0.86)',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        padding: '64px 16px 80px',
         zIndex: 24000,
       }}
       onClick={() => {
@@ -69,16 +68,19 @@ const EditLibraryVideoModal: React.FC<EditLibraryVideoModalProps> = ({ video, on
     >
       <div
         style={{
-          width: 'min(560px, 92vw)',
-          background: '#0b0b0b',
-          borderRadius: 16,
-          border: '1px solid rgba(255,255,255,0.18)',
+          width: '100%',
+          maxWidth: 560,
+          margin: '0 auto',
+          background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+          borderRadius: 14,
+          border: '1px solid rgba(96,165,250,0.95)',
           boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-          padding: 18,
+          padding: 16,
+          boxSizing: 'border-box',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 900 }}>Edit Video</div>
             <div style={{ color: '#b9c1cc', fontSize: 13 }}>Update the title and description.</div>
@@ -94,7 +96,7 @@ const EditLibraryVideoModal: React.FC<EditLibraryVideoModalProps> = ({ video, on
               height: 34,
               borderRadius: 10,
               border: '1px solid rgba(255,255,255,0.2)',
-              background: 'rgba(0,0,0,0.35)',
+              background: 'rgba(255,255,255,0.06)',
               color: '#fff',
               fontSize: 18,
               fontWeight: 800,
@@ -652,51 +654,58 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,0.7)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 50,
-              padding: 20,
+              background: 'rgba(0,0,0,0.86)',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: '64px 16px 80px',
+              zIndex: 24000,
             }}
             onClick={() => setSelectedView(null)}
           >
             <div
               style={{
-                width: 'min(960px, 100%)',
-                background: '#0b0b0b',
-                borderRadius: 12,
+                width: '100%',
+                maxWidth: 560,
+                margin: '0 auto',
+                background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                borderRadius: 14,
+                border: '1px solid rgba(96,165,250,0.95)',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
                 padding: 16,
-                border: '1px solid rgba(255,255,255,0.12)',
+                boxSizing: 'border-box',
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontWeight: 800 }}>{selectedView.modified_filename || selectedView.original_filename}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedView.modified_filename || selectedView.original_filename}
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedView(null)}
                   style={{
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: '#1a1a1a',
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.06)',
                     color: '#fff',
-                    borderRadius: 8,
-                    padding: '4px 10px',
                     fontSize: 18,
-                    fontWeight: 700,
+                    fontWeight: 800,
+                    cursor: 'pointer',
                   }}
                   aria-label="Close"
                 >
                   ×
                 </button>
               </div>
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 16 }}>
                 <video
                   controls
                   playsInline
                   preload="metadata"
                   src={`/api/uploads/${encodeURIComponent(String(selectedView.id))}/edit-proxy#t=0.1`}
-                  style={{ width: '100%', maxHeight: '70vh', background: '#000', borderRadius: 10 }}
+                  style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 12 }}
                 />
               </div>
             </div>
@@ -1853,27 +1862,33 @@ const LibraryCreateClipPageInner: React.FC = () => {
           <div
             role="dialog"
             aria-modal="true"
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 24000 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.86)',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              padding: '64px 16px 80px',
+              zIndex: 24000,
+            }}
             onClick={() => setPreviewOpen(false)}
           >
             <div
               style={{
-                position: 'fixed',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 'min(92vw, 900px)',
-                maxHeight: '82vh',
-                background: '#0b0b0b',
-                border: '1px solid rgba(255,255,255,0.18)',
-                borderRadius: 16,
-                padding: 12,
-                boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+                width: '100%',
+                maxWidth: 560,
+                margin: '0 auto',
+                background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+                borderRadius: 14,
+                border: '1px solid rgba(96,165,250,0.95)',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+                padding: 16,
+                boxSizing: 'border-box',
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {selectedVideo.modified_filename || selectedVideo.original_filename}
                 </div>
                 <button
@@ -1883,17 +1898,18 @@ const LibraryCreateClipPageInner: React.FC = () => {
                     width: 34,
                     height: 34,
                     borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    background: 'rgba(0,0,0,0.35)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.06)',
                     color: '#fff',
-                    fontWeight: 900,
+                    fontSize: 18,
+                    fontWeight: 800,
                     cursor: 'pointer',
                   }}
                 >
-                  ✕
+                  ×
                 </button>
               </div>
-              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <video
                   controls
                   playsInline
@@ -1901,7 +1917,7 @@ const LibraryCreateClipPageInner: React.FC = () => {
                   src={previewSrc}
                   style={{
                     width: '100%',
-                    maxHeight: '72vh',
+                    maxHeight: '60vh',
                     background: '#000',
                     borderRadius: 12,
                     objectFit: 'contain',
