@@ -164,12 +164,16 @@ async function ensureLibraryVideoAccess(uploadId: number, ctx: ServiceContext): 
 }
 
 export async function listSystemLibraryVideos(
-  input: { q?: string; sourceOrg?: string; limit?: number },
+  input: { q?: string; sourceOrg?: string; limit?: number; sort?: string; favoritesOnly?: boolean },
   ctx: ServiceContext
 ): Promise<{ items: any[] }> {
   if (!ctx.userId) throw new ForbiddenError()
+  const userId = Number(ctx.userId)
+  if (!Number.isFinite(userId) || userId <= 0) throw new ForbiddenError()
   const q = String(input.q || '').trim()
   const sourceOrg = String(input.sourceOrg || '').trim().toLowerCase()
+  const sort = String(input.sort || '').trim().toLowerCase()
+  const favoritesOnly = Boolean(input.favoritesOnly)
   const lim = clampLimit(input.limit, 200, 1, 500)
 
   const where: string[] = []
@@ -188,15 +192,44 @@ export async function listSystemLibraryVideos(
     args.push(sourceOrg)
   }
 
+  const joinSql = `LEFT JOIN user_upload_prefs p ON p.user_id = ? AND p.upload_id = u.id`
+  const joinArgs = [userId]
+  if (favoritesOnly) where.push(`COALESCE(p.is_favorite, 0) = 1`)
+
+  const orderBy = (() => {
+    switch (sort) {
+      case 'oldest':
+        return `u.id ASC`
+      case 'name_asc':
+        return `COALESCE(u.modified_filename, u.original_filename) ASC, u.id DESC`
+      case 'name_desc':
+        return `COALESCE(u.modified_filename, u.original_filename) DESC, u.id DESC`
+      case 'duration_asc':
+        return `COALESCE(u.duration_seconds, 0) ASC, u.id DESC`
+      case 'duration_desc':
+        return `COALESCE(u.duration_seconds, 0) DESC, u.id DESC`
+      case 'size_asc':
+        return `COALESCE(u.size_bytes, 0) ASC, u.id DESC`
+      case 'size_desc':
+        return `COALESCE(u.size_bytes, 0) DESC, u.id DESC`
+      case 'recent':
+        return `p.last_used_at DESC, u.id DESC`
+      case 'newest':
+      default:
+        return `u.id DESC`
+    }
+  })()
+
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const db = getPool()
   const [rows] = await db.query(
-    `SELECT u.*
+    `SELECT u.*, COALESCE(p.is_favorite, 0) AS is_favorite, p.last_used_at
        FROM uploads u
+       ${joinSql}
        ${whereSql}
-      ORDER BY u.id DESC
+      ORDER BY ${orderBy}
       LIMIT ?`,
-    [...args, lim]
+    [...joinArgs, ...args, lim]
   )
   return { items: rows as any[] }
 }
@@ -330,7 +363,7 @@ export async function createLibraryClip(
 }
 
 export async function listLibraryClips(
-  input: { scope?: 'system' | 'mine' | 'shared'; uploadId?: number; q?: string; limit?: number },
+  input: { scope?: 'system' | 'mine' | 'shared'; uploadId?: number; q?: string; limit?: number; favoritesOnly?: boolean },
   ctx: ServiceContext
 ): Promise<{ items: any[] }> {
   if (!ctx.userId) throw new ForbiddenError()
@@ -338,6 +371,7 @@ export async function listLibraryClips(
   const scope = String(input.scope || '').trim().toLowerCase() as any
   const uploadId = input.uploadId != null ? Number(input.uploadId) : null
   const q = String(input.q || '').trim()
+  const favoritesOnly = Boolean(input.favoritesOnly)
   const lim = clampLimit(input.limit, 200, 1, 500)
 
   const where: string[] = []
@@ -364,6 +398,9 @@ export async function listLibraryClips(
     const like = `%${q}%`
     args.push(like, like)
   }
+  if (favoritesOnly) {
+    where.push(`c.is_favorite = 1`)
+  }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const db = getPool()
@@ -377,6 +414,26 @@ export async function listLibraryClips(
     [...args, lim]
   )
   return { items: rows as any[] }
+}
+
+export async function setLibraryClipFavorite(
+  clipId: number,
+  input: { favorite: boolean },
+  ctx: ServiceContext
+): Promise<{ ok: true; clipId: number; favorite: boolean }> {
+  if (!ctx.userId) throw new ForbiddenError()
+  const id = Number(clipId)
+  if (!Number.isFinite(id) || id <= 0) throw new ValidationError('bad_id')
+  const db = getPool()
+  const [rows] = await db.query(`SELECT * FROM library_clips WHERE id = ? LIMIT 1`, [id])
+  const row = (rows as any[])[0]
+  if (!row) throw new NotFoundError('clip_not_found')
+  const userId = Number(ctx.userId)
+  if (Number(row.owner_user_id) !== userId) throw new ForbiddenError()
+  if (Number(row.is_system) === 1) throw new ForbiddenError()
+  const favorite = Boolean(input.favorite)
+  await db.query(`UPDATE library_clips SET is_favorite = ? WHERE id = ?`, [favorite ? 1 : 0, id])
+  return { ok: true, clipId: id, favorite }
 }
 
 export async function getLibraryClip(

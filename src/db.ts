@@ -1453,6 +1453,7 @@ export async function ensureSchema(db: DB) {
       end_seconds DECIMAL(8,3) NOT NULL,
       is_system TINYINT(1) NOT NULL DEFAULT 0,
       is_shared TINYINT(1) NOT NULL DEFAULT 0,
+      is_favorite TINYINT(1) NOT NULL DEFAULT 0,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_library_clips_upload (upload_id, start_seconds, end_seconds),
@@ -1461,6 +1462,7 @@ export async function ensureSchema(db: DB) {
       KEY idx_library_clips_system (is_system, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
+  await db.query(`ALTER TABLE library_clips ADD COLUMN IF NOT EXISTS is_favorite TINYINT(1) NOT NULL DEFAULT 0`)
   // Retroactive cleanup: clear legacy Personal ⇒ Global coupling
   try {
     await db.query(`

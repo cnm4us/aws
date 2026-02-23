@@ -18,6 +18,9 @@ type LibraryVideo = {
   width?: number | null
   height?: number | null
   source_org?: string | null
+  is_favorite?: boolean
+  last_used_at?: string | null
+  size_bytes?: number | null
 }
 
 type TranscriptHit = {
@@ -343,13 +346,21 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [sort, setSort] = useState('recent')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [sourceOrg, setSourceOrg] = useState('all')
   const [sharedScope, setSharedScope] = useState<'system' | 'users'>(defaultSharedScope)
+  const [togglingFav, setTogglingFav] = useState<Record<number, boolean>>({})
   const [selectedView, setSelectedView] = useState<LibraryVideo | null>(null)
   const [selectedInfo, setSelectedInfo] = useState<LibraryVideo | null>(null)
   const [editVideo, setEditVideo] = useState<LibraryVideo | null>(null)
   const sourceOptions = useLibrarySourceOptions()
   const effectiveSharedScope = sharedScopeValue ?? sharedScope
+  const showSort = embedded && showSharedScope
+  const showFavoritesToggle = embedded && showSharedScope
+  const showSourceSelect = !showSharedScope || effectiveSharedScope === 'system'
+  const showPairRow = showSort || showSourceSelect
   const handleSharedScopeChange = useCallback(
     (next: 'system' | 'users') => {
       if (sharedScopeValue != null) {
@@ -367,13 +378,24 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     const qParam = params.get('q') || ''
     const sourceParam = params.get('source_org') || params.get('sourceOrg') || 'all'
     const sharedParam = params.get('shared_scope') || params.get('sharedScope') || ''
+    const sortParam = params.get('sort') || ''
+    const favParam = params.get('favorites_only') || params.get('favoritesOnly') || ''
     setQ(qParam)
     setSourceOrg(sourceParam || 'all')
+    if (showSort && sortParam) setSort(String(sortParam))
+    if (showFavoritesToggle && favParam) setFavoritesOnly(favParam === '1' || favParam === 'true')
     if (showSharedScope) {
       const nextShared = String(sharedParam || defaultSharedScope).trim().toLowerCase()
       setSharedScope(nextShared === 'users' ? 'users' : 'system')
     }
-  }, [defaultSharedScope, showSharedScope, sharedScopeValue])
+  }, [defaultSharedScope, showSharedScope, sharedScopeValue, showSort, showFavoritesToggle])
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedQ(q)
+    }, 350)
+    return () => window.clearTimeout(handle)
+  }, [q])
 
   const syncUrl = useCallback(
     (nextQ: string, nextSource: string, nextSharedScope: 'system' | 'users') => {
@@ -383,15 +405,20 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
       params.delete('sourceOrg')
       params.delete('shared_scope')
       params.delete('sharedScope')
+      params.delete('sort')
+      params.delete('favorites_only')
+      params.delete('favoritesOnly')
       if (nextQ.trim()) params.set('q', nextQ.trim())
       if (nextSource && nextSource !== 'all') params.set('source_org', nextSource)
       if (showSharedScope && nextSharedScope && nextSharedScope !== 'system') params.set('shared_scope', nextSharedScope)
+      if (showSort && sort && sort !== 'newest') params.set('sort', sort)
+      if (showFavoritesToggle && favoritesOnly) params.set('favorites_only', '1')
       const qs = params.toString()
       const targetPath = basePath || window.location.pathname || '/library'
       const nextUrl = qs ? `${targetPath}?${qs}` : targetPath
       window.history.replaceState(null, '', nextUrl)
     },
-    [basePath, showSharedScope]
+    [basePath, showSharedScope, showSort, showFavoritesToggle, sort, favoritesOnly]
   )
 
   const loadVideos = useCallback(async () => {
@@ -400,15 +427,17 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     try {
       if (showSharedScope && effectiveSharedScope === 'users') {
         setVideos([])
-        syncUrl(q, sourceOrg, effectiveSharedScope)
+        syncUrl(debouncedQ, sourceOrg, effectiveSharedScope)
         return
       }
       const user = await ensureLoggedIn()
       if (!user?.userId) throw new Error('Please sign in to access the library.')
       const params = new URLSearchParams()
-      const qTrim = q.trim()
+      const qTrim = debouncedQ.trim()
       if (qTrim) params.set('q', qTrim)
       if (sourceOrg && sourceOrg !== 'all') params.set('source_org', sourceOrg)
+      if (showSort && sort && sort !== 'newest') params.set('sort', sort)
+      if (showFavoritesToggle && favoritesOnly) params.set('favorites_only', '1')
       params.set('limit', '200')
       const res = await fetch(`/api/library/videos?${params.toString()}`, { credentials: 'same-origin' })
       const json = await res.json().catch(() => null)
@@ -421,7 +450,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     } finally {
       setLoading(false)
     }
-  }, [q, sourceOrg, effectiveSharedScope, showSharedScope, syncUrl])
+  }, [debouncedQ, sourceOrg, sort, favoritesOnly, effectiveSharedScope, showSharedScope, showSort, showFavoritesToggle, syncUrl])
 
   useEffect(() => {
     void loadVideos()
@@ -452,8 +481,49 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
     { value: 'system', label: 'System' },
     { value: 'users', label: 'Other Users' },
   ]
-  const showSourceSelect = !showSharedScope || effectiveSharedScope === 'system'
-  const showSourceRow = embedded && showSharedScope && showSourceSelect
+  const sortOptions = [
+    { value: 'recent', label: 'Recently Used' },
+    { value: 'newest', label: 'Newest' },
+    { value: 'oldest', label: 'Oldest' },
+    { value: 'name_asc', label: 'Name A→Z' },
+    { value: 'name_desc', label: 'Name Z→A' },
+    { value: 'duration_asc', label: 'Duration (short→long)' },
+    { value: 'duration_desc', label: 'Duration (long→short)' },
+    { value: 'size_asc', label: 'Size (small→large)' },
+    { value: 'size_desc', label: 'Size (large→small)' },
+  ]
+
+  const toggleFavorite = useCallback(
+    async (video: LibraryVideo) => {
+      if (!video?.id) return
+      if (togglingFav[video.id]) return
+      setTogglingFav((prev) => ({ ...prev, [video.id]: true }))
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const nextFav = !Boolean(video.is_favorite)
+        const res = await fetch(`/api/assets/videos/${video.id}/favorite`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ favorite: nextFav }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed')
+        setVideos((prev) => prev.map((x) => (x.id === video.id ? { ...x, is_favorite: nextFav } : x)))
+      } catch (e: any) {
+        window.alert(e?.message || 'Failed to favorite')
+      } finally {
+        setTogglingFav((prev) => {
+          const next = { ...prev }
+          delete next[video.id]
+          return next
+        })
+      }
+    },
+    [togglingFav]
+  )
 
   const content = (
     <>
@@ -464,7 +534,7 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
       ) : null}
 
       <div style={{ marginTop: embedded ? 0 : 16, display: 'grid', gap: 12 }}>
-        {showSourceRow ? (
+        {showPairRow ? (
           <div
             style={{
               display: 'grid',
@@ -473,27 +543,75 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               alignItems: 'center',
             }}
           >
-            <select
-              value={sourceOrg}
-              onChange={(e) => setSourceOrg(String(e.target.value))}
-              style={{
-                width: '100%',
-                minWidth: 0,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0b0b0b',
-                color: '#fff',
-                fontWeight: 900,
-              }}
-            >
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <div />
+            {showSort ? (
+              <select
+                value={sort}
+                onChange={(e) => setSort(String(e.target.value || 'recent'))}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0b0b0b',
+                  color: '#fff',
+                  fontWeight: 900,
+                }}
+              >
+                {sortOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : showSourceSelect ? (
+              <select
+                value={sourceOrg}
+                onChange={(e) => setSourceOrg(String(e.target.value))}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0b0b0b',
+                  color: '#fff',
+                  fontWeight: 900,
+                }}
+              >
+                {filterOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div />
+            )}
+            {showSort && showSourceSelect ? (
+              <select
+                value={sourceOrg}
+                onChange={(e) => setSourceOrg(String(e.target.value))}
+                style={{
+                  width: '100%',
+                  minWidth: 0,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: '#0b0b0b',
+                  color: '#fff',
+                  fontWeight: 900,
+                }}
+              >
+                {filterOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div />
+            )}
           </div>
         ) : null}
 
@@ -525,7 +643,8 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search name/description"
             style={{
-              flex: '1 1 240px',
+              flex: '1 1 220px',
+              minWidth: 200,
               padding: '10px 12px',
               borderRadius: 10,
               border: '1px solid rgba(255,255,255,0.18)',
@@ -534,42 +653,30 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               fontSize: 16,
             }}
           />
-          {!showSourceRow && showSourceSelect ? (
-            <select
-              value={sourceOrg}
-              onChange={(e) => setSourceOrg(String(e.target.value))}
+          {showFavoritesToggle ? (
+            <button
+              type="button"
+              onClick={() => setFavoritesOnly((prev) => !prev)}
+              aria-pressed={favoritesOnly}
+              title={favoritesOnly ? 'Show all videos' : 'Show favorites only'}
               style={{
-                minWidth: 160,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: '#0b0b0b',
-                color: '#fff',
+                flex: '0 0 auto',
+                width: 40,
+                height: 40,
+                marginLeft: 'auto',
+                marginRight: 15,
+                borderRadius: 12,
+                border: '1px solid rgba(212,175,55,0.7)',
+                background: '#0c0c0c',
+                color: favoritesOnly ? '#ffd35a' : '#bbb',
+                fontSize: 18,
                 fontWeight: 900,
+                cursor: 'pointer',
               }}
             >
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              {favoritesOnly ? '★' : '☆'}
+            </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => void loadVideos()}
-            style={{
-              padding: '10px 16px',
-              borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0a84ff',
-              color: '#fff',
-              fontWeight: 700,
-            }}
-            disabled={loading}
-          >
-            Refresh
-          </button>
         </div>
         {error ? <div style={{ color: '#ffb3b3' }}>{error}</div> : null}
       </div>
@@ -596,6 +703,8 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
                 .join(' · ')
               const description = v.description ? String(v.description) : ''
               const clippedDescription = description ? truncateWords(description, 50).text : ''
+              const fav = Boolean(v.is_favorite)
+              const isToggling = !!togglingFav[v.id]
               const backParams = new URLSearchParams()
               const baseParams = new URLSearchParams(window.location.search)
               baseParams.delete('q')
@@ -603,10 +712,15 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
               baseParams.delete('sourceOrg')
               baseParams.delete('shared_scope')
               baseParams.delete('sharedScope')
+              baseParams.delete('sort')
+              baseParams.delete('favorites_only')
+              baseParams.delete('favoritesOnly')
               for (const [key, value] of baseParams.entries()) backParams.set(key, value)
               if (q.trim()) backParams.set('q', q.trim())
               if (sourceOrg && sourceOrg !== 'all') backParams.set('source_org', sourceOrg)
               if (showSharedScope && effectiveSharedScope !== 'system') backParams.set('shared_scope', effectiveSharedScope)
+              if (showSort && sort && sort !== 'newest') backParams.set('sort', sort)
+              if (showFavoritesToggle && favoritesOnly) backParams.set('favorites_only', '1')
               const qs = backParams.toString()
               const clipHref = qs
                 ? `${clipBasePath}/${encodeURIComponent(String(v.id))}?${qs}`
@@ -614,20 +728,45 @@ export const LibraryListPage: React.FC<LibraryListPageProps> = ({
 
               return (
                 <div key={v.id} className="card-item">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInfo(v)}
-                    style={{
-                      padding: 0,
-                      margin: 0,
-                      border: 'none',
-                      background: 'transparent',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div className="card-title" style={{ fontSize: 17 }}>{name}</div>
-                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInfo(v)}
+                      style={{
+                        padding: 0,
+                        margin: 0,
+                        border: 'none',
+                        background: 'transparent',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        flex: '1 1 auto',
+                        minWidth: 0,
+                      }}
+                    >
+                      <div className="card-title" style={{ fontSize: 17 }}>{name}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void toggleFavorite(v)}
+                      disabled={isToggling}
+                      title={fav ? 'Unfavorite' : 'Favorite'}
+                      style={{
+                        flex: '0 0 auto',
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        border: '1px solid rgba(212,175,55,0.7)',
+                        background: '#0c0c0c',
+                        color: fav ? '#ffd35a' : '#bbb',
+                        fontSize: 18,
+                        fontWeight: 900,
+                        cursor: isToggling ? 'default' : 'pointer',
+                        opacity: isToggling ? 0.7 : 1,
+                      }}
+                    >
+                      {fav ? '★' : '☆'}
+                    </button>
+                  </div>
                   {meta ? <div style={{ color: '#bbb', fontSize: 13 }}>{meta}</div> : null}
                   <div
                     style={{

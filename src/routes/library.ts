@@ -16,12 +16,14 @@ libraryRouter.get('/api/library/source-orgs', requireAuth, async (_req, res) => 
 
 libraryRouter.get('/api/library/videos', requireAuth, async (req, res) => {
   try {
-    const { q, source_org, sourceOrg, limit } = req.query as any
+    const { q, source_org, sourceOrg, limit, favorites_only, sort } = req.query as any
     const data = await librarySvc.listSystemLibraryVideos(
       {
         q: q != null ? String(q) : undefined,
         sourceOrg: (sourceOrg != null ? String(sourceOrg) : source_org != null ? String(source_org) : undefined),
         limit: limit != null ? Number(limit) : undefined,
+        sort: sort != null ? String(sort) : undefined,
+        favoritesOnly: favorites_only === '1' || favorites_only === 'true',
       },
       { userId: Number(req.user!.id) }
     )
@@ -76,13 +78,14 @@ libraryRouter.get('/api/library/videos/:id/search', requireAuth, async (req, res
 
 libraryRouter.get('/api/library/clips', requireAuth, async (req, res) => {
   try {
-    const { scope, upload_id, uploadId, q, limit } = req.query as any
+    const { scope, upload_id, uploadId, q, limit, favorites_only } = req.query as any
     const data = await librarySvc.listLibraryClips(
       {
         scope: scope != null ? String(scope) as any : undefined,
         uploadId: uploadId != null ? Number(uploadId) : upload_id != null ? Number(upload_id) : undefined,
         q: q != null ? String(q) : undefined,
         limit: limit != null ? Number(limit) : undefined,
+        favoritesOnly: favorites_only === '1' || favorites_only === 'true',
       },
       { userId: Number(req.user!.id) }
     )
@@ -156,5 +159,19 @@ libraryRouter.post('/api/library/clips', requireAuth, async (req, res) => {
   } catch (err: any) {
     const status = err?.status || 500
     return res.status(status).json({ error: err?.code || 'failed_to_create', detail: String(err?.message || err) })
+  }
+})
+
+libraryRouter.post('/api/library/clips/:id/favorite', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
+    const favorite = Boolean((req.body || {})?.favorite)
+    const data = await librarySvc.setLibraryClipFavorite(id, { favorite }, { userId: Number(req.user!.id) })
+    return res.json(data)
+  } catch (err: any) {
+    console.error('favorite library clip error', err)
+    const status = err?.status || 500
+    return res.status(status).json({ error: err?.code || 'failed_to_favorite', detail: String(err?.message || err) })
   }
 })

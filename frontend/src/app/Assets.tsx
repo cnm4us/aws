@@ -69,6 +69,7 @@ type LibraryClipItem = {
   is_system?: number
   is_shared?: number
   owner_user_id?: number
+  is_favorite?: boolean
   modified_filename?: string | null
   original_filename?: string | null
   upload_description?: string | null
@@ -1046,6 +1047,7 @@ const VideoAssetsListPage: React.FC<{
   const clipVideoRef = React.useRef<HTMLVideoElement | null>(null)
   const [clipPreviewTime, setClipPreviewTime] = React.useState(0)
   const [clipPreviewPlaying, setClipPreviewPlaying] = React.useState(false)
+  const [togglingClipFav, setTogglingClipFav] = React.useState<Record<number, boolean>>({})
 
   const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
   const allowClips = pickType === 'video' || pickType === 'videoOverlay'
@@ -1074,8 +1076,8 @@ const VideoAssetsListPage: React.FC<{
   }, [allowClips, clipScope])
 
   React.useEffect(() => {
-    if (!isUploadMode && favoritesOnly) setFavoritesOnly(false)
-  }, [isUploadMode, favoritesOnly])
+    if (!isUploadMode && !isClipMode && favoritesOnly) setFavoritesOnly(false)
+  }, [isUploadMode, isClipMode, favoritesOnly])
 
   React.useEffect(() => {
     if (!isClipPreview) {
@@ -1152,6 +1154,7 @@ const VideoAssetsListPage: React.FC<{
           const params = new URLSearchParams()
           if (qTrim) params.set('q', qTrim)
           params.set('scope', 'mine')
+          if (favoritesOnly) params.set('favorites_only', '1')
           params.set('limit', '200')
           const res = await fetch(`/api/library/clips?${params.toString()}`, {
             credentials: 'same-origin',
@@ -1290,6 +1293,38 @@ const VideoAssetsListPage: React.FC<{
       }
     },
     [togglingFav]
+  )
+
+  const toggleClipFavorite = React.useCallback(
+    async (c: LibraryClipItem) => {
+      if (!c?.id) return
+      if (togglingClipFav[c.id]) return
+      setTogglingClipFav((prev) => ({ ...prev, [c.id]: true }))
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const csrf = getCsrfToken()
+        if (csrf) headers['x-csrf-token'] = csrf
+        const nextFav = !Boolean(c.is_favorite)
+        const res = await fetch(`/api/library/clips/${c.id}/favorite`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers,
+          body: JSON.stringify({ favorite: nextFav }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.detail || data?.error || 'Failed')
+        setClipItems((prev) => prev.map((x) => (x.id === c.id ? { ...x, is_favorite: nextFav } : x)))
+      } catch (e: any) {
+        window.alert(e?.message || 'Failed to favorite')
+      } finally {
+        setTogglingClipFav((prev) => {
+          const next = { ...prev }
+          delete next[c.id]
+          return next
+        })
+      }
+    },
+    [togglingClipFav]
   )
 
   const renderCard = (u: UploadListItem) => {
@@ -1450,6 +1485,8 @@ const VideoAssetsListPage: React.FC<{
     const previewSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy#t=${(start + 0.1).toFixed(1)}`
     const playbackSrc = `/api/uploads/${encodeURIComponent(String(c.upload_id))}/edit-proxy`
     const isPick = mode === 'pick'
+    const fav = Boolean(c.is_favorite)
+    const isToggling = !!togglingClipFav[c.id]
     return (
       <div key={`clip-${c.id}`} className="card-item" data-card-type="clip">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
@@ -1457,20 +1494,44 @@ const VideoAssetsListPage: React.FC<{
             <div className="card-title" style={{ fontSize: 17, color: '#ffd60a' }}>{name}</div>
             {meta ? <div className="card-meta">{meta}</div> : null}
           </div>
-          {isPick ? (
-            <button
-              className="card-btn card-btn-open"
-              type="button"
-              onClick={() => {
-                const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
-                const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id) })
-                if (href) window.location.href = href
-              }}
-              style={{ flex: '0 0 auto', cursor: 'pointer' }}
-            >
-              Select
-            </button>
-          ) : null}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+            {!isPick ? (
+              <button
+                type="button"
+                onClick={() => void toggleClipFavorite(c)}
+                disabled={isToggling}
+                title={fav ? 'Unfavorite' : 'Favorite'}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  border: '1px solid rgba(212,175,55,0.7)',
+                  background: '#0c0c0c',
+                  color: fav ? '#ffd35a' : '#bbb',
+                  fontSize: 18,
+                  fontWeight: 900,
+                  cursor: isToggling ? 'default' : 'pointer',
+                  opacity: isToggling ? 0.7 : 1,
+                }}
+              >
+                {fav ? '★' : '☆'}
+              </button>
+            ) : null}
+            {isPick ? (
+              <button
+                className="card-btn card-btn-open"
+                type="button"
+                onClick={() => {
+                  const pick = pickType === 'videoOverlay' ? 'videoOverlayClip' : 'clip'
+                  const href = buildReturnHref({ cvPickType: pick, cvPickClipId: String(c.id) })
+                  if (href) window.location.href = href
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                Select
+              </button>
+            ) : null}
+          </div>
         </div>
         <div
           style={{
@@ -1623,72 +1684,85 @@ const VideoAssetsListPage: React.FC<{
         ) : null}
 
         {!isSharedMode ? (
-          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-            <input
-              value={q}
-              onChange={(e) => setQ(String((e.target as any).value || ''))}
-              placeholder="Search name or description…"
+          <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <div
               style={{
-                flex: '1 1 220px',
-                minWidth: 200,
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: '#0c0c0c',
-                color: '#fff',
-                outline: 'none',
-              }}
-            />
-
-            <select
-              value={sort}
-              onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'recent')))}
-              style={{
-                flex: '0 0 auto',
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: '#0c0c0c',
-                color: '#fff',
-                outline: 'none',
-                fontWeight: 900,
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                gap: 10,
+                alignItems: 'center',
               }}
             >
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-              <option value="name_asc">Name A→Z</option>
-              <option value="name_desc">Name Z→A</option>
-              <option value="duration_asc">Duration (short→long)</option>
-              <option value="duration_desc">Duration (long→short)</option>
-              <option value="size_asc">Size (small→large)</option>
-              <option value="size_desc">Size (large→small)</option>
-              <option value="recent">Recently Used</option>
-            </select>
-
-            {isUploadMode ? (
-              <button
-                type="button"
-                onClick={() => setFavoritesOnly((prev) => !prev)}
-                aria-pressed={favoritesOnly}
-                title={favoritesOnly ? 'Show all videos' : 'Show favorites only'}
+              <select
+                value={sort}
+                onChange={(e) => setSort(normalizeVideoSort(String((e.target as any).value || 'recent')))}
                 style={{
-                  flex: '0 0 auto',
-                  width: 40,
-                  height: 40,
-                  marginLeft: 'auto',
-                  marginRight: 15,
+                  width: '100%',
+                  minWidth: 0,
+                  padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid rgba(212,175,55,0.7)',
+                  border: '1px solid rgba(255,255,255,0.14)',
                   background: '#0c0c0c',
-                  color: favoritesOnly ? '#ffd35a' : '#bbb',
-                  fontSize: 18,
+                  color: '#fff',
+                  outline: 'none',
                   fontWeight: 900,
-                  cursor: 'pointer',
                 }}
               >
-                {favoritesOnly ? '★' : '☆'}
-              </button>
-            ) : null}
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="name_asc">Name A→Z</option>
+                <option value="name_desc">Name Z→A</option>
+                <option value="duration_asc">Duration (short→long)</option>
+                <option value="duration_desc">Duration (long→short)</option>
+                <option value="size_asc">Size (small→large)</option>
+                <option value="size_desc">Size (large→small)</option>
+                <option value="recent">Recently Used</option>
+              </select>
+              <div />
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+              <input
+                value={q}
+                onChange={(e) => setQ(String((e.target as any).value || ''))}
+                placeholder="Search name or description…"
+                style={{
+                  flex: '1 1 220px',
+                  minWidth: 200,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  background: '#0c0c0c',
+                  color: '#fff',
+                  outline: 'none',
+                }}
+              />
+
+              {isUploadMode || isClipMode ? (
+                <button
+                  type="button"
+                  onClick={() => setFavoritesOnly((prev) => !prev)}
+                  aria-pressed={favoritesOnly}
+                  title={favoritesOnly ? 'Show all videos' : 'Show favorites only'}
+                  style={{
+                    flex: '0 0 auto',
+                    width: 40,
+                    height: 40,
+                    marginLeft: 'auto',
+                    marginRight: 15,
+                    borderRadius: 12,
+                    border: '1px solid rgba(212,175,55,0.7)',
+                    background: '#0c0c0c',
+                    color: favoritesOnly ? '#ffd35a' : '#bbb',
+                    fontSize: 18,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {favoritesOnly ? '★' : '☆'}
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
