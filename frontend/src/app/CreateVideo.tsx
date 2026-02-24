@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getUploadCdnUrl } from '../ui/uploadsCdn'
 import type {
   AudioSegment,
   AudioTrack,
@@ -4139,7 +4138,7 @@ export default function CreateVideo() {
     const a = narrationPreviewRef.current || new Audio()
     narrationPreviewRef.current = a
     try { a.pause() } catch {}
-    const url = (await getUploadCdnUrl(uploadId, { kind: 'file' })) || `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+    const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
     a.src = url
     a.preload = 'auto'
 
@@ -4293,7 +4292,7 @@ export default function CreateVideo() {
     const a = musicPreviewRef.current || new Audio()
     musicPreviewRef.current = a
     try { a.pause() } catch {}
-    const url = (await getUploadCdnUrl(uploadId, { kind: 'file' })) || `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+    const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
     a.src = url
     a.preload = 'auto'
 
@@ -4437,7 +4436,7 @@ export default function CreateVideo() {
           player.load()
         } catch {}
 
-        const url = (await getUploadCdnUrl(id, { kind: 'file' })) || `/api/uploads/${encodeURIComponent(String(id))}/file`
+        const url = `/api/uploads/${encodeURIComponent(String(id))}/file`
         player.src = url
         player.currentTime = 0
         try {
@@ -6186,12 +6185,8 @@ export default function CreateVideo() {
             nextTimeline = { ...(nextTimeline as any), screenTitles: out }
           }
 
-          try {
-            const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
-            if (url) {
-              setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
-            }
-          } catch {}
+          const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+          setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
         } catch {}
       }
 
@@ -6210,7 +6205,6 @@ export default function CreateVideo() {
   }, [
     buildScreenTitlePresetOverride,
     forceReloadScreenTitlePresets,
-    getUploadCdnUrl,
     outputFrame.height,
     outputFrame.width,
     refreshScreenTitlePresetId,
@@ -6510,8 +6504,7 @@ export default function CreateVideo() {
 
       if (activeUploadId !== nextUploadId) {
         setActiveUploadId(nextUploadId)
-        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-        const src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+        const src = `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy#t=0.1`
         v.src = src
         baseLoadedUploadIdRef.current = nextUploadId
         v.load()
@@ -6677,8 +6670,7 @@ export default function CreateVideo() {
 
 	      if (overlayActiveUploadId !== nextUploadId) {
 	        setOverlayActiveUploadId(nextUploadId)
-	        const cdn = await getUploadCdnUrl(nextUploadId, { kind: 'edit-proxy' })
-	        v.src = `${cdn || `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy`}#t=0.1`
+	        v.src = `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy#t=0.1`
         overlayLoadedUploadIdRef.current = nextUploadId
         v.load()
         const onMeta = () => {
@@ -6748,8 +6740,7 @@ export default function CreateVideo() {
     ;(async () => {
       if (!activeUploadId) return
       if (posterByUploadId[activeUploadId]) return
-      const cdn = await getUploadCdnUrl(activeUploadId, { kind: 'thumb' })
-      const url = cdn || `/api/uploads/${encodeURIComponent(String(activeUploadId))}/thumb`
+      const url = `/api/uploads/${encodeURIComponent(String(activeUploadId))}/thumb`
       if (!alive) return
       setPosterByUploadId((prev) => (prev[activeUploadId] ? prev : { ...prev, [activeUploadId]: url }))
     })()
@@ -6767,8 +6758,7 @@ export default function CreateVideo() {
       const uploadId = Number(o.uploadId)
       if (!Number.isFinite(uploadId) || uploadId <= 0) return
       if (posterByUploadId[uploadId]) return
-      const cdn = await getUploadCdnUrl(uploadId, { kind: 'thumb' })
-      const url = cdn || `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
+      const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/thumb`
       if (!alive) return
       setPosterByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
     })()
@@ -6777,7 +6767,7 @@ export default function CreateVideo() {
     }
   }, [activeVideoOverlayAtPlayhead, posterByUploadId])
 
-  // Prefetch CloudFront-signed file URLs for image assets (graphics + logos + freeze-frame stills) so playback doesn't stall.
+  // Prefetch file URLs for image assets (graphics + logos + freeze-frame stills) so playback doesn't stall.
   useEffect(() => {
     const ids = Array.from(
       new Set(
@@ -6803,7 +6793,7 @@ export default function CreateVideo() {
       const batchSize = 8
       for (let i = 0; i < missing.length; i += batchSize) {
         const batch = missing.slice(i, i + batchSize)
-        const urls = await Promise.all(batch.map((id) => getUploadCdnUrl(id, { kind: 'file' })))
+        const urls = batch.map((id) => `/api/uploads/${encodeURIComponent(String(id))}/file`)
         if (!alive) return
         setGraphicFileUrlByUploadId((prev) => {
           const next = { ...prev }
@@ -15361,12 +15351,8 @@ export default function CreateVideo() {
         return { ...prev, screenTitles: nextSts }
       })
 
-      try {
-        const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
-        if (url) {
-          setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
-        }
-      } catch {}
+      const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+      setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
 
       if (closeEditorOnSuccess) {
         setScreenTitlePlacementEditor(null)
@@ -15388,7 +15374,7 @@ export default function CreateVideo() {
     } finally {
       setScreenTitleRenderBusy(false)
     }
-  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
+  }, [outputFrame.height, outputFrame.width, screenTitlePlacementEditor, screenTitlePresets, snapshotUndo])
 
   saveScreenTitlePlacementRef.current = saveScreenTitlePlacement
 
@@ -15497,12 +15483,8 @@ export default function CreateVideo() {
         return { ...prev, screenTitles: nextSts }
       })
 
-      try {
-        const url = await getUploadCdnUrl(uploadId, { kind: 'file' })
-        if (url) {
-          setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
-        }
-      } catch {}
+      const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+      setGraphicFileUrlByUploadId((prev) => (prev[uploadId] ? prev : { ...prev, [uploadId]: url }))
 
       setScreenTitleCustomizeEditor(null)
       setScreenTitleCustomizeError(null)
@@ -15511,7 +15493,7 @@ export default function CreateVideo() {
     } finally {
       setScreenTitleRenderBusy(false)
     }
-  }, [getUploadCdnUrl, outputFrame.height, outputFrame.width, screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
+  }, [outputFrame.height, outputFrame.width, screenTitleCustomizeEditor, screenTitlePresets, snapshotUndo])
 
   const openAdd = useCallback(() => {
     try {
@@ -17029,9 +17011,10 @@ export default function CreateVideo() {
   // [cv-shell + cv-preview-stage + cv-timeline-lanes] primary page composition.
   return (
     <div style={{ minHeight: '100vh', background: '#050505', color: '#fff', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+      <div style={{ padding: '24px 16px 80px' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
             <button
               type="button"
               onClick={async () => {
@@ -17105,32 +17088,31 @@ export default function CreateVideo() {
             </button>
           </div>
         </div>
-
         <h1 style={{ margin: '12px 0 10px', fontSize: 28 }}>Create Video</h1>
         <div style={{ color: '#bbb', fontSize: 13 }}>
           Clips: {timeline.clips.length} • Stills: {stills.length} • Graphics: {graphics.length} • Total: {totalSeconds.toFixed(1)}s
         </div>
-        <div
-          style={{
-            marginTop: 14,
-            borderRadius: 14,
-            border: '1px solid rgba(255,255,255,0.14)',
-            overflow: screenTitlePlacementEditor || showPreviewToolbar ? 'visible' : 'hidden',
-            background: '#000',
-            position: 'relative',
-            zIndex: screenTitlePlacementEditor ? 260 : 'auto',
-          }}
-        >
+        <div style={{ maxWidth: 520, margin: '14px auto 0' }}>
           <div
-            ref={previewWrapRef}
             style={{
-              width: '100%',
-              aspectRatio: '9 / 16',
-              background: timelineBackgroundMode === 'color' ? timelineBackgroundColor : '#000',
-              position: 'relative',
+              borderRadius: 14,
+              border: '1px solid rgba(255,255,255,0.14)',
               overflow: screenTitlePlacementEditor || showPreviewToolbar ? 'visible' : 'hidden',
+              background: '#000',
+              position: 'relative',
+              zIndex: screenTitlePlacementEditor ? 260 : 'auto',
             }}
           >
+            <div
+              ref={previewWrapRef}
+              style={{
+                width: '100%',
+                aspectRatio: '9 / 16',
+                background: timelineBackgroundMode === 'color' ? timelineBackgroundColor : '#000',
+                position: 'relative',
+                overflow: screenTitlePlacementEditor || showPreviewToolbar ? 'visible' : 'hidden',
+              }}
+            >
             {timelineBackgroundMode === 'color' ? (
               <div
                 style={{
@@ -17431,8 +17413,10 @@ export default function CreateVideo() {
 	                style={activeLogoPreview.style}
 	              />
 	            ) : null}
-	          </div>
-	        </div>
+        </div>
+        </div>
+        </div>
+        </div>
 
         <div
           style={{
@@ -19353,6 +19337,7 @@ export default function CreateVideo() {
             </div>
           </div>
 
+              <div style={{ maxWidth: 620, margin: '0 auto' }}>
 		          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
 		            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -19507,7 +19492,7 @@ export default function CreateVideo() {
 					              </div>
 			            </div>
 
-		            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 10, alignItems: 'center' }}>
+		              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 10, alignItems: 'center' }}>
 		              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-start' }}>
 		                <button
 		                  type="button"
@@ -19733,25 +19718,27 @@ export default function CreateVideo() {
 		                  »
 		                </button>
 		              </div>
-		            </div>
+		              </div>
 
-            {timelineMessage ? (
-              <div
-                style={{
-                  marginTop: 6,
-                  color: '#ffd24a',
-                  fontSize: 13,
-                  textAlign: 'center',
-                  fontWeight: 900,
-                  background: 'rgba(255,210,74,0.10)',
-                  border: '1px solid rgba(255,210,74,0.28)',
-                  borderRadius: 12,
-                  padding: '8px 10px',
-                }}
-              >
-                {timelineMessage}
-              </div>
-            ) : null}
+              {timelineMessage ? (
+                <div
+                  style={{
+                    marginTop: 6,
+                    color: '#ffd24a',
+                    fontSize: 13,
+                    textAlign: 'center',
+                    fontWeight: 900,
+                    background: 'rgba(255,210,74,0.10)',
+                    border: '1px solid rgba(255,210,74,0.28)',
+                    borderRadius: 12,
+                    padding: '8px 10px',
+                  }}
+                >
+                  {timelineMessage}
+                </div>
+              ) : null}
+            </div>
+          </div>
 
             {timelineErrorModal ? (
               <div
@@ -19804,11 +19791,12 @@ export default function CreateVideo() {
                 </div>
               </div>
             ) : null}
-          </div>
         </div>
 
-        {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
-        {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          {exportStatus ? <div style={{ marginTop: 12, color: '#bbb' }}>{exportStatus}</div> : null}
+          {exportError ? <div style={{ marginTop: 10, color: '#ff9b9b' }}>{exportError}</div> : null}
+        </div>
       </div>
 
       {/* [cv-editor-video-graphics + cv-editor-branding-audio] modal host boundary for standalone lazy chunk. */}

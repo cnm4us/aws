@@ -489,30 +489,16 @@ export default function Exports() {
                   <div style={{ position: 'relative', background: 'rgba(0,0,0,0.35)', borderRadius: 12, overflow: 'hidden', width: '100%', height: 520, maxHeight: '70vh' }}>
                     <button
                       type="button"
-                      onClick={async () => {
+                      onClick={() => {
                         if (!me?.userId) return
                         const uploadId = Number(u.id)
                         setPreviewOpen(true)
                         setPreviewUploadId(uploadId)
                         setPreviewTitle(title)
-                        setPreviewUrl(null)
+                        setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
                         setPreviewFallbackTried(false)
-                        setPreviewLoading(true)
+                        setPreviewLoading(false)
                         setPreviewError(null)
-                        try {
-                          const res = await fetch(`/api/uploads/${encodeURIComponent(String(uploadId))}/cdn-url?kind=file`, { credentials: 'same-origin' })
-                          const json: any = await res.json().catch(() => null)
-                          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'failed_to_get_url'))
-                          const url = json?.url != null ? String(json.url) : ''
-                          if (!url) throw new Error('missing_url')
-                          setPreviewUrl(url)
-                        } catch (e: any) {
-                          setPreviewError(e?.message || 'Failed to load preview')
-                          setPreviewUrl(`/api/uploads/${encodeURIComponent(String(uploadId))}/file`)
-                          setPreviewFallbackTried(true)
-                        } finally {
-                          setPreviewLoading(false)
-                        }
                       }}
                       style={{
                         position: 'absolute',

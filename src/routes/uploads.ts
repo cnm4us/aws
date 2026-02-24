@@ -423,34 +423,6 @@ uploadsRouter.get('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
 	  }
 	})
 
-uploadsRouter.get('/api/uploads/:id/cdn-url', requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id)
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'bad_id' })
-    const kindRaw = String((req.query as any)?.kind || '').trim().toLowerCase()
-    const kind =
-      kindRaw === 'edit-proxy' || kindRaw === 'edit_proxy'
-        ? 'edit_proxy'
-        : kindRaw === 'thumb'
-          ? 'thumb'
-          : kindRaw === 'file'
-            ? 'file'
-            : null
-    if (!kind) return res.status(400).json({ error: 'bad_kind' })
-    const signed = await uploadsSvc.getUploadSignedCdnUrl(
-      id,
-      { kind: kind as any },
-      { userId: Number(req.user!.id) }
-    )
-    res.set('Cache-Control', 'no-store')
-    return res.json({ url: signed.url, expiresAt: signed.expiresAt })
-  } catch (err: any) {
-    const status = err?.status || 500
-    const code = err?.code || 'failed'
-    return res.status(status).json({ error: code, detail: String(err?.message || err) })
-  }
-})
-
 uploadsRouter.post('/api/uploads/:id/thumb', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)

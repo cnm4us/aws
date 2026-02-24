@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getUploadCdnUrl } from '../ui/uploadsCdn'
 
 type Range = { start: number; end: number }
 
@@ -550,21 +549,8 @@ export default function EditVideo() {
 
   // iOS Safari often won’t render an initial paused frame for a <video> without a poster until playback begins.
   // Adding a time fragment and starting muted improves first-frame paint reliability.
-  const [editProxyCdnUrl, setEditProxyCdnUrl] = useState<string | null>(null)
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      if (!uploadId) return
-      const cdn = await getUploadCdnUrl(uploadId, { kind: 'edit-proxy' })
-      if (!alive) return
-      setEditProxyCdnUrl(cdn)
-    })()
-    return () => {
-      alive = false
-    }
-  }, [uploadId, retryNonce])
   const src = uploadId
-    ? `${editProxyCdnUrl || `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}`}#t=0.1`
+    ? `/api/uploads/${encodeURIComponent(String(uploadId))}/edit-proxy?b=${retryNonce}#t=0.1`
     : null
   const backHref = from || (uploadId ? `/produce?upload=${encodeURIComponent(String(uploadId))}` : '/produce')
 
