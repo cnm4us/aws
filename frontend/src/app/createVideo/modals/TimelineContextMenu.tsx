@@ -120,6 +120,25 @@ export default function TimelineContextMenu(props: any) {
     const initial = snapTargetRef?.current
     return initial || 'guideline'
   })
+  const readHeaderPx = React.useCallback(() => {
+    if (typeof window === 'undefined') return 44
+    const headerEl = document.querySelector('[class*="sharedNav_container__"]') as HTMLElement | null
+    if (headerEl) {
+      const rect = headerEl.getBoundingClientRect()
+      if (rect.height > 0) return rect.height
+    }
+    try {
+      const probe = document.createElement('div')
+      probe.style.position = 'fixed'
+      probe.style.visibility = 'hidden'
+      probe.style.height = 'var(--header-h, 44px)'
+      document.body.appendChild(probe)
+      const h = probe.getBoundingClientRect().height
+      probe.remove()
+      if (h > 0) return h
+    } catch {}
+    return 44
+  }, [])
   const dragRef = React.useRef<{
     pointerId: number
     startX: number
@@ -146,10 +165,12 @@ export default function TimelineContextMenu(props: any) {
     const rect = el.getBoundingClientRect()
     const viewportW = window.innerWidth || 0
     const viewportH = window.innerHeight || 0
+    const headerPx = readHeaderPx()
+    const minY = Math.max(margin, Math.round(headerPx) + 8)
     const maxX = Math.max(margin, viewportW - rect.width - margin)
-    const maxY = Math.max(margin, viewportH - rect.height - margin)
+    const maxY = Math.max(minY, viewportH - rect.height - margin)
     const nextX = Math.min(maxX, Math.max(margin, menuPos.x))
-    const nextY = Math.min(maxY, Math.max(margin, menuPos.y))
+    const nextY = Math.min(maxY, Math.max(minY, menuPos.y))
     if (nextX !== menuPos.x || nextY !== menuPos.y) {
       setMenuPos({ x: nextX, y: nextY })
     }
@@ -185,7 +206,18 @@ export default function TimelineContextMenu(props: any) {
     if (!drag || drag.pointerId !== e.pointerId) return
     const dx = e.clientX - drag.startX
     const dy = e.clientY - drag.startY
-    setMenuPos({ x: drag.startLeft + dx, y: drag.startTop + dy })
+    const el = menuRef.current
+    const rect = el ? el.getBoundingClientRect() : null
+    const margin = 8
+    const viewportW = window.innerWidth || 0
+    const viewportH = window.innerHeight || 0
+    const headerPx = readHeaderPx()
+    const minY = Math.max(margin, Math.round(headerPx) + 8)
+    const maxX = Math.max(margin, viewportW - (rect?.width || 0) - margin)
+    const maxY = Math.max(minY, viewportH - (rect?.height || 0) - margin)
+    const nextX = Math.min(maxX, Math.max(margin, drag.startLeft + dx))
+    const nextY = Math.min(maxY, Math.max(minY, drag.startTop + dy))
+    setMenuPos({ x: nextX, y: nextY })
   }
 
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {

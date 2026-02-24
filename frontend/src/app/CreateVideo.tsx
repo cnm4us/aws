@@ -1137,13 +1137,35 @@ export default function CreateVideo() {
   )
   const openTimelineCtxMenuForEdge = useCallback(
     (kind: TimelineCtxKind, id: string, edgeIntent: 'move' | 'start' | 'end') => {
+      const readHeaderPx = () => {
+        if (typeof window === 'undefined') return 44
+        const headerEl = document.querySelector('[class*="sharedNav_container__"]') as HTMLElement | null
+        if (headerEl) {
+          const rect = headerEl.getBoundingClientRect()
+          if (rect.height > 0) return rect.height
+        }
+        try {
+          const probe = document.createElement('div')
+          probe.style.position = 'fixed'
+          probe.style.visibility = 'hidden'
+          probe.style.height = 'var(--header-h, 44px)'
+          document.body.appendChild(probe)
+          const h = probe.getBoundingClientRect().height
+          probe.remove()
+          if (h > 0) return h
+        } catch {}
+        return 44
+      }
       const w = window.innerWidth || 0
       const h = window.innerHeight || 0
       const menuW = 170
       const menuH = 188
       const pad = 10
       const x = clamp(Math.round((w - menuW) / 2), pad, Math.max(pad, w - menuW - pad))
-      const y = clamp(Math.round((h - menuH) / 2), pad, Math.max(pad, h - menuH - pad))
+      const headerPx = readHeaderPx()
+      const minY = Math.max(pad, Math.round(headerPx) + 8)
+      const maxY = Math.max(minY, h - menuH - pad)
+      const y = clamp(minY, minY, maxY)
       timelineCtxMenuOpenedAtRef.current = performance.now()
       setTimelineCtxMenu((prev) => ({
         kind,
