@@ -1742,7 +1742,7 @@ export default function CreateVideo() {
   const TRACKS_TOP = RULER_H + WAVEFORM_H
   const LANE_TOP_PAD = 6
   const PILL_H = Math.max(18, TRACK_H - 12)
-  const HANDLE_HIT_PX = 18
+  const HANDLE_HIT_PX = 36
   const pickTrimEdge = (
     clickX: number,
     leftX: number,
@@ -1753,8 +1753,9 @@ export default function CreateVideo() {
     if (nearLeft && nearRight) {
       const handleSize = Math.max(10, Math.min(18, Math.floor(PILL_H - 10)))
       const inset = 6
-      const leftCenter = leftX + inset + handleSize / 2
-      const rightCenter = rightX - inset - handleSize / 2
+      const handleW = handleSize * 2
+      const leftCenter = leftX + inset + handleW / 2
+      const rightCenter = rightX - inset - handleW / 2
       return Math.abs(clickX - leftCenter) <= Math.abs(clickX - rightCenter) ? 'start' : 'end'
     }
     return nearLeft ? 'start' : 'end'
@@ -4922,15 +4923,17 @@ export default function CreateVideo() {
 	    const boundHandleKind = boundHandleEdge ? String((timelineCtxMenu as any)?.kind || '') : null
 	    const boundHandleId = boundHandleEdge ? String((timelineCtxMenu as any)?.id || '') : null
 	    const drawHandle = (hx: number, hy: number, hs: number, color: string, bound: boolean) => {
+	      const hw = hs * 2
+	      const hh = hs
 	      if (!bound) {
 	        ctx.fillStyle = color
-	        roundRect(ctx, hx, hy, hs, hs, 4)
+	        roundRect(ctx, hx, hy, hw, hh, 4)
 	        ctx.fill()
 	        return
 	      }
-	      const ds = Math.max(6, Math.floor(hs * 0.9))
-	      const cx = hx + hs / 2
-	      const cy = hy + hs / 2
+	      const ds = Math.max(6, Math.floor(hh * 0.9))
+	      const cx = hx + hw / 2
+	      const cy = hy + hh / 2
 	      ctx.save()
 	      ctx.translate(cx, cy)
 	      ctx.rotate(Math.PI / 4)
@@ -5007,6 +5010,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(212,175,55,0.10)'
       roundRect(ctx, x, logoY, w, pillH, 10)
@@ -5029,8 +5033,8 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[Number(l.uploadId)] || `Logo ${l.uploadId}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
@@ -5041,7 +5045,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = logoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'logo' && String((l as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5076,6 +5080,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(94,92,230,0.18)'
       roundRect(ctx, x, lowerThirdY, w, pillH, 10)
@@ -5100,8 +5105,8 @@ export default function CreateVideo() {
       const cfgName = String(lt?.configSnapshot?.name || '') || `Config ${lt.configId}`
       const name = `${imgName} • ${cfgName}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
@@ -5112,7 +5117,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = lowerThirdY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'lowerThird' && String((lt as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5148,6 +5153,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(255,214,10,0.16)'
       roundRect(ctx, x, screenTitleY, w, pillH, 10)
@@ -5173,8 +5179,8 @@ export default function CreateVideo() {
       const snippet = snippetRaw ? snippetRaw : 'Unconfigured'
       const label = presetName ? `${presetName} • ${snippet}` : snippet
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, label, maxTextW)
@@ -5185,7 +5191,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = screenTitleY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'screenTitle' && String((st as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5223,6 +5229,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(255,255,255,0.10)'
       roundRect(ctx, x, videoOverlayY, w, pillH, 10)
@@ -5245,8 +5252,8 @@ export default function CreateVideo() {
 
       ctx.fillStyle = '#fff'
       const label = `Freeze ${len.toFixed(1)}s`
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, label, maxTextW)
@@ -5257,7 +5264,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = videoOverlayY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'videoOverlayStill' && String((s as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5296,6 +5303,7 @@ export default function CreateVideo() {
         const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
         const showHandles = (isSelected || isDragging) && w >= 28
         const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+        const handleW = handleSize * 2
 
         ctx.fillStyle = 'rgba(255,159,10,0.18)'
         roundRect(ctx, x, videoOverlayY, w, pillH, 10)
@@ -5318,8 +5326,8 @@ export default function CreateVideo() {
 
         const name = namesByUploadId[Number(o.uploadId)] || `Overlay ${o.uploadId}`
         ctx.fillStyle = '#fff'
-        const padLeft = showHandles ? 6 + handleSize + 10 : 12
-        const padRight = showHandles ? 6 + handleSize + 10 : 12
+        const padLeft = showHandles ? 6 + handleW + 10 : 12
+        const padRight = showHandles ? 6 + handleW + 10 : 12
         const maxTextW = Math.max(0, w - padLeft - padRight)
         if (maxTextW >= 20) {
           const clipped = ellipsizeText(ctx, name, maxTextW)
@@ -5339,7 +5347,7 @@ export default function CreateVideo() {
           const hs = handleSize
           const hy = videoOverlayY + Math.floor((pillH - handleSize) / 2)
           const hxL = x + 6
-          const hxR = x + w - 6 - hs
+          const hxR = x + w - 6 - handleW
           const boundEdge =
             boundHandleEdge && boundHandleKind === 'videoOverlay' && String((o as any)?.id) === boundHandleId ? boundHandleEdge : null
           drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
@@ -5374,6 +5382,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(10,132,255,0.18)'
       roundRect(ctx, x, graphicsY, w, pillH, 10)
@@ -5396,8 +5405,8 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[g.uploadId] || `Image ${g.uploadId}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
@@ -5408,7 +5417,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = graphicsY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'graphic' && String((g as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5443,6 +5452,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(255,255,255,0.10)'
       roundRect(ctx, x, videoY, w, pillH, 10)
@@ -5465,8 +5475,8 @@ export default function CreateVideo() {
 
       ctx.fillStyle = '#fff'
       const label = `Freeze ${len.toFixed(1)}s`
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, label, maxTextW)
@@ -5477,7 +5487,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'still' && String((s as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
@@ -5508,6 +5518,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       // pill background
       ctx.fillStyle = 'rgba(212,175,55,0.28)'
@@ -5532,8 +5543,8 @@ export default function CreateVideo() {
 
       const name = namesByUploadId[clip.uploadId] || `Video ${clip.uploadId}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : isSelected ? 18 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : isSelected ? 18 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, name, maxTextW)
@@ -5550,7 +5561,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = videoY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'clip' && String((clip as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
@@ -5586,6 +5597,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
 
       ctx.fillStyle = 'rgba(175,82,222,0.16)'
       roundRect(ctx, x, narrationY, w, pillH, 10)
@@ -5613,8 +5625,8 @@ export default function CreateVideo() {
       const boostLabel = Math.abs(boostDb) > 0.05 ? `${boostDb > 0 ? '+' : ''}${boostDb.toFixed(0)}dB` : '0dB'
       const label = `${baseName} • ${boostLabel}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, label, maxTextW)
@@ -5636,7 +5648,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = narrationY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'narration' && String((n as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
@@ -5672,6 +5684,7 @@ export default function CreateVideo() {
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+      const handleW = handleSize * 2
       ctx.fillStyle = 'rgba(48,209,88,0.18)'
       roundRect(ctx, x, audioY, w, pillH, 10)
       ctx.fill()
@@ -5695,8 +5708,8 @@ export default function CreateVideo() {
       const cfgName = audioConfigNameById[Number(seg.audioConfigId)] || `Config ${seg.audioConfigId}`
       const label = `${audioName} • ${cfgName}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleSize + 10 : 12
-      const padRight = showHandles ? 6 + handleSize + 10 : 12
+      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
         const clipped = ellipsizeText(ctx, label, maxTextW)
@@ -5716,7 +5729,7 @@ export default function CreateVideo() {
         const hs = handleSize
         const hy = audioY + Math.floor((pillH - handleSize) / 2)
         const hxL = x + 6
-        const hxR = x + w - 6 - hs
+        const hxR = x + w - 6 - handleW
         const boundEdge =
           boundHandleEdge && boundHandleKind === 'audioSegment' && String((seg as any)?.id) === boundHandleId ? boundHandleEdge : null
         drawHandle(hxL, hy, hs, leftIsGreen ? HANDLE_GREEN : HANDLE_GOLD, boundEdge === 'start')
