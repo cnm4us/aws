@@ -677,6 +677,7 @@ export default function CreateVideo() {
         y: number
       }
   >(null)
+  const bodyHoldRef = useRef<null | { timer: number; pointerId: number; startX: number; startY: number }>(null)
   const undoStackRef = useRef<
     Array<{
       timeline: Timeline
@@ -17173,6 +17174,49 @@ export default function CreateVideo() {
     }
   }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
 
+  const cancelBodyHold = useCallback(
+    (reason: string) => {
+      const cur = bodyHoldRef.current
+      if (!cur) return
+      try { window.clearTimeout(cur.timer) } catch {}
+      bodyHoldRef.current = null
+      dbg('cancelBodyHold', { reason })
+    },
+    [dbg]
+  )
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const cur = bodyHoldRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      if (trimDragging) {
+        cancelBodyHold('dragging')
+        return
+      }
+      const dx = e.clientX - cur.startX
+      const dy = e.clientY - cur.startY
+      if (dx * dx + dy * dy > 9 * 9) cancelBodyHold('moved')
+    }
+    const onUp = (e: PointerEvent) => {
+      const cur = bodyHoldRef.current
+      if (!cur) return
+      if (e.pointerId !== cur.pointerId) return
+      cancelBodyHold('pointerup')
+    }
+    const onBlur = () => cancelBodyHold('blur')
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+      window.removeEventListener('blur', onBlur as any)
+    }
+  }, [cancelBodyHold, trimDragging])
+
 
   const cancelTimelineLongPress = useCallback((reason: string) => {
     const lp = timelineLongPressRef.current
@@ -17247,6 +17291,52 @@ export default function CreateVideo() {
       timelineLongPressRef.current = { timer, pointerId, startX, startY, kind: 'graphic', id: graphicId, x, y }
     },
     [cancelTimelineLongPress, openTimelineCtxMenu, panDragging, trimDragging]
+  )
+
+  const beginBodyPanHoldMove = useCallback(
+    (
+      e: React.PointerEvent,
+      moveDrag: any,
+      selectFn: () => void,
+      dbgInfo: { kind: string; edge: string; id: string }
+    ) => {
+      const sc = timelineScrollRef.current
+      if (!sc) return
+      if (trimDragging) return
+      cancelBodyHold('restart')
+      panDragRef.current = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startScrollLeft: sc.scrollLeft,
+        moved: false,
+      }
+      setPanDragging(true)
+      try { sc.setPointerCapture(e.pointerId) } catch {}
+      const pointerId = e.pointerId
+      const startX = e.clientX
+      const startY = e.clientY
+      const timer = window.setTimeout(() => {
+        const cur = bodyHoldRef.current
+        if (!cur || cur.pointerId !== pointerId) return
+        bodyHoldRef.current = null
+        panDragRef.current = null
+        setPanDragging(false)
+        try { sc.releasePointerCapture?.(pointerId) } catch {}
+        selectFn()
+        trimDragRef.current = {
+          ...moveDrag,
+          pointerId,
+          startClientX: startX,
+          startClientY: startY,
+          armed: true,
+          moved: false,
+        }
+        try { sc.setPointerCapture(pointerId) } catch {}
+        dbg('armTrimDrag', dbgInfo)
+      }, 300)
+      bodyHoldRef.current = { timer, pointerId, startX, startY }
+    },
+    [cancelBodyHold, dbg, trimDragging]
   )
 
   const exportNow = useCallback(async () => {
@@ -18089,11 +18179,12 @@ export default function CreateVideo() {
                   setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
                 }}
 	                onPointerDown={(e) => {
-	                  const sc = timelineScrollRef.current
-	                  if (!sc) return
-	                  if (trimDragging) return
-	                  // If a pan gesture started in capture phase for this pointer, don't run selection logic.
-	                  if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) return
+                  const sc = timelineScrollRef.current
+                  if (!sc) return
+                  if (trimDragging) return
+                  cancelBodyHold('new_pointerdown')
+                  // If a pan gesture started in capture phase for this pointer, don't run selection logic.
+                  if (panDragRef.current && panDragRef.current.pointerId === e.pointerId) return
 	                  // Only do mouse drag-panning on desktop. Touch already pans the scroll container.
 	                  const isMouse = (e as any).pointerType === 'mouse'
 	                  if (isMouse && e.button != null && e.button !== 0) return
@@ -18150,32 +18241,36 @@ export default function CreateVideo() {
                     const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
                     const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-	                    // Slide (body drag) only when already selected.
-	                    if (!nearLeft && !nearRight) {
-	                      if (selectedLogoId !== String((l as any).id)) return
-	                      const dur = Math.max(0.2, roundToTenth(e2 - s))
-	                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
-	                      // Arm the drag; we only enter "dragging" state once pointer movement crosses a threshold.
-	                      // This keeps a normal click on a selected logo pill available for opening the properties modal.
-	                      trimDragRef.current = {
-	                        kind: 'logo',
-	                        logoId: String((l as any).id),
-	                        edge: 'move',
-	                        pointerId: e.pointerId,
-	                        startClientX: e.clientX,
-	                        startClientY: e.clientY,
-	                        startStartSeconds: s,
-	                        startEndSeconds: e2,
-	                        minStartSeconds,
-	                        maxEndSeconds,
-	                        maxStartSeconds,
-	                        armed: true,
-	                        moved: false,
-	                      }
-	                      try { sc.setPointerCapture(e.pointerId) } catch {}
-	                      dbg('armTrimDrag', { kind: 'logo', edge: 'move', id: String((l as any).id) })
-	                      return
-	                    }
+                    // Body drag: pan timeline by default; long-press to move the object.
+                    if (!nearLeft && !nearRight) {
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+                      beginBodyPanHoldMove(
+                        e,
+                        {
+                          kind: 'logo',
+                          logoId: String((l as any).id),
+                          edge: 'move',
+                          startStartSeconds: s,
+                          startEndSeconds: e2,
+                          minStartSeconds,
+                          maxEndSeconds,
+                          maxStartSeconds,
+                        },
+                        () => {
+                          setSelectedLogoId(String((l as any).id))
+                          setSelectedClipId(null)
+                          setSelectedGraphicId(null)
+                          setSelectedLowerThirdId(null)
+                          setSelectedScreenTitleId(null)
+                          setSelectedNarrationId(null)
+                          setSelectedStillId(null)
+                          setSelectedAudioId(null)
+                        },
+                        { kind: 'logo', edge: 'move', id: String((l as any).id) }
+                      )
+                      return
+                    }
 
 	                    // Resize only when already selected (unless the action panel is open).
 	                    if (selectedLogoId !== String((l as any).id)) {
@@ -18245,29 +18340,34 @@ export default function CreateVideo() {
                     const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
                     const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-                    // Slide (body drag) only when already selected.
+                    // Body drag: pan timeline by default; long-press to move the object.
                     if (!nearLeft && !nearRight) {
-                      if (selectedLowerThirdId !== String((lt as any).id)) return
                       const dur = Math.max(0.2, roundToTenth(e2 - s))
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
-                      // Arm the drag; we only enter "dragging" state once pointer movement crosses a threshold.
-                      trimDragRef.current = {
-                        kind: 'lowerThird',
-                        lowerThirdId: String((lt as any).id),
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                        armed: true,
-                        moved: false,
-                      }
-                      try { sc.setPointerCapture(e.pointerId) } catch {}
-                      dbg('armTrimDrag', { kind: 'lowerThird', edge: 'move', id: String((lt as any).id) })
+                      beginBodyPanHoldMove(
+                        e,
+                        {
+                          kind: 'lowerThird',
+                          lowerThirdId: String((lt as any).id),
+                          edge: 'move',
+                          startStartSeconds: s,
+                          startEndSeconds: e2,
+                          minStartSeconds,
+                          maxEndSeconds,
+                          maxStartSeconds,
+                        },
+                        () => {
+                          setSelectedLowerThirdId(String((lt as any).id))
+                          setSelectedClipId(null)
+                          setSelectedGraphicId(null)
+                          setSelectedLogoId(null)
+                          setSelectedScreenTitleId(null)
+                          setSelectedNarrationId(null)
+                          setSelectedStillId(null)
+                          setSelectedAudioId(null)
+                        },
+                        { kind: 'lowerThird', edge: 'move', id: String((lt as any).id) }
+                      )
                       return
                     }
 
@@ -18320,9 +18420,8 @@ export default function CreateVideo() {
 	                    }
 
                     const allowEdgeBind = nearLeft || nearRight
-                    // Ensure first tap selects the segment so handles/highlight render even if
-                    // the subsequent click event gets suppressed by pointer logic.
-	                    if (selectedScreenTitleId !== String((st as any).id)) {
+                    // Ensure first tap selects the segment when binding edges.
+	                    if (selectedScreenTitleId !== String((st as any).id) && allowEdgeBind) {
 	                      setSelectedScreenTitleId(String((st as any).id))
 	                      setSelectedClipId(null)
 	                      setSelectedVideoOverlayId(null)
@@ -18333,10 +18432,6 @@ export default function CreateVideo() {
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
                       setSelectedAudioId(null)
-                      if (!allowEdgeBind) {
-                        suppressNextTimelineClickRef.current = true
-                        return
-                      }
                     }
 
                     const capEnd = MAX_TIMELINE_SECONDS
@@ -18347,28 +18442,34 @@ export default function CreateVideo() {
                     const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
                     const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-                    // Slide (body drag) only when already selected.
+                    // Body drag: pan timeline by default; long-press to move the object.
                     if (!nearLeft && !nearRight) {
-                      if (selectedScreenTitleId !== String((st as any).id)) return
                       const dur = Math.max(0.2, roundToTenth(e2 - s))
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
-                      trimDragRef.current = {
-                        kind: 'screenTitle',
-                        screenTitleId: String((st as any).id),
-                        edge: 'move',
-                        pointerId: e.pointerId,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        startStartSeconds: s,
-                        startEndSeconds: e2,
-                        minStartSeconds,
-                        maxEndSeconds,
-                        maxStartSeconds,
-                        armed: true,
-                        moved: false,
-                      }
-                      try { sc.setPointerCapture(e.pointerId) } catch {}
-                      dbg('armTrimDrag', { kind: 'screenTitle', edge: 'move', id: String((st as any).id) })
+                      beginBodyPanHoldMove(
+                        e,
+                        {
+                          kind: 'screenTitle',
+                          screenTitleId: String((st as any).id),
+                          edge: 'move',
+                          startStartSeconds: s,
+                          startEndSeconds: e2,
+                          minStartSeconds,
+                          maxEndSeconds,
+                          maxStartSeconds,
+                        },
+                        () => {
+                          setSelectedScreenTitleId(String((st as any).id))
+                          setSelectedClipId(null)
+                          setSelectedGraphicId(null)
+                          setSelectedLogoId(null)
+                          setSelectedLowerThirdId(null)
+                          setSelectedNarrationId(null)
+                          setSelectedStillId(null)
+                          setSelectedAudioId(null)
+                        },
+                        { kind: 'screenTitle', edge: 'move', id: String((st as any).id) }
+                      )
                       return
                     }
 
@@ -18445,6 +18546,36 @@ export default function CreateVideo() {
                       const dur = Math.max(0.1, roundToTenth(e2 - s))
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
+                      if (!nearLeft && !nearRight) {
+                        beginBodyPanHoldMove(
+                          e,
+                          {
+                            kind: 'videoOverlayStill',
+                            videoOverlayStillId: String((overlayStill as any).id),
+                            edge: 'move',
+                            startStartSeconds: s,
+                            startEndSeconds: e2,
+                            minStartSeconds,
+                            maxEndSeconds,
+                            maxStartSeconds,
+                          },
+                          () => {
+                            setSelectedVideoOverlayStillId(String((overlayStill as any).id))
+                            setSelectedVideoOverlayId(null)
+                            setSelectedClipId(null)
+                            setSelectedGraphicId(null)
+                            setSelectedLogoId(null)
+                            setSelectedLowerThirdId(null)
+                            setSelectedScreenTitleId(null)
+                            setSelectedNarrationId(null)
+                            setSelectedStillId(null)
+                            setSelectedAudioId(null)
+                          },
+                          { kind: 'videoOverlayStill', edge: 'move', id: String((overlayStill as any).id) }
+                        )
+                        return
+                      }
+
                       if (selectedVideoOverlayStillId !== String((overlayStill as any).id)) {
                         e.preventDefault()
                         setSelectedVideoOverlayStillId(String((overlayStill as any).id))
@@ -18515,8 +18646,8 @@ export default function CreateVideo() {
 	                    if (!inside) return
 	                    const allowEdgeBind = nearLeft || nearRight
 
-	                    // Ensure first tap selects so handles/highlight render.
-                    if (selectedVideoOverlayId !== String((o as any).id)) {
+	                    // Ensure first tap selects when binding edges.
+                    if (selectedVideoOverlayId !== String((o as any).id) && allowEdgeBind) {
                       setSelectedVideoOverlayId(String((o as any).id))
                       setSelectedVideoOverlayStillId(null)
                       setSelectedClipId(null)
@@ -18527,10 +18658,6 @@ export default function CreateVideo() {
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudioId(null)
-	                      if (!allowEdgeBind) {
-	                        suppressNextTimelineClickRef.current = true
-	                        return
-	                      }
 	                    }
 
 	                    // Expand handle hitboxes when selected.
@@ -18572,26 +18699,35 @@ export default function CreateVideo() {
 	                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
 	                    if (!nearLeft && !nearRight) {
-	                      trimDragRef.current = {
-	                        kind: 'videoOverlay',
-	                        videoOverlayId: String((o as any).id),
-	                        edge: 'move',
-	                        pointerId: e.pointerId,
-	                        startClientX: e.clientX,
-	                        startClientY: e.clientY,
-	                        startStartSeconds: Number((o as any).sourceStartSeconds || 0),
-	                        startEndSeconds: Number((o as any).sourceEndSeconds || 0),
-	                        startTimelineStartSeconds: start0,
-	                        startTimelineEndSeconds: end0,
-	                        maxDurationSeconds,
-	                        minStartSeconds,
-	                        maxEndSeconds,
-	                        maxStartSeconds,
-	                        armed: true,
-	                        moved: false,
-	                      }
-	                      try { sc.setPointerCapture(e.pointerId) } catch {}
-	                      dbg('armTrimDrag', { kind: 'videoOverlay', edge: 'move', id: String((o as any).id) })
+	                      beginBodyPanHoldMove(
+	                        e,
+	                        {
+	                          kind: 'videoOverlay',
+	                          videoOverlayId: String((o as any).id),
+	                          edge: 'move',
+	                          startStartSeconds: Number((o as any).sourceStartSeconds || 0),
+	                          startEndSeconds: Number((o as any).sourceEndSeconds || 0),
+	                          startTimelineStartSeconds: start0,
+	                          startTimelineEndSeconds: end0,
+	                          maxDurationSeconds,
+	                          minStartSeconds,
+	                          maxEndSeconds,
+	                          maxStartSeconds,
+	                        },
+	                        () => {
+	                          setSelectedVideoOverlayId(String((o as any).id))
+	                          setSelectedVideoOverlayStillId(null)
+	                          setSelectedClipId(null)
+	                          setSelectedGraphicId(null)
+	                          setSelectedLogoId(null)
+	                          setSelectedLowerThirdId(null)
+	                          setSelectedScreenTitleId(null)
+	                          setSelectedNarrationId(null)
+	                          setSelectedStillId(null)
+	                          setSelectedAudioId(null)
+	                        },
+	                        { kind: 'videoOverlay', edge: 'move', id: String((o as any).id) }
+	                      )
 	                      return
 	                    }
 
@@ -18636,9 +18772,8 @@ export default function CreateVideo() {
 		                    }
 		                    const allowEdgeBind = nearLeft || nearRight
 
-		                    // Tap selects. Tap+drag moves/resizes. Tap-release on an already-selected pill opens the context menu.
-		                    if (selectedGraphicId !== g.id) {
-		                      e.preventDefault()
+		                    // Select immediately when binding edges.
+		                    if (selectedGraphicId !== g.id && allowEdgeBind) {
 		                      setSelectedGraphicId(g.id)
 		                      setSelectedClipId(null)
 		                      setSelectedLogoId(null)
@@ -18647,7 +18782,6 @@ export default function CreateVideo() {
 		                      setSelectedNarrationId(null)
 		                      setSelectedStillId(null)
 		                      setSelectedAudioId(null)
-		                      if (!allowEdgeBind) return
 		                    }
 
 		                    // Disallow overlaps: trim handles constrained by neighbors.
@@ -18691,34 +18825,33 @@ export default function CreateVideo() {
 		                      return
 		                    }
 
-		                    // Move (body drag): arm so we can decide between opening the context menu (tap) and moving (drag).
-		                    e.preventDefault()
-		                    setSelectedGraphicId(g.id)
-		                    setSelectedClipId(null)
-		                    setSelectedLogoId(null)
-		                    setSelectedLowerThirdId(null)
-		                    setSelectedScreenTitleId(null)
-		                    setSelectedNarrationId(null)
-		                    setSelectedStillId(null)
-		                    setSelectedAudioId(null)
-
+		                    // Body drag: pan timeline by default; long-press to move the object.
 		                    const dur = Math.max(0.2, roundToTenth(e2 - s))
 		                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
-		                    trimDragRef.current = {
-		                      kind: 'graphic',
-		                      graphicId: g.id,
-		                      edge: 'move',
-		                      pointerId: e.pointerId,
-		                      startClientX: e.clientX,
-		                      startStartSeconds: s,
-		                      startEndSeconds: e2,
-		                      minStartSeconds,
-		                      maxEndSeconds,
-		                      maxStartSeconds,
-		                      armed: true,
-		                      moved: false,
-		                    }
-		                    try { sc.setPointerCapture(e.pointerId) } catch {}
+		                    beginBodyPanHoldMove(
+		                      e,
+		                      {
+		                        kind: 'graphic',
+		                        graphicId: g.id,
+		                        edge: 'move',
+		                        startStartSeconds: s,
+		                        startEndSeconds: e2,
+		                        minStartSeconds,
+		                        maxEndSeconds,
+		                        maxStartSeconds,
+		                      },
+		                      () => {
+		                        setSelectedGraphicId(g.id)
+		                        setSelectedClipId(null)
+		                        setSelectedLogoId(null)
+		                        setSelectedLowerThirdId(null)
+		                        setSelectedScreenTitleId(null)
+		                        setSelectedNarrationId(null)
+		                        setSelectedStillId(null)
+		                        setSelectedAudioId(null)
+		                      },
+		                      { kind: 'graphic', edge: 'move', id: String(g.id) }
+		                    )
 		                    return
 		                  }
 
@@ -18758,48 +18891,52 @@ export default function CreateVideo() {
 	                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
 	                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-	                    // Move/resize only when already selected (unless the action panel is open on a handle).
-	                    if (selectedNarrationId !== String((n as any).id)) {
-	                      if (nearLeft || nearRight) {
-	                        setSelectedNarrationId(String((n as any).id))
-	                        setSelectedClipId(null)
-	                        setSelectedVideoOverlayId(null)
-	                        setSelectedVideoOverlayStillId(null)
-	                        setSelectedGraphicId(null)
-	                        setSelectedLogoId(null)
-	                        setSelectedLowerThirdId(null)
-	                        setSelectedScreenTitleId(null)
-	                        setSelectedStillId(null)
-	                        setSelectedAudioId(null)
-	                      } else {
-	                        return
-	                      }
+	                    // Select immediately when binding edges.
+	                    if (selectedNarrationId !== String((n as any).id) && (nearLeft || nearRight)) {
+	                      setSelectedNarrationId(String((n as any).id))
+	                      setSelectedClipId(null)
+	                      setSelectedVideoOverlayId(null)
+	                      setSelectedVideoOverlayStillId(null)
+	                      setSelectedGraphicId(null)
+	                      setSelectedLogoId(null)
+	                      setSelectedLowerThirdId(null)
+	                      setSelectedScreenTitleId(null)
+	                      setSelectedStillId(null)
+	                      setSelectedAudioId(null)
 	                    }
 
 	                    const dur = Math.max(0.2, roundToTenth(e2 - s))
 	                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
 	                    if (!nearLeft && !nearRight) {
-	                      // Arm body drag (tap-release can open the context menu; pointer movement begins drag).
-	                      trimDragRef.current = {
-	                        kind: 'narration',
-	                        narrationId: String((n as any).id),
-	                        edge: 'move',
-	                        pointerId: e.pointerId,
-	                        startClientX: e.clientX,
-	                        startClientY: e.clientY,
-	                        startStartSeconds: s,
-	                        startEndSeconds: e2,
-	                        startSourceStartSeconds: nSourceStart,
-	                        maxDurationSeconds: nMaxDurationSeconds,
-	                        minStartSeconds,
-	                        maxEndSeconds,
-	                        maxStartSeconds,
-	                        armed: true,
-	                        moved: false,
-	                      }
-	                      try { sc.setPointerCapture(e.pointerId) } catch {}
-	                      dbg('armTrimDrag', { kind: 'narration', edge: 'move', id: String((n as any).id) })
+	                      beginBodyPanHoldMove(
+	                        e,
+	                        {
+	                          kind: 'narration',
+	                          narrationId: String((n as any).id),
+	                          edge: 'move',
+	                          startStartSeconds: s,
+	                          startEndSeconds: e2,
+	                          startSourceStartSeconds: nSourceStart,
+	                          maxDurationSeconds: nMaxDurationSeconds,
+	                          minStartSeconds,
+	                          maxEndSeconds,
+	                          maxStartSeconds,
+	                        },
+	                        () => {
+	                          setSelectedNarrationId(String((n as any).id))
+	                          setSelectedClipId(null)
+	                          setSelectedVideoOverlayId(null)
+	                          setSelectedVideoOverlayStillId(null)
+	                          setSelectedGraphicId(null)
+	                          setSelectedLogoId(null)
+	                          setSelectedLowerThirdId(null)
+	                          setSelectedScreenTitleId(null)
+	                          setSelectedStillId(null)
+	                          setSelectedAudioId(null)
+	                        },
+	                        { kind: 'narration', edge: 'move', id: String((n as any).id) }
+	                      )
 	                      return
 	                    }
 
@@ -18861,22 +18998,18 @@ export default function CreateVideo() {
 		                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
 		                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
 
-		                    // Move/resize only when already selected (unless the action panel is open on a handle).
-		                    if (String(selectedAudioId || '') !== String(seg.id)) {
-		                      if (nearLeft || nearRight) {
-		                        setSelectedAudioId(String(seg.id))
-		                        setSelectedClipId(null)
-		                        setSelectedVideoOverlayId(null)
-		                        setSelectedVideoOverlayStillId(null)
-		                        setSelectedGraphicId(null)
-		                        setSelectedLogoId(null)
-		                        setSelectedLowerThirdId(null)
-		                        setSelectedScreenTitleId(null)
-		                        setSelectedNarrationId(null)
-		                        setSelectedStillId(null)
-		                      } else {
-		                        return
-		                      }
+		                    // Select immediately when binding edges.
+		                    if (String(selectedAudioId || '') !== String(seg.id) && (nearLeft || nearRight)) {
+		                      setSelectedAudioId(String(seg.id))
+		                      setSelectedClipId(null)
+		                      setSelectedVideoOverlayId(null)
+		                      setSelectedVideoOverlayStillId(null)
+		                      setSelectedGraphicId(null)
+		                      setSelectedLogoId(null)
+		                      setSelectedLowerThirdId(null)
+		                      setSelectedScreenTitleId(null)
+		                      setSelectedNarrationId(null)
+		                      setSelectedStillId(null)
 		                    }
 
 		                    const segSourceStart =
@@ -18893,28 +19026,34 @@ export default function CreateVideo() {
 		                    const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
 		                    if (!nearLeft && !nearRight) {
-		                      // Arm body drag (tap-release can open the context menu; pointer movement begins drag).
-		                      trimDragRef.current = {
-		                        kind: 'audioSegment',
-		                        audioSegmentId: String(seg.id),
-		                        edge: 'move',
-		                        pointerId: e.pointerId,
-		                        startClientX: e.clientX,
-		                        startClientY: e.clientY,
-		                        startStartSeconds: s,
-		                        startEndSeconds: e2,
-		                        startSourceStartSeconds: segSourceStart,
-		                        maxDurationSeconds: segMaxDurationSeconds ?? undefined,
-		                        minStartSeconds,
-		                        maxEndSeconds,
-		                        maxStartSeconds,
-		                        armed: true,
-		                        moved: false,
-		                      }
-		                      try {
-		                        sc.setPointerCapture(e.pointerId)
-		                      } catch {}
-		                      dbg('armTrimDrag', { kind: 'audioSegment', edge: 'move', id: String(seg.id) })
+		                      beginBodyPanHoldMove(
+		                        e,
+		                        {
+		                          kind: 'audioSegment',
+		                          audioSegmentId: String(seg.id),
+		                          edge: 'move',
+		                          startStartSeconds: s,
+		                          startEndSeconds: e2,
+		                          startSourceStartSeconds: segSourceStart,
+		                          maxDurationSeconds: segMaxDurationSeconds ?? undefined,
+		                          minStartSeconds,
+		                          maxEndSeconds,
+		                          maxStartSeconds,
+		                        },
+		                        () => {
+		                          setSelectedAudioId(String(seg.id))
+		                          setSelectedClipId(null)
+		                          setSelectedVideoOverlayId(null)
+		                          setSelectedVideoOverlayStillId(null)
+		                          setSelectedGraphicId(null)
+		                          setSelectedLogoId(null)
+		                          setSelectedLowerThirdId(null)
+		                          setSelectedScreenTitleId(null)
+		                          setSelectedNarrationId(null)
+		                          setSelectedStillId(null)
+		                        },
+		                        { kind: 'audioSegment', edge: 'move', id: String(seg.id) }
+		                      )
 		                      return
 		                    }
 
@@ -18982,9 +19121,8 @@ export default function CreateVideo() {
                       const dur = Math.max(0.1, roundToTenth(e2 - s))
                       const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
 
-                      // Tap selects. Tap+drag moves/resizes. Tap-release on an already-selected pill opens the context menu.
-	                      if (selectedStillId !== String((still as any).id)) {
-	                        e.preventDefault()
+                      // Select immediately when binding edges.
+	                      if (selectedStillId !== String((still as any).id) && allowEdgeBind) {
 	                        setSelectedStillId(String((still as any).id))
 	                        setSelectedClipId(null)
 	                        setSelectedVideoOverlayId(null)
@@ -18995,7 +19133,36 @@ export default function CreateVideo() {
 	                        setSelectedScreenTitleId(null)
 	                        setSelectedNarrationId(null)
                         setSelectedAudioId(null)
-                        if (!allowEdgeBind) return
+                      }
+
+                      if (!nearLeft && !nearRight) {
+                        beginBodyPanHoldMove(
+                          e,
+                          {
+                            kind: 'still',
+                            stillId: String((still as any).id),
+                            edge: 'move',
+                            startStartSeconds: s,
+                            startEndSeconds: e2,
+                            minStartSeconds,
+                            maxEndSeconds,
+                            maxStartSeconds,
+                          },
+                          () => {
+                            setSelectedStillId(String((still as any).id))
+                            setSelectedClipId(null)
+                            setSelectedVideoOverlayId(null)
+                            setSelectedVideoOverlayStillId(null)
+                            setSelectedGraphicId(null)
+                            setSelectedLogoId(null)
+                            setSelectedLowerThirdId(null)
+                            setSelectedScreenTitleId(null)
+                            setSelectedNarrationId(null)
+                            setSelectedAudioId(null)
+                          },
+                          { kind: 'still', edge: 'move', id: String((still as any).id) }
+                        )
+                        return
                       }
 
 	                      e.preventDefault()
@@ -19057,11 +19224,8 @@ export default function CreateVideo() {
 	                    nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                  }
 
-                  // Slide (body drag) only when already selected.
+                  // Body drag: pan timeline by default; long-press to move the object.
                   if (!nearLeft && !nearRight) {
-                    if (selectedClipId !== clip.id) return
-                    e.preventDefault()
-
                     const capEnd = 20 * 60
                     const clipRanges = timeline.clips.map((c, i) => ({
                       id: `clip:${String(c.id)}`,
@@ -19082,24 +19246,33 @@ export default function CreateVideo() {
                     const maxStartSeconds = clamp(roundToTenth(nextStart - len), minStartSeconds, maxEndSeconds)
 
                     const maxDur = durationsByUploadId[Number(clip.uploadId)] ?? clip.sourceEndSeconds
-                    trimDragRef.current = {
-                      kind: 'clip',
-                      clipId: clip.id,
-                      edge: 'move',
-                      pointerId: e.pointerId,
-                      startClientX: e.clientX,
-                      startClientY: e.clientY,
-                      startStartSeconds: start,
-                      startEndSeconds: start + len,
-                      maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
-                      minStartSeconds,
-                      maxEndSeconds,
-                      maxStartSeconds,
-                      armed: true,
-                      moved: false,
-                    }
-                    try { sc.setPointerCapture(e.pointerId) } catch {}
-                    dbg('armTrimDrag', { kind: 'clip', edge: 'move', id: clip.id })
+                    beginBodyPanHoldMove(
+                      e,
+                      {
+                        kind: 'clip',
+                        clipId: clip.id,
+                        edge: 'move',
+                        startStartSeconds: start,
+                        startEndSeconds: start + len,
+                        maxDurationSeconds: Number.isFinite(maxDur) && maxDur > 0 ? maxDur : clip.sourceEndSeconds,
+                        minStartSeconds,
+                        maxEndSeconds,
+                        maxStartSeconds,
+                      },
+                      () => {
+                        setSelectedClipId(clip.id)
+                        setSelectedVideoOverlayId(null)
+                        setSelectedVideoOverlayStillId(null)
+                        setSelectedGraphicId(null)
+                        setSelectedLogoId(null)
+                        setSelectedLowerThirdId(null)
+                        setSelectedScreenTitleId(null)
+                        setSelectedNarrationId(null)
+                        setSelectedStillId(null)
+                        setSelectedAudioId(null)
+                      },
+                      { kind: 'clip', edge: 'move', id: clip.id }
+                    )
                     return
                   }
 
@@ -19278,6 +19451,20 @@ export default function CreateVideo() {
 		                  const x = clickXInScroll - padPx
 		                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
 		                  const EDGE_HIT_PX = Math.max(24, Math.min(72, Math.round(pxPerSecond * 0.6)))
+	                  const maybeOpenCtxMenu = (
+	                    kind: TimelineCtxKind,
+	                    id: string,
+	                    selectedId: string | null,
+	                    leftX: number,
+	                    rightX: number
+	                  ) => {
+	                    if (!selectedId || String(selectedId) !== String(id)) return false
+	                    const nearLeft = Math.abs(clickXInScroll - leftX) <= EDGE_HIT_PX
+	                    const nearRight = Math.abs(clickXInScroll - rightX) <= EDGE_HIT_PX
+	                    if (nearLeft || nearRight) return false
+	                    openTimelineCtxMenuForEdge(kind, String(id), 'move')
+	                    return true
+	                  }
 		                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
 		                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
 		                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
@@ -19327,8 +19514,7 @@ export default function CreateVideo() {
 	                      setSelectedAudioId(null)
 	                      return
 	                    }
-		                    // Logo properties are opened via the context menu (not by tapping).
-		                    if (selectedLogoId === String((l as any).id)) return
+	                    if (maybeOpenCtxMenu('logo', String((l as any).id), selectedLogoId, leftX, rightX)) return
 			                    setSelectedLogoId(String((l as any).id))
 			                    setSelectedClipId(null)
 			                    setSelectedVideoOverlayId(null)
@@ -19370,8 +19556,7 @@ export default function CreateVideo() {
 	                      setSelectedAudioId(null)
 	                      return
 	                    }
-		                    // Lower third properties are opened via the context menu (not by tapping).
-		                    if (selectedLowerThirdId === String((lt as any).id)) return
+	                    if (maybeOpenCtxMenu('lowerThird', String((lt as any).id), selectedLowerThirdId, leftX, rightX)) return
 			                    setSelectedLowerThirdId(String((lt as any).id))
 			                    setSelectedClipId(null)
 			                    setSelectedVideoOverlayId(null)
@@ -19413,8 +19598,7 @@ export default function CreateVideo() {
 	                      setSelectedAudioId(null)
 	                      return
 	                    }
-		                    // Screen title properties are opened via the context menu (not by tapping).
-		                    if (selectedScreenTitleId === String((st as any).id)) return
+	                    if (maybeOpenCtxMenu('screenTitle', String((st as any).id), selectedScreenTitleId, leftX, rightX)) return
 			                    setSelectedScreenTitleId(String((st as any).id))
 			                    setSelectedClipId(null)
 			                    setSelectedVideoOverlayId(null)
@@ -19435,21 +19619,22 @@ export default function CreateVideo() {
 		                      const e2 = Number((overlayStill as any).endSeconds || 0)
 		                      const leftX = padPx + s * pxPerSecond
 		                      const rightX = padPx + e2 * pxPerSecond
-		                      if (clickXInScroll >= leftX && clickXInScroll <= rightX) {
-		                        if (selectedVideoOverlayStillId !== String((overlayStill as any).id)) {
-		                          setSelectedVideoOverlayStillId(String((overlayStill as any).id))
-		                          setSelectedVideoOverlayId(null)
-		                          setSelectedClipId(null)
-		                          setSelectedGraphicId(null)
-		                          setSelectedLogoId(null)
-		                          setSelectedLowerThirdId(null)
-		                          setSelectedScreenTitleId(null)
-		                          setSelectedNarrationId(null)
-		                          setSelectedStillId(null)
-		                          setSelectedAudioId(null)
-		                        }
-		                        return
+		                    if (clickXInScroll >= leftX && clickXInScroll <= rightX) {
+		                      if (maybeOpenCtxMenu('videoOverlayStill', String((overlayStill as any).id), selectedVideoOverlayStillId, leftX, rightX)) return
+		                      if (selectedVideoOverlayStillId !== String((overlayStill as any).id)) {
+		                        setSelectedVideoOverlayStillId(String((overlayStill as any).id))
+		                        setSelectedVideoOverlayId(null)
+		                        setSelectedClipId(null)
+		                        setSelectedGraphicId(null)
+		                        setSelectedLogoId(null)
+		                        setSelectedLowerThirdId(null)
+		                        setSelectedScreenTitleId(null)
+		                        setSelectedNarrationId(null)
+		                        setSelectedStillId(null)
+		                        setSelectedAudioId(null)
 		                      }
+		                      return
+		                    }
 		                    }
 		                    const o = findVideoOverlayAtTime(t)
 		                    if (!o) {
@@ -19485,8 +19670,7 @@ export default function CreateVideo() {
 			                      setSelectedAudioId(null)
 			                      return
 			                    }
-				                    // Video overlay properties are opened via the context menu (not by tapping).
-				                    if (selectedVideoOverlayId === String((o as any).id)) return
+				                    if (maybeOpenCtxMenu('videoOverlay', String((o as any).id), selectedVideoOverlayId, leftX, rightX)) return
 				                    setSelectedVideoOverlayId(String((o as any).id))
 				                    setSelectedVideoOverlayStillId(null)
 				                    setSelectedClipId(null)
@@ -19535,9 +19719,7 @@ export default function CreateVideo() {
 			                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 			                    }
 			                    if ((nearLeft || nearRight) && selectedNarrationId === String((n as any).id)) return
-
-			                    // Narration properties are opened via the context menu (not by tapping).
-			                    if (selectedNarrationId === String((n as any).id)) return
+			                    if (maybeOpenCtxMenu('narration', String((n as any).id), selectedNarrationId, leftX, rightX)) return
 
 					                    setSelectedNarrationId(String((n as any).id))
 					                    setSelectedClipId(null)
@@ -19580,8 +19762,7 @@ export default function CreateVideo() {
 	                      setSelectedAudioId(null)
 	                      return
 	                    }
-	                    // Graphics properties are only opened via the long-press context menu (not by tapping).
-	                    if (selectedGraphicId === g.id) return
+	                    if (maybeOpenCtxMenu('graphic', String(g.id), selectedGraphicId, leftX, rightX)) return
 			                    setSelectedClipId(null)
 			                    setSelectedVideoOverlayId(null)
 			                    setSelectedVideoOverlayStillId(null)
@@ -19639,8 +19820,7 @@ export default function CreateVideo() {
 	                    }
 	                    if ((nearLeft || nearRight) && String(selectedAudioId || '') === String(seg.id)) return
 
-				                    // Audio properties are opened via the context menu (not by tapping).
-				                    if (String(selectedAudioId || '') === String(seg.id)) return
+	                    if (maybeOpenCtxMenu('audioSegment', String(seg.id), selectedAudioId, leftX, rightX)) return
 				                    setSelectedAudioId(String(seg.id))
 				                    setSelectedClipId(null)
 				                    setSelectedVideoOverlayId(null)
@@ -19673,6 +19853,7 @@ export default function CreateVideo() {
 		                      setSelectedAudioId(null)
 		                      return
 		                    }
+	                    if (maybeOpenCtxMenu('still', String((still as any).id), selectedStillId, leftX, rightX)) return
 			                    setSelectedStillId(String((still as any).id))
 			                    setSelectedClipId(null)
 			                    setSelectedVideoOverlayId(null)
@@ -19728,7 +19909,7 @@ export default function CreateVideo() {
 	                  if ((nearLeft || nearRight) && selectedClipId === clip.id) return
 
                   if (selectedClipId === clip.id) {
-                    // Video properties are opened via the context menu (not by tapping).
+                    if (maybeOpenCtxMenu('clip', String(clip.id), selectedClipId, leftX, rightX)) return
                     return
                   }
 
