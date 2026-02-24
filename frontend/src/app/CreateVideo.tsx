@@ -82,6 +82,10 @@ const RIPPLE_ICON_URL = new URL('./icons/ripple.svg', import.meta.url).toString(
 const FLOAT_ICON_URL = new URL('./icons/float.svg', import.meta.url).toString()
 const EXPAND_ICON_URL = new URL('./icons/expand.svg', import.meta.url).toString()
 const ACTION_ARROW_ICON_URL = new URL('./icons/arrow.svg', import.meta.url).toString()
+const AUDIO_ON_ICON_URL = new URL('./icons/audio-on.svg', import.meta.url).toString()
+const AUDIO_OFF_ICON_URL = new URL('./icons/audio-off.svg', import.meta.url).toString()
+const VIDEO_ON_ICON_URL = new URL('./icons/video-on.svg', import.meta.url).toString()
+const VIDEO_OFF_ICON_URL = new URL('./icons/video-off.svg', import.meta.url).toString()
 const LazyEditorModalHost = React.lazy(() => import('./createVideo/modals/EditorModalHost'))
 const LazyScreenTitleQuickPanelOverlay = React.lazy(() => import('./createVideo/modals/ScreenTitleQuickPanelOverlay'))
 const LazyTimelineContextMenu = React.lazy(() => import('./createVideo/modals/TimelineContextMenu'))
@@ -138,6 +142,10 @@ type Project = {
   lastExportJobId?: number | null
   lastExportUploadId?: number | null
 }
+
+type LaneKey = 'graphics' | 'logo' | 'lowerThird' | 'screenTitle' | 'videoOverlay' | 'video' | 'narration' | 'audio'
+type PreviewAudioLaneKey = 'video' | 'videoOverlay' | 'narration' | 'audio'
+type PreviewVideoLaneKey = 'video' | 'videoOverlay'
 
 type ProjectListItem = {
   id: number
@@ -549,16 +557,28 @@ export default function CreateVideo() {
     | null
   >(null)
   const narrationPreviewRafRef = useRef<number | null>(null)
+  const iconScratchRef = useRef<HTMLCanvasElement | null>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
   const [audioConfigs, setAudioConfigs] = useState<AudioConfigItem[]>([])
   const [audioConfigsLoaded, setAudioConfigsLoaded] = useState(false)
   const [audioConfigsError, setAudioConfigsError] = useState<string | null>(null)
+  const [previewAudioLaneEnabled, setPreviewAudioLaneEnabled] = useState<Record<PreviewAudioLaneKey, boolean>>({
+    video: true,
+    videoOverlay: true,
+    narration: true,
+    audio: true,
+  })
+  const [previewVideoLaneEnabled, setPreviewVideoLaneEnabled] = useState<Record<PreviewVideoLaneKey, boolean>>({
+    video: true,
+    videoOverlay: true,
+  })
   const [audioEditor, setAudioEditor] = useState<{
     id: string
     start: number
     end: number
     audioConfigId: number
+    audioEnabled: boolean
     musicMode: '' | 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
     musicLevel: '' | 'quiet' | 'medium' | 'loud'
     duckingIntensity: '' | 'min' | 'medium' | 'max'
@@ -586,6 +606,8 @@ export default function CreateVideo() {
   const [previewPlayhead, setPreviewPlayhead] = useState(0)
   const previewPlayheadRef = useRef(0)
   const activeClipIndexRef = useRef(0)
+  const syntheticStillIdRef = useRef<string>('')
+  const syntheticOverlayStillIdRef = useRef<string>('')
   const playheadFromVideoRef = useRef(false)
   const suppressNextVideoPauseRef = useRef(false)
   const gapPlaybackRef = useRef<{ raf: number; target: number; nextClipIndex: number | null } | null>(null)
@@ -729,6 +751,9 @@ export default function CreateVideo() {
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelineScrollEl, setTimelineScrollEl] = useState<HTMLDivElement | null>(null)
   const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const laneLabelIconHitRef = useRef<
+    Array<{ lane: LaneKey; kind: 'audio' | 'video'; x: number; y: number; w: number; h: number }>
+  >([])
   const [timelinePadPx, setTimelinePadPx] = useState(0)
   const playheadFromScrollRef = useRef(false)
   const ignoreScrollRef = useRef(false)
@@ -737,6 +762,13 @@ export default function CreateVideo() {
   const primedFrameSrcRef = useRef<string>('')
   const primedOverlayFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
+  const iconImagesRef = useRef<{
+    audioOn?: HTMLImageElement
+    audioOff?: HTMLImageElement
+    videoOn?: HTMLImageElement
+    videoOff?: HTMLImageElement
+  }>({})
+  const [iconReadyTick, setIconReadyTick] = useState(0)
   const [graphicFileUrlByUploadId, setGraphicFileUrlByUploadId] = useState<Record<number, string>>({})
   const [audioEnvelopeByUploadId, setAudioEnvelopeByUploadId] = useState<Record<number, any>>({})
   const [audioEnvelopeStatusByUploadId, setAudioEnvelopeStatusByUploadId] = useState<Record<number, 'idle' | 'pending' | 'ready' | 'error'>>({})
@@ -746,6 +778,36 @@ export default function CreateVideo() {
     if (!activeUploadId) return null
     return posterByUploadId[activeUploadId] || null
   }, [activeUploadId, posterByUploadId])
+  const baseMotionPoster = useMemo(() => {
+    if (!activeUploadId) return null
+    return posterByUploadId[activeUploadId] || `/api/uploads/${encodeURIComponent(String(activeUploadId))}/thumb`
+  }, [activeUploadId, posterByUploadId])
+
+  useEffect(() => {
+    let alive = true
+    const load = (key: 'audioOn' | 'audioOff' | 'videoOn' | 'videoOff', url: string) => {
+      if (iconImagesRef.current[key]) return
+      const img = new Image()
+      img.onload = () => {
+        if (!alive) return
+        iconImagesRef.current[key] = img
+        setIconReadyTick((v) => v + 1)
+      }
+      img.onerror = () => {
+        if (!alive) return
+        iconImagesRef.current[key] = img
+        setIconReadyTick((v) => v + 1)
+      }
+      img.src = url
+    }
+    load('audioOn', AUDIO_ON_ICON_URL)
+    load('audioOff', AUDIO_OFF_ICON_URL)
+    load('videoOn', VIDEO_ON_ICON_URL)
+    load('videoOff', VIDEO_OFF_ICON_URL)
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const nudgeRepeatRef = useRef<{ timeout: number | null; interval: number | null; deltaSeconds: number; fired: boolean } | null>(null)
   const suppressNextNudgeClickRef = useRef(false)
@@ -2039,7 +2101,7 @@ export default function CreateVideo() {
 	      })
 	    }
 	    if (audioTrack) {
-	      return [
+      return [
         {
           id: 'audio_track_legacy',
           uploadId: audioTrack.uploadId,
@@ -2047,13 +2109,13 @@ export default function CreateVideo() {
           startSeconds: audioTrack.startSeconds,
           endSeconds: audioTrack.endSeconds,
           sourceStartSeconds: 0,
+          audioEnabled: true,
         },
       ]
     }
     return []
   }, [audioTrack, timeline])
 
-  type LaneKey = 'graphics' | 'logo' | 'lowerThird' | 'screenTitle' | 'videoOverlay' | 'video' | 'narration' | 'audio'
   const laneMeta = useMemo<Record<LaneKey, { label: string; swatch: string }>>(
     () => ({
       graphics: { label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
@@ -2073,8 +2135,24 @@ export default function CreateVideo() {
     const nextAlpha = Math.min(1, Math.max(0, Number(match[4]) * 0.92))
     return `rgba(${match[1]},${match[2]},${match[3]},${nextAlpha})`
   }
+  const isPreviewAudioLaneOn = useCallback(
+    (lane: PreviewAudioLaneKey) => {
+      const audioOn = previewAudioLaneEnabled[lane] !== false
+      if ((lane === 'video' || lane === 'videoOverlay') && previewVideoLaneEnabled[lane] === false) return false
+      return audioOn
+    },
+    [previewAudioLaneEnabled, previewVideoLaneEnabled]
+  )
+  const togglePreviewAudioLane = useCallback((lane: PreviewAudioLaneKey) => {
+    setPreviewAudioLaneEnabled((prev) => ({ ...prev, [lane]: !prev[lane] }))
+  }, [])
+  const togglePreviewVideoLane = useCallback((lane: PreviewVideoLaneKey) => {
+    setPreviewVideoLaneEnabled((prev) => ({ ...prev, [lane]: !prev[lane] }))
+  }, [])
   const narrationButtonSwatch = laneSwatchForButton(laneMeta.narration.swatch)
   const audioButtonSwatch = laneSwatchForButton(laneMeta.audio.swatch)
+  const narrationPreviewEnabled = isPreviewAudioLaneOn('narration')
+  const audioPreviewEnabled = isPreviewAudioLaneOn('audio')
   const laneVisibility = useMemo(
     () => ({
       graphics: showEmptyLanes || graphics.length > 0,
@@ -3944,10 +4022,10 @@ export default function CreateVideo() {
       height: '100%',
       objectFit: previewObjectFit,
       pointerEvents: 'none',
-      display: activeUploadId != null ? 'block' : 'none',
+      display: activeUploadId != null && previewVideoLaneEnabled.video !== false ? 'block' : 'none',
       zIndex: 5,
     }
-  }, [activeUploadId, previewObjectFit])
+  }, [activeUploadId, previewObjectFit, previewVideoLaneEnabled])
 
   const ensureAudioEnvelope = useCallback(async (uploadId: number) => {
     const id = Number(uploadId)
@@ -4100,17 +4178,27 @@ export default function CreateVideo() {
       stopNarrationPreview()
       return
     }
+    if (!isPreviewAudioLaneOn('narration')) {
+      setTimelineMessage('Narration preview muted')
+      return
+    }
     if (musicPreviewPlaying) stopMusicPreview()
     if (!sortedNarration.length) {
       setTimelineMessage('No narration segments')
       return
     }
+    const enabledNarration = sortedNarration.filter((n: any) => (n as any).audioEnabled !== false)
+    if (!enabledNarration.length) {
+      setTimelineMessage('Narration muted')
+      return
+    }
 
     // If playhead is not inside a narration segment, jump to the next segment start and stop.
-    const segAt = findNarrationAtTime(playhead)
+    const segAtRaw = findNarrationAtTime(playhead)
+    const segAt = segAtRaw && (segAtRaw as any).audioEnabled !== false ? segAtRaw : null
     const eps = 0.05
     if (!segAt) {
-      const next = sortedNarration.find((n: any) => Number(n.startSeconds) > Number(playhead) + eps)
+      const next = enabledNarration.find((n: any) => Number(n.startSeconds) > Number(playhead) + eps)
       if (!next) {
         setTimelineMessage('No next narration segment')
         return
@@ -4199,7 +4287,7 @@ export default function CreateVideo() {
       if (nextPlayhead >= seg.segEnd - 0.02) {
         const eps2 = 0.05
         const at = roundToTenth(Number(seg.segEnd || 0))
-        const next = sortedNarration.find(
+        const next = enabledNarration.find(
           (n: any) =>
             Number((n as any).uploadId) === Number(seg.uploadId) &&
             String((n as any).id) !== String(seg.segId) &&
@@ -4244,6 +4332,7 @@ export default function CreateVideo() {
     narrationPreviewPlaying,
     playhead,
     sortedNarration,
+    isPreviewAudioLaneOn,
     stopMusicPreview,
     stopNarrationPreview,
     totalSeconds,
@@ -4254,17 +4343,23 @@ export default function CreateVideo() {
       stopMusicPreview()
       return
     }
+    if (!isPreviewAudioLaneOn('audio')) {
+      setTimelineMessage('Music preview muted')
+      return
+    }
     if (narrationPreviewPlaying) stopNarrationPreview()
-    if (!sortedAudioSegments.length) {
+    const enabledSegments = sortedAudioSegments.filter((s: any) => (s as any).audioEnabled !== false)
+    if (!enabledSegments.length) {
       setTimelineMessage('No music segments')
       return
     }
 
     // If playhead is not inside a music segment, jump to the next segment start and stop.
-    const segAt = findAudioSegmentAtTime(playhead)
+    const segAtRaw = findAudioSegmentAtTime(playhead)
+    const segAt = segAtRaw && (segAtRaw as any).audioEnabled !== false ? segAtRaw : null
     const eps = 0.05
     if (!segAt) {
-      const next = sortedAudioSegments.find((s: any) => Number(s.startSeconds) > Number(playhead) + eps)
+      const next = enabledSegments.find((s: any) => Number(s.startSeconds) > Number(playhead) + eps)
       if (!next) {
         setTimelineMessage('No next music segment')
         return
@@ -4348,7 +4443,7 @@ export default function CreateVideo() {
       if (nextPlayhead >= seg.segEnd - 0.02) {
         const eps2 = 0.05
         const at = roundToTenth(Number(seg.segEnd || 0))
-        const next = sortedAudioSegments.find(
+        const next = enabledSegments.find(
           (s: any) =>
             Number((s as any).uploadId) === Number(seg.uploadId) &&
             String((s as any).id) !== String(seg.segId) &&
@@ -4394,9 +4489,27 @@ export default function CreateVideo() {
     narrationPreviewPlaying,
     playhead,
     sortedAudioSegments,
+    isPreviewAudioLaneOn,
     stopMusicPreview,
     stopNarrationPreview,
     totalSeconds,
+  ])
+
+  useEffect(() => {
+    if (!isPreviewAudioLaneOn('narration') && narrationPreviewPlaying) {
+      stopNarrationPreview()
+    }
+    if (!isPreviewAudioLaneOn('audio') && musicPreviewPlaying) {
+      stopMusicPreview()
+    }
+  }, [
+    isPreviewAudioLaneOn,
+    musicPreviewPlaying,
+    narrationPreviewPlaying,
+    previewAudioLaneEnabled,
+    previewVideoLaneEnabled,
+    stopMusicPreview,
+    stopNarrationPreview,
   ])
 
   useEffect(() => {
@@ -4956,6 +5069,39 @@ export default function CreateVideo() {
 	      ctx.fillRect(-ds / 2, -ds / 2, ds, ds)
 	      ctx.restore()
 	    }
+    const ICON_ACCENT_ON = 'rgba(48,209,88,0.95)'
+    const ICON_ACCENT_OFF = 'rgba(255,69,58,0.95)'
+    const drawIcon = (img: HTMLImageElement | undefined, x: number, y: number, size: number, accent: string) => {
+      if (!img) return
+      const scratch = iconScratchRef.current || document.createElement('canvas')
+      iconScratchRef.current = scratch
+      scratch.width = size
+      scratch.height = size
+      const sctx = scratch.getContext('2d')
+      if (!sctx) return
+      sctx.clearRect(0, 0, size, size)
+      sctx.drawImage(img, 0, 0, size, size)
+      sctx.globalCompositeOperation = 'source-in'
+      sctx.fillStyle = '#fff'
+      sctx.fillRect(0, 0, size, size)
+      sctx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(scratch, x, y)
+      ctx.beginPath()
+      ctx.fillStyle = accent
+      ctx.arc(x + size - 2, y + 2, 2, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    const pillIconSize = Math.max(18, Math.min(24, Math.floor(pillH * 0.7)))
+	    const pillIconGap = 6
+	    const drawPillAudioIcon = (x: number, y: number, enabled: boolean) => {
+	      drawIcon(
+	        enabled ? iconImagesRef.current.audioOn : iconImagesRef.current.audioOff,
+	        x,
+	        y,
+	        pillIconSize,
+	        enabled ? ICON_ACCENT_ON : ICON_ACCENT_OFF
+	      )
+	    }
     const hasNoOffset = (value: unknown, eps = 0.05) => {
       const n = Number(value)
       return Number.isFinite(n) && Math.abs(n) <= eps
@@ -4969,6 +5115,7 @@ export default function CreateVideo() {
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
 	    ctx.textBaseline = 'middle'
 	    const activeDrag = trimDragging ? trimDragRef.current : null
+	    laneLabelIconHitRef.current = []
 
 	    // Lane labels in the left gutter (only when time=0 is visible, i.e. there is blank space to the left of the 0.0s tick).
 	    {
@@ -4977,13 +5124,15 @@ export default function CreateVideo() {
 	      if (Number.isFinite(gutterRight) && gutterRight > 80) {
 	        const swatchW = 8
 	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
-	        const labels: Array<{ y: number; label: string; swatch: string }> = laneLayout.visibleKeys
+        const iconSize = Math.max(18, Math.min(26, Math.floor(pillH * 0.9)))
+	        const iconGap = 6
+	        const labels: Array<{ y: number; label: string; swatch: string; key: LaneKey }> = laneLayout.visibleKeys
 	          .map((key) => {
 	            const y = laneLayout.yByLane[key]
 	            if (y == null) return null
-	            return { y: y + pillH / 2, label: laneMeta[key].label, swatch: laneMeta[key].swatch }
+	            return { y: y + pillH / 2, label: laneMeta[key].label, swatch: laneMeta[key].swatch, key }
 	          })
-	          .filter((row): row is { y: number; label: string; swatch: string } => Boolean(row))
+	          .filter((row): row is { y: number; label: string; swatch: string; key: LaneKey } => Boolean(row))
 
 	        ctx.save()
 	        ctx.globalAlpha = 0.92
@@ -4997,7 +5146,46 @@ export default function CreateVideo() {
 	          ctx.fillStyle = row.swatch
 	          ctx.fillRect(swatchX, swatchY, swatchW, swatchH)
 
-	          const textX = swatchX - 8
+	          const laneKey = row.key
+	          const hasAudioIcon =
+	            laneKey === 'video' || laneKey === 'videoOverlay' || laneKey === 'narration' || laneKey === 'audio'
+	          const hasVideoIcon = laneKey === 'video' || laneKey === 'videoOverlay'
+	          const audioEnabled =
+	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay')
+	              ? isPreviewAudioLaneOn(laneKey)
+	              : laneKey === 'narration' || laneKey === 'audio'
+	                ? isPreviewAudioLaneOn(laneKey as any)
+	                : true
+	          const videoEnabled =
+	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay') ? previewVideoLaneEnabled[laneKey] !== false : true
+	          let iconRight = swatchX - iconGap
+	          if (hasVideoIcon && laneKey) {
+	            const iconX = Math.round(iconRight - iconSize)
+	            const iconY = Math.round(y - iconSize / 2)
+	            drawIcon(
+	              videoEnabled ? iconImagesRef.current.videoOn : iconImagesRef.current.videoOff,
+	              iconX,
+	              iconY,
+	              iconSize,
+	              videoEnabled ? ICON_ACCENT_ON : ICON_ACCENT_OFF
+	            )
+	            laneLabelIconHitRef.current.push({ lane: laneKey as LaneKey, kind: 'video', x: iconX, y: iconY, w: iconSize, h: iconSize })
+	            iconRight = iconX - iconGap
+	          }
+	          if (hasAudioIcon && laneKey) {
+	            const iconX = Math.round(iconRight - iconSize)
+	            const iconY = Math.round(y - iconSize / 2)
+	            drawIcon(
+	              audioEnabled ? iconImagesRef.current.audioOn : iconImagesRef.current.audioOff,
+	              iconX,
+	              iconY,
+	              iconSize,
+	              audioEnabled ? ICON_ACCENT_ON : ICON_ACCENT_OFF
+	            )
+	            laneLabelIconHitRef.current.push({ lane: laneKey as LaneKey, kind: 'audio', x: iconX, y: iconY, w: iconSize, h: iconSize })
+	            iconRight = iconX - iconGap
+	          }
+	          const textX = Math.round(iconRight)
 	          const maxW = Math.max(0, textX - 8)
 	          if (maxW < 20) continue
 	          ctx.fillStyle = 'rgba(187,187,187,0.95)'
@@ -5340,8 +5528,13 @@ export default function CreateVideo() {
         }
 
         const name = namesByUploadId[Number(o.uploadId)] || `Overlay ${o.uploadId}`
+        const audioEnabled = (o as any).audioEnabled !== false
         ctx.fillStyle = '#fff'
-        const padLeft = showHandles ? 6 + handleW + 10 : 12
+        const basePadLeft = showHandles ? 6 + handleW + 6 : 12
+        const iconX = x + basePadLeft
+        const iconY = videoOverlayY + Math.floor((pillH - pillIconSize) / 2)
+        drawPillAudioIcon(iconX, iconY, audioEnabled)
+        const padLeft = basePadLeft + pillIconSize + pillIconGap
         const padRight = showHandles ? 6 + handleW + 10 : 12
         const maxTextW = Math.max(0, w - padLeft - padRight)
         if (maxTextW >= 20) {
@@ -5557,8 +5750,13 @@ export default function CreateVideo() {
       }
 
       const name = namesByUploadId[clip.uploadId] || `Video ${clip.uploadId}`
+      const audioEnabled = (clip as any).audioEnabled !== false
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleW + 10 : isSelected ? 18 : 12
+      const basePadLeft = showHandles ? 6 + handleW + 6 : isSelected ? 18 : 12
+      const iconX = x + basePadLeft
+      const iconY = videoY + Math.floor((pillH - pillIconSize) / 2)
+      drawPillAudioIcon(iconX, iconY, audioEnabled)
+      const padLeft = basePadLeft + pillIconSize + pillIconGap
       const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
@@ -5634,13 +5832,18 @@ export default function CreateVideo() {
       }
 
       const uploadId = Number((n as any).uploadId)
+      const audioEnabled = (n as any).audioEnabled !== false
       const baseName = namesByUploadId[uploadId] || `Narration ${uploadId}`
       const boostDbRaw = (n as any).boostDb != null ? Number((n as any).boostDb) : ((n as any).gainDb == null ? 0 : Number((n as any).gainDb))
       const boostDb = Number.isFinite(boostDbRaw) ? boostDbRaw : 0
       const boostLabel = Math.abs(boostDb) > 0.05 ? `${boostDb > 0 ? '+' : ''}${boostDb.toFixed(0)}dB` : '0dB'
       const label = `${baseName} • ${boostLabel}`
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const basePadLeft = showHandles ? 6 + handleW + 6 : 12
+      const iconX = x + basePadLeft
+      const iconY = narrationY + Math.floor((pillH - pillIconSize) / 2)
+      drawPillAudioIcon(iconX, iconY, audioEnabled)
+      const padLeft = basePadLeft + pillIconSize + pillIconGap
       const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
@@ -5722,8 +5925,13 @@ export default function CreateVideo() {
       const audioName = namesByUploadId[Number(seg.uploadId)] || `Audio ${seg.uploadId}`
       const cfgName = audioConfigNameById[Number(seg.audioConfigId)] || `Config ${seg.audioConfigId}`
       const label = `${audioName} • ${cfgName}`
+      const audioEnabled = (seg as any).audioEnabled !== false
       ctx.fillStyle = '#fff'
-      const padLeft = showHandles ? 6 + handleW + 10 : 12
+      const basePadLeft = showHandles ? 6 + handleW + 6 : 12
+      const iconX = x + basePadLeft
+      const iconY = audioY + Math.floor((pillH - pillIconSize) / 2)
+      drawPillAudioIcon(iconX, iconY, audioEnabled)
+      const padLeft = basePadLeft + pillIconSize + pillIconGap
       const padRight = showHandles ? 6 + handleW + 10 : 12
       const maxTextW = Math.max(0, w - padLeft - padRight)
       if (maxTextW >= 20) {
@@ -5792,6 +6000,10 @@ export default function CreateVideo() {
     trimDragging,
     timeline.clips,
     timelineCtxMenu,
+    previewAudioLaneEnabled,
+    previewVideoLaneEnabled,
+    iconReadyTick,
+    isPreviewAudioLaneOn,
     guidelineFlash,
     playhead,
     timelinePadPx,
@@ -6432,6 +6644,8 @@ export default function CreateVideo() {
       if (!v) return
       const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
       if (!timeline.clips.length) return
+      const motionEnabled = previewVideoLaneEnabled.video !== false
+      const previewAudioEnabled = isPreviewAudioLaneOn('video')
       // Freeze-frame stills are a base-track segment: pause the video and let the still image render as an overlay.
       if (findStillAtTime(tClamped)) {
         try { v.pause() } catch {}
@@ -6450,7 +6664,7 @@ export default function CreateVideo() {
       activeClipIndexRef.current = idx
       const clip = timeline.clips[idx]
       if (!clip) return
-      const desiredMuted = (clip as any).audioEnabled === false
+      const desiredMuted = (clip as any).audioEnabled === false || !previewAudioEnabled || !motionEnabled
       const startTimeline = Number(clipStarts[idx] || 0)
       const within = Math.max(0, tClamped - startTimeline)
       const srcDur = clipSourceDurationSeconds(clip)
@@ -6461,6 +6675,56 @@ export default function CreateVideo() {
       const clipBgStyle = String((clip as any).bgFillStyle || 'none')
       const clipDims = dimsByUploadId[nextUploadId]
       const wantsBg = clipBgStyle === 'blur' && clipDims && Number(clipDims.width) > Number(clipDims.height)
+
+      if (!motionEnabled) {
+        const stillTime = clip.sourceStartSeconds
+        if (activeUploadId !== nextUploadId) {
+          setActiveUploadId(nextUploadId)
+          const src = `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy#t=0.1`
+          v.src = src
+          baseLoadedUploadIdRef.current = nextUploadId
+          v.load()
+          if (bg && wantsBg) {
+            if (bgLoadedUploadIdRef.current !== nextUploadId || bg.currentSrc !== src) {
+              bg.src = src
+              bgLoadedUploadIdRef.current = nextUploadId
+              bg.load()
+            }
+          } else if (bg) {
+            try { bg.pause() } catch {}
+          }
+          const onMeta = () => {
+            v.removeEventListener('loadedmetadata', onMeta)
+            try { v.muted = true } catch {}
+            try {
+              const w = Number(v.videoWidth || 0)
+              const h = Number(v.videoHeight || 0)
+              if (w > 0 && h > 0) {
+                setPreviewObjectFit(w > h ? 'contain' : 'cover')
+                setBaseVideoDims({ w, h })
+              }
+            } catch {}
+            try { v.currentTime = Math.max(0, stillTime) } catch {}
+            if (bg && wantsBg) {
+              try { bg.muted = true } catch {}
+              try { bg.currentTime = Math.max(0, stillTime) } catch {}
+            }
+          }
+          v.addEventListener('loadedmetadata', onMeta)
+        } else {
+          baseLoadedUploadIdRef.current = nextUploadId
+          try { v.muted = true } catch {}
+          try { v.currentTime = Math.max(0, stillTime) } catch {}
+          if (bg && wantsBg) {
+            try { bg.muted = true } catch {}
+            try { bg.currentTime = Math.max(0, stillTime) } catch {}
+          } else if (bg) {
+            try { bg.pause() } catch {}
+          }
+        }
+        try { v.pause() } catch {}
+        return
+      }
 
       // Fast-path: the correct upload is already loaded into the element's src (even if activeUploadId is null,
       // e.g. while showing a freeze-frame still). Avoid async src swap so play stays within the user gesture on iOS.
@@ -6578,7 +6842,17 @@ export default function CreateVideo() {
         }
       }
     },
-    [activeUploadId, clipStarts, dimsByUploadId, findStillAtTime, playWithAutoplayFallback, timeline.clips, totalSeconds]
+    [
+      activeUploadId,
+      clipStarts,
+      dimsByUploadId,
+      findStillAtTime,
+      playWithAutoplayFallback,
+      timeline.clips,
+      totalSeconds,
+      previewVideoLaneEnabled,
+      isPreviewAudioLaneOn,
+    ]
   )
 
   useEffect(() => {
@@ -6610,20 +6884,22 @@ export default function CreateVideo() {
     }
   }, [activeClipBgFill, activeUploadId, playing])
 
-		  const seekOverlay = useCallback(
-		    async (t: number, opts?: { autoPlay?: boolean }) => {
-		      const v = overlayVideoRef.current
-		      if (!v) return
-	      const shouldAutoPlay = Boolean(opts?.autoPlay)
-	      if (!shouldAutoPlay) {
-	        try { v.pause() } catch {}
-	      }
-	      const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
-	      if (!videoOverlays.length && !(videoOverlayStills as any[]).length) {
-	        setOverlayActiveUploadId(null)
-	        overlayLoadedUploadIdRef.current = null
-	        return
-	      }
+  const seekOverlay = useCallback(
+    async (t: number, opts?: { autoPlay?: boolean }) => {
+      const v = overlayVideoRef.current
+      if (!v) return
+      const shouldAutoPlay = Boolean(opts?.autoPlay)
+      if (!shouldAutoPlay) {
+        try { v.pause() } catch {}
+      }
+      const motionEnabled = previewVideoLaneEnabled.videoOverlay !== false
+      const previewAudioEnabled = isPreviewAudioLaneOn('videoOverlay')
+      const tClamped = clamp(roundToTenth(t), 0, Math.max(0, totalSeconds))
+      if (!videoOverlays.length && !(videoOverlayStills as any[]).length) {
+        setOverlayActiveUploadId(null)
+        overlayLoadedUploadIdRef.current = null
+        return
+      }
 	      const still = findVideoOverlayStillAtTime(tClamped)
 	      if (still) {
 	        return
@@ -6636,7 +6912,7 @@ export default function CreateVideo() {
       activeVideoOverlayIndexRef.current = idx
       const o: any = (videoOverlays as any)[idx]
       if (!o) return
-      const desiredMuted = !Boolean((o as any).audioEnabled)
+      const desiredMuted = !Boolean((o as any).audioEnabled) || !previewAudioEnabled || !motionEnabled
       const startTimeline = Number((videoOverlayStarts as any)[idx] || 0)
       const within = Math.max(0, tClamped - startTimeline)
       const srcDur = clipSourceDurationSeconds(o as any)
@@ -6645,10 +6921,41 @@ export default function CreateVideo() {
       const nextUploadId = Number(o.uploadId)
       if (!Number.isFinite(nextUploadId) || nextUploadId <= 0) return
 
-	      // Fast-path: the correct upload is already loaded into the overlay element's src.
-	      if (overlayLoadedUploadIdRef.current === nextUploadId) {
-	        if (overlayActiveUploadId !== nextUploadId) setOverlayActiveUploadId(nextUploadId)
-	        try { v.muted = desiredMuted } catch {}
+      if (!motionEnabled) {
+        const stillTime = Number(o.sourceStartSeconds || 0)
+        if (overlayActiveUploadId !== nextUploadId) {
+          setOverlayActiveUploadId(nextUploadId)
+          v.src = `/api/uploads/${encodeURIComponent(String(nextUploadId))}/edit-proxy#t=0.1`
+          overlayLoadedUploadIdRef.current = nextUploadId
+          v.load()
+          const onMeta = () => {
+            v.removeEventListener('loadedmetadata', onMeta)
+            try { v.muted = true } catch {}
+            try {
+              const w = Number(v.videoWidth || 0)
+              const h = Number(v.videoHeight || 0)
+              if (w > 0 && h > 0) {
+                setDimsByUploadId((prev) =>
+                  prev[nextUploadId] ? prev : { ...prev, [nextUploadId]: { width: Math.round(w), height: Math.round(h) } }
+                )
+              }
+            } catch {}
+            try { v.currentTime = Math.max(0, stillTime) } catch {}
+          }
+          v.addEventListener('loadedmetadata', onMeta)
+        } else {
+          overlayLoadedUploadIdRef.current = nextUploadId
+          try { v.muted = true } catch {}
+          try { v.currentTime = Math.max(0, stillTime) } catch {}
+        }
+        try { v.pause() } catch {}
+        return
+      }
+
+      // Fast-path: the correct upload is already loaded into the overlay element's src.
+      if (overlayLoadedUploadIdRef.current === nextUploadId) {
+        if (overlayActiveUploadId !== nextUploadId) setOverlayActiveUploadId(nextUploadId)
+        try { v.muted = desiredMuted } catch {}
         try {
           const w = Number(v.videoWidth || 0)
           const h = Number(v.videoHeight || 0)
@@ -6709,8 +7016,18 @@ export default function CreateVideo() {
 		        }
 		      }
 		    },
-	    [findVideoOverlayStillAtTime, overlayActiveUploadId, playWithAutoplayFallback, totalSeconds, videoOverlayStarts, videoOverlays, videoOverlayStills]
-	  )
+    [
+      findVideoOverlayStillAtTime,
+      overlayActiveUploadId,
+      playWithAutoplayFallback,
+      totalSeconds,
+      videoOverlayStarts,
+      videoOverlays,
+      videoOverlayStills,
+      previewVideoLaneEnabled,
+      isPreviewAudioLaneOn,
+    ]
+  )
 
   // If the overlay lane changes (e.g. user inserts an overlay), ensure the overlay preview is
   // synced to the current playhead and NOT playing until the user hits Play.
@@ -6733,6 +7050,26 @@ export default function CreateVideo() {
     void seek(playhead)
     void seekOverlay(playhead)
   }, [activeUploadId, overlayActiveUploadId, playhead, seek, seekOverlay])
+
+  useEffect(() => {
+    const baseOn = previewVideoLaneEnabled.video !== false
+    const overlayOn = previewVideoLaneEnabled.videoOverlay !== false
+    if (!baseOn) {
+      try { videoRef.current?.pause?.() } catch {}
+    }
+    if (!overlayOn) {
+      try { overlayVideoRef.current?.pause?.() } catch {}
+    }
+    if (playingRef.current) {
+      if (playbackClockRef.current === 'base' && !baseOn) {
+        playbackClockRef.current = overlayOn ? 'overlay' : 'synthetic'
+      } else if (playbackClockRef.current === 'overlay' && !overlayOn) {
+        playbackClockRef.current = baseOn ? 'base' : 'synthetic'
+      }
+    }
+    void seek(playheadRef.current)
+    void seekOverlay(playheadRef.current)
+  }, [previewVideoLaneEnabled, seek, seekOverlay])
 
   // Keep a stable poster image for iOS Safari (initial paused frame often won’t paint reliably).
   useEffect(() => {
@@ -6886,25 +7223,25 @@ export default function CreateVideo() {
 
     const baseIdx = timeline.clips.length ? findClipIndexAtTime(t0, timeline.clips, clipStarts) : -1
     const overlayIdx = videoOverlays.length ? findClipIndexAtTime(t0, videoOverlays as any, videoOverlayStarts as any) : -1
+    const baseMotionEnabled = previewVideoLaneEnabled.video !== false
+    const overlayMotionEnabled = previewVideoLaneEnabled.videoOverlay !== false
 
     // Choose which element drives the playhead. Base clip wins when present; otherwise overlay; otherwise synthetic (graphics-only).
-    if (baseIdx >= 0) playbackClockRef.current = 'base'
-    else if (overlayIdx >= 0) playbackClockRef.current = 'overlay'
-    else if (timeline.clips.length) playbackClockRef.current = 'base'
-    else if (videoOverlays.length) playbackClockRef.current = 'overlay'
+    if (baseIdx >= 0 && baseMotionEnabled) playbackClockRef.current = 'base'
+    else if (overlayIdx >= 0 && overlayMotionEnabled) playbackClockRef.current = 'overlay'
     else playbackClockRef.current = 'synthetic'
 
     setPlaying(true)
 
     if (baseIdx >= 0) {
-      void seek(t0, { autoPlay: true })
+      void seek(t0, { autoPlay: baseMotionEnabled })
     } else {
       try { videoRef.current?.pause?.() } catch {}
       setActiveUploadId(null)
     }
 
     if (overlayIdx >= 0) {
-      void seekOverlay(t0, { autoPlay: true })
+      void seekOverlay(t0, { autoPlay: overlayMotionEnabled })
     } else {
       try { overlayVideoRef.current?.pause?.() } catch {}
     }
@@ -6920,14 +7257,13 @@ export default function CreateVideo() {
     stopNarrationPreview,
     timeline.clips,
     totalSeconds,
+    previewVideoLaneEnabled,
     videoOverlayStarts,
     videoOverlays,
   ])
 
-  // Synthetic playback for graphics-only projects.
+  // Synthetic playback for cases where no video element is driving the clock (e.g. motion disabled).
   useEffect(() => {
-    if (timeline.clips.length) return
-    if (videoOverlays.length) return
     if (playbackClockRef.current !== 'synthetic') return
     if (!playing) return
     if (!(totalSeconds > 0)) {
@@ -6943,8 +7279,38 @@ export default function CreateVideo() {
       const cur = Number(playheadRef.current || 0)
       let next = cur + dt
       if (next >= totalSeconds - 0.001) next = totalSeconds
+      playheadFromVideoRef.current = true
       playheadRef.current = next
       setTimeline((prev) => ({ ...prev, playheadSeconds: roundToTenth(next) }))
+      const nextClipIdx = timeline.clips.length ? findClipIndexAtTime(next, timeline.clips, clipStarts) : -1
+      const stillNow = findStillAtTime(next)
+      const stillId = stillNow ? String((stillNow as any).id || '') : ''
+      let needsSeekBase = false
+      if (nextClipIdx !== activeClipIndexRef.current) {
+        activeClipIndexRef.current = nextClipIdx
+        needsSeekBase = true
+      }
+      if (stillId !== syntheticStillIdRef.current) {
+        syntheticStillIdRef.current = stillId
+        needsSeekBase = true
+      }
+      if (needsSeekBase) void seek(next)
+
+      const nextOverlayIdx = videoOverlays.length
+        ? findClipIndexAtTime(next, videoOverlays as any, videoOverlayStarts as any)
+        : -1
+      const overlayStillNow = findVideoOverlayStillAtTime(next)
+      const overlayStillId = overlayStillNow ? String((overlayStillNow as any).id || '') : ''
+      let needsSeekOverlay = false
+      if (nextOverlayIdx !== activeVideoOverlayIndexRef.current) {
+        activeVideoOverlayIndexRef.current = nextOverlayIdx
+        needsSeekOverlay = true
+      }
+      if (overlayStillId !== syntheticOverlayStillIdRef.current) {
+        syntheticOverlayStillIdRef.current = overlayStillId
+        needsSeekOverlay = true
+      }
+      if (needsSeekOverlay) void seekOverlay(next)
       if (next >= totalSeconds - 0.001) {
         setPlaying(false)
         return
@@ -6955,7 +7321,18 @@ export default function CreateVideo() {
     return () => {
       window.cancelAnimationFrame(raf)
     }
-  }, [playing, timeline.clips.length, totalSeconds, videoOverlays.length])
+  }, [
+    clipStarts,
+    findStillAtTime,
+    findVideoOverlayStillAtTime,
+    playing,
+    seek,
+    seekOverlay,
+    timeline.clips,
+    totalSeconds,
+    videoOverlayStarts,
+    videoOverlays,
+  ])
 
   // Drive playhead from the active clock video element while playing.
   // Best-effort sync: the non-clock video is periodically nudged to match the timeline time.
@@ -6970,6 +7347,10 @@ export default function CreateVideo() {
 
     const syncOverlayToTimeline = (t: number) => {
       if (!overlay || !videoOverlays.length) return
+      if (previewVideoLaneEnabled.videoOverlay === false) {
+        safePause(overlay)
+        return
+      }
       const idx = findClipIndexAtTime(t, videoOverlays as any, videoOverlayStarts as any)
       if (idx < 0) {
         safePause(overlay)
@@ -6983,7 +7364,7 @@ export default function CreateVideo() {
       const srcDur = clipSourceDurationSeconds(seg as any)
       const withinMoving = clamp(roundToTenth(within), 0, Math.max(0, srcDur))
       const sourceTime = Number(seg.sourceStartSeconds || 0) + withinMoving
-      const desiredMuted = !Boolean((seg as any).audioEnabled)
+      const desiredMuted = !Boolean((seg as any).audioEnabled) || !isPreviewAudioLaneOn('videoOverlay')
       try { overlay.muted = desiredMuted } catch {}
 
       if (overlayActiveUploadId !== uploadId) {
@@ -7003,6 +7384,10 @@ export default function CreateVideo() {
 
     const syncBaseToTimeline = (t: number) => {
       if (!base || !timeline.clips.length) return
+      if (previewVideoLaneEnabled.video === false) {
+        safePause(base)
+        return
+      }
       const idx = findClipIndexAtTime(t, timeline.clips, clipStarts)
       if (idx < 0) {
         safePause(base)
@@ -7010,7 +7395,7 @@ export default function CreateVideo() {
       }
       const clip = timeline.clips[idx]
       if (!clip) return
-      const desiredMuted = (clip as any).audioEnabled === false
+      const desiredMuted = (clip as any).audioEnabled === false || !isPreviewAudioLaneOn('video')
       try { base.muted = desiredMuted } catch {}
       if (activeUploadId !== Number(clip.uploadId)) {
         void seek(t, { autoPlay: playingRef.current })
@@ -7238,6 +7623,8 @@ export default function CreateVideo() {
     totalSeconds,
     videoOverlayStarts,
     videoOverlays,
+    previewVideoLaneEnabled,
+    isPreviewAudioLaneOn,
   ])
 
 	  // Gap playback for absolute-positioned clips: advance the playhead through black gaps.
@@ -8682,7 +9069,7 @@ export default function CreateVideo() {
       }
 
       const id = `nar_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-	      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, boostDb: 0 }
+	      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, boostDb: 0, audioEnabled: true }
       snapshotUndo()
       setTimeline((prev) => {
         const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
@@ -8964,6 +9351,7 @@ export default function CreateVideo() {
       start: Number(selectedAudioSegment.startSeconds),
       end: Number(selectedAudioSegment.endSeconds),
       audioConfigId: (selectedAudioSegment as any).audioConfigId == null ? 0 : Number((selectedAudioSegment as any).audioConfigId),
+      audioEnabled: (selectedAudioSegment as any).audioEnabled !== false,
       musicMode: (selectedAudioSegment as any).musicMode == null ? '' : (String((selectedAudioSegment as any).musicMode) as any),
       musicLevel: (selectedAudioSegment as any).musicLevel == null ? '' : (String((selectedAudioSegment as any).musicLevel) as any),
       duckingIntensity: (selectedAudioSegment as any).duckingIntensity == null ? '' : (String((selectedAudioSegment as any).duckingIntensity) as any),
@@ -8975,6 +9363,7 @@ export default function CreateVideo() {
 	    const start = roundToTenth(Number(audioEditor.start))
 	    const end = roundToTenth(Number(audioEditor.end))
 	    const audioConfigId = Number(audioEditor.audioConfigId)
+      const audioEnabled = Boolean(audioEditor.audioEnabled)
 	    const musicMode = String(audioEditor.musicMode || '').trim()
 	    const musicLevel = String(audioEditor.musicLevel || '').trim()
 	    const duckingIntensity = String(audioEditor.duckingIntensity || '').trim()
@@ -9021,6 +9410,7 @@ export default function CreateVideo() {
 	      ...(prevSegs[idx] as any),
 	      startSeconds: safeStart,
 	      endSeconds: safeEnd,
+        audioEnabled,
 	      ...(Number.isFinite(audioConfigId) && audioConfigId > 0 ? { audioConfigId } : {}),
 	      musicMode,
 	      musicLevel,
@@ -17212,6 +17602,21 @@ export default function CreateVideo() {
               poster={activePoster || undefined}
 	              style={previewBaseVideoStyle}
 	            />
+            {previewVideoLaneEnabled.video === false && baseMotionPoster ? (
+              <img
+                src={baseMotionPoster}
+                alt=""
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: previewObjectFit,
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}
+              />
+            ) : null}
             {activeStillUrl ? (
               <img
                 src={activeStillUrl}
@@ -17280,8 +17685,18 @@ export default function CreateVideo() {
                     playsInline
                     preload="metadata"
                     poster={activeVideoOverlayPreview.thumbUrl || undefined}
-                    style={activeVideoOverlayPreview.innerStyle}
+                    style={{
+                      ...activeVideoOverlayPreview.innerStyle,
+                      display: previewVideoLaneEnabled.videoOverlay !== false ? 'block' : 'none',
+                    }}
                   />
+                  {previewVideoLaneEnabled.videoOverlay === false ? (
+                    <img
+                      src={activeVideoOverlayPreview.thumbUrl}
+                      alt=""
+                      style={activeVideoOverlayPreview.innerStyle}
+                    />
+                  ) : null}
                 </div>
               </>
             ) : null}
@@ -18755,6 +19170,15 @@ export default function CreateVideo() {
 	                  // Don't pan when starting on a pill (let click-selection work). This only kicks in for empty space.
 	                  const rect = sc.getBoundingClientRect()
 	                  const y = e.clientY - rect.top
+	                  const hitX = e.clientX - rect.left
+	                  const iconHits = laneLabelIconHitRef.current
+	                  if (iconHits.length) {
+	                    for (const hit of iconHits) {
+	                      if (hitX >= hit.x && hitX <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
+	                        return
+	                      }
+	                    }
+	                  }
 	                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
@@ -18837,9 +19261,19 @@ export default function CreateVideo() {
                   if (!sc) return
                   if (trimDragging) return
                   const rect = sc.getBoundingClientRect()
-                  const y = e.clientY - rect.top
-                  const clickX = e.clientX - rect.left
-                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
+	                  const y = e.clientY - rect.top
+	                  const clickX = e.clientX - rect.left
+	                  const iconHits = laneLabelIconHitRef.current
+	                  if (iconHits.length) {
+	                    for (const hit of iconHits) {
+	                      if (clickX >= hit.x && clickX <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
+	                        if (hit.kind === 'audio') togglePreviewAudioLane(hit.lane as any)
+	                        else togglePreviewVideoLane(hit.lane as any)
+	                        return
+	                      }
+	                    }
+	                  }
+	                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 		                  const clickXInScroll = clickX + sc.scrollLeft
 		                  const x = clickXInScroll - padPx
 		                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
@@ -19594,7 +20028,7 @@ export default function CreateVideo() {
 				                {sortedNarration.length ? (
 				                  <button
 				                    type="button"
-				                    onClick={toggleNarrationPlay}
+				                    onClick={narrationPreviewEnabled ? toggleNarrationPlay : undefined}
 				                    style={{
 				                      padding: '10px 12px',
 				                      borderRadius: 10,
@@ -19604,10 +20038,11 @@ export default function CreateVideo() {
 				                        : laneSwatchForButton(laneMeta.narration.swatch),
 				                      color: '#fff',
 				                      fontWeight: 900,
-				                      cursor: 'pointer',
+				                      cursor: narrationPreviewEnabled ? 'pointer' : 'default',
 				                      flex: '0 0 auto',
 				                      minWidth: 44,
 				                      lineHeight: 1,
+				                      opacity: narrationPreviewEnabled ? 1 : 0.5,
 				                    }}
 				                    title="Play narration (voice memo)"
 				                    aria-label={narrationPreviewPlaying ? 'Pause voice' : 'Play voice'}
@@ -19621,7 +20056,7 @@ export default function CreateVideo() {
 				                {audioSegments.length ? (
 				                  <button
 				                    type="button"
-				                    onClick={toggleMusicPlay}
+				                    onClick={audioPreviewEnabled ? toggleMusicPlay : undefined}
 				                    style={{
 				                      padding: '10px 12px',
 				                      borderRadius: 10,
@@ -19631,10 +20066,11 @@ export default function CreateVideo() {
 				                        : laneSwatchForButton(laneMeta.audio.swatch),
 				                      color: '#fff',
 				                      fontWeight: 900,
-				                      cursor: 'pointer',
+				                      cursor: audioPreviewEnabled ? 'pointer' : 'default',
 				                      flex: '0 0 auto',
 				                      minWidth: 44,
 				                      lineHeight: 1,
+				                      opacity: audioPreviewEnabled ? 1 : 0.5,
 				                    }}
 				                    title="Play music"
 				                    aria-label={musicPreviewPlaying ? 'Pause music' : 'Play music'}

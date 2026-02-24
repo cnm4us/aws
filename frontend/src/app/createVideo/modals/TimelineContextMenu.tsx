@@ -674,7 +674,7 @@ export default function TimelineContextMenu(props: any) {
 					                >
 					                  Properties
 					                </button>
-                        {timelineCtxMenu.kind === 'clip' || timelineCtxMenu.kind === 'videoOverlay' || timelineCtxMenu.kind === 'narration' ? (
+                        {timelineCtxMenu.kind === 'clip' || timelineCtxMenu.kind === 'videoOverlay' || timelineCtxMenu.kind === 'narration' || timelineCtxMenu.kind === 'audioSegment' ? (
                           <button
                             type="button"
                             onClick={() => {
@@ -710,6 +710,16 @@ export default function TimelineContextMenu(props: any) {
                                   next[idx] = { ...(cur as any), audioEnabled: nextEnabled }
                                   return { ...(prev as any), narration: next } as any
                                 }
+                                if (timelineCtxMenu.kind === 'audioSegment') {
+                                  const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? ((prev as any).audioSegments as any[]) : []
+                                  const idx = prevSegs.findIndex((s: any) => String(s?.id) === String(timelineCtxMenu.id))
+                                  if (idx < 0) return prev
+                                  const cur = prevSegs[idx]
+                                  const nextEnabled = cur?.audioEnabled === false
+                                  const next = prevSegs.slice()
+                                  next[idx] = { ...(cur as any), audioEnabled: nextEnabled }
+                                  return { ...(prev as any), audioSegments: next } as any
+                                }
                                 return prev
                               })
                             }}
@@ -733,7 +743,9 @@ export default function TimelineContextMenu(props: any) {
                                     ? Boolean(
                                         (videoOverlays.find((o: any) => String((o as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled
                                       )
-                                    : (narration.find((n: any) => String((n as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled !== false
+                                    : timelineCtxMenu.kind === 'narration'
+                                      ? (narration.find((n: any) => String((n as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled !== false
+                                      : (audioSegments.find((s: any) => String((s as any).id) === String(timelineCtxMenu.id)) as any)?.audioEnabled !== false
                               return (
                                 <>
                                   <span style={{ color: '#bbb', fontWeight: 900 }}>Audio: </span>

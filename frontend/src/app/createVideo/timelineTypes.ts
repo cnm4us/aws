@@ -148,6 +148,7 @@ export type AudioSegment = {
   audioConfigId: number
   startSeconds: number
   endSeconds: number
+  audioEnabled?: boolean
   // Offset into the audio file for where this segment begins (in seconds).
   // This enables split/trim to play the continuation instead of restarting at 0.
   sourceStartSeconds?: number
@@ -162,6 +163,7 @@ export type Narration = {
   uploadId: number
   startSeconds: number
   endSeconds: number
+  audioEnabled?: boolean
   // Offset into the audio file for where this segment begins (in seconds).
   // This enables split/trim to play the continuation instead of restarting at 0.
   sourceStartSeconds?: number
@@ -376,6 +378,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           uploadId: Number(n.uploadId),
           startSeconds: Number(n.startSeconds),
           endSeconds: Number(n.endSeconds),
+          audioEnabled: n.audioEnabled == null ? true : Boolean(n.audioEnabled),
           sourceStartSeconds: n.sourceStartSeconds == null ? 0 : Number(n.sourceStartSeconds),
           gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
         }))
@@ -387,6 +390,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           audioConfigId: Number(s.audioConfigId),
           startSeconds: Number(s.startSeconds),
           endSeconds: Number(s.endSeconds),
+          audioEnabled: s.audioEnabled == null ? true : Boolean(s.audioEnabled),
           sourceStartSeconds: s.sourceStartSeconds == null ? 0 : Number(s.sourceStartSeconds),
           musicMode: s.musicMode == null ? undefined : String(s.musicMode),
           musicLevel: s.musicLevel == null ? undefined : String(s.musicLevel),

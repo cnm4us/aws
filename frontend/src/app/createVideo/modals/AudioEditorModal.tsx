@@ -5,6 +5,7 @@ type AudioEditorState = {
   start: number
   end: number
   audioConfigId: number
+  audioEnabled: boolean
   musicMode: '' | 'opener_cutoff' | 'replace' | 'mix' | 'mix_duck'
   musicLevel: '' | 'quiet' | 'medium' | 'loud'
   duckingIntensity: '' | 'min' | 'medium' | 'max'
@@ -113,6 +114,21 @@ export default function AudioEditorModal({
         ) : null}
 
         <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 6, maxWidth: 240 }}>
+            <div style={{ color: '#bbb', fontSize: 13 }}>Audio</div>
+            <select
+              value={audioEditor.audioEnabled ? 'on' : 'off'}
+              onChange={(e) => {
+                setAudioEditorError(null)
+                const next = String(e.target.value || '') === 'on'
+                setAudioEditor((p) => (p ? ({ ...p, audioEnabled: next } as any) : p))
+              }}
+              style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+            >
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
             <label style={{ display: 'grid', gap: 6 }}>
               <div style={{ color: '#bbb', fontSize: 13 }}>Music Mode</div>
@@ -231,4 +247,3 @@ export default function AudioEditorModal({
     </div>
   )
 }
-
