@@ -598,6 +598,8 @@ export default function CreateVideo() {
   const [timelineErrorModal, setTimelineErrorModal] = useState<string | null>(null)
   const [guidelineMenuOpen, setGuidelineMenuOpen] = useState(false)
   const guidelinePressRef = useRef<{ timer: number | null; fired: boolean } | null>(null)
+  const [guidelineFlash, setGuidelineFlash] = useState<{ t: number; at: number } | null>(null)
+  const guidelineFlashTimerRef = useRef<number | null>(null)
   const timelineCtxMenuOpenedAtRef = useRef<number | null>(null)
   const timelineCtxSnapTargetRef = useRef<'timeline' | 'guideline' | 'object_lane' | 'object_any'>('guideline')
   const previewWrapRef = useRef<HTMLDivElement | null>(null)
@@ -4764,17 +4766,31 @@ export default function CreateVideo() {
     // Guidelines (user markers) — full height.
     const gs: number[] = Array.isArray((timeline as any).guidelines) ? (timeline as any).guidelines : []
     if (gs.length) {
+      const now = performance.now()
       ctx.strokeStyle = 'rgba(212,175,55,0.85)'
       ctx.lineWidth = 1
+      const centerX = wCss / 2
       for (const g of gs) {
         const t = roundToTenth(Number(g))
         if (!Number.isFinite(t) || t < startT - 0.5 || t > endT + 0.5) continue
-        const x = padPx + t * pxPerSecond - scrollLeft
+        const onPlayhead = Math.abs(t - playhead) < 0.001
+        const x = onPlayhead ? centerX - 0.5 : padPx + t * pxPerSecond - scrollLeft
         if (x < -2 || x > wCss + 2) continue
         ctx.beginPath()
         ctx.moveTo(x + 0.5, 0)
         ctx.lineTo(x + 0.5, hCss)
         ctx.stroke()
+
+        if (guidelineFlash && Math.abs(t - guidelineFlash.t) < 0.001 && now - guidelineFlash.at < 700) {
+          ctx.save()
+          ctx.strokeStyle = 'rgba(255,214,10,0.95)'
+          ctx.lineWidth = 3
+          ctx.beginPath()
+          ctx.moveTo(x + 0.5, 0)
+          ctx.lineTo(x + 0.5, hCss)
+          ctx.stroke()
+          ctx.restore()
+        }
       }
     }
 
@@ -5777,6 +5793,8 @@ export default function CreateVideo() {
     trimDragging,
     timeline.clips,
     timelineCtxMenu,
+    guidelineFlash,
+    playhead,
     timelinePadPx,
     timelineScrollLeftPx,
     totalSeconds,
@@ -6215,6 +6233,16 @@ export default function CreateVideo() {
     snapshotUndo()
     setTimeline(nextTimeline)
     void saveTimelineNow(nextTimeline)
+    try {
+      if (guidelineFlashTimerRef.current != null) {
+        window.clearTimeout(guidelineFlashTimerRef.current)
+      }
+      setGuidelineFlash({ t, at: performance.now() })
+      guidelineFlashTimerRef.current = window.setTimeout(() => {
+        setGuidelineFlash(null)
+        guidelineFlashTimerRef.current = null
+      }, 700)
+    } catch {}
     setTimelineMessage(`Guideline added at ${t.toFixed(1)}s`)
   }, [playhead, saveTimelineNow, snapshotUndo, timeline])
 
