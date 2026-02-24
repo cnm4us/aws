@@ -17725,7 +17725,6 @@ export default function CreateVideo() {
 	                      setSelectedNarrationId(null)
 	                      setSelectedStillId(null)
 	                      setSelectedAudioId(null)
-	                      if (!timelineCtxMenu) return
 	                    }
 	                    e.preventDefault()
 	                    setSelectedLogoId(String((l as any).id))
@@ -17820,7 +17819,6 @@ export default function CreateVideo() {
                       setSelectedNarrationId(null)
                       setSelectedStillId(null)
                       setSelectedAudioId(null)
-                      if (!timelineCtxMenu) return
                     }
                     e.preventDefault()
                     trimDragRef.current = {
@@ -17859,7 +17857,7 @@ export default function CreateVideo() {
 	                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                    }
 
-                    const allowEdgeBind = Boolean(timelineCtxMenu) && (nearLeft || nearRight)
+                    const allowEdgeBind = nearLeft || nearRight
                     // Ensure first tap selects the segment so handles/highlight render even if
                     // the subsequent click event gets suppressed by pointer logic.
 	                    if (selectedScreenTitleId !== String((st as any).id)) {
@@ -17960,7 +17958,7 @@ export default function CreateVideo() {
                         nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
                         nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
                       }
-                      const allowEdgeBind = Boolean(timelineCtxMenu) && (nearLeft || nearRight)
+                      const allowEdgeBind = nearLeft || nearRight
 
                       const capEnd = MAX_TIMELINE_SECONDS
                       const overlayStarts = computeClipStarts(videoOverlays as any)
@@ -18053,7 +18051,7 @@ export default function CreateVideo() {
 	                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
 	                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
 	                    if (!inside) return
-	                    const allowEdgeBind = Boolean(timelineCtxMenu) && (nearLeft || nearRight)
+	                    const allowEdgeBind = nearLeft || nearRight
 
 	                    // Ensure first tap selects so handles/highlight render.
                     if (selectedVideoOverlayId !== String((o as any).id)) {
@@ -18174,7 +18172,7 @@ export default function CreateVideo() {
 		                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 		                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 		                    }
-		                    const allowEdgeBind = Boolean(timelineCtxMenu) && (nearLeft || nearRight)
+		                    const allowEdgeBind = nearLeft || nearRight
 
 		                    // Tap selects. Tap+drag moves/resizes. Tap-release on an already-selected pill opens the context menu.
 		                    if (selectedGraphicId !== g.id) {
@@ -18300,7 +18298,7 @@ export default function CreateVideo() {
 
 	                    // Move/resize only when already selected (unless the action panel is open on a handle).
 	                    if (selectedNarrationId !== String((n as any).id)) {
-	                      if (timelineCtxMenu && (nearLeft || nearRight)) {
+	                      if (nearLeft || nearRight) {
 	                        setSelectedNarrationId(String((n as any).id))
 	                        setSelectedClipId(null)
 	                        setSelectedVideoOverlayId(null)
@@ -18403,7 +18401,7 @@ export default function CreateVideo() {
 
 		                    // Move/resize only when already selected (unless the action panel is open on a handle).
 		                    if (String(selectedAudioId || '') !== String(seg.id)) {
-		                      if (timelineCtxMenu && (nearLeft || nearRight)) {
+		                      if (nearLeft || nearRight) {
 		                        setSelectedAudioId(String(seg.id))
 		                        setSelectedClipId(null)
 		                        setSelectedVideoOverlayId(null)
@@ -18500,7 +18498,7 @@ export default function CreateVideo() {
 	                        nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
 	                        nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
 	                      }
-                      const allowEdgeBind = Boolean(timelineCtxMenu) && (nearLeft || nearRight)
+                      const allowEdgeBind = nearLeft || nearRight
 
                       const capEnd = 20 * 60
                       const clipRanges = timeline.clips.map((c, i) => ({
@@ -18645,7 +18643,7 @@ export default function CreateVideo() {
 
                   // Resize only when already selected (unless the action panel is open on a handle).
                   if (selectedClipId !== clip.id) {
-                    if (timelineCtxMenu && (nearLeft || nearRight)) {
+                    if (nearLeft || nearRight) {
                       setSelectedClipId(clip.id)
                       setSelectedVideoOverlayId(null)
                       setSelectedVideoOverlayStillId(null)
