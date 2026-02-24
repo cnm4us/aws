@@ -653,6 +653,17 @@ export default function CreateVideo() {
   const previewToolbarDragRef = useRef<null | { pointerId: number; startY: number; startBottom: number }>(null)
   const [previewToolbarDragging, setPreviewToolbarDragging] = useState(false)
   const previewMiniDragRef = useRef<null | { pointerId: number; startX: number; startPlayhead: number }>(null)
+  const scrubberDragRef = useRef<
+    | null
+    | {
+        pointerId: number
+        startX: number
+        startScrollLeft: number
+        maxLeft: number
+        scrollRange: number
+      }
+  >(null)
+  const [scrubberDragging, setScrubberDragging] = useState(false)
   const [timelineCtxMenu, setTimelineCtxMenu] = useState<
     | null
     | {
@@ -1806,6 +1817,8 @@ export default function CreateVideo() {
   const TRACKS_TOP = RULER_H + WAVEFORM_H
   const LANE_TOP_PAD = 6
   const PILL_H = Math.max(18, TRACK_H - 12)
+  const SCRUBBER_H = 24
+  const SCRUBBER_MIN_HANDLE_PX = 26
   const HANDLE_HIT_PX = 36
   const pickTrimEdge = (
     clickX: number,
@@ -5148,15 +5161,10 @@ export default function CreateVideo() {
 	          ctx.fillRect(swatchX, swatchY, swatchW, swatchH)
 
 	          const laneKey = row.key
-	          const hasAudioIcon =
-	            laneKey === 'video' || laneKey === 'videoOverlay' || laneKey === 'narration' || laneKey === 'audio'
+	          const hasAudioIcon = laneKey === 'video' || laneKey === 'videoOverlay'
 	          const hasVideoIcon = laneKey === 'video' || laneKey === 'videoOverlay'
 	          const audioEnabled =
-	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay')
-	              ? isPreviewAudioLaneOn(laneKey)
-	              : laneKey === 'narration' || laneKey === 'audio'
-	                ? isPreviewAudioLaneOn(laneKey as any)
-	                : true
+	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay') ? isPreviewAudioLaneOn(laneKey) : true
 	          const videoEnabled =
 	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay') ? previewVideoLaneEnabled[laneKey] !== false : true
 	          let iconRight = swatchX - iconGap
@@ -17258,6 +17266,48 @@ export default function CreateVideo() {
     }
   }, [cancelTimelineLongPress, panDragging, trimDragging])
 
+  useEffect(() => {
+    if (!scrubberDragging) return
+    const onMove = (e: PointerEvent) => {
+      const drag = scrubberDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      e.preventDefault()
+      const sc = timelineScrollRef.current
+      if (!sc) return
+      const dx = e.clientX - drag.startX
+      const maxLeft = drag.maxLeft
+      const scrollRange = drag.scrollRange
+      if (!(maxLeft > 0 && scrollRange > 0)) return
+      const nextScrollLeft = clamp(Math.round(drag.startScrollLeft + (dx * scrollRange) / maxLeft), 0, Math.max(0, scrollRange))
+      ignoreScrollRef.current = true
+      sc.scrollLeft = nextScrollLeft
+      setTimelineScrollLeftPx(nextScrollLeft)
+      const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
+      playheadFromScrollRef.current = true
+      setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
+      window.requestAnimationFrame(() => {
+        ignoreScrollRef.current = false
+      })
+    }
+    const onUp = (e: PointerEvent) => {
+      const drag = scrubberDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      scrubberDragRef.current = null
+      setScrubberDragging(false)
+      try { (e.target as HTMLElement | null)?.releasePointerCapture?.(e.pointerId) } catch {}
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [pxPerSecond, scrubberDragging, totalSeconds])
+
   const beginGraphicLongPress = useCallback(
     (e: React.PointerEvent, graphicId: string) => {
       cancelTimelineLongPress('restart')
@@ -17933,6 +17983,9 @@ export default function CreateVideo() {
           }}
         >
           <div style={{ position: 'relative', paddingTop: 14 }}>
+            <style>{`
+              .cv-timeline-scroll::-webkit-scrollbar { height: 0; }
+            `}</style>
             <div style={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', color: '#bbb', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
               {playhead.toFixed(1)}s
             </div>
@@ -18178,6 +18231,7 @@ export default function CreateVideo() {
                   playheadFromScrollRef.current = true
                   setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
                 }}
+                className="cv-timeline-scroll"
 	                onPointerDown={(e) => {
                   const sc = timelineScrollRef.current
                   if (!sc) return
@@ -19923,12 +19977,14 @@ export default function CreateVideo() {
 			                  setSelectedNarrationId(null)
 		                  setSelectedStillId(null)
 		                  setSelectedAudioId(null)
-		                }}
+	                }}
                 style={{
                   width: '100%',
                   overflowX: trimDragging ? 'hidden' : 'auto',
                   overflowY: 'hidden',
                   WebkitOverflowScrolling: trimDragging ? 'auto' : 'touch',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.28)',
                   background: 'rgba(0,0,0,0.60)',
@@ -19949,6 +20005,80 @@ export default function CreateVideo() {
                   />
                 </div>
               </div>
+              {(() => {
+                const viewportW = Math.max(0, (timelinePadPx || 0) * 2)
+                const contentW = viewportW + stripContentW
+                const showScrubber = viewportW > 0 && stripContentW > 1 && contentW > viewportW + 1
+                if (!showScrubber) return null
+                const trackW = viewportW
+                const ratio = trackW > 0 ? Math.min(1, trackW / contentW) : 1
+                const handleW = Math.min(trackW, Math.max(SCRUBBER_MIN_HANDLE_PX, Math.round(trackW * ratio)))
+                const maxLeft = Math.max(0, trackW - handleW)
+                const scrollRange = Math.max(0, stripContentW)
+                const left =
+                  maxLeft > 0 && scrollRange > 0
+                    ? Math.round((Math.max(0, Number(timelineScrollLeftPx) || 0) / scrollRange) * maxLeft)
+                    : 0
+                return (
+                  <div style={{ marginTop: 12, padding: '0 0' }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        height: SCRUBBER_H,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          top: '50%',
+                          height: 2,
+                          transform: 'translateY(-50%)',
+                          background: 'rgba(255,255,255,0.35)',
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          width: Math.max(0, left),
+                          top: '50%',
+                          height: 2,
+                          transform: 'translateY(-50%)',
+                          background: '#d4af37',
+                        }}
+                      />
+                      <div
+                        onPointerDown={(e) => {
+                          if (trimDragging) return
+                          if (!(maxLeft > 0 && scrollRange > 0)) return
+                          scrubberDragRef.current = {
+                            pointerId: e.pointerId,
+                            startX: e.clientX,
+                            startScrollLeft: Math.max(0, Number(timelineScrollLeftPx) || 0),
+                            maxLeft,
+                            scrollRange,
+                          }
+                          setScrubberDragging(true)
+                          try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch {}
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left,
+                          top: 0,
+                          height: '100%',
+                          width: handleW,
+                          borderRadius: 999,
+                          background: '#d4af37',
+                          cursor: 'pointer',
+                          touchAction: 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 
