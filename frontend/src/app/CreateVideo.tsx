@@ -5091,7 +5091,7 @@ export default function CreateVideo() {
       ctx.arc(x + size - 2, y + 2, 2, 0, Math.PI * 2)
       ctx.fill()
     }
-    const pillIconSize = Math.max(18, Math.min(24, Math.floor(pillH * 0.7)))
+    const pillIconSize = Math.max(15, Math.min(21, Math.floor(pillH * 0.6)))
 	    const pillIconGap = 6
 	    const drawPillAudioIcon = (x: number, y: number, enabled: boolean) => {
 	      drawIcon(
@@ -5124,7 +5124,7 @@ export default function CreateVideo() {
 	      if (Number.isFinite(gutterRight) && gutterRight > 80) {
 	        const swatchW = 8
 	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
-        const iconSize = Math.max(18, Math.min(26, Math.floor(pillH * 0.9)))
+        const iconSize = Math.max(15, Math.min(21, Math.floor(pillH * 0.6)))
 	        const iconGap = 6
 	        const labels: Array<{ y: number; label: string; swatch: string; key: LaneKey }> = laneLayout.visibleKeys
 	          .map((key) => {
