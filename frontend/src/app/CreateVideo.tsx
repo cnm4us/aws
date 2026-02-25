@@ -690,6 +690,8 @@ export default function CreateVideo() {
       }
   >(null)
   const bodyHoldRef = useRef<null | { timer: number; pointerId: number; startX: number; startY: number }>(null)
+  const activePointerDownRef = useRef<Record<number, boolean>>({})
+  const dragReadyRef = useRef<null | { kind: string; id: string; pointerId: number }>(null)
   const undoStackRef = useRef<
     Array<{
       timeline: Timeline
@@ -1160,6 +1162,7 @@ export default function CreateVideo() {
     }
   }, [previewToolbarDragging])
   const [trimDragging, setTrimDragging] = useState(false)
+  const [dragReadyTick, setDragReadyTick] = useState(0)
   const trimDragLockScrollLeftRef = useRef<number | null>(null)
   const trimDragScrollRestoreRef = useRef<{
     overflowX: string
@@ -5151,6 +5154,10 @@ export default function CreateVideo() {
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
 	    ctx.textBaseline = 'middle'
 	    const activeDrag = trimDragging ? trimDragRef.current : null
+	    const isDragReady = (kind: string, id: string) => {
+	      const cur = dragReadyRef.current
+	      return Boolean(cur && String(cur.kind) === String(kind) && String(cur.id) === String(id))
+	    }
 	    // Lane labels in the left gutter (only when time=0 is visible, i.e. there is blank space to the left of the 0.0s tick).
 	    {
 	      const xZero = padPx - scrollLeft
@@ -5205,6 +5212,7 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'logo' && String((activeDrag as any).logoId) === String(l?.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5213,8 +5221,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, logoY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(212,175,55,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('logo', String(l?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(212,175,55,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('logo', String(l?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, logoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5275,6 +5288,7 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'lowerThird' && String((activeDrag as any).lowerThirdId) === String(lt?.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5283,8 +5297,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, lowerThirdY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(94,92,230,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('lowerThird', String(lt?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(94,92,230,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('lowerThird', String(lt?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, lowerThirdY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5348,6 +5367,7 @@ export default function CreateVideo() {
         Boolean(activeDrag) && (activeDrag as any).kind === 'screenTitle' && String((activeDrag as any).screenTitleId) === String(st?.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5356,8 +5376,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, screenTitleY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(255,214,10,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('screenTitle', String(st?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(255,214,10,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('screenTitle', String(st?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, screenTitleY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5424,6 +5449,7 @@ export default function CreateVideo() {
         String((activeDrag as any).videoOverlayStillId) === String(s?.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5432,8 +5458,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, videoOverlayY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(255,255,255,0.40)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('videoOverlayStill', String(s?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(255,255,255,0.40)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('videoOverlayStill', String(s?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, videoOverlayY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5492,13 +5523,14 @@ export default function CreateVideo() {
         const w = Math.max(8, dur * pxPerSecond)
         if (x > wCss + 4 || x + w < -4) continue
         const isSelected = String(o?.id) === String(selectedVideoOverlayId || '')
-        const isDragging =
-          Boolean(activeDrag) &&
-          (activeDrag as any).kind === 'videoOverlay' &&
-          String((activeDrag as any).videoOverlayId) === String(o?.id)
-        const activeEdge = isDragging ? String((activeDrag as any).edge) : null
-        const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
-        const showHandles = (isSelected || isDragging) && w >= 28
+      const isDragging =
+        Boolean(activeDrag) &&
+        (activeDrag as any).kind === 'videoOverlay' &&
+        String((activeDrag as any).videoOverlayId) === String(o?.id)
+      const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+      const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
+      const showHandles = (isSelected || isDragging) && w >= 28
         const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
         const handleW = handleSize * 2
 
@@ -5506,8 +5538,13 @@ export default function CreateVideo() {
         roundRect(ctx, x, videoOverlayY, w, pillH, 10)
         ctx.fill()
 
-        ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(255,159,10,0.55)'
-        ctx.lineWidth = 1
+        ctx.strokeStyle =
+          isResizing || isMoveDragging || isDragReady('videoOverlay', String(o?.id || ''))
+            ? 'rgba(212,175,55,0.92)'
+            : isSelected
+              ? 'rgba(255,255,255,0.92)'
+              : 'rgba(255,159,10,0.55)'
+        ctx.lineWidth = isResizing || isMoveDragging || isDragReady('videoOverlay', String(o?.id || '')) ? 2 : 1
         roundRect(ctx, x + 0.5, videoOverlayY + 0.5, w - 1, pillH - 1, 10)
         ctx.stroke()
 
@@ -5582,6 +5619,7 @@ export default function CreateVideo() {
         Boolean(activeDrag) && (activeDrag as any).kind === 'graphic' && String((activeDrag as any).graphicId) === String((g as any).id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5590,8 +5628,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, graphicsY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(10,132,255,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('graphic', String((g as any)?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(10,132,255,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('graphic', String((g as any)?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, graphicsY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5652,6 +5695,7 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'still' && String((activeDrag as any).stillId) === String(s?.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5660,8 +5704,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, videoY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(255,255,255,0.40)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('still', String(s?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(255,255,255,0.40)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('still', String(s?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5718,6 +5767,7 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'clip' && String((activeDrag as any).clipId) === String(clip.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5728,8 +5778,13 @@ export default function CreateVideo() {
       ctx.fill()
 
       // pill border
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(212,175,55,0.65)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('clip', String(clip.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(212,175,55,0.65)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('clip', String(clip.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, videoY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5802,6 +5857,7 @@ export default function CreateVideo() {
       const isDragging = Boolean(activeDrag) && (activeDrag as any).kind === 'narration' && String((activeDrag as any).narrationId) === String((n as any).id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5810,8 +5866,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, narrationY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(175,82,222,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('narration', String((n as any)?.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(175,82,222,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('narration', String((n as any)?.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, narrationY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -5894,6 +5955,7 @@ export default function CreateVideo() {
         Boolean(activeDrag) && (activeDrag as any).kind === 'audioSegment' && String((activeDrag as any).audioSegmentId) === String(seg.id)
       const activeEdge = isDragging ? String((activeDrag as any).edge) : null
       const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+      const isMoveDragging = isDragging && activeEdge === 'move'
       const showHandles = (isSelected || isDragging) && w >= 28
       const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
       const handleW = handleSize * 2
@@ -5901,8 +5963,13 @@ export default function CreateVideo() {
       roundRect(ctx, x, audioY, w, pillH, 10)
       ctx.fill()
 
-      ctx.strokeStyle = isSelected ? (isResizing ? 'rgba(212,175,55,0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(48,209,88,0.55)'
-      ctx.lineWidth = 1
+      ctx.strokeStyle =
+        isResizing || isMoveDragging || isDragReady('audioSegment', String(seg.id || ''))
+          ? 'rgba(212,175,55,0.92)'
+          : isSelected
+            ? 'rgba(255,255,255,0.92)'
+            : 'rgba(48,209,88,0.55)'
+      ctx.lineWidth = isResizing || isMoveDragging || isDragReady('audioSegment', String(seg.id || '')) ? 2 : 1
       roundRect(ctx, x + 0.5, audioY + 0.5, w - 1, pillH - 1, 10)
       ctx.stroke()
 
@@ -6000,6 +6067,7 @@ export default function CreateVideo() {
     isPreviewAudioLaneOn,
     guidelineFlash,
     playhead,
+    dragReadyTick,
     timelinePadPx,
     timelineScrollLeftPx,
     totalSeconds,
@@ -17230,11 +17298,48 @@ export default function CreateVideo() {
       const cur = bodyHoldRef.current
       if (!cur) return
       try { window.clearTimeout(cur.timer) } catch {}
+      activePointerDownRef.current[cur.pointerId] = false
+      if (dragReadyRef.current && dragReadyRef.current.pointerId === cur.pointerId) {
+        dragReadyRef.current = null
+        setDragReadyTick((v) => v + 1)
+      }
       bodyHoldRef.current = null
       dbg('cancelBodyHold', { reason })
     },
     [dbg]
   )
+
+  useEffect(() => {
+    const onUp = (e: PointerEvent) => {
+      activePointerDownRef.current[e.pointerId] = false
+      if (dragReadyRef.current && dragReadyRef.current.pointerId === e.pointerId) {
+        dragReadyRef.current = null
+        setDragReadyTick((v) => v + 1)
+      }
+    }
+    const onCancel = (e: PointerEvent) => {
+      activePointerDownRef.current[e.pointerId] = false
+      if (dragReadyRef.current && dragReadyRef.current.pointerId === e.pointerId) {
+        dragReadyRef.current = null
+        setDragReadyTick((v) => v + 1)
+      }
+    }
+    const onBlur = () => {
+      activePointerDownRef.current = {}
+      if (dragReadyRef.current) {
+        dragReadyRef.current = null
+        setDragReadyTick((v) => v + 1)
+      }
+    }
+    window.addEventListener('pointerup', onUp, { capture: true })
+    window.addEventListener('pointercancel', onCancel, { capture: true })
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('pointerup', onUp as any, { capture: true } as any)
+      window.removeEventListener('pointercancel', onCancel as any, { capture: true } as any)
+      window.removeEventListener('blur', onBlur as any)
+    }
+  }, [])
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -17408,13 +17513,20 @@ export default function CreateVideo() {
       const pointerId = e.pointerId
       const startX = e.clientX
       const startY = e.clientY
+      activePointerDownRef.current[pointerId] = true
       const timer = window.setTimeout(() => {
         const cur = bodyHoldRef.current
         if (!cur || cur.pointerId !== pointerId) return
+        if (!activePointerDownRef.current[pointerId]) {
+          bodyHoldRef.current = null
+          return
+        }
         bodyHoldRef.current = null
         panDragRef.current = null
         setPanDragging(false)
         try { sc.releasePointerCapture?.(pointerId) } catch {}
+        dragReadyRef.current = { kind: dbgInfo.kind, id: dbgInfo.id, pointerId }
+        setDragReadyTick((v) => v + 1)
         selectFn()
         trimDragRef.current = {
           ...moveDrag,
@@ -17426,7 +17538,7 @@ export default function CreateVideo() {
         }
         try { sc.setPointerCapture(pointerId) } catch {}
         dbg('armTrimDrag', dbgInfo)
-      }, 300)
+      }, 450)
       bodyHoldRef.current = { timer, pointerId, startX, startY }
     },
     [cancelBodyHold, dbg, trimDragging]
