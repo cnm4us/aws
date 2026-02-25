@@ -250,7 +250,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                     : 'none',
                                 background:
                                   screenTitlePlacementControlMode === 'top' || screenTitlePlacementMoveVertical
-                                    ? 'rgba(96,165,250,0.40)'
+                                    ? '#0f2538'
                                     : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
@@ -273,7 +273,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                     : 'none',
                                 background:
                                   screenTitlePlacementControlMode === 'right' || screenTitlePlacementMoveHorizontal
-                                    ? 'rgba(96,165,250,0.40)'
+                                    ? '#0f2538'
                                     : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
@@ -296,7 +296,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                     : 'none',
                                 background:
                                   screenTitlePlacementControlMode === 'bottom' || screenTitlePlacementMoveVertical
-                                    ? 'rgba(96,165,250,0.40)'
+                                    ? '#0f2538'
                                     : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
@@ -319,7 +319,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                     : 'none',
                                 background:
                                   screenTitlePlacementControlMode === 'left' || screenTitlePlacementMoveHorizontal
-                                    ? 'rgba(96,165,250,0.40)'
+                                    ? '#0f2538'
                                     : 'transparent',
                                 color: '#fff',
                                 cursor: 'pointer',
@@ -347,7 +347,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                 transform: 'translate(-50%, -50%)',
                                 borderRadius: 999,
                                 border: `1px solid ${screenTitlePlacementControlMode === 'move' ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.4)'}`,
-                                background: screenTitlePlacementControlMode === 'move' ? 'rgba(96,165,250,0.30)' : 'rgba(255,255,255,0.08)',
+                                background: screenTitlePlacementControlMode === 'move' ? '#0f2538' : '#0b0b0b',
                                 color: '#fff',
                                 cursor: 'pointer',
                               }}
@@ -381,7 +381,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                   height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: `1px solid ${screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
-                                  background: screenTitlePlacementStepPx === 1 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                                  background: screenTitlePlacementStepPx === 1 ? '#0f2538' : '#0b0b0b',
                                   color: '#fff',
                                   fontSize: 11,
                                   fontWeight: 900,
@@ -398,7 +398,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                   height: SCREEN_TITLE_PLACEMENT_NUDGE_BUTTON_HEIGHT_PX,
                                   borderRadius: 8,
                                   border: `1px solid ${screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.95)' : 'rgba(255,255,255,0.22)'}`,
-                                  background: screenTitlePlacementStepPx === 5 ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
+                                  background: screenTitlePlacementStepPx === 5 ? '#0f2538' : '#0b0b0b',
                                   color: '#fff',
                                   fontSize: 11,
                                   fontWeight: 900,
@@ -442,6 +442,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   touchAction: 'none',
+                                  opacity: 1,
                                 }}
                                 aria-label={screenTitlePlacementArrowControls.firstAria}
                               >
@@ -485,6 +486,7 @@ export default function ScreenTitleQuickPanelOverlay(props: any) {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   touchAction: 'none',
+                                  opacity: 1,
                                 }}
                                 aria-label={screenTitlePlacementArrowControls.secondAria}
                               >
