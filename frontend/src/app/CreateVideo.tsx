@@ -809,6 +809,7 @@ export default function CreateVideo() {
     audioOff?: HTMLImageElement
     videoOn?: HTMLImageElement
     videoOff?: HTMLImageElement
+    actionArrow?: HTMLImageElement
   }>({})
   const [iconReadyTick, setIconReadyTick] = useState(0)
   const [graphicFileUrlByUploadId, setGraphicFileUrlByUploadId] = useState<Record<number, string>>({})
@@ -827,7 +828,10 @@ export default function CreateVideo() {
 
   useEffect(() => {
     let alive = true
-    const load = (key: 'audioOn' | 'audioOff' | 'videoOn' | 'videoOff', url: string) => {
+    const load = (
+      key: 'audioOn' | 'audioOff' | 'videoOn' | 'videoOff' | 'actionArrow',
+      url: string
+    ) => {
       if (iconImagesRef.current[key]) return
       const img = new Image()
       img.onload = () => {
@@ -846,6 +850,7 @@ export default function CreateVideo() {
     load('audioOff', AUDIO_OFF_ICON_URL)
     load('videoOn', VIDEO_ON_ICON_URL)
     load('videoOff', VIDEO_OFF_ICON_URL)
+    load('actionArrow', ACTION_ARROW_ICON_URL)
     return () => {
       alive = false
     }
@@ -5130,6 +5135,28 @@ export default function CreateVideo() {
       ctx.arc(x + size - 2, y + 2, 2, 0, Math.PI * 2)
       ctx.fill()
     }
+    const drawTintedIcon = (img: HTMLImageElement | undefined, x: number, y: number, size: number, color: string, flipX = false) => {
+      if (!img) return
+      const scratch = iconScratchRef.current || document.createElement('canvas')
+      iconScratchRef.current = scratch
+      scratch.width = size
+      scratch.height = size
+      const sctx = scratch.getContext('2d')
+      if (!sctx) return
+      sctx.clearRect(0, 0, size, size)
+      sctx.save()
+      if (flipX) {
+        sctx.translate(size, 0)
+        sctx.scale(-1, 1)
+      }
+      sctx.drawImage(img, 0, 0, size, size)
+      sctx.restore()
+      sctx.globalCompositeOperation = 'source-in'
+      sctx.fillStyle = color
+      sctx.fillRect(0, 0, size, size)
+      sctx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(scratch, x, y)
+    }
     const pillIconSize = Math.max(15, Math.min(21, Math.floor(pillH * 0.6)))
 	    const pillIconGap = 6
 	    const drawPillAudioIcon = (x: number, y: number, enabled: boolean) => {
@@ -5153,11 +5180,24 @@ export default function CreateVideo() {
     }
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
 	    ctx.textBaseline = 'middle'
-	    const activeDrag = trimDragging ? trimDragRef.current : null
-	    const isDragReady = (kind: string, id: string) => {
-	      const cur = dragReadyRef.current
-	      return Boolean(cur && String(cur.kind) === String(kind) && String(cur.id) === String(id))
-	    }
+    const activeDrag = trimDragging ? trimDragRef.current : null
+    const isDragReady = (kind: string, id: string) => {
+      const cur = dragReadyRef.current
+      return Boolean(cur && String(cur.kind) === String(kind) && String(cur.id) === String(id))
+    }
+    const RESIZE_ARROW_COLOR = 'rgba(212,175,55,0.5)'
+    const resizeArrowBase = Math.max(14, Math.min(20, Math.floor(pillH * 0.6)))
+    const resizeArrowSize = resizeArrowBase * 2
+    const resizeArrowGap = 18
+    const drawResizeArrow = (edge: 'start' | 'end', x: number, y: number, w: number) => {
+      const img = iconImagesRef.current.actionArrow
+      if (!img) return
+      const dragDx = Number((activeDrag as any)?.lastDx ?? 0)
+      const flipX = dragDx === 0 ? edge === 'start' : dragDx < 0
+      const ay = y + Math.floor((pillH - resizeArrowSize) / 2)
+      const ax = edge === 'start' ? x - resizeArrowSize - resizeArrowGap : x + w + resizeArrowGap
+      drawTintedIcon(img, Math.round(ax), Math.round(ay), resizeArrowSize, RESIZE_ARROW_COLOR, flipX)
+    }
 	    // Lane labels in the left gutter (only when time=0 is visible, i.e. there is blank space to the left of the 0.0s tick).
 	    {
 	      const xZero = padPx - scrollLeft
@@ -5269,6 +5309,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, logoY, w)
         }
       }
     }
@@ -5347,6 +5388,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, lowerThirdY, w)
         }
       }
     }
@@ -5427,6 +5469,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, screenTitleY, w)
         }
       }
     }
@@ -5506,6 +5549,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, videoOverlayY, w)
         }
       }
     }
@@ -5600,6 +5644,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, videoOverlayY, w)
         }
       }
     }
@@ -5676,6 +5721,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, graphicsY, w)
         }
       }
     }
@@ -5752,6 +5798,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, videoY, w)
         }
       }
     }
@@ -5837,6 +5884,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, videoY, w)
         }
       }
     }
@@ -5935,6 +5983,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, narrationY, w)
         }
       }
     }
@@ -6027,6 +6076,7 @@ export default function CreateVideo() {
           const bh = pillH - 6
           if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
           if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, audioY, w)
         }
       }
     }
@@ -16103,6 +16153,7 @@ export default function CreateVideo() {
 	        ignoreScrollRef.current = false
 	      }
       const dx = e.clientX - drag.startClientX
+      ;(drag as any).lastDx = dx
       const deltaSeconds = dx / pxPerSecond
       const minLen = 0.2
         setTimeline((prev) => {
@@ -17245,54 +17296,6 @@ export default function CreateVideo() {
     })
   }, [dbg, panDragging, trimDragging])
 
-  // Desktop UX: allow click+drag panning (mobile already pans naturally).
-  useEffect(() => {
-    if (!panDragging) return
-    const onMove = (e: PointerEvent) => {
-      const drag = panDragRef.current
-      if (!drag) return
-      if (e.pointerId !== drag.pointerId) return
-      e.preventDefault()
-      const sc = timelineScrollRef.current
-      if (!sc) return
-      const dx = e.clientX - drag.startClientX
-      if (Math.abs(dx) > 4) drag.moved = true
-      const nextScrollLeft = clamp(Math.round(drag.startScrollLeft - dx), 0, Math.max(0, stripContentW))
-      ignoreScrollRef.current = true
-      sc.scrollLeft = nextScrollLeft
-      setTimelineScrollLeftPx(nextScrollLeft)
-      const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
-      playheadFromScrollRef.current = true
-      setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
-      window.requestAnimationFrame(() => {
-        ignoreScrollRef.current = false
-      })
-    }
-    const onUp = (e: PointerEvent) => {
-      const drag = panDragRef.current
-      if (!drag) return
-      if (e.pointerId !== drag.pointerId) return
-      if (drag.moved) {
-        suppressNextTimelineClickRef.current = true
-        // Only suppress the synthetic click that can be emitted immediately after a drag ends.
-        window.setTimeout(() => {
-          suppressNextTimelineClickRef.current = false
-        }, 0)
-      }
-      panDragRef.current = null
-      setPanDragging(false)
-      try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
-    }
-    window.addEventListener('pointermove', onMove, { passive: false })
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
-    return () => {
-      window.removeEventListener('pointermove', onMove as any)
-      window.removeEventListener('pointerup', onUp as any)
-      window.removeEventListener('pointercancel', onUp as any)
-    }
-  }, [panDragging, pxPerSecond, stripContentW, totalSeconds])
-
   const cancelBodyHold = useCallback(
     (reason: string) => {
       const cur = bodyHoldRef.current
@@ -17340,6 +17343,55 @@ export default function CreateVideo() {
       window.removeEventListener('blur', onBlur as any)
     }
   }, [])
+
+  // Desktop UX: allow click+drag panning (mobile already pans naturally).
+  useEffect(() => {
+    if (!panDragging) return
+    const onMove = (e: PointerEvent) => {
+      const drag = panDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      e.preventDefault()
+      const sc = timelineScrollRef.current
+      if (!sc) return
+      const dx = e.clientX - drag.startClientX
+      if (Math.abs(dx) > 4) drag.moved = true
+      const nextScrollLeft = clamp(Math.round(drag.startScrollLeft - dx), 0, Math.max(0, stripContentW))
+      ignoreScrollRef.current = true
+      sc.scrollLeft = nextScrollLeft
+      setTimelineScrollLeftPx(nextScrollLeft)
+      const t = clamp(roundToTenth(nextScrollLeft / pxPerSecond), 0, Math.max(0, totalSeconds))
+      playheadFromScrollRef.current = true
+      setTimeline((prev) => ({ ...prev, playheadSeconds: t }))
+      window.requestAnimationFrame(() => {
+        ignoreScrollRef.current = false
+      })
+    }
+    const onUp = (e: PointerEvent) => {
+      const drag = panDragRef.current
+      if (!drag) return
+      if (e.pointerId !== drag.pointerId) return
+      cancelBodyHold('pointerup_pan')
+      if (drag.moved) {
+        suppressNextTimelineClickRef.current = true
+        // Only suppress the synthetic click that can be emitted immediately after a drag ends.
+        window.setTimeout(() => {
+          suppressNextTimelineClickRef.current = false
+        }, 0)
+      }
+      panDragRef.current = null
+      setPanDragging(false)
+      try { timelineScrollRef.current?.releasePointerCapture?.(e.pointerId) } catch {}
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove as any)
+      window.removeEventListener('pointerup', onUp as any)
+      window.removeEventListener('pointercancel', onUp as any)
+    }
+  }, [cancelBodyHold, panDragging, pxPerSecond, stripContentW, totalSeconds])
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
