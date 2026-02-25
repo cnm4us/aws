@@ -747,6 +747,23 @@ export default function CreateVideo() {
   const timelineZoomLabel = useMemo(() => `${Math.round(timelineZoom * 100)}%`, [timelineZoom])
   const [showTimelineZoomMenu, setShowTimelineZoomMenu] = useState(false)
   const timelineZoomMenuRef = useRef<HTMLDivElement | null>(null)
+  const timelineZoomMenuPanelRef = useRef<HTMLDivElement | null>(null)
+  const [timelineZoomMenuPos, setTimelineZoomMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const timelineZoomMenuDragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startLeft: number
+    startTop: number
+  } | null>(null)
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null)
+  const [timelineScrollEl, setTimelineScrollEl] = useState<HTMLDivElement | null>(null)
+  const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [timelinePadPx, setTimelinePadPx] = useState(0)
+  const playheadFromScrollRef = useRef(false)
+  const ignoreScrollRef = useRef(false)
+  const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
+  const timelineZoomRef = useRef(timelineZoom)
   useEffect(() => {
     if (!showTimelineZoomMenu) return
     const onPointerDown = (event: PointerEvent) => {
@@ -758,17 +775,30 @@ export default function CreateVideo() {
     window.addEventListener('pointerdown', onPointerDown)
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [showTimelineZoomMenu])
+  useEffect(() => {
+    if (!showTimelineZoomMenu) {
+      setTimelineZoomMenuPos(null)
+      return
+    }
+    const rect = timelineScrollEl?.getBoundingClientRect()
+    const viewportW = window.innerWidth || 0
+    const viewportH = window.innerHeight || 0
+    const menuRect = timelineZoomMenuPanelRef.current?.getBoundingClientRect()
+    const menuW = menuRect?.width || 140
+    const menuH = menuRect?.height || 200
+    const margin = 8
+    const baseX = rect ? rect.left + rect.width / 2 - menuW / 2 : (viewportW - menuW) / 2
+    const baseY = rect ? rect.top + 8 : 120
+    const maxX = Math.max(margin, viewportW - menuW - margin)
+    const maxY = Math.max(margin, viewportH - menuH - margin)
+    setTimelineZoomMenuPos({
+      x: Math.min(maxX, Math.max(margin, Math.round(baseX))),
+      y: Math.min(maxY, Math.max(margin, Math.round(baseY))),
+    })
+  }, [showTimelineZoomMenu, timelineScrollEl])
 	  const lastSavedRef = useRef<string>('')
 	  const timelineSaveAbortRef = useRef<AbortController | null>(null)
 	  const hydratingRef = useRef(false)
-  const timelineScrollRef = useRef<HTMLDivElement | null>(null)
-  const [timelineScrollEl, setTimelineScrollEl] = useState<HTMLDivElement | null>(null)
-  const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const [timelinePadPx, setTimelinePadPx] = useState(0)
-  const playheadFromScrollRef = useRef(false)
-  const ignoreScrollRef = useRef(false)
-  const [timelineScrollLeftPx, setTimelineScrollLeftPx] = useState(0)
-  const timelineZoomRef = useRef(timelineZoom)
   const primedFrameSrcRef = useRef<string>('')
   const primedOverlayFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
@@ -18187,13 +18217,9 @@ export default function CreateVideo() {
                   <div
                     style={{
                       position: 'fixed',
-                      left: '50%',
-                      top: (() => {
-                        const rect = timelineScrollEl?.getBoundingClientRect()
-                        if (!rect) return 120
-                        return Math.max(8, Math.round(rect.top + 8))
-                      })(),
-                      transform: 'translateX(-50%)',
+                      left: timelineZoomMenuPos ? timelineZoomMenuPos.x : '50%',
+                      top: timelineZoomMenuPos ? timelineZoomMenuPos.y : 120,
+                      transform: timelineZoomMenuPos ? 'none' : 'translateX(-50%)',
                       background: 'rgba(0,0,0,0.55)',
                       backdropFilter: 'blur(6px)',
                       WebkitBackdropFilter: 'blur(6px)',
@@ -18206,7 +18232,62 @@ export default function CreateVideo() {
                       zIndex: 2000,
                       boxShadow: 'none',
                     }}
+                    ref={timelineZoomMenuPanelRef}
                   >
+                    <div
+                      onPointerDown={(e) => {
+                        if (e.button != null && e.button !== 0) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        try {
+                          ;(e.currentTarget as any).setPointerCapture?.(e.pointerId)
+                        } catch {}
+                        const start = timelineZoomMenuPos || { x: 0, y: 0 }
+                        timelineZoomMenuDragRef.current = {
+                          pointerId: e.pointerId,
+                          startX: e.clientX,
+                          startY: e.clientY,
+                          startLeft: start.x,
+                          startTop: start.y,
+                        }
+                      }}
+                      onPointerMove={(e) => {
+                        const drag = timelineZoomMenuDragRef.current
+                        if (!drag || drag.pointerId !== e.pointerId) return
+                        const dx = e.clientX - drag.startX
+                        const dy = e.clientY - drag.startY
+                        const viewportW = window.innerWidth || 0
+                        const viewportH = window.innerHeight || 0
+                        const menuRect = timelineZoomMenuPanelRef.current?.getBoundingClientRect()
+                        const margin = 8
+                        const maxX = Math.max(margin, viewportW - (menuRect?.width || 0) - margin)
+                        const maxY = Math.max(margin, viewportH - (menuRect?.height || 0) - margin)
+                        const nextX = Math.min(maxX, Math.max(margin, drag.startLeft + dx))
+                        const nextY = Math.min(maxY, Math.max(margin, drag.startTop + dy))
+                        setTimelineZoomMenuPos({ x: nextX, y: nextY })
+                      }}
+                      onPointerUp={(e) => {
+                        const drag = timelineZoomMenuDragRef.current
+                        if (!drag || drag.pointerId !== e.pointerId) return
+                        timelineZoomMenuDragRef.current = null
+                      }}
+                      onPointerCancel={(e) => {
+                        const drag = timelineZoomMenuDragRef.current
+                        if (!drag || drag.pointerId !== e.pointerId) return
+                        timelineZoomMenuDragRef.current = null
+                      }}
+                      style={{
+                        height: 18,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'grab',
+                        touchAction: 'none',
+                      }}
+                      title="Drag panel"
+                    >
+                      <div style={{ width: 44, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
+                    </div>
                     {TIMELINE_ZOOM_OPTIONS.map((opt) => {
                       const active = Math.abs(opt - timelineZoom) < 1e-6
                       return (
@@ -18220,8 +18301,8 @@ export default function CreateVideo() {
                           style={{
                             padding: '8px 10px',
                             borderRadius: 8,
-                            border: active ? '1px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
-                            background: active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.06)',
+                            border: active ? '1px solid rgba(10,132,255,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                            background: active ? '#0a84ff' : '#0c0c0c',
                             color: '#fff',
                             fontWeight: 900,
                             textAlign: 'left',
