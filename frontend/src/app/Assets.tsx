@@ -661,7 +661,7 @@ const AssetUploadsListPage: React.FC<{
   const [deleting, setDeleting] = React.useState<Record<number, boolean>>({})
   const [deleteError, setDeleteError] = React.useState<string | null>(null)
   const [imagePreview, setImagePreview] = React.useState<{ title: string; src: string } | null>(null)
-  const returnTo = useMemo(() => window.location.pathname + window.location.search, [clipScope])
+  const returnTo = useMemo(() => window.location.pathname + window.location.search, [])
 
   const backHref = useMemo(() => {
     const base = '/assets'
