@@ -592,6 +592,7 @@ export default function CreateVideo() {
   const [previewObjectFit, setPreviewObjectFit] = useState<'cover' | 'contain'>('cover')
   const [baseVideoDims, setBaseVideoDims] = useState<{ w: number; h: number } | null>(null)
   const [playing, setPlaying] = useState(false)
+  const [previewMotionSource, setPreviewMotionSource] = useState<'video' | 'videoOverlay'>('video')
   const [activeUploadId, setActiveUploadId] = useState<number | null>(null)
   const [overlayActiveUploadId, setOverlayActiveUploadId] = useState<number | null>(null)
   // Tracks which upload ID is currently loaded into each <video> element's src, even if we temporarily
@@ -763,9 +764,6 @@ export default function CreateVideo() {
   const timelineScrollRef = useRef<HTMLDivElement | null>(null)
   const [timelineScrollEl, setTimelineScrollEl] = useState<HTMLDivElement | null>(null)
   const timelineCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const laneLabelIconHitRef = useRef<
-    Array<{ lane: LaneKey; kind: 'audio' | 'video'; x: number; y: number; w: number; h: number }>
-  >([])
   const [timelinePadPx, setTimelinePadPx] = useState(0)
   const playheadFromScrollRef = useRef(false)
   const ignoreScrollRef = useRef(false)
@@ -2157,12 +2155,6 @@ export default function CreateVideo() {
     },
     [previewAudioLaneEnabled, previewVideoLaneEnabled]
   )
-  const togglePreviewAudioLane = useCallback((lane: PreviewAudioLaneKey) => {
-    setPreviewAudioLaneEnabled((prev) => ({ ...prev, [lane]: !prev[lane] }))
-  }, [])
-  const togglePreviewVideoLane = useCallback((lane: PreviewVideoLaneKey) => {
-    setPreviewVideoLaneEnabled((prev) => ({ ...prev, [lane]: !prev[lane] }))
-  }, [])
   const narrationButtonSwatch = laneSwatchForButton(laneMeta.narration.swatch)
   const audioButtonSwatch = laneSwatchForButton(laneMeta.audio.swatch)
   const narrationPreviewEnabled = isPreviewAudioLaneOn('narration')
@@ -5129,8 +5121,6 @@ export default function CreateVideo() {
     ctx.font = '900 12px system-ui, -apple-system, Segoe UI, sans-serif'
 	    ctx.textBaseline = 'middle'
 	    const activeDrag = trimDragging ? trimDragRef.current : null
-	    laneLabelIconHitRef.current = []
-
 	    // Lane labels in the left gutter (only when time=0 is visible, i.e. there is blank space to the left of the 0.0s tick).
 	    {
 	      const xZero = padPx - scrollLeft
@@ -5138,7 +5128,6 @@ export default function CreateVideo() {
 	      if (Number.isFinite(gutterRight) && gutterRight > 80) {
 	        const swatchW = 8
 	        const swatchH = Math.min(16, Math.max(10, Math.floor(pillH * 0.45)))
-        const iconSize = Math.max(15, Math.min(21, Math.floor(pillH * 0.6)))
 	        const iconGap = 6
 	        const labels: Array<{ y: number; label: string; swatch: string; key: LaneKey }> = laneLayout.visibleKeys
 	          .map((key) => {
@@ -5160,41 +5149,7 @@ export default function CreateVideo() {
 	          ctx.fillStyle = row.swatch
 	          ctx.fillRect(swatchX, swatchY, swatchW, swatchH)
 
-	          const laneKey = row.key
-	          const hasAudioIcon = laneKey === 'video' || laneKey === 'videoOverlay'
-	          const hasVideoIcon = laneKey === 'video' || laneKey === 'videoOverlay'
-	          const audioEnabled =
-	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay') ? isPreviewAudioLaneOn(laneKey) : true
-	          const videoEnabled =
-	            laneKey && (laneKey === 'video' || laneKey === 'videoOverlay') ? previewVideoLaneEnabled[laneKey] !== false : true
-	          let iconRight = swatchX - iconGap
-	          if (hasVideoIcon && laneKey) {
-	            const iconX = Math.round(iconRight - iconSize)
-	            const iconY = Math.round(y - iconSize / 2)
-	            drawIcon(
-	              videoEnabled ? iconImagesRef.current.videoOn : iconImagesRef.current.videoOff,
-	              iconX,
-	              iconY,
-	              iconSize,
-	              videoEnabled ? ICON_ACCENT_ON : ICON_ACCENT_OFF
-	            )
-	            laneLabelIconHitRef.current.push({ lane: laneKey as LaneKey, kind: 'video', x: iconX, y: iconY, w: iconSize, h: iconSize })
-	            iconRight = iconX - iconGap
-	          }
-	          if (hasAudioIcon && laneKey) {
-	            const iconX = Math.round(iconRight - iconSize)
-	            const iconY = Math.round(y - iconSize / 2)
-	            drawIcon(
-	              audioEnabled ? iconImagesRef.current.audioOn : iconImagesRef.current.audioOff,
-	              iconX,
-	              iconY,
-	              iconSize,
-	              audioEnabled ? ICON_ACCENT_ON : ICON_ACCENT_OFF
-	            )
-	            laneLabelIconHitRef.current.push({ lane: laneKey as LaneKey, kind: 'audio', x: iconX, y: iconY, w: iconSize, h: iconSize })
-	            iconRight = iconX - iconGap
-	          }
-	          const textX = Math.round(iconRight)
+	          const textX = Math.round(swatchX - iconGap)
 	          const maxW = Math.max(0, textX - 8)
 	          if (maxW < 20) continue
 	          ctx.fillStyle = 'rgba(187,187,187,0.95)'
@@ -6769,7 +6724,7 @@ export default function CreateVideo() {
         if (opts?.autoPlay) {
           void (async () => {
             const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-            if (!ok) setPlaying(false)
+            if (!ok && playbackClockRef.current === 'base') setPlaying(false)
           })()
         }
         return
@@ -6817,7 +6772,7 @@ export default function CreateVideo() {
           if (opts?.autoPlay) {
             void (async () => {
               const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-              if (!ok) setPlaying(false)
+              if (!ok && playbackClockRef.current === 'base') setPlaying(false)
             })()
           }
         }
@@ -6846,7 +6801,7 @@ export default function CreateVideo() {
         if (opts?.autoPlay) {
           void (async () => {
             const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-            if (!ok) setPlaying(false)
+            if (!ok && playbackClockRef.current === 'base') setPlaying(false)
           })()
         }
       }
@@ -6978,7 +6933,7 @@ export default function CreateVideo() {
 	        if (shouldAutoPlay) {
 	          void (async () => {
 	            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-	            if (!ok) setPlaying(false)
+	            if (!ok && playbackClockRef.current === 'overlay') setPlaying(false)
 	          })()
 	        }
 	        return
@@ -7008,7 +6963,7 @@ export default function CreateVideo() {
 		          if (shouldAutoPlay) {
 		            void (async () => {
 		              const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-		              if (!ok) setPlaying(false)
+		              if (!ok && playbackClockRef.current === 'overlay') setPlaying(false)
 		            })()
 		          }
 	        }
@@ -7019,8 +6974,8 @@ export default function CreateVideo() {
 	        try { v.currentTime = Math.max(0, sourceTime) } catch {}
 		        if (shouldAutoPlay) {
 		          void (async () => {
-		            const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
-		            if (!ok) setPlaying(false)
+		          const ok = await playWithAutoplayFallback(v, { unmuteAfterPlay: !desiredMuted })
+		          if (!ok && playbackClockRef.current === 'overlay') setPlaying(false)
 		          })()
 		        }
 		      }
@@ -7044,6 +6999,14 @@ export default function CreateVideo() {
     if (playingRef.current) return
     void seekOverlay(playheadRef.current)
   }, [seekOverlay, videoOverlays.length, videoOverlayStills.length])
+
+  // Keep base + overlay previews aligned with the playhead when not playing, so a play gesture
+  // can start immediately without an async src swap (helps iOS).
+  useEffect(() => {
+    if (playingRef.current) return
+    void seek(playhead)
+    void seekOverlay(playhead)
+  }, [playhead, seek, seekOverlay])
 
   // Extra safety: if we're not playing, force the overlay element to stay paused even if it
   // tries to auto-play after a src swap or metadata load.
@@ -7206,70 +7169,98 @@ export default function CreateVideo() {
     }
   }, [timeline.clips.length])
 
-  const togglePlay = useCallback(() => {
-    if (!(totalSeconds > 0)) return
-    if (narrationPreviewPlaying) stopNarrationPreview()
-    if (musicPreviewPlaying) stopMusicPreview()
+  const stopPlayback = useCallback(() => {
+    setPlaying(false)
+    const curGap = gapPlaybackRef.current
+    if (curGap) {
+      window.cancelAnimationFrame(curGap.raf)
+      gapPlaybackRef.current = null
+    }
+    try { videoRef.current?.pause?.() } catch {}
+    try { overlayVideoRef.current?.pause?.() } catch {}
+  }, [])
 
-    if (playing) {
-      setPlaying(false)
-      const curGap = gapPlaybackRef.current
-      if (curGap) {
-        window.cancelAnimationFrame(curGap.raf)
-        gapPlaybackRef.current = null
+  const startPlayback = useCallback(
+    (preferredSource?: 'video' | 'videoOverlay') => {
+      if (!(totalSeconds > 0)) return
+      if (narrationPreviewPlaying) stopNarrationPreview()
+      if (musicPreviewPlaying) stopMusicPreview()
+
+      const desiredSource = preferredSource || previewMotionSource
+      if (preferredSource && preferredSource !== previewMotionSource) {
+        setPreviewMotionSource(preferredSource)
       }
-      try { videoRef.current?.pause?.() } catch {}
-      try { overlayVideoRef.current?.pause?.() } catch {}
-      return
-    }
+      const t0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      if (t0 >= totalSeconds - 0.05) {
+        playheadFromVideoRef.current = true
+        playheadRef.current = 0
+        setTimeline((prev) => ({ ...prev, playheadSeconds: 0 }))
+      }
 
-    const t0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
-    if (t0 >= totalSeconds - 0.05) {
-      playheadFromVideoRef.current = true
-      playheadRef.current = 0
-      setTimeline((prev) => ({ ...prev, playheadSeconds: 0 }))
-    }
+      const baseIdx = timeline.clips.length ? findClipIndexAtTime(t0, timeline.clips, clipStarts) : -1
+      const overlayIdx = videoOverlays.length ? findClipIndexAtTime(t0, videoOverlays as any, videoOverlayStarts as any) : -1
+      const baseMotionEnabled = previewVideoLaneEnabled.video !== false
+      const overlayMotionEnabled = previewVideoLaneEnabled.videoOverlay !== false
 
-    const baseIdx = timeline.clips.length ? findClipIndexAtTime(t0, timeline.clips, clipStarts) : -1
-    const overlayIdx = videoOverlays.length ? findClipIndexAtTime(t0, videoOverlays as any, videoOverlayStarts as any) : -1
-    const baseMotionEnabled = previewVideoLaneEnabled.video !== false
-    const overlayMotionEnabled = previewVideoLaneEnabled.videoOverlay !== false
+      // Choose which element drives the playhead based on desired motion source.
+      if (desiredSource === 'video') {
+        if (baseIdx >= 0 && baseMotionEnabled) playbackClockRef.current = 'base'
+        else if (overlayIdx >= 0 && overlayMotionEnabled) playbackClockRef.current = 'overlay'
+        else playbackClockRef.current = 'synthetic'
+      } else {
+        if (overlayIdx >= 0 && overlayMotionEnabled) playbackClockRef.current = 'overlay'
+        else if (baseIdx >= 0 && baseMotionEnabled) playbackClockRef.current = 'base'
+        else playbackClockRef.current = 'synthetic'
+      }
 
-    // Choose which element drives the playhead. Base clip wins when present; otherwise overlay; otherwise synthetic (graphics-only).
-    if (baseIdx >= 0 && baseMotionEnabled) playbackClockRef.current = 'base'
-    else if (overlayIdx >= 0 && overlayMotionEnabled) playbackClockRef.current = 'overlay'
-    else playbackClockRef.current = 'synthetic'
+      setPlaying(true)
 
-    setPlaying(true)
+      if (baseIdx >= 0) {
+        void seek(t0, { autoPlay: playbackClockRef.current === 'base' && baseMotionEnabled })
+      } else {
+        try { videoRef.current?.pause?.() } catch {}
+        setActiveUploadId(null)
+      }
 
-    if (baseIdx >= 0) {
-      void seek(t0, { autoPlay: baseMotionEnabled })
-    } else {
-      try { videoRef.current?.pause?.() } catch {}
-      setActiveUploadId(null)
-    }
+      if (overlayIdx >= 0) {
+        void seekOverlay(t0, { autoPlay: playbackClockRef.current === 'overlay' && overlayMotionEnabled })
+      } else {
+        try { overlayVideoRef.current?.pause?.() } catch {}
+      }
+    },
+    [
+      clipStarts,
+      musicPreviewPlaying,
+      narrationPreviewPlaying,
+      playhead,
+      previewMotionSource,
+      previewVideoLaneEnabled,
+      seek,
+      seekOverlay,
+      stopMusicPreview,
+      stopNarrationPreview,
+      timeline.clips,
+      totalSeconds,
+      videoOverlayStarts,
+      videoOverlays,
+    ]
+  )
 
-    if (overlayIdx >= 0) {
-      void seekOverlay(t0, { autoPlay: overlayMotionEnabled })
-    } else {
-      try { overlayVideoRef.current?.pause?.() } catch {}
-    }
-  }, [
-    clipStarts,
-    musicPreviewPlaying,
-    narrationPreviewPlaying,
-    playhead,
-    playing,
-    seek,
-    seekOverlay,
-    stopMusicPreview,
-    stopNarrationPreview,
-    timeline.clips,
-    totalSeconds,
-    previewVideoLaneEnabled,
-    videoOverlayStarts,
-    videoOverlays,
-  ])
+  const togglePlay = useCallback(
+    (preferredSource?: 'video' | 'videoOverlay') => {
+      if (playing) {
+        if (!preferredSource || preferredSource === previewMotionSource) {
+          stopPlayback()
+          return
+        }
+        stopPlayback()
+        startPlayback(preferredSource)
+        return
+      }
+      startPlayback(preferredSource)
+    },
+    [playing, previewMotionSource, startPlayback, stopPlayback]
+  )
 
   // Synthetic playback for cases where no video element is driving the clock (e.g. motion disabled).
   useEffect(() => {
@@ -7376,6 +7367,17 @@ export default function CreateVideo() {
       const desiredMuted = !Boolean((seg as any).audioEnabled) || !isPreviewAudioLaneOn('videoOverlay')
       try { overlay.muted = desiredMuted } catch {}
 
+      if (playbackClockRef.current !== 'overlay') {
+        if (overlayActiveUploadId !== uploadId) {
+          void seekOverlay(t, { autoPlay: false })
+          return
+        }
+        if (Number.isFinite(sourceTime) && Math.abs((overlay.currentTime || 0) - sourceTime) > 0.25) {
+          try { overlay.currentTime = Math.max(0, sourceTime) } catch {}
+        }
+        safePause(overlay)
+        return
+      }
       if (overlayActiveUploadId !== uploadId) {
         void seekOverlay(t, { autoPlay: playingRef.current })
         return
@@ -7406,15 +7408,26 @@ export default function CreateVideo() {
       if (!clip) return
       const desiredMuted = (clip as any).audioEnabled === false || !isPreviewAudioLaneOn('video')
       try { base.muted = desiredMuted } catch {}
-      if (activeUploadId !== Number(clip.uploadId)) {
-        void seek(t, { autoPlay: playingRef.current })
-        return
-      }
       const startTimeline = Number(clipStarts[idx] || 0)
       const within = Math.max(0, t - startTimeline)
       const srcDur = clipSourceDurationSeconds(clip)
       const withinMoving = clamp(roundToTenth(within), 0, Math.max(0, srcDur))
       const sourceTime = Number(clip.sourceStartSeconds) + withinMoving
+      if (playbackClockRef.current !== 'base') {
+        if (activeUploadId !== Number(clip.uploadId)) {
+          void seek(t, { autoPlay: false })
+          return
+        }
+        if (Number.isFinite(sourceTime) && Math.abs((base.currentTime || 0) - sourceTime) > 0.25) {
+          try { base.currentTime = Math.max(0, sourceTime) } catch {}
+        }
+        safePause(base)
+        return
+      }
+      if (activeUploadId !== Number(clip.uploadId)) {
+        void seek(t, { autoPlay: playingRef.current })
+        return
+      }
       if (Number.isFinite(sourceTime) && Math.abs((base.currentTime || 0) - sourceTime) > 0.25) {
         try { base.currentTime = Math.max(0, sourceTime) } catch {}
       }
@@ -19398,14 +19411,6 @@ export default function CreateVideo() {
 	                  const rect = sc.getBoundingClientRect()
 	                  const y = e.clientY - rect.top
 	                  const hitX = e.clientX - rect.left
-	                  const iconHits = laneLabelIconHitRef.current
-	                  if (iconHits.length) {
-	                    for (const hit of iconHits) {
-	                      if (hitX >= hit.x && hitX <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
-	                        return
-	                      }
-	                    }
-	                  }
 	                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
@@ -19490,16 +19495,6 @@ export default function CreateVideo() {
                   const rect = sc.getBoundingClientRect()
 	                  const y = e.clientY - rect.top
 	                  const clickX = e.clientX - rect.left
-	                  const iconHits = laneLabelIconHitRef.current
-	                  if (iconHits.length) {
-	                    for (const hit of iconHits) {
-	                      if (clickX >= hit.x && clickX <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
-	                        if (hit.kind === 'audio') togglePreviewAudioLane(hit.lane as any)
-	                        else togglePreviewVideoLane(hit.lane as any)
-	                        return
-	                      }
-	                    }
-	                  }
 	                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 		                  const clickXInScroll = clickX + sc.scrollLeft
 		                  const x = clickXInScroll - padPx
@@ -20312,29 +20307,84 @@ export default function CreateVideo() {
 		              </div>
 
 				              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
-				                <button
-				                  type="button"
-				                  onClick={togglePlay}
-				                  disabled={totalSeconds <= 0}
-			                  style={{
-			                    padding: '10px 12px',
-			                    borderRadius: 10,
-			                    border: '1px solid rgba(10,132,255,0.55)',
-			                    background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
-			                    color: '#fff',
-			                    fontWeight: 900,
-			                    cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-			                    flex: '0 0 auto',
-			                    minWidth: 44,
-			                    lineHeight: 1,
-			                  }}
-			                  title={playing ? 'Pause' : 'Play'}
-			                  aria-label={playing ? 'Pause' : 'Play'}
-			                >
-				                  <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
-				                    {playPauseGlyph(playing)}
-				                  </span>
-				                </button>
+                        {(() => {
+                          const activeMotion =
+                            playing
+                              ? playbackClockRef.current === 'overlay'
+                                ? 'videoOverlay'
+                                : playbackClockRef.current === 'base'
+                                  ? 'video'
+                                  : previewMotionSource
+                              : previewMotionSource
+                          const baseActive = activeMotion === 'video'
+                          const overlayActive = activeMotion === 'videoOverlay'
+                          const basePlaying = playing && baseActive
+                          const overlayPlaying = playing && overlayActive
+                          const baseStyle = {
+                            padding: '10px 10px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(10,132,255,0.55)',
+                            background: baseActive ? (basePlaying ? '#0a84ff' : 'rgba(10,132,255,0.18)') : 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                            flex: '0 0 auto' as const,
+                            minWidth: 44,
+                            lineHeight: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }
+                          const overlayStyle = {
+                            padding: '10px 10px',
+                            borderRadius: 10,
+                            border: '1px solid rgba(10,132,255,0.55)',
+                            background: overlayActive
+                              ? overlayPlaying
+                                ? '#0a84ff'
+                                : 'rgba(10,132,255,0.18)'
+                              : 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                            flex: '0 0 auto' as const,
+                            minWidth: 44,
+                            lineHeight: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => togglePlay('video')}
+                                disabled={totalSeconds <= 0}
+                                style={baseStyle}
+                                title={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+                                aria-label={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+                              >
+                                <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                                  {playPauseGlyph(basePlaying)}
+                                </span>
+                                <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V1</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => togglePlay('videoOverlay')}
+                                disabled={totalSeconds <= 0}
+                                style={overlayStyle}
+                                title={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                                aria-label={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                              >
+                                <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                                  {playPauseGlyph(overlayPlaying)}
+                                </span>
+                                <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V2</span>
+                              </button>
+                            </>
+                          )
+                        })()}
 
 				                {sortedNarration.length ? (
 				                  <button
