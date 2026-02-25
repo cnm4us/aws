@@ -20308,6 +20308,44 @@ export default function CreateVideo() {
 
 				              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                         {(() => {
+                          const baseHas = Boolean(timeline.clips.length || stills.length)
+                          const overlayHas = Boolean(videoOverlays.length || videoOverlayStills.length)
+                          const showDual = baseHas && overlayHas
+                          if (!showDual) {
+                            const singleSource = baseHas ? 'video' : overlayHas ? 'videoOverlay' : undefined
+                            const singleActive =
+                              singleSource === 'video'
+                                ? playbackClockRef.current === 'base'
+                                : singleSource === 'videoOverlay'
+                                  ? playbackClockRef.current === 'overlay'
+                                  : false
+                            const isPlaying = playing && (singleSource ? singleActive : true)
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => togglePlay(singleSource)}
+                                disabled={totalSeconds <= 0}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: 10,
+                                  border: '1px solid rgba(10,132,255,0.55)',
+                                  background: isPlaying ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+                                  color: '#fff',
+                                  fontWeight: 900,
+                                  cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                                  flex: '0 0 auto',
+                                  minWidth: 44,
+                                  lineHeight: 1,
+                                }}
+                                title={isPlaying ? 'Pause' : 'Play'}
+                                aria-label={isPlaying ? 'Pause' : 'Play'}
+                              >
+                                <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                                  {playPauseGlyph(isPlaying)}
+                                </span>
+                              </button>
+                            )
+                          }
                           const activeMotion =
                             playing
                               ? playbackClockRef.current === 'overlay'
