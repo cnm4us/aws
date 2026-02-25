@@ -8,13 +8,14 @@ import type {
   LowerThird,
   LowerThirdConfigSnapshot,
   Narration,
+  NarrationVisualizerConfig,
   ScreenTitle,
   Still,
   Timeline,
   VideoOverlay,
   VideoOverlayStill,
 } from './createVideo/timelineTypes'
-import { cloneTimeline } from './createVideo/timelineTypes'
+import { cloneTimeline, DEFAULT_NARRATION_VISUALIZER, normalizeNarrationVisualizer } from './createVideo/timelineTypes'
 import {
   clamp,
   clipDurationSeconds,
@@ -106,6 +107,25 @@ const SCREEN_TITLE_PLACEMENT_ACTION_BUTTON_WIDTH_PX = SCREEN_TITLE_PLACEMENT_MOD
 const TIMELINE_ZOOM_MIN = 0.25
 const TIMELINE_ZOOM_MAX = 2
 const TIMELINE_ZOOM_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+const NARRATION_VISUALIZER_STORAGE_KEY = 'cv:narrationVisualizerDefaults'
+
+const loadNarrationVisualizerDefaults = (): NarrationVisualizerConfig => {
+  if (typeof window === 'undefined') return DEFAULT_NARRATION_VISUALIZER
+  try {
+    const raw = window.localStorage.getItem(NARRATION_VISUALIZER_STORAGE_KEY)
+    if (!raw) return DEFAULT_NARRATION_VISUALIZER
+    return normalizeNarrationVisualizer(JSON.parse(raw))
+  } catch {
+    return DEFAULT_NARRATION_VISUALIZER
+  }
+}
+
+const saveNarrationVisualizerDefaults = (cfg: NarrationVisualizerConfig) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(NARRATION_VISUALIZER_STORAGE_KEY, JSON.stringify(cfg))
+  } catch {}
+}
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
 type MeResponse = {
   userId: number | null
@@ -584,7 +604,8 @@ export default function CreateVideo() {
     duckingIntensity: '' | 'min' | 'medium' | 'max'
   } | null>(null)
   const [audioEditorError, setAudioEditorError] = useState<string | null>(null)
-  const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; boostDb: number } | null>(null)
+  const narrationVisualizerDefaultsRef = useRef<NarrationVisualizerConfig>(loadNarrationVisualizerDefaults())
+  const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; boostDb: number; visualizer: NarrationVisualizerConfig } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -4569,13 +4590,14 @@ export default function CreateVideo() {
   }, [])
 
   const toggleAudioPreview = useCallback(
-    async (uploadId: number) => {
+    async (uploadId: number, options?: { beforePlay?: (player: HTMLAudioElement) => void }) => {
       const id = Number(uploadId)
       if (!Number.isFinite(id) || id <= 0) return
       try {
         let player = audioPreviewRef.current
         if (!player) {
           player = new Audio()
+          player.crossOrigin = 'anonymous'
           player.preload = 'none'
           audioPreviewRef.current = player
         }
@@ -4593,16 +4615,26 @@ export default function CreateVideo() {
           player.load()
         } catch {}
 
-        const url = `/api/uploads/${encodeURIComponent(String(id))}/file`
+        if (!player.crossOrigin) {
+          player.crossOrigin = 'anonymous'
+        }
+        const url = `/api/uploads/${encodeURIComponent(String(id))}/file?raw=1`
         player.src = url
         player.currentTime = 0
+        try {
+          options?.beforePlay?.(player)
+        } catch {}
         try {
           const p = player.play()
           if (p && typeof (p as any).then === 'function') await p.catch(() => {})
         } catch {}
-        setAudioPreviewPlayingId(id)
-        player.onended = () => {
-          setAudioPreviewPlayingId((prev) => (prev === id ? null : prev))
+        if (!player.paused) {
+          setAudioPreviewPlayingId(id)
+          player.onended = () => {
+            setAudioPreviewPlayingId((prev) => (prev === id ? null : prev))
+          }
+        } else {
+          setAudioPreviewPlayingId(null)
         }
       } catch {
         setAudioPreviewPlayingId(null)
@@ -9239,7 +9271,17 @@ export default function CreateVideo() {
       }
 
       const id = `nar_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-	      const seg: Narration = { id, uploadId, startSeconds: start, endSeconds: end, sourceStartSeconds: 0, boostDb: 0, audioEnabled: true }
+      const vizDefaults = narrationVisualizerDefaultsRef.current || DEFAULT_NARRATION_VISUALIZER
+      const seg: Narration = {
+        id,
+        uploadId,
+        startSeconds: start,
+        endSeconds: end,
+        sourceStartSeconds: 0,
+        boostDb: 0,
+        audioEnabled: true,
+        visualizer: { ...vizDefaults },
+      }
       snapshotUndo()
       setTimeline((prev) => {
         const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
@@ -9613,6 +9655,7 @@ export default function CreateVideo() {
 		    const boostRaw = Number((narrationEditor as any).boostDb)
 		    const boostAllowed = new Set([0, 3, 6, 9])
 		    const boostDb = Number.isFinite(boostRaw) && boostAllowed.has(Math.round(boostRaw)) ? Math.round(boostRaw) : 0
+        const visualizer = normalizeNarrationVisualizer((narrationEditor as any).visualizer)
 		    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
 		      setNarrationEditorError('End must be after start.')
 		      return
@@ -9664,6 +9707,7 @@ export default function CreateVideo() {
 	        boostDb,
 	        // Keep legacy field in sync for back-compat.
 	        gainDb: boostDb,
+          visualizer,
 	      }
 	      const next = prevNs.slice()
 	      next[idx] = updated
@@ -9673,6 +9717,8 @@ export default function CreateVideo() {
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
 	    })
+      narrationVisualizerDefaultsRef.current = visualizer
+      saveNarrationVisualizerDefaults(visualizer)
 	    setNarrationEditor(null)
 	    setNarrationEditorError(null)
 	  }, [computeTotalSecondsForTimeline, durationsByUploadId, narration, narrationEditor, snapshotUndo])
@@ -20911,6 +20957,7 @@ export default function CreateVideo() {
               audioEditor,
               audioEditorError,
               audioPreviewPlayingId,
+              audioPreviewRef,
               audioSegments,
               buildScreenTitlePresetSnapshot,
               clipEditor,

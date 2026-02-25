@@ -267,6 +267,14 @@ export type CreateVideoNarrationSegmentV1 = {
   audioEnabled?: boolean
   // Optional per-segment loudness adjustment (MVP: 0/+3/+6/+9). If present, overrides gainDb for export.
   boostDb?: number
+  visualizer?: {
+    enabled?: boolean
+    style?: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+    fgColor?: string
+    bgColor?: string | 'transparent'
+    opacity?: number
+    scale?: 'linear' | 'log'
+  }
 }
 
 export type CreateVideoTimelineV1 = {

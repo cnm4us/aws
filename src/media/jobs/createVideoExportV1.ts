@@ -153,6 +153,14 @@ type Narration = {
   boostDb?: number
   // Legacy only; ignored when boostDb is present.
   gainDb?: number
+  visualizer?: {
+    enabled?: boolean
+    style?: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+    fgColor?: string
+    bgColor?: string | 'transparent'
+    opacity?: number
+    scale?: 'linear' | 'log'
+  }
 }
 
 function normalizeBoostDb(raw: unknown): number {
@@ -160,6 +168,34 @@ function normalizeBoostDb(raw: unknown): number {
   const n = raw == null ? 0 : Number(raw)
   const rounded = Number.isFinite(n) ? Math.round(n) : 0
   return boostAllowed.has(rounded) ? rounded : 0
+}
+
+function normalizeNarrationVisualizerConfig(raw: any): {
+  enabled: boolean
+  style: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+  fgColor: string
+  bgColor: string | 'transparent'
+  opacity: number
+  scale: 'linear' | 'log'
+} {
+  const styleRaw = String(raw?.style || 'wave_line').trim().toLowerCase()
+  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars'])
+  const style = styleAllowed.has(styleRaw) ? (styleRaw as any) : 'wave_line'
+  const scaleRaw = String(raw?.scale || 'linear').trim().toLowerCase()
+  const scale = scaleRaw === 'log' ? 'log' : 'linear'
+  const fgColor = normalizeHexColor(raw?.fgColor, '#d4af37')
+  const bgRaw = String(raw?.bgColor || 'transparent').trim().toLowerCase()
+  const bgColor = bgRaw === 'transparent' ? 'transparent' : normalizeHexColor(bgRaw, '#000000')
+  const opacityRaw = Number(raw?.opacity)
+  const opacity = Number.isFinite(opacityRaw) ? clamp(opacityRaw, 0, 1) : 1
+  const enabled = raw?.enabled === true
+  return { enabled, style, fgColor, bgColor, opacity, scale }
+}
+
+function hexToFfmpegColor(hex: string): string {
+  const s = String(hex || '').trim()
+  if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return '0x000000'
+  return `0x${s.replace('#', '')}`
 }
 
 function musicGainDbForLevel(level: MusicLevel): number {
@@ -1092,6 +1128,98 @@ async function overlayGraphics(opts: {
   await runFfmpeg(args, opts.logPaths)
 }
 
+async function overlayNarrationVisualizers(opts: {
+  baseMp4Path: string
+  outPath: string
+  visuals: Array<{
+    audioPath: string
+    startSeconds: number
+    endSeconds: number
+    sourceStartSeconds: number
+    visualizer: {
+      style: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+      fgColor: string
+      bgColor: string | 'transparent'
+      opacity: number
+      scale: 'linear' | 'log'
+    }
+  }>
+  targetW: number
+  targetH: number
+  durationSeconds: number
+  logPaths?: FfmpegLogPaths
+}) {
+  const baseDur = roundToTenth(Math.max(0, Number(opts.durationSeconds)))
+  if (!opts.visuals.length) throw new Error('no_visuals')
+
+  const args: string[] = ['-i', opts.baseMp4Path]
+  for (const v of opts.visuals) {
+    args.push('-i', v.audioPath)
+  }
+
+  const filters: string[] = []
+  let current = '[0:v]'
+
+  for (let i = 0; i < opts.visuals.length; i++) {
+    const v = opts.visuals[i]
+    const inIdx = i + 1
+    const start = clamp(roundToTenth(Number(v.startSeconds)), 0, baseDur)
+    const end = clamp(roundToTenth(Number(v.endSeconds)), 0, baseDur)
+    const segDur = Math.max(0, end - start)
+    if (!(segDur > 0.05)) continue
+    const srcStart = clamp(roundToTenth(Number(v.sourceStartSeconds || 0)), 0, 20 * 60)
+    const srcEnd = roundToTenth(srcStart + segDur)
+    const delayMs = Math.max(0, Math.round(start * 1000))
+    const fg = hexToFfmpegColor(v.visualizer.fgColor)
+    const bg = v.visualizer.bgColor === 'transparent' ? 'black@0' : hexToFfmpegColor(v.visualizer.bgColor)
+    const opacity = Math.max(0, Math.min(1, Number(v.visualizer.opacity || 1)))
+    const scale = v.visualizer.scale === 'log' ? 'log' : 'lin'
+    const show =
+      v.visualizer.style === 'spectrum_bars'
+        ? `showspectrum=s=${opts.targetW}x${opts.targetH}:mode=combined:color=${fg}:scale=${scale}`
+        : v.visualizer.style === 'wave_fill'
+          ? `showwaves=s=${opts.targetW}x${opts.targetH}:mode=p2p:rate=30:colors=${fg}`
+          : `showwaves=s=${opts.targetW}x${opts.targetH}:mode=line:rate=30:colors=${fg}`
+
+    filters.push(
+      `[${inIdx}:a]atrim=start=${srcStart.toFixed(3)}:end=${srcEnd.toFixed(3)},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},apad=pad_dur=${baseDur}[a${i}]`
+    )
+    filters.push(`[a${i}]${show},format=rgba,colorkey=0x000000:0.1:0.0[vw${i}]`)
+    filters.push(`color=c=${bg}:s=${opts.targetW}x${opts.targetH}:d=${baseDur}[bg${i}]`)
+    filters.push(`[bg${i}][vw${i}]overlay=format=auto,format=rgba,colorchannelmixer=aa=${opacity.toFixed(3)}[vis${i}]`)
+
+    const next = `[v${i + 1}]`
+    const sStr = start.toFixed(3)
+    const eStr = Math.min(baseDur, end + 0.05).toFixed(3)
+    filters.push(`${current}[vis${i}]overlay=0:0:format=auto:enable='gte(t,${sStr})*lt(t,${eStr})'${next}`)
+    current = next
+  }
+
+  args.push(
+    '-filter_complex',
+    filters.join(';'),
+    '-map',
+    current,
+    '-map',
+    '0:a?',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'copy',
+    '-movflags',
+    '+faststart',
+    opts.outPath
+  )
+
+  await runFfmpeg(args, opts.logPaths)
+}
+
 function overlayXYForPosition(position: string): { x: string; y: string } {
   const insetX = '(main_w*0.02)'
   const insetY = '(main_h*0.02)'
@@ -1930,6 +2058,7 @@ export async function runCreateVideoExportV1Job(
       audioEnabled: (n as any).audioEnabled == null ? undefined : Boolean((n as any).audioEnabled),
       boostDb: (n as any).boostDb == null ? undefined : Number((n as any).boostDb),
       gainDb: (n as any).gainDb == null ? undefined : Number((n as any).gainDb),
+      visualizer: (n as any).visualizer == null ? undefined : (n as any).visualizer,
     }))
     .filter((n) => n.id && Number.isFinite(n.uploadId) && n.uploadId > 0 && Number.isFinite(n.startSeconds) && Number.isFinite(n.endSeconds))
   const audioSegmentsRaw = (input.timeline as any)?.audioSegments
@@ -2697,6 +2826,84 @@ export async function runCreateVideoExportV1Job(
           logPaths,
         })
         finalOut = outLt
+      }
+    }
+
+    if (narration.length) {
+      const visuals: Array<{
+        audioPath: string
+        startSeconds: number
+        endSeconds: number
+        sourceStartSeconds: number
+        visualizer: {
+          style: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+          fgColor: string
+          bgColor: string | 'transparent'
+          opacity: number
+          scale: 'linear' | 'log'
+        }
+      }> = []
+      const sortedViz = narration
+        .slice()
+        .map((n) => ({
+          ...n,
+          startSeconds: roundToTenth(Math.max(0, Number((n as any).startSeconds || 0))),
+          endSeconds: roundToTenth(Math.max(0, Number((n as any).endSeconds || 0))),
+          sourceStartSeconds: roundToTenth(Math.max(0, Number((n as any).sourceStartSeconds || 0))),
+          audioEnabled: (n as any).audioEnabled == null ? true : Boolean((n as any).audioEnabled),
+          visualizer: normalizeNarrationVisualizerConfig((n as any).visualizer),
+        }))
+        .filter((n) => n.audioEnabled !== false && n.visualizer.enabled && Number(n.endSeconds) > Number(n.startSeconds))
+        .sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+
+      if (sortedViz.length) {
+        const narrationDownloads = new Map<number, string>()
+        for (const seg of sortedViz) {
+          const uploadId = Number(seg.uploadId)
+          const row = byId.get(uploadId)
+          if (!row) throw new Error('upload_not_found')
+          if (String(row.kind || '').toLowerCase() !== 'audio') throw new Error('invalid_upload_kind')
+          const oid = row.user_id != null ? Number(row.user_id) : null
+          if (!(oid === userId || oid == null)) throw new Error('forbidden')
+          if (Number(row.is_system || 0)) throw new Error('forbidden')
+          if (row.source_deleted_at) throw new Error('source_deleted')
+          const st = String(row.status || '').toLowerCase()
+          if (!(st === 'uploaded' || st === 'completed')) throw new Error('invalid_upload_status')
+
+          let audioPath = narrationDownloads.get(uploadId)
+          if (!audioPath) {
+            const ext = path.extname(String(row.s3_key || '')) || '.m4a'
+            audioPath = path.join(tmpDir, `narr_viz_${uploadId}${ext}`)
+            await downloadS3ObjectToFile(String(row.s3_bucket), String(row.s3_key), audioPath)
+            narrationDownloads.set(uploadId, audioPath)
+          }
+
+          const startSeconds = clamp(roundToTenth(Number(seg.startSeconds || 0)), 0, Math.max(0, baseDurationSeconds))
+          const endSeconds = clamp(roundToTenth(Number(seg.endSeconds || 0)), 0, Math.max(0, baseDurationSeconds))
+          if (!(endSeconds > startSeconds + 0.05)) continue
+          const sourceStartSeconds = clamp(roundToTenth(Number(seg.sourceStartSeconds || 0)), 0, 20 * 60)
+          visuals.push({
+            audioPath,
+            startSeconds,
+            endSeconds,
+            sourceStartSeconds,
+            visualizer: seg.visualizer,
+          })
+        }
+      }
+
+      if (visuals.length) {
+        const outViz = path.join(tmpDir, 'out_narration_visualizer.mp4')
+        await overlayNarrationVisualizers({
+          baseMp4Path: finalOut,
+          outPath: outViz,
+          visuals,
+          targetW: target.w,
+          targetH: target.h,
+          durationSeconds: baseDurationSeconds,
+          logPaths,
+        })
+        finalOut = outViz
       }
     }
 

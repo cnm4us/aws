@@ -20,7 +20,7 @@ type AudioEditorModalProps = {
   namesByUploadId: Record<number, string>
   audioConfigNameById: Record<number, string>
   audioPreviewPlayingId: number | null
-  toggleAudioPreview: (uploadId: number) => void
+  toggleAudioPreview: (uploadId: number, options?: { beforePlay?: (player: HTMLAudioElement) => void }) => void
   playPauseGlyph: (isPlaying: boolean) => string
   onClose: () => void
   onSave: () => void

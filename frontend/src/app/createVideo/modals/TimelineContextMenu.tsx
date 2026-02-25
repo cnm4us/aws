@@ -1,4 +1,5 @@
 import React from 'react'
+import { normalizeNarrationVisualizer } from '../timelineTypes'
 
 export default function TimelineContextMenu(props: any) {
   const ctx = props?.ctx || props
@@ -624,6 +625,7 @@ export default function TimelineContextMenu(props: any) {
 					                              : (n as any).gainDb == null
 					                                ? 0
 					                                : Number((n as any).gainDb),
+                                    visualizer: normalizeNarrationVisualizer((n as any).visualizer),
 					                        })
 					                        setNarrationEditorError(null)
 					                      }

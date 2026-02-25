@@ -168,6 +168,48 @@ export type Narration = {
   // This enables split/trim to play the continuation instead of restarting at 0.
   sourceStartSeconds?: number
   gainDb?: number
+  visualizer?: NarrationVisualizerConfig
+}
+
+export type NarrationVisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars'
+export type NarrationVisualizerScale = 'linear' | 'log'
+export type NarrationVisualizerConfig = {
+  enabled: boolean
+  style: NarrationVisualizerStyle
+  fgColor: string
+  bgColor: string | 'transparent'
+  opacity: number
+  scale: NarrationVisualizerScale
+}
+
+export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
+  enabled: false,
+  style: 'wave_line',
+  fgColor: '#d4af37',
+  bgColor: 'transparent',
+  opacity: 1,
+  scale: 'linear',
+}
+
+export function normalizeNarrationVisualizer(raw: any): NarrationVisualizerConfig {
+  const styleRaw = String(raw?.style || DEFAULT_NARRATION_VISUALIZER.style).trim().toLowerCase()
+  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars'])
+  const style = styleAllowed.has(styleRaw) ? (styleRaw as NarrationVisualizerStyle) : DEFAULT_NARRATION_VISUALIZER.style
+  const scaleRaw = String(raw?.scale || DEFAULT_NARRATION_VISUALIZER.scale).trim().toLowerCase()
+  const scale = scaleRaw === 'log' ? 'log' : 'linear'
+  const fgColor = normalizeHexColor(raw?.fgColor, DEFAULT_NARRATION_VISUALIZER.fgColor)
+  const bgRaw = String(raw?.bgColor || DEFAULT_NARRATION_VISUALIZER.bgColor).trim().toLowerCase()
+  const bgColor = bgRaw === 'transparent' ? 'transparent' : normalizeHexColor(bgRaw, '#000000')
+  const opacityRaw = Number(raw?.opacity)
+  const opacity = Number.isFinite(opacityRaw) ? Math.max(0, Math.min(1, opacityRaw)) : DEFAULT_NARRATION_VISUALIZER.opacity
+  const enabled = raw?.enabled === true
+  return { enabled, style, fgColor, bgColor, opacity, scale }
+}
+
+function normalizeHexColor(raw: any, fallback: string): string {
+  const s = String(raw == null ? fallback : raw).trim()
+  if (!/^#?[0-9a-fA-F]{6}$/.test(s)) return fallback
+  return s.startsWith('#') ? s : `#${s}`
 }
 
 export type ScreenTitlePresetSnapshot = {
@@ -381,6 +423,7 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           audioEnabled: n.audioEnabled == null ? true : Boolean(n.audioEnabled),
           sourceStartSeconds: n.sourceStartSeconds == null ? 0 : Number(n.sourceStartSeconds),
           gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
+          visualizer: normalizeNarrationVisualizer((n as any).visualizer),
         }))
       : [],
     audioSegments: Array.isArray((timeline as any).audioSegments)

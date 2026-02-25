@@ -257,19 +257,22 @@ uploadsRouter.get('/api/uploads/:id/file', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id)
     if (!Number.isFinite(id) || id <= 0) return res.status(400).send('bad_id')
+    const raw = String(req.query.raw || '') === '1'
     // Prefer redirect to signed CloudFront URL when configured (keeps Node out of the data path).
-    try {
-      const signed = await uploadsSvc.getUploadSignedCdnUrl(
-        id,
-        { kind: 'file' },
-        { userId: Number(req.user!.id) }
-      )
-      res.set('Cache-Control', 'no-store')
-      res.status(302).set('Location', signed.url)
-      return res.end()
-    } catch (e: any) {
-      const code = String(e?.code || e?.message || '')
-      if (code !== 'cdn_not_configured') throw e
+    if (!raw) {
+      try {
+        const signed = await uploadsSvc.getUploadSignedCdnUrl(
+          id,
+          { kind: 'file' },
+          { userId: Number(req.user!.id) }
+        )
+        res.set('Cache-Control', 'no-store')
+        res.status(302).set('Location', signed.url)
+        return res.end()
+      } catch (e: any) {
+        const code = String(e?.code || e?.message || '')
+        if (code !== 'cdn_not_configured') throw e
+      }
     }
     const range = typeof req.headers.range === 'string' ? String(req.headers.range) : undefined
     const { contentType, body, contentLength, contentRange } = await uploadsSvc.getUploadFileStream(

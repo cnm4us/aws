@@ -20,6 +20,7 @@ export default function EditorModalHost(props: any) {
     audioEditor,
     audioEditorError,
     audioPreviewPlayingId,
+    audioPreviewRef,
     audioSegments,
     buildScreenTitlePresetSnapshot,
     clipEditor,
@@ -369,6 +370,7 @@ export default function EditorModalHost(props: any) {
             namesByUploadId={namesByUploadId}
             audioPreviewPlayingId={audioPreviewPlayingId}
             toggleAudioPreview={toggleAudioPreview}
+            audioPreviewRef={audioPreviewRef}
             onClose={() => {
               setNarrationEditor(null)
               setNarrationEditorError(null)

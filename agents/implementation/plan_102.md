@@ -1,74 +1,108 @@
-# Plan 102: Normalize Upload Playback to /api Redirects (CloudFront Signed)
+# Plan 102 - Audio Visualizer (MVP)
 
-## Goal
-Ensure **all runtime/preview media playback** uses `/api/uploads/...` endpoints so signatures are always fresh while CloudFront still serves the payload via server redirects. This eliminates mixed strategies (direct signed CDN URLs vs `/api` redirects) and should reduce preview glitches.
+## Recommendation: Start With Narration
+Narration is the cleanest first surface:
+- Audio-only, no competing video layer.
+- Single source per object, minimal layering conflicts.
+- Fastest to wire from object property → render → export.
 
-## Scope
-- Frontend playback/preview URLs (Create Video, Edit Video, Produce, Exports, Assets/Library previews).
-- Central CDN helper usage in `frontend/src/ui/uploadsCdn.ts`.
-- **Not** changing upload POST (presigned S3) or backend signing logic.
-
-## Comprehensive Search (commands)
-Run these in repo root:
-
-1) Direct CDN/signed URL usage
-```
-rg -n "uploads\\.bawebtech\\.com|cloudfront|signedUrl|signed_url|cdn-url|getUploadCdnUrl|uploadsCdn" frontend src
-```
-
-2) Any `/api/uploads` usage for playback
-```
-rg -n "api/uploads" frontend src
-```
-
-3) Any `edit-proxy`, `thumb`, or `file` playback references
-```
-rg -n "edit-proxy|thumb|/file" frontend/src/app
-```
-
-## Findings (from current search)
-- **Central CDN helper:** `frontend/src/ui/uploadsCdn.ts` fetches `/api/uploads/:id/cdn-url` which returns a signed CloudFront URL.
-- **CreateVideo uses direct CDN URLs** via `getUploadCdnUrl` in multiple places:
-  - file/preview URLs, thumb URLs, edit-proxy URLs, and a prefetch batch for images.
-- **EditVideo uses direct CDN URLs** via `getUploadCdnUrl` for `edit-proxy`.
-- **Produce uses direct CDN URLs** via `getUploadCdnUrl` for `edit-proxy`.
-- **Exports uses /api/uploads/:id/cdn-url** to fetch direct CDN URLs.
-- **Backend already supports `/api/uploads/:id/file|thumb|edit-proxy` redirecting to signed CloudFront** (see `src/routes/uploads.ts`), so using `/api/` **still offloads bandwidth to CloudFront**.
-- No hard-coded `uploads.bawebtech.com` strings found in repo (so direct usage is likely only via `getUploadCdnUrl`).
-
-## Plan (with adjustments based on findings)
-
-### Phase A — Centralize policy: prefer `/api` everywhere
-- **Update** `frontend/src/ui/uploadsCdn.ts` to short-circuit and return `null` (or a sentinel) when we’re forcing `/api` usage.
-  - This ensures any legacy callers fall back to `/api/uploads/:id/...` without removing all call sites.
-  - Add a single toggle constant (e.g., `FORCE_API_UPLOADS = true`) in that file so we can re-enable later if desired.
-
-### Phase B — Remove direct CDN fetches in high-traffic previews
-- **CreateVideo**: replace all `getUploadCdnUrl(...) || /api/uploads/...` with direct `/api/uploads/...` URLs (skip the CDN call entirely). Key areas:
-  - thumb URLs
-  - edit-proxy URLs
-  - file URLs (graphics/logos/stills/lower thirds)
-  - prefetch batch (remove CDN lookups; prefetch with `/api/uploads/:id/file`)
-- **EditVideo**: use `/api/uploads/:id/edit-proxy` directly.
-- **Produce**: use `/api/uploads/:id/edit-proxy` directly.
-- **Exports**: stop calling `/api/uploads/:id/cdn-url` and instead use `/api/uploads/:id/file` for previews.
-
-### Phase C — Validation
-- Confirm via browser devtools that media requests show `/api/uploads/...` and the response is **302 → CloudFront**.
-- Verify preview still loads and no increased auth errors.
-- Check that refresh no longer “fixes” glitches (expected improvement).
-
-### Phase D — Cleanup (optional)
-- If all callers are updated, consider leaving `getUploadCdnUrl` in place for future use but unused. Or add a deprecation note.
-
-## Implementation Notes
-- Backend `/api/uploads/:id/file|thumb|edit-proxy` already redirects to CloudFront with signed URL; this meets the requirement to keep signatures fresh **and** let CloudFront serve the bytes.
-- We will avoid any direct `uploads.bawebtech.com` usage in frontend, so all playback should be consistent.
+Music/Audio is a close second. Video/video-overlay visualizers add complexity (muting video frames, dual-layer preview, and performance implications). Starting with narration lets us validate UI/UX + ffmpeg pipeline quickly, then expand.
 
 ---
 
-If this plan looks good, I’ll proceed with Phase A + B together (minimal behavior change, just consistent URL choice), then verify in Phase C.
+## Phase A — MVP Data + Rendering Pipeline (Narration only)
 
-## Scope Clarification (CDNs)
-- This plan **only targets** the *uploads* CDN (`uploads.bawebtech.com` → `bacs-mc-uploads`) used for **pre‑HLS editing/preview assets**.
-- It **does not change** the public HLS CDN (`videos.bawebtech.com` → `bacs-mc-public-stream`). If we want a similar `/api` redirect or signing strategy for HLS playback, that should be a **separate plan**.
+### A1) Data model (frontend + backend)
+- Add `visualizer` settings to narration objects in timeline payload.
+- Proposed structure (minimal):
+  - `enabled: boolean`
+  - `style: 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'spectrum_line' | 'cqt' | 'vectorscope'` (start with 3)
+  - `fgColor: string` (hex)
+  - `bgColor: string | 'transparent'`
+  - `opacity: number` (0..1)
+  - `scale: 'linear' | 'log'`
+  - `heightPct: number` (if we want a band instead of full frame)
+- Default `enabled: false` so existing timelines remain unchanged.
+
+### A2) FFmpeg filtergraph (render-time)
+- Build a small render helper that generates a visualizer stream from audio:
+  - Example: `showspectrum` or `showwaves` → RGBA (alpha if bg transparent).
+  - Output size: 1080x1920 (match timeline).
+- Composite visualizer on top of background (or full-frame if bg defined).
+- Wire into export pipeline for narration objects when `visualizer.enabled`.
+
+### A3) API mapping
+- Update timeline serializer/deserializer to persist `visualizer` settings.
+- Add validation defaults (missing fields → disabled).
+
+### A4) Basic UI (Narration object)
+- Add “Visualizer” toggle in narration object properties.
+- When enabled, expose:
+  - Style select
+  - Foreground color
+  - Background color (transparent / color)
+  - Scale (linear/log) if supported
+- Keep it minimal and non-blocking for v1.
+
+### A5) Preview behavior (create-video)
+- For MVP, use a lightweight preview strategy:
+  - Option 1: simple Canvas/WebAudio visualizer for live preview only.
+  - Option 2: static placeholder + “Render Preview” button (generates small preview via backend).
+- Recommendation: start with Canvas preview so users see immediate response without waiting.
+
+---
+
+## Phase B — Visual Style Presets + UX Polish
+
+### B1) Preset library
+- Curate 5-6 named styles (mapped 1:1 to ffmpeg filters), e.g.:
+  - Wave Line
+  - Wave Fill
+  - Spectrum Bars
+  - Spectrum Glow
+  - CQT Musical
+  - Stereo Vectorscope
+
+### B2) Style tokens
+- Add global palette defaults (gold/white) to keep on-brand.
+- Save last-used style for quick reuse.
+
+### B3) Small preview card
+- Add a compact preview window inside narration properties (3–4 lines tall).
+- Include “Generate” button if not using live Canvas preview.
+
+---
+
+## Phase C — Expand to Music/Audio
+
+### C1) Reuse same UI + settings
+- Add the same “Visualizer” panel to Music/Audio objects.
+- Confirm audio-segment timeline mapping (multiple segments supported).
+
+### C2) Render pipeline
+- When visualizer enabled on music segments, generate visualizer for that segment’s time window.
+
+---
+
+## Phase D — Video & Video Overlay (Optional, Later)
+
+### D1) “Audio-only with Visualizer” mode
+- Add per video object option: “Hide Video (Show Visualizer)”.
+- For preview: freeze-frame + visualizer overlay.
+- For render: omit video frames, use visualizer over background.
+
+---
+
+## Questions to confirm before implementation
+1. MVP visualizer styles: which 3 do you want first? (recommended: `wave_line`, `wave_fill`, `spectrum_bars`)
+2. Default colors: gold on transparent background OK?
+3. Preview: live Canvas preview OK for v1, or do you prefer a “Render Preview” button?
+4. Should visualizer be full-frame or a bottom band by default? (recommend full-frame for v1)
+
+---
+
+## Deliverables (Phase A)
+- Schema updates + timeline persistence.
+- Narration visualizer UI toggle + settings.
+- Render-time ffmpeg filter integration for narration.
+- Preview support (Canvas or render button).

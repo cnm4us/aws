@@ -36,6 +36,28 @@ function normalizeHexColor(raw: any, fallback: string): string {
   return s.startsWith('#') ? s : `#${s}`
 }
 
+function normalizeNarrationVisualizer(raw: any): {
+  enabled: boolean
+  style: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+  fgColor: string
+  bgColor: string | 'transparent'
+  opacity: number
+  scale: 'linear' | 'log'
+} {
+  const styleRaw = String(raw?.style || 'wave_line').trim().toLowerCase()
+  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars'])
+  const style = styleAllowed.has(styleRaw) ? (styleRaw as any) : 'wave_line'
+  const scaleRaw = String(raw?.scale || 'linear').trim().toLowerCase()
+  const scale = scaleRaw === 'log' ? 'log' : 'linear'
+  const fgColor = normalizeHexColor(raw?.fgColor, '#d4af37')
+  const bgRaw = String(raw?.bgColor || 'transparent').trim().toLowerCase()
+  const bgColor = bgRaw === 'transparent' ? 'transparent' : normalizeHexColor(bgRaw, '#000000')
+  const opacityRaw = Number(raw?.opacity)
+  const opacity = Number.isFinite(opacityRaw) ? clamp(opacityRaw, 0, 1) : 1
+  const enabled = raw?.enabled === true
+  return { enabled, style, fgColor, bgColor, opacity, scale }
+}
+
 function clampTimelineRange(
   startSeconds: number,
   endSeconds: number
@@ -1495,6 +1517,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const boostDb = boostRaw == null ? null : Number(boostRaw)
     const boostAllowed = new Set([0, 3, 6, 9])
     if (boostDb != null && !(Number.isFinite(boostDb) && boostAllowed.has(Math.round(boostDb)))) throw new ValidationError('invalid_boost_db')
+    const visualizer = normalizeNarrationVisualizer((seg as any).visualizer)
 
     const meta = await loadNarrationAudioMetaForUser(uploadId, ctx.userId)
     narration.push({
@@ -1506,6 +1529,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       gainDb,
       audioEnabled,
       ...(boostDb != null ? { boostDb: Math.round(boostDb) } : {}),
+      visualizer,
     })
   }
   narration.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
