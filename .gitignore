@@ -17,6 +17,8 @@ logs/
 
 schema_backups/
 
+agents/tests/
+
 
 # Ignore built web assets (output of `npm run web:build`)
 public/app/assets/
