@@ -17893,6 +17893,10 @@ export default function CreateVideo() {
                     togglePlay,
                     totalSeconds,
                     videoRef,
+                    playbackClockRef,
+                    previewMotionSource,
+                    baseHasVideo: Boolean(timeline.clips.length || stills.length),
+                    overlayHasVideo: Boolean(videoOverlays.length || videoOverlayStills.length),
                   }}
                 />
               </React.Suspense>

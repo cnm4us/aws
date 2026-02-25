@@ -39,6 +39,10 @@ export default function PreviewFloatingToolbar(props: any) {
     togglePlay,
     totalSeconds,
     videoRef,
+    playbackClockRef,
+    previewMotionSource,
+    baseHasVideo,
+    overlayHasVideo,
   } = ctx as any
 
   const narrationSwatch = narrationButtonSwatch || 'rgba(175,82,222,0.90)'
@@ -205,33 +209,123 @@ export default function PreviewFloatingToolbar(props: any) {
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={togglePlay}
-              disabled={totalSeconds <= 0}
-              style={{
-                padding: '10px 12px',
+            {(() => {
+              const baseHas = Boolean(baseHasVideo)
+              const overlayHas = Boolean(overlayHasVideo)
+              const showDual = baseHas && overlayHas
+              if (!showDual) {
+                const singleSource = baseHas ? 'video' : overlayHas ? 'videoOverlay' : undefined
+                return (
+                  <button
+                    type="button"
+                    onClick={() => togglePlay(singleSource)}
+                    disabled={totalSeconds <= 0}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(10,132,255,0.55)',
+                      background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+                      color: '#fff',
+                      fontWeight: 900,
+                      cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                      flex: '0 0 auto',
+                      minWidth: 40,
+                      height: 40,
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title={playing ? 'Pause' : 'Play'}
+                    aria-label={playing ? 'Pause' : 'Play'}
+                  >
+                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                      {playPauseGlyph(playing)}
+                    </span>
+                  </button>
+                )
+              }
+              const activeMotion =
+                playing
+                  ? playbackClockRef?.current === 'overlay'
+                    ? 'videoOverlay'
+                    : playbackClockRef?.current === 'base'
+                      ? 'video'
+                      : previewMotionSource || 'video'
+                  : previewMotionSource || 'video'
+              const baseActive = activeMotion === 'video'
+              const overlayActive = activeMotion === 'videoOverlay'
+              const basePlaying = playing && baseActive
+              const overlayPlaying = playing && overlayActive
+              const baseStyle = {
+                padding: '10px 10px',
                 borderRadius: 10,
                 border: '1px solid rgba(10,132,255,0.55)',
-                background: playing ? 'rgba(10,132,255,0.18)' : '#0a84ff',
+                background: baseActive ? (basePlaying ? '#0a84ff' : 'rgba(10,132,255,0.18)') : 'rgba(255,255,255,0.06)',
                 color: '#fff',
                 fontWeight: 900,
                 cursor: totalSeconds <= 0 ? 'default' : 'pointer',
-                flex: '0 0 auto',
+                flex: '0 0 auto' as const,
                 minWidth: 40,
                 height: 40,
                 lineHeight: 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-              }}
-              title={playing ? 'Pause' : 'Play'}
-              aria-label={playing ? 'Pause' : 'Play'}
-            >
-              <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
-                {playPauseGlyph(playing)}
-              </span>
-            </button>
+                gap: 6,
+              }
+              const overlayStyle = {
+                padding: '10px 10px',
+                borderRadius: 10,
+                border: '1px solid rgba(10,132,255,0.55)',
+                background: overlayActive
+                  ? overlayPlaying
+                    ? '#0a84ff'
+                    : 'rgba(10,132,255,0.18)'
+                  : 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: totalSeconds <= 0 ? 'default' : 'pointer',
+                flex: '0 0 auto' as const,
+                minWidth: 40,
+                height: 40,
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => togglePlay('video')}
+                    disabled={totalSeconds <= 0}
+                    style={baseStyle}
+                    title={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+                    aria-label={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+                  >
+                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                      {playPauseGlyph(basePlaying)}
+                    </span>
+                    <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V1</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => togglePlay('videoOverlay')}
+                    disabled={totalSeconds <= 0}
+                    style={overlayStyle}
+                    title={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                    aria-label={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                  >
+                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                      {playPauseGlyph(overlayPlaying)}
+                    </span>
+                    <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V2</span>
+                  </button>
+                </>
+              )
+            })()}
             {sortedNarration.length ? (
               <button
                 type="button"
