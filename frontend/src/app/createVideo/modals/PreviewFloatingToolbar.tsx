@@ -162,7 +162,7 @@ export default function PreviewFloatingToolbar(props: any) {
                 padding: 0,
                 borderRadius: 10,
                 border: '1px solid rgba(255,255,255,0.18)',
-                background: totalSeconds <= 0 || !canJumpPrev ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+                background: '#0c0c0c',
                 color: '#ffd24a',
                 fontWeight: 900,
                 fontSize: 26,
@@ -174,6 +174,7 @@ export default function PreviewFloatingToolbar(props: any) {
                 flex: '0 0 auto',
                 minWidth: 40,
                 height: 40,
+                opacity: 1,
               }}
               title="Jump to previous boundary"
               aria-label="Jump to previous boundary"
@@ -425,7 +426,7 @@ export default function PreviewFloatingToolbar(props: any) {
                 padding: 0,
                 borderRadius: 10,
                 border: '1px solid rgba(255,255,255,0.18)',
-                background: totalSeconds <= 0 || !canJumpNext ? 'rgba(255,255,255,0.06)' : '#0c0c0c',
+                background: '#0c0c0c',
                 color: '#ffd24a',
                 fontWeight: 900,
                 fontSize: 26,
@@ -437,6 +438,7 @@ export default function PreviewFloatingToolbar(props: any) {
                 flex: '0 0 auto',
                 minWidth: 40,
                 height: 40,
+                opacity: 1,
               }}
               title="Jump to next boundary"
               aria-label="Jump to next boundary"
