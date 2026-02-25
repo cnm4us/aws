@@ -302,30 +302,40 @@ export default function PreviewFloatingToolbar(props: any) {
                     onClick={() => togglePlay('video')}
                     disabled={totalSeconds <= 0}
                     style={baseStyle}
-                    title={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
-                    aria-label={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
-                  >
-                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
-                      {playPauseGlyph(basePlaying)}
-                    </span>
-                    <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V1</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => togglePlay('videoOverlay')}
-                    disabled={totalSeconds <= 0}
+                title={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+                aria-label={basePlaying ? 'Pause video (V1)' : 'Play video (V1)'}
+              >
+                <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                  {playPauseGlyph(basePlaying)}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => togglePlay('videoOverlay')}
+                disabled={totalSeconds <= 0}
                     style={overlayStyle}
-                    title={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
-                    aria-label={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                title={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+                aria-label={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
+              >
+                <span style={{ position: 'relative', display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                  {playPauseGlyph(overlayPlaying)}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -6,
+                      fontSize: 10,
+                      fontWeight: 900,
+                      lineHeight: 1,
+                    }}
                   >
-                    <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
-                      {playPauseGlyph(overlayPlaying)}
-                    </span>
-                    <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V2</span>
-                  </button>
-                </>
-              )
-            })()}
+                    O
+                  </span>
+                </span>
+              </button>
+            </>
+          )
+        })()}
             {sortedNarration.length ? (
               <button
                 type="button"

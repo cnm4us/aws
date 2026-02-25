@@ -20409,7 +20409,6 @@ export default function CreateVideo() {
                                 <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
                                   {playPauseGlyph(basePlaying)}
                                 </span>
-                                <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V1</span>
                               </button>
                               <button
                                 type="button"
@@ -20419,10 +20418,21 @@ export default function CreateVideo() {
                                 title={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
                                 aria-label={overlayPlaying ? 'Pause overlay (V2)' : 'Play overlay (V2)'}
                               >
-                                <span style={{ display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
+                                <span style={{ position: 'relative', display: 'inline-block', width: 20, textAlign: 'center', fontSize: 20 }}>
                                   {playPauseGlyph(overlayPlaying)}
+                                  <span
+                                    style={{
+                                      position: 'absolute',
+                                      top: -4,
+                                      right: -6,
+                                      fontSize: 10,
+                                      fontWeight: 900,
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    O
+                                  </span>
                                 </span>
-                                <span style={{ fontSize: 10, letterSpacing: 0.4 }}>V2</span>
                               </button>
                             </>
                           )
