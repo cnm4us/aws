@@ -577,6 +577,14 @@ export default function CreateVideo() {
     | null
   >(null)
   const narrationPreviewRafRef = useRef<number | null>(null)
+  const narrationVizCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const narrationVizRafRef = useRef<number | null>(null)
+  const narrationVizAudioCtxRef = useRef<AudioContext | null>(null)
+  const narrationVizAnalyserRef = useRef<AnalyserNode | null>(null)
+  const narrationVizSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const narrationVizLastElRef = useRef<HTMLAudioElement | null>(null)
+  const narrationVizTimeRef = useRef<Uint8Array | null>(null)
+  const narrationVizFreqRef = useRef<Uint8Array | null>(null)
   const iconScratchRef = useRef<HTMLCanvasElement | null>(null)
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null)
   const [audioPreviewPlayingId, setAudioPreviewPlayingId] = useState<number | null>(null)
@@ -4238,6 +4246,48 @@ export default function CreateVideo() {
     setMusicPreviewPlaying(false)
   }, [])
 
+  const setupNarrationPreviewAnalyser = useCallback(() => {
+    const audioEl = narrationPreviewRef.current
+    if (!audioEl) return null
+    if (narrationVizLastElRef.current && narrationVizLastElRef.current !== audioEl) {
+      try { narrationVizSourceRef.current?.disconnect?.() } catch {}
+      narrationVizSourceRef.current = null
+      narrationVizAnalyserRef.current = null
+    }
+    narrationVizLastElRef.current = audioEl
+    let ctx = narrationVizAudioCtxRef.current
+    if (!ctx) {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!Ctx) return null
+      try {
+        ctx = new Ctx()
+      } catch {
+        return null
+      }
+      narrationVizAudioCtxRef.current = ctx
+    }
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {})
+    }
+    let analyser = narrationVizAnalyserRef.current
+    if (!analyser) {
+      analyser = ctx.createAnalyser()
+      analyser.fftSize = 2048
+      analyser.smoothingTimeConstant = 0.75
+      narrationVizAnalyserRef.current = analyser
+    }
+    if (!narrationVizSourceRef.current) {
+      try {
+        narrationVizSourceRef.current = ctx.createMediaElementSource(audioEl)
+        narrationVizSourceRef.current.connect(analyser)
+        analyser.connect(ctx.destination)
+      } catch {
+        // ignore
+      }
+    }
+    return analyser
+  }, [])
+
   const toggleNarrationPlay = useCallback(async () => {
     if (narrationPreviewPlaying) {
       stopNarrationPreview()
@@ -4287,11 +4337,13 @@ export default function CreateVideo() {
     if (!(segEnd > segStart + 0.05)) return
     const uploadId = Number((segAt as any).uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    const vizCfg = normalizeNarrationVisualizer((segAt as any).visualizer)
 
     const a = narrationPreviewRef.current || new Audio()
     narrationPreviewRef.current = a
     try { a.pause() } catch {}
-    const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
+    if (!a.crossOrigin) a.crossOrigin = 'anonymous'
+    const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file?raw=1`
     a.src = url
     a.preload = 'auto'
 
@@ -4315,6 +4367,9 @@ export default function CreateVideo() {
     try { a.currentTime = Math.max(0, srcStart0 + startInSeg) } catch {}
 
     narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd, sourceStartSeconds: srcStart0 }
+    if (vizCfg.enabled) {
+      setupNarrationPreviewAnalyser()
+    }
 
     try {
       const p = a.play()
@@ -4398,10 +4453,119 @@ export default function CreateVideo() {
     playhead,
     sortedNarration,
     isPreviewAudioLaneOn,
+    setupNarrationPreviewAnalyser,
     stopMusicPreview,
     stopNarrationPreview,
     totalSeconds,
   ])
+
+  const activeNarrationForPreview = useMemo(() => {
+    if (!narrationPreviewPlaying) return null
+    const seg = findNarrationAtTime(playhead)
+    return seg || null
+  }, [findNarrationAtTime, narrationPreviewPlaying, playhead])
+
+  const activeNarrationVisualizer = useMemo(() => {
+    if (!activeNarrationForPreview) return DEFAULT_NARRATION_VISUALIZER
+    return normalizeNarrationVisualizer((activeNarrationForPreview as any).visualizer)
+  }, [activeNarrationForPreview])
+
+  const narrationVisualizerActive = narrationPreviewPlaying && Boolean(activeNarrationVisualizer?.enabled)
+
+  useEffect(() => {
+    if (!narrationVisualizerActive) {
+      if (narrationVizRafRef.current != null) {
+        try { window.cancelAnimationFrame(narrationVizRafRef.current) } catch {}
+      }
+      narrationVizRafRef.current = null
+      const canvas = narrationVizCanvasRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        }
+      }
+      return
+    }
+
+    const analyser = setupNarrationPreviewAnalyser()
+    if (!analyser) return
+    const canvas = narrationVizCanvasRef.current
+    if (!canvas) return
+
+    const draw = () => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      const rect = canvas.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+      const w = Math.max(1, Math.round(rect.width))
+      const h = Math.max(1, Math.round(rect.height))
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr)
+        canvas.height = Math.round(h * dpr)
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, h)
+
+      const viz = activeNarrationVisualizer || DEFAULT_NARRATION_VISUALIZER
+      if (viz.bgColor && viz.bgColor !== 'transparent') {
+        ctx.fillStyle = viz.bgColor
+        ctx.fillRect(0, 0, w, h)
+      }
+
+      ctx.globalAlpha = Number.isFinite(viz.opacity) ? Math.max(0, Math.min(1, viz.opacity)) : 1
+      ctx.strokeStyle = viz.fgColor || '#d4af37'
+      ctx.fillStyle = viz.fgColor || '#d4af37'
+
+      if (viz.style === 'spectrum_bars') {
+        const freq = narrationVizFreqRef.current || new Uint8Array(analyser.frequencyBinCount)
+        narrationVizFreqRef.current = freq
+        analyser.getByteFrequencyData(freq)
+        const bars = 48
+        const gap = 2
+        const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+        for (let i = 0; i < bars; i++) {
+          const t = bars <= 1 ? 0 : i / (bars - 1)
+          const idx = viz.scale === 'log' ? Math.floor(Math.pow(t, 2) * (freq.length - 1)) : Math.floor(t * (freq.length - 1))
+          const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+          const bh = Math.max(1, Math.round(v * h))
+          const x = i * (barW + gap)
+          ctx.fillRect(x, h - bh, barW, bh)
+        }
+      } else {
+        const data = narrationVizTimeRef.current || new Uint8Array(analyser.fftSize)
+        narrationVizTimeRef.current = data
+        analyser.getByteTimeDomainData(data)
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        for (let i = 0; i < data.length; i++) {
+          const v = data[i] / 255
+          const y = v * h
+          const x = (i / (data.length - 1)) * w
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        }
+        if (viz.style === 'wave_fill') {
+          ctx.lineTo(w, h / 2)
+          ctx.lineTo(0, h / 2)
+          ctx.closePath()
+          ctx.fill()
+        } else {
+          ctx.stroke()
+        }
+      }
+      ctx.globalAlpha = 1
+      narrationVizRafRef.current = window.requestAnimationFrame(draw)
+    }
+
+    narrationVizRafRef.current = window.requestAnimationFrame(draw)
+    return () => {
+      if (narrationVizRafRef.current != null) {
+        try { window.cancelAnimationFrame(narrationVizRafRef.current) } catch {}
+      }
+      narrationVizRafRef.current = null
+    }
+  }, [activeNarrationVisualizer, narrationVisualizerActive, setupNarrationPreviewAnalyser])
 
   const toggleMusicPlay = useCallback(async () => {
     if (musicPreviewPlaying) {
@@ -18092,6 +18256,19 @@ export default function CreateVideo() {
                   ) : null}
                 </div>
               </>
+            ) : null}
+            {narrationVisualizerActive ? (
+              <canvas
+                ref={narrationVizCanvasRef}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  zIndex: 30,
+                }}
+              />
             ) : null}
             {showPreviewToolbar && hasPlayablePreview && !screenTitlePlacementEditor ? (
               <React.Suspense fallback={null}>
