@@ -18202,7 +18202,7 @@ export default function CreateVideo() {
                       gap: 6,
                       minWidth: 120,
                       zIndex: 2000,
-                      boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+                      boxShadow: '0 10px 26px rgba(0,0,0,0.55)',
                     }}
                   >
                     {TIMELINE_ZOOM_OPTIONS.map((opt) => {
@@ -20365,8 +20365,8 @@ export default function CreateVideo() {
                           const baseStyle = {
                             padding: '10px 10px',
                             borderRadius: 10,
-                            border: '1px solid rgba(10,132,255,0.55)',
-                            background: baseActive ? (basePlaying ? '#0a84ff' : 'rgba(10,132,255,0.18)') : 'rgba(255,255,255,0.06)',
+                            border: '1px solid #0a84ff',
+                            background: '#0a84ff',
                             color: '#fff',
                             fontWeight: 900,
                             cursor: totalSeconds <= 0 ? 'default' : 'pointer',
@@ -20380,12 +20380,8 @@ export default function CreateVideo() {
                           const overlayStyle = {
                             padding: '10px 10px',
                             borderRadius: 10,
-                            border: '1px solid rgba(10,132,255,0.55)',
-                            background: overlayActive
-                              ? overlayPlaying
-                                ? '#0a84ff'
-                                : 'rgba(10,132,255,0.18)'
-                              : 'rgba(255,255,255,0.06)',
+                            border: '1px solid #0a84ff',
+                            background: '#0a84ff',
                             color: '#fff',
                             fontWeight: 900,
                             cursor: totalSeconds <= 0 ? 'default' : 'pointer',

@@ -260,8 +260,8 @@ export default function PreviewFloatingToolbar(props: any) {
               const baseStyle = {
                 padding: '10px 10px',
                 borderRadius: 10,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: baseActive ? (basePlaying ? '#0a84ff' : 'rgba(10,132,255,0.18)') : 'rgba(255,255,255,0.06)',
+                border: '1px solid #0a84ff',
+                background: '#0a84ff',
                 color: '#fff',
                 fontWeight: 900,
                 cursor: totalSeconds <= 0 ? 'default' : 'pointer',
@@ -277,12 +277,8 @@ export default function PreviewFloatingToolbar(props: any) {
               const overlayStyle = {
                 padding: '10px 10px',
                 borderRadius: 10,
-                border: '1px solid rgba(10,132,255,0.55)',
-                background: overlayActive
-                  ? overlayPlaying
-                    ? '#0a84ff'
-                    : 'rgba(10,132,255,0.18)'
-                  : 'rgba(255,255,255,0.06)',
+                border: '1px solid #0a84ff',
+                background: '#0a84ff',
                 color: '#fff',
                 fontWeight: 900,
                 cursor: totalSeconds <= 0 ? 'default' : 'pointer',
