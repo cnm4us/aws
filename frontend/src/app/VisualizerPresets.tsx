@@ -301,6 +301,7 @@ export default function VisualizerPresetsPage() {
   const routeCtx = React.useMemo(() => parseRouteContext(), [])
   const mode = React.useMemo(() => parseMode(), [])
   const returnHref = React.useMemo(() => parseReturnHref(), [])
+  const isPickMode = mode === 'pick'
   const [presets, setPresets] = React.useState<VisualizerPreset[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -375,6 +376,22 @@ export default function VisualizerPresetsPage() {
   const backHref = routeCtx.action === 'list' ? '/assets' : '/assets/visualizers'
   const backLabel = routeCtx.action === 'list' ? '← Assets' : '← Visualizers'
   const secondaryBackHref = mode === 'pick' && returnHref ? returnHref : null
+  const buildReturnHref = React.useCallback(
+    (params: Record<string, string>) => {
+      if (!returnHref) return null
+      try {
+        const url = new URL(returnHref, window.location.origin)
+        Object.entries(params).forEach(([k, v]) => {
+          if (v == null) return
+          url.searchParams.set(k, String(v))
+        })
+        return url.pathname + url.search + (url.hash || '')
+      } catch {
+        return null
+      }
+    },
+    [returnHref]
+  )
 
   const submit = async () => {
     setSaving(true)
@@ -731,22 +748,26 @@ export default function VisualizerPresetsPage() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>Visualizer Presets</h1>
-            <p style={{ margin: '4px 0 0', color: '#bbb' }}>Create reusable audio visualizer presets.</p>
+            <h1 style={{ margin: 0, fontSize: 28 }}>{isPickMode ? 'Select Visualizer' : 'Visualizer Presets'}</h1>
+            <p style={{ margin: '4px 0 0', color: '#bbb' }}>
+              {isPickMode ? 'Pick a preset to add to your timeline.' : 'Create reusable audio visualizer presets.'}
+            </p>
           </div>
-          <a
-            href="/assets/visualizers/new"
-            className="card-btn card-btn-open"
-            style={{
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginLeft: 'auto',
-            }}
-          >
-            New
-          </a>
+          {!isPickMode ? (
+            <a
+              href="/assets/visualizers/new"
+              className="card-btn card-btn-open"
+              style={{
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: 'auto',
+              }}
+            >
+              New
+            </a>
+          ) : null}
         </div>
 
         {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
@@ -763,88 +784,105 @@ export default function VisualizerPresetsPage() {
                 <div className="card-title">{name}</div>
                 {desc ? <div className="card-meta" style={{ lineHeight: 1.35 }}>{desc}</div> : null}
                 <div className="card-actions card-actions-spread" style={{ marginTop: 6 }}>
-                  <button
-                    className="card-btn card-btn-delete"
-                    type="button"
-                    onClick={async () => {
-                      const ok = window.confirm('Delete this preset? This cannot be undone.')
-                      if (!ok) return
-                      setFormError(null)
-                      try {
-                        const headers: Record<string, string> = {}
-                        const csrf = getCsrfToken()
-                        if (csrf) headers['x-csrf-token'] = csrf
-                        const res = await fetch(`/api/visualizer-presets/${encodeURIComponent(String(id))}`, {
-                          method: 'DELETE',
-                          credentials: 'same-origin',
-                          headers,
-                        })
-                        const j: any = await res.json().catch(() => ({}))
-                        if (!res.ok) throw new Error(String(j?.detail || j?.error || 'Failed to delete'))
-                        setPresets((prev) => prev.filter((x) => Number((x as any)?.id || 0) !== id))
-                      } catch (e: any) {
-                        setFormError(e?.message || 'Failed to delete')
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                  <div className="card-actions" style={{ gap: 8 }}>
-                    <button
-                      className="card-btn card-btn-edit"
-                      type="button"
-                      onClick={() => {
-                        const target = `/assets/visualizers/${encodeURIComponent(String(id))}/edit`
-                        window.location.href = target
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="card-btn card-btn-open"
-                      type="button"
-                      onClick={async () => {
-                        setFormError(null)
-                        try {
-                          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-                          const csrf = getCsrfToken()
-                          if (csrf) headers['x-csrf-token'] = csrf
-                          const body = {
-                            name: `${name} Copy`,
-                            description: preset.description,
-                            style: preset.style,
-                            fgColor: preset.fgColor,
-                            bgColor: preset.bgColor,
-                            opacity: preset.opacity,
-                            scale: preset.scale,
-                            gradientEnabled: preset.gradientEnabled,
-                            gradientStart: preset.gradientStart,
-                            gradientEnd: preset.gradientEnd,
-                            gradientMode: preset.gradientMode,
-                            clipMode: preset.clipMode,
-                            clipInsetPct: preset.clipInsetPct,
-                            clipHeightPct: preset.clipHeightPct,
+                  {isPickMode ? (
+                    <div className="card-actions card-actions-right" style={{ width: '100%' }}>
+                      <button
+                        className="card-btn card-btn-open"
+                        type="button"
+                        onClick={() => {
+                          const href = buildReturnHref({ cvPickType: 'visualizer', cvPickPresetId: String(id) })
+                          if (href) window.location.href = href
+                        }}
+                      >
+                        Select
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        className="card-btn card-btn-delete"
+                        type="button"
+                        onClick={async () => {
+                          const ok = window.confirm('Delete this preset? This cannot be undone.')
+                          if (!ok) return
+                          setFormError(null)
+                          try {
+                            const headers: Record<string, string> = {}
+                            const csrf = getCsrfToken()
+                            if (csrf) headers['x-csrf-token'] = csrf
+                            const res = await fetch(`/api/visualizer-presets/${encodeURIComponent(String(id))}`, {
+                              method: 'DELETE',
+                              credentials: 'same-origin',
+                              headers,
+                            })
+                            const j: any = await res.json().catch(() => ({}))
+                            if (!res.ok) throw new Error(String(j?.detail || j?.error || 'Failed to delete'))
+                            setPresets((prev) => prev.filter((x) => Number((x as any)?.id || 0) !== id))
+                          } catch (e: any) {
+                            setFormError(e?.message || 'Failed to delete')
                           }
-                          const res = await fetch('/api/visualizer-presets', {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers,
-                            body: JSON.stringify(body),
-                          })
-                          const json = await res.json().catch(() => null)
-                          if (!res.ok) throw new Error(String(json?.detail || json?.error || 'Failed to clone'))
-                          const created = json?.preset
-                          if (created) {
-                            setPresets((prev) => [created, ...prev])
-                          }
-                        } catch (e: any) {
-                          setFormError(String(e?.message || 'Failed to clone'))
-                        }
-                      }}
-                    >
-                      Clone
-                    </button>
-                  </div>
+                        }}
+                      >
+                        Delete
+                      </button>
+                      <div className="card-actions" style={{ gap: 8 }}>
+                        <button
+                          className="card-btn card-btn-edit"
+                          type="button"
+                          onClick={() => {
+                            const target = `/assets/visualizers/${encodeURIComponent(String(id))}/edit`
+                            window.location.href = target
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="card-btn card-btn-open"
+                          type="button"
+                          onClick={async () => {
+                            setFormError(null)
+                            try {
+                              const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+                              const csrf = getCsrfToken()
+                              if (csrf) headers['x-csrf-token'] = csrf
+                              const body = {
+                                name: `${name} Copy`,
+                                description: preset.description,
+                                style: preset.style,
+                                fgColor: preset.fgColor,
+                                bgColor: preset.bgColor,
+                                opacity: preset.opacity,
+                                scale: preset.scale,
+                                gradientEnabled: preset.gradientEnabled,
+                                gradientStart: preset.gradientStart,
+                                gradientEnd: preset.gradientEnd,
+                                gradientMode: preset.gradientMode,
+                                clipMode: preset.clipMode,
+                                clipInsetPct: preset.clipInsetPct,
+                                clipHeightPct: preset.clipHeightPct,
+                              }
+                              const res = await fetch('/api/visualizer-presets', {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers,
+                                body: JSON.stringify(body),
+                              })
+                              const json = await res.json().catch(() => null)
+                              if (!res.ok) throw new Error(String(json?.detail || json?.error || 'Failed to clone'))
+                              const created = json?.preset
+                              if (created) {
+                                setPresets((prev) => [created, ...prev])
+                              }
+                            } catch (e: any) {
+                              setFormError(String(e?.message || 'Failed to clone'))
+                            }
+                          }}
+                        >
+                          Clone
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )

@@ -4,6 +4,7 @@ import type { CreateVideoTimelineV1 } from './types'
 import * as audioConfigsSvc from '../audio-configs/service'
 import * as lowerThirdConfigsSvc from '../lower-third-configs/service'
 import * as screenTitlePresetsSvc from '../screen-title-presets/service'
+import * as visualizerPresetsSvc from '../visualizer-presets/service'
 
 const MAX_CLIPS = 50
 const MAX_GRAPHICS = 200
@@ -12,6 +13,7 @@ const MAX_LOGOS = 200
 const MAX_LOWER_THIRDS = 200
 const MAX_SCREEN_TITLES = 200
 const MAX_NARRATION = 200
+const MAX_VISUALIZERS = 200
 const MAX_VIDEO_OVERLAYS = 200
 const MAX_SECONDS = 20 * 60
 
@@ -1560,7 +1562,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
   }
   const narrationTotalSeconds = narration.length ? Number(narration[narration.length - 1].endSeconds) : 0
 
-  const totalForPlayhead = roundToTenth(
+  const baseTotalSeconds = roundToTenth(
     Math.min(
       MAX_SECONDS,
       Math.max(
@@ -1576,7 +1578,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       )
     )
   )
-  const safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
+  let safePlayheadSeconds = baseTotalSeconds > 0 ? Math.min(playheadSeconds, roundToTenth(baseTotalSeconds)) : 0
 
   const MAX_AUDIO_SEGMENTS = 200
   const audioSegments: any[] = []
@@ -1588,7 +1590,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
       throw new ValidationError('invalid_audio_segments')
     } else {
       if (audioSegmentsRaw.length > MAX_AUDIO_SEGMENTS) throw new DomainError('too_many_audio_segments', 'too_many_audio_segments', 400)
-      if (audioSegmentsRaw.length && !(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+      if (audioSegmentsRaw.length && !(baseTotalSeconds > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
 
       for (let i = 0; i < audioSegmentsRaw.length; i++) {
         const seg = audioSegmentsRaw[i]
@@ -1611,8 +1613,8 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
         const startSeconds = normalizeSeconds((seg as any).startSeconds ?? 0)
         const endSecondsRaw = (seg as any).endSeconds
-        const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
-        const maxPlayhead = roundToTenth(totalForPlayhead)
+        const endSecondsInput = endSecondsRaw == null ? baseTotalSeconds : normalizeSeconds(endSecondsRaw)
+        const maxPlayhead = roundToTenth(baseTotalSeconds)
         const start = Math.min(startSeconds, maxPlayhead)
         const end = Math.min(endSecondsInput, maxPlayhead)
         if (!(end > start)) {
@@ -1650,7 +1652,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
         : audioTrackRaw0
     if (audioTrackRaw != null && audioTrackRaw !== null) {
       if (typeof audioTrackRaw !== 'object' || Array.isArray(audioTrackRaw)) throw new ValidationError('invalid_audio_track')
-      if (!(totalForPlayhead > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
+      if (!(baseTotalSeconds > 0)) throw new DomainError('empty_timeline', 'empty_timeline', 400)
       const uploadId = Number((audioTrackRaw as any).uploadId)
       const audioConfigId = Number((audioTrackRaw as any).audioConfigId)
       if (!Number.isFinite(uploadId) || uploadId <= 0) throw new ValidationError('invalid_upload_id')
@@ -1659,9 +1661,9 @@ export async function validateAndNormalizeCreateVideoTimeline(
 
       const startSeconds = normalizeSeconds((audioTrackRaw as any).startSeconds ?? 0)
       const endSecondsRaw = (audioTrackRaw as any).endSeconds
-      const endSecondsInput = endSecondsRaw == null ? totalForPlayhead : normalizeSeconds(endSecondsRaw)
-      const start = Math.min(startSeconds, roundToTenth(totalForPlayhead))
-      const end = Math.min(endSecondsInput, roundToTenth(totalForPlayhead))
+      const endSecondsInput = endSecondsRaw == null ? baseTotalSeconds : normalizeSeconds(endSecondsRaw)
+      const start = Math.min(startSeconds, roundToTenth(baseTotalSeconds))
+      const end = Math.min(endSecondsInput, roundToTenth(baseTotalSeconds))
       if (end > start) {
         audioSegments.push({
           id: 'audio_track_legacy',
@@ -1684,6 +1686,121 @@ export async function validateAndNormalizeCreateVideoTimeline(
       if (seg.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('audio_overlap', 'audio_overlap', 400)
     }
   }
+
+  const visualizersRaw = Array.isArray((raw as any).visualizers) ? ((raw as any).visualizers as any[]) : []
+  if (visualizersRaw.length > MAX_VISUALIZERS) throw new DomainError('too_many_visualizers', 'too_many_visualizers', 400)
+  const visualizers: any[] = []
+  const visualizerPresetCache = new Map<number, any>()
+
+  const resolvePreset = async (id: number) => {
+    if (visualizerPresetCache.has(id)) return visualizerPresetCache.get(id)
+    const preset = await visualizerPresetsSvc.getForUser(id, ctx.userId)
+    visualizerPresetCache.set(id, preset)
+    return preset
+  }
+
+  const videoSourceSegments = clips.map((c: any) => {
+    const start = roundToTenth(Number(c.startSeconds || 0))
+    const dur = roundToTenth(Math.max(0, Number(c.sourceEndSeconds || 0) - Number(c.sourceStartSeconds || 0)))
+    const end = roundToTenth(start + dur)
+    return {
+      id: String(c.id),
+      startSeconds: start,
+      endSeconds: end,
+      sourceStartSeconds: roundToTenth(Number(c.sourceStartSeconds || 0)),
+    }
+  })
+  const overlaySourceSegments = videoOverlays.map((o: any) => {
+    const start = roundToTenth(Number(o.startSeconds || 0))
+    const dur = roundToTenth(Math.max(0, Number(o.sourceEndSeconds || 0) - Number(o.sourceStartSeconds || 0)))
+    const end = roundToTenth(start + dur)
+    return {
+      id: String(o.id),
+      startSeconds: start,
+      endSeconds: end,
+      sourceStartSeconds: roundToTenth(Number(o.sourceStartSeconds || 0)),
+    }
+  })
+  const narrationSourceSegments = narration.map((n: any) => ({
+    id: String(n.id),
+    startSeconds: roundToTenth(Number(n.startSeconds || 0)),
+    endSeconds: roundToTenth(Number(n.endSeconds || 0)),
+    sourceStartSeconds: roundToTenth(Number(n.sourceStartSeconds || 0)),
+  }))
+  const musicSourceSegments = audioSegments.map((seg: any) => ({
+    id: String(seg.id),
+    startSeconds: roundToTenth(Number(seg.startSeconds || 0)),
+    endSeconds: roundToTenth(Number(seg.endSeconds || 0)),
+    sourceStartSeconds: roundToTenth(Number(seg.sourceStartSeconds || 0)),
+  }))
+
+  const findSourceSegment = (kind: string, id: string) => {
+    if (!id) return null
+    const targetId = String(id)
+    if (kind === 'video') return videoSourceSegments.find((s) => String(s.id) === targetId) || null
+    if (kind === 'video_overlay') return overlaySourceSegments.find((s) => String(s.id) === targetId) || null
+    if (kind === 'music') return musicSourceSegments.find((s) => String(s.id) === targetId) || null
+    return narrationSourceSegments.find((s) => String(s.id) === targetId) || null
+  }
+
+  for (const seg of visualizersRaw) {
+    if (!seg || typeof seg !== 'object') continue
+    const id = normalizeId((seg as any).id)
+    if (seen.has(id)) throw new ValidationError('duplicate_clip_id')
+    seen.add(id)
+
+    const presetId = Number((seg as any).presetId)
+    if (!Number.isFinite(presetId) || presetId <= 0) throw new ValidationError('invalid_visualizer_preset')
+    let preset: any
+    try {
+      preset = await resolvePreset(Math.round(presetId))
+    } catch {
+      throw new ValidationError('invalid_visualizer_preset')
+    }
+
+    const startSeconds = normalizeSeconds((seg as any).startSeconds)
+    const endSeconds = normalizeSeconds((seg as any).endSeconds)
+    if (!(endSeconds > startSeconds)) throw new ValidationError('invalid_seconds')
+    const clamped = clampTimelineRange(startSeconds, endSeconds)
+    if (!clamped) continue
+
+    const kindRaw = String((seg as any).audioSourceKind || '').trim().toLowerCase()
+    const audioSourceKind =
+      kindRaw === 'video_overlay'
+        ? 'video_overlay'
+        : kindRaw === 'video'
+          ? 'video'
+          : kindRaw === 'music'
+            ? 'music'
+            : 'narration'
+    const audioSourceSegmentId = String((seg as any).audioSourceSegmentId || '').trim()
+    if (!audioSourceSegmentId) throw new ValidationError('invalid_audio_source_segment')
+    const sourceSeg = findSourceSegment(audioSourceKind, audioSourceSegmentId)
+    if (!sourceSeg) throw new ValidationError('invalid_audio_source_segment')
+
+    visualizers.push({
+      id,
+      presetId: Number(preset.id || presetId),
+      presetSnapshot: preset,
+      startSeconds: clamped.startSeconds,
+      endSeconds: clamped.endSeconds,
+      audioSourceKind,
+      audioSourceSegmentId,
+      audioSourceStartSeconds: roundToTenth(Number(sourceSeg.sourceStartSeconds || 0)),
+    })
+  }
+
+  visualizers.sort((a, b) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+  for (let i = 0; i < visualizers.length; i++) {
+    const seg = visualizers[i]
+    if (i > 0) {
+      const prev = visualizers[i - 1]
+      if (seg.startSeconds < prev.endSeconds - 1e-6) throw new DomainError('visualizer_overlap', 'visualizer_overlap', 400)
+    }
+  }
+  const visualizerTotalSeconds = visualizers.length ? Number(visualizers[visualizers.length - 1].endSeconds) : 0
+  const totalForPlayhead = roundToTenth(Math.min(MAX_SECONDS, Math.max(baseTotalSeconds, visualizerTotalSeconds)))
+  safePlayheadSeconds = totalForPlayhead > 0 ? Math.min(playheadSeconds, roundToTenth(totalForPlayhead)) : 0
 
   // Optional: guidelines (UI-only, used for snapping/markers).
   const rawGuidelines = Array.isArray((raw as any).guidelines) ? ((raw as any).guidelines as any[]) : []
@@ -1724,6 +1841,7 @@ export async function validateAndNormalizeCreateVideoTimeline(
     lowerThirds,
     screenTitles,
     narration,
+    visualizers,
     audioSegments,
     audioTrack: null,
   }

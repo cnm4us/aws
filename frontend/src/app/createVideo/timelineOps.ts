@@ -1,4 +1,17 @@
-import type { AudioSegment, Clip, Graphic, Logo, LowerThird, Narration, ScreenTitle, Still, Timeline, VideoOverlay, VideoOverlayStill } from './timelineTypes'
+import type {
+  AudioSegment,
+  Clip,
+  Graphic,
+  Logo,
+  LowerThird,
+  Narration,
+  ScreenTitle,
+  Still,
+  Timeline,
+  VideoOverlay,
+  VideoOverlayStill,
+  VisualizerSegment,
+} from './timelineTypes'
 import { clamp, clipDurationSeconds, computeClipStarts, computeTimelineEndSecondsFromClips, locate, roundToTenth } from './timelineMath'
 
 export function insertClipAtPlayhead(timeline: Timeline, clip: Clip, maxEndSeconds?: number): Timeline {
@@ -341,6 +354,39 @@ export function splitNarrationAtPlayhead(
   const next = [...ns.slice(0, idx), left, right, ...ns.slice(idx + 1)]
   next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
   return { timeline: { ...(timeline as any), narration: next } as any, selectedNarrationId: right.id }
+}
+
+export function splitVisualizerAtPlayhead(
+  timeline: Timeline,
+  selectedVisualizerId: string | null
+): { timeline: Timeline; selectedVisualizerId: string | null } {
+  if (!selectedVisualizerId) return { timeline, selectedVisualizerId }
+  const vs: VisualizerSegment[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any) : []
+  const idx = vs.findIndex((v: any) => String(v?.id) === String(selectedVisualizerId))
+  if (idx < 0) return { timeline, selectedVisualizerId }
+  const v: any = vs[idx]
+  const start = roundToTenth(Number(v?.startSeconds || 0))
+  const end = roundToTenth(Number(v?.endSeconds || 0))
+  if (!(end > start)) return { timeline, selectedVisualizerId }
+
+  const t = roundToTenth(Number(timeline.playheadSeconds || 0))
+  const cut = clamp(t, start, end)
+  const minLen = 0.2
+  if (cut <= start + minLen || cut >= end - minLen) return { timeline, selectedVisualizerId }
+
+  const baseSourceStart =
+    v.audioSourceStartSeconds != null && Number.isFinite(Number(v.audioSourceStartSeconds)) ? Number(v.audioSourceStartSeconds) : 0
+  const left: VisualizerSegment = { ...v, id: `${String(v.id)}_a`, startSeconds: start, endSeconds: cut, audioSourceStartSeconds: baseSourceStart }
+  const right: VisualizerSegment = {
+    ...v,
+    id: `${String(v.id)}_b`,
+    startSeconds: cut,
+    endSeconds: end,
+    audioSourceStartSeconds: baseSourceStart,
+  }
+  const next = [...vs.slice(0, idx), left, right, ...vs.slice(idx + 1)]
+  next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+  return { timeline: { ...(timeline as any), visualizers: next } as any, selectedVisualizerId: right.id }
 }
 
 export function splitAudioSegmentAtPlayhead(

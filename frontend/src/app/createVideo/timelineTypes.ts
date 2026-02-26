@@ -189,6 +189,40 @@ export type NarrationVisualizerConfig = {
   scale: NarrationVisualizerScale
 }
 
+export type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
+export type VisualizerScale = 'linear' | 'log'
+export type VisualizerGradientMode = 'vertical' | 'horizontal'
+export type VisualizerClipMode = 'none' | 'rect'
+
+export type VisualizerPresetSnapshot = {
+  id: number
+  name: string
+  description?: string | null
+  style: VisualizerStyle
+  fgColor: string
+  bgColor: string | 'transparent'
+  opacity: number
+  scale: VisualizerScale
+  gradientEnabled: boolean
+  gradientStart: string
+  gradientEnd: string
+  gradientMode: VisualizerGradientMode
+  clipMode: VisualizerClipMode
+  clipInsetPct: number
+  clipHeightPct: number
+}
+
+export type VisualizerSegment = {
+  id: string
+  presetId: number
+  presetSnapshot: VisualizerPresetSnapshot | null
+  startSeconds: number
+  endSeconds: number
+  audioSourceKind: 'video' | 'video_overlay' | 'narration' | 'music'
+  audioSourceSegmentId?: string | null
+  audioSourceStartSeconds?: number
+}
+
 export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
   enabled: false,
   style: 'wave_line',
@@ -203,6 +237,24 @@ export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
   bgColor: 'transparent',
   opacity: 1,
   scale: 'linear',
+}
+
+export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
+  id: 0,
+  name: 'Visualizer Preset',
+  description: null,
+  style: 'wave_line',
+  fgColor: '#d4af37',
+  bgColor: 'transparent',
+  opacity: 1,
+  scale: 'linear',
+  gradientEnabled: false,
+  gradientStart: '#d4af37',
+  gradientEnd: '#f7d774',
+  gradientMode: 'vertical',
+  clipMode: 'none',
+  clipInsetPct: 6,
+  clipHeightPct: 100,
 }
 
 export function normalizeNarrationVisualizer(raw: any): NarrationVisualizerConfig {
@@ -318,6 +370,7 @@ export type Timeline = {
   lowerThirds?: LowerThird[]
   screenTitles?: ScreenTitle[]
   narration?: Narration[]
+  visualizers?: VisualizerSegment[]
   audioSegments?: AudioSegment[]
   // Deprecated: retained for backward compatibility with existing projects.
   audioTrack?: AudioTrack | null
@@ -450,6 +503,60 @@ export function cloneTimeline(timeline: Timeline): Timeline {
           gainDb: n.gainDb == null ? 0 : Number(n.gainDb),
           visualizer: normalizeNarrationVisualizer((n as any).visualizer),
         }))
+      : [],
+    visualizers: Array.isArray((timeline as any).visualizers)
+      ? (timeline as any).visualizers
+          .map((v: any) => {
+            const presetIdRaw = Number((v as any).presetId)
+            const presetId = Number.isFinite(presetIdRaw) && presetIdRaw > 0 ? presetIdRaw : 0
+            const snapRaw = (v as any).presetSnapshot
+            const snapBase: any = snapRaw && typeof snapRaw === 'object' ? snapRaw : {}
+            const snapshot: VisualizerPresetSnapshot = {
+              ...DEFAULT_VISUALIZER_PRESET_SNAPSHOT,
+              id: Number(snapBase.id ?? presetId ?? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id,
+              name: String(snapBase.name || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.name),
+              description:
+                snapBase.description == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.description : String(snapBase.description),
+              style: (String(snapBase.style || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style,
+              fgColor: String(snapBase.fgColor || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.fgColor),
+              bgColor: (snapBase.bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : snapBase.bgColor) as any,
+              opacity: Number.isFinite(Number(snapBase.opacity)) ? Number(snapBase.opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
+              scale: (String(snapBase.scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
+              gradientEnabled: snapBase.gradientEnabled === true,
+              gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
+              gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
+              gradientMode:
+                (String(snapBase.gradientMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode,
+              clipMode: (String(snapBase.clipMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode,
+              clipInsetPct: Number.isFinite(Number(snapBase.clipInsetPct))
+                ? Number(snapBase.clipInsetPct)
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipInsetPct,
+              clipHeightPct: Number.isFinite(Number(snapBase.clipHeightPct))
+                ? Number(snapBase.clipHeightPct)
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
+            }
+            const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
+            const audioSourceKind =
+              kindRaw === 'video_overlay'
+                ? 'video_overlay'
+                : kindRaw === 'video'
+                  ? 'video'
+                  : kindRaw === 'music'
+                    ? 'music'
+                    : 'narration'
+            return {
+              id: String((v as any).id || ''),
+              presetId,
+              presetSnapshot: snapshot,
+              startSeconds: Number((v as any).startSeconds),
+              endSeconds: Number((v as any).endSeconds),
+              audioSourceKind,
+              audioSourceSegmentId: (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : null,
+              audioSourceStartSeconds:
+                (v as any).audioSourceStartSeconds == null ? undefined : Number((v as any).audioSourceStartSeconds),
+            }
+          })
+          .filter((v: any) => v && v.id)
       : [],
     audioSegments: Array.isArray((timeline as any).audioSegments)
       ? (timeline as any).audioSegments.map((s: any) => ({

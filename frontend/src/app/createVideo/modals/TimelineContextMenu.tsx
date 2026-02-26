@@ -25,6 +25,7 @@ export default function TimelineContextMenu(props: any) {
     deleteLowerThirdById,
     deleteNarrationById,
     deleteScreenTitleById,
+    deleteVisualizerById,
     deleteStillById,
     deleteVideoOverlayById,
     deleteVideoOverlayStillById,
@@ -35,12 +36,14 @@ export default function TimelineContextMenu(props: any) {
     duplicateLowerThirdById,
     duplicateNarrationById,
     duplicateScreenTitleById,
+    duplicateVisualizerById,
     duplicateStillById,
     duplicateVideoOverlayById,
     duplicateVideoOverlayStillById,
     ensureAudioConfigs,
     ensureScreenTitleFonts,
     ensureScreenTitlePresets,
+    ensureVisualizerPresets,
     graphics,
     logos,
     lowerThirds,
@@ -69,6 +72,8 @@ export default function TimelineContextMenu(props: any) {
     setScreenTitleCustomizeError,
     setScreenTitleEditor,
     setScreenTitleEditorError,
+    setVisualizerEditor,
+    setVisualizerEditorError,
     setSelectedAudioId,
     setSelectedClipId,
     setSelectedGraphicId,
@@ -76,6 +81,7 @@ export default function TimelineContextMenu(props: any) {
     setSelectedLowerThirdId,
     setSelectedNarrationId,
     setSelectedScreenTitleId,
+    setSelectedVisualizerId,
     setSelectedStillId,
     setSelectedVideoOverlayId,
     setSelectedVideoOverlayStillId,
@@ -95,6 +101,7 @@ export default function TimelineContextMenu(props: any) {
     splitLowerThirdById,
     splitNarrationById,
     splitScreenTitleById,
+    splitVisualizerById,
     splitStillById,
     splitVideoOverlayById,
     splitVideoOverlayStillById,
@@ -105,6 +112,7 @@ export default function TimelineContextMenu(props: any) {
     totalSeconds,
     videoOverlayStills,
     videoOverlays,
+    visualizers,
   } = ctx as any
   const menuRef = React.useRef<HTMLDivElement | null>(null)
   const menuKey = `${String(timelineCtxMenu?.kind || '')}:${String(timelineCtxMenu?.id || '')}:${String(
@@ -309,11 +317,14 @@ export default function TimelineContextMenu(props: any) {
 			            {(timelineCtxMenu.view || 'main') === 'main' ? (
 			              <>
 			                <button
-			                  type="button"
-			                  onClick={() => {
-				                    if (timelineCtxMenu.kind === 'graphic') {
-				                      const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
-				                      if (g) {
+                            type="button"
+                            onClick={() => {
+                              if (timelineCtxMenu.kind !== 'visualizer') {
+                                setSelectedVisualizerId(null)
+                              }
+                              if (timelineCtxMenu.kind === 'graphic') {
+                                const g = graphics.find((gg) => String((gg as any).id) === String(timelineCtxMenu.id)) as any
+                                if (g) {
 				                        const s = roundToTenth(Number((g as any).startSeconds || 0))
 				                        const e2 = roundToTenth(Number((g as any).endSeconds || 0))
                         const fitModeRaw = (g as any).fitMode != null ? String((g as any).fitMode) : ''
@@ -457,11 +468,11 @@ export default function TimelineContextMenu(props: any) {
 			                        })
 			                        setLowerThirdEditorError(null)
 			                      }
-				                    } else if (timelineCtxMenu.kind === 'screenTitle') {
-				                      const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
-				                      if (st) {
-				                        const s = roundToTenth(Number((st as any).startSeconds || 0))
-				                        const e2 = roundToTenth(Number((st as any).endSeconds || 0))
+                    } else if (timelineCtxMenu.kind === 'screenTitle') {
+                      const st = screenTitles.find((ss: any) => String((ss as any).id) === String(timelineCtxMenu.id)) as any
+                      if (st) {
+                        const s = roundToTenth(Number((st as any).startSeconds || 0))
+                        const e2 = roundToTenth(Number((st as any).endSeconds || 0))
 				                        setSelectedScreenTitleId(String((st as any).id))
 				                        setSelectedClipId(null)
 				                        setSelectedVideoOverlayId(null)
@@ -471,10 +482,38 @@ export default function TimelineContextMenu(props: any) {
 				                        setSelectedNarrationId(null)
 				                        setSelectedStillId(null)
 				                        setSelectedAudioId(null)
-				                        setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2 })
-				                        setScreenTitleEditorError(null)
-				                      }
-				                    } else if (timelineCtxMenu.kind === 'videoOverlay') {
+                        setScreenTitleEditor({ id: String((st as any).id), start: s, end: e2 })
+                        setScreenTitleEditorError(null)
+                      }
+                    } else if (timelineCtxMenu.kind === 'visualizer') {
+                      const v = (visualizers || []).find((vv: any) => String((vv as any).id) === String(timelineCtxMenu.id)) as any
+                      if (v) {
+                        const s = roundToTenth(Number((v as any).startSeconds || 0))
+                        const e2 = roundToTenth(Number((v as any).endSeconds || 0))
+                        setSelectedVisualizerId(String((v as any).id))
+                        setSelectedClipId(null)
+                        setSelectedVideoOverlayId(null)
+                        setSelectedVideoOverlayStillId(null)
+                        setSelectedGraphicId(null)
+                        setSelectedLogoId(null)
+                        setSelectedLowerThirdId(null)
+                        setSelectedScreenTitleId(null)
+                        setSelectedNarrationId(null)
+                        setSelectedStillId(null)
+                        setSelectedAudioId(null)
+                        setVisualizerEditor({
+                          id: String((v as any).id),
+                          start: s,
+                          end: e2,
+                          presetId: Number((v as any).presetId || 0),
+                          audioSourceKind: String((v as any).audioSourceKind || 'narration') as any,
+                          audioSourceSegmentId:
+                            (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : null,
+                        })
+                        setVisualizerEditorError(null)
+                        void ensureVisualizerPresets()
+                      }
+                    } else if (timelineCtxMenu.kind === 'videoOverlay') {
 				                      const o = videoOverlays.find((oo: any) => String((oo as any).id) === String(timelineCtxMenu.id)) as any
 				                      if (o) {
 					                        const sizePctWidth = Number((o as any).sizePctWidth || 33)
@@ -854,12 +893,13 @@ export default function TimelineContextMenu(props: any) {
 					                    if (timelineCtxMenu.kind === 'still') splitStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'videoOverlayStill') splitVideoOverlayStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'logo') splitLogoById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'lowerThird') splitLowerThirdById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'screenTitle') splitScreenTitleById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'videoOverlay') splitVideoOverlayById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'clip') splitClipById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'narration') splitNarrationById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'audioSegment') splitAudioSegmentById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'lowerThird') splitLowerThirdById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'screenTitle') splitScreenTitleById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'visualizer') splitVisualizerById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'videoOverlay') splitVideoOverlayById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'clip') splitClipById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'narration') splitNarrationById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'audioSegment') splitAudioSegmentById(timelineCtxMenu.id)
 					                    setTimelineCtxMenu(null)
 					                  }}
 			                  style={{
@@ -883,12 +923,13 @@ export default function TimelineContextMenu(props: any) {
 					                    if (timelineCtxMenu.kind === 'still') duplicateStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'videoOverlayStill') duplicateVideoOverlayStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'logo') duplicateLogoById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'lowerThird') duplicateLowerThirdById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'screenTitle') duplicateScreenTitleById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'videoOverlay') duplicateVideoOverlayById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'clip') duplicateClipById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'narration') duplicateNarrationById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'audioSegment') duplicateAudioSegmentById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'lowerThird') duplicateLowerThirdById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'screenTitle') duplicateScreenTitleById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'visualizer') duplicateVisualizerById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'videoOverlay') duplicateVideoOverlayById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'clip') duplicateClipById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'narration') duplicateNarrationById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'audioSegment') duplicateAudioSegmentById(timelineCtxMenu.id)
 					                    setTimelineCtxMenu(null)
 					                  }}
 			                  style={{
@@ -912,12 +953,13 @@ export default function TimelineContextMenu(props: any) {
 					                    if (timelineCtxMenu.kind === 'still') deleteStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'videoOverlayStill') deleteVideoOverlayStillById(timelineCtxMenu.id)
 					                    if (timelineCtxMenu.kind === 'logo') deleteLogoById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'lowerThird') deleteLowerThirdById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'screenTitle') deleteScreenTitleById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'videoOverlay') deleteVideoOverlayById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'clip') deleteClipById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'narration') deleteNarrationById(timelineCtxMenu.id)
-					                    if (timelineCtxMenu.kind === 'audioSegment') deleteAudioSegmentById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'lowerThird') deleteLowerThirdById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'screenTitle') deleteScreenTitleById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'visualizer') deleteVisualizerById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'videoOverlay') deleteVideoOverlayById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'clip') deleteClipById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'narration') deleteNarrationById(timelineCtxMenu.id)
+                        if (timelineCtxMenu.kind === 'audioSegment') deleteAudioSegmentById(timelineCtxMenu.id)
 					                    setTimelineCtxMenu(null)
 					                  }}
 			                  style={{

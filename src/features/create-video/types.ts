@@ -1,3 +1,5 @@
+import type { VisualizerClipMode, VisualizerGradientMode, VisualizerScale, VisualizerStyle } from '../visualizer-presets/types'
+
 export type CreateVideoProjectStatus = 'active' | 'archived'
 
 export type CreateVideoClipV1 = {
@@ -280,8 +282,37 @@ export type CreateVideoNarrationSegmentV1 = {
     clipHeightPct?: number
     bgColor?: string | 'transparent'
     opacity?: number
-    scale?: 'linear' | 'log'
+  scale?: 'linear' | 'log'
   }
+}
+
+export type CreateVideoVisualizerPresetSnapshotV1 = {
+  id: number
+  name: string
+  description?: string | null
+  style: VisualizerStyle
+  fgColor: string
+  bgColor: string | 'transparent'
+  opacity: number
+  scale: VisualizerScale
+  gradientEnabled: boolean
+  gradientStart: string
+  gradientEnd: string
+  gradientMode: VisualizerGradientMode
+  clipMode: VisualizerClipMode
+  clipInsetPct: number
+  clipHeightPct: number
+}
+
+export type CreateVideoVisualizerSegmentV1 = {
+  id: string
+  presetId: number
+  presetSnapshot: CreateVideoVisualizerPresetSnapshotV1
+  startSeconds: number
+  endSeconds: number
+  audioSourceKind: 'video' | 'video_overlay' | 'narration' | 'music'
+  audioSourceSegmentId?: string
+  audioSourceStartSeconds?: number
 }
 
 export type CreateVideoTimelineV1 = {
@@ -304,6 +335,7 @@ export type CreateVideoTimelineV1 = {
   lowerThirds?: CreateVideoLowerThirdV1[]
   screenTitles?: CreateVideoScreenTitleV1[]
   narration?: CreateVideoNarrationSegmentV1[]
+  visualizers?: CreateVideoVisualizerSegmentV1[]
   audioSegments?: CreateVideoAudioSegmentV1[]
   // Deprecated: retained for backward compatibility with existing projects.
   audioTrack?: CreateVideoAudioTrackV1 | null

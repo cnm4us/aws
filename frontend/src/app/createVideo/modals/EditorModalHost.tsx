@@ -12,6 +12,7 @@ const LazyScreenTitleCustomizeModal = React.lazy(() => import('./ScreenTitleCust
 const LazyScreenTitlePlacementAdvancedModal = React.lazy(() => import('./ScreenTitlePlacementAdvancedModal'))
 const LazyClipEditorModal = React.lazy(() => import('./ClipEditorModal'))
 const LazyNarrationEditorModal = React.lazy(() => import('./NarrationEditorModal'))
+const LazyVisualizerEditorModal = React.lazy(() => import('./VisualizerEditorModal'))
 
 export default function EditorModalHost(props: any) {
   const ctx = props?.ctx || props
@@ -47,6 +48,9 @@ export default function EditorModalHost(props: any) {
     narration,
     narrationEditor,
     narrationEditorError,
+    visualizerEditor,
+    visualizerEditorError,
+    visualizerPresets,
     normalizeScreenTitlePlacementRectForEditor,
     openClipBackgroundPicker,
     overlayFreezeInsertBusy,
@@ -60,6 +64,7 @@ export default function EditorModalHost(props: any) {
     saveLogoEditor,
     saveLowerThirdEditor,
     saveNarrationEditor,
+    saveVisualizerEditor,
     saveScreenTitleEditor,
     saveScreenTitlePlacement,
     saveStillEditor,
@@ -96,6 +101,8 @@ export default function EditorModalHost(props: any) {
     setLowerThirdEditorError,
     setNarrationEditor,
     setNarrationEditorError,
+    setVisualizerEditor,
+    setVisualizerEditorError,
     setScreenTitleCustomizeEditor,
     setScreenTitleCustomizeError,
     setScreenTitleEditor,
@@ -124,6 +131,7 @@ export default function EditorModalHost(props: any) {
     videoOverlayStillEditor,
     videoOverlayStillEditorError,
     videoOverlays,
+    visualizers,
     beginScreenTitlePlacementDrag,
     SCREEN_TITLE_PLACEMENT_MIN_H_PCT,
     SCREEN_TITLE_PLACEMENT_MIN_W_PCT,
@@ -199,6 +207,28 @@ export default function EditorModalHost(props: any) {
               setAudioEditorError(null)
             }}
             onSave={saveAudioEditor}
+          />
+        </React.Suspense>
+      ) : null}
+
+      {visualizerEditor ? (
+        <React.Suspense fallback={null}>
+          <LazyVisualizerEditorModal
+            visualizerEditor={visualizerEditor}
+            visualizerEditorError={visualizerEditorError}
+            setVisualizerEditor={setVisualizerEditor}
+            setVisualizerEditorError={setVisualizerEditorError}
+            visualizerPresets={visualizerPresets}
+            clips={timeline.clips}
+            videoOverlays={videoOverlays}
+            narration={narration}
+            audioSegments={audioSegments}
+            namesByUploadId={namesByUploadId}
+            onClose={() => {
+              setVisualizerEditor(null)
+              setVisualizerEditorError(null)
+            }}
+            onSave={saveVisualizerEditor}
           />
         </React.Suspense>
       ) : null}

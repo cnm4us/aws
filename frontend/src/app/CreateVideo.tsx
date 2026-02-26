@@ -12,10 +12,17 @@ import type {
   ScreenTitle,
   Still,
   Timeline,
+  VisualizerPresetSnapshot,
+  VisualizerSegment,
   VideoOverlay,
   VideoOverlayStill,
 } from './createVideo/timelineTypes'
-import { cloneTimeline, DEFAULT_NARRATION_VISUALIZER, normalizeNarrationVisualizer } from './createVideo/timelineTypes'
+import {
+  cloneTimeline,
+  DEFAULT_NARRATION_VISUALIZER,
+  DEFAULT_VISUALIZER_PRESET_SNAPSHOT,
+  normalizeNarrationVisualizer,
+} from './createVideo/timelineTypes'
 import {
   clamp,
   clipDurationSeconds,
@@ -39,6 +46,7 @@ import {
   splitNarrationAtPlayhead,
   splitScreenTitleAtPlayhead,
   splitVideoOverlayAtPlayhead,
+  splitVisualizerAtPlayhead,
 } from './createVideo/timelineOps'
 import {
   SCREEN_TITLE_MARGIN_BASELINE_WIDTH_PX,
@@ -126,6 +134,64 @@ const saveNarrationVisualizerDefaults = (cfg: NarrationVisualizerConfig) => {
     window.localStorage.setItem(NARRATION_VISUALIZER_STORAGE_KEY, JSON.stringify(cfg))
   } catch {}
 }
+
+const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot => {
+  const base = DEFAULT_VISUALIZER_PRESET_SNAPSHOT
+  const snap = raw && typeof raw === 'object' ? raw : {}
+  const styleRaw = String(snap.style || base.style).trim().toLowerCase()
+  const style: VisualizerPresetSnapshot['style'] =
+    styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars' ? (styleRaw as any) : 'wave_line'
+  const scaleRaw = String(snap.scale || base.scale).trim().toLowerCase()
+  const scale: VisualizerPresetSnapshot['scale'] = scaleRaw === 'log' ? 'log' : 'linear'
+  const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
+  const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
+  const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
+  const clipMode: VisualizerPresetSnapshot['clipMode'] = clipModeRaw === 'rect' ? 'rect' : 'none'
+  const clipInsetRaw = Number(snap.clipInsetPct)
+  const clipHeightRaw = Number(snap.clipHeightPct)
+  return {
+    id: Number.isFinite(Number(snap.id)) ? Number(snap.id) : base.id,
+    name: String(snap.name || base.name),
+    description: snap.description == null ? base.description : String(snap.description),
+    style,
+    fgColor: String(snap.fgColor || base.fgColor),
+    bgColor: snap.bgColor == null ? base.bgColor : (snap.bgColor as any),
+    opacity: Number.isFinite(Number(snap.opacity)) ? Math.max(0, Math.min(1, Number(snap.opacity))) : base.opacity,
+    scale,
+    gradientEnabled: Boolean(snap.gradientEnabled),
+    gradientStart: String(snap.gradientStart || base.gradientStart),
+    gradientEnd: String(snap.gradientEnd || base.gradientEnd),
+    gradientMode,
+    clipMode,
+    clipInsetPct: Number.isFinite(clipInsetRaw) ? Math.max(0, Math.min(40, clipInsetRaw)) : base.clipInsetPct,
+    clipHeightPct: Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : base.clipHeightPct,
+  }
+}
+
+const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): VisualizerPresetSnapshot => {
+  const base = DEFAULT_VISUALIZER_PRESET_SNAPSHOT
+  const gradientModeRaw = String(cfg.gradientMode || base.gradientMode).trim().toLowerCase()
+  const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
+  const clipModeRaw = String(cfg.clipMode || base.clipMode).trim().toLowerCase()
+  const clipMode: VisualizerPresetSnapshot['clipMode'] = clipModeRaw === 'rect' ? 'rect' : 'none'
+  const clipInsetRaw = Number(cfg.clipInsetPct)
+  const clipHeightRaw = Number(cfg.clipHeightPct)
+  return {
+    ...base,
+    style: cfg.style || base.style,
+    fgColor: cfg.fgColor || base.fgColor,
+    bgColor: cfg.bgColor == null ? base.bgColor : (cfg.bgColor as any),
+    opacity: Number.isFinite(Number(cfg.opacity)) ? Math.max(0, Math.min(1, Number(cfg.opacity))) : base.opacity,
+    scale: cfg.scale || base.scale,
+    gradientEnabled: Boolean(cfg.gradientEnabled),
+    gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
+    gradientEnd: cfg.gradientEnd || base.gradientEnd,
+    gradientMode,
+    clipMode,
+    clipInsetPct: Number.isFinite(clipInsetRaw) ? Math.max(0, Math.min(40, clipInsetRaw)) : base.clipInsetPct,
+    clipHeightPct: Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : base.clipHeightPct,
+  }
+}
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
 type MeResponse = {
   userId: number | null
@@ -163,7 +229,7 @@ type Project = {
   lastExportUploadId?: number | null
 }
 
-type LaneKey = 'graphics' | 'logo' | 'lowerThird' | 'screenTitle' | 'videoOverlay' | 'video' | 'narration' | 'audio'
+type LaneKey = 'visualizer' | 'graphics' | 'logo' | 'lowerThird' | 'screenTitle' | 'videoOverlay' | 'video' | 'narration' | 'audio'
 type PreviewAudioLaneKey = 'video' | 'videoOverlay' | 'narration' | 'audio'
 type PreviewVideoLaneKey = 'video' | 'videoOverlay'
 
@@ -227,6 +293,10 @@ type ScreenTitlePresetItem = {
   archivedAt?: string | null
 }
 
+type VisualizerPresetItem = VisualizerPresetSnapshot
+
+type VisualizerAudioSourceKind = 'video' | 'video_overlay' | 'narration' | 'music'
+
 type ScreenTitleFontFamily = {
   familyKey: string
   label: string
@@ -276,6 +346,7 @@ type TimelineCtxKind =
   | 'clip'
   | 'narration'
   | 'audioSegment'
+  | 'visualizer'
 
 const CURRENT_PROJECT_ID_KEY = 'createVideoCurrentProjectId:v1'
 
@@ -376,6 +447,7 @@ export default function CreateVideo() {
     lowerThirds: [],
     screenTitles: [],
     narration: [],
+    visualizers: [],
     audioSegments: [],
     audioTrack: null,
   })
@@ -387,6 +459,7 @@ export default function CreateVideo() {
   const [selectedLowerThirdId, setSelectedLowerThirdId] = useState<string | null>(null)
   const [selectedScreenTitleId, setSelectedScreenTitleId] = useState<string | null>(null)
   const [selectedNarrationId, setSelectedNarrationId] = useState<string | null>(null)
+  const [selectedVisualizerId, setSelectedVisualizerId] = useState<string | null>(null)
   const [selectedStillId, setSelectedStillId] = useState<string | null>(null)
   const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null)
 
@@ -489,6 +562,9 @@ export default function CreateVideo() {
   const [screenTitlePresets, setScreenTitlePresets] = useState<ScreenTitlePresetItem[]>([])
   const [screenTitlePresetsLoaded, setScreenTitlePresetsLoaded] = useState(false)
   const [screenTitlePresetsError, setScreenTitlePresetsError] = useState<string | null>(null)
+  const [visualizerPresets, setVisualizerPresets] = useState<VisualizerPresetItem[]>([])
+  const [visualizerPresetsLoaded, setVisualizerPresetsLoaded] = useState(false)
+  const [visualizerPresetsError, setVisualizerPresetsError] = useState<string | null>(null)
   const [screenTitleFontFamilies, setScreenTitleFontFamilies] = useState<ScreenTitleFontFamily[]>([])
   const [screenTitleFontPresets, setScreenTitleFontPresets] = useState<ScreenTitleFontPresetsResponse | null>(null)
   const [screenTitleFontsLoaded, setScreenTitleFontsLoaded] = useState(false)
@@ -615,6 +691,15 @@ export default function CreateVideo() {
   const narrationVisualizerDefaultsRef = useRef<NarrationVisualizerConfig>(loadNarrationVisualizerDefaults())
   const [narrationEditor, setNarrationEditor] = useState<{ id: string; start: number; end: number; boostDb: number; visualizer: NarrationVisualizerConfig } | null>(null)
   const [narrationEditorError, setNarrationEditorError] = useState<string | null>(null)
+  const [visualizerEditor, setVisualizerEditor] = useState<{
+    id: string
+    start: number
+    end: number
+    presetId: number
+    audioSourceKind: VisualizerAudioSourceKind
+    audioSourceSegmentId: string | null
+  } | null>(null)
+  const [visualizerEditorError, setVisualizerEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const bgVideoRef = useRef<HTMLVideoElement | null>(null)
   const overlayVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -732,6 +817,7 @@ export default function CreateVideo() {
       selectedLowerThirdId: string | null
       selectedScreenTitleId: string | null
       selectedNarrationId: string | null
+      selectedVisualizerId: string | null
       selectedStillId: string | null
       selectedAudioId: string | null
     }>
@@ -747,6 +833,7 @@ export default function CreateVideo() {
       selectedLowerThirdId: string | null
       selectedScreenTitleId: string | null
       selectedNarrationId: string | null
+      selectedVisualizerId: string | null
       selectedStillId: string | null
       selectedAudioId: string | null
     }>
@@ -1029,6 +1116,7 @@ export default function CreateVideo() {
         startClientY?: number
         startStartSeconds: number
         startEndSeconds: number
+        startSourceStartSeconds?: number
         minStartSeconds: number
         maxEndSeconds: number
         maxStartSeconds?: number
@@ -1110,6 +1198,22 @@ export default function CreateVideo() {
         startEndSeconds: number
         startSourceStartSeconds?: number
         maxDurationSeconds?: number
+        minStartSeconds: number
+        maxEndSeconds: number
+        maxStartSeconds?: number
+        // For armed body/edge drag (so a click can still open the context menu)
+        armed?: boolean
+        moved?: boolean
+      }
+    | {
+        kind: 'visualizer'
+        visualizerId: string
+        edge: 'start' | 'end' | 'move'
+        pointerId: number
+        startClientX: number
+        startClientY?: number
+        startStartSeconds: number
+        startEndSeconds: number
         minStartSeconds: number
         maxEndSeconds: number
         maxStartSeconds?: number
@@ -1613,7 +1717,13 @@ export default function CreateVideo() {
       const e = Number((n as any).endSeconds)
       if (Number.isFinite(e) && e > nEnd) nEnd = e
     }
-    return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, overlayStillEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd)))
+    const vs: any[] = Array.isArray((tl as any).visualizers) ? (tl as any).visualizers : []
+    let vEnd = 0
+    for (const v of vs) {
+      const e = Number((v as any).endSeconds)
+      if (Number.isFinite(e) && e > vEnd) vEnd = e
+    }
+    return Math.max(0, roundToTenth(Math.max(videoEnd, overlayEnd, overlayStillEnd, gEnd, sEnd, lEnd, ltEnd, stEnd, nEnd, vEnd)))
   }, [])
 
   const rippleRightSimpleLane = useCallback(
@@ -2130,6 +2240,15 @@ export default function CreateVideo() {
     return narration.find((n: any) => String((n as any)?.id) === String(selectedNarrationId)) || null
   }, [narration, selectedNarrationId])
 
+  const visualizers = useMemo(
+    () => (Array.isArray((timeline as any).visualizers) ? (((timeline as any).visualizers as any) as VisualizerSegment[]) : []),
+    [timeline]
+  )
+  const selectedVisualizer = useMemo(() => {
+    if (!selectedVisualizerId) return null
+    return visualizers.find((v: any) => String((v as any)?.id) === String(selectedVisualizerId)) || null
+  }, [selectedVisualizerId, visualizers])
+
   const stills = useMemo(() => (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as Still[]) : []), [timeline])
   const selectedStill = useMemo(() => {
     if (!selectedStillId) return null
@@ -2197,6 +2316,7 @@ export default function CreateVideo() {
 
   const laneMeta = useMemo<Record<LaneKey, { label: string; swatch: string }>>(
     () => ({
+      visualizer: { label: 'VISUALIZER', swatch: 'rgba(0,199,190,0.90)' },
       graphics: { label: 'GRAPHICS', swatch: 'rgba(10,132,255,0.90)' },
       logo: { label: 'LOGO', swatch: 'rgba(212,175,55,0.95)' },
       lowerThird: { label: 'LOWER THIRD', swatch: 'rgba(94,92,230,0.90)' },
@@ -2228,6 +2348,7 @@ export default function CreateVideo() {
   const audioPreviewEnabled = isPreviewAudioLaneOn('audio')
   const laneVisibility = useMemo(
     () => ({
+      visualizer: showEmptyLanes || visualizers.length > 0,
       graphics: showEmptyLanes || graphics.length > 0,
       logo: showEmptyLanes || logos.length > 0,
       lowerThird: showEmptyLanes || lowerThirds.length > 0,
@@ -2239,6 +2360,7 @@ export default function CreateVideo() {
     }),
     [
       showEmptyLanes,
+      visualizers.length,
       graphics.length,
       logos.length,
       lowerThirds.length,
@@ -2252,8 +2374,9 @@ export default function CreateVideo() {
     ]
   )
   const laneLayout = useMemo(() => {
-    const order: LaneKey[] = ['graphics', 'logo', 'lowerThird', 'screenTitle', 'videoOverlay', 'video', 'narration', 'audio']
+    const order: LaneKey[] = ['visualizer', 'graphics', 'logo', 'lowerThird', 'screenTitle', 'videoOverlay', 'video', 'narration', 'audio']
     const yByLane: Record<LaneKey, number | null> = {
+      visualizer: null,
       graphics: null,
       logo: null,
       lowerThird: null,
@@ -2275,6 +2398,7 @@ export default function CreateVideo() {
     const height = TRACKS_TOP + LANE_TOP_PAD + TRACK_H * visibleRows
     return { yByLane, visibleKeys, height }
   }, [LANE_TOP_PAD, TRACKS_TOP, TRACK_H, laneVisibility])
+  const VISUALIZER_Y = laneLayout.yByLane.visualizer
   const GRAPHICS_Y = laneLayout.yByLane.graphics
   const LOGO_Y = laneLayout.yByLane.logo
   const LOWER_THIRD_Y = laneLayout.yByLane.lowerThird
@@ -2386,6 +2510,11 @@ export default function CreateVideo() {
 	      const e = roundToTenth(Number((n as any).endSeconds || 0))
 	      if (e > s) out.push(s, e)
 	    }
+	    for (const v of visualizers) {
+	      const s = roundToTenth(Number((v as any).startSeconds || 0))
+	      const e = roundToTenth(Number((v as any).endSeconds || 0))
+	      if (e > s) out.push(s, e)
+	    }
 	    for (const a of audioSegments) {
 	      const s = roundToTenth(Number((a as any).startSeconds || 0))
 	      const e = roundToTenth(Number((a as any).endSeconds || 0))
@@ -2403,7 +2532,7 @@ export default function CreateVideo() {
 	      uniq.set(tt.toFixed(1), tt)
 	    }
     return Array.from(uniq.values()).sort((a, b) => a - b)
-  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, narration, screenTitles, stills, timeline, totalSeconds, videoOverlays])
+  }, [audioSegments, clipStarts, graphics, logos, lowerThirds, narration, screenTitles, stills, timeline, totalSeconds, videoOverlays, visualizers])
 
   const { laneBoundariesByKind, objectBoundariesAll, timelineGuidelines } = useMemo(() => {
     const push = (arr: number[], all: number[], start: number, end: number) => {
@@ -2421,6 +2550,7 @@ export default function CreateVideo() {
     const lowerThirdLane: number[] = []
     const screenTitleLane: number[] = []
     const narrationLane: number[] = []
+    const visualizerLane: number[] = []
     const audioLane: number[] = []
     const all: number[] = []
 
@@ -2462,6 +2592,9 @@ export default function CreateVideo() {
     for (const n of narration) {
       push(narrationLane, all, Number((n as any).startSeconds || 0), Number((n as any).endSeconds || 0))
     }
+    for (const v of visualizers) {
+      push(visualizerLane, all, Number((v as any).startSeconds || 0), Number((v as any).endSeconds || 0))
+    }
     for (const a of audioSegments) {
       push(audioLane, all, Number((a as any).startSeconds || 0), Number((a as any).endSeconds || 0))
     }
@@ -2485,6 +2618,7 @@ export default function CreateVideo() {
       lowerThird: uniqSorted(lowerThirdLane),
       screenTitle: uniqSorted(screenTitleLane),
       narration: uniqSorted(narrationLane),
+      visualizer: uniqSorted(visualizerLane),
       audioSegment: uniqSorted(audioLane),
     }
 
@@ -2510,6 +2644,7 @@ export default function CreateVideo() {
     timeline,
     videoOverlayStills,
     videoOverlays,
+    visualizers,
   ])
 
   const isBlockingTimelineMessage = useCallback((msg: string) => {
@@ -2942,6 +3077,96 @@ export default function CreateVideo() {
     candidates.sort((a, b) => a.s - b.s || a.e - b.e)
     return candidates[0].n
   }, [narration])
+
+  const findVisualizerAtTime = useCallback(
+    (t: number): VisualizerSegment | null => {
+      const tt = Number(t)
+      if (!Number.isFinite(tt) || tt < 0) return null
+      const candidates: Array<{ s: number; e: number; v: VisualizerSegment }> = []
+      for (const v of visualizers) {
+        const s = Number((v as any).startSeconds)
+        const e = Number((v as any).endSeconds)
+        if (!Number.isFinite(s) || !Number.isFinite(e)) continue
+        if (tt >= s && tt <= e) candidates.push({ s, e, v })
+      }
+      if (!candidates.length) return null
+      for (const c of candidates) {
+        if (roundToTenth(c.s) === roundToTenth(tt)) return c.v
+      }
+      candidates.sort((a, b) => a.s - b.s || a.e - b.e)
+      return candidates[0].v
+    },
+    [visualizers]
+  )
+
+  const resolveVisualizerSourceSegment = useCallback(
+    (v: VisualizerSegment | null) => {
+      if (!v) return null
+      const kind = String((v as any).audioSourceKind || '').trim().toLowerCase()
+      const segId = String((v as any).audioSourceSegmentId || '').trim()
+      if (!segId) return null
+      if (kind === 'narration') {
+        const seg: any = narration.find((n: any) => String(n?.id) === segId)
+        if (!seg) return null
+        const startSeconds = Number((seg as any).startSeconds || 0)
+        const endSeconds = Number((seg as any).endSeconds || 0)
+        if (!(Number.isFinite(startSeconds) && Number.isFinite(endSeconds) && endSeconds > startSeconds)) return null
+        const sourceStartSeconds =
+          seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds))
+            ? Number(seg.sourceStartSeconds)
+            : (v as any).audioSourceStartSeconds != null && Number.isFinite(Number((v as any).audioSourceStartSeconds))
+              ? Number((v as any).audioSourceStartSeconds)
+              : 0
+        return { kind: 'narration' as const, seg, startSeconds, endSeconds, sourceStartSeconds }
+      }
+      if (kind === 'music') {
+        const seg: any = audioSegments.find((a: any) => String(a?.id) === segId)
+        if (!seg) return null
+        const startSeconds = Number((seg as any).startSeconds || 0)
+        const endSeconds = Number((seg as any).endSeconds || 0)
+        if (!(Number.isFinite(startSeconds) && Number.isFinite(endSeconds) && endSeconds > startSeconds)) return null
+        const sourceStartSeconds =
+          seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds))
+            ? Number(seg.sourceStartSeconds)
+            : (v as any).audioSourceStartSeconds != null && Number.isFinite(Number((v as any).audioSourceStartSeconds))
+              ? Number((v as any).audioSourceStartSeconds)
+              : 0
+        return { kind: 'music' as const, seg, startSeconds, endSeconds, sourceStartSeconds }
+      }
+      if (kind === 'video') {
+        const idx = timeline.clips.findIndex((c: any) => String(c?.id) === segId)
+        if (idx < 0) return null
+        const seg: any = timeline.clips[idx]
+        const startSeconds = Number((clipStarts as any)[idx] || 0)
+        const endSeconds = roundToTenth(startSeconds + clipDurationSeconds(seg))
+        if (!(Number.isFinite(startSeconds) && Number.isFinite(endSeconds) && endSeconds > startSeconds)) return null
+        const sourceStartSeconds =
+          seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds))
+            ? Number(seg.sourceStartSeconds)
+            : (v as any).audioSourceStartSeconds != null && Number.isFinite(Number((v as any).audioSourceStartSeconds))
+              ? Number((v as any).audioSourceStartSeconds)
+              : 0
+        return { kind: 'video' as const, seg, startSeconds, endSeconds, sourceStartSeconds }
+      }
+      if (kind === 'video_overlay') {
+        const idx = videoOverlays.findIndex((o: any) => String(o?.id) === segId)
+        if (idx < 0) return null
+        const seg: any = videoOverlays[idx]
+        const startSeconds = Number((videoOverlayStarts as any)[idx] || 0)
+        const endSeconds = roundToTenth(startSeconds + clipDurationSeconds(seg))
+        if (!(Number.isFinite(startSeconds) && Number.isFinite(endSeconds) && endSeconds > startSeconds)) return null
+        const sourceStartSeconds =
+          seg.sourceStartSeconds != null && Number.isFinite(Number(seg.sourceStartSeconds))
+            ? Number(seg.sourceStartSeconds)
+            : (v as any).audioSourceStartSeconds != null && Number.isFinite(Number((v as any).audioSourceStartSeconds))
+              ? Number((v as any).audioSourceStartSeconds)
+              : 0
+        return { kind: 'video_overlay' as const, seg, startSeconds, endSeconds, sourceStartSeconds }
+      }
+      return null
+    },
+    [audioSegments, clipStarts, narration, timeline.clips, videoOverlayStarts, videoOverlays]
+  )
 
   const findAudioSegmentAtTime = useCallback(
     (t: number): any | null => {
@@ -4246,14 +4471,17 @@ export default function CreateVideo() {
     setMusicPreviewPlaying(false)
   }, [])
 
-  const setupNarrationPreviewAnalyser = useCallback(() => {
-    const audioEl = narrationPreviewRef.current
+  const setupVisualizerPreviewAnalyser = useCallback((mediaEl?: HTMLMediaElement | null) => {
+    const audioEl = mediaEl || narrationPreviewRef.current
     if (!audioEl) return null
     if (narrationVizLastElRef.current && narrationVizLastElRef.current !== audioEl) {
       try { narrationVizSourceRef.current?.disconnect?.() } catch {}
       narrationVizSourceRef.current = null
       narrationVizAnalyserRef.current = null
     }
+    try {
+      if (!audioEl.crossOrigin) audioEl.crossOrigin = 'anonymous'
+    } catch {}
     narrationVizLastElRef.current = audioEl
     let ctx = narrationVizAudioCtxRef.current
     if (!ctx) {
@@ -4337,8 +4565,6 @@ export default function CreateVideo() {
     if (!(segEnd > segStart + 0.05)) return
     const uploadId = Number((segAt as any).uploadId)
     if (!Number.isFinite(uploadId) || uploadId <= 0) return
-    const vizCfg = normalizeNarrationVisualizer((segAt as any).visualizer)
-
     const a = narrationPreviewRef.current || new Audio()
     narrationPreviewRef.current = a
     try { a.pause() } catch {}
@@ -4367,9 +4593,7 @@ export default function CreateVideo() {
     try { a.currentTime = Math.max(0, srcStart0 + startInSeg) } catch {}
 
     narrationPreviewSegRef.current = { segId: String((segAt as any).id), uploadId, segStart, segEnd, sourceStartSeconds: srcStart0 }
-    if (vizCfg.enabled) {
-      setupNarrationPreviewAnalyser()
-    }
+    setupVisualizerPreviewAnalyser(a)
 
     try {
       const p = a.play()
@@ -4453,7 +4677,7 @@ export default function CreateVideo() {
     playhead,
     sortedNarration,
     isPreviewAudioLaneOn,
-    setupNarrationPreviewAnalyser,
+    setupVisualizerPreviewAnalyser,
     stopMusicPreview,
     stopNarrationPreview,
     totalSeconds,
@@ -4465,15 +4689,70 @@ export default function CreateVideo() {
     return seg || null
   }, [findNarrationAtTime, narrationPreviewPlaying, playhead])
 
-  const activeNarrationVisualizer = useMemo(() => {
-    if (!activeNarrationForPreview) return DEFAULT_NARRATION_VISUALIZER
-    return normalizeNarrationVisualizer((activeNarrationForPreview as any).visualizer)
+  const legacyNarrationVisualizer = useMemo(() => {
+    if (!activeNarrationForPreview) return null
+    const cfg = normalizeNarrationVisualizer((activeNarrationForPreview as any).visualizer)
+    if (!cfg.enabled) return null
+    return narrationVisualizerToPresetSnapshot(cfg)
   }, [activeNarrationForPreview])
 
-  const narrationVisualizerActive = narrationPreviewPlaying && Boolean(activeNarrationVisualizer?.enabled)
+  const hasVisualizerSegments = visualizers.length > 0
+
+  const activeVisualizerPreview = useMemo(() => {
+    if (!hasVisualizerSegments) return null
+    const v = findVisualizerAtTime(playhead)
+    if (!v) return null
+    const source = resolveVisualizerSourceSegment(v)
+    if (!source) return null
+    const vStart = roundToTenth(Number((v as any).startSeconds || 0))
+    const vEnd = roundToTenth(Number((v as any).endSeconds || 0))
+    const sStart = roundToTenth(Number((source as any).startSeconds || 0))
+    const sEnd = roundToTenth(Number((source as any).endSeconds || 0))
+    if (!(vEnd > vStart && sEnd > sStart)) return null
+    const overlapStart = Math.max(vStart, sStart)
+    const overlapEnd = Math.min(vEnd, sEnd)
+    if (!(overlapEnd > overlapStart - 1e-6)) return null
+    const t = roundToTenth(Number(playhead || 0))
+    if (t < overlapStart - 1e-6 || t > overlapEnd + 1e-6) return null
+    const sourceAudioStart = Number((source as any).sourceStartSeconds || 0)
+    const audioTime = roundToTenth(sourceAudioStart + Math.max(0, t - sStart))
+    return { visualizer: v, source, overlapStart, overlapEnd, audioTime }
+  }, [findVisualizerAtTime, hasVisualizerSegments, playhead, resolveVisualizerSourceSegment])
+
+  const visualizerPreviewConfig = useMemo(() => {
+    if (activeVisualizerPreview) {
+      return normalizeVisualizerPresetSnapshot((activeVisualizerPreview.visualizer as any)?.presetSnapshot)
+    }
+    if (!hasVisualizerSegments) return legacyNarrationVisualizer
+    return null
+  }, [activeVisualizerPreview, hasVisualizerSegments, legacyNarrationVisualizer])
+
+  const visualizerPreviewMedia = useMemo(() => {
+    if (!visualizerPreviewConfig) return null
+    if (!activeVisualizerPreview) return narrationPreviewRef.current
+    const kind = (activeVisualizerPreview.source as any).kind
+    if (kind === 'narration') return narrationPreviewRef.current
+    if (kind === 'music') return musicPreviewRef.current
+    if (kind === 'video') return videoRef.current
+    if (kind === 'video_overlay') return overlayVideoRef.current
+    return narrationPreviewRef.current
+  }, [activeVisualizerPreview, narrationPreviewPlaying, musicPreviewPlaying, playing, visualizerPreviewConfig])
+
+  const visualizerPreviewActive = useMemo(() => {
+    if (!visualizerPreviewConfig || !visualizerPreviewMedia) return false
+    if (activeVisualizerPreview) {
+      const kind = (activeVisualizerPreview.source as any).kind
+      if (kind === 'narration') return narrationPreviewPlaying
+      if (kind === 'music') return musicPreviewPlaying
+      if (kind === 'video') return playing && playbackClockRef.current === 'base'
+      if (kind === 'video_overlay') return playing && playbackClockRef.current === 'overlay'
+      return false
+    }
+    return narrationPreviewPlaying
+  }, [activeVisualizerPreview, musicPreviewPlaying, narrationPreviewPlaying, playing, visualizerPreviewConfig, visualizerPreviewMedia])
 
   useEffect(() => {
-    if (!narrationVisualizerActive) {
+    if (!visualizerPreviewActive) {
       if (narrationVizRafRef.current != null) {
         try { window.cancelAnimationFrame(narrationVizRafRef.current) } catch {}
       }
@@ -4488,8 +4767,12 @@ export default function CreateVideo() {
       return
     }
 
-    const analyser = setupNarrationPreviewAnalyser()
-    if (!analyser) return
+    const analyser = setupVisualizerPreviewAnalyser(visualizerPreviewMedia)
+    if (!analyser) {
+      const ctx = narrationVizCanvasRef.current?.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+      return
+    }
     const canvas = narrationVizCanvasRef.current
     if (!canvas) return
 
@@ -4507,7 +4790,7 @@ export default function CreateVideo() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
 
-      const viz = activeNarrationVisualizer || DEFAULT_NARRATION_VISUALIZER
+      const viz = visualizerPreviewConfig || DEFAULT_VISUALIZER_PRESET_SNAPSHOT
       const clipMode = (viz as any).clipMode || 'none'
       const clipInsetPct = Number.isFinite(Number((viz as any).clipInsetPct)) ? Math.max(0, Math.min(40, Number((viz as any).clipInsetPct))) : 0
       const clipHeightPct = Number.isFinite(Number((viz as any).clipHeightPct)) ? Math.max(10, Math.min(100, Number((viz as any).clipHeightPct))) : 100
@@ -4626,7 +4909,7 @@ export default function CreateVideo() {
       }
       narrationVizRafRef.current = null
     }
-  }, [activeNarrationVisualizer, narrationVisualizerActive, setupNarrationPreviewAnalyser])
+  }, [visualizerPreviewActive, visualizerPreviewConfig, visualizerPreviewMedia, setupVisualizerPreviewAnalyser])
 
   const toggleMusicPlay = useCallback(async () => {
     if (musicPreviewPlaying) {
@@ -4677,9 +4960,11 @@ export default function CreateVideo() {
     const a = musicPreviewRef.current || new Audio()
     musicPreviewRef.current = a
     try { a.pause() } catch {}
+    if (!a.crossOrigin) a.crossOrigin = 'anonymous'
     const url = `/api/uploads/${encodeURIComponent(String(uploadId))}/file`
     a.src = url
     a.preload = 'auto'
+    setupVisualizerPreviewAnalyser(a)
 
     const startTimeline = clamp(roundToTenth(Number(playhead)), segStart, segEnd)
     const startInSeg = Math.max(0, startTimeline - segStart)
@@ -4780,6 +5065,7 @@ export default function CreateVideo() {
     playhead,
     sortedAudioSegments,
     isPreviewAudioLaneOn,
+    setupVisualizerPreviewAnalyser,
     stopMusicPreview,
     stopNarrationPreview,
     totalSeconds,
@@ -4935,6 +5221,7 @@ export default function CreateVideo() {
       selectedLowerThirdId,
       selectedScreenTitleId,
       selectedNarrationId,
+      selectedVisualizerId,
       selectedStillId,
       selectedAudioId,
     }
@@ -4983,6 +5270,7 @@ export default function CreateVideo() {
       selectedLowerThirdId,
       selectedScreenTitleId,
       selectedNarrationId,
+      selectedVisualizerId,
       selectedStillId,
       selectedAudioId,
     })
@@ -4999,6 +5287,7 @@ export default function CreateVideo() {
       setSelectedLowerThirdId((snap as any).selectedLowerThirdId || null)
       setSelectedScreenTitleId((snap as any).selectedScreenTitleId || null)
       setSelectedNarrationId((snap as any).selectedNarrationId || null)
+      setSelectedVisualizerId((snap as any).selectedVisualizerId || null)
       setSelectedStillId(snap.selectedStillId)
       setSelectedAudioId((snap as any).selectedAudioId || null)
     } finally {
@@ -5013,11 +5302,12 @@ export default function CreateVideo() {
     selectedVideoOverlayStillId,
     selectedGraphicId,
     selectedLogoId,
-    selectedLowerThirdId,
-    selectedNarrationId,
-    selectedScreenTitleId,
-    selectedStillId,
-    timeline,
+      selectedLowerThirdId,
+      selectedNarrationId,
+      selectedVisualizerId,
+      selectedScreenTitleId,
+      selectedStillId,
+      timeline,
   ])
 
   const redo = useCallback(() => {
@@ -5037,6 +5327,7 @@ export default function CreateVideo() {
       selectedLowerThirdId,
       selectedScreenTitleId,
       selectedNarrationId,
+      selectedVisualizerId,
       selectedStillId,
       selectedAudioId,
     })
@@ -5053,6 +5344,7 @@ export default function CreateVideo() {
       setSelectedLowerThirdId((snap as any).selectedLowerThirdId || null)
       setSelectedScreenTitleId((snap as any).selectedScreenTitleId || null)
       setSelectedNarrationId((snap as any).selectedNarrationId || null)
+      setSelectedVisualizerId((snap as any).selectedVisualizerId || null)
       setSelectedStillId(snap.selectedStillId)
       setSelectedAudioId((snap as any).selectedAudioId || null)
     } finally {
@@ -5069,6 +5361,7 @@ export default function CreateVideo() {
     selectedLogoId,
     selectedLowerThirdId,
     selectedNarrationId,
+    selectedVisualizerId,
     selectedScreenTitleId,
     selectedStillId,
     timeline,
@@ -6146,6 +6439,107 @@ export default function CreateVideo() {
       }
     }
 
+    // Visualizer segments (top lane)
+    if (VISUALIZER_Y != null) {
+      for (let i = 0; i < visualizers.length; i++) {
+        const v: any = visualizers[i]
+        const start = clamp(Number((v as any).startSeconds || 0), 0, Math.max(0, totalSeconds))
+        const end = clamp(Number((v as any).endSeconds || 0), 0, Math.max(0, totalSeconds))
+        const len = Math.max(0, end - start)
+        if (len <= 0.01) continue
+        const x = padPx + start * pxPerSecond - scrollLeft
+        const w = Math.max(8, len * pxPerSecond)
+        if (x > wCss + 4 || x + w < -4) continue
+
+        const isSelected = String((v as any).id) === String(selectedVisualizerId || '')
+        const isDragging =
+          Boolean(activeDrag) && (activeDrag as any).kind === 'visualizer' && String((activeDrag as any).visualizerId) === String((v as any).id)
+        const activeEdge = isDragging ? String((activeDrag as any).edge) : null
+        const isResizing = isDragging && activeEdge != null && activeEdge !== 'move'
+        const isMoveDragging = isDragging && activeEdge === 'move'
+        const showHandles = (isSelected || isDragging) && w >= 28
+        const handleSize = showHandles ? Math.max(10, Math.min(18, Math.floor(pillH - 10))) : 0
+        const handleW = handleSize * 2
+
+        ctx.fillStyle = 'rgba(0,199,190,0.14)'
+        roundRect(ctx, x, VISUALIZER_Y, w, pillH, 10)
+        ctx.fill()
+
+        ctx.strokeStyle =
+          isResizing || isMoveDragging || isDragReady('visualizer', String((v as any)?.id || ''))
+            ? 'rgba(212,175,55,0.92)'
+            : isSelected
+              ? 'rgba(255,255,255,0.92)'
+              : 'rgba(0,199,190,0.55)'
+        ctx.lineWidth = isResizing || isMoveDragging || isDragReady('visualizer', String((v as any)?.id || '')) ? 2 : 1
+        roundRect(ctx, x + 0.5, VISUALIZER_Y + 0.5, w - 1, pillH - 1, 10)
+        ctx.stroke()
+
+        if (isResizing) {
+          ctx.save()
+          ctx.setLineDash([6, 4])
+          ctx.strokeStyle = 'rgba(212,175,55,0.92)'
+          ctx.lineWidth = 2
+          roundRect(ctx, x + 0.5, VISUALIZER_Y + 0.5, w - 1, pillH - 1, 10)
+          ctx.stroke()
+          ctx.restore()
+        }
+
+        const presetName = String((v as any)?.presetSnapshot?.name || 'Visualizer').trim()
+        const kind = String((v as any).audioSourceKind || '').trim()
+        let sourceLabel = 'Narration'
+        if (kind === 'video') {
+          const clip = timeline.clips.find((c: any) => String(c?.id) === String((v as any).audioSourceSegmentId))
+          const uploadId = clip ? Number((clip as any).uploadId) : NaN
+          sourceLabel = namesByUploadId[uploadId] || (clip ? `Video ${uploadId}` : 'Video')
+        } else if (kind === 'video_overlay') {
+          const overlay = videoOverlays.find((o: any) => String(o?.id) === String((v as any).audioSourceSegmentId))
+          const uploadId = overlay ? Number((overlay as any).uploadId) : NaN
+          sourceLabel = namesByUploadId[uploadId] || (overlay ? `Overlay ${uploadId}` : 'Overlay')
+        } else if (kind === 'music') {
+          const seg = audioSegments.find((a: any) => String(a?.id) === String((v as any).audioSourceSegmentId))
+          const uploadId = seg ? Number((seg as any).uploadId) : NaN
+          sourceLabel = namesByUploadId[uploadId] || (seg ? `Music ${uploadId}` : 'Music')
+        } else {
+          const seg = narration.find((n: any) => String(n?.id) === String((v as any).audioSourceSegmentId))
+          const uploadId = seg ? Number((seg as any).uploadId) : NaN
+          sourceLabel = namesByUploadId[uploadId] || (seg ? `Narration ${uploadId}` : 'Narration')
+        }
+        const label = `VIZ: ${presetName} \u2192 ${sourceLabel}`
+
+        ctx.fillStyle = '#fff'
+        const basePadLeft = showHandles ? 6 + handleW + 6 : 12
+        const padLeft = basePadLeft
+        const padRight = showHandles ? 6 + handleW + 10 : 12
+        const maxTextW = Math.max(0, w - padLeft - padRight)
+        if (maxTextW >= 20) {
+          const clipped = ellipsizeText(ctx, label, maxTextW)
+          ctx.fillText(clipped, x + padLeft, VISUALIZER_Y + pillH / 2)
+        }
+
+        if (showHandles) {
+          const hs = handleSize
+          const hy = VISUALIZER_Y + Math.floor((pillH - handleSize) / 2)
+          const hxL = x + 6
+          const hxR = x + w - 6 - handleW
+          const boundEdge =
+            boundHandleEdge && boundHandleKind === 'visualizer' && String((v as any)?.id) === boundHandleId ? boundHandleEdge : null
+          drawHandle(hxL, hy, hs, HANDLE_GREEN, boundEdge === 'start')
+          drawHandle(hxR, hy, hs, HANDLE_GREEN, boundEdge === 'end')
+        }
+
+        if (isResizing) {
+          ctx.fillStyle = 'rgba(212,175,55,0.95)'
+          const barW = 5
+          const by = VISUALIZER_Y + 3
+          const bh = pillH - 6
+          if (activeEdge === 'start') ctx.fillRect(x + 2, by, barW, bh)
+          if (activeEdge === 'end') ctx.fillRect(x + w - 2 - barW, by, barW, bh)
+          if (activeEdge === 'start' || activeEdge === 'end') drawResizeArrow(activeEdge as any, x, VISUALIZER_Y, w)
+        }
+      }
+    }
+
     // Narration segments (above music; no overlaps)
     if (narrationY != null) {
       for (let i = 0; i < narration.length; i++) {
@@ -6364,6 +6758,7 @@ export default function CreateVideo() {
     selectedVideoOverlayId,
     selectedVideoOverlayStillId,
     selectedNarrationId,
+    selectedVisualizerId,
     selectedStillId,
     trimDragging,
     timeline.clips,
@@ -6381,6 +6776,7 @@ export default function CreateVideo() {
     videoOverlays,
     videoOverlayStarts,
     visualTotalSeconds,
+    visualizers,
   ])
 
   useEffect(() => {
@@ -6515,6 +6911,65 @@ export default function CreateVideo() {
 		                  boostDb,
 		                }
 		              })
+		            : [],
+		          visualizers: Array.isArray((tlRaw as any)?.visualizers)
+		            ? ((tlRaw as any).visualizers as any[])
+		                .map((v: any) => {
+		                  const presetIdRaw = Number((v as any).presetId)
+		                  const presetId = Number.isFinite(presetIdRaw) && presetIdRaw > 0 ? presetIdRaw : 0
+		                  const snapRaw = (v as any).presetSnapshot
+		                  const snapBase: any = snapRaw && typeof snapRaw === 'object' ? snapRaw : {}
+		                  const snapshot: VisualizerPresetSnapshot = {
+		                    ...DEFAULT_VISUALIZER_PRESET_SNAPSHOT,
+		                    id: Number(snapBase.id ?? presetId ?? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id,
+		                    name: String(snapBase.name || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.name),
+		                    description:
+		                      snapBase.description == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.description : String(snapBase.description),
+		                    style:
+		                      (String(snapBase.style || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style,
+		                    fgColor: String(snapBase.fgColor || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.fgColor),
+		                    bgColor: (snapBase.bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : snapBase.bgColor) as any,
+		                    opacity: Number.isFinite(Number(snapBase.opacity)) ? Number(snapBase.opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
+		                    scale:
+		                      (String(snapBase.scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
+		                    gradientEnabled: snapBase.gradientEnabled === true,
+		                    gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
+		                    gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
+		                    gradientMode:
+		                      (String(snapBase.gradientMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode) as any) ||
+		                      DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode,
+		                    clipMode:
+		                      (String(snapBase.clipMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode,
+		                    clipInsetPct: Number.isFinite(Number(snapBase.clipInsetPct))
+		                      ? Number(snapBase.clipInsetPct)
+		                      : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipInsetPct,
+		                    clipHeightPct: Number.isFinite(Number(snapBase.clipHeightPct))
+		                      ? Number(snapBase.clipHeightPct)
+		                      : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
+		                  }
+		                  const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
+		                  const audioSourceKind =
+		                    kindRaw === 'video_overlay'
+		                      ? 'video_overlay'
+		                      : kindRaw === 'video'
+		                        ? 'video'
+		                        : kindRaw === 'music'
+		                          ? 'music'
+		                          : 'narration'
+		                  return {
+		                    ...v,
+		                    id: String((v as any).id || ''),
+		                    presetId,
+		                    presetSnapshot: snapshot,
+		                    startSeconds: roundToTenth(Number((v as any).startSeconds || 0)),
+		                    endSeconds: roundToTenth(Number((v as any).endSeconds || 0)),
+		                    audioSourceKind,
+		                    audioSourceSegmentId: (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : '',
+		                    audioSourceStartSeconds:
+		                      (v as any).audioSourceStartSeconds == null ? undefined : roundToTenth(Number((v as any).audioSourceStartSeconds || 0)),
+		                  }
+		                })
+		                .filter((v: any) => v && v.id)
 		            : [],
 	          audioSegments: Array.isArray((tlRaw as any)?.audioSegments)
 	            ? ((tlRaw as any).audioSegments as any[]).map((s: any, i: number) => ({
@@ -8203,6 +8658,24 @@ export default function CreateVideo() {
     }
   }, [screenTitlePresets, screenTitlePresetsLoaded])
 
+  const ensureVisualizerPresets = useCallback(async (): Promise<VisualizerPresetItem[]> => {
+    if (visualizerPresetsLoaded) return visualizerPresets
+    setVisualizerPresetsError(null)
+    try {
+      const res = await fetch(`/api/visualizer-presets?limit=200`, { credentials: 'same-origin' })
+      const json: any = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(String(json?.error || 'failed_to_load'))
+      const items: VisualizerPresetItem[] = Array.isArray(json) ? json : Array.isArray(json?.items) ? json.items : []
+      setVisualizerPresets(items)
+      setVisualizerPresetsLoaded(true)
+      return items
+    } catch (e: any) {
+      setVisualizerPresetsError(e?.message || 'Failed to load visualizer presets')
+      setVisualizerPresetsLoaded(true)
+      return []
+    }
+  }, [visualizerPresets, visualizerPresetsLoaded])
+
   const ensureScreenTitleFonts = useCallback(async (): Promise<ScreenTitleFontFamily[]> => {
     if (screenTitleFontsLoaded) return screenTitleFontFamilies
     try {
@@ -8396,6 +8869,13 @@ export default function CreateVideo() {
     if (screenTitlePresetsLoaded) return
     void ensureScreenTitlePresets()
   }, [ensureScreenTitlePresets, screenTitlePresetsLoaded, screenTitles.length])
+
+  // If a timeline already has visualizer segments, prefetch presets for labels/editors.
+  useEffect(() => {
+    if (!visualizers.length) return
+    if (visualizerPresetsLoaded) return
+    void ensureVisualizerPresets()
+  }, [ensureVisualizerPresets, visualizerPresetsLoaded, visualizers.length])
 
   useEffect(() => {
     if (!screenTitles.length) return
@@ -9543,6 +10023,207 @@ export default function CreateVideo() {
     [computeTotalSecondsForTimeline, extendViewportEndSecondsIfNeeded, narration, playhead, rippleRightSimpleLane, snapshotUndo]
   )
 
+  const addVisualizerFromPreset = useCallback(
+    (preset: VisualizerPresetItem) => {
+      const presetId = Number((preset as any).id)
+      if (!Number.isFinite(presetId) || presetId <= 0) return
+      if (!(contentTotalSeconds > 0)) {
+        setTimelineMessage('Add a video or graphic first.')
+        return
+      }
+
+      const dur = 5.0
+      const id = `viz_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const start0 = clamp(roundToTenth(playhead), 0, Math.max(0, totalSeconds))
+      let start = start0
+      let end = roundToTenth(start + dur)
+      if (end > totalSeconds + 1e-6) {
+        setTimelineMessage('Not enough room to add a 5s visualizer segment within the timeline.')
+        return
+      }
+
+      const existing = visualizers
+        .slice()
+        .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+      if (!rippleEnabledRef.current) {
+        for (let i = 0; i < existing.length; i++) {
+          const v: any = existing[i]
+          const ss = Number(v.startSeconds)
+          const se = Number(v.endSeconds)
+          if (!Number.isFinite(ss) || !Number.isFinite(se)) continue
+          const overlaps = start < se - 1e-6 && end > ss + 1e-6
+          if (overlaps) {
+            start = roundToTenth(se)
+            end = roundToTenth(start + dur)
+            i = -1
+            if (end > totalSeconds + 1e-6) {
+              setTimelineMessage('No available slot for a 5s visualizer segment without overlapping.')
+              return
+            }
+          }
+        }
+      } else {
+        for (const v of existing as any[]) {
+          const ss = Number((v as any).startSeconds)
+          const se = Number((v as any).endSeconds)
+          if (!(Number.isFinite(ss) && Number.isFinite(se) && se > ss)) continue
+          if (start < se - 1e-6 && start > ss + 1e-6) {
+            start = roundToTenth(se)
+            end = roundToTenth(start + dur)
+            if (end > totalSeconds + 1e-6) {
+              setTimelineMessage('Not enough room to add a 5s visualizer segment within the timeline.')
+              return
+            }
+          }
+        }
+      }
+
+      const presetSnapshot: VisualizerPresetSnapshot = {
+        ...DEFAULT_VISUALIZER_PRESET_SNAPSHOT,
+        id: presetId,
+        name: String((preset as any).name || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.name),
+        description: (preset as any).description == null ? null : String((preset as any).description || ''),
+        style: (preset as any).style || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style,
+        fgColor: String((preset as any).fgColor || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.fgColor),
+        bgColor: (preset as any).bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : String((preset as any).bgColor),
+        opacity: Number.isFinite(Number((preset as any).opacity)) ? Number((preset as any).opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
+        scale: (preset as any).scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
+        gradientEnabled:
+          (preset as any).gradientEnabled == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnabled : Boolean((preset as any).gradientEnabled),
+        gradientStart: String((preset as any).gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
+        gradientEnd: String((preset as any).gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
+        gradientMode: (preset as any).gradientMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode,
+        clipMode: (preset as any).clipMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode,
+        clipInsetPct: Number.isFinite(Number((preset as any).clipInsetPct))
+          ? Number((preset as any).clipInsetPct)
+          : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipInsetPct,
+        clipHeightPct: Number.isFinite(Number((preset as any).clipHeightPct))
+          ? Number((preset as any).clipHeightPct)
+          : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
+      }
+
+      const pickCandidate = <T extends { id: string; startSeconds: number; endSeconds: number }>(
+        items: T[],
+        t0: number
+      ): T | null => {
+        if (!items.length) return null
+        const direct = items.find((s) => t0 + 1e-6 >= Number(s.startSeconds) && t0 <= Number(s.endSeconds) - 1e-6)
+        if (direct) return direct
+        return items[0] || null
+      }
+
+      const narrationSegs = narration.map((n: any) => ({
+        id: String((n as any).id),
+        startSeconds: Number((n as any).startSeconds || 0),
+        endSeconds: Number((n as any).endSeconds || 0),
+        sourceStartSeconds: Number((n as any).sourceStartSeconds || 0),
+      }))
+      const musicSegs = audioSegments.map((a: any) => ({
+        id: String((a as any).id),
+        startSeconds: Number((a as any).startSeconds || 0),
+        endSeconds: Number((a as any).endSeconds || 0),
+        sourceStartSeconds: Number((a as any).sourceStartSeconds || 0),
+      }))
+      const videoSegs = timeline.clips.map((c: any, idx: number) => ({
+        id: String((c as any).id),
+        startSeconds: Number(clipStarts[idx] || 0),
+        endSeconds: Number(clipStarts[idx] || 0) + clipDurationSeconds(c as any),
+        sourceStartSeconds: Number((c as any).sourceStartSeconds || 0),
+      }))
+      const overlayStarts = computeClipStarts(videoOverlays as any)
+      const overlaySegs = videoOverlays.map((o: any, idx: number) => ({
+        id: String((o as any).id),
+        startSeconds: Number(overlayStarts[idx] || 0),
+        endSeconds: Number(overlayStarts[idx] || 0) + clipDurationSeconds(o as any),
+        sourceStartSeconds: Number((o as any).sourceStartSeconds || 0),
+      }))
+
+      let audioSourceKind: VisualizerAudioSourceKind = 'narration'
+      let audioSourceSegmentId = ''
+      let audioSourceStartSeconds = 0
+
+      const prefer = [
+        { kind: 'narration' as const, list: narrationSegs },
+        { kind: 'music' as const, list: musicSegs },
+        { kind: 'video' as const, list: videoSegs },
+        { kind: 'video_overlay' as const, list: overlaySegs },
+      ]
+      let picked: { kind: VisualizerAudioSourceKind; seg: any } | null = null
+      for (const pref of prefer) {
+        const seg = pickCandidate(pref.list as any, start)
+        if (seg) {
+          picked = { kind: pref.kind, seg }
+          break
+        }
+      }
+      if (!picked) {
+        setTimelineMessage('Add a narration, music, or video segment first.')
+        return
+      }
+      audioSourceKind = picked.kind
+      audioSourceSegmentId = picked.seg.id
+      audioSourceStartSeconds = roundToTenth(Number(picked.seg.sourceStartSeconds || 0))
+
+      const seg: VisualizerSegment = {
+        id,
+        presetId,
+        presetSnapshot,
+        startSeconds: start,
+        endSeconds: end,
+        audioSourceKind,
+        audioSourceSegmentId,
+        audioSourceStartSeconds,
+      }
+
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevVs: VisualizerSegment[] = Array.isArray((prev as any).visualizers) ? ((prev as any).visualizers as any) : []
+        const next = [...prevVs, seg].sort(
+          (a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id))
+        )
+        if (rippleEnabledRef.current) {
+          const ripple = rippleRightSimpleLane(next as any, String(seg.id))
+          if (!ripple) {
+            setTimelineMessage('Timeline max length reached.')
+            return prev
+          }
+          const nextTimeline0: any = { ...(prev as any), visualizers: ripple.items }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
+        return { ...prev, visualizers: next }
+      })
+      setSelectedVisualizerId(id)
+      setSelectedClipId(null)
+      setSelectedVideoOverlayId(null)
+      setSelectedVideoOverlayStillId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [
+      audioSegments,
+      clipStarts,
+      computeTotalSecondsForTimeline,
+      contentTotalSeconds,
+      extendViewportEndSecondsIfNeeded,
+      narration,
+      playhead,
+      rippleRightSimpleLane,
+      snapshotUndo,
+      totalSeconds,
+      videoOverlays,
+      visualizers,
+    ]
+  )
+
   const pickFromAssets = useMemo(() => {
     try {
       const qp = new URLSearchParams(window.location.search)
@@ -9749,6 +10430,10 @@ export default function CreateVideo() {
           const presets = await ensureScreenTitlePresets()
           const preset = presets.find((p: any) => Number((p as any).id) === Number(pickFromAssets.presetId)) as any
           if (preset) addScreenTitleFromPreset(preset as any, { openEditor: false })
+        } else if (t === 'visualizer' && pickFromAssets.presetId) {
+          const presets = await ensureVisualizerPresets()
+          const preset = presets.find((p: any) => Number((p as any).id) === Number(pickFromAssets.presetId)) as any
+          if (preset) addVisualizerFromPreset(preset as any)
         }
       } finally {
         cleanUrl()
@@ -9766,9 +10451,11 @@ export default function CreateVideo() {
     addLowerThirdFromPick,
     addNarrationFromUpload,
     addScreenTitleFromPreset,
+    addVisualizerFromPreset,
     ensureAudioConfigs,
     ensureLowerThirdConfigs,
     ensureScreenTitlePresets,
+    ensureVisualizerPresets,
     clipEditor,
     loading,
     pickFromAssets,
@@ -9873,7 +10560,7 @@ export default function CreateVideo() {
 	    totalSeconds,
 	  ])
 
-		  const saveNarrationEditor = useCallback(() => {
+  const saveNarrationEditor = useCallback(() => {
 		    if (!narrationEditor) return
 		    const start = roundToTenth(Number(narrationEditor.start))
 		    const end = roundToTenth(Number(narrationEditor.end))
@@ -9946,7 +10633,116 @@ export default function CreateVideo() {
       saveNarrationVisualizerDefaults(visualizer)
 	    setNarrationEditor(null)
 	    setNarrationEditorError(null)
-	  }, [computeTotalSecondsForTimeline, durationsByUploadId, narration, narrationEditor, snapshotUndo])
+  }, [computeTotalSecondsForTimeline, durationsByUploadId, narration, narrationEditor, snapshotUndo])
+
+  const saveVisualizerEditor = useCallback(() => {
+    if (!visualizerEditor) return
+    const start = roundToTenth(Number(visualizerEditor.start))
+    const end = roundToTenth(Number(visualizerEditor.end))
+    const presetId = Number(visualizerEditor.presetId)
+    const audioSourceKindRaw = String(visualizerEditor.audioSourceKind || '').trim().toLowerCase()
+    const audioSourceKind: VisualizerAudioSourceKind =
+      audioSourceKindRaw === 'video_overlay'
+        ? 'video_overlay'
+        : audioSourceKindRaw === 'video'
+          ? 'video'
+          : audioSourceKindRaw === 'music'
+            ? 'music'
+            : 'narration'
+    const audioSourceSegmentId = String(visualizerEditor.audioSourceSegmentId || '').trim()
+
+    if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
+      setVisualizerEditorError('End must be after start.')
+      return
+    }
+    if (!Number.isFinite(presetId) || presetId <= 0) {
+      setVisualizerEditorError('Select a preset.')
+      return
+    }
+    if (!(contentTotalSeconds > 0)) {
+      setVisualizerEditorError('Add a video or graphic first.')
+      return
+    }
+    if (!audioSourceSegmentId) {
+      setVisualizerEditorError('Select an audio source segment.')
+      return
+    }
+    if (end > MAX_TIMELINE_SECONDS + 1e-6) {
+      setVisualizerEditorError(`End exceeds max timeline (${MAX_TIMELINE_SECONDS.toFixed(1)}s).`)
+      return
+    }
+
+    const preset = visualizerPresets.find((p: any) => Number((p as any).id) === presetId) as any
+    if (!preset) {
+      setVisualizerEditorError('Preset not found.')
+      return
+    }
+
+    const sourceList =
+      audioSourceKind === 'video'
+        ? timeline.clips
+        : audioSourceKind === 'video_overlay'
+          ? videoOverlays
+          : audioSourceKind === 'music'
+            ? audioSegments
+            : narration
+    const sourceSeg = sourceList.find((s: any) => String((s as any).id) === audioSourceSegmentId) as any
+    if (!sourceSeg) {
+      setVisualizerEditorError('Source segment not found.')
+      return
+    }
+
+    const sourceStartSeconds = roundToTenth(Number((sourceSeg as any).sourceStartSeconds || 0))
+
+    // Disallow overlaps.
+    const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+    for (const v of prevVs) {
+      if (String((v as any).id) === String(visualizerEditor.id)) continue
+      const os = roundToTenth(Number((v as any).startSeconds || 0))
+      const oe = roundToTenth(Number((v as any).endSeconds || 0))
+      if (start < oe - 1e-6 && end > os + 1e-6) {
+        setVisualizerEditorError('Visualizers cannot overlap in time.')
+        return
+      }
+    }
+
+    snapshotUndo()
+    setTimeline((prev) => {
+      const prevVs: any[] = Array.isArray((prev as any).visualizers) ? ((prev as any).visualizers as any[]) : []
+      const idx = prevVs.findIndex((v: any) => String(v?.id) === String(visualizerEditor.id))
+      if (idx < 0) return prev
+      const updated: any = {
+        ...(prevVs[idx] as any),
+        startSeconds: Math.max(0, start),
+        endSeconds: Math.max(0, end),
+        presetId,
+        presetSnapshot: preset,
+        audioSourceKind,
+        audioSourceSegmentId,
+        audioSourceStartSeconds: sourceStartSeconds,
+      }
+      const next = prevVs.slice()
+      next[idx] = updated
+      next.sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTimeline: any = { ...(prev as any), visualizers: next }
+      const nextTotal = computeTotalSecondsForTimeline(nextTimeline as any)
+      const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
+      return { ...(nextTimeline as any), playheadSeconds: nextPlayhead }
+    })
+    setVisualizerEditor(null)
+    setVisualizerEditorError(null)
+  }, [
+    MAX_TIMELINE_SECONDS,
+    audioSegments,
+    computeTotalSecondsForTimeline,
+    contentTotalSeconds,
+    narration,
+    snapshotUndo,
+    timeline,
+    videoOverlays,
+    visualizerEditor,
+    visualizerPresets,
+  ])
 
   const split = useCallback(() => {
     if (selectedNarrationId) {
@@ -9986,6 +10782,27 @@ export default function CreateVideo() {
       setSelectedScreenTitleId(null)
       setSelectedNarrationId(null)
       setSelectedStillId(null)
+      return
+    }
+    if (selectedVisualizerId) {
+      const res = splitVisualizerAtPlayhead(timeline as any, selectedVisualizerId)
+      const prevVs = Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : []
+      const nextVs = Array.isArray((res.timeline as any).visualizers) ? (res.timeline as any).visualizers : []
+      if (res.timeline === (timeline as any) && String(res.selectedVisualizerId) === selectedVisualizerId) return
+      if (nextVs === prevVs) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedVisualizerId(String(res.selectedVisualizerId))
+      setSelectedClipId(null)
+      setSelectedVideoOverlayId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
       return
     }
     if (selectedVideoOverlayId) {
@@ -10178,6 +10995,19 @@ export default function CreateVideo() {
         return { ...(prev as any), screenTitles: nextSts } as any
       })
       setSelectedScreenTitleId(null)
+      return
+    }
+
+    if (selectedVisualizerId) {
+      const target = selectedVisualizer
+      if (!target) return
+      snapshotUndo()
+      setTimeline((prev) => {
+        const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+        const nextVs = prevVs.filter((v: any) => String(v.id) !== String((target as any).id))
+        return { ...(prev as any), visualizers: nextVs } as any
+      })
+      setSelectedVisualizerId(null)
       return
     }
 
@@ -10720,6 +11550,118 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline]
   )
 
+  const deleteVisualizerById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      if (!prevVs.some((v: any) => String(v?.id) === targetId)) return
+      snapshotUndo()
+      const nextVs = prevVs.filter((v: any) => String(v?.id) !== targetId)
+      const nextTimeline: any = { ...(timeline as any), visualizers: nextVs }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (selectedVisualizerId === targetId) setSelectedVisualizerId(null)
+    },
+    [playhead, saveTimelineNow, selectedVisualizerId, snapshotUndo, timeline]
+  )
+
+  const duplicateVisualizerById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const v0 = prevVs.find((v: any) => String(v?.id) === targetId) as any
+      if (!v0) return
+      const start0 = roundToTenth(Number(v0.startSeconds || 0))
+      const end0 = roundToTenth(Number(v0.endSeconds || 0))
+      const dur = roundToTenth(Math.max(0.2, end0 - start0))
+      const capEnd = 20 * 60
+      let start = roundToTenth(Math.max(0, end0))
+      let end = roundToTenth(start + dur)
+      if (end > capEnd + 1e-6) {
+        setTimelineMessage('Not enough room to duplicate that visualizer.')
+        return
+      }
+
+      const sorted = prevVs
+        .filter((v: any) => String(v?.id) !== targetId)
+        .slice()
+        .map((v: any) => ({
+          ...v,
+          startSeconds: roundToTenth(Number(v?.startSeconds || 0)),
+          endSeconds: roundToTenth(Number(v?.endSeconds || 0)),
+        }))
+        .filter((v: any) => Number(v.endSeconds) > Number(v.startSeconds))
+        .sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+
+      for (const other of sorted) {
+        const os = Number(other.startSeconds || 0)
+        const oe = Number(other.endSeconds || 0)
+        const overlaps = start < oe - 1e-6 && end > os + 1e-6
+        if (overlaps) {
+          start = roundToTenth(oe)
+          end = roundToTenth(start + dur)
+        }
+        if (end > capEnd + 1e-6) break
+      }
+
+      for (const other of sorted) {
+        const os = Number(other.startSeconds || 0)
+        const oe = Number(other.endSeconds || 0)
+        if (start < oe - 1e-6 && end > os + 1e-6) {
+          setTimelineMessage('No available slot to duplicate that visualizer without overlapping.')
+          return
+        }
+      }
+
+      const newId = `viz_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
+      const placed: any = { ...v0, id: newId, startSeconds: start, endSeconds: end }
+      const nextVs = [...prevVs, placed].sort(
+        (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((a as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+      )
+      snapshotUndo()
+      const nextTimeline: any = { ...(timeline as any), visualizers: nextVs }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      setSelectedVisualizerId(String(newId))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
+  const splitVisualizerById = useCallback(
+    (id: string) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const res = splitVisualizerAtPlayhead(timeline as any, targetId)
+      const prevVs = Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : []
+      const nextVs = Array.isArray((res.timeline as any).visualizers) ? (res.timeline as any).visualizers : []
+      if (res.timeline === (timeline as any) && String(res.selectedVisualizerId) === targetId) return
+      if (nextVs === prevVs) return
+      snapshotUndo()
+      setTimeline(res.timeline as any)
+      void saveTimelineNow({ ...(res.timeline as any), playheadSeconds: playhead } as any)
+      setSelectedVisualizerId(String(res.selectedVisualizerId))
+      setSelectedClipId(null)
+      setSelectedGraphicId(null)
+      setSelectedLogoId(null)
+      setSelectedLowerThirdId(null)
+      setSelectedScreenTitleId(null)
+      setSelectedNarrationId(null)
+      setSelectedStillId(null)
+      setSelectedAudioId(null)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline]
+  )
+
   type GuidelineActionOpts = {
     edgeIntent?: 'move' | 'start' | 'end'
     guidelinesOverride?: number[]
@@ -10772,6 +11714,11 @@ export default function CreateVideo() {
       }
       if (kind === 'screenTitle') {
         const seg = (Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).endSeconds || 0))
+      }
+      if (kind === 'visualizer') {
+        const seg = (Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : []).find((s: any) => String(s?.id) === targetId)
         if (!seg) return null
         return roundToTenth(Number((seg as any).endSeconds || 0))
       }
@@ -10836,6 +11783,11 @@ export default function CreateVideo() {
       }
       if (kind === 'screenTitle') {
         const seg = (Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : []).find((s: any) => String(s?.id) === targetId)
+        if (!seg) return null
+        return roundToTenth(Number((seg as any).startSeconds || 0))
+      }
+      if (kind === 'visualizer') {
+        const seg = (Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : []).find((s: any) => String(s?.id) === targetId)
         if (!seg) return null
         return roundToTenth(Number((seg as any).startSeconds || 0))
       }
@@ -11177,6 +12129,10 @@ export default function CreateVideo() {
         const res = applySimpleLane(Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : [], 0.2)
         if (res.message) message = res.message
         else if (res.changed) nextTimeline = { ...(timeline as any), screenTitles: res.items }
+      } else if (kind === 'visualizer') {
+        const res = applySimpleLane(Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) nextTimeline = { ...(timeline as any), visualizers: res.items }
       } else if (kind === 'narration') {
         const res = applySimpleLane(Array.isArray((timeline as any).narration) ? (timeline as any).narration : [], 0.2, (seg, targetEnd) => {
           const sourceStart = roundToTenth(Number((seg as any).sourceStartSeconds || 0))
@@ -11525,6 +12481,10 @@ export default function CreateVideo() {
         const res = applySimpleLaneStart(Array.isArray((timeline as any).screenTitles) ? (timeline as any).screenTitles : [], 0.2)
         if (res.message) message = res.message
         else if (res.changed) nextTimeline = { ...(timeline as any), screenTitles: res.items }
+      } else if (kind === 'visualizer') {
+        const res = applySimpleLaneStart(Array.isArray((timeline as any).visualizers) ? (timeline as any).visualizers : [], 0.2)
+        if (res.message) message = res.message
+        else if (res.changed) nextTimeline = { ...(timeline as any), visualizers: res.items }
       } else if (kind === 'narration') {
         const prev = Array.isArray((timeline as any).narration) ? (timeline as any).narration : []
         const res = applySimpleLaneStart(prev, 0.2, (seg, targetStart) => {
@@ -13751,6 +14711,11 @@ export default function CreateVideo() {
       const seg0 = prevSegs[idx] as any
       const start0 = roundToTenth(Number(seg0.startSeconds || 0))
       const end0 = roundToTenth(Number(seg0.endSeconds || 0))
+      const baseSourceStart =
+        seg0.audioSourceStartSeconds != null && Number.isFinite(Number(seg0.audioSourceStartSeconds))
+          ? Number(seg0.audioSourceStartSeconds)
+          : 0
+      let sourceStartS = baseSourceStart
       const minLen = 0.2
       const dur = roundToTenth(Math.max(minLen, end0 - start0))
       const capEnd = Math.max(0, Number(totalSeconds) || 0)
@@ -13875,6 +14840,7 @@ export default function CreateVideo() {
           return
         }
         startS = nextStartS
+        sourceStartS = roundToTenth(Math.max(0, baseSourceStart + roundToTenth(startS - start0)))
       } else if (action === 'contract_start') {
         const cand = nextStrict(start0)
         if (cand == null) {
@@ -13888,6 +14854,7 @@ export default function CreateVideo() {
           return
         }
         startS = nextStartS
+        sourceStartS = roundToTenth(Math.max(0, baseSourceStart + roundToTenth(startS - start0)))
       } else if (action === 'expand_end') {
         const cand = nextStrict(end0)
         if (cand == null) {
@@ -13925,7 +14892,7 @@ export default function CreateVideo() {
 
       snapshotUndo()
       const nextSegs = prevSegs.slice()
-      nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS }
+      nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS, audioSourceStartSeconds: sourceStartS }
       nextSegs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
       const nextTimeline: any = { ...(timeline as any), logos: nextSegs }
       setTimeline(nextTimeline)
@@ -14618,6 +15585,225 @@ export default function CreateVideo() {
     [playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds]
   )
 
+  const applyVisualizerGuidelineAction = useCallback(
+    (
+      id: string,
+      action: 'snap' | 'expand_start' | 'contract_start' | 'expand_end' | 'contract_end',
+      opts?: GuidelineActionOpts
+    ) => {
+      const targetId = String(id || '')
+      if (!targetId) return
+      const prevSegs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const idx = prevSegs.findIndex((s: any) => String(s?.id) === targetId)
+      if (idx < 0) return
+
+      const gsRaw: any[] = Array.isArray(opts?.guidelinesOverride)
+        ? ((opts?.guidelinesOverride as any) || [])
+        : Array.isArray((timeline as any).guidelines)
+          ? ((timeline as any).guidelines as any[])
+          : []
+      let gsSorted = Array.from(
+        new Map(
+          gsRaw
+            .map((x) => roundToTenth(Number(x)))
+            .filter((x) => Number.isFinite(x) && x >= 0)
+            .map((x) => [x.toFixed(1), x] as const)
+        ).values()
+      ).sort((a, b) => a - b)
+      if (!gsSorted.length) {
+        if (action === 'snap') {
+          setTimelineMessage('No guidelines yet. Tap the guideline button to add one.')
+          return
+        }
+        gsSorted = [roundToTenth(playhead)]
+      }
+
+      const seg0 = prevSegs[idx] as any
+      const start0 = roundToTenth(Number(seg0.startSeconds || 0))
+      const end0 = roundToTenth(Number(seg0.endSeconds || 0))
+      const minLen = 0.2
+      const dur = roundToTenth(Math.max(minLen, end0 - start0))
+      const capEnd = Math.max(0, Number(totalSeconds) || 0)
+
+      const sorted = prevSegs.slice().sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const pos = sorted.findIndex((s: any) => String(s?.id) === targetId)
+      const prevEnd = pos > 0 ? roundToTenth(Number((sorted[pos - 1] as any).endSeconds || 0)) : 0
+      const nextStart =
+        pos >= 0 && pos < sorted.length - 1 ? roundToTenth(Number((sorted[pos + 1] as any).startSeconds || capEnd)) : roundToTenth(capEnd)
+      const minStartSeconds = clamp(prevEnd, 0, Math.max(0, capEnd))
+      const maxEndSeconds = clamp(nextStart, 0, Math.max(0, capEnd))
+
+      const eps = 0.05
+      const prevStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = gsSorted.length - 1; i >= 0; i--) {
+          const v = gsSorted[i]
+          if (v < tt - eps) return v
+        }
+        return null
+      }
+      const nextStrict = (t: number) => {
+        const tt = Number(t)
+        for (let i = 0; i < gsSorted.length; i++) {
+          const v = gsSorted[i]
+          if (v > tt + eps) return v
+        }
+        return null
+      }
+      const nearestInclusive = (t: number) => {
+        let best: number | null = null
+        let bestDist = Number.POSITIVE_INFINITY
+        for (const v of gsSorted) {
+          const d = Math.abs(v - t)
+          if (d < bestDist - 1e-9) {
+            bestDist = d
+            best = v
+          }
+        }
+        return best == null ? null : { v: best, dist: bestDist }
+      }
+
+      let startS = start0
+      let endS = end0
+
+      if (action === 'snap') {
+        const edgeIntent = opts?.edgeIntent || 'move'
+        if (edgeIntent === 'start') {
+          const cand = prevStrict(start0)
+          if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('No guideline before start.')
+            return
+          }
+          if (Math.abs(cand - start0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          startS = roundToTenth(cand)
+          endS = roundToTenth(startS + dur)
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another visualizer).')
+            return
+          }
+        } else if (edgeIntent === 'end') {
+          const cand = nextStrict(end0)
+          if (cand == null) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('No guideline after end.')
+            return
+          }
+          if (Math.abs(cand - end0) <= eps) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          endS = roundToTenth(cand)
+          startS = roundToTenth(endS - dur)
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another visualizer).')
+            return
+          }
+        } else {
+          const nS = nearestInclusive(start0)
+          const nE = nearestInclusive(end0)
+          if (!nS && !nE) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('No guidelines available.')
+            return
+          }
+          const snapEdge = !nE || (nS && nS.dist <= nE.dist) ? ('start' as const) : ('end' as const)
+          const nn = snapEdge === 'start' ? nS : nE
+          if (!nn) return
+          if (nn.dist <= eps) {
+            if (opts?.noopIfNoCandidate) return
+            setTimelineMessage('Already aligned to guideline.')
+            return
+          }
+          if (snapEdge === 'start') {
+            startS = roundToTenth(nn.v)
+            endS = roundToTenth(startS + dur)
+          } else {
+            endS = roundToTenth(nn.v)
+            startS = roundToTenth(endS - dur)
+          }
+          if (startS < minStartSeconds - 1e-6 || endS > maxEndSeconds + 1e-6) {
+            setTimelineMessage('Cannot snap (would overlap another visualizer).')
+            return
+          }
+        }
+      } else if (action === 'expand_start') {
+        const cand = prevStrict(start0)
+        if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
+          setTimelineMessage('No guideline before start.')
+          return
+        }
+        const nextStartS = roundToTenth(cand)
+        if (nextStartS < minStartSeconds - 1e-6 || nextStartS > end0 - minLen + 1e-6) {
+          setTimelineMessage('No room to expand start to that guideline.')
+          return
+        }
+        startS = nextStartS
+      } else if (action === 'contract_start') {
+        const cand = nextStrict(start0)
+        if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
+          setTimelineMessage('No guideline after start.')
+          return
+        }
+        const nextStartS = roundToTenth(cand)
+        if (nextStartS < minStartSeconds - 1e-6 || nextStartS > end0 - minLen + 1e-6) {
+          setTimelineMessage('No room to contract start to that guideline.')
+          return
+        }
+        startS = nextStartS
+      } else if (action === 'expand_end') {
+        const cand = nextStrict(end0)
+        if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
+          setTimelineMessage('No guideline after end.')
+          return
+        }
+        const nextEndS = roundToTenth(cand)
+        if (nextEndS > maxEndSeconds + 1e-6 || nextEndS < start0 + minLen - 1e-6) {
+          setTimelineMessage('No room to expand end to that guideline.')
+          return
+        }
+        endS = nextEndS
+      } else if (action === 'contract_end') {
+        const cand = prevStrict(end0)
+        if (cand == null) {
+          if (opts?.noopIfNoCandidate) return
+          setTimelineMessage('No guideline before end.')
+          return
+        }
+        const nextEndS = roundToTenth(cand)
+        if (nextEndS > maxEndSeconds + 1e-6 || nextEndS < start0 + minLen - 1e-6) {
+          setTimelineMessage('No room to contract end to that guideline.')
+          return
+        }
+        endS = nextEndS
+      }
+
+      startS = roundToTenth(startS)
+      endS = roundToTenth(endS)
+      if (!(endS > startS + minLen - 1e-6)) {
+        setTimelineMessage('Resulting duration is too small.')
+        return
+      }
+
+      snapshotUndo()
+      const nextSegs = prevSegs.slice()
+      nextSegs[idx] = { ...seg0, startSeconds: startS, endSeconds: endS }
+      nextSegs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+      const nextTimeline: any = { ...(timeline as any), visualizers: nextSegs }
+      setTimeline(nextTimeline)
+      void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+    },
+    [playhead, saveTimelineNow, snapshotUndo, timeline, totalSeconds]
+  )
+
   const applyTimelineGuidelineActionByKind = useCallback(
     (
       kind: TimelineCtxKind,
@@ -14631,6 +15817,7 @@ export default function CreateVideo() {
       if (kind === 'logo') return applyLogoGuidelineAction(id, action, opts)
       if (kind === 'lowerThird') return applyLowerThirdGuidelineAction(id, action, opts)
       if (kind === 'screenTitle') return applyScreenTitleGuidelineAction(id, action, opts)
+      if (kind === 'visualizer') return applyVisualizerGuidelineAction(id, action, opts)
       if (kind === 'videoOverlay') return applyVideoOverlayGuidelineAction(id, action, opts)
       if (kind === 'clip') return applyClipGuidelineAction(id, action, opts)
       if (kind === 'narration') return applyNarrationGuidelineAction(id, action, opts)
@@ -14644,6 +15831,7 @@ export default function CreateVideo() {
       applyLowerThirdGuidelineAction,
       applyNarrationGuidelineAction,
       applyScreenTitleGuidelineAction,
+      applyVisualizerGuidelineAction,
       applyStillGuidelineAction,
       applyVideoOverlayGuidelineAction,
       applyVideoOverlayStillGuidelineAction,
@@ -14926,6 +16114,15 @@ export default function CreateVideo() {
         return st
       })
 
+      const prevVisualizers: any[] = Array.isArray((tl as any).visualizers) ? (tl as any).visualizers : []
+      const nextVisualizers: any[] = prevVisualizers.map((v: any) => {
+        const a = roundToTenth(Number(v?.startSeconds || 0))
+        const b = roundToTenth(Number(v?.endSeconds || 0))
+        if (a + 1e-6 >= at) return { ...(v as any), startSeconds: roundToTenth(a + delta), endSeconds: roundToTenth(b + delta) }
+        if (b > at + 1e-6) return { ...(v as any), endSeconds: roundToTenth(b + delta) }
+        return v
+      })
+
       const prevNarration: any[] = Array.isArray((tl as any).narration) ? (tl as any).narration : []
       const nextNarration: any[] = prevNarration.map((n: any) => {
         const a = roundToTenth(Number(n?.startSeconds || 0))
@@ -14968,6 +16165,9 @@ export default function CreateVideo() {
         logos: nextLogos.slice().sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
         lowerThirds: nextLowerThirds.slice().sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
         screenTitles: nextScreenTitles
+          .slice()
+          .sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
+        visualizers: nextVisualizers
           .slice()
           .sort((a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))),
         narration: nextNarration
@@ -16369,7 +17569,7 @@ export default function CreateVideo() {
 
 		      // Special case: "armed" drags. Don't start mutating the timeline until the pointer has moved a bit,
 		      // otherwise a simple tap on the selected pill can open a context menu / modal.
-				      if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle' || drag.kind === 'videoOverlay' || drag.kind === 'videoOverlayStill' || drag.kind === 'clip' || drag.kind === 'narration' || drag.kind === 'audioSegment' || drag.kind === 'still') && (drag as any).armed) {
+          if ((drag.kind === 'logo' || drag.kind === 'lowerThird' || drag.kind === 'screenTitle' || drag.kind === 'visualizer' || drag.kind === 'videoOverlay' || drag.kind === 'videoOverlayStill' || drag.kind === 'clip' || drag.kind === 'narration' || drag.kind === 'audioSegment' || drag.kind === 'still') && (drag as any).armed) {
 			        const dx0 = e.clientX - drag.startClientX
 			        const dy0 = e.clientY - Number((drag as any).startClientY ?? e.clientY)
 			        const moved = Boolean((drag as any).moved)
@@ -17176,10 +18376,52 @@ export default function CreateVideo() {
 	          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
 	        }
 
-		        if (drag.kind === 'narration') {
-		          const prevNs: any[] = Array.isArray((prev as any).narration) ? (prev as any).narration : []
-		          const idx = prevNs.findIndex((n: any) => String(n?.id) === String((drag as any).narrationId))
-		          if (idx < 0) return prev
+        if (drag.kind === 'visualizer') {
+          const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+          const idx = prevVs.findIndex((v: any) => String(v?.id) === String((drag as any).visualizerId))
+          if (idx < 0) return prev
+          const v0 = prevVs[idx] as any
+          const nextVs = prevVs.slice()
+          let startS = Number(v0.startSeconds || 0)
+          let endS = Number(v0.endSeconds || 0)
+          const dur = Math.max(0.2, roundToTenth(Number(drag.startEndSeconds) - Number(drag.startStartSeconds)))
+          const maxEndSecondsLane = rippleEnabledRef.current ? MAX_TIMELINE_SECONDS : Number(drag.maxEndSeconds)
+          if (drag.edge === 'start') {
+            const nextStart = clamp(
+              roundToTenth(drag.startStartSeconds + deltaSeconds),
+              drag.minStartSeconds,
+              Math.max(drag.minStartSeconds, drag.startEndSeconds - minLen)
+            )
+            startS = nextStart
+          } else if (drag.edge === 'end') {
+            endS = clamp(
+              roundToTenth(drag.startEndSeconds + deltaSeconds),
+              Math.max(drag.startStartSeconds + minLen, drag.minStartSeconds + minLen),
+              maxEndSecondsLane
+            )
+          } else {
+            const maxStart = rippleEnabledRef.current
+              ? Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+              : drag.maxStartSeconds != null
+                ? Number(drag.maxStartSeconds)
+                : Math.max(drag.minStartSeconds, maxEndSecondsLane - dur)
+            startS = clamp(roundToTenth(drag.startStartSeconds + deltaSeconds), drag.minStartSeconds, maxStart)
+            endS = roundToTenth(startS + dur)
+          }
+          nextVs[idx] = { ...v0, startSeconds: startS, endSeconds: endS }
+          nextVs.sort((a: any, b: any) => Number(a.startSeconds) - Number(b.startSeconds) || String(a.id).localeCompare(String(b.id)))
+          const nextTimeline0: any = { ...(prev as any), visualizers: nextVs }
+          const nextTotal = computeTotalSecondsForTimeline(nextTimeline0 as any)
+          const nextTimeline1: any = extendViewportEndSecondsIfNeeded(prev as any, nextTimeline0 as any, nextTotal + VIEWPORT_PAD_SECONDS)
+          const capPlayhead = Math.max(0, nextTotal, MIN_VIEWPORT_SECONDS, Number((nextTimeline1 as any).viewportEndSeconds || 0))
+          const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, capPlayhead)
+          return { ...(nextTimeline1 as any), playheadSeconds: nextPlayhead }
+        }
+
+	        if (drag.kind === 'narration') {
+	          const prevNs: any[] = Array.isArray((prev as any).narration) ? (prev as any).narration : []
+	          const idx = prevNs.findIndex((n: any) => String(n?.id) === String((drag as any).narrationId))
+	          if (idx < 0) return prev
 		          const n0 = prevNs[idx] as any
 		          const nextNs = prevNs.slice()
 		          let startS = Number(n0.startSeconds || 0)
@@ -17345,6 +18587,20 @@ export default function CreateVideo() {
         return
       }
 
+      // For visualizers: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
+      if (drag && drag.kind === 'visualizer' && (drag as any).armed && !Boolean((drag as any).moved)) {
+        try {
+          const edgeIntent: any = drag.edge === 'start' ? 'start' : drag.edge === 'end' ? 'end' : 'move'
+          openTimelineCtxMenuForEdge('visualizer', String((drag as any).visualizerId), edgeIntent)
+          suppressNextTimelineClickRef.current = true
+          window.setTimeout(() => {
+            suppressNextTimelineClickRef.current = false
+          }, 0)
+        } catch {}
+        stopTrimDrag('visualizer_ctx_menu')
+        return
+      }
+
       // For video overlays: tap-release on a selected pill (armed, not moved) opens the context menu immediately.
       if (drag && drag.kind === 'videoOverlay' && (drag as any).armed && !Boolean((drag as any).moved)) {
         try {
@@ -17500,17 +18756,25 @@ export default function CreateVideo() {
                 return prev
               }
               next = { ...(prev as any), lowerThirds: ripple.items }
-            } else if (kind === 'screenTitle') {
-              const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
-              const ripple = rippleRightSimpleLane(prevSts as any, String((drag as any).screenTitleId))
-              if (!ripple) {
-                setTimelineMessage('Timeline max length reached.')
-                return prev
-              }
-              next = { ...(prev as any), screenTitles: ripple.items }
-            } else if (kind === 'narration') {
-              const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
-              const ripple = rippleRightSimpleLane(prevNs as any, String((drag as any).narrationId))
+    } else if (kind === 'screenTitle') {
+      const prevSts: ScreenTitle[] = Array.isArray((prev as any).screenTitles) ? ((prev as any).screenTitles as any) : []
+      const ripple = rippleRightSimpleLane(prevSts as any, String((drag as any).screenTitleId))
+      if (!ripple) {
+        setTimelineMessage('Timeline max length reached.')
+        return prev
+      }
+      next = { ...(prev as any), screenTitles: ripple.items }
+    } else if (kind === 'visualizer') {
+      const prevVs: VisualizerSegment[] = Array.isArray((prev as any).visualizers) ? ((prev as any).visualizers as any) : []
+      const ripple = rippleRightSimpleLane(prevVs as any, String((drag as any).visualizerId))
+      if (!ripple) {
+        setTimelineMessage('Timeline max length reached.')
+        return prev
+      }
+      next = { ...(prev as any), visualizers: ripple.items }
+    } else if (kind === 'narration') {
+      const prevNs: Narration[] = Array.isArray((prev as any).narration) ? ((prev as any).narration as any) : []
+      const ripple = rippleRightSimpleLane(prevNs as any, String((drag as any).narrationId))
               if (!ripple) {
                 setTimelineMessage('Timeline max length reached.')
                 return prev
@@ -18318,7 +19582,7 @@ export default function CreateVideo() {
                 </div>
               </>
             ) : null}
-            {narrationVisualizerActive ? (
+            {visualizerPreviewActive ? (
               <canvas
                 ref={narrationVizCanvasRef}
                 style={{
@@ -18794,12 +20058,13 @@ export default function CreateVideo() {
 	                  const y = e.clientY - rect.top
 	                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
 	                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-	                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
-	                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
-	                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
-	                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
-	                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
-	                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+                  const withinVisualizer = VISUALIZER_Y != null && y >= VISUALIZER_Y && y <= VISUALIZER_Y + PILL_H
+                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
+                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
+                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
 		                  const padPx = timelinePadPx || Math.floor((sc.clientWidth || 0) / 2)
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
@@ -18813,10 +20078,11 @@ export default function CreateVideo() {
 	                    withinVideoOverlay,
 	                    withinGraphics,
 	                    withinVideo,
-	                    withinNarration,
-	                    withinAudio,
-	                    t,
-	                  })
+                    withinNarration,
+                    withinAudio,
+                    withinVisualizer,
+                    t,
+                  })
 
 	                  if (withinLogo) {
 	                    cancelTimelineLongPress('new_pointerdown')
@@ -19004,7 +20270,7 @@ export default function CreateVideo() {
                     return
                   }
 
-		                  if (withinScreenTitle) {
+                    if (withinScreenTitle) {
 		                    cancelTimelineLongPress('new_pointerdown')
 		                    const st = findScreenTitleAtTime(t)
 		                    if (!st) return
@@ -19104,8 +20370,101 @@ export default function CreateVideo() {
                     }
                     try { sc.setPointerCapture(e.pointerId) } catch {}
                     dbg('armTrimDrag', { kind: 'screenTitle', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((st as any).id) })
-	                    return
-	                  }
+                    return
+                  }
+
+                  if (withinVisualizer) {
+                    cancelTimelineLongPress('new_pointerdown')
+                    const v = findVisualizerAtTime(t)
+                    if (!v) return
+                    const s = Number((v as any).startSeconds || 0)
+                    const e2 = Number((v as any).endSeconds || 0)
+                    const leftX = padPx + s * pxPerSecond
+                    const rightX = padPx + e2 * pxPerSecond
+                    let nearLeft = Math.abs(clickXInScroll - leftX) <= HANDLE_HIT_PX
+                    let nearRight = Math.abs(clickXInScroll - rightX) <= HANDLE_HIT_PX
+                    const inside = clickXInScroll >= leftX && clickXInScroll <= rightX
+                    if (!inside) return
+                    if (selectedVisualizerId === String((v as any).id)) {
+                      nearLeft = nearLeft || clickXInScroll - leftX <= EDGE_HIT_PX
+                      nearRight = nearRight || rightX - clickXInScroll <= EDGE_HIT_PX
+                    }
+
+                    const capEnd = MAX_TIMELINE_SECONDS
+                    const sorted = visualizers
+                      .slice()
+                      .sort((a: any, b: any) => Number((a as any).startSeconds) - Number((b as any).startSeconds))
+                    const pos = sorted.findIndex((x: any) => String(x?.id) === String((v as any).id))
+                    const prevEnd = pos > 0 ? Number((sorted[pos - 1] as any).endSeconds || 0) : 0
+                    const nextStart = pos >= 0 && pos < sorted.length - 1 ? Number((sorted[pos + 1] as any).startSeconds || capEnd) : capEnd
+                    const maxEndSeconds = clamp(roundToTenth(nextStart), 0, capEnd)
+                    const minStartSeconds = clamp(roundToTenth(prevEnd), 0, maxEndSeconds)
+
+                    if (!nearLeft && !nearRight) {
+                      const dur = Math.max(0.2, roundToTenth(e2 - s))
+                      const maxStartSeconds = clamp(roundToTenth(maxEndSeconds - dur), minStartSeconds, maxEndSeconds)
+                      beginBodyPanHoldMove(
+                        e,
+                        {
+                          kind: 'visualizer',
+                          visualizerId: String((v as any).id),
+                          edge: 'move',
+                          startStartSeconds: s,
+                          startEndSeconds: e2,
+                          minStartSeconds,
+                          maxEndSeconds,
+                          maxStartSeconds,
+                        },
+                        () => {
+                          setSelectedVisualizerId(String((v as any).id))
+                          setSelectedClipId(null)
+                          setSelectedVideoOverlayId(null)
+                          setSelectedVideoOverlayStillId(null)
+                          setSelectedGraphicId(null)
+                          setSelectedLogoId(null)
+                          setSelectedLowerThirdId(null)
+                          setSelectedScreenTitleId(null)
+                          setSelectedNarrationId(null)
+                          setSelectedStillId(null)
+                          setSelectedAudioId(null)
+                        },
+                        { kind: 'visualizer', edge: 'move', id: String((v as any).id) }
+                      )
+                      return
+                    }
+
+                    if (selectedVisualizerId !== String((v as any).id)) {
+                      setSelectedVisualizerId(String((v as any).id))
+                      setSelectedClipId(null)
+                      setSelectedVideoOverlayId(null)
+                      setSelectedVideoOverlayStillId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                    }
+                    e.preventDefault()
+                    trimDragRef.current = {
+                      kind: 'visualizer',
+                      visualizerId: String((v as any).id),
+                      edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight),
+                      pointerId: e.pointerId,
+                      startClientX: e.clientX,
+                      startClientY: e.clientY,
+                      startStartSeconds: s,
+                      startEndSeconds: e2,
+                      minStartSeconds,
+                      maxEndSeconds,
+                      armed: true,
+                      moved: false,
+                    }
+                    try { sc.setPointerCapture(e.pointerId) } catch {}
+                    dbg('armTrimDrag', { kind: 'visualizer', edge: pickTrimEdge(clickXInScroll, leftX, rightX, nearLeft, nearRight), id: String((v as any).id) })
+                    return
+                  }
 
                   if (withinVideoOverlay) {
                     cancelTimelineLongPress('new_pointerdown')
@@ -19950,14 +21309,15 @@ export default function CreateVideo() {
 	                  const clickXInScroll = (e.clientX - rect.left) + sc.scrollLeft
 	                  const x = clickXInScroll - padPx
 	                  const t = clamp(roundToTenth(x / pxPerSecond), 0, Math.max(0, totalSeconds))
-		                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
-		                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
-		                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
-		                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
-		                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
-		                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
-		                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
-		                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
+	                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
+	                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
+	                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+                  const withinVisualizer = VISUALIZER_Y != null && y >= VISUALIZER_Y && y <= VISUALIZER_Y + PILL_H
+	                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
+	                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
+	                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
+	                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
+	                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
 
 	                  if (withinLogo) {
 	                    const l = findLogoAtTime(t)
@@ -19967,10 +21327,14 @@ export default function CreateVideo() {
 	                    const lt = findLowerThirdAtTime(t)
 	                    if (lt) return
 	                  }
-		                  if (withinScreenTitle) {
-		                    const st = findScreenTitleAtTime(t)
-		                    if (st) return
-		                  }
+                  if (withinScreenTitle) {
+                    const st = findScreenTitleAtTime(t)
+                    if (st) return
+                  }
+                  if (withinVisualizer) {
+                    const v = findVisualizerAtTime(t)
+                    if (v) return
+                  }
                   if (withinVideoOverlay) {
                     const st = findVideoOverlayStillAtTime(t)
                     if (st) return
@@ -20052,23 +21416,70 @@ export default function CreateVideo() {
 		                  const withinLogo = LOGO_Y != null && y >= LOGO_Y && y <= LOGO_Y + PILL_H
 		                  const withinLowerThird = LOWER_THIRD_Y != null && y >= LOWER_THIRD_Y && y <= LOWER_THIRD_Y + PILL_H
 		                  const withinScreenTitle = SCREEN_TITLE_Y != null && y >= SCREEN_TITLE_Y && y <= SCREEN_TITLE_Y + PILL_H
+                  const withinVisualizer = VISUALIZER_Y != null && y >= VISUALIZER_Y && y <= VISUALIZER_Y + PILL_H
 		                  const withinVideoOverlay = VIDEO_OVERLAY_Y != null && y >= VIDEO_OVERLAY_Y && y <= VIDEO_OVERLAY_Y + PILL_H
 		                  const withinGraphics = GRAPHICS_Y != null && y >= GRAPHICS_Y && y <= GRAPHICS_Y + PILL_H
 		                  const withinVideo = VIDEO_Y != null && y >= VIDEO_Y && y <= VIDEO_Y + PILL_H
 		                  const withinNarration = NARRATION_Y != null && y >= NARRATION_Y && y <= NARRATION_Y + PILL_H
 		                  const withinAudio = AUDIO_Y != null && y >= AUDIO_Y && y <= AUDIO_Y + PILL_H
-		                  if (!withinLogo && !withinLowerThird && !withinScreenTitle && !withinVideoOverlay && !withinGraphics && !withinVideo && !withinNarration && !withinAudio) {
-		                    setSelectedClipId(null)
-		                    setSelectedVideoOverlayId(null)
-		                    setSelectedGraphicId(null)
-		                    setSelectedLogoId(null)
-		                    setSelectedLowerThirdId(null)
-		                    setSelectedScreenTitleId(null)
-		                    setSelectedNarrationId(null)
-		                    setSelectedStillId(null)
-		                    setSelectedAudioId(null)
-		                    return
-		                  }
+                  if (!withinLogo && !withinLowerThird && !withinScreenTitle && !withinVideoOverlay && !withinGraphics && !withinVideo && !withinNarration && !withinAudio && !withinVisualizer) {
+                    setSelectedClipId(null)
+                    setSelectedVideoOverlayId(null)
+                    setSelectedGraphicId(null)
+                    setSelectedLogoId(null)
+                    setSelectedLowerThirdId(null)
+                    setSelectedScreenTitleId(null)
+                    setSelectedNarrationId(null)
+                    setSelectedVisualizerId(null)
+                    setSelectedStillId(null)
+                    setSelectedAudioId(null)
+                    return
+                  }
+
+                  if (withinVisualizer) {
+                    const v = findVisualizerAtTime(t)
+                    if (!v) {
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      setSelectedVisualizerId(null)
+                      return
+                    }
+                    const s = Number((v as any).startSeconds || 0)
+                    const e2 = Number((v as any).endSeconds || 0)
+                    const leftX = padPx + s * pxPerSecond
+                    const rightX = padPx + e2 * pxPerSecond
+                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      setSelectedVisualizerId(null)
+                      return
+                    }
+                    if (maybeOpenCtxMenu('visualizer', String((v as any).id), selectedVisualizerId, leftX, rightX)) return
+                    setSelectedVisualizerId(String((v as any).id))
+                    setSelectedClipId(null)
+                    setSelectedVideoOverlayId(null)
+                    setSelectedVideoOverlayStillId(null)
+                    setSelectedGraphicId(null)
+                    setSelectedLogoId(null)
+                    setSelectedLowerThirdId(null)
+                    setSelectedScreenTitleId(null)
+                    setSelectedNarrationId(null)
+                    setSelectedStillId(null)
+                    setSelectedAudioId(null)
+                    return
+                  }
 
 	                  if (withinLogo) {
 	                    const l = findLogoAtTime(t)
@@ -20154,7 +21565,7 @@ export default function CreateVideo() {
 		                    return
 	                  }
 
-	                  if (withinScreenTitle) {
+                  if (withinScreenTitle) {
 	                    const st = findScreenTitleAtTime(t)
 	                    if (!st) {
 	                      setSelectedClipId(null)
@@ -20494,6 +21905,51 @@ export default function CreateVideo() {
 
                   if (selectedClipId === clip.id) {
                     if (maybeOpenCtxMenu('clip', String(clip.id), selectedClipId, leftX, rightX)) return
+                    return
+                  }
+
+                  if (withinVisualizer) {
+                    const v = findVisualizerAtTime(t)
+                    if (!v) {
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      setSelectedVisualizerId(null)
+                      return
+                    }
+                    const s = Number((v as any).startSeconds || 0)
+                    const e2 = Number((v as any).endSeconds || 0)
+                    const leftX = padPx + s * pxPerSecond
+                    const rightX = padPx + e2 * pxPerSecond
+                    if (clickXInScroll < leftX || clickXInScroll > rightX) {
+                      setSelectedClipId(null)
+                      setSelectedGraphicId(null)
+                      setSelectedLogoId(null)
+                      setSelectedLowerThirdId(null)
+                      setSelectedScreenTitleId(null)
+                      setSelectedNarrationId(null)
+                      setSelectedStillId(null)
+                      setSelectedAudioId(null)
+                      setSelectedVisualizerId(null)
+                      return
+                    }
+                    if (maybeOpenCtxMenu('visualizer', String((v as any).id), selectedVisualizerId, leftX, rightX)) return
+                    setSelectedVisualizerId(String((v as any).id))
+                    setSelectedClipId(null)
+                    setSelectedVideoOverlayId(null)
+                    setSelectedVideoOverlayStillId(null)
+                    setSelectedGraphicId(null)
+                    setSelectedLogoId(null)
+                    setSelectedLowerThirdId(null)
+                    setSelectedScreenTitleId(null)
+                    setSelectedNarrationId(null)
+                    setSelectedStillId(null)
+                    setSelectedAudioId(null)
                     return
                   }
 
@@ -21187,7 +22643,8 @@ export default function CreateVideo() {
       screenTitleCustomizeEditor ||
       (screenTitlePlacementEditor && screenTitlePlacementAdvancedOpen) ||
       clipEditor ||
-      narrationEditor ? (
+      narrationEditor ||
+      visualizerEditor ? (
         <React.Suspense fallback={null}>
           <LazyEditorModalHost
             ctx={{
@@ -21222,6 +22679,9 @@ export default function CreateVideo() {
               narration,
               narrationEditor,
               narrationEditorError,
+              visualizerEditor,
+              visualizerEditorError,
+              visualizerPresets,
               normalizeScreenTitlePlacementRectForEditor,
               openClipBackgroundPicker,
               overlayFreezeInsertBusy,
@@ -21235,6 +22695,7 @@ export default function CreateVideo() {
               saveLogoEditor,
               saveLowerThirdEditor,
               saveNarrationEditor,
+              saveVisualizerEditor,
               saveScreenTitleEditor,
               saveScreenTitlePlacement,
               saveStillEditor,
@@ -21271,6 +22732,8 @@ export default function CreateVideo() {
               setLowerThirdEditorError,
               setNarrationEditor,
               setNarrationEditorError,
+              setVisualizerEditor,
+              setVisualizerEditorError,
               setScreenTitleCustomizeEditor,
               setScreenTitleCustomizeError,
               setScreenTitleEditor,
@@ -21336,6 +22799,7 @@ export default function CreateVideo() {
               deleteLowerThirdById,
               deleteNarrationById,
               deleteScreenTitleById,
+              deleteVisualizerById,
               deleteStillById,
               deleteVideoOverlayById,
               deleteVideoOverlayStillById,
@@ -21346,12 +22810,14 @@ export default function CreateVideo() {
               duplicateLowerThirdById,
               duplicateNarrationById,
               duplicateScreenTitleById,
+              duplicateVisualizerById,
               duplicateStillById,
               duplicateVideoOverlayById,
               duplicateVideoOverlayStillById,
               ensureAudioConfigs,
               ensureScreenTitleFonts,
               ensureScreenTitlePresets,
+              ensureVisualizerPresets,
               getTimelineCtxSegmentEnd,
               getTimelineCtxSegmentStart,
               graphics,
@@ -21382,6 +22848,8 @@ export default function CreateVideo() {
               setScreenTitleCustomizeError,
               setScreenTitleEditor,
               setScreenTitleEditorError,
+              setVisualizerEditor,
+              setVisualizerEditorError,
               setSelectedAudioId,
               setSelectedClipId,
               setSelectedGraphicId,
@@ -21389,6 +22857,7 @@ export default function CreateVideo() {
               setSelectedLowerThirdId,
               setSelectedNarrationId,
               setSelectedScreenTitleId,
+              setSelectedVisualizerId,
               setSelectedStillId,
               setSelectedVideoOverlayId,
               setSelectedVideoOverlayStillId,
@@ -21408,6 +22877,7 @@ export default function CreateVideo() {
               splitLowerThirdById,
               splitNarrationById,
               splitScreenTitleById,
+              splitVisualizerById,
               splitStillById,
               splitVideoOverlayById,
               splitVideoOverlayStillById,
@@ -21419,6 +22889,7 @@ export default function CreateVideo() {
               totalSeconds,
               videoOverlayStills,
               videoOverlays,
+              visualizers,
             }}
           />
         </React.Suspense>
