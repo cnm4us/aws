@@ -2249,6 +2249,69 @@ export default function CreateVideo() {
     return visualizers.find((v: any) => String((v as any)?.id) === String(selectedVisualizerId)) || null
   }, [selectedVisualizerId, visualizers])
 
+  const syncVisualizersToSources = useCallback((tl: Timeline): Timeline => {
+    const vsRaw: any[] = Array.isArray((tl as any).visualizers) ? ((tl as any).visualizers as any[]) : []
+    if (!vsRaw.length) return tl
+    const clipMap = new Map<string, number>()
+    for (const c of tl.clips || []) {
+      clipMap.set(String((c as any).id), roundToTenth(Number((c as any).sourceStartSeconds || 0)))
+    }
+    const overlayMap = new Map<string, number>()
+    const overlaysRaw: any[] = Array.isArray((tl as any).videoOverlays) ? ((tl as any).videoOverlays as any[]) : []
+    for (const o of overlaysRaw) {
+      overlayMap.set(String((o as any).id), roundToTenth(Number((o as any).sourceStartSeconds || 0)))
+    }
+    const narrationRaw: any[] = Array.isArray((tl as any).narration) ? ((tl as any).narration as any[]) : []
+    const narrationMap = new Map<string, number>()
+    for (const n of narrationRaw) {
+      narrationMap.set(String((n as any).id), roundToTenth(Number((n as any).sourceStartSeconds || 0)))
+    }
+    const audioRaw: any[] = Array.isArray((tl as any).audioSegments) ? ((tl as any).audioSegments as any[]) : []
+    const audioMap = new Map<string, number>()
+    for (const a of audioRaw) {
+      audioMap.set(String((a as any).id), roundToTenth(Number((a as any).sourceStartSeconds || 0)))
+    }
+    let changed = false
+    const nextVs = vsRaw.map((v: any) => {
+      if (!v || typeof v !== 'object') return v
+      const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
+      const kind =
+        kindRaw === 'video_overlay'
+          ? 'video_overlay'
+          : kindRaw === 'video'
+            ? 'video'
+            : kindRaw === 'music'
+              ? 'music'
+              : 'narration'
+      const segId = String((v as any).audioSourceSegmentId || '')
+      if (!segId) return v
+      const sourceStart =
+        kind === 'video'
+          ? clipMap.get(segId)
+          : kind === 'video_overlay'
+            ? overlayMap.get(segId)
+            : kind === 'music'
+              ? audioMap.get(segId)
+              : narrationMap.get(segId)
+      if (sourceStart == null || !Number.isFinite(sourceStart)) return v
+      const cur = (v as any).audioSourceStartSeconds
+      if (cur == null || Math.abs(Number(cur) - sourceStart) > 1e-6) {
+        changed = true
+        return { ...(v as any), audioSourceStartSeconds: sourceStart }
+      }
+      return v
+    })
+    if (!changed) return tl
+    return { ...(tl as any), visualizers: nextVs }
+  }, [])
+
+  useEffect(() => {
+    if (hydratingRef.current) return
+    if (!(Array.isArray((timeline as any).visualizers) && (timeline as any).visualizers.length)) return
+    const next = syncVisualizersToSources(timeline)
+    if (next !== timeline) setTimeline(next)
+  }, [syncVisualizersToSources, timeline])
+
   const stills = useMemo(() => (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as Still[]) : []), [timeline])
   const selectedStill = useMemo(() => {
     if (!selectedStillId) return null
@@ -4727,6 +4790,27 @@ export default function CreateVideo() {
     return null
   }, [activeVisualizerPreview, hasVisualizerSegments, legacyNarrationVisualizer])
 
+  const visualizerEnvelope = useMemo(() => {
+    if (!activeVisualizerPreview) return null
+    const seg: any = (activeVisualizerPreview as any).source?.seg
+    const uploadId = Number(seg?.uploadId || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return null
+    const env = audioEnvelopeByUploadId[uploadId]
+    return { uploadId, env }
+  }, [activeVisualizerPreview, audioEnvelopeByUploadId])
+
+  useEffect(() => {
+    if (!activeVisualizerPreview) return
+    const kind = String((activeVisualizerPreview.source as any)?.kind || '')
+    if (kind !== 'video' && kind !== 'video_overlay') return
+    const seg: any = (activeVisualizerPreview as any).source?.seg
+    const uploadId = Number(seg?.uploadId || 0)
+    if (!Number.isFinite(uploadId) || uploadId <= 0) return
+    if (!audioEnvelopeByUploadId[uploadId]) {
+      ensureAudioEnvelope(uploadId).catch(() => {})
+    }
+  }, [activeVisualizerPreview, audioEnvelopeByUploadId, ensureAudioEnvelope])
+
   const visualizerPreviewMedia = useMemo(() => {
     if (!visualizerPreviewConfig) return null
     if (!activeVisualizerPreview) return narrationPreviewRef.current
@@ -4767,14 +4851,39 @@ export default function CreateVideo() {
       return
     }
 
+    const envelopePreferred =
+      Boolean(activeVisualizerPreview) &&
+      (String((activeVisualizerPreview?.source as any)?.kind || '') === 'video' ||
+        String((activeVisualizerPreview?.source as any)?.kind || '') === 'video_overlay')
     const analyser = setupVisualizerPreviewAnalyser(visualizerPreviewMedia)
-    if (!analyser) {
+    const useEnvelope = envelopePreferred && !analyser
+    if (!useEnvelope && !analyser) {
       const ctx = narrationVizCanvasRef.current?.getContext('2d')
       if (ctx) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
       return
     }
     const canvas = narrationVizCanvasRef.current
     if (!canvas) return
+
+    const sampleEnvelope = (points: any[], t: number) => {
+      if (!points.length) return 0
+      let prev = points[0]
+      for (const p of points) {
+        const pt = Number((p as any).t)
+        if (!Number.isFinite(pt)) continue
+        if (pt >= t) {
+          const v0 = Number((prev as any).v)
+          const v1 = Number((p as any).v)
+          if (!Number.isFinite(v0) || !Number.isFinite(v1)) return 0
+          const dt = Math.max(1e-6, pt - Number((prev as any).t || 0))
+          const k = Math.max(0, Math.min(1, (t - Number((prev as any).t || 0)) / dt))
+          return clamp(v0 + (v1 - v0) * k, 0, 1)
+        }
+        prev = p
+      }
+      const vlast = Number((prev as any).v)
+      return Number.isFinite(vlast) ? clamp(vlast, 0, 1) : 0
+    }
 
     const draw = () => {
       const ctx = canvas.getContext('2d')
@@ -4791,6 +4900,10 @@ export default function CreateVideo() {
       ctx.clearRect(0, 0, w, h)
 
       const viz = visualizerPreviewConfig || DEFAULT_VISUALIZER_PRESET_SNAPSHOT
+      const envTime =
+        activeVisualizerPreview && Number.isFinite(Number((activeVisualizerPreview as any).audioTime))
+          ? Number((activeVisualizerPreview as any).audioTime)
+          : performance.now() / 1000
       const clipMode = (viz as any).clipMode || 'none'
       const clipInsetPct = Number.isFinite(Number((viz as any).clipInsetPct)) ? Math.max(0, Math.min(40, Number((viz as any).clipInsetPct))) : 0
       const clipHeightPct = Number.isFinite(Number((viz as any).clipHeightPct)) ? Math.max(10, Math.min(100, Number((viz as any).clipHeightPct))) : 100
@@ -4832,9 +4945,27 @@ export default function CreateVideo() {
       ctx.fillStyle = grad || fg
 
       if (viz.style === 'radial_bars') {
-        const freq = narrationVizFreqRef.current || new Uint8Array(analyser.frequencyBinCount)
+        const envPoints =
+          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
+            ? ((visualizerEnvelope.env as any).points as any[])
+            : null
+        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
+        const freq = narrationVizFreqRef.current || new Uint8Array(analyser ? analyser.frequencyBinCount : 128)
         narrationVizFreqRef.current = freq
-        analyser.getByteFrequencyData(freq)
+        if (useEnvelope) {
+          for (let i = 0; i < freq.length; i++) {
+            const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
+            const phase = envTime * 18
+            const wobble =
+              0.35 +
+              0.65 *
+                Math.abs(Math.sin(t * Math.PI * 2 + phase)) *
+                (0.55 + 0.45 * Math.abs(Math.sin(t * 11 + phase * 1.3)))
+            freq[i] = Math.round(amp * wobble * 255)
+          }
+        } else if (analyser) {
+          analyser.getByteFrequencyData(freq)
+        }
         const bars = 64
         const cx = w / 2
         const cy = h / 2
@@ -4859,9 +4990,27 @@ export default function CreateVideo() {
         }
         ctx.stroke()
       } else if (viz.style === 'spectrum_bars') {
-        const freq = narrationVizFreqRef.current || new Uint8Array(analyser.frequencyBinCount)
+        const envPoints =
+          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
+            ? ((visualizerEnvelope.env as any).points as any[])
+            : null
+        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
+        const freq = narrationVizFreqRef.current || new Uint8Array(analyser ? analyser.frequencyBinCount : 128)
         narrationVizFreqRef.current = freq
-        analyser.getByteFrequencyData(freq)
+        if (useEnvelope) {
+          for (let i = 0; i < freq.length; i++) {
+            const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
+            const phase = envTime * 22
+            const wobble =
+              0.2 +
+              0.8 *
+                Math.abs(Math.sin(t * 8 + phase)) *
+                (0.5 + 0.5 * Math.abs(Math.sin(t * 21 - phase * 1.1)))
+            freq[i] = Math.round(amp * wobble * 255)
+          }
+        } else if (analyser) {
+          analyser.getByteFrequencyData(freq)
+        }
         const bars = 48
         const gap = 2
         const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
@@ -4874,9 +5023,28 @@ export default function CreateVideo() {
           ctx.fillRect(x, h - bh, barW, bh)
         }
       } else {
-        const data = narrationVizTimeRef.current || new Uint8Array(analyser.fftSize)
+        const envPoints =
+          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
+            ? ((visualizerEnvelope.env as any).points as any[])
+            : null
+        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
+        const data = narrationVizTimeRef.current || new Uint8Array(analyser ? analyser.fftSize : 512)
         narrationVizTimeRef.current = data
-        analyser.getByteTimeDomainData(data)
+        if (useEnvelope) {
+          for (let i = 0; i < data.length; i++) {
+            const t = data.length <= 1 ? 0 : i / (data.length - 1)
+            const phase = envTime * 16
+            const wave =
+              0.5 +
+              0.5 *
+                (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
+                  Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
+                  Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
+            data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
+          }
+        } else if (analyser) {
+          analyser.getByteTimeDomainData(data)
+        }
         ctx.lineWidth = 2
         ctx.beginPath()
         for (let i = 0; i < data.length; i++) {
@@ -19465,6 +19633,7 @@ export default function CreateVideo() {
             ) : null}
             <video
               ref={bgVideoRef}
+              crossOrigin="anonymous"
               playsInline
               preload="metadata"
               muted
@@ -19479,6 +19648,7 @@ export default function CreateVideo() {
             ) : null}
             <video
               ref={videoRef}
+              crossOrigin="anonymous"
               playsInline
               preload="metadata"
               poster={activePoster || undefined}
@@ -19564,6 +19734,7 @@ export default function CreateVideo() {
                 <div style={activeVideoOverlayPreview.style}>
                   <video
                     ref={overlayVideoRef}
+                    crossOrigin="anonymous"
                     playsInline
                     preload="metadata"
                     poster={activeVideoOverlayPreview.thumbUrl || undefined}
@@ -22657,6 +22828,7 @@ export default function CreateVideo() {
               buildScreenTitlePresetSnapshot,
               clipEditor,
               clipEditorError,
+              clipStarts,
               defaultScreenTitlePlacementRect,
               dimsByUploadId,
               durationsByUploadId,
@@ -22757,6 +22929,7 @@ export default function CreateVideo() {
               toggleAudioPreview,
               totalSeconds,
               totalSecondsVideo,
+              videoOverlayStarts,
               videoOverlayEditor,
               videoOverlayEditorError,
               videoOverlayStillEditor,

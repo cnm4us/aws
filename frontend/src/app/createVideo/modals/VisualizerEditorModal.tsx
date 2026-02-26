@@ -21,7 +21,9 @@ type VisualizerEditorModalProps = {
   setVisualizerEditorError: React.Dispatch<React.SetStateAction<string | null>>
   visualizerPresets: VisualizerPresetItem[]
   clips: any[]
+  clipStarts: number[]
   videoOverlays: any[]
+  videoOverlayStarts: number[]
   narration: any[]
   audioSegments: any[]
   namesByUploadId: Record<number, string>
@@ -38,7 +40,9 @@ export default function VisualizerEditorModal({
   setVisualizerEditorError,
   visualizerPresets,
   clips,
+  clipStarts,
   videoOverlays,
+  videoOverlayStarts,
   narration,
   audioSegments,
   namesByUploadId,
@@ -86,6 +90,54 @@ export default function VisualizerEditorModal({
       setVisualizerEditor((prev) => (prev ? { ...prev, audioSourceSegmentId: sourceOptions[0].id } : prev))
     }
   }, [setVisualizerEditor, sourceOptions, visualizerEditor])
+
+  const pickRebindCandidate = React.useCallback(() => {
+    const start = Number(visualizerEditor.start)
+    const end = Number(visualizerEditor.end)
+    const kind = String(visualizerEditor.audioSourceKind || 'narration')
+    const rangeStart = Number.isFinite(start) ? start : 0
+    const rangeEnd = Number.isFinite(end) && end > rangeStart ? end : rangeStart
+
+    const pickFrom = (segments: Array<{ id: string; startSeconds: number; endSeconds: number }>) => {
+      if (!segments.length) return null
+      const within = segments.find((s) => rangeStart + 1e-6 >= s.startSeconds && rangeStart <= s.endSeconds - 1e-6)
+      if (within) return within.id
+      const overlap = segments.find((s) => s.startSeconds < rangeEnd - 1e-6 && s.endSeconds > rangeStart + 1e-6)
+      if (overlap) return overlap.id
+      return segments[0].id
+    }
+
+    if (kind === 'video') {
+      const segments = (clips || []).map((c: any, idx: number) => ({
+        id: String(c?.id || ''),
+        startSeconds: Number((clipStarts as any)[idx] || 0),
+        endSeconds: Number((clipStarts as any)[idx] || 0) + Math.max(0, Number(c?.sourceEndSeconds || 0) - Number(c?.sourceStartSeconds || 0)),
+      }))
+      return pickFrom(segments)
+    }
+    if (kind === 'video_overlay') {
+      const segments = (videoOverlays || []).map((o: any, idx: number) => ({
+        id: String(o?.id || ''),
+        startSeconds: Number((videoOverlayStarts as any)[idx] || 0),
+        endSeconds: Number((videoOverlayStarts as any)[idx] || 0) + Math.max(0, Number(o?.sourceEndSeconds || 0) - Number(o?.sourceStartSeconds || 0)),
+      }))
+      return pickFrom(segments)
+    }
+    if (kind === 'music') {
+      const segments = (audioSegments || []).map((s: any) => ({
+        id: String(s?.id || ''),
+        startSeconds: Number(s?.startSeconds || 0),
+        endSeconds: Number(s?.endSeconds || 0),
+      }))
+      return pickFrom(segments)
+    }
+    const segments = (narration || []).map((n: any) => ({
+      id: String(n?.id || ''),
+      startSeconds: Number(n?.startSeconds || 0),
+      endSeconds: Number(n?.endSeconds || 0),
+    }))
+    return pickFrom(segments)
+  }, [audioSegments, clipStarts, clips, narration, videoOverlayStarts, videoOverlays, visualizerEditor])
 
   return (
     <div
@@ -206,6 +258,31 @@ export default function VisualizerEditorModal({
                 ))}
               </select>
             </label>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setVisualizerEditorError(null)
+                const nextId = pickRebindCandidate()
+                if (!nextId) {
+                  setVisualizerEditorError('No matching source segment to rebind.')
+                  return
+                }
+                setVisualizerEditor((prev) => (prev ? { ...prev, audioSourceSegmentId: nextId } : prev))
+              }}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(0,0,0,0.55)',
+                color: '#fff',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Rebind
+            </button>
           </div>
         </div>
 

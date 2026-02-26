@@ -51,6 +51,7 @@ export default function EditorModalHost(props: any) {
     visualizerEditor,
     visualizerEditorError,
     visualizerPresets,
+    clipStarts,
     normalizeScreenTitlePlacementRectForEditor,
     openClipBackgroundPicker,
     overlayFreezeInsertBusy,
@@ -123,6 +124,7 @@ export default function EditorModalHost(props: any) {
     stillEditor,
     stillEditorError,
     timeline,
+    videoOverlayStarts,
     toggleAudioPreview,
     totalSeconds,
     totalSecondsVideo,
@@ -220,7 +222,9 @@ export default function EditorModalHost(props: any) {
             setVisualizerEditorError={setVisualizerEditorError}
             visualizerPresets={visualizerPresets}
             clips={timeline.clips}
+            clipStarts={clipStarts as any}
             videoOverlays={videoOverlays}
+            videoOverlayStarts={videoOverlayStarts as any}
             narration={narration}
             audioSegments={audioSegments}
             namesByUploadId={namesByUploadId}
