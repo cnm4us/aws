@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import ScreenTitlePresetsPage from './ScreenTitlePresets'
 import { LibraryCreateClipPage, LibraryListPage } from './Library'
+import VisualizerPresetsPage from './VisualizerPresets'
 import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 import nebulaBgImage from './images/nebula_bg.jpg'
@@ -4223,6 +4224,9 @@ export default function Assets() {
     if (route.rest.length === 0) return <ScreenTitleStylesAssetsPage />
     return <ScreenTitlePresetsPage />
   }
+  if (route?.type === 'visualizers') {
+    return <VisualizerPresetsPage />
+  }
 
   if (route?.type === 'shared') {
     if (route.rest[0] === 'create-clip') {
@@ -4362,6 +4366,7 @@ export default function Assets() {
       { key: 'video', label: 'Videos', description: 'Raw uploaded videos (source clips).', href: '/assets/video' },
       { key: 'narration', label: 'Narration', description: 'Voice clips for narration track.', href: '/assets/narration' },
       { key: 'audio', label: 'Audio/Music', description: 'System + user music tracks.', href: '/assets/audio' },
+      { key: 'visualizer', label: 'Visualizers', description: 'Audio visualizer presets for your timeline.', href: '/assets/visualizers' },
     ]
     if (mode === 'pick') {
       base.splice(3, 0, { key: 'video_overlay', label: 'Video Overlays', description: 'Picture-in-picture videos (source clips).', href: '/assets/video-overlay' })

@@ -507,6 +507,45 @@ export async function ensureSchema(db: DB) {
             }
           } catch {}
 
+          // --- Visualizer presets (plan_105) ---
+          await db.query(`
+            CREATE TABLE IF NOT EXISTS visualizer_presets (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              owner_user_id BIGINT UNSIGNED NOT NULL,
+              name VARCHAR(120) NOT NULL,
+              description TEXT NULL,
+              style ENUM('wave_line','wave_fill','spectrum_bars','radial_bars') NOT NULL DEFAULT 'wave_line',
+              fg_color VARCHAR(32) NOT NULL DEFAULT '#d4af37',
+              bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent',
+              opacity DECIMAL(4,2) NOT NULL DEFAULT 1.00,
+              scale ENUM('linear','log') NOT NULL DEFAULT 'linear',
+              gradient_enabled TINYINT(1) NOT NULL DEFAULT 0,
+              gradient_start VARCHAR(32) NOT NULL DEFAULT '#d4af37',
+              gradient_end VARCHAR(32) NOT NULL DEFAULT '#f7d774',
+              gradient_mode ENUM('vertical','horizontal') NOT NULL DEFAULT 'vertical',
+              clip_mode ENUM('none','rect') NOT NULL DEFAULT 'none',
+              clip_inset_pct TINYINT UNSIGNED NOT NULL DEFAULT 6,
+              clip_height_pct TINYINT UNSIGNED NOT NULL DEFAULT 100,
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              archived_at TIMESTAMP NULL DEFAULT NULL,
+              KEY idx_visualizer_owner_archived (owner_user_id, archived_at, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `);
+          try { await db.query(`CREATE INDEX IF NOT EXISTS idx_visualizer_archived ON visualizer_presets (archived_at, id)`); } catch {}
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS style ENUM('wave_line','wave_fill','spectrum_bars','radial_bars') NOT NULL DEFAULT 'wave_line'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS fg_color VARCHAR(32) NOT NULL DEFAULT '#d4af37'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS opacity DECIMAL(4,2) NOT NULL DEFAULT 1.00`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS scale ENUM('linear','log') NOT NULL DEFAULT 'linear'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_enabled TINYINT(1) NOT NULL DEFAULT 0`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_start VARCHAR(32) NOT NULL DEFAULT '#d4af37'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_end VARCHAR(32) NOT NULL DEFAULT '#f7d774'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_mode ENUM('vertical','horizontal') NOT NULL DEFAULT 'vertical'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_mode ENUM('none','rect') NOT NULL DEFAULT 'none'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_inset_pct TINYINT UNSIGNED NOT NULL DEFAULT 6`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_height_pct TINYINT UNSIGNED NOT NULL DEFAULT 100`);
+
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`
 	          CREATE TABLE IF NOT EXISTS lower_third_templates (
