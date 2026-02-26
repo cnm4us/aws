@@ -174,22 +174,41 @@ function normalizeNarrationVisualizerConfig(raw: any): {
   enabled: boolean
   style: 'wave_line' | 'wave_fill' | 'spectrum_bars'
   fgColor: string
+  gradientEnabled?: boolean
+  gradientStart?: string
+  gradientEnd?: string
+  gradientMode?: 'vertical' | 'horizontal'
+  clipMode?: 'none' | 'rect'
+  clipInsetPct?: number
+  clipHeightPct?: number
   bgColor: string | 'transparent'
   opacity: number
   scale: 'linear' | 'log'
 } {
   const styleRaw = String(raw?.style || 'wave_line').trim().toLowerCase()
-  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars'])
-  const style = styleAllowed.has(styleRaw) ? (styleRaw as any) : 'wave_line'
+  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars', 'radial_bars'])
+  const mappedStyle = styleRaw === 'radial_bars' ? 'spectrum_bars' : styleRaw
+  const style = styleAllowed.has(styleRaw) ? (mappedStyle as any) : 'wave_line'
   const scaleRaw = String(raw?.scale || 'linear').trim().toLowerCase()
   const scale = scaleRaw === 'log' ? 'log' : 'linear'
   const fgColor = normalizeHexColor(raw?.fgColor, '#d4af37')
+  const gradientEnabled = raw?.gradientEnabled === true
+  const gradientStart = normalizeHexColor(raw?.gradientStart, fgColor)
+  const gradientEnd = normalizeHexColor(raw?.gradientEnd, '#f7d774')
+  const gradientModeRaw = String(raw?.gradientMode || 'vertical').trim().toLowerCase()
+  const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
+  const clipModeRaw = String(raw?.clipMode || 'none').trim().toLowerCase()
+  const clipMode = clipModeRaw === 'rect' ? 'rect' : 'none'
+  const clipInsetRaw = Number(raw?.clipInsetPct)
+  const clipInsetPct = Number.isFinite(clipInsetRaw) ? clamp(clipInsetRaw, 0, 40) : 6
+  const clipHeightRaw = Number(raw?.clipHeightPct)
+  const clipHeightPct = Number.isFinite(clipHeightRaw) ? clamp(clipHeightRaw, 10, 100) : 100
   const bgRaw = String(raw?.bgColor || 'transparent').trim().toLowerCase()
   const bgColor = bgRaw === 'transparent' ? 'transparent' : normalizeHexColor(bgRaw, '#000000')
   const opacityRaw = Number(raw?.opacity)
   const opacity = Number.isFinite(opacityRaw) ? clamp(opacityRaw, 0, 1) : 1
   const enabled = raw?.enabled === true
-  return { enabled, style, fgColor, bgColor, opacity, scale }
+  return { enabled, style, fgColor, gradientEnabled, gradientStart, gradientEnd, gradientMode, clipMode, clipInsetPct, clipHeightPct, bgColor, opacity, scale }
 }
 
 function hexToFfmpegColor(hex: string): string {

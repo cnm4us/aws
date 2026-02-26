@@ -4508,16 +4508,74 @@ export default function CreateVideo() {
       ctx.clearRect(0, 0, w, h)
 
       const viz = activeNarrationVisualizer || DEFAULT_NARRATION_VISUALIZER
+      const clipMode = (viz as any).clipMode || 'none'
+      const clipInsetPct = Number.isFinite(Number((viz as any).clipInsetPct)) ? Math.max(0, Math.min(40, Number((viz as any).clipInsetPct))) : 0
+      const clipHeightPct = Number.isFinite(Number((viz as any).clipHeightPct)) ? Math.max(10, Math.min(100, Number((viz as any).clipHeightPct))) : 100
+      let didClip = false
+      if (clipMode === 'rect' && (clipInsetPct > 0 || clipHeightPct < 100)) {
+        const insetX = Math.round((w * clipInsetPct) / 100)
+        const insetY = Math.round((h * clipInsetPct) / 100)
+        const desiredH = Math.max(1, Math.round((h * clipHeightPct) / 100))
+        const maxH = Math.max(1, h - insetY * 2)
+        const clipH = Math.min(maxH, desiredH)
+        const top = Math.round(insetY + (maxH - clipH) / 2)
+        const clipW = Math.max(1, w - insetX * 2)
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(insetX, top, clipW, clipH)
+        ctx.clip()
+        didClip = true
+      }
+
       if (viz.bgColor && viz.bgColor !== 'transparent') {
         ctx.fillStyle = viz.bgColor
         ctx.fillRect(0, 0, w, h)
       }
 
       ctx.globalAlpha = Number.isFinite(viz.opacity) ? Math.max(0, Math.min(1, viz.opacity)) : 1
-      ctx.strokeStyle = viz.fgColor || '#d4af37'
-      ctx.fillStyle = viz.fgColor || '#d4af37'
+      const fg = viz.fgColor || '#d4af37'
+      const gradientOn = (viz as any).gradientEnabled && (viz as any).gradientStart && (viz as any).gradientEnd
+      const grad =
+        gradientOn && w > 0 && h > 0
+          ? (() => {
+              const isHorizontal = (viz as any).gradientMode === 'horizontal'
+              const g = ctx.createLinearGradient(0, 0, isHorizontal ? w : 0, isHorizontal ? 0 : h)
+              g.addColorStop(0, String((viz as any).gradientStart || fg))
+              g.addColorStop(1, String((viz as any).gradientEnd || fg))
+              return g
+            })()
+          : null
+      ctx.strokeStyle = grad || fg
+      ctx.fillStyle = grad || fg
 
-      if (viz.style === 'spectrum_bars') {
+      if (viz.style === 'radial_bars') {
+        const freq = narrationVizFreqRef.current || new Uint8Array(analyser.frequencyBinCount)
+        narrationVizFreqRef.current = freq
+        analyser.getByteFrequencyData(freq)
+        const bars = 64
+        const cx = w / 2
+        const cy = h / 2
+        const minDim = Math.min(w, h)
+        const inner = Math.max(6, minDim * 0.18)
+        const maxLen = Math.max(10, minDim * 0.32)
+        ctx.lineWidth = 2
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        for (let i = 0; i < bars; i++) {
+          const t = bars <= 1 ? 0 : i / bars
+          const idx = viz.scale === 'log' ? Math.floor(Math.pow(t, 2) * (freq.length - 1)) : Math.floor(t * (freq.length - 1))
+          const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+          const len = inner + v * maxLen
+          const ang = t * Math.PI * 2 - Math.PI / 2
+          const x0 = cx + Math.cos(ang) * inner
+          const y0 = cy + Math.sin(ang) * inner
+          const x1 = cx + Math.cos(ang) * len
+          const y1 = cy + Math.sin(ang) * len
+          ctx.moveTo(x0, y0)
+          ctx.lineTo(x1, y1)
+        }
+        ctx.stroke()
+      } else if (viz.style === 'spectrum_bars') {
         const freq = narrationVizFreqRef.current || new Uint8Array(analyser.frequencyBinCount)
         narrationVizFreqRef.current = freq
         analyser.getByteFrequencyData(freq)
@@ -4553,6 +4611,9 @@ export default function CreateVideo() {
         } else {
           ctx.stroke()
         }
+      }
+      if (didClip) {
+        try { ctx.restore() } catch {}
       }
       ctx.globalAlpha = 1
       narrationVizRafRef.current = window.requestAnimationFrame(draw)

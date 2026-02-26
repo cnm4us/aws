@@ -269,8 +269,15 @@ export type CreateVideoNarrationSegmentV1 = {
   boostDb?: number
   visualizer?: {
     enabled?: boolean
-    style?: 'wave_line' | 'wave_fill' | 'spectrum_bars'
+    style?: 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
     fgColor?: string
+    gradientEnabled?: boolean
+    gradientStart?: string
+    gradientEnd?: string
+    gradientMode?: 'vertical' | 'horizontal'
+    clipMode?: 'none' | 'rect'
+    clipInsetPct?: number
+    clipHeightPct?: number
     bgColor?: string | 'transparent'
     opacity?: number
     scale?: 'linear' | 'log'

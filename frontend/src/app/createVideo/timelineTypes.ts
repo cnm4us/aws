@@ -171,12 +171,19 @@ export type Narration = {
   visualizer?: NarrationVisualizerConfig
 }
 
-export type NarrationVisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars'
+export type NarrationVisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
 export type NarrationVisualizerScale = 'linear' | 'log'
 export type NarrationVisualizerConfig = {
   enabled: boolean
   style: NarrationVisualizerStyle
   fgColor: string
+  gradientEnabled?: boolean
+  gradientStart?: string
+  gradientEnd?: string
+  gradientMode?: 'vertical' | 'horizontal'
+  clipMode?: 'none' | 'rect'
+  clipInsetPct?: number
+  clipHeightPct?: number
   bgColor: string | 'transparent'
   opacity: number
   scale: NarrationVisualizerScale
@@ -186,6 +193,13 @@ export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
   enabled: false,
   style: 'wave_line',
   fgColor: '#d4af37',
+  gradientEnabled: false,
+  gradientStart: '#d4af37',
+  gradientEnd: '#f7d774',
+  gradientMode: 'vertical',
+  clipMode: 'none',
+  clipInsetPct: 6,
+  clipHeightPct: 100,
   bgColor: 'transparent',
   opacity: 1,
   scale: 'linear',
@@ -193,17 +207,28 @@ export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
 
 export function normalizeNarrationVisualizer(raw: any): NarrationVisualizerConfig {
   const styleRaw = String(raw?.style || DEFAULT_NARRATION_VISUALIZER.style).trim().toLowerCase()
-  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars'])
+  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars', 'radial_bars'])
   const style = styleAllowed.has(styleRaw) ? (styleRaw as NarrationVisualizerStyle) : DEFAULT_NARRATION_VISUALIZER.style
   const scaleRaw = String(raw?.scale || DEFAULT_NARRATION_VISUALIZER.scale).trim().toLowerCase()
   const scale = scaleRaw === 'log' ? 'log' : 'linear'
   const fgColor = normalizeHexColor(raw?.fgColor, DEFAULT_NARRATION_VISUALIZER.fgColor)
+  const gradientEnabled = raw?.gradientEnabled === true
+  const gradientStart = normalizeHexColor(raw?.gradientStart, fgColor)
+  const gradientEnd = normalizeHexColor(raw?.gradientEnd, DEFAULT_NARRATION_VISUALIZER.gradientEnd || '#f7d774')
+  const gradientModeRaw = String(raw?.gradientMode || DEFAULT_NARRATION_VISUALIZER.gradientMode || 'vertical').trim().toLowerCase()
+  const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
+  const clipModeRaw = String(raw?.clipMode || DEFAULT_NARRATION_VISUALIZER.clipMode || 'none').trim().toLowerCase()
+  const clipMode = clipModeRaw === 'rect' ? 'rect' : 'none'
+  const clipInsetRaw = Number(raw?.clipInsetPct)
+  const clipInsetPct = Number.isFinite(clipInsetRaw) ? Math.max(0, Math.min(40, clipInsetRaw)) : (DEFAULT_NARRATION_VISUALIZER.clipInsetPct || 0)
+  const clipHeightRaw = Number(raw?.clipHeightPct)
+  const clipHeightPct = Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : (DEFAULT_NARRATION_VISUALIZER.clipHeightPct || 100)
   const bgRaw = String(raw?.bgColor || DEFAULT_NARRATION_VISUALIZER.bgColor).trim().toLowerCase()
   const bgColor = bgRaw === 'transparent' ? 'transparent' : normalizeHexColor(bgRaw, '#000000')
   const opacityRaw = Number(raw?.opacity)
   const opacity = Number.isFinite(opacityRaw) ? Math.max(0, Math.min(1, opacityRaw)) : DEFAULT_NARRATION_VISUALIZER.opacity
   const enabled = raw?.enabled === true
-  return { enabled, style, fgColor, bgColor, opacity, scale }
+  return { enabled, style, fgColor, gradientEnabled, gradientStart, gradientEnd, gradientMode, clipMode, clipInsetPct, clipHeightPct, bgColor, opacity, scale }
 }
 
 function normalizeHexColor(raw: any, fallback: string): string {
