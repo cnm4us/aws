@@ -4975,20 +4975,21 @@ export default function CreateVideo() {
         ctx.scale(scale, scale)
       } else {
         ctx.translate(boxX, boxY)
-        ctx.scale(scaleX, scaleY)
       }
+      const drawW = placement.fitMode === 'cover' ? baseW : boxW
+      const drawH = placement.fitMode === 'cover' ? baseH : boxH
       const clipMode = (viz as any).clipMode || 'none'
       const clipInsetPct = Number.isFinite(Number((viz as any).clipInsetPct)) ? Math.max(0, Math.min(40, Number((viz as any).clipInsetPct))) : 0
       const clipHeightPct = Number.isFinite(Number((viz as any).clipHeightPct)) ? Math.max(10, Math.min(100, Number((viz as any).clipHeightPct))) : 100
       let didClip = false
       if (clipMode === 'rect' && (clipInsetPct > 0 || clipHeightPct < 100)) {
-        const insetX = Math.round((baseW * clipInsetPct) / 100)
-        const insetY = Math.round((baseH * clipInsetPct) / 100)
-        const desiredH = Math.max(1, Math.round((baseH * clipHeightPct) / 100))
-        const maxH = Math.max(1, baseH - insetY * 2)
+        const insetX = Math.round((drawW * clipInsetPct) / 100)
+        const insetY = Math.round((drawH * clipInsetPct) / 100)
+        const desiredH = Math.max(1, Math.round((drawH * clipHeightPct) / 100))
+        const maxH = Math.max(1, drawH - insetY * 2)
         const clipH = Math.min(maxH, desiredH)
         const top = Math.round(insetY + (maxH - clipH) / 2)
-        const clipW = Math.max(1, baseW - insetX * 2)
+        const clipW = Math.max(1, drawW - insetX * 2)
         ctx.save()
         ctx.beginPath()
         ctx.rect(insetX, top, clipW, clipH)
@@ -4998,17 +4999,17 @@ export default function CreateVideo() {
 
       if (viz.bgColor && viz.bgColor !== 'transparent') {
         ctx.fillStyle = viz.bgColor
-        ctx.fillRect(0, 0, baseW, baseH)
+        ctx.fillRect(0, 0, drawW, drawH)
       }
 
       ctx.globalAlpha = Number.isFinite(viz.opacity) ? Math.max(0, Math.min(1, viz.opacity)) : 1
       const fg = viz.fgColor || '#d4af37'
       const gradientOn = (viz as any).gradientEnabled && (viz as any).gradientStart && (viz as any).gradientEnd
       const grad =
-        gradientOn && baseW > 0 && baseH > 0
+        gradientOn && drawW > 0 && drawH > 0
           ? (() => {
               const isHorizontal = (viz as any).gradientMode === 'horizontal'
-              const g = ctx.createLinearGradient(0, 0, isHorizontal ? baseW : 0, isHorizontal ? 0 : baseH)
+              const g = ctx.createLinearGradient(0, 0, isHorizontal ? drawW : 0, isHorizontal ? 0 : drawH)
               g.addColorStop(0, String((viz as any).gradientStart || fg))
               g.addColorStop(1, String((viz as any).gradientEnd || fg))
               return g
@@ -5040,9 +5041,9 @@ export default function CreateVideo() {
           analyser.getByteFrequencyData(freq)
         }
         const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 64))))
-        const cx = baseW / 2
-        const cy = baseH / 2
-        const minDim = Math.min(baseW, baseH)
+        const cx = drawW / 2
+        const cy = drawH / 2
+        const minDim = Math.min(drawW, drawH)
         const inner = Math.max(6, minDim * 0.18)
         const maxLen = Math.max(10, minDim * 0.32)
         const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
@@ -5099,7 +5100,7 @@ export default function CreateVideo() {
         const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 48))))
         const gap = 2
         const minBarFrac = 0.04
-        const barW = Math.max(2, (baseW - gap * (bars - 1)) / bars)
+        const barW = Math.max(2, (drawW - gap * (bars - 1)) / bars)
         const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
         const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
         const maxIdx = Math.max(1, freq.length - 1)
@@ -5116,9 +5117,9 @@ export default function CreateVideo() {
           const base = viz.scale === 'log' ? Math.pow(t, 2) : t
           const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
           const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
-          const bh = Math.max(Math.round(baseH * minBarFrac), Math.round(v * baseH))
+          const bh = Math.max(Math.round(drawH * minBarFrac), Math.round(v * drawH))
           const x = i * (barW + gap)
-          ctx.fillRect(x, baseH - bh, barW, bh)
+          ctx.fillRect(x, drawH - bh, barW, bh)
         }
       } else {
         const envPoints =
@@ -5147,14 +5148,14 @@ export default function CreateVideo() {
         ctx.beginPath()
         for (let i = 0; i < data.length; i++) {
           const v = data[i] / 255
-          const y = v * baseH
-          const x = (i / (data.length - 1)) * baseW
+          const y = v * drawH
+          const x = (i / (data.length - 1)) * drawW
           if (i === 0) ctx.moveTo(x, y)
           else ctx.lineTo(x, y)
         }
         if (viz.style === 'wave_fill') {
-          ctx.lineTo(baseW, baseH / 2)
-          ctx.lineTo(0, baseH / 2)
+          ctx.lineTo(drawW, drawH / 2)
+          ctx.lineTo(0, drawH / 2)
           ctx.closePath()
           ctx.fill()
         } else {

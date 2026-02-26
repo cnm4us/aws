@@ -78,6 +78,57 @@ const nebulaBackgroundLayerStyle: React.CSSProperties = {
 }
 
 const FORM_CONTROL_FONT_SIZE_PX = 16
+const MODAL_BACKDROP_STYLE: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1100,
+  background: 'rgba(0,0,0,0.86)',
+  overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  padding: '64px 16px 80px',
+}
+const MODAL_CARD_STYLE: React.CSSProperties = {
+  maxWidth: 560,
+  margin: '0 auto',
+  padding: 16,
+  borderRadius: 14,
+  border: '1px solid rgba(96,165,250,0.95)',
+  background: 'linear-gradient(180deg, rgba(28,45,58,0.96) 0%, rgba(12,16,20,0.96) 100%)',
+  boxSizing: 'border-box',
+  color: '#fff',
+}
+const MODAL_HEADER_STYLE: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: 12,
+  alignItems: 'baseline',
+}
+const MODAL_TITLE_STYLE: React.CSSProperties = { margin: 0, fontSize: 18, fontWeight: 900 }
+const MODAL_INPUT_STYLE: React.CSSProperties = {
+  width: '100%',
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid rgba(255,255,255,0.18)',
+  background: '#0b0b0b',
+  color: '#fff',
+  fontSize: 14,
+  fontWeight: 900,
+}
+const MODAL_TEXTAREA_STYLE: React.CSSProperties = {
+  ...MODAL_INPUT_STYLE,
+  minHeight: 90,
+}
+const MODAL_CLOSE_BUTTON_STYLE: React.CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 10,
+  border: '1px solid rgba(255,255,255,0.18)',
+  background: 'rgba(255,255,255,0.06)',
+  color: '#fff',
+  textDecoration: 'none',
+  fontWeight: 800,
+}
 
 function parseMode(): Mode {
   try {
@@ -455,44 +506,36 @@ export default function VisualizerPresetsPage() {
 
   if (routeCtx.action !== 'list') {
     return (
-      <div style={{ ...nebulaShellBaseStyle }}>
-        <div aria-hidden="true" style={nebulaBackgroundLayerStyle} />
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <a href={backHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
-              {backLabel}
+      <div style={MODAL_BACKDROP_STYLE}>
+        <div style={MODAL_CARD_STYLE} role="dialog" aria-modal="true">
+          <div style={MODAL_HEADER_STYLE}>
+            <div>
+              <h1 style={MODAL_TITLE_STYLE}>{routeCtx.action === 'edit' ? 'Visualizer Properties' : 'Visualizer Properties'}</h1>
+              <div style={{ marginTop: 4, color: '#bbb', fontSize: 13 }}>Configure a reusable visualizer preset.</div>
+            </div>
+            <a href={backHref} style={MODAL_CLOSE_BUTTON_STYLE}>
+              Close
             </a>
-            {secondaryBackHref ? (
-              <a href={secondaryBackHref} style={{ color: '#0a84ff', textDecoration: 'none' }}>
+          </div>
+          {secondaryBackHref ? (
+            <div style={{ marginTop: 8 }}>
+              <a href={secondaryBackHref} style={{ color: '#0a84ff', textDecoration: 'none', fontSize: 13 }}>
                 ← Back to Timeline
               </a>
-            ) : null}
-          </div>
-          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 28 }}>{routeCtx.action === 'edit' ? 'Edit Visualizer' : 'New Visualizer'}</h1>
-              <p style={{ margin: '4px 0 0', color: '#bbb' }}>Configure a reusable visualizer preset.</p>
             </div>
-          </div>
+          ) : null}
 
           {loading ? <div style={{ color: '#bbb', marginTop: 12 }}>Loading…</div> : null}
           {error ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{error}</div> : null}
           {formError ? <div style={{ color: '#ff9b9b', marginTop: 12 }}>{formError}</div> : null}
 
-          <div style={{ marginTop: 16, display: 'grid', gap: 16, maxWidth: 760 }}>
+          <div style={{ marginTop: 16, display: 'grid', gap: 16 }}>
             <label style={{ display: 'grid', gap: 6 }}>
               <div style={{ color: '#bbb', fontSize: 13 }}>Name</div>
               <input
                 value={draft.name}
                 onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#fff',
-                  fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                }}
+                style={MODAL_INPUT_STYLE}
               />
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
@@ -501,31 +544,17 @@ export default function VisualizerPresetsPage() {
                 value={draft.description || ''}
                 onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
                 rows={3}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#fff',
-                  fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                }}
+                style={MODAL_TEXTAREA_STYLE}
               />
             </label>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
                 <select
                   value={draft.style}
                   onChange={(e) => setDraft((p) => ({ ...p, style: e.target.value as VisualizerStyle }))}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.45)',
-                    color: '#fff',
-                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                  }}
+                  style={MODAL_INPUT_STYLE}
                 >
                   <option value="wave_line">Wave Line</option>
                   <option value="wave_fill">Wave Fill</option>
@@ -538,19 +567,26 @@ export default function VisualizerPresetsPage() {
                 <select
                   value={draft.scale}
                   onChange={(e) => setDraft((p) => ({ ...p, scale: e.target.value as VisualizerScale }))}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.45)',
-                    color: '#fff',
-                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                  }}
+                  style={MODAL_INPUT_STYLE}
                 >
                   <option value="linear">Linear</option>
                   <option value="log">Log</option>
                 </select>
               </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
+                <select
+                  value={draft.spectrumMode}
+                  onChange={(e) => setDraft((p) => ({ ...p, spectrumMode: e.target.value as VisualizerSpectrumMode }))}
+                  style={MODAL_INPUT_STYLE}
+                >
+                  <option value="full">Full</option>
+                  <option value="voice">Voice</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
                 <input
@@ -563,24 +599,9 @@ export default function VisualizerPresetsPage() {
                 />
                 <div style={{ color: '#bbb', fontSize: 12 }}>{draft.barCount}</div>
               </label>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
-                <select
-                  value={draft.spectrumMode}
-                  onChange={(e) => setDraft((p) => ({ ...p, spectrumMode: e.target.value as VisualizerSpectrumMode }))}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.45)',
-                    color: '#fff',
-                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                  }}
-                >
-                  <option value="full">Full</option>
-                  <option value="voice">Voice</option>
-                </select>
-              </label>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Opacity</div>
                 <input
@@ -595,7 +616,7 @@ export default function VisualizerPresetsPage() {
               </label>
             </div>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Foreground</div>
                 <input
@@ -626,7 +647,7 @@ export default function VisualizerPresetsPage() {
               </label>
             </div>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Gradient</div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#bbb', fontSize: 13 }}>
@@ -664,14 +685,7 @@ export default function VisualizerPresetsPage() {
                     <select
                       value={draft.gradientMode}
                       onChange={(e) => setDraft((p) => ({ ...p, gradientMode: e.target.value as VisualizerGradientMode }))}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 10,
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        background: 'rgba(0,0,0,0.45)',
-                        color: '#fff',
-                        fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                      }}
+                      style={MODAL_INPUT_STYLE}
                     >
                       <option value="vertical">Vertical</option>
                       <option value="horizontal">Horizontal</option>
@@ -684,14 +698,7 @@ export default function VisualizerPresetsPage() {
                 <select
                   value={draft.clipMode}
                   onChange={(e) => setDraft((p) => ({ ...p, clipMode: e.target.value as VisualizerClipMode }))}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.45)',
-                    color: '#fff',
-                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                  }}
+                  style={MODAL_INPUT_STYLE}
                 >
                   <option value="none">None</option>
                   <option value="rect">Rectangle</option>
@@ -706,14 +713,7 @@ export default function VisualizerPresetsPage() {
                         max={40}
                         value={draft.clipInsetPct}
                         onChange={(e) => setDraft((p) => ({ ...p, clipInsetPct: parseClipInset(e.target.value) }))}
-                        style={{
-                          padding: '8px 10px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          background: 'rgba(0,0,0,0.45)',
-                          color: '#fff',
-                          fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                        }}
+                        style={MODAL_INPUT_STYLE}
                       />
                     </label>
                     <label style={{ display: 'grid', gap: 4 }}>
@@ -724,14 +724,7 @@ export default function VisualizerPresetsPage() {
                         max={100}
                         value={draft.clipHeightPct}
                         onChange={(e) => setDraft((p) => ({ ...p, clipHeightPct: parseClipHeight(e.target.value) }))}
-                        style={{
-                          padding: '8px 10px',
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          background: 'rgba(0,0,0,0.45)',
-                          color: '#fff',
-                          fontSize: FORM_CONTROL_FONT_SIZE_PX,
-                        }}
+                        style={MODAL_INPUT_STYLE}
                       />
                     </label>
                   </div>
@@ -747,15 +740,7 @@ export default function VisualizerPresetsPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
               <a
                 href={backHref}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  background: 'rgba(0,0,0,0.35)',
-                  color: '#fff',
-                  textDecoration: 'none',
-                  fontWeight: 800,
-                }}
+                style={MODAL_CLOSE_BUTTON_STYLE}
               >
                 Cancel
               </a>
