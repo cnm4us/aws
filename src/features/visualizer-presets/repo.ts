@@ -34,6 +34,8 @@ export async function create(input: {
   bgColor: string | 'transparent'
   opacity: number
   scale: string
+  barCount: number
+  spectrumMode: string
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -45,8 +47,8 @@ export async function create(input: {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO visualizer_presets
-      (owner_user_id, name, description, style, fg_color, bg_color, opacity, scale, gradient_enabled, gradient_start, gradient_end, gradient_mode, clip_mode, clip_inset_pct, clip_height_pct)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, fg_color, bg_color, opacity, scale, bar_count, spectrum_mode, gradient_enabled, gradient_start, gradient_end, gradient_mode, clip_mode, clip_inset_pct, clip_height_pct)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -56,6 +58,8 @@ export async function create(input: {
       input.bgColor,
       input.opacity,
       input.scale,
+      input.barCount,
+      input.spectrumMode,
       input.gradientEnabled ? 1 : 0,
       input.gradientStart,
       input.gradientEnd,
@@ -79,6 +83,8 @@ export async function update(id: number, patch: {
   bgColor?: string | 'transparent'
   opacity?: number
   scale?: string
+  barCount?: number
+  spectrumMode?: string
   gradientEnabled?: boolean
   gradientStart?: string
   gradientEnd?: string
@@ -97,6 +103,8 @@ export async function update(id: number, patch: {
   if (patch.bgColor !== undefined) { sets.push('bg_color = ?'); args.push(patch.bgColor) }
   if (patch.opacity !== undefined) { sets.push('opacity = ?'); args.push(patch.opacity) }
   if (patch.scale !== undefined) { sets.push('scale = ?'); args.push(patch.scale) }
+  if (patch.barCount !== undefined) { sets.push('bar_count = ?'); args.push(patch.barCount) }
+  if (patch.spectrumMode !== undefined) { sets.push('spectrum_mode = ?'); args.push(patch.spectrumMode) }
   if (patch.gradientEnabled !== undefined) { sets.push('gradient_enabled = ?'); args.push(patch.gradientEnabled ? 1 : 0) }
   if (patch.gradientStart !== undefined) { sets.push('gradient_start = ?'); args.push(patch.gradientStart) }
   if (patch.gradientEnd !== undefined) { sets.push('gradient_end = ?'); args.push(patch.gradientEnd) }

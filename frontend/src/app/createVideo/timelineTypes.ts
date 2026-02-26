@@ -193,6 +193,7 @@ export type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'rad
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
+export type VisualizerSpectrumMode = 'full' | 'voice'
 
 export type VisualizerPresetSnapshot = {
   id: number
@@ -203,6 +204,8 @@ export type VisualizerPresetSnapshot = {
   bgColor: string | 'transparent'
   opacity: number
   scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -221,6 +224,21 @@ export type VisualizerSegment = {
   audioSourceKind: 'video' | 'video_overlay' | 'narration' | 'music'
   audioSourceSegmentId?: string | null
   audioSourceStartSeconds?: number
+  sizePctWidth?: number
+  sizePctHeight?: number
+  insetXPx?: number
+  insetYPx?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  fitMode?: 'contain' | 'cover'
 }
 
 export const DEFAULT_NARRATION_VISUALIZER: NarrationVisualizerConfig = {
@@ -248,6 +266,8 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   bgColor: 'transparent',
   opacity: 1,
   scale: 'linear',
+  barCount: 48,
+  spectrumMode: 'full',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -522,6 +542,13 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               bgColor: (snapBase.bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : snapBase.bgColor) as any,
               opacity: Number.isFinite(Number(snapBase.opacity)) ? Number(snapBase.opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
               scale: (String(snapBase.scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
+              barCount: Number.isFinite(Number(snapBase.barCount))
+                ? Math.max(12, Math.min(128, Number(snapBase.barCount)))
+                : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.barCount,
+              spectrumMode:
+                String(snapBase.spectrumMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.spectrumMode).trim().toLowerCase() === 'voice'
+                  ? 'voice'
+                  : 'full',
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -544,6 +571,29 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                   : kindRaw === 'music'
                     ? 'music'
                     : 'narration'
+            const positionRaw = String((v as any).position || '').trim().toLowerCase()
+            const positionAllowed = new Set([
+              'top_left',
+              'top_center',
+              'top_right',
+              'middle_left',
+              'middle_center',
+              'middle_right',
+              'bottom_left',
+              'bottom_center',
+              'bottom_right',
+            ])
+            const position = positionAllowed.has(positionRaw) ? (positionRaw as any) : 'middle_center'
+            const fitRaw = String((v as any).fitMode || '').trim().toLowerCase()
+            const fitMode = fitRaw === 'cover' ? 'cover' : 'contain'
+            const sizePctWidthRaw = Number((v as any).sizePctWidth)
+            const sizePctHeightRaw = Number((v as any).sizePctHeight)
+            const sizePctWidth = Number.isFinite(sizePctWidthRaw) ? Math.max(10, Math.min(100, sizePctWidthRaw)) : 100
+            const sizePctHeight = Number.isFinite(sizePctHeightRaw) ? Math.max(10, Math.min(100, sizePctHeightRaw)) : 100
+            const insetXPxRaw = Number((v as any).insetXPx)
+            const insetYPxRaw = Number((v as any).insetYPx)
+            const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(200, insetXPxRaw)) : 0
+            const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(200, insetYPxRaw)) : 0
             return {
               id: String((v as any).id || ''),
               presetId,
@@ -554,6 +604,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               audioSourceSegmentId: (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : null,
               audioSourceStartSeconds:
                 (v as any).audioSourceStartSeconds == null ? undefined : Number((v as any).audioSourceStartSeconds),
+              sizePctWidth,
+              sizePctHeight,
+              insetXPx,
+              insetYPx,
+              position,
+              fitMode,
             }
           })
           .filter((v: any) => v && v.id)

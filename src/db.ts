@@ -519,6 +519,8 @@ export async function ensureSchema(db: DB) {
               bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent',
               opacity DECIMAL(4,2) NOT NULL DEFAULT 1.00,
               scale ENUM('linear','log') NOT NULL DEFAULT 'linear',
+              bar_count TINYINT UNSIGNED NOT NULL DEFAULT 48,
+              spectrum_mode ENUM('full','voice') NOT NULL DEFAULT 'full',
               gradient_enabled TINYINT(1) NOT NULL DEFAULT 0,
               gradient_start VARCHAR(32) NOT NULL DEFAULT '#d4af37',
               gradient_end VARCHAR(32) NOT NULL DEFAULT '#f7d774',
@@ -538,6 +540,8 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS bg_color VARCHAR(32) NOT NULL DEFAULT 'transparent'`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS opacity DECIMAL(4,2) NOT NULL DEFAULT 1.00`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS scale ENUM('linear','log') NOT NULL DEFAULT 'linear'`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS bar_count TINYINT UNSIGNED NOT NULL DEFAULT 48`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS spectrum_mode ENUM('full','voice') NOT NULL DEFAULT 'full'`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_enabled TINYINT(1) NOT NULL DEFAULT 0`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_start VARCHAR(32) NOT NULL DEFAULT '#d4af37'`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS gradient_end VARCHAR(32) NOT NULL DEFAULT '#f7d774'`);

@@ -7,6 +7,7 @@ type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bar
 type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
 type VisualizerClipMode = 'none' | 'rect'
+type VisualizerSpectrumMode = 'full' | 'voice'
 
 type VisualizerPreset = {
   id: number
@@ -17,6 +18,8 @@ type VisualizerPreset = {
   bgColor: string | 'transparent'
   opacity: number
   scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -44,6 +47,8 @@ const DEFAULT_PRESET: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 
   bgColor: 'transparent',
   opacity: 1,
   scale: 'linear',
+  barCount: 48,
+  spectrumMode: 'full',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -139,6 +144,12 @@ function parseClipHeight(value: any): number {
   return Math.min(Math.max(n, 10), 100)
 }
 
+function parseBarCount(value: any): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_PRESET.barCount
+  return Math.round(Math.min(Math.max(n, 12), 128))
+}
+
 function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
   const rafRef = React.useRef<number | null>(null)
@@ -203,7 +214,7 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
       ctx.fillStyle = grad || fg
 
       if (config.style === 'radial_bars') {
-        const bars = 64
+        const bars = parseBarCount(config.barCount)
         const cx = w / 2
         const cy = h / 2
         const minDim = Math.min(w, h)
@@ -214,7 +225,8 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         ctx.beginPath()
         for (let i = 0; i < bars; i++) {
           const tt = bars <= 1 ? 0 : i / bars
-          const base = config.scale === 'log' ? Math.pow(tt, 2) : tt
+          const base0 = config.scale === 'log' ? Math.pow(tt, 2) : tt
+          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
           const v = 0.35 + 0.65 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
           const len = inner + v * maxLen
           const ang = tt * Math.PI * 2 - Math.PI / 2
@@ -227,12 +239,13 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         }
         ctx.stroke()
       } else if (config.style === 'spectrum_bars') {
-        const bars = 48
+        const bars = parseBarCount(config.barCount)
         const gap = 2
         const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
         for (let i = 0; i < bars; i++) {
           const tt = bars <= 1 ? 0 : i / (bars - 1)
-          const base = config.scale === 'log' ? Math.pow(tt, 2) : tt
+          const base0 = config.scale === 'log' ? Math.pow(tt, 2) : tt
+          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
           const v = 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
           const bh = Math.max(1, Math.round(v * h))
           const x = i * (barW + gap)
@@ -338,6 +351,8 @@ export default function VisualizerPresetsPage() {
           bgColor: preset.bgColor || 'transparent',
           opacity: Number.isFinite(Number(preset.opacity)) ? Number(preset.opacity) : 1,
           scale: preset.scale === 'log' ? 'log' : 'linear',
+          barCount: parseBarCount(preset.barCount),
+          spectrumMode: preset.spectrumMode === 'voice' ? 'voice' : 'full',
           gradientEnabled: preset.gradientEnabled === true,
           gradientStart: preset.gradientStart || preset.fgColor || '#d4af37',
           gradientEnd: preset.gradientEnd || '#f7d774',
@@ -363,7 +378,12 @@ export default function VisualizerPresetsPage() {
       try {
         const res = await fetchJson('/api/visualizer-presets?limit=200')
         const raw = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []
-        setPresets(raw)
+        const items = raw.map((preset: any) => ({
+          ...preset,
+          barCount: parseBarCount(preset?.barCount),
+          spectrumMode: preset?.spectrumMode === 'voice' ? 'voice' : 'full',
+        }))
+        setPresets(items)
       } catch (e: any) {
         setError(String(e?.message || 'Failed to load'))
       } finally {
@@ -408,6 +428,8 @@ export default function VisualizerPresetsPage() {
         bgColor: draft.bgColor,
         opacity: draft.opacity,
         scale: draft.scale,
+        barCount: draft.barCount,
+        spectrumMode: draft.spectrumMode,
         gradientEnabled: draft.gradientEnabled,
         gradientStart: draft.gradientStart,
         gradientEnd: draft.gradientEnd,
@@ -527,6 +549,36 @@ export default function VisualizerPresetsPage() {
                 >
                   <option value="linear">Linear</option>
                   <option value="log">Log</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
+                <input
+                  type="range"
+                  min={12}
+                  max={128}
+                  step={4}
+                  value={draft.barCount}
+                  onChange={(e) => setDraft((p) => ({ ...p, barCount: parseBarCount(e.target.value) }))}
+                />
+                <div style={{ color: '#bbb', fontSize: 12 }}>{draft.barCount}</div>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
+                <select
+                  value={draft.spectrumMode}
+                  onChange={(e) => setDraft((p) => ({ ...p, spectrumMode: e.target.value as VisualizerSpectrumMode }))}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(0,0,0,0.45)',
+                    color: '#fff',
+                    fontSize: FORM_CONTROL_FONT_SIZE_PX,
+                  }}
+                >
+                  <option value="full">Full</option>
+                  <option value="voice">Voice</option>
                 </select>
               </label>
               <label style={{ display: 'grid', gap: 6 }}>

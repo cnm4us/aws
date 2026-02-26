@@ -7,6 +7,21 @@ export type VisualizerEditorState = {
   presetId: number
   audioSourceKind: 'video' | 'video_overlay' | 'narration' | 'music'
   audioSourceSegmentId: string | null
+  sizePctWidth: number
+  sizePctHeight: number
+  insetXPx: number
+  insetYPx: number
+  position:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  fitMode: 'contain' | 'cover'
 }
 
 type VisualizerPresetItem = {
@@ -256,6 +271,135 @@ export default function VisualizerEditorModal({
                     {opt.label}
                   </option>
                 ))}
+              </select>
+            </label>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ color: '#bbb', fontSize: 13 }}>Placement</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 12 }}>Size (% width)</div>
+                <select
+                  value={String(visualizerEditor.sizePctWidth)}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value))
+                    setVisualizerEditor((p) => (p ? { ...p, sizePctWidth: Number.isFinite(v) ? v : p.sizePctWidth } : p))
+                  }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                >
+                  {[10, 20, 25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 12 }}>Size (% height)</div>
+                <select
+                  value={String(visualizerEditor.sizePctHeight)}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value))
+                    setVisualizerEditor((p) => (p ? { ...p, sizePctHeight: Number.isFinite(v) ? v : p.sizePctHeight } : p))
+                  }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                >
+                  {[10, 20, 25, 33, 40, 50, 60, 70, 80, 90, 100].map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 12 }}>Inset X (px)</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={200}
+                  value={String(visualizerEditor.insetXPx)}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value))
+                    setVisualizerEditor((p) => (p ? { ...p, insetXPx: Number.isFinite(v) ? v : p.insetXPx } : p))
+                  }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <div style={{ color: '#bbb', fontSize: 12 }}>Inset Y (px)</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={200}
+                  value={String(visualizerEditor.insetYPx)}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value))
+                    setVisualizerEditor((p) => (p ? { ...p, insetYPx: Number.isFinite(v) ? v : p.insetYPx } : p))
+                  }}
+                  style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+                />
+              </label>
+            </div>
+            <div>
+              <div style={{ color: '#bbb', fontSize: 12, marginBottom: 8 }}>Position</div>
+              {(() => {
+                const cells: Array<{ key: any; label: string }> = [
+                  { key: 'top_left', label: '↖' },
+                  { key: 'top_center', label: '↑' },
+                  { key: 'top_right', label: '↗' },
+                  { key: 'middle_left', label: '←' },
+                  { key: 'middle_center', label: '•' },
+                  { key: 'middle_right', label: '→' },
+                  { key: 'bottom_left', label: '↙' },
+                  { key: 'bottom_center', label: '↓' },
+                  { key: 'bottom_right', label: '↘' },
+                ]
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, maxWidth: 240 }}>
+                    {cells.map((c) => {
+                      const selected = String(visualizerEditor.position) === String(c.key)
+                      return (
+                        <button
+                          key={String(c.key)}
+                          type="button"
+                          onClick={() => setVisualizerEditor((p) => (p ? { ...p, position: c.key as any } : p))}
+                          style={{
+                            height: 44,
+                            borderRadius: 12,
+                            border: selected ? '2px solid rgba(96,165,250,0.95)' : '1px solid rgba(255,255,255,0.18)',
+                            background: selected ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                            color: '#fff',
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 18,
+                          }}
+                          aria-label={`Position ${String(c.key)}`}
+                        >
+                          {c.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+            <label style={{ display: 'grid', gap: 6, maxWidth: 220 }}>
+              <div style={{ color: '#bbb', fontSize: 12 }}>Fit</div>
+              <select
+                value={String(visualizerEditor.fitMode || 'contain')}
+                onChange={(e) => {
+                  const next = String(e.target.value || '')
+                  setVisualizerEditor((p) => (p ? { ...p, fitMode: next === 'cover' ? 'cover' : 'contain' } : p))
+                }}
+                style={{ width: '100%', borderRadius: 10, border: '1px solid rgba(255,255,255,0.18)', background: '#0b0b0b', color: '#fff', padding: '10px 12px', fontSize: 14, fontWeight: 900, boxSizing: 'border-box' }}
+              >
+                <option value="contain">Contain</option>
+                <option value="cover">Cover</option>
               </select>
             </label>
           </div>

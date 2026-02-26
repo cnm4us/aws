@@ -295,6 +295,8 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   bgColor: string | 'transparent'
   opacity: number
   scale: VisualizerScale
+  barCount: number
+  spectrumMode: 'full' | 'voice'
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -313,6 +315,21 @@ export type CreateVideoVisualizerSegmentV1 = {
   audioSourceKind: 'video' | 'video_overlay' | 'narration' | 'music'
   audioSourceSegmentId?: string
   audioSourceStartSeconds?: number
+  sizePctWidth?: number
+  sizePctHeight?: number
+  insetXPx?: number
+  insetYPx?: number
+  position?:
+    | 'top_left'
+    | 'top_center'
+    | 'top_right'
+    | 'middle_left'
+    | 'middle_center'
+    | 'middle_right'
+    | 'bottom_left'
+    | 'bottom_center'
+    | 'bottom_right'
+  fitMode?: 'contain' | 'cover'
 }
 
 export type CreateVideoTimelineV1 = {

@@ -1778,6 +1778,33 @@ export async function validateAndNormalizeCreateVideoTimeline(
     const sourceSeg = findSourceSegment(audioSourceKind, audioSourceSegmentId)
     if (!sourceSeg) throw new ValidationError('invalid_audio_source_segment')
 
+    const sizePctWidthRaw = Number((seg as any).sizePctWidth)
+    const sizePctHeightRaw = Number((seg as any).sizePctHeight)
+    const sizePctWidth = Number.isFinite(sizePctWidthRaw) ? clamp(sizePctWidthRaw, 10, 100) : 100
+    const sizePctHeight = Number.isFinite(sizePctHeightRaw) ? clamp(sizePctHeightRaw, 10, 100) : 100
+
+    const insetXPxRaw = Number((seg as any).insetXPx)
+    const insetYPxRaw = Number((seg as any).insetYPx)
+    const insetXPx = Number.isFinite(insetXPxRaw) ? clamp(insetXPxRaw, 0, 200) : 0
+    const insetYPx = Number.isFinite(insetYPxRaw) ? clamp(insetYPxRaw, 0, 200) : 0
+
+    const positionRaw = String((seg as any).position || '').trim().toLowerCase()
+    const positionAllowed = new Set([
+      'top_left',
+      'top_center',
+      'top_right',
+      'middle_left',
+      'middle_center',
+      'middle_right',
+      'bottom_left',
+      'bottom_center',
+      'bottom_right',
+    ])
+    const position = positionAllowed.has(positionRaw) ? (positionRaw as any) : 'middle_center'
+
+    const fitRaw = String((seg as any).fitMode || '').trim().toLowerCase()
+    const fitMode = fitRaw === 'cover' ? 'cover' : 'contain'
+
     visualizers.push({
       id,
       presetId: Number(preset.id || presetId),
@@ -1787,6 +1814,12 @@ export async function validateAndNormalizeCreateVideoTimeline(
       audioSourceKind,
       audioSourceSegmentId,
       audioSourceStartSeconds: roundToTenth(Number(sourceSeg.sourceStartSeconds || 0)),
+      sizePctWidth,
+      sizePctHeight,
+      insetXPx,
+      insetYPx,
+      position,
+      fitMode,
     })
   }
 

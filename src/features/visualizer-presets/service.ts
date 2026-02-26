@@ -6,6 +6,7 @@ import type {
   VisualizerPresetDto,
   VisualizerPresetRow,
   VisualizerScale,
+  VisualizerSpectrumMode,
   VisualizerStyle,
 } from './types'
 
@@ -13,6 +14,7 @@ const STYLES: readonly VisualizerStyle[] = ['wave_line', 'wave_fill', 'spectrum_
 const SCALES: readonly VisualizerScale[] = ['linear', 'log']
 const GRADIENT_MODES: readonly VisualizerGradientMode[] = ['vertical', 'horizontal']
 const CLIP_MODES: readonly VisualizerClipMode[] = ['none', 'rect']
+const SPECTRUM_MODES: readonly VisualizerSpectrumMode[] = ['full', 'voice']
 
 const DEFAULTS = {
   style: 'wave_line' as VisualizerStyle,
@@ -20,6 +22,8 @@ const DEFAULTS = {
   bgColor: 'transparent' as 'transparent',
   opacity: 1,
   scale: 'linear' as VisualizerScale,
+  barCount: 48,
+  spectrumMode: 'full' as VisualizerSpectrumMode,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -79,11 +83,19 @@ function normalizeClipHeight(raw: any): number {
   return Math.round(Math.min(Math.max(n, 10), 100))
 }
 
+function normalizeBarCount(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return DEFAULTS.barCount
+  return Math.round(Math.min(Math.max(n, 12), 128))
+}
+
 function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
   const styleRaw = String(row.style || DEFAULTS.style).trim().toLowerCase()
   const style: VisualizerStyle = isEnumValue(styleRaw, STYLES) ? (styleRaw as VisualizerStyle) : DEFAULTS.style
   const scaleRaw = String(row.scale || DEFAULTS.scale).trim().toLowerCase()
   const scale: VisualizerScale = isEnumValue(scaleRaw, SCALES) ? (scaleRaw as VisualizerScale) : DEFAULTS.scale
+  const spectrumModeRaw = String((row as any).spectrum_mode || DEFAULTS.spectrumMode).trim().toLowerCase()
+  const spectrumMode: VisualizerSpectrumMode = isEnumValue(spectrumModeRaw, SPECTRUM_MODES) ? (spectrumModeRaw as VisualizerSpectrumMode) : DEFAULTS.spectrumMode
   const gradientModeRaw = String(row.gradient_mode || DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(row.clip_mode || DEFAULTS.clipMode).trim().toLowerCase()
@@ -95,6 +107,7 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
   const gradientStart = normalizeHexColor((row as any).gradient_start, fgColor)
   const gradientEnd = normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd)
   const opacity = normalizeOpacity((row as any).opacity)
+  const barCount = normalizeBarCount((row as any).bar_count)
   const clipInsetPct = normalizeClipInset((row as any).clip_inset_pct)
   const clipHeightPct = normalizeClipHeight((row as any).clip_height_pct)
 
@@ -107,6 +120,8 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
     bgColor,
     opacity,
     scale,
+    barCount,
+    spectrumMode,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -146,6 +161,8 @@ export async function createForUser(input: {
   bgColor?: any
   opacity?: any
   scale?: any
+  barCount?: any
+  spectrumMode?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -161,6 +178,10 @@ export async function createForUser(input: {
   const style: VisualizerStyle = isEnumValue(styleRaw, STYLES) ? (styleRaw as VisualizerStyle) : DEFAULTS.style
   const scaleRaw = String(input.scale ?? DEFAULTS.scale).trim().toLowerCase()
   const scale: VisualizerScale = isEnumValue(scaleRaw, SCALES) ? (scaleRaw as VisualizerScale) : DEFAULTS.scale
+  const spectrumModeRaw = String(input.spectrumMode ?? DEFAULTS.spectrumMode).trim().toLowerCase()
+  const spectrumMode: VisualizerSpectrumMode = isEnumValue(spectrumModeRaw, SPECTRUM_MODES)
+    ? (spectrumModeRaw as VisualizerSpectrumMode)
+    : DEFAULTS.spectrumMode
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -172,6 +193,7 @@ export async function createForUser(input: {
   const gradientStart = normalizeHexColor(input.gradientStart, fgColor)
   const gradientEnd = normalizeHexColor(input.gradientEnd, DEFAULTS.gradientEnd)
   const opacity = normalizeOpacity(input.opacity)
+  const barCount = normalizeBarCount(input.barCount)
   const clipInsetPct = normalizeClipInset(input.clipInsetPct)
   const clipHeightPct = normalizeClipHeight(input.clipHeightPct)
 
@@ -184,6 +206,8 @@ export async function createForUser(input: {
     bgColor,
     opacity,
     scale,
+    barCount,
+    spectrumMode,
     gradientEnabled,
     gradientStart,
     gradientEnd,
@@ -205,6 +229,8 @@ export async function updateForUser(
     bgColor?: any
     opacity?: any
     scale?: any
+    barCount?: any
+    spectrumMode?: any
     gradientEnabled?: any
     gradientStart?: any
     gradientEnd?: any
@@ -233,6 +259,11 @@ export async function updateForUser(
     const scaleRaw = String(input.scale ?? '').trim().toLowerCase()
     patch.scale = isEnumValue(scaleRaw, SCALES) ? scaleRaw : DEFAULTS.scale
   }
+  if (input.spectrumMode !== undefined) {
+    const spectrumRaw = String(input.spectrumMode ?? '').trim().toLowerCase()
+    patch.spectrumMode = isEnumValue(spectrumRaw, SPECTRUM_MODES) ? spectrumRaw : DEFAULTS.spectrumMode
+  }
+  if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
   if (input.gradientEnd !== undefined) patch.gradientEnd = normalizeHexColor(input.gradientEnd, DEFAULTS.gradientEnd)

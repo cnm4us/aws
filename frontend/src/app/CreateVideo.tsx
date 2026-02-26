@@ -143,6 +143,9 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars' ? (styleRaw as any) : 'wave_line'
   const scaleRaw = String(snap.scale || base.scale).trim().toLowerCase()
   const scale: VisualizerPresetSnapshot['scale'] = scaleRaw === 'log' ? 'log' : 'linear'
+  const barCountRaw = Number(snap.barCount)
+  const spectrumModeRaw = String(snap.spectrumMode || base.spectrumMode).trim().toLowerCase()
+  const spectrumMode: VisualizerPresetSnapshot['spectrumMode'] = spectrumModeRaw === 'voice' ? 'voice' : 'full'
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
@@ -158,6 +161,8 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     bgColor: snap.bgColor == null ? base.bgColor : (snap.bgColor as any),
     opacity: Number.isFinite(Number(snap.opacity)) ? Math.max(0, Math.min(1, Number(snap.opacity))) : base.opacity,
     scale,
+    barCount: Number.isFinite(barCountRaw) ? Math.max(12, Math.min(128, Math.round(barCountRaw))) : base.barCount,
+    spectrumMode,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -183,6 +188,8 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     bgColor: cfg.bgColor == null ? base.bgColor : (cfg.bgColor as any),
     opacity: Number.isFinite(Number(cfg.opacity)) ? Math.max(0, Math.min(1, Number(cfg.opacity))) : base.opacity,
     scale: cfg.scale || base.scale,
+    barCount: base.barCount,
+    spectrumMode: base.spectrumMode,
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -698,6 +705,21 @@ export default function CreateVideo() {
     presetId: number
     audioSourceKind: VisualizerAudioSourceKind
     audioSourceSegmentId: string | null
+    sizePctWidth: number
+    sizePctHeight: number
+    insetXPx: number
+    insetYPx: number
+    position:
+      | 'top_left'
+      | 'top_center'
+      | 'top_right'
+      | 'middle_left'
+      | 'middle_center'
+      | 'middle_right'
+      | 'bottom_left'
+      | 'bottom_center'
+      | 'bottom_right'
+    fitMode: 'contain' | 'cover'
   } | null>(null)
   const [visualizerEditorError, setVisualizerEditorError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -4904,18 +4926,69 @@ export default function CreateVideo() {
         activeVisualizerPreview && Number.isFinite(Number((activeVisualizerPreview as any).audioTime))
           ? Number((activeVisualizerPreview as any).audioTime)
           : performance.now() / 1000
+      const placement = (() => {
+        const v = activeVisualizerPreview?.visualizer as any
+        const sizePctWidthRaw = v && Number.isFinite(Number(v.sizePctWidth)) ? Number(v.sizePctWidth) : 100
+        const sizePctHeightRaw = v && Number.isFinite(Number(v.sizePctHeight)) ? Number(v.sizePctHeight) : 100
+        const insetXPxRaw = v && Number.isFinite(Number(v.insetXPx)) ? Number(v.insetXPx) : 0
+        const insetYPxRaw = v && Number.isFinite(Number(v.insetYPx)) ? Number(v.insetYPx) : 0
+        const positionRaw = v && typeof v.position === 'string' ? v.position : 'middle_center'
+        const fitRaw = v && typeof v.fitMode === 'string' ? v.fitMode : 'contain'
+        return {
+          sizePctWidth: clamp(sizePctWidthRaw, 10, 100),
+          sizePctHeight: clamp(sizePctHeightRaw, 10, 100),
+          insetXPx: clamp(insetXPxRaw, 0, 200),
+          insetYPx: clamp(insetYPxRaw, 0, 200),
+          position: positionRaw,
+          fitMode: fitRaw === 'cover' ? 'cover' : 'contain',
+        }
+      })()
+      const baseW = w
+      const baseH = h
+      const insetX = placement.insetXPx
+      const insetY = placement.insetYPx
+      const availW = Math.max(1, baseW - insetX * 2)
+      const availH = Math.max(1, baseH - insetY * 2)
+      let boxW = Math.max(1, Math.round((baseW * placement.sizePctWidth) / 100))
+      let boxH = Math.max(1, Math.round((baseH * placement.sizePctHeight) / 100))
+      boxW = Math.min(boxW, availW)
+      boxH = Math.min(boxH, availH)
+      const pos = String(placement.position || 'middle_center')
+      let boxX = insetX
+      if (pos.endsWith('right')) boxX = baseW - insetX - boxW
+      else if (pos.endsWith('center')) boxX = Math.round((baseW - boxW) / 2)
+      let boxY = insetY
+      if (pos.startsWith('bottom')) boxY = baseH - insetY - boxH
+      else if (pos.startsWith('middle')) boxY = Math.round((baseH - boxH) / 2)
+      boxX = Math.max(0, Math.min(baseW - boxW, boxX))
+      boxY = Math.max(0, Math.min(baseH - boxH, boxY))
+      const scaleX = boxW / baseW
+      const scaleY = boxH / baseH
+      ctx.save()
+      if (placement.fitMode === 'cover') {
+        const scale = Math.max(scaleX, scaleY)
+        const renderW = baseW * scale
+        const renderH = baseH * scale
+        const offsetX = boxX + Math.round((boxW - renderW) / 2)
+        const offsetY = boxY + Math.round((boxH - renderH) / 2)
+        ctx.translate(offsetX, offsetY)
+        ctx.scale(scale, scale)
+      } else {
+        ctx.translate(boxX, boxY)
+        ctx.scale(scaleX, scaleY)
+      }
       const clipMode = (viz as any).clipMode || 'none'
       const clipInsetPct = Number.isFinite(Number((viz as any).clipInsetPct)) ? Math.max(0, Math.min(40, Number((viz as any).clipInsetPct))) : 0
       const clipHeightPct = Number.isFinite(Number((viz as any).clipHeightPct)) ? Math.max(10, Math.min(100, Number((viz as any).clipHeightPct))) : 100
       let didClip = false
       if (clipMode === 'rect' && (clipInsetPct > 0 || clipHeightPct < 100)) {
-        const insetX = Math.round((w * clipInsetPct) / 100)
-        const insetY = Math.round((h * clipInsetPct) / 100)
-        const desiredH = Math.max(1, Math.round((h * clipHeightPct) / 100))
-        const maxH = Math.max(1, h - insetY * 2)
+        const insetX = Math.round((baseW * clipInsetPct) / 100)
+        const insetY = Math.round((baseH * clipInsetPct) / 100)
+        const desiredH = Math.max(1, Math.round((baseH * clipHeightPct) / 100))
+        const maxH = Math.max(1, baseH - insetY * 2)
         const clipH = Math.min(maxH, desiredH)
         const top = Math.round(insetY + (maxH - clipH) / 2)
-        const clipW = Math.max(1, w - insetX * 2)
+        const clipW = Math.max(1, baseW - insetX * 2)
         ctx.save()
         ctx.beginPath()
         ctx.rect(insetX, top, clipW, clipH)
@@ -4925,17 +4998,17 @@ export default function CreateVideo() {
 
       if (viz.bgColor && viz.bgColor !== 'transparent') {
         ctx.fillStyle = viz.bgColor
-        ctx.fillRect(0, 0, w, h)
+        ctx.fillRect(0, 0, baseW, baseH)
       }
 
       ctx.globalAlpha = Number.isFinite(viz.opacity) ? Math.max(0, Math.min(1, viz.opacity)) : 1
       const fg = viz.fgColor || '#d4af37'
       const gradientOn = (viz as any).gradientEnabled && (viz as any).gradientStart && (viz as any).gradientEnd
       const grad =
-        gradientOn && w > 0 && h > 0
+        gradientOn && baseW > 0 && baseH > 0
           ? (() => {
               const isHorizontal = (viz as any).gradientMode === 'horizontal'
-              const g = ctx.createLinearGradient(0, 0, isHorizontal ? w : 0, isHorizontal ? 0 : h)
+              const g = ctx.createLinearGradient(0, 0, isHorizontal ? baseW : 0, isHorizontal ? 0 : baseH)
               g.addColorStop(0, String((viz as any).gradientStart || fg))
               g.addColorStop(1, String((viz as any).gradientEnd || fg))
               return g
@@ -4966,18 +5039,30 @@ export default function CreateVideo() {
         } else if (analyser) {
           analyser.getByteFrequencyData(freq)
         }
-        const bars = 64
-        const cx = w / 2
-        const cy = h / 2
-        const minDim = Math.min(w, h)
+        const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 64))))
+        const cx = baseW / 2
+        const cy = baseH / 2
+        const minDim = Math.min(baseW, baseH)
         const inner = Math.max(6, minDim * 0.18)
         const maxLen = Math.max(10, minDim * 0.32)
+        const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
+        const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+        const maxIdx = Math.max(1, freq.length - 1)
+        let rangeStart = 0
+        let rangeEnd = maxIdx
+        if (viz.spectrumMode === 'voice') {
+          const lowIdx = Math.round((80 / nyquist) * maxIdx)
+          const highIdx = Math.round((4000 / nyquist) * maxIdx)
+          rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
+          rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
+        }
         ctx.lineWidth = 2
         ctx.lineCap = 'round'
         ctx.beginPath()
         for (let i = 0; i < bars; i++) {
           const t = bars <= 1 ? 0 : i / bars
-          const idx = viz.scale === 'log' ? Math.floor(Math.pow(t, 2) * (freq.length - 1)) : Math.floor(t * (freq.length - 1))
+          const base = viz.scale === 'log' ? Math.pow(t, 2) : t
+          const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
           const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
           const len = inner + v * maxLen
           const ang = t * Math.PI * 2 - Math.PI / 2
@@ -5011,16 +5096,29 @@ export default function CreateVideo() {
         } else if (analyser) {
           analyser.getByteFrequencyData(freq)
         }
-        const bars = 48
+        const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 48))))
         const gap = 2
-        const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+        const minBarFrac = 0.04
+        const barW = Math.max(2, (baseW - gap * (bars - 1)) / bars)
+        const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
+        const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+        const maxIdx = Math.max(1, freq.length - 1)
+        let rangeStart = 0
+        let rangeEnd = maxIdx
+        if (viz.spectrumMode === 'voice') {
+          const lowIdx = Math.round((80 / nyquist) * maxIdx)
+          const highIdx = Math.round((4000 / nyquist) * maxIdx)
+          rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
+          rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
+        }
         for (let i = 0; i < bars; i++) {
           const t = bars <= 1 ? 0 : i / (bars - 1)
-          const idx = viz.scale === 'log' ? Math.floor(Math.pow(t, 2) * (freq.length - 1)) : Math.floor(t * (freq.length - 1))
+          const base = viz.scale === 'log' ? Math.pow(t, 2) : t
+          const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
           const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
-          const bh = Math.max(1, Math.round(v * h))
+          const bh = Math.max(Math.round(baseH * minBarFrac), Math.round(v * baseH))
           const x = i * (barW + gap)
-          ctx.fillRect(x, h - bh, barW, bh)
+          ctx.fillRect(x, baseH - bh, barW, bh)
         }
       } else {
         const envPoints =
@@ -5049,14 +5147,14 @@ export default function CreateVideo() {
         ctx.beginPath()
         for (let i = 0; i < data.length; i++) {
           const v = data[i] / 255
-          const y = v * h
-          const x = (i / (data.length - 1)) * w
+          const y = v * baseH
+          const x = (i / (data.length - 1)) * baseW
           if (i === 0) ctx.moveTo(x, y)
           else ctx.lineTo(x, y)
         }
         if (viz.style === 'wave_fill') {
-          ctx.lineTo(w, h / 2)
-          ctx.lineTo(0, h / 2)
+          ctx.lineTo(baseW, baseH / 2)
+          ctx.lineTo(0, baseH / 2)
           ctx.closePath()
           ctx.fill()
         } else {
@@ -5067,6 +5165,7 @@ export default function CreateVideo() {
         try { ctx.restore() } catch {}
       }
       ctx.globalAlpha = 1
+      ctx.restore()
       narrationVizRafRef.current = window.requestAnimationFrame(draw)
     }
 
@@ -5077,7 +5176,14 @@ export default function CreateVideo() {
       }
       narrationVizRafRef.current = null
     }
-  }, [visualizerPreviewActive, visualizerPreviewConfig, visualizerPreviewMedia, setupVisualizerPreviewAnalyser])
+  }, [
+    activeVisualizerPreview,
+    visualizerEnvelope,
+    visualizerPreviewActive,
+    visualizerPreviewConfig,
+    visualizerPreviewMedia,
+    setupVisualizerPreviewAnalyser,
+  ])
 
   const toggleMusicPlay = useCallback(async () => {
     if (musicPreviewPlaying) {
@@ -7124,6 +7230,29 @@ export default function CreateVideo() {
 		                        : kindRaw === 'music'
 		                          ? 'music'
 		                          : 'narration'
+		                  const positionRaw = String((v as any).position || '').trim().toLowerCase()
+		                  const positionAllowed = new Set([
+		                    'top_left',
+		                    'top_center',
+		                    'top_right',
+		                    'middle_left',
+		                    'middle_center',
+		                    'middle_right',
+		                    'bottom_left',
+		                    'bottom_center',
+		                    'bottom_right',
+		                  ])
+		                  const position = positionAllowed.has(positionRaw) ? (positionRaw as any) : 'middle_center'
+		                  const fitRaw = String((v as any).fitMode || '').trim().toLowerCase()
+		                  const fitMode = fitRaw === 'cover' ? 'cover' : 'contain'
+		                  const sizePctWidthRaw = Number((v as any).sizePctWidth)
+		                  const sizePctHeightRaw = Number((v as any).sizePctHeight)
+		                  const sizePctWidth = Number.isFinite(sizePctWidthRaw) ? Math.max(10, Math.min(100, sizePctWidthRaw)) : 100
+		                  const sizePctHeight = Number.isFinite(sizePctHeightRaw) ? Math.max(10, Math.min(100, sizePctHeightRaw)) : 100
+		                  const insetXPxRaw = Number((v as any).insetXPx)
+		                  const insetYPxRaw = Number((v as any).insetYPx)
+		                  const insetXPx = Number.isFinite(insetXPxRaw) ? Math.max(0, Math.min(200, insetXPxRaw)) : 0
+		                  const insetYPx = Number.isFinite(insetYPxRaw) ? Math.max(0, Math.min(200, insetYPxRaw)) : 0
 		                  return {
 		                    ...v,
 		                    id: String((v as any).id || ''),
@@ -7135,6 +7264,12 @@ export default function CreateVideo() {
 		                    audioSourceSegmentId: (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : '',
 		                    audioSourceStartSeconds:
 		                      (v as any).audioSourceStartSeconds == null ? undefined : roundToTenth(Number((v as any).audioSourceStartSeconds || 0)),
+		                    sizePctWidth,
+		                    sizePctHeight,
+		                    insetXPx,
+		                    insetYPx,
+		                    position,
+		                    fitMode,
 		                  }
 		                })
 		                .filter((v: any) => v && v.id)
@@ -10256,6 +10391,13 @@ export default function CreateVideo() {
         bgColor: (preset as any).bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : String((preset as any).bgColor),
         opacity: Number.isFinite(Number((preset as any).opacity)) ? Number((preset as any).opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
         scale: (preset as any).scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
+        barCount: Number.isFinite(Number((preset as any).barCount))
+          ? Math.max(12, Math.min(128, Math.round(Number((preset as any).barCount))))
+          : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.barCount,
+        spectrumMode:
+          String((preset as any).spectrumMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.spectrumMode).trim().toLowerCase() === 'voice'
+            ? 'voice'
+            : 'full',
         gradientEnabled:
           (preset as any).gradientEnabled == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnabled : Boolean((preset as any).gradientEnabled),
         gradientStart: String((preset as any).gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
@@ -10818,6 +10960,24 @@ export default function CreateVideo() {
             ? 'music'
             : 'narration'
     const audioSourceSegmentId = String(visualizerEditor.audioSourceSegmentId || '').trim()
+    const sizePctWidth = clamp(Math.round(Number(visualizerEditor.sizePctWidth)), 10, 100)
+    const sizePctHeight = clamp(Math.round(Number(visualizerEditor.sizePctHeight)), 10, 100)
+    const insetXPx = clamp(Math.round(Number(visualizerEditor.insetXPx)), 0, 200)
+    const insetYPx = clamp(Math.round(Number(visualizerEditor.insetYPx)), 0, 200)
+    const positionRaw = String(visualizerEditor.position || '').trim().toLowerCase()
+    const positionAllowed = new Set([
+      'top_left',
+      'top_center',
+      'top_right',
+      'middle_left',
+      'middle_center',
+      'middle_right',
+      'bottom_left',
+      'bottom_center',
+      'bottom_right',
+    ])
+    const position = positionAllowed.has(positionRaw) ? (positionRaw as any) : 'middle_center'
+    const fitMode = String(visualizerEditor.fitMode || '').trim().toLowerCase() === 'cover' ? 'cover' : 'contain'
 
     if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) {
       setVisualizerEditorError('End must be after start.')
@@ -10888,6 +11048,12 @@ export default function CreateVideo() {
         audioSourceKind,
         audioSourceSegmentId,
         audioSourceStartSeconds: sourceStartSeconds,
+        sizePctWidth,
+        sizePctHeight,
+        insetXPx,
+        insetYPx,
+        position,
+        fitMode,
       }
       const next = prevVs.slice()
       next[idx] = updated

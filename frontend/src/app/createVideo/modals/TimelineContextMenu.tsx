@@ -509,6 +509,12 @@ export default function TimelineContextMenu(props: any) {
                           audioSourceKind: String((v as any).audioSourceKind || 'narration') as any,
                           audioSourceSegmentId:
                             (v as any).audioSourceSegmentId != null ? String((v as any).audioSourceSegmentId) : null,
+                          sizePctWidth: Number.isFinite(Number((v as any).sizePctWidth)) ? Math.round(Number((v as any).sizePctWidth)) : 100,
+                          sizePctHeight: Number.isFinite(Number((v as any).sizePctHeight)) ? Math.round(Number((v as any).sizePctHeight)) : 100,
+                          insetXPx: Number.isFinite(Number((v as any).insetXPx)) ? Math.round(Math.max(0, Number((v as any).insetXPx))) : 0,
+                          insetYPx: Number.isFinite(Number((v as any).insetYPx)) ? Math.round(Math.max(0, Number((v as any).insetYPx))) : 0,
+                          position: String((v as any).position || 'middle_center') as any,
+                          fitMode: String((v as any).fitMode || 'contain') === 'cover' ? 'cover' : 'contain',
                         })
                         setVisualizerEditorError(null)
                         void ensureVisualizerPresets()

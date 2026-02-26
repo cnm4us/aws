@@ -2,6 +2,7 @@ export type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'rad
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
+export type VisualizerSpectrumMode = 'full' | 'voice'
 
 export type VisualizerPresetRow = {
   id: number
@@ -13,6 +14,8 @@ export type VisualizerPresetRow = {
   bg_color: string | 'transparent'
   opacity: number
   scale: VisualizerScale
+  bar_count: number
+  spectrum_mode: VisualizerSpectrumMode
   gradient_enabled: number
   gradient_start: string
   gradient_end: string
@@ -34,6 +37,8 @@ export type VisualizerPresetDto = {
   bgColor: string | 'transparent'
   opacity: number
   scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
