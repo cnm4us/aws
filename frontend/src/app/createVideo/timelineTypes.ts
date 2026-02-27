@@ -194,6 +194,22 @@ export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
 export type VisualizerSpectrumMode = 'full' | 'voice'
+export type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+
+export type VisualizerPresetInstanceSnapshot = {
+  id: string
+  style: VisualizerStyle
+  fgColor: string
+  opacity: number
+  scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
+  bandMode: VisualizerBandMode
+  gradientEnabled: boolean
+  gradientStart: string
+  gradientEnd: string
+  gradientMode: VisualizerGradientMode
+}
 
 export type VisualizerPresetSnapshot = {
   id: number
@@ -206,6 +222,7 @@ export type VisualizerPresetSnapshot = {
   scale: VisualizerScale
   barCount: number
   spectrumMode: VisualizerSpectrumMode
+  bandMode: VisualizerBandMode
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -213,6 +230,7 @@ export type VisualizerPresetSnapshot = {
   clipMode: VisualizerClipMode
   clipInsetPct: number
   clipHeightPct: number
+  instances?: VisualizerPresetInstanceSnapshot[]
 }
 
 export type VisualizerSegment = {
@@ -268,6 +286,7 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   scale: 'linear',
   barCount: 48,
   spectrumMode: 'full',
+  bandMode: 'full',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -275,6 +294,22 @@ export const DEFAULT_VISUALIZER_PRESET_SNAPSHOT: VisualizerPresetSnapshot = {
   clipMode: 'none',
   clipInsetPct: 6,
   clipHeightPct: 100,
+  instances: [
+    {
+      id: 'instance_1',
+      style: 'wave_line',
+      fgColor: '#d4af37',
+      opacity: 1,
+      scale: 'linear',
+      barCount: 48,
+      spectrumMode: 'full',
+      bandMode: 'full',
+      gradientEnabled: false,
+      gradientStart: '#d4af37',
+      gradientEnd: '#f7d774',
+      gradientMode: 'vertical',
+    },
+  ],
 }
 
 export function normalizeNarrationVisualizer(raw: any): NarrationVisualizerConfig {
@@ -549,6 +584,13 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 String(snapBase.spectrumMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.spectrumMode).trim().toLowerCase() === 'voice'
                   ? 'voice'
                   : 'full',
+              bandMode:
+                String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() === 'band_1' ||
+                String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() === 'band_2' ||
+                String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() === 'band_3' ||
+                String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() === 'band_4'
+                  ? (String(snapBase.bandMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bandMode).trim().toLowerCase() as any)
+                  : 'full',
               gradientEnabled: snapBase.gradientEnabled === true,
               gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
               gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
@@ -562,6 +604,60 @@ export function cloneTimeline(timeline: Timeline): Timeline {
                 ? Number(snapBase.clipHeightPct)
                 : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
             }
+            const instancesRaw = Array.isArray((snapBase as any).instances) ? ((snapBase as any).instances as any[]) : []
+            const normalizedInstances = instancesRaw
+              .slice(0, 8)
+              .map((inst: any, idx: number) => {
+                const styleRaw = String(inst?.style || snapshot.style).trim().toLowerCase()
+                const style =
+                  styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars'
+                    ? (styleRaw as any)
+                    : 'wave_line'
+                const scaleRaw = String(inst?.scale || snapshot.scale).trim().toLowerCase()
+                const scale = scaleRaw === 'log' ? 'log' : 'linear'
+                const spectrumRaw = String(inst?.spectrumMode || snapshot.spectrumMode).trim().toLowerCase()
+                const spectrumMode = spectrumRaw === 'voice' ? 'voice' : 'full'
+                const bandRaw = String(inst?.bandMode || snapshot.bandMode || 'full').trim().toLowerCase()
+                const bandMode =
+                  bandRaw === 'band_1' || bandRaw === 'band_2' || bandRaw === 'band_3' || bandRaw === 'band_4' ? (bandRaw as any) : 'full'
+                const gradientModeRaw = String(inst?.gradientMode || snapshot.gradientMode).trim().toLowerCase()
+                const gradientMode = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
+                return {
+                  id: String(inst?.id || `instance_${idx + 1}`),
+                  style,
+                  fgColor: String(inst?.fgColor || snapshot.fgColor),
+                  opacity: Number.isFinite(Number(inst?.opacity)) ? Math.max(0, Math.min(1, Number(inst?.opacity))) : snapshot.opacity,
+                  scale,
+                  barCount: Number.isFinite(Number(inst?.barCount))
+                    ? Math.max(12, Math.min(128, Number(inst?.barCount)))
+                    : snapshot.barCount,
+                  spectrumMode,
+                  bandMode,
+                  gradientEnabled: inst?.gradientEnabled === true,
+                  gradientStart: String(inst?.gradientStart || snapshot.gradientStart),
+                  gradientEnd: String(inst?.gradientEnd || snapshot.gradientEnd),
+                  gradientMode,
+                } as VisualizerPresetInstanceSnapshot
+              })
+            snapshot.instances =
+              normalizedInstances.length > 0
+                ? normalizedInstances
+                : [
+                    {
+                      id: 'instance_1',
+                      style: snapshot.style,
+                      fgColor: snapshot.fgColor,
+                      opacity: snapshot.opacity,
+                      scale: snapshot.scale,
+                      barCount: snapshot.barCount,
+                      spectrumMode: snapshot.spectrumMode,
+                      bandMode: snapshot.bandMode || 'full',
+                      gradientEnabled: snapshot.gradientEnabled,
+                      gradientStart: snapshot.gradientStart,
+                      gradientEnd: snapshot.gradientEnd,
+                      gradientMode: snapshot.gradientMode,
+                    },
+                  ]
             const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
             const audioSourceKind =
               kindRaw === 'video_overlay'

@@ -6,27 +6,29 @@ import nebulaBgImage from './images/nebula_bg.jpg'
 type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
 type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
-type VisualizerClipMode = 'none' | 'rect'
 type VisualizerSpectrumMode = 'full' | 'voice'
+type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+type VisualizerPresetInstance = {
+  id: string
+  style: VisualizerStyle
+  fgColor: string
+  opacity: number
+  scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
+  bandMode: VisualizerBandMode
+  gradientEnabled: boolean
+  gradientStart: string
+  gradientEnd: string
+  gradientMode: VisualizerGradientMode
+}
 
 type VisualizerPreset = {
   id: number
   name: string
   description: string | null
-  style: VisualizerStyle
-  fgColor: string
   bgColor: string | 'transparent'
-  opacity: number
-  scale: VisualizerScale
-  barCount: number
-  spectrumMode: VisualizerSpectrumMode
-  gradientEnabled: boolean
-  gradientStart: string
-  gradientEnd: string
-  gradientMode: VisualizerGradientMode
-  clipMode: VisualizerClipMode
-  clipInsetPct: number
-  clipHeightPct: number
+  instances: VisualizerPresetInstance[]
   createdAt: string
   updatedAt: string
   archivedAt: string | null
@@ -47,23 +49,26 @@ type RouteContext = {
 
 type Mode = 'manage' | 'pick'
 
-const DEFAULT_PRESET: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> = {
-  name: 'Visualizer Preset',
-  description: null,
+const DEFAULT_INSTANCE: VisualizerPresetInstance = {
+  id: 'instance_1',
   style: 'wave_line',
   fgColor: '#d4af37',
-  bgColor: 'transparent',
   opacity: 1,
   scale: 'linear',
   barCount: 48,
   spectrumMode: 'full',
+  bandMode: 'full',
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
   gradientMode: 'vertical',
-  clipMode: 'none',
-  clipInsetPct: 6,
-  clipHeightPct: 100,
+}
+
+const DEFAULT_PRESET: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> = {
+  name: 'Visualizer Preset',
+  description: null,
+  bgColor: 'transparent',
+  instances: [DEFAULT_INSTANCE],
 }
 
 const nebulaShellBaseStyle: React.CSSProperties = {
@@ -191,22 +196,87 @@ async function fetchJson(url: string): Promise<any> {
   return json
 }
 
-function parseClipInset(value: any): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return 6
-  return Math.min(Math.max(n, 0), 40)
-}
-
-function parseClipHeight(value: any): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return 100
-  return Math.min(Math.max(n, 10), 100)
-}
-
 function parseBarCount(value: any): number {
   const n = Number(value)
-  if (!Number.isFinite(n)) return DEFAULT_PRESET.barCount
+  if (!Number.isFinite(n)) return DEFAULT_INSTANCE.barCount
   return Math.round(Math.min(Math.max(n, 12), 128))
+}
+
+function getSpectrumRange(
+  binsLength: number,
+  spectrumMode: VisualizerSpectrumMode,
+  bandMode: VisualizerBandMode
+): { start: number; end: number } {
+  const maxIdx = Math.max(1, binsLength - 1)
+  let baseStart = 0
+  let baseEnd = maxIdx
+  if (spectrumMode === 'voice') {
+    const lowIdx = Math.round(0.12 * maxIdx)
+    const highIdx = Math.round(0.68 * maxIdx)
+    baseStart = Math.max(0, Math.min(maxIdx, lowIdx))
+    baseEnd = Math.max(baseStart + 1, Math.min(maxIdx, highIdx))
+  }
+  if (bandMode === 'full') return { start: baseStart, end: baseEnd }
+  const bandIndex = bandMode === 'band_1' ? 0 : bandMode === 'band_2' ? 1 : bandMode === 'band_3' ? 2 : 3
+  const span = Math.max(1, baseEnd - baseStart + 1)
+  const step = span / 4
+  const start = Math.round(baseStart + step * bandIndex)
+  const end = Math.round(baseStart + step * (bandIndex + 1) - 1)
+  return {
+    start: Math.max(baseStart, Math.min(baseEnd, start)),
+    end: Math.max(baseStart + 1, Math.min(baseEnd, end)),
+  }
+}
+
+function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: number): VisualizerPresetInstance {
+  const styleRaw = String(raw?.style || fallback.style).trim().toLowerCase()
+  const style: VisualizerStyle =
+    styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars' ? (styleRaw as any) : 'wave_line'
+  const scale: VisualizerScale = String(raw?.scale || fallback.scale).trim().toLowerCase() === 'log' ? 'log' : 'linear'
+  const spectrumMode: VisualizerSpectrumMode =
+    String(raw?.spectrumMode || fallback.spectrumMode).trim().toLowerCase() === 'voice' ? 'voice' : 'full'
+  const bandModeRaw = String(raw?.bandMode || fallback.bandMode || 'full').trim().toLowerCase()
+  const bandMode: VisualizerBandMode =
+    bandModeRaw === 'band_1' || bandModeRaw === 'band_2' || bandModeRaw === 'band_3' || bandModeRaw === 'band_4'
+      ? (bandModeRaw as VisualizerBandMode)
+      : 'full'
+  const gradientMode: VisualizerGradientMode =
+    String(raw?.gradientMode || fallback.gradientMode).trim().toLowerCase() === 'horizontal' ? 'horizontal' : 'vertical'
+  return {
+    id: String(raw?.id || fallback.id || `instance_${idx + 1}`).trim() || `instance_${idx + 1}`,
+    style,
+    fgColor: String(raw?.fgColor || fallback.fgColor || '#d4af37'),
+    opacity: Number.isFinite(Number(raw?.opacity)) ? Math.max(0, Math.min(1, Number(raw.opacity))) : fallback.opacity,
+    scale,
+    barCount: parseBarCount(raw?.barCount),
+    spectrumMode,
+    bandMode,
+    gradientEnabled: raw?.gradientEnabled == null ? Boolean(fallback.gradientEnabled) : raw?.gradientEnabled === true,
+    gradientStart: String(raw?.gradientStart || fallback.gradientStart || '#d4af37'),
+    gradientEnd: String(raw?.gradientEnd || fallback.gradientEnd || '#f7d774'),
+    gradientMode,
+  }
+}
+
+function normalizeInstances(raw: any): VisualizerPresetInstance[] {
+  const list = Array.isArray(raw) ? raw : []
+  const out: VisualizerPresetInstance[] = []
+  for (let idx = 0; idx < Math.min(8, list.length); idx++) {
+    const fallback = idx > 0 ? out[idx - 1] : DEFAULT_INSTANCE
+    out.push(normalizeInstance(list[idx], fallback, idx))
+  }
+  if (out.length) return out
+  return [{ ...DEFAULT_INSTANCE }]
+}
+
+function normalizePresetDraft(raw: any): Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> {
+  const instances = normalizeInstances(raw?.instances)
+  return {
+    name: String(raw?.name || DEFAULT_PRESET.name),
+    description: raw?.description == null ? null : String(raw.description),
+    bgColor: raw?.bgColor === 'transparent' ? 'transparent' : String(raw?.bgColor || 'transparent'),
+    instances,
+  }
 }
 
 function VisualizerPreview({
@@ -290,25 +360,32 @@ function VisualizerPreview({
         analyser.getByteFrequencyData(freqDataRef.current)
       }
 
-      const getSpectrumValue = (tNorm: number) => {
+      const getSpectrumValue = (
+        tNorm: number,
+        scale: VisualizerScale,
+        spectrumMode: VisualizerSpectrumMode,
+        bandMode: VisualizerBandMode
+      ) => {
         const bins = freqDataRef.current
         if (!bins || bins.length < 2) {
-          const base0 = config.scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
-          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
+          const base0 = scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
+          const { start, end } = getSpectrumRange(512, spectrumMode, bandMode)
+          const bandNorm = start / 511 + base0 * Math.max(0.0001, (end - start) / 511)
+          const base = bandNorm
           return 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
         }
         const clamped = Math.max(0, Math.min(1, tNorm))
-        const scaled = config.scale === 'log' ? Math.pow(clamped, 2) : clamped
-        const mapped = config.spectrumMode === 'voice' ? 0.12 + scaled * 0.56 : scaled
-        const idx = Math.max(0, Math.min(bins.length - 1, Math.round(mapped * (bins.length - 1))))
+        const scaled = scale === 'log' ? Math.pow(clamped, 2) : clamped
+        const { start, end } = getSpectrumRange(bins.length, spectrumMode, bandMode)
+        const idx = Math.max(start, Math.min(end, Math.round(start + scaled * (end - start))))
         const v = bins[idx] / 255
         return Math.max(0.03, Math.min(1, v))
       }
 
-      const getWaveValue = (tNorm: number) => {
+      const getWaveValue = (tNorm: number, scale: VisualizerScale) => {
         const samples = timeDataRef.current
         if (!samples || samples.length < 2) {
-          const base = config.scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
+          const base = scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
           const wobble = Math.sin(t * 2 + base * Math.PI * 4)
           const wobble2 = Math.sin(t * 3 + base * Math.PI * 7) * 0.45
           return wobble * 0.55 + wobble2
@@ -317,108 +394,87 @@ function VisualizerPreview({
         return (samples[idx] - 128) / 128
       }
 
-      const clipMode = config.clipMode || 'none'
-      const clipInsetPct = parseClipInset(config.clipInsetPct)
-      const clipHeightPct = parseClipHeight(config.clipHeightPct)
-      let didClip = false
-      if (clipMode === 'rect' && (clipInsetPct > 0 || clipHeightPct < 100)) {
-        const insetX = Math.round((w * clipInsetPct) / 100)
-        const insetY = Math.round((h * clipInsetPct) / 100)
-        const desiredH = Math.max(1, Math.round((h * clipHeightPct) / 100))
-        const maxH = Math.max(1, h - insetY * 2)
-        const clipH = Math.min(maxH, desiredH)
-        const top = Math.round(insetY + (maxH - clipH) / 2)
-        const clipW = Math.max(1, w - insetX * 2)
-        ctx.save()
-        ctx.beginPath()
-        ctx.rect(insetX, top, clipW, clipH)
-        ctx.clip()
-        didClip = true
-      }
-
       if (config.bgColor && config.bgColor !== 'transparent') {
         ctx.fillStyle = config.bgColor
         ctx.fillRect(0, 0, w, h)
       }
+      const instances = Array.isArray(config.instances) && config.instances.length ? config.instances : [DEFAULT_INSTANCE]
+      for (const instRaw of instances) {
+        const inst = normalizeInstance(instRaw, DEFAULT_INSTANCE, 0)
+        const fg = inst.fgColor || '#d4af37'
+        const gradientOn = inst.gradientEnabled && inst.gradientStart && inst.gradientEnd
+        const grad =
+          gradientOn && w > 0 && h > 0
+            ? (() => {
+                const isHorizontal = inst.gradientMode === 'horizontal'
+                const g = ctx.createLinearGradient(0, 0, isHorizontal ? w : 0, isHorizontal ? 0 : h)
+                g.addColorStop(0, String(inst.gradientStart || fg))
+                g.addColorStop(1, String(inst.gradientEnd || fg))
+                return g
+              })()
+            : null
+        ctx.globalAlpha = Number.isFinite(inst.opacity) ? Math.max(0, Math.min(1, inst.opacity)) : 1
+        ctx.strokeStyle = grad || fg
+        ctx.fillStyle = grad || fg
 
-      ctx.globalAlpha = Number.isFinite(config.opacity) ? Math.max(0, Math.min(1, config.opacity)) : 1
-      const fg = config.fgColor || '#d4af37'
-      const gradientOn = config.gradientEnabled && config.gradientStart && config.gradientEnd
-      const grad =
-        gradientOn && w > 0 && h > 0
-          ? (() => {
-              const isHorizontal = config.gradientMode === 'horizontal'
-              const g = ctx.createLinearGradient(0, 0, isHorizontal ? w : 0, isHorizontal ? 0 : h)
-              g.addColorStop(0, String(config.gradientStart || fg))
-              g.addColorStop(1, String(config.gradientEnd || fg))
-              return g
-            })()
-          : null
-      ctx.strokeStyle = grad || fg
-      ctx.fillStyle = grad || fg
-
-      if (config.style === 'radial_bars') {
-        const bars = parseBarCount(config.barCount)
-        const cx = w / 2
-        const cy = h / 2
-        const minDim = Math.min(w, h)
-        const inner = Math.max(6, minDim * 0.18)
-        const maxLen = Math.max(10, minDim * 0.32)
-        ctx.lineWidth = 2
-        ctx.lineCap = 'round'
-        ctx.beginPath()
-        for (let i = 0; i < bars; i++) {
-          const tt = bars <= 1 ? 0 : i / bars
-          const v = getSpectrumValue(tt)
-          const len = inner + v * maxLen
-          const ang = tt * Math.PI * 2 - Math.PI / 2
-          const x0 = cx + Math.cos(ang) * inner
-          const y0 = cy + Math.sin(ang) * inner
-          const x1 = cx + Math.cos(ang) * len
-          const y1 = cy + Math.sin(ang) * len
-          ctx.moveTo(x0, y0)
-          ctx.lineTo(x1, y1)
-        }
-        ctx.stroke()
-      } else if (config.style === 'spectrum_bars') {
-        const bars = parseBarCount(config.barCount)
-        const gap = 2
-        const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
-        for (let i = 0; i < bars; i++) {
-          const tt = bars <= 1 ? 0 : i / (bars - 1)
-          const v = getSpectrumValue(tt)
-          const bh = Math.max(1, Math.round(v * h))
-          const x = i * (barW + gap)
-          ctx.fillRect(x, h - bh, barW, bh)
-        }
-      } else {
-        const points = 180
-        const center = h / 2
-        const amp = h * 0.35
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        for (let i = 0; i < points; i++) {
-          const tt = points <= 1 ? 0 : i / (points - 1)
-          const y = center + amp * getWaveValue(tt)
-          const x = tt * w
-          if (i === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-        if (config.style === 'wave_fill') {
-          ctx.lineTo(w, center)
-          ctx.lineTo(0, center)
-          ctx.closePath()
-          ctx.fill()
-        } else {
+        if (inst.style === 'radial_bars') {
+          const bars = parseBarCount(inst.barCount)
+          const cx = w / 2
+          const cy = h / 2
+          const minDim = Math.min(w, h)
+          const inner = Math.max(6, minDim * 0.18)
+          const maxLen = Math.max(10, minDim * 0.32)
+          ctx.lineWidth = 2
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          for (let i = 0; i < bars; i++) {
+            const tt = bars <= 1 ? 0 : i / bars
+            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const len = inner + v * maxLen
+            const ang = tt * Math.PI * 2 - Math.PI / 2
+            const x0 = cx + Math.cos(ang) * inner
+            const y0 = cy + Math.sin(ang) * inner
+            const x1 = cx + Math.cos(ang) * len
+            const y1 = cy + Math.sin(ang) * len
+            ctx.moveTo(x0, y0)
+            ctx.lineTo(x1, y1)
+          }
           ctx.stroke()
+        } else if (inst.style === 'spectrum_bars') {
+          const bars = parseBarCount(inst.barCount)
+          const gap = 2
+          const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+          for (let i = 0; i < bars; i++) {
+            const tt = bars <= 1 ? 0 : i / (bars - 1)
+            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const bh = Math.max(1, Math.round(v * h))
+            const x = i * (barW + gap)
+            ctx.fillRect(x, h - bh, barW, bh)
+          }
+        } else {
+          const points = 180
+          const center = h / 2
+          const amp = h * 0.35
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          for (let i = 0; i < points; i++) {
+            const tt = points <= 1 ? 0 : i / (points - 1)
+            const y = center + amp * getWaveValue(tt, inst.scale)
+            const x = tt * w
+            if (i === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+          }
+          if (inst.style === 'wave_fill') {
+            ctx.lineTo(w, center)
+            ctx.lineTo(0, center)
+            ctx.closePath()
+            ctx.fill()
+          } else {
+            ctx.stroke()
+          }
         }
       }
 
-      if (didClip) {
-        try {
-          ctx.restore()
-        } catch {}
-      }
       ctx.globalAlpha = 1
     }
 
@@ -493,24 +549,7 @@ export default function VisualizerPresetsPage() {
         const res = await fetchJson(`/api/visualizer-presets/${encodeURIComponent(String(routeCtx.presetId))}`)
         const preset = res?.preset
         if (!preset) throw new Error('Failed to load')
-        setDraft({
-          name: preset.name || 'Visualizer Preset',
-          description: preset.description ?? null,
-          style: preset.style || 'wave_line',
-          fgColor: preset.fgColor || '#d4af37',
-          bgColor: preset.bgColor || 'transparent',
-          opacity: Number.isFinite(Number(preset.opacity)) ? Number(preset.opacity) : 1,
-          scale: preset.scale === 'log' ? 'log' : 'linear',
-          barCount: parseBarCount(preset.barCount),
-          spectrumMode: preset.spectrumMode === 'voice' ? 'voice' : 'full',
-          gradientEnabled: preset.gradientEnabled === true,
-          gradientStart: preset.gradientStart || preset.fgColor || '#d4af37',
-          gradientEnd: preset.gradientEnd || '#f7d774',
-          gradientMode: preset.gradientMode === 'horizontal' ? 'horizontal' : 'vertical',
-          clipMode: preset.clipMode === 'rect' ? 'rect' : 'none',
-          clipInsetPct: parseClipInset(preset.clipInsetPct),
-          clipHeightPct: parseClipHeight(preset.clipHeightPct),
-        })
+        setDraft(normalizePresetDraft(preset))
       } catch (e: any) {
         setError(String(e?.message || 'Failed to load'))
       } finally {
@@ -528,11 +567,19 @@ export default function VisualizerPresetsPage() {
       try {
         const res = await fetchJson('/api/visualizer-presets?limit=200')
         const raw = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : []
-        const items = raw.map((preset: any) => ({
-          ...preset,
-          barCount: parseBarCount(preset?.barCount),
-          spectrumMode: preset?.spectrumMode === 'voice' ? 'voice' : 'full',
-        }))
+        const items = raw.map((preset: any) => {
+          const normalized = normalizePresetDraft(preset)
+          return {
+            id: Number(preset?.id || 0),
+            name: String(preset?.name || normalized.name),
+            description: preset?.description == null ? null : String(preset.description),
+            bgColor: normalized.bgColor,
+            instances: normalized.instances,
+            createdAt: String(preset?.createdAt || ''),
+            updatedAt: String(preset?.updatedAt || ''),
+            archivedAt: preset?.archivedAt == null ? null : String(preset.archivedAt),
+          } as VisualizerPreset
+        })
         setPresets(items)
       } catch (e: any) {
         setError(String(e?.message || 'Failed to load'))
@@ -626,6 +673,36 @@ export default function VisualizerPresetsPage() {
     [returnHref]
   )
 
+  const updateInstance = React.useCallback((idx: number, patch: Partial<VisualizerPresetInstance>) => {
+    setDraft((prev) => {
+      const list = normalizeInstances(prev.instances)
+      if (idx < 0 || idx >= list.length) return prev
+      const next = list.slice()
+      next[idx] = normalizeInstance({ ...next[idx], ...patch }, next[idx], idx)
+      return { ...prev, instances: next }
+    })
+  }, [])
+
+  const addInstance = React.useCallback(() => {
+    setDraft((prev) => {
+      const list = normalizeInstances(prev.instances)
+      if (list.length >= 8) return prev
+      const last = list[list.length - 1] || DEFAULT_INSTANCE
+      const nextInst = normalizeInstance({ ...last, id: `instance_${list.length + 1}` }, last, list.length)
+      return { ...prev, instances: [...list, nextInst] }
+    })
+  }, [])
+
+  const removeInstance = React.useCallback((idx: number) => {
+    setDraft((prev) => {
+      const list = normalizeInstances(prev.instances)
+      if (list.length <= 1) return prev
+      if (idx < 0 || idx >= list.length) return prev
+      const next = list.filter((_, i) => i !== idx).map((inst, i) => normalizeInstance({ ...inst, id: `instance_${i + 1}` }, inst, i))
+      return { ...prev, instances: next }
+    })
+  }, [])
+
   const submit = async () => {
     setSaving(true)
     setFormError(null)
@@ -633,23 +710,24 @@ export default function VisualizerPresetsPage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       const csrf = getCsrfToken()
       if (csrf) headers['x-csrf-token'] = csrf
+      const instances = normalizeInstances(draft.instances)
+      const primary = instances[0] || DEFAULT_INSTANCE
       const body = {
         name: draft.name,
         description: draft.description,
-        style: draft.style,
-        fgColor: draft.fgColor,
+        instances,
+        style: primary.style,
+        fgColor: primary.fgColor,
         bgColor: draft.bgColor,
-        opacity: draft.opacity,
-        scale: draft.scale,
-        barCount: draft.barCount,
-        spectrumMode: draft.spectrumMode,
-        gradientEnabled: draft.gradientEnabled,
-        gradientStart: draft.gradientStart,
-        gradientEnd: draft.gradientEnd,
-        gradientMode: draft.gradientMode,
-        clipMode: draft.clipMode,
-        clipInsetPct: draft.clipInsetPct,
-        clipHeightPct: draft.clipHeightPct,
+        opacity: primary.opacity,
+        scale: primary.scale,
+        barCount: primary.barCount,
+        spectrumMode: primary.spectrumMode,
+        bandMode: primary.bandMode,
+        gradientEnabled: primary.gradientEnabled,
+        gradientStart: primary.gradientStart,
+        gradientEnd: primary.gradientEnd,
+        gradientMode: primary.gradientMode,
       }
       const url = routeCtx.action === 'edit' && routeCtx.presetId
         ? `/api/visualizer-presets/${encodeURIComponent(String(routeCtx.presetId))}`
@@ -771,84 +849,7 @@ export default function VisualizerPresetsPage() {
               <VisualizerPreview config={draft} audioEl={previewAudioEl} active={previewPlaying} />
             </div>
 
-            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
-                <select
-                  value={draft.style}
-                  onChange={(e) => setDraft((p) => ({ ...p, style: e.target.value as VisualizerStyle }))}
-                  style={MODAL_INPUT_STYLE}
-                >
-                  <option value="wave_line">Wave Line</option>
-                  <option value="wave_fill">Wave Fill</option>
-                  <option value="spectrum_bars">Spectrum Bars</option>
-                  <option value="radial_bars">Radial Bars</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Scale</div>
-                <select
-                  value={draft.scale}
-                  onChange={(e) => setDraft((p) => ({ ...p, scale: e.target.value as VisualizerScale }))}
-                  style={MODAL_INPUT_STYLE}
-                >
-                  <option value="linear">Linear</option>
-                  <option value="log">Log</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
-                <select
-                  value={draft.spectrumMode}
-                  onChange={(e) => setDraft((p) => ({ ...p, spectrumMode: e.target.value as VisualizerSpectrumMode }))}
-                  style={MODAL_INPUT_STYLE}
-                >
-                  <option value="full">Full</option>
-                  <option value="voice">Voice</option>
-                </select>
-              </label>
-            </div>
-
-            <div style={{ display: 'grid', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
-                <input
-                  type="range"
-                  min={12}
-                  max={128}
-                  step={4}
-                  value={draft.barCount}
-                  onChange={(e) => setDraft((p) => ({ ...p, barCount: parseBarCount(e.target.value) }))}
-                />
-                <div style={{ color: '#bbb', fontSize: 12 }}>{draft.barCount}</div>
-              </label>
-            </div>
-
-            <div style={{ display: 'grid', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Opacity</div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={draft.opacity}
-                  onChange={(e) => setDraft((p) => ({ ...p, opacity: Number(e.target.value) }))}
-                />
-                <div style={{ color: '#bbb', fontSize: 12 }}>{Math.round(draft.opacity * 100)}%</div>
-              </label>
-            </div>
-
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Foreground</div>
-                <input
-                  type="color"
-                  value={draft.fgColor}
-                  onChange={(e) => setDraft((p) => ({ ...p, fgColor: e.target.value }))}
-                  style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
-                />
-              </label>
               <label style={{ display: 'grid', gap: 6 }}>
                 <div style={{ color: '#bbb', fontSize: 13 }}>Background</div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -870,89 +871,198 @@ export default function VisualizerPresetsPage() {
               </label>
             </div>
 
-            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Gradient</div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#bbb', fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={draft.gradientEnabled}
-                    onChange={(e) => {
-                      const enabled = e.target.checked
-                      setDraft((p) => ({
-                        ...p,
-                        gradientEnabled: enabled,
-                        gradientStart: p.gradientStart || p.fgColor,
-                        gradientEnd: p.gradientEnd || '#f7d774',
-                      }))
-                    }}
-                  />
-                  Enable gradient
-                </label>
-                {draft.gradientEnabled ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <input
-                        type="color"
-                        value={draft.gradientStart}
-                        onChange={(e) => setDraft((p) => ({ ...p, gradientStart: e.target.value }))}
-                        style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
-                      />
-                      <input
-                        type="color"
-                        value={draft.gradientEnd}
-                        onChange={(e) => setDraft((p) => ({ ...p, gradientEnd: e.target.value }))}
-                        style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
-                      />
-                    </div>
-                    <select
-                      value={draft.gradientMode}
-                      onChange={(e) => setDraft((p) => ({ ...p, gradientMode: e.target.value as VisualizerGradientMode }))}
-                      style={MODAL_INPUT_STYLE}
-                    >
-                      <option value="vertical">Vertical</option>
-                      <option value="horizontal">Horizontal</option>
-                    </select>
-                  </div>
-                ) : null}
-              </label>
-              <label style={{ display: 'grid', gap: 6 }}>
-                <div style={{ color: '#bbb', fontSize: 13 }}>Clip</div>
-                <select
-                  value={draft.clipMode}
-                  onChange={(e) => setDraft((p) => ({ ...p, clipMode: e.target.value as VisualizerClipMode }))}
-                  style={MODAL_INPUT_STYLE}
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <div style={{ color: '#bbb', fontSize: 13 }}>Instances</div>
+                <button
+                  type="button"
+                  onClick={addInstance}
+                  disabled={(draft.instances || []).length >= 8}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(10,132,255,0.75)',
+                    background: 'rgba(10,132,255,0.24)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: (draft.instances || []).length >= 8 ? 'default' : 'pointer',
+                    opacity: (draft.instances || []).length >= 8 ? 0.6 : 1,
+                  }}
                 >
-                  <option value="none">None</option>
-                  <option value="rect">Rectangle</option>
-                </select>
-                {draft.clipMode === 'rect' ? (
-                  <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-                    <label style={{ display: 'grid', gap: 4 }}>
-                      <span style={{ color: '#bbb', fontSize: 12 }}>Inset %</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={40}
-                        value={draft.clipInsetPct}
-                        onChange={(e) => setDraft((p) => ({ ...p, clipInsetPct: parseClipInset(e.target.value) }))}
+                  + Add Instance
+                </button>
+              </div>
+              {normalizeInstances(draft.instances).map((inst, idx, arr) => (
+                <div
+                  key={inst.id || `instance-${idx}`}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    borderRadius: 12,
+                    padding: 10,
+                    display: 'grid',
+                    gap: 10,
+                    background: 'rgba(0,0,0,0.28)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div style={{ color: '#fff', fontSize: 13, fontWeight: 900 }}>Instance #{idx + 1}</div>
+                    <button
+                      type="button"
+                      onClick={() => removeInstance(idx)}
+                      disabled={arr.length <= 1}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 10,
+                        border: '1px solid rgba(255,155,155,0.40)',
+                        background: 'rgba(128,0,0,1)',
+                        color: '#fff',
+                        fontWeight: 800,
+                        cursor: arr.length <= 1 ? 'default' : 'pointer',
+                        opacity: arr.length <= 1 ? 0.55 : 1,
+                      }}
+                    >
+                      -
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Style</div>
+                      <select
+                        value={inst.style}
+                        onChange={(e) => updateInstance(idx, { style: e.target.value as VisualizerStyle })}
                         style={MODAL_INPUT_STYLE}
-                      />
+                      >
+                        <option value="wave_line">Wave Line</option>
+                        <option value="wave_fill">Wave Fill</option>
+                        <option value="spectrum_bars">Spectrum Bars</option>
+                        <option value="radial_bars">Radial Bars</option>
+                      </select>
                     </label>
-                    <label style={{ display: 'grid', gap: 4 }}>
-                      <span style={{ color: '#bbb', fontSize: 12 }}>Height %</span>
-                      <input
-                        type="number"
-                        min={10}
-                        max={100}
-                        value={draft.clipHeightPct}
-                        onChange={(e) => setDraft((p) => ({ ...p, clipHeightPct: parseClipHeight(e.target.value) }))}
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Scale</div>
+                      <select
+                        value={inst.scale}
+                        onChange={(e) => updateInstance(idx, { scale: e.target.value as VisualizerScale })}
                         style={MODAL_INPUT_STYLE}
-                      />
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="log">Log</option>
+                      </select>
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Spectrum</div>
+                      <select
+                        value={inst.spectrumMode}
+                        onChange={(e) => updateInstance(idx, { spectrumMode: e.target.value as VisualizerSpectrumMode })}
+                        style={MODAL_INPUT_STYLE}
+                      >
+                        <option value="full">Full</option>
+                        <option value="voice">Voice</option>
+                      </select>
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Band</div>
+                      <select
+                        value={inst.bandMode}
+                        onChange={(e) => updateInstance(idx, { bandMode: e.target.value as VisualizerBandMode })}
+                        style={MODAL_INPUT_STYLE}
+                      >
+                        <option value="full">Full</option>
+                        <option value="band_1">Band 1</option>
+                        <option value="band_2">Band 2</option>
+                        <option value="band_3">Band 3</option>
+                        <option value="band_4">Band 4</option>
+                      </select>
                     </label>
                   </div>
-                ) : null}
-              </label>
+
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Bars</div>
+                      <input
+                        type="range"
+                        min={12}
+                        max={128}
+                        step={4}
+                        value={inst.barCount}
+                        onChange={(e) => updateInstance(idx, { barCount: parseBarCount(e.target.value) })}
+                      />
+                      <div style={{ color: '#bbb', fontSize: 12 }}>{inst.barCount}</div>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Opacity</div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={inst.opacity}
+                        onChange={(e) => updateInstance(idx, { opacity: Number(e.target.value) })}
+                      />
+                      <div style={{ color: '#bbb', fontSize: 12 }}>{Math.round(inst.opacity * 100)}%</div>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))' }}>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Foreground</div>
+                      <input
+                        type="color"
+                        value={inst.fgColor}
+                        onChange={(e) => updateInstance(idx, { fgColor: e.target.value })}
+                        style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
+                      />
+                    </label>
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#bbb', fontSize: 13 }}>Gradient</div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#bbb', fontSize: 13 }}>
+                        <input
+                          type="checkbox"
+                          checked={inst.gradientEnabled}
+                          onChange={(e) =>
+                            updateInstance(idx, {
+                              gradientEnabled: e.target.checked,
+                              gradientStart: inst.gradientStart || inst.fgColor,
+                              gradientEnd: inst.gradientEnd || '#f7d774',
+                            })
+                          }
+                        />
+                        Enable gradient
+                      </label>
+                      {inst.gradientEnabled ? (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                            <input
+                              type="color"
+                              value={inst.gradientStart}
+                              onChange={(e) => updateInstance(idx, { gradientStart: e.target.value })}
+                              style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
+                            />
+                            <input
+                              type="color"
+                              value={inst.gradientEnd}
+                              onChange={(e) => updateInstance(idx, { gradientEnd: e.target.value })}
+                              style={{ height: 40, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent' }}
+                            />
+                          </div>
+                          <select
+                            value={inst.gradientMode}
+                            onChange={(e) => updateInstance(idx, { gradientMode: e.target.value as VisualizerGradientMode })}
+                            style={MODAL_INPUT_STYLE}
+                          >
+                            <option value="vertical">Vertical</option>
+                            <option value="horizontal">Horizontal</option>
+                          </select>
+                        </div>
+                      ) : null}
+                    </label>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
@@ -1103,18 +1213,8 @@ export default function VisualizerPresetsPage() {
                               const body = {
                                 name: `${name} Copy`,
                                 description: preset.description,
-                                style: preset.style,
-                                fgColor: preset.fgColor,
                                 bgColor: preset.bgColor,
-                                opacity: preset.opacity,
-                                scale: preset.scale,
-                                gradientEnabled: preset.gradientEnabled,
-                                gradientStart: preset.gradientStart,
-                                gradientEnd: preset.gradientEnd,
-                                gradientMode: preset.gradientMode,
-                                clipMode: preset.clipMode,
-                                clipInsetPct: preset.clipInsetPct,
-                                clipHeightPct: preset.clipHeightPct,
+                                instances: normalizeInstances(preset.instances),
                               }
                               const res = await fetch('/api/visualizer-presets', {
                                 method: 'POST',

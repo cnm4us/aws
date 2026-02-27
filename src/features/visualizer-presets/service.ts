@@ -1,9 +1,11 @@
 import { DomainError, ForbiddenError, NotFoundError } from '../../core/errors'
 import * as repo from './repo'
 import type {
+  VisualizerBandMode,
   VisualizerClipMode,
   VisualizerGradientMode,
   VisualizerPresetDto,
+  VisualizerPresetInstanceDto,
   VisualizerPresetRow,
   VisualizerScale,
   VisualizerSpectrumMode,
@@ -15,6 +17,7 @@ const SCALES: readonly VisualizerScale[] = ['linear', 'log']
 const GRADIENT_MODES: readonly VisualizerGradientMode[] = ['vertical', 'horizontal']
 const CLIP_MODES: readonly VisualizerClipMode[] = ['none', 'rect']
 const SPECTRUM_MODES: readonly VisualizerSpectrumMode[] = ['full', 'voice']
+const BAND_MODES: readonly VisualizerBandMode[] = ['full', 'band_1', 'band_2', 'band_3', 'band_4']
 
 const DEFAULTS = {
   style: 'wave_line' as VisualizerStyle,
@@ -24,6 +27,7 @@ const DEFAULTS = {
   scale: 'linear' as VisualizerScale,
   barCount: 48,
   spectrumMode: 'full' as VisualizerSpectrumMode,
+  bandMode: 'full' as VisualizerBandMode,
   gradientEnabled: false,
   gradientStart: '#d4af37',
   gradientEnd: '#f7d774',
@@ -32,6 +36,8 @@ const DEFAULTS = {
   clipInsetPct: 6,
   clipHeightPct: 100,
 }
+
+const MAX_INSTANCES = 8
 
 function isEnumValue<T extends string>(value: any, allowed: readonly T[]): value is T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -89,6 +95,105 @@ function normalizeBarCount(raw: any): number {
   return Math.round(Math.min(Math.max(n, 12), 128))
 }
 
+function normalizeInstance(raw: any, fallback?: Partial<VisualizerPresetInstanceDto>, idx = 0): VisualizerPresetInstanceDto {
+  const seed = fallback || {}
+  const idRaw = String(raw?.id ?? seed.id ?? '').trim()
+  const id = idRaw ? idRaw.slice(0, 80) : `instance_${idx + 1}`
+
+  const styleRaw = String(raw?.style ?? seed.style ?? DEFAULTS.style).trim().toLowerCase()
+  const style: VisualizerStyle = isEnumValue(styleRaw, STYLES) ? (styleRaw as VisualizerStyle) : DEFAULTS.style
+
+  const scaleRaw = String(raw?.scale ?? seed.scale ?? DEFAULTS.scale).trim().toLowerCase()
+  const scale: VisualizerScale = isEnumValue(scaleRaw, SCALES) ? (scaleRaw as VisualizerScale) : DEFAULTS.scale
+
+  const spectrumModeRaw = String(raw?.spectrumMode ?? seed.spectrumMode ?? DEFAULTS.spectrumMode).trim().toLowerCase()
+  const spectrumMode: VisualizerSpectrumMode = isEnumValue(spectrumModeRaw, SPECTRUM_MODES)
+    ? (spectrumModeRaw as VisualizerSpectrumMode)
+    : DEFAULTS.spectrumMode
+  const bandModeRaw = String(raw?.bandMode ?? seed.bandMode ?? DEFAULTS.bandMode).trim().toLowerCase()
+  const bandMode: VisualizerBandMode = isEnumValue(bandModeRaw, BAND_MODES) ? (bandModeRaw as VisualizerBandMode) : DEFAULTS.bandMode
+
+  const gradientModeRaw = String(raw?.gradientMode ?? seed.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
+  const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES)
+    ? (gradientModeRaw as VisualizerGradientMode)
+    : DEFAULTS.gradientMode
+
+  const fgColor = normalizeHexColor(raw?.fgColor ?? seed.fgColor, DEFAULTS.fgColor)
+  const gradientEnabled = raw?.gradientEnabled == null ? Boolean(seed.gradientEnabled) : raw?.gradientEnabled === true
+  const gradientStart = normalizeHexColor(raw?.gradientStart ?? seed.gradientStart, fgColor)
+  const gradientEnd = normalizeHexColor(raw?.gradientEnd ?? seed.gradientEnd, DEFAULTS.gradientEnd)
+  const opacity = normalizeOpacity(raw?.opacity ?? seed.opacity)
+  const barCount = normalizeBarCount(raw?.barCount ?? seed.barCount)
+
+  return {
+    id,
+    style,
+    fgColor,
+    opacity,
+    scale,
+    barCount,
+    spectrumMode,
+    bandMode,
+    gradientEnabled,
+    gradientStart,
+    gradientEnd,
+    gradientMode,
+  }
+}
+
+function parseInstancesJson(raw: any): any[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  if (typeof raw === 'object') return []
+  return []
+}
+
+function normalizeInstances(raw: any, fallback: Partial<VisualizerPresetInstanceDto>): VisualizerPresetInstanceDto[] {
+  const list = Array.isArray(raw) ? raw : []
+  const out = list
+    .slice(0, MAX_INSTANCES)
+    .map((item, idx) => normalizeInstance(item, idx === 0 ? fallback : fallback, idx))
+  if (out.length) return out
+  return [normalizeInstance({}, fallback, 0)]
+}
+
+function legacyStyleFromRow(row: VisualizerPresetRow): Partial<VisualizerPresetInstanceDto> {
+  return {
+    id: 'instance_1',
+    style: isEnumValue(String(row.style || '').trim().toLowerCase(), STYLES)
+      ? (String(row.style || '').trim().toLowerCase() as VisualizerStyle)
+      : DEFAULTS.style,
+    fgColor: normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor),
+    opacity: normalizeOpacity((row as any).opacity),
+    scale: isEnumValue(String(row.scale || '').trim().toLowerCase(), SCALES)
+      ? (String(row.scale || '').trim().toLowerCase() as VisualizerScale)
+      : DEFAULTS.scale,
+    barCount: normalizeBarCount((row as any).bar_count),
+    spectrumMode: isEnumValue(String((row as any).spectrum_mode || '').trim().toLowerCase(), SPECTRUM_MODES)
+      ? (String((row as any).spectrum_mode || '').trim().toLowerCase() as VisualizerSpectrumMode)
+      : DEFAULTS.spectrumMode,
+    bandMode: DEFAULTS.bandMode,
+    gradientEnabled: Number((row as any).gradient_enabled) === 1,
+    gradientStart: normalizeHexColor((row as any).gradient_start, normalizeHexColor((row as any).fg_color, DEFAULTS.fgColor)),
+    gradientEnd: normalizeHexColor((row as any).gradient_end, DEFAULTS.gradientEnd),
+    gradientMode: isEnumValue(String((row as any).gradient_mode || '').trim().toLowerCase(), GRADIENT_MODES)
+      ? (String((row as any).gradient_mode || '').trim().toLowerCase() as VisualizerGradientMode)
+      : DEFAULTS.gradientMode,
+  }
+}
+
+function serializeInstances(instances: VisualizerPresetInstanceDto[]): string {
+  return JSON.stringify(instances.map((inst) => ({ ...inst })))
+}
+
 function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
   const styleRaw = String(row.style || DEFAULTS.style).trim().toLowerCase()
   const style: VisualizerStyle = isEnumValue(styleRaw, STYLES) ? (styleRaw as VisualizerStyle) : DEFAULTS.style
@@ -111,24 +216,47 @@ function mapRow(row: VisualizerPresetRow): VisualizerPresetDto {
   const clipInsetPct = normalizeClipInset((row as any).clip_inset_pct)
   const clipHeightPct = normalizeClipHeight((row as any).clip_height_pct)
 
+  const legacyPrimary: VisualizerPresetInstanceDto = normalizeInstance(
+    {
+      id: 'instance_1',
+      style,
+      fgColor,
+      opacity,
+      scale,
+      barCount,
+      spectrumMode,
+      gradientEnabled,
+      gradientStart,
+      gradientEnd,
+      gradientMode,
+    },
+    undefined,
+    0
+  )
+  const parsedInstances = parseInstancesJson((row as any).instances_json)
+  const instances = normalizeInstances(parsedInstances, legacyPrimary)
+  const primary = instances[0] || legacyPrimary
+
   return {
     id: Number(row.id),
     name: String(row.name || ''),
     description: row.description == null ? null : String(row.description),
-    style,
-    fgColor,
+    style: primary.style,
+    fgColor: primary.fgColor,
     bgColor,
-    opacity,
-    scale,
-    barCount,
-    spectrumMode,
-    gradientEnabled,
-    gradientStart,
-    gradientEnd,
-    gradientMode,
+    opacity: primary.opacity,
+    scale: primary.scale,
+    barCount: primary.barCount,
+    spectrumMode: primary.spectrumMode,
+    bandMode: primary.bandMode,
+    gradientEnabled: primary.gradientEnabled,
+    gradientStart: primary.gradientStart,
+    gradientEnd: primary.gradientEnd,
+    gradientMode: primary.gradientMode,
     clipMode,
     clipInsetPct,
     clipHeightPct,
+    instances,
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
     archivedAt: row.archived_at == null ? null : String(row.archived_at),
@@ -156,6 +284,7 @@ export async function getForUser(id: number, userId: number): Promise<Visualizer
 export async function createForUser(input: {
   name: any
   description?: any
+  instances?: any
   style?: any
   fgColor?: any
   bgColor?: any
@@ -163,6 +292,7 @@ export async function createForUser(input: {
   scale?: any
   barCount?: any
   spectrumMode?: any
+  bandMode?: any
   gradientEnabled?: any
   gradientStart?: any
   gradientEnd?: any
@@ -182,6 +312,10 @@ export async function createForUser(input: {
   const spectrumMode: VisualizerSpectrumMode = isEnumValue(spectrumModeRaw, SPECTRUM_MODES)
     ? (spectrumModeRaw as VisualizerSpectrumMode)
     : DEFAULTS.spectrumMode
+  const bandModeRaw = String(input.bandMode ?? DEFAULTS.bandMode).trim().toLowerCase()
+  const bandMode: VisualizerBandMode = isEnumValue(bandModeRaw, BAND_MODES)
+    ? (bandModeRaw as VisualizerBandMode)
+    : DEFAULTS.bandMode
   const gradientModeRaw = String(input.gradientMode ?? DEFAULTS.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerGradientMode = isEnumValue(gradientModeRaw, GRADIENT_MODES) ? (gradientModeRaw as VisualizerGradientMode) : DEFAULTS.gradientMode
   const clipModeRaw = String(input.clipMode ?? DEFAULTS.clipMode).trim().toLowerCase()
@@ -196,25 +330,41 @@ export async function createForUser(input: {
   const barCount = normalizeBarCount(input.barCount)
   const clipInsetPct = normalizeClipInset(input.clipInsetPct)
   const clipHeightPct = normalizeClipHeight(input.clipHeightPct)
+  const instances = normalizeInstances((input as any).instances, {
+    id: 'instance_1',
+    style,
+    fgColor,
+    opacity,
+    scale,
+    barCount,
+    spectrumMode,
+    bandMode,
+    gradientEnabled,
+    gradientStart,
+    gradientEnd,
+    gradientMode,
+  })
+  const primary = instances[0]
 
   const row = await repo.create({
     ownerUserId: Number(userId),
     name,
     description,
-    style,
-    fgColor,
+    style: primary.style,
+    fgColor: primary.fgColor,
     bgColor,
-    opacity,
-    scale,
-    barCount,
-    spectrumMode,
-    gradientEnabled,
-    gradientStart,
-    gradientEnd,
-    gradientMode,
+    opacity: primary.opacity,
+    scale: primary.scale,
+    barCount: primary.barCount,
+    spectrumMode: primary.spectrumMode,
+    gradientEnabled: primary.gradientEnabled,
+    gradientStart: primary.gradientStart,
+    gradientEnd: primary.gradientEnd,
+    gradientMode: primary.gradientMode,
     clipMode,
     clipInsetPct,
     clipHeightPct,
+    instancesJson: serializeInstances(instances),
   })
   return mapRow(row)
 }
@@ -224,6 +374,7 @@ export async function updateForUser(
   input: {
     name?: any
     description?: any
+    instances?: any
     style?: any
     fgColor?: any
     bgColor?: any
@@ -231,6 +382,7 @@ export async function updateForUser(
     scale?: any
     barCount?: any
     spectrumMode?: any
+    bandMode?: any
     gradientEnabled?: any
     gradientStart?: any
     gradientEnd?: any
@@ -244,6 +396,7 @@ export async function updateForUser(
   const row = await repo.getById(id)
   if (!row) throw new NotFoundError('not_found')
   ensureOwned(row, userId)
+  const mappedCurrent = mapRow(row)
 
   const patch: any = {}
   if (input.name !== undefined) patch.name = normalizeName(input.name)
@@ -263,6 +416,10 @@ export async function updateForUser(
     const spectrumRaw = String(input.spectrumMode ?? '').trim().toLowerCase()
     patch.spectrumMode = isEnumValue(spectrumRaw, SPECTRUM_MODES) ? spectrumRaw : DEFAULTS.spectrumMode
   }
+  if (input.bandMode !== undefined) {
+    const bandRaw = String(input.bandMode ?? '').trim().toLowerCase()
+    patch.bandMode = isEnumValue(bandRaw, BAND_MODES) ? bandRaw : DEFAULTS.bandMode
+  }
   if (input.barCount !== undefined) patch.barCount = normalizeBarCount(input.barCount)
   if (input.gradientEnabled !== undefined) patch.gradientEnabled = input.gradientEnabled === true
   if (input.gradientStart !== undefined) patch.gradientStart = normalizeHexColor(input.gradientStart, DEFAULTS.gradientStart)
@@ -277,6 +434,73 @@ export async function updateForUser(
   }
   if (input.clipInsetPct !== undefined) patch.clipInsetPct = normalizeClipInset(input.clipInsetPct)
   if (input.clipHeightPct !== undefined) patch.clipHeightPct = normalizeClipHeight(input.clipHeightPct)
+
+  const instanceFieldTouched =
+    input.style !== undefined ||
+    input.fgColor !== undefined ||
+    input.opacity !== undefined ||
+    input.scale !== undefined ||
+    input.barCount !== undefined ||
+    input.spectrumMode !== undefined ||
+    input.bandMode !== undefined ||
+    input.gradientEnabled !== undefined ||
+    input.gradientStart !== undefined ||
+    input.gradientEnd !== undefined ||
+    input.gradientMode !== undefined
+
+  if (input.instances !== undefined) {
+    const currentPrimary = (mappedCurrent.instances && mappedCurrent.instances[0]) || normalizeInstance({}, legacyStyleFromRow(row), 0)
+    const instances = normalizeInstances(input.instances, currentPrimary)
+    const primary = instances[0]
+    patch.instancesJson = serializeInstances(instances)
+    patch.style = primary.style
+    patch.fgColor = primary.fgColor
+    patch.opacity = primary.opacity
+    patch.scale = primary.scale
+    patch.barCount = primary.barCount
+    patch.spectrumMode = primary.spectrumMode
+    patch.bandMode = primary.bandMode
+    patch.gradientEnabled = primary.gradientEnabled
+    patch.gradientStart = primary.gradientStart
+    patch.gradientEnd = primary.gradientEnd
+    patch.gradientMode = primary.gradientMode
+  } else if (instanceFieldTouched) {
+    const current = Array.isArray(mappedCurrent.instances) && mappedCurrent.instances.length
+      ? mappedCurrent.instances
+      : normalizeInstances([], legacyStyleFromRow(row))
+    const primaryNext = normalizeInstance(
+      {
+        ...current[0],
+        style: patch.style ?? current[0].style,
+        fgColor: patch.fgColor ?? current[0].fgColor,
+        opacity: patch.opacity ?? current[0].opacity,
+        scale: patch.scale ?? current[0].scale,
+        barCount: patch.barCount ?? current[0].barCount,
+        spectrumMode: patch.spectrumMode ?? current[0].spectrumMode,
+        bandMode: patch.bandMode ?? current[0].bandMode,
+        gradientEnabled: patch.gradientEnabled ?? current[0].gradientEnabled,
+        gradientStart: patch.gradientStart ?? current[0].gradientStart,
+        gradientEnd: patch.gradientEnd ?? current[0].gradientEnd,
+        gradientMode: patch.gradientMode ?? current[0].gradientMode,
+      },
+      current[0],
+      0
+    )
+    const tail = current.slice(1).map((inst, idx) => normalizeInstance(inst, inst, idx + 1))
+    const instances = [primaryNext, ...tail]
+    patch.instancesJson = serializeInstances(instances)
+    patch.style = primaryNext.style
+    patch.fgColor = primaryNext.fgColor
+    patch.opacity = primaryNext.opacity
+    patch.scale = primaryNext.scale
+    patch.barCount = primaryNext.barCount
+    patch.spectrumMode = primaryNext.spectrumMode
+    patch.bandMode = primaryNext.bandMode
+    patch.gradientEnabled = primaryNext.gradientEnabled
+    patch.gradientStart = primaryNext.gradientStart
+    patch.gradientEnd = primaryNext.gradientEnd
+    patch.gradientMode = primaryNext.gradientMode
+  }
 
   const updated = await repo.update(id, patch)
   return mapRow(updated)

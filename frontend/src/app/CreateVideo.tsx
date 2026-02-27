@@ -146,13 +146,16 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const barCountRaw = Number(snap.barCount)
   const spectrumModeRaw = String(snap.spectrumMode || base.spectrumMode).trim().toLowerCase()
   const spectrumMode: VisualizerPresetSnapshot['spectrumMode'] = spectrumModeRaw === 'voice' ? 'voice' : 'full'
+  const bandModeRaw = String((snap as any).bandMode || (base as any).bandMode || 'full').trim().toLowerCase()
+  const bandMode: any =
+    bandModeRaw === 'band_1' || bandModeRaw === 'band_2' || bandModeRaw === 'band_3' || bandModeRaw === 'band_4' ? bandModeRaw : 'full'
   const gradientModeRaw = String(snap.gradientMode || base.gradientMode).trim().toLowerCase()
   const gradientMode: VisualizerPresetSnapshot['gradientMode'] = gradientModeRaw === 'horizontal' ? 'horizontal' : 'vertical'
   const clipModeRaw = String(snap.clipMode || base.clipMode).trim().toLowerCase()
   const clipMode: VisualizerPresetSnapshot['clipMode'] = clipModeRaw === 'rect' ? 'rect' : 'none'
   const clipInsetRaw = Number(snap.clipInsetPct)
   const clipHeightRaw = Number(snap.clipHeightPct)
-  return {
+  const normalized: VisualizerPresetSnapshot = {
     id: Number.isFinite(Number(snap.id)) ? Number(snap.id) : base.id,
     name: String(snap.name || base.name),
     description: snap.description == null ? base.description : String(snap.description),
@@ -163,6 +166,7 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     scale,
     barCount: Number.isFinite(barCountRaw) ? Math.max(12, Math.min(128, Math.round(barCountRaw))) : base.barCount,
     spectrumMode,
+    bandMode,
     gradientEnabled: Boolean(snap.gradientEnabled),
     gradientStart: String(snap.gradientStart || base.gradientStart),
     gradientEnd: String(snap.gradientEnd || base.gradientEnd),
@@ -171,6 +175,58 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     clipInsetPct: Number.isFinite(clipInsetRaw) ? Math.max(0, Math.min(40, clipInsetRaw)) : base.clipInsetPct,
     clipHeightPct: Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : base.clipHeightPct,
   }
+  const instancesRaw = Array.isArray((snap as any).instances) ? ((snap as any).instances as any[]) : []
+  const normalizedInstances = instancesRaw
+    .slice(0, 8)
+    .map((inst: any, idx: number) => {
+      const styleRawI = String(inst?.style || normalized.style).trim().toLowerCase()
+      const styleI: VisualizerPresetSnapshot['style'] =
+        styleRawI === 'wave_fill' || styleRawI === 'spectrum_bars' || styleRawI === 'radial_bars' ? (styleRawI as any) : 'wave_line'
+      const scaleRawI = String(inst?.scale || normalized.scale).trim().toLowerCase()
+      const scaleI: VisualizerPresetSnapshot['scale'] = scaleRawI === 'log' ? 'log' : 'linear'
+      const spectrumRawI = String(inst?.spectrumMode || normalized.spectrumMode).trim().toLowerCase()
+      const spectrumModeI: VisualizerPresetSnapshot['spectrumMode'] = spectrumRawI === 'voice' ? 'voice' : 'full'
+      const bandRawI = String((inst as any)?.bandMode || (normalized as any).bandMode || 'full').trim().toLowerCase()
+      const bandModeI: any =
+        bandRawI === 'band_1' || bandRawI === 'band_2' || bandRawI === 'band_3' || bandRawI === 'band_4' ? bandRawI : 'full'
+      const gradientModeRawI = String(inst?.gradientMode || normalized.gradientMode).trim().toLowerCase()
+      const gradientModeI: VisualizerPresetSnapshot['gradientMode'] = gradientModeRawI === 'horizontal' ? 'horizontal' : 'vertical'
+      const barCountRawI = Number(inst?.barCount)
+      return {
+        id: String(inst?.id || `instance_${idx + 1}`),
+        style: styleI,
+        fgColor: String(inst?.fgColor || normalized.fgColor),
+        opacity: Number.isFinite(Number(inst?.opacity)) ? Math.max(0, Math.min(1, Number(inst?.opacity))) : normalized.opacity,
+        scale: scaleI,
+        barCount: Number.isFinite(barCountRawI) ? Math.max(12, Math.min(128, Math.round(barCountRawI))) : normalized.barCount,
+        spectrumMode: spectrumModeI,
+        bandMode: bandModeI,
+        gradientEnabled: inst?.gradientEnabled === true,
+        gradientStart: String(inst?.gradientStart || normalized.gradientStart),
+        gradientEnd: String(inst?.gradientEnd || normalized.gradientEnd),
+        gradientMode: gradientModeI,
+      } as any
+    })
+  normalized.instances =
+    normalizedInstances.length > 0
+      ? normalizedInstances
+      : [
+          {
+            id: 'instance_1',
+            style: normalized.style,
+            fgColor: normalized.fgColor,
+            opacity: normalized.opacity,
+            scale: normalized.scale,
+            barCount: normalized.barCount,
+            spectrumMode: normalized.spectrumMode,
+            bandMode: (normalized as any).bandMode || 'full',
+            gradientEnabled: normalized.gradientEnabled,
+            gradientStart: normalized.gradientStart,
+            gradientEnd: normalized.gradientEnd,
+            gradientMode: normalized.gradientMode,
+          } as any,
+        ]
+  return normalized
 }
 
 const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): VisualizerPresetSnapshot => {
@@ -190,6 +246,7 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     scale: cfg.scale || base.scale,
     barCount: base.barCount,
     spectrumMode: base.spectrumMode,
+    bandMode: (base as any).bandMode || 'full',
     gradientEnabled: Boolean(cfg.gradientEnabled),
     gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
     gradientEnd: cfg.gradientEnd || base.gradientEnd,
@@ -197,6 +254,22 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     clipMode,
     clipInsetPct: Number.isFinite(clipInsetRaw) ? Math.max(0, Math.min(40, clipInsetRaw)) : base.clipInsetPct,
     clipHeightPct: Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : base.clipHeightPct,
+    instances: [
+      {
+        id: 'instance_1',
+        style: cfg.style || base.style,
+        fgColor: cfg.fgColor || base.fgColor,
+        opacity: Number.isFinite(Number(cfg.opacity)) ? Math.max(0, Math.min(1, Number(cfg.opacity))) : base.opacity,
+        scale: cfg.scale || base.scale,
+        barCount: base.barCount,
+        spectrumMode: base.spectrumMode,
+        bandMode: (base as any).bandMode || 'full',
+        gradientEnabled: Boolean(cfg.gradientEnabled),
+        gradientStart: cfg.gradientStart || cfg.fgColor || base.gradientStart,
+        gradientEnd: cfg.gradientEnd || base.gradientEnd,
+        gradientMode,
+      },
+    ],
   }
 }
 
@@ -214,13 +287,16 @@ const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
     String(a.scale || '') === String(b.scale || '') &&
     Number(a.barCount || 0) === Number(b.barCount || 0) &&
     String(a.spectrumMode || '') === String(b.spectrumMode || '') &&
+    String((a as any).bandMode || '') === String((b as any).bandMode || '') &&
     Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
     String(a.gradientStart || '') === String(b.gradientStart || '') &&
     String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
     String(a.gradientMode || '') === String(b.gradientMode || '') &&
     String(a.clipMode || '') === String(b.clipMode || '') &&
     Number(a.clipInsetPct || 0) === Number(b.clipInsetPct || 0) &&
-    Number(a.clipHeightPct || 0) === Number(b.clipHeightPct || 0)
+    Number(a.clipHeightPct || 0) === Number(b.clipHeightPct || 0) &&
+    JSON.stringify(Array.isArray((a as any).instances) ? (a as any).instances : []) ===
+      JSON.stringify(Array.isArray((b as any).instances) ? (b as any).instances : [])
   )
 }
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
@@ -5183,164 +5259,185 @@ export default function CreateVideo() {
         ctx.fillRect(0, 0, drawW, drawH)
       }
 
-      ctx.globalAlpha = Number.isFinite(viz.opacity) ? Math.max(0, Math.min(1, viz.opacity)) : 1
-      const fg = viz.fgColor || '#d4af37'
-      const gradientOn = (viz as any).gradientEnabled && (viz as any).gradientStart && (viz as any).gradientEnd
-      const grad =
-        gradientOn && drawW > 0 && drawH > 0
-          ? (() => {
-              const isHorizontal = (viz as any).gradientMode === 'horizontal'
-              const g = ctx.createLinearGradient(0, 0, isHorizontal ? drawW : 0, isHorizontal ? 0 : drawH)
-              g.addColorStop(0, String((viz as any).gradientStart || fg))
-              g.addColorStop(1, String((viz as any).gradientEnd || fg))
-              return g
-            })()
-          : null
-      ctx.strokeStyle = grad || fg
-      ctx.fillStyle = grad || fg
+      const instanceList = Array.isArray((viz as any).instances) && (viz as any).instances.length
+        ? ((viz as any).instances as any[])
+        : [
+            {
+              id: 'instance_1',
+              style: viz.style,
+              fgColor: viz.fgColor,
+              opacity: viz.opacity,
+              scale: viz.scale,
+              barCount: viz.barCount,
+              spectrumMode: viz.spectrumMode,
+              bandMode: (viz as any).bandMode || 'full',
+              gradientEnabled: (viz as any).gradientEnabled,
+              gradientStart: (viz as any).gradientStart,
+              gradientEnd: (viz as any).gradientEnd,
+              gradientMode: (viz as any).gradientMode,
+            },
+          ]
 
-      if (viz.style === 'radial_bars') {
-        const envPoints =
-          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
-            ? ((visualizerEnvelope.env as any).points as any[])
+      const envPoints =
+        useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
+          ? ((visualizerEnvelope.env as any).points as any[])
+          : null
+      const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
+      const freq = narrationVizFreqRef.current || new Uint8Array(analyser ? analyser.frequencyBinCount : 128)
+      narrationVizFreqRef.current = freq
+      const data = narrationVizTimeRef.current || new Uint8Array(analyser ? analyser.fftSize : 512)
+      narrationVizTimeRef.current = data
+
+      for (const inst of instanceList) {
+        const instStyleRaw = String((inst as any).style || viz.style).trim().toLowerCase()
+        const instStyle =
+          instStyleRaw === 'wave_fill' || instStyleRaw === 'spectrum_bars' || instStyleRaw === 'radial_bars'
+            ? instStyleRaw
+            : 'wave_line'
+        const instScale = String((inst as any).scale || viz.scale).trim().toLowerCase() === 'log' ? 'log' : 'linear'
+        const instSpectrum = String((inst as any).spectrumMode || viz.spectrumMode).trim().toLowerCase() === 'voice' ? 'voice' : 'full'
+        const instBandRaw = String((inst as any).bandMode || (viz as any).bandMode || 'full').trim().toLowerCase()
+        const instBand = instBandRaw === 'band_1' || instBandRaw === 'band_2' || instBandRaw === 'band_3' || instBandRaw === 'band_4' ? instBandRaw : 'full'
+        const instOpacity = Number.isFinite(Number((inst as any).opacity))
+          ? Math.max(0, Math.min(1, Number((inst as any).opacity)))
+          : Number.isFinite(viz.opacity)
+            ? Math.max(0, Math.min(1, viz.opacity))
+            : 1
+        const instFg = String((inst as any).fgColor || viz.fgColor || '#d4af37')
+        const instGradientOn = Boolean((inst as any).gradientEnabled)
+        const instGradientStart = String((inst as any).gradientStart || (viz as any).gradientStart || instFg)
+        const instGradientEnd = String((inst as any).gradientEnd || (viz as any).gradientEnd || '#f7d774')
+        const instGradientMode = String((inst as any).gradientMode || (viz as any).gradientMode || 'vertical').trim().toLowerCase() === 'horizontal'
+          ? 'horizontal'
+          : 'vertical'
+        const instBars = Math.max(12, Math.min(128, Math.round(Number((inst as any).barCount || viz.barCount || 48))))
+
+        ctx.globalAlpha = instOpacity
+        const grad =
+          instGradientOn && drawW > 0 && drawH > 0
+            ? (() => {
+                const isHorizontal = instGradientMode === 'horizontal'
+                const g = ctx.createLinearGradient(0, 0, isHorizontal ? drawW : 0, isHorizontal ? 0 : drawH)
+                g.addColorStop(0, instGradientStart || instFg)
+                g.addColorStop(1, instGradientEnd || instFg)
+                return g
+              })()
             : null
-        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
-        const freq = narrationVizFreqRef.current || new Uint8Array(analyser ? analyser.frequencyBinCount : 128)
-        narrationVizFreqRef.current = freq
-        if (useEnvelope) {
-          for (let i = 0; i < freq.length; i++) {
-            const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
-            const phase = envTime * 18
-            const wobble =
-              0.35 +
-              0.65 *
-                Math.abs(Math.sin(t * Math.PI * 2 + phase)) *
-                (0.55 + 0.45 * Math.abs(Math.sin(t * 11 + phase * 1.3)))
-            freq[i] = Math.round(amp * wobble * 255)
+        ctx.strokeStyle = grad || instFg
+        ctx.fillStyle = grad || instFg
+
+        if (instStyle === 'radial_bars' || instStyle === 'spectrum_bars') {
+          if (useEnvelope) {
+            for (let i = 0; i < freq.length; i++) {
+              const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
+              const phase = envTime * (instStyle === 'radial_bars' ? 18 : 22)
+              const wobble =
+                instStyle === 'radial_bars'
+                  ? 0.35 +
+                    0.65 *
+                      Math.abs(Math.sin(t * Math.PI * 2 + phase)) *
+                      (0.55 + 0.45 * Math.abs(Math.sin(t * 11 + phase * 1.3)))
+                  : 0.2 +
+                    0.8 *
+                      Math.abs(Math.sin(t * 8 + phase)) *
+                      (0.5 + 0.5 * Math.abs(Math.sin(t * 21 - phase * 1.1)))
+              freq[i] = Math.round(amp * wobble * 255)
+            }
+          } else if (analyser) {
+            analyser.getByteFrequencyData(freq)
           }
-        } else if (analyser) {
-          analyser.getByteFrequencyData(freq)
-        }
-        const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 64))))
-        const cx = drawW / 2
-        const cy = drawH / 2
-        const minDim = Math.min(drawW, drawH)
-        const inner = Math.max(6, minDim * 0.18)
-        const maxLen = Math.max(10, minDim * 0.32)
-        const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
-        const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
-        const maxIdx = Math.max(1, freq.length - 1)
-        let rangeStart = 0
-        let rangeEnd = maxIdx
-        if (viz.spectrumMode === 'voice') {
-          const lowIdx = Math.round((80 / nyquist) * maxIdx)
-          const highIdx = Math.round((4000 / nyquist) * maxIdx)
-          rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
-          rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
-        }
-        ctx.lineWidth = 2
-        ctx.lineCap = 'round'
-        ctx.beginPath()
-        for (let i = 0; i < bars; i++) {
-          const t = bars <= 1 ? 0 : i / bars
-          const base = viz.scale === 'log' ? Math.pow(t, 2) : t
-          const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
-          const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
-          const len = inner + v * maxLen
-          const ang = t * Math.PI * 2 - Math.PI / 2
-          const x0 = cx + Math.cos(ang) * inner
-          const y0 = cy + Math.sin(ang) * inner
-          const x1 = cx + Math.cos(ang) * len
-          const y1 = cy + Math.sin(ang) * len
-          ctx.moveTo(x0, y0)
-          ctx.lineTo(x1, y1)
-        }
-        ctx.stroke()
-      } else if (viz.style === 'spectrum_bars') {
-        const envPoints =
-          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
-            ? ((visualizerEnvelope.env as any).points as any[])
-            : null
-        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
-        const freq = narrationVizFreqRef.current || new Uint8Array(analyser ? analyser.frequencyBinCount : 128)
-        narrationVizFreqRef.current = freq
-        if (useEnvelope) {
-          for (let i = 0; i < freq.length; i++) {
-            const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
-            const phase = envTime * 22
-            const wobble =
-              0.2 +
-              0.8 *
-                Math.abs(Math.sin(t * 8 + phase)) *
-                (0.5 + 0.5 * Math.abs(Math.sin(t * 21 - phase * 1.1)))
-            freq[i] = Math.round(amp * wobble * 255)
+          const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
+          const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+          const maxIdx = Math.max(1, freq.length - 1)
+          let rangeStart = 0
+          let rangeEnd = maxIdx
+          if (instSpectrum === 'voice') {
+            const lowIdx = Math.round((80 / nyquist) * maxIdx)
+            const highIdx = Math.round((4000 / nyquist) * maxIdx)
+            rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
+            rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
           }
-        } else if (analyser) {
-          analyser.getByteFrequencyData(freq)
-        }
-        const bars = Math.max(12, Math.min(128, Math.round(Number(viz.barCount || 48))))
-        const gap = 2
-        const minBarFrac = 0.04
-        const barW = Math.max(2, (drawW - gap * (bars - 1)) / bars)
-        const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
-        const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
-        const maxIdx = Math.max(1, freq.length - 1)
-        let rangeStart = 0
-        let rangeEnd = maxIdx
-        if (viz.spectrumMode === 'voice') {
-          const lowIdx = Math.round((80 / nyquist) * maxIdx)
-          const highIdx = Math.round((4000 / nyquist) * maxIdx)
-          rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
-          rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
-        }
-        for (let i = 0; i < bars; i++) {
-          const t = bars <= 1 ? 0 : i / (bars - 1)
-          const base = viz.scale === 'log' ? Math.pow(t, 2) : t
-          const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
-          const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
-          const bh = Math.max(Math.round(drawH * minBarFrac), Math.round(v * drawH))
-          const x = i * (barW + gap)
-          ctx.fillRect(x, drawH - bh, barW, bh)
-        }
-      } else {
-        const envPoints =
-          useEnvelope && visualizerEnvelope && visualizerEnvelope.env && Array.isArray((visualizerEnvelope.env as any).points)
-            ? ((visualizerEnvelope.env as any).points as any[])
-            : null
-        const amp = envPoints && activeVisualizerPreview ? sampleEnvelope(envPoints, envTime) : 0
-        const data = narrationVizTimeRef.current || new Uint8Array(analyser ? analyser.fftSize : 512)
-        narrationVizTimeRef.current = data
-        if (useEnvelope) {
-          for (let i = 0; i < data.length; i++) {
-            const t = data.length <= 1 ? 0 : i / (data.length - 1)
-            const phase = envTime * 16
-            const wave =
-              0.5 +
-              0.5 *
-                (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
-                  Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
-                  Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
-            data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
+          if (instBand !== 'full') {
+            const bandIndex = instBand === 'band_1' ? 0 : instBand === 'band_2' ? 1 : instBand === 'band_3' ? 2 : 3
+            const span = Math.max(1, rangeEnd - rangeStart + 1)
+            const step = span / 4
+            const bStart = Math.round(rangeStart + step * bandIndex)
+            const bEnd = Math.round(rangeStart + step * (bandIndex + 1) - 1)
+            rangeStart = Math.max(0, Math.min(maxIdx, bStart))
+            rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, bEnd))
           }
-        } else if (analyser) {
-          analyser.getByteTimeDomainData(data)
-        }
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        for (let i = 0; i < data.length; i++) {
-          const v = data[i] / 255
-          const y = v * drawH
-          const x = (i / (data.length - 1)) * drawW
-          if (i === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-        if (viz.style === 'wave_fill') {
-          ctx.lineTo(drawW, drawH / 2)
-          ctx.lineTo(0, drawH / 2)
-          ctx.closePath()
-          ctx.fill()
+
+          if (instStyle === 'radial_bars') {
+            const cx = drawW / 2
+            const cy = drawH / 2
+            const minDim = Math.min(drawW, drawH)
+            const inner = Math.max(6, minDim * 0.18)
+            const maxLen = Math.max(10, minDim * 0.32)
+            ctx.lineWidth = 2
+            ctx.lineCap = 'round'
+            ctx.beginPath()
+            for (let i = 0; i < instBars; i++) {
+              const t = instBars <= 1 ? 0 : i / instBars
+              const base = instScale === 'log' ? Math.pow(t, 2) : t
+              const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
+              const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+              const len = inner + v * maxLen
+              const ang = t * Math.PI * 2 - Math.PI / 2
+              const x0 = cx + Math.cos(ang) * inner
+              const y0 = cy + Math.sin(ang) * inner
+              const x1 = cx + Math.cos(ang) * len
+              const y1 = cy + Math.sin(ang) * len
+              ctx.moveTo(x0, y0)
+              ctx.lineTo(x1, y1)
+            }
+            ctx.stroke()
+          } else {
+            const gap = 2
+            const minBarFrac = 0.04
+            const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
+            for (let i = 0; i < instBars; i++) {
+              const t = instBars <= 1 ? 0 : i / (instBars - 1)
+              const base = instScale === 'log' ? Math.pow(t, 2) : t
+              const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
+              const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+              const bh = Math.max(Math.round(drawH * minBarFrac), Math.round(v * drawH))
+              const x = i * (barW + gap)
+              ctx.fillRect(x, drawH - bh, barW, bh)
+            }
+          }
         } else {
-          ctx.stroke()
+          if (useEnvelope) {
+            for (let i = 0; i < data.length; i++) {
+              const t = data.length <= 1 ? 0 : i / (data.length - 1)
+              const phase = envTime * 16
+              const wave =
+                0.5 +
+                0.5 *
+                  (Math.sin(t * Math.PI * 2 + phase) * 0.7 +
+                    Math.sin(t * Math.PI * 6 - phase * 0.9) * 0.25 +
+                    Math.sin(t * Math.PI * 12 + phase * 0.35) * 0.15)
+              data[i] = Math.round((0.5 + (wave - 0.5) * Math.max(0.15, amp)) * 255)
+            }
+          } else if (analyser) {
+            analyser.getByteTimeDomainData(data)
+          }
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          for (let i = 0; i < data.length; i++) {
+            const v = data[i] / 255
+            const y = v * drawH
+            const x = (i / (data.length - 1)) * drawW
+            if (i === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+          }
+          if (instStyle === 'wave_fill') {
+            ctx.lineTo(drawW, drawH / 2)
+            ctx.lineTo(0, drawH / 2)
+            ctx.closePath()
+            ctx.fill()
+          } else {
+            ctx.stroke()
+          }
         }
       }
       if (didClip) {
@@ -10596,6 +10693,13 @@ export default function CreateVideo() {
           String((preset as any).spectrumMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.spectrumMode).trim().toLowerCase() === 'voice'
             ? 'voice'
             : 'full',
+        bandMode:
+          String((preset as any).bandMode || (DEFAULT_VISUALIZER_PRESET_SNAPSHOT as any).bandMode || 'full').trim().toLowerCase() === 'band_1' ||
+          String((preset as any).bandMode || (DEFAULT_VISUALIZER_PRESET_SNAPSHOT as any).bandMode || 'full').trim().toLowerCase() === 'band_2' ||
+          String((preset as any).bandMode || (DEFAULT_VISUALIZER_PRESET_SNAPSHOT as any).bandMode || 'full').trim().toLowerCase() === 'band_3' ||
+          String((preset as any).bandMode || (DEFAULT_VISUALIZER_PRESET_SNAPSHOT as any).bandMode || 'full').trim().toLowerCase() === 'band_4'
+            ? (String((preset as any).bandMode || (DEFAULT_VISUALIZER_PRESET_SNAPSHOT as any).bandMode || 'full').trim().toLowerCase() as any)
+            : 'full',
         gradientEnabled:
           (preset as any).gradientEnabled == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnabled : Boolean((preset as any).gradientEnabled),
         gradientStart: String((preset as any).gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
@@ -10608,6 +10712,7 @@ export default function CreateVideo() {
         clipHeightPct: Number.isFinite(Number((preset as any).clipHeightPct))
           ? Number((preset as any).clipHeightPct)
           : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
+        instances: Array.isArray((preset as any).instances) ? ((preset as any).instances as any[]) : undefined,
       }
 
       const pickCandidate = <T extends { id: string; startSeconds: number; endSeconds: number }>(

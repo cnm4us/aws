@@ -3,6 +3,22 @@ export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
 export type VisualizerSpectrumMode = 'full' | 'voice'
+export type VisualizerBandMode = 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+
+export type VisualizerPresetInstanceDto = {
+  id: string
+  style: VisualizerStyle
+  fgColor: string
+  opacity: number
+  scale: VisualizerScale
+  barCount: number
+  spectrumMode: VisualizerSpectrumMode
+  bandMode: VisualizerBandMode
+  gradientEnabled: boolean
+  gradientStart: string
+  gradientEnd: string
+  gradientMode: VisualizerGradientMode
+}
 
 export type VisualizerPresetRow = {
   id: number
@@ -23,6 +39,7 @@ export type VisualizerPresetRow = {
   clip_mode: VisualizerClipMode
   clip_inset_pct: number
   clip_height_pct: number
+  instances_json: string | null
   created_at: string
   updated_at: string
   archived_at: string | null
@@ -39,6 +56,7 @@ export type VisualizerPresetDto = {
   scale: VisualizerScale
   barCount: number
   spectrumMode: VisualizerSpectrumMode
+  bandMode: VisualizerBandMode
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -46,6 +64,7 @@ export type VisualizerPresetDto = {
   clipMode: VisualizerClipMode
   clipInsetPct: number
   clipHeightPct: number
+  instances: VisualizerPresetInstanceDto[]
   createdAt: string
   updatedAt: string
   archivedAt: string | null

@@ -297,6 +297,7 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   scale: VisualizerScale
   barCount: number
   spectrumMode: 'full' | 'voice'
+  bandMode?: 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
   gradientEnabled: boolean
   gradientStart: string
   gradientEnd: string
@@ -304,6 +305,20 @@ export type CreateVideoVisualizerPresetSnapshotV1 = {
   clipMode: VisualizerClipMode
   clipInsetPct: number
   clipHeightPct: number
+  instances?: Array<{
+    id: string
+    style: VisualizerStyle
+    fgColor: string
+    opacity: number
+    scale: VisualizerScale
+    barCount: number
+    spectrumMode: 'full' | 'voice'
+    bandMode?: 'full' | 'band_1' | 'band_2' | 'band_3' | 'band_4'
+    gradientEnabled: boolean
+    gradientStart: string
+    gradientEnd: string
+    gradientMode: VisualizerGradientMode
+  }>
 }
 
 export type CreateVideoVisualizerSegmentV1 = {

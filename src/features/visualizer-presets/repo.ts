@@ -43,12 +43,13 @@ export async function create(input: {
   clipMode: string
   clipInsetPct: number
   clipHeightPct: number
+  instancesJson?: string | null
 }): Promise<VisualizerPresetRow> {
   const db = getPool()
   const [result] = await db.query(
     `INSERT INTO visualizer_presets
-      (owner_user_id, name, description, style, fg_color, bg_color, opacity, scale, bar_count, spectrum_mode, gradient_enabled, gradient_start, gradient_end, gradient_mode, clip_mode, clip_inset_pct, clip_height_pct)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (owner_user_id, name, description, style, fg_color, bg_color, opacity, scale, bar_count, spectrum_mode, gradient_enabled, gradient_start, gradient_end, gradient_mode, clip_mode, clip_inset_pct, clip_height_pct, instances_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.ownerUserId,
       input.name,
@@ -67,6 +68,7 @@ export async function create(input: {
       input.clipMode,
       input.clipInsetPct,
       input.clipHeightPct,
+      input.instancesJson ?? null,
     ]
   )
   const id = Number((result as any).insertId)
@@ -92,6 +94,7 @@ export async function update(id: number, patch: {
   clipMode?: string
   clipInsetPct?: number
   clipHeightPct?: number
+  instancesJson?: string | null
 }): Promise<VisualizerPresetRow> {
   const db = getPool()
   const sets: string[] = []
@@ -112,6 +115,7 @@ export async function update(id: number, patch: {
   if (patch.clipMode !== undefined) { sets.push('clip_mode = ?'); args.push(patch.clipMode) }
   if (patch.clipInsetPct !== undefined) { sets.push('clip_inset_pct = ?'); args.push(patch.clipInsetPct) }
   if (patch.clipHeightPct !== undefined) { sets.push('clip_height_pct = ?'); args.push(patch.clipHeightPct) }
+  if (patch.instancesJson !== undefined) { sets.push('instances_json = ?'); args.push(patch.instancesJson) }
   if (!sets.length) {
     const row = await getById(id)
     if (!row) throw new Error('not_found')

@@ -528,6 +528,7 @@ export async function ensureSchema(db: DB) {
               clip_mode ENUM('none','rect') NOT NULL DEFAULT 'none',
               clip_inset_pct TINYINT UNSIGNED NOT NULL DEFAULT 6,
               clip_height_pct TINYINT UNSIGNED NOT NULL DEFAULT 100,
+              instances_json JSON NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
               archived_at TIMESTAMP NULL DEFAULT NULL,
@@ -549,6 +550,7 @@ export async function ensureSchema(db: DB) {
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_mode ENUM('none','rect') NOT NULL DEFAULT 'none'`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_inset_pct TINYINT UNSIGNED NOT NULL DEFAULT 6`);
           await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS clip_height_pct TINYINT UNSIGNED NOT NULL DEFAULT 100`);
+          await db.query(`ALTER TABLE visualizer_presets ADD COLUMN IF NOT EXISTS instances_json JSON NULL`);
 
 	        // --- Lower thirds (feature_10) ---
 	        await db.query(`
