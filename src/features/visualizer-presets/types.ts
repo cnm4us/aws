@@ -1,4 +1,11 @@
-export type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
+export type VisualizerStyle =
+  | 'wave_line'
+  | 'wave_fill'
+  | 'center_wave'
+  | 'spectrum_bars'
+  | 'mirror_bars'
+  | 'stacked_bands'
+  | 'radial_bars'
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'

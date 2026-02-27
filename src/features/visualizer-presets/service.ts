@@ -12,7 +12,15 @@ import type {
   VisualizerStyle,
 } from './types'
 
-const STYLES: readonly VisualizerStyle[] = ['wave_line', 'wave_fill', 'spectrum_bars', 'radial_bars']
+const STYLES: readonly VisualizerStyle[] = [
+  'wave_line',
+  'wave_fill',
+  'center_wave',
+  'spectrum_bars',
+  'mirror_bars',
+  'stacked_bands',
+  'radial_bars',
+]
 const SCALES: readonly VisualizerScale[] = ['linear', 'log']
 const GRADIENT_MODES: readonly VisualizerGradientMode[] = ['vertical', 'horizontal']
 const CLIP_MODES: readonly VisualizerClipMode[] = ['none', 'rect']

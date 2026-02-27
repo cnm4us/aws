@@ -3,7 +3,14 @@ import './styles/card-list.css'
 import { cardThemeStyle, cardThemeTokens, mergeCardThemeVars } from './styles/cardThemes'
 import nebulaBgImage from './images/nebula_bg.jpg'
 
-type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
+type VisualizerStyle =
+  | 'wave_line'
+  | 'wave_fill'
+  | 'center_wave'
+  | 'spectrum_bars'
+  | 'mirror_bars'
+  | 'stacked_bands'
+  | 'radial_bars'
 type VisualizerScale = 'linear' | 'log'
 type VisualizerGradientMode = 'vertical' | 'horizontal'
 type VisualizerSpectrumMode = 'full' | 'voice'
@@ -231,7 +238,14 @@ function getSpectrumRange(
 function normalizeInstance(raw: any, fallback: VisualizerPresetInstance, idx: number): VisualizerPresetInstance {
   const styleRaw = String(raw?.style || fallback.style).trim().toLowerCase()
   const style: VisualizerStyle =
-    styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars' ? (styleRaw as any) : 'wave_line'
+    styleRaw === 'wave_fill' ||
+    styleRaw === 'center_wave' ||
+    styleRaw === 'spectrum_bars' ||
+    styleRaw === 'mirror_bars' ||
+    styleRaw === 'stacked_bands' ||
+    styleRaw === 'radial_bars'
+      ? (styleRaw as any)
+      : 'wave_line'
   const scale: VisualizerScale = String(raw?.scale || fallback.scale).trim().toLowerCase() === 'log' ? 'log' : 'linear'
   const spectrumMode: VisualizerSpectrumMode =
     String(raw?.spectrumMode || fallback.spectrumMode).trim().toLowerCase() === 'voice' ? 'voice' : 'full'
@@ -379,7 +393,7 @@ function VisualizerPreview({
         const { start, end } = getSpectrumRange(bins.length, spectrumMode, bandMode)
         const idx = Math.max(start, Math.min(end, Math.round(start + scaled * (end - start))))
         const v = bins[idx] / 255
-        return Math.max(0.03, Math.min(1, v))
+        return Math.max(0, Math.min(1, v))
       }
 
       const getWaveValue = (tNorm: number, scale: VisualizerScale) => {
@@ -447,30 +461,81 @@ function VisualizerPreview({
           for (let i = 0; i < bars; i++) {
             const tt = bars <= 1 ? 0 : i / (bars - 1)
             const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
-            const bh = Math.max(1, Math.round(v * h))
+            const bh = Math.round(v * h)
+            if (bh <= 0) continue
             const x = i * (barW + gap)
             ctx.fillRect(x, h - bh, barW, bh)
+          }
+        } else if (inst.style === 'mirror_bars') {
+          const bars = parseBarCount(inst.barCount)
+          const gap = 2
+          const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
+          const centerY = h / 2
+          for (let i = 0; i < bars; i++) {
+            const tt = bars <= 1 ? 0 : i / (bars - 1)
+            const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, inst.bandMode)
+            const hh = Math.round(v * h * 0.48)
+            if (hh <= 0) continue
+            const x = i * (barW + gap)
+            ctx.fillRect(x, centerY - hh, barW, hh * 2)
+          }
+        } else if (inst.style === 'stacked_bands') {
+          const bands: VisualizerBandMode[] = ['band_1', 'band_2', 'band_3', 'band_4']
+          const lanes = bands.length
+          const laneGap = 2
+          const laneH = Math.max(1, (h - laneGap * (lanes - 1)) / lanes)
+          const bars = Math.max(12, Math.min(96, parseBarCount(inst.barCount)))
+          const gap = 1
+          const barW = Math.max(1, (w - gap * (bars - 1)) / bars)
+          for (let lane = 0; lane < lanes; lane++) {
+            const yTop = lane * (laneH + laneGap)
+            const yBottom = yTop + laneH
+            for (let i = 0; i < bars; i++) {
+              const tt = bars <= 1 ? 0 : i / (bars - 1)
+              const v = getSpectrumValue(tt, inst.scale, inst.spectrumMode, bands[lane])
+              const bh = Math.round(v * laneH)
+              if (bh <= 0) continue
+              const x = i * (barW + gap)
+              ctx.fillRect(x, yBottom - bh, barW, bh)
+            }
           }
         } else {
           const points = 180
           const center = h / 2
           const amp = h * 0.35
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          for (let i = 0; i < points; i++) {
-            const tt = points <= 1 ? 0 : i / (points - 1)
-            const y = center + amp * getWaveValue(tt, inst.scale)
-            const x = tt * w
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
-          }
-          if (inst.style === 'wave_fill') {
-            ctx.lineTo(w, center)
-            ctx.lineTo(0, center)
-            ctx.closePath()
-            ctx.fill()
+          if (inst.style === 'center_wave') {
+            ctx.lineWidth = 2
+            const drawWave = (sign: 1 | -1) => {
+              ctx.beginPath()
+              for (let i = 0; i < points; i++) {
+                const tt = points <= 1 ? 0 : i / (points - 1)
+                const y = center + sign * amp * getWaveValue(tt, inst.scale)
+                const x = tt * w
+                if (i === 0) ctx.moveTo(x, y)
+                else ctx.lineTo(x, y)
+              }
+              ctx.stroke()
+            }
+            drawWave(1)
+            drawWave(-1)
           } else {
-            ctx.stroke()
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            for (let i = 0; i < points; i++) {
+              const tt = points <= 1 ? 0 : i / (points - 1)
+              const y = center + amp * getWaveValue(tt, inst.scale)
+              const x = tt * w
+              if (i === 0) ctx.moveTo(x, y)
+              else ctx.lineTo(x, y)
+            }
+            if (inst.style === 'wave_fill') {
+              ctx.lineTo(w, center)
+              ctx.lineTo(0, center)
+              ctx.closePath()
+              ctx.fill()
+            } else {
+              ctx.stroke()
+            }
           }
         }
       }
@@ -935,7 +1000,10 @@ export default function VisualizerPresetsPage() {
                       >
                         <option value="wave_line">Wave Line</option>
                         <option value="wave_fill">Wave Fill</option>
+                        <option value="center_wave">Center Wave</option>
                         <option value="spectrum_bars">Spectrum Bars</option>
+                        <option value="mirror_bars">Mirror Bars</option>
+                        <option value="stacked_bands">Stacked Bands</option>
                         <option value="radial_bars">Radial Bars</option>
                       </select>
                     </label>

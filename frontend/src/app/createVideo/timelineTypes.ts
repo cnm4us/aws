@@ -189,7 +189,14 @@ export type NarrationVisualizerConfig = {
   scale: NarrationVisualizerScale
 }
 
-export type VisualizerStyle = 'wave_line' | 'wave_fill' | 'spectrum_bars' | 'radial_bars'
+export type VisualizerStyle =
+  | 'wave_line'
+  | 'wave_fill'
+  | 'center_wave'
+  | 'spectrum_bars'
+  | 'mirror_bars'
+  | 'stacked_bands'
+  | 'radial_bars'
 export type VisualizerScale = 'linear' | 'log'
 export type VisualizerGradientMode = 'vertical' | 'horizontal'
 export type VisualizerClipMode = 'none' | 'rect'
@@ -610,7 +617,12 @@ export function cloneTimeline(timeline: Timeline): Timeline {
               .map((inst: any, idx: number) => {
                 const styleRaw = String(inst?.style || snapshot.style).trim().toLowerCase()
                 const style =
-                  styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars'
+                  styleRaw === 'wave_fill' ||
+                  styleRaw === 'center_wave' ||
+                  styleRaw === 'spectrum_bars' ||
+                  styleRaw === 'mirror_bars' ||
+                  styleRaw === 'stacked_bands' ||
+                  styleRaw === 'radial_bars'
                     ? (styleRaw as any)
                     : 'wave_line'
                 const scaleRaw = String(inst?.scale || snapshot.scale).trim().toLowerCase()

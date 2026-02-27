@@ -186,8 +186,21 @@ function normalizeNarrationVisualizerConfig(raw: any): {
   scale: 'linear' | 'log'
 } {
   const styleRaw = String(raw?.style || 'wave_line').trim().toLowerCase()
-  const styleAllowed = new Set(['wave_line', 'wave_fill', 'spectrum_bars', 'radial_bars'])
-  const mappedStyle = styleRaw === 'radial_bars' ? 'spectrum_bars' : styleRaw
+  const styleAllowed = new Set([
+    'wave_line',
+    'wave_fill',
+    'center_wave',
+    'spectrum_bars',
+    'mirror_bars',
+    'stacked_bands',
+    'radial_bars',
+  ])
+  const mappedStyle =
+    styleRaw === 'radial_bars' || styleRaw === 'mirror_bars' || styleRaw === 'stacked_bands'
+      ? 'spectrum_bars'
+      : styleRaw === 'center_wave'
+        ? 'wave_line'
+        : styleRaw
   const style = styleAllowed.has(styleRaw) ? (mappedStyle as any) : 'wave_line'
   const scaleRaw = String(raw?.scale || 'linear').trim().toLowerCase()
   const scale = scaleRaw === 'log' ? 'log' : 'linear'

@@ -140,7 +140,14 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
   const snap = raw && typeof raw === 'object' ? raw : {}
   const styleRaw = String(snap.style || base.style).trim().toLowerCase()
   const style: VisualizerPresetSnapshot['style'] =
-    styleRaw === 'wave_fill' || styleRaw === 'spectrum_bars' || styleRaw === 'radial_bars' ? (styleRaw as any) : 'wave_line'
+    styleRaw === 'wave_fill' ||
+    styleRaw === 'center_wave' ||
+    styleRaw === 'spectrum_bars' ||
+    styleRaw === 'mirror_bars' ||
+    styleRaw === 'stacked_bands' ||
+    styleRaw === 'radial_bars'
+      ? (styleRaw as any)
+      : 'wave_line'
   const scaleRaw = String(snap.scale || base.scale).trim().toLowerCase()
   const scale: VisualizerPresetSnapshot['scale'] = scaleRaw === 'log' ? 'log' : 'linear'
   const barCountRaw = Number(snap.barCount)
@@ -181,7 +188,14 @@ const normalizeVisualizerPresetSnapshot = (raw: any): VisualizerPresetSnapshot =
     .map((inst: any, idx: number) => {
       const styleRawI = String(inst?.style || normalized.style).trim().toLowerCase()
       const styleI: VisualizerPresetSnapshot['style'] =
-        styleRawI === 'wave_fill' || styleRawI === 'spectrum_bars' || styleRawI === 'radial_bars' ? (styleRawI as any) : 'wave_line'
+        styleRawI === 'wave_fill' ||
+        styleRawI === 'center_wave' ||
+        styleRawI === 'spectrum_bars' ||
+        styleRawI === 'mirror_bars' ||
+        styleRawI === 'stacked_bands' ||
+        styleRawI === 'radial_bars'
+          ? (styleRawI as any)
+          : 'wave_line'
       const scaleRawI = String(inst?.scale || normalized.scale).trim().toLowerCase()
       const scaleI: VisualizerPresetSnapshot['scale'] = scaleRawI === 'log' ? 'log' : 'linear'
       const spectrumRawI = String(inst?.spectrumMode || normalized.spectrumMode).trim().toLowerCase()
@@ -1931,7 +1945,7 @@ export default function CreateVideo() {
           if (cur.kind === 'clip') {
             const ci = clips.findIndex((c: any) => String(c.id) === cur.clipId)
             if (ci >= 0) clips[ci] = { ...(clips[ci] as any), startSeconds: ns }
-          } else {
+          } else if (cur.kind === 'still') {
             const si = stills.findIndex((s: any) => String(s.id) === cur.stillId)
             if (si >= 0) stills[si] = { ...(stills[si] as any), startSeconds: ns, endSeconds: ne }
           }
@@ -2007,7 +2021,7 @@ export default function CreateVideo() {
           if (cur.kind === 'videoOverlay') {
             const oi = videoOverlays.findIndex((o: any) => String(o.id) === cur.videoOverlayId)
             if (oi >= 0) videoOverlays[oi] = { ...(videoOverlays[oi] as any), startSeconds: ns }
-          } else {
+          } else if (cur.kind === 'videoOverlayStill') {
             const si = videoOverlayStills.findIndex((s: any) => String(s.id) === cur.videoOverlayStillId)
             if (si >= 0) videoOverlayStills[si] = { ...(videoOverlayStills[si] as any), startSeconds: ns, endSeconds: ne }
           }
@@ -5291,7 +5305,12 @@ export default function CreateVideo() {
       for (const inst of instanceList) {
         const instStyleRaw = String((inst as any).style || viz.style).trim().toLowerCase()
         const instStyle =
-          instStyleRaw === 'wave_fill' || instStyleRaw === 'spectrum_bars' || instStyleRaw === 'radial_bars'
+          instStyleRaw === 'wave_fill' ||
+          instStyleRaw === 'center_wave' ||
+          instStyleRaw === 'spectrum_bars' ||
+          instStyleRaw === 'mirror_bars' ||
+          instStyleRaw === 'stacked_bands' ||
+          instStyleRaw === 'radial_bars'
             ? instStyleRaw
             : 'wave_line'
         const instScale = String((inst as any).scale || viz.scale).trim().toLowerCase() === 'log' ? 'log' : 'linear'
@@ -5326,7 +5345,32 @@ export default function CreateVideo() {
         ctx.strokeStyle = grad || instFg
         ctx.fillStyle = grad || instFg
 
-        if (instStyle === 'radial_bars' || instStyle === 'spectrum_bars') {
+        const isBarStyle =
+          instStyle === 'radial_bars' || instStyle === 'spectrum_bars' || instStyle === 'mirror_bars' || instStyle === 'stacked_bands'
+        const getRangeForBand = (maxIdx: number, spectrum: 'full' | 'voice', band: string) => {
+          const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
+          const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
+          let start = 0
+          let end = Math.max(1, maxIdx)
+          if (spectrum === 'voice') {
+            const lowIdx = Math.round((80 / nyquist) * maxIdx)
+            const highIdx = Math.round((4000 / nyquist) * maxIdx)
+            start = Math.max(0, Math.min(maxIdx, lowIdx))
+            end = Math.max(start + 1, Math.min(maxIdx, highIdx))
+          }
+          if (band !== 'full') {
+            const bandIndex = band === 'band_1' ? 0 : band === 'band_2' ? 1 : band === 'band_3' ? 2 : 3
+            const span = Math.max(1, end - start + 1)
+            const step = span / 4
+            const bStart = Math.round(start + step * bandIndex)
+            const bEnd = Math.round(start + step * (bandIndex + 1) - 1)
+            start = Math.max(0, Math.min(maxIdx, bStart))
+            end = Math.max(start + 1, Math.min(maxIdx, bEnd))
+          }
+          return { start, end }
+        }
+
+        if (isBarStyle) {
           if (useEnvelope) {
             for (let i = 0; i < freq.length; i++) {
               const t = freq.length <= 1 ? 0 : i / (freq.length - 1)
@@ -5346,26 +5390,10 @@ export default function CreateVideo() {
           } else if (analyser) {
             analyser.getByteFrequencyData(freq)
           }
-          const sampleRate = narrationVizAudioCtxRef.current?.sampleRate || 44100
-          const nyquist = sampleRate > 0 ? sampleRate / 2 : 22050
           const maxIdx = Math.max(1, freq.length - 1)
-          let rangeStart = 0
-          let rangeEnd = maxIdx
-          if (instSpectrum === 'voice') {
-            const lowIdx = Math.round((80 / nyquist) * maxIdx)
-            const highIdx = Math.round((4000 / nyquist) * maxIdx)
-            rangeStart = Math.max(0, Math.min(maxIdx, lowIdx))
-            rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, highIdx))
-          }
-          if (instBand !== 'full') {
-            const bandIndex = instBand === 'band_1' ? 0 : instBand === 'band_2' ? 1 : instBand === 'band_3' ? 2 : 3
-            const span = Math.max(1, rangeEnd - rangeStart + 1)
-            const step = span / 4
-            const bStart = Math.round(rangeStart + step * bandIndex)
-            const bEnd = Math.round(rangeStart + step * (bandIndex + 1) - 1)
-            rangeStart = Math.max(0, Math.min(maxIdx, bStart))
-            rangeEnd = Math.max(rangeStart + 1, Math.min(maxIdx, bEnd))
-          }
+          const primaryRange = getRangeForBand(maxIdx, instSpectrum as any, instBand)
+          const rangeStart = primaryRange.start
+          const rangeEnd = primaryRange.end
 
           if (instStyle === 'radial_bars') {
             const cx = drawW / 2
@@ -5391,18 +5419,55 @@ export default function CreateVideo() {
               ctx.lineTo(x1, y1)
             }
             ctx.stroke()
-          } else {
+          } else if (instStyle === 'spectrum_bars') {
             const gap = 2
-            const minBarFrac = 0.04
             const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
             for (let i = 0; i < instBars; i++) {
               const t = instBars <= 1 ? 0 : i / (instBars - 1)
               const base = instScale === 'log' ? Math.pow(t, 2) : t
               const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
               const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
-              const bh = Math.max(Math.round(drawH * minBarFrac), Math.round(v * drawH))
+              const bh = Math.round(v * drawH)
+              if (bh <= 0) continue
               const x = i * (barW + gap)
               ctx.fillRect(x, drawH - bh, barW, bh)
+            }
+          } else if (instStyle === 'mirror_bars') {
+            const gap = 2
+            const barW = Math.max(2, (drawW - gap * (instBars - 1)) / instBars)
+            const centerY = drawH / 2
+            for (let i = 0; i < instBars; i++) {
+              const t = instBars <= 1 ? 0 : i / (instBars - 1)
+              const base = instScale === 'log' ? Math.pow(t, 2) : t
+              const idx = Math.round(rangeStart + base * (rangeEnd - rangeStart))
+              const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+              const hh = Math.round(v * drawH * 0.48)
+              if (hh <= 0) continue
+              const x = i * (barW + gap)
+              ctx.fillRect(x, centerY - hh, barW, hh * 2)
+            }
+          } else {
+            const laneBands: Array<'band_1' | 'band_2' | 'band_3' | 'band_4'> = ['band_1', 'band_2', 'band_3', 'band_4']
+            const lanes = laneBands.length
+            const laneGap = 2
+            const laneH = Math.max(1, (drawH - laneGap * (lanes - 1)) / lanes)
+            const bars = Math.max(12, Math.min(96, instBars))
+            const gap = 1
+            const barW = Math.max(1, (drawW - gap * (bars - 1)) / bars)
+            for (let lane = 0; lane < lanes; lane++) {
+              const laneRange = getRangeForBand(maxIdx, instSpectrum as any, laneBands[lane])
+              const yTop = lane * (laneH + laneGap)
+              const yBottom = yTop + laneH
+              for (let i = 0; i < bars; i++) {
+                const t = bars <= 1 ? 0 : i / (bars - 1)
+                const base = instScale === 'log' ? Math.pow(t, 2) : t
+                const idx = Math.round(laneRange.start + base * (laneRange.end - laneRange.start))
+                const v = freq[Math.max(0, Math.min(freq.length - 1, idx))] / 255
+                const bh = Math.round(v * laneH)
+                if (bh <= 0) continue
+                const x = i * (barW + gap)
+                ctx.fillRect(x, yBottom - bh, barW, bh)
+              }
             }
           }
         } else {
@@ -5421,22 +5486,40 @@ export default function CreateVideo() {
           } else if (analyser) {
             analyser.getByteTimeDomainData(data)
           }
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          for (let i = 0; i < data.length; i++) {
-            const v = data[i] / 255
-            const y = v * drawH
-            const x = (i / (data.length - 1)) * drawW
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
-          }
-          if (instStyle === 'wave_fill') {
-            ctx.lineTo(drawW, drawH / 2)
-            ctx.lineTo(0, drawH / 2)
-            ctx.closePath()
-            ctx.fill()
+          if (instStyle === 'center_wave') {
+            const centerY = drawH / 2
+            ctx.lineWidth = 2
+            const drawWave = (sign: 1 | -1) => {
+              ctx.beginPath()
+              for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128
+                const y = centerY + sign * v * drawH * 0.4
+                const x = (i / (data.length - 1)) * drawW
+                if (i === 0) ctx.moveTo(x, y)
+                else ctx.lineTo(x, y)
+              }
+              ctx.stroke()
+            }
+            drawWave(1)
+            drawWave(-1)
           } else {
-            ctx.stroke()
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            for (let i = 0; i < data.length; i++) {
+              const v = data[i] / 255
+              const y = v * drawH
+              const x = (i / (data.length - 1)) * drawW
+              if (i === 0) ctx.moveTo(x, y)
+              else ctx.lineTo(x, y)
+            }
+            if (instStyle === 'wave_fill') {
+              ctx.lineTo(drawW, drawH / 2)
+              ctx.lineTo(0, drawH / 2)
+              ctx.closePath()
+              ctx.fill()
+            } else {
+              ctx.stroke()
+            }
           }
         }
       }
