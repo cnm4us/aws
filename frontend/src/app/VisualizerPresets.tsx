@@ -32,6 +32,14 @@ type VisualizerPreset = {
   archivedAt: string | null
 }
 
+type SystemAudioItem = {
+  id: number
+  original_filename: string
+  modified_filename: string | null
+  description: string | null
+  duration_seconds?: number | null
+}
+
 type RouteContext = {
   action: 'list' | 'new' | 'edit'
   presetId: number | null
@@ -201,15 +209,60 @@ function parseBarCount(value: any): number {
   return Math.round(Math.min(Math.max(n, 12), 128))
 }
 
-function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'> }) {
+function VisualizerPreview({
+  config,
+  audioEl,
+  active,
+}: {
+  config: Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>
+  audioEl: HTMLAudioElement | null
+  active: boolean
+}) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
   const rafRef = React.useRef<number | null>(null)
+  const audioCtxRef = React.useRef<AudioContext | null>(null)
+  const sourceNodeRef = React.useRef<MediaElementAudioSourceNode | null>(null)
+  const analyserRef = React.useRef<AnalyserNode | null>(null)
+  const timeDataRef = React.useRef<Uint8Array | null>(null)
+  const freqDataRef = React.useRef<Uint8Array | null>(null)
+
+  React.useEffect(() => {
+    if (!audioEl) return
+    try {
+      if (!audioEl.crossOrigin) audioEl.crossOrigin = 'anonymous'
+    } catch {}
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!Ctx) return
+      if (!audioCtxRef.current) audioCtxRef.current = new Ctx()
+      const ctx = audioCtxRef.current
+      if (!ctx) return
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => {})
+      }
+      if (!sourceNodeRef.current) {
+        sourceNodeRef.current = ctx.createMediaElementSource(audioEl)
+      }
+      if (!analyserRef.current) {
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 2048
+        analyser.smoothingTimeConstant = 0.72
+        sourceNodeRef.current.connect(analyser)
+        analyser.connect(ctx.destination)
+        analyserRef.current = analyser
+      }
+    } catch {
+      analyserRef.current = null
+      timeDataRef.current = null
+      freqDataRef.current = null
+    }
+  }, [audioEl])
 
   React.useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const draw = (ts: number) => {
+    const drawFrame = (ts: number) => {
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       const rect = canvas.getBoundingClientRect()
@@ -224,6 +277,46 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
       ctx.clearRect(0, 0, w, h)
 
       const t = (ts || 0) / 1000
+      const analyser = analyserRef.current
+      const analyserReady = Boolean(analyser && active && audioEl && !audioEl.paused)
+      if (analyserReady && analyser) {
+        if (!timeDataRef.current || timeDataRef.current.length !== analyser.fftSize) {
+          timeDataRef.current = new Uint8Array(analyser.fftSize)
+        }
+        if (!freqDataRef.current || freqDataRef.current.length !== analyser.frequencyBinCount) {
+          freqDataRef.current = new Uint8Array(analyser.frequencyBinCount)
+        }
+        analyser.getByteTimeDomainData(timeDataRef.current)
+        analyser.getByteFrequencyData(freqDataRef.current)
+      }
+
+      const getSpectrumValue = (tNorm: number) => {
+        const bins = freqDataRef.current
+        if (!bins || bins.length < 2) {
+          const base0 = config.scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
+          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
+          return 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
+        }
+        const clamped = Math.max(0, Math.min(1, tNorm))
+        const scaled = config.scale === 'log' ? Math.pow(clamped, 2) : clamped
+        const mapped = config.spectrumMode === 'voice' ? 0.12 + scaled * 0.56 : scaled
+        const idx = Math.max(0, Math.min(bins.length - 1, Math.round(mapped * (bins.length - 1))))
+        const v = bins[idx] / 255
+        return Math.max(0.03, Math.min(1, v))
+      }
+
+      const getWaveValue = (tNorm: number) => {
+        const samples = timeDataRef.current
+        if (!samples || samples.length < 2) {
+          const base = config.scale === 'log' ? Math.pow(Math.max(0, Math.min(1, tNorm)), 2) : Math.max(0, Math.min(1, tNorm))
+          const wobble = Math.sin(t * 2 + base * Math.PI * 4)
+          const wobble2 = Math.sin(t * 3 + base * Math.PI * 7) * 0.45
+          return wobble * 0.55 + wobble2
+        }
+        const idx = Math.max(0, Math.min(samples.length - 1, Math.round(Math.max(0, Math.min(1, tNorm)) * (samples.length - 1))))
+        return (samples[idx] - 128) / 128
+      }
+
       const clipMode = config.clipMode || 'none'
       const clipInsetPct = parseClipInset(config.clipInsetPct)
       const clipHeightPct = parseClipHeight(config.clipHeightPct)
@@ -276,9 +369,7 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         ctx.beginPath()
         for (let i = 0; i < bars; i++) {
           const tt = bars <= 1 ? 0 : i / bars
-          const base0 = config.scale === 'log' ? Math.pow(tt, 2) : tt
-          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
-          const v = 0.35 + 0.65 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
+          const v = getSpectrumValue(tt)
           const len = inner + v * maxLen
           const ang = tt * Math.PI * 2 - Math.PI / 2
           const x0 = cx + Math.cos(ang) * inner
@@ -295,9 +386,7 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         const barW = Math.max(2, (w - gap * (bars - 1)) / bars)
         for (let i = 0; i < bars; i++) {
           const tt = bars <= 1 ? 0 : i / (bars - 1)
-          const base0 = config.scale === 'log' ? Math.pow(tt, 2) : tt
-          const base = config.spectrumMode === 'voice' ? 0.15 + base0 * 0.7 : base0
-          const v = 0.2 + 0.8 * Math.abs(Math.sin(t * 2 + base * Math.PI * 3))
+          const v = getSpectrumValue(tt)
           const bh = Math.max(1, Math.round(v * h))
           const x = i * (barW + gap)
           ctx.fillRect(x, h - bh, barW, bh)
@@ -310,10 +399,7 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         ctx.beginPath()
         for (let i = 0; i < points; i++) {
           const tt = points <= 1 ? 0 : i / (points - 1)
-          const base = config.scale === 'log' ? Math.pow(tt, 2) : tt
-          const wobble = Math.sin(t * 2 + base * Math.PI * 4)
-          const wobble2 = Math.sin(t * 3 + base * Math.PI * 7) * 0.45
-          const y = center + amp * (wobble * 0.55 + wobble2)
+          const y = center + amp * getWaveValue(tt)
           const x = tt * w
           if (i === 0) ctx.moveTo(x, y)
           else ctx.lineTo(x, y)
@@ -334,18 +420,25 @@ function VisualizerPreview({ config }: { config: Omit<VisualizerPreset, 'id' | '
         } catch {}
       }
       ctx.globalAlpha = 1
-
-      rafRef.current = window.requestAnimationFrame(draw)
     }
 
-    rafRef.current = window.requestAnimationFrame(draw)
+    const draw = (ts: number) => {
+      drawFrame(ts)
+      if (active) rafRef.current = window.requestAnimationFrame(draw)
+    }
+
+    if (active) {
+      rafRef.current = window.requestAnimationFrame(draw)
+    } else {
+      drawFrame(performance.now())
+    }
     return () => {
       if (rafRef.current != null) {
         try { window.cancelAnimationFrame(rafRef.current) } catch {}
       }
       rafRef.current = null
     }
-  }, [config])
+  }, [active, audioEl, config])
 
   return (
     <canvas
@@ -372,6 +465,12 @@ export default function VisualizerPresetsPage() {
   const [saving, setSaving] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
   const [draft, setDraft] = React.useState<Omit<VisualizerPreset, 'id' | 'createdAt' | 'updatedAt' | 'archivedAt'>>(DEFAULT_PRESET)
+  const [previewAudioItems, setPreviewAudioItems] = React.useState<SystemAudioItem[]>([])
+  const [previewAudioLoading, setPreviewAudioLoading] = React.useState(false)
+  const [previewAudioError, setPreviewAudioError] = React.useState<string | null>(null)
+  const [previewAudioId, setPreviewAudioId] = React.useState<number | null>(null)
+  const [previewPlaying, setPreviewPlaying] = React.useState(false)
+  const [previewAudioEl, setPreviewAudioEl] = React.useState<HTMLAudioElement | null>(null)
 
   const sharedCardListStyle = React.useMemo(
     () =>
@@ -443,6 +542,69 @@ export default function VisualizerPresetsPage() {
     }
     void run()
   }, [routeCtx.action])
+
+  React.useEffect(() => {
+    if (routeCtx.action === 'list') return
+    let cancelled = false
+    const run = async () => {
+      setPreviewAudioLoading(true)
+      setPreviewAudioError(null)
+      try {
+        const res = await fetchJson('/api/system-audio?limit=200')
+        if (cancelled) return
+        const items = Array.isArray(res?.items) ? (res.items as SystemAudioItem[]) : Array.isArray(res) ? (res as SystemAudioItem[]) : []
+        setPreviewAudioItems(items)
+        if (items.length > 0) setPreviewAudioId((prev) => (prev && items.some((x) => Number(x.id) === Number(prev)) ? prev : Number(items[0].id)))
+      } catch (e: any) {
+        if (cancelled) return
+        setPreviewAudioError(String(e?.message || 'Failed to load audio sources'))
+      } finally {
+        if (!cancelled) setPreviewAudioLoading(false)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [routeCtx.action])
+
+  React.useEffect(() => {
+    const el = previewAudioEl
+    if (!el) return
+    const onEnded = () => setPreviewPlaying(false)
+    const onPause = () => setPreviewPlaying(false)
+    const onPlay = () => setPreviewPlaying(true)
+    el.addEventListener('ended', onEnded)
+    el.addEventListener('pause', onPause)
+    el.addEventListener('play', onPlay)
+    return () => {
+      el.removeEventListener('ended', onEnded)
+      el.removeEventListener('pause', onPause)
+      el.removeEventListener('play', onPlay)
+    }
+  }, [previewAudioEl])
+
+  React.useEffect(() => {
+    const el = previewAudioEl
+    if (!el) return
+    try {
+      if (previewAudioId && Number.isFinite(previewAudioId) && previewAudioId > 0) {
+        const nextSrc = `/api/uploads/${encodeURIComponent(String(previewAudioId))}/file`
+        if (el.src !== new URL(nextSrc, window.location.origin).toString()) {
+          el.pause()
+          el.currentTime = 0
+          el.src = nextSrc
+          el.load()
+          setPreviewPlaying(false)
+        }
+      } else {
+        el.pause()
+        el.removeAttribute('src')
+        el.load()
+        setPreviewPlaying(false)
+      }
+    } catch {}
+  }, [previewAudioEl, previewAudioId])
 
   const backHref = routeCtx.action === 'list' ? '/assets' : '/assets/visualizers'
   const backLabel = routeCtx.action === 'list' ? '← Assets' : '← Visualizers'
@@ -547,6 +709,67 @@ export default function VisualizerPresetsPage() {
                 style={MODAL_TEXTAREA_STYLE}
               />
             </label>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ color: '#bbb', fontSize: 13 }}>Preview</div>
+              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#bbb', fontSize: 12 }}>Audio Source (System)</div>
+                  <select
+                    value={previewAudioId && Number.isFinite(previewAudioId) ? String(previewAudioId) : ''}
+                    onChange={(e) => setPreviewAudioId(Number(e.target.value) || null)}
+                    style={MODAL_INPUT_STYLE}
+                    disabled={previewAudioLoading || previewAudioItems.length === 0}
+                  >
+                    {!previewAudioItems.length ? <option value="">No system audio</option> : null}
+                    {previewAudioItems.map((a) => {
+                      const id = Number((a as any).id || 0)
+                      const baseName = String((a as any).modified_filename || (a as any).original_filename || `Audio ${id}`).trim()
+                      return (
+                        <option key={`preview-aud-${id}`} value={String(id)}>
+                          {baseName}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const el = previewAudioEl
+                    if (!el) return
+                    if (el.paused) {
+                      try {
+                        await el.play()
+                      } catch (e: any) {
+                        setFormError(String(e?.message || 'Unable to play preview audio'))
+                      }
+                    } else {
+                      el.pause()
+                    }
+                  }}
+                  disabled={!previewAudioId || !previewAudioEl}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(10,132,255,0.75)',
+                    background: 'rgba(10,132,255,0.24)',
+                    color: '#fff',
+                    fontWeight: 900,
+                    cursor: !previewAudioId || !previewAudioEl ? 'default' : 'pointer',
+                    opacity: !previewAudioId || !previewAudioEl ? 0.6 : 1,
+                    minWidth: 72,
+                    height: 42,
+                  }}
+                >
+                  {previewPlaying ? 'Pause' : 'Play'}
+                </button>
+              </div>
+              {previewAudioLoading ? <div style={{ color: '#bbb', fontSize: 12 }}>Loading audio sources…</div> : null}
+              {previewAudioError ? <div style={{ color: '#ff9b9b', fontSize: 12 }}>{previewAudioError}</div> : null}
+              <audio ref={setPreviewAudioEl} preload="metadata" crossOrigin="anonymous" style={{ display: 'none' }} />
+              <VisualizerPreview config={draft} audioEl={previewAudioEl} active={previewPlaying} />
+            </div>
 
             <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
               <label style={{ display: 'grid', gap: 6 }}>
@@ -730,11 +953,6 @@ export default function VisualizerPresetsPage() {
                   </div>
                 ) : null}
               </label>
-            </div>
-
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ color: '#bbb', fontSize: 13 }}>Preview</div>
-              <VisualizerPreview config={draft} />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
