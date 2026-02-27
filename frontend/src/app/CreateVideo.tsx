@@ -199,6 +199,30 @@ const narrationVisualizerToPresetSnapshot = (cfg: NarrationVisualizerConfig): Vi
     clipHeightPct: Number.isFinite(clipHeightRaw) ? Math.max(10, Math.min(100, clipHeightRaw)) : base.clipHeightPct,
   }
 }
+
+const visualizerPresetSnapshotsEqual = (aRaw: any, bRaw: any): boolean => {
+  const a = normalizeVisualizerPresetSnapshot(aRaw)
+  const b = normalizeVisualizerPresetSnapshot(bRaw)
+  return (
+    Number(a.id) === Number(b.id) &&
+    String(a.name || '') === String(b.name || '') &&
+    String(a.description || '') === String(b.description || '') &&
+    String(a.style || '') === String(b.style || '') &&
+    String(a.fgColor || '') === String(b.fgColor || '') &&
+    String(a.bgColor || '') === String(b.bgColor || '') &&
+    Number(a.opacity || 0) === Number(b.opacity || 0) &&
+    String(a.scale || '') === String(b.scale || '') &&
+    Number(a.barCount || 0) === Number(b.barCount || 0) &&
+    String(a.spectrumMode || '') === String(b.spectrumMode || '') &&
+    Boolean(a.gradientEnabled) === Boolean(b.gradientEnabled) &&
+    String(a.gradientStart || '') === String(b.gradientStart || '') &&
+    String(a.gradientEnd || '') === String(b.gradientEnd || '') &&
+    String(a.gradientMode || '') === String(b.gradientMode || '') &&
+    String(a.clipMode || '') === String(b.clipMode || '') &&
+    Number(a.clipInsetPct || 0) === Number(b.clipInsetPct || 0) &&
+    Number(a.clipHeightPct || 0) === Number(b.clipHeightPct || 0)
+  )
+}
 // [cv-shell] shared DTOs and editor-local types; safe to move into dedicated type modules first.
 type MeResponse = {
   userId: number | null
@@ -939,6 +963,8 @@ export default function CreateVideo() {
 	  const lastSavedRef = useRef<string>('')
 	  const timelineSaveAbortRef = useRef<AbortController | null>(null)
 	  const hydratingRef = useRef(false)
+  const latestTimelineRef = useRef<Timeline>(timeline)
+  const visualizerOpenSyncProjectIdRef = useRef<number | null>(null)
   const primedFrameSrcRef = useRef<string>('')
   const primedOverlayFrameSrcRef = useRef<string>('')
   const [posterByUploadId, setPosterByUploadId] = useState<Record<number, string>>({})
@@ -1002,6 +1028,10 @@ export default function CreateVideo() {
     if (!Number.isFinite(id) || id <= 0) return null
     return `createVideoHistory:v1:${id}`
   }, [project?.id])
+
+  useEffect(() => {
+    latestTimelineRef.current = timeline
+  }, [timeline])
 
   const hashString = useCallback((s: string): string => {
     // FNV-1a 32-bit
@@ -2333,6 +2363,154 @@ export default function CreateVideo() {
     const next = syncVisualizersToSources(timeline)
     if (next !== timeline) setTimeline(next)
   }, [syncVisualizersToSources, timeline])
+
+  const syncVisualizersOnOpen = useCallback(
+    (tl: Timeline, presets: VisualizerPresetItem[]) => {
+      const prevVs: any[] = Array.isArray((tl as any).visualizers) ? ((tl as any).visualizers as any[]) : []
+      if (!prevVs.length) {
+        return { timeline: tl, changed: false, refreshed: 0, rebound: 0, needsBinding: 0 }
+      }
+
+      type BoundSegment = { id: string; startSeconds: number; endSeconds: number; sourceStartSeconds: number }
+      const byKind: Record<VisualizerAudioSourceKind, BoundSegment[]> = {
+        video: [],
+        video_overlay: [],
+        narration: [],
+        music: [],
+      }
+      const pushBoundSegment = (kind: VisualizerAudioSourceKind, seg: BoundSegment) => {
+        if (!seg.id) return
+        if (!(Number.isFinite(seg.startSeconds) && Number.isFinite(seg.endSeconds) && seg.endSeconds > seg.startSeconds + 1e-6)) return
+        byKind[kind].push(seg)
+      }
+
+      let cursor = 0
+      for (const c of tl.clips || []) {
+        const s = roundToTenth(cursor)
+        const dur = roundToTenth(Math.max(0, clipDurationSeconds(c as any)))
+        const e = roundToTenth(s + dur)
+        pushBoundSegment('video', {
+          id: String((c as any)?.id || ''),
+          startSeconds: s,
+          endSeconds: e,
+          sourceStartSeconds: roundToTenth(Number((c as any)?.sourceStartSeconds || 0)),
+        })
+        cursor = e
+      }
+
+      cursor = 0
+      const overlaysRaw: any[] = Array.isArray((tl as any).videoOverlays) ? ((tl as any).videoOverlays as any[]) : []
+      for (const o of overlaysRaw) {
+        const s = roundToTenth(cursor)
+        const dur = roundToTenth(Math.max(0, clipDurationSeconds(o as any)))
+        const e = roundToTenth(s + dur)
+        pushBoundSegment('video_overlay', {
+          id: String((o as any)?.id || ''),
+          startSeconds: s,
+          endSeconds: e,
+          sourceStartSeconds: roundToTenth(Number((o as any)?.sourceStartSeconds || 0)),
+        })
+        cursor = e
+      }
+
+      const narrationRaw: any[] = Array.isArray((tl as any).narration) ? ((tl as any).narration as any[]) : []
+      for (const n of narrationRaw) {
+        pushBoundSegment('narration', {
+          id: String((n as any)?.id || ''),
+          startSeconds: roundToTenth(Number((n as any)?.startSeconds || 0)),
+          endSeconds: roundToTenth(Number((n as any)?.endSeconds || 0)),
+          sourceStartSeconds: roundToTenth(Number((n as any)?.sourceStartSeconds || 0)),
+        })
+      }
+
+      const audioRaw: any[] = Array.isArray((tl as any).audioSegments) ? ((tl as any).audioSegments as any[]) : []
+      for (const a of audioRaw) {
+        pushBoundSegment('music', {
+          id: String((a as any)?.id || ''),
+          startSeconds: roundToTenth(Number((a as any)?.startSeconds || 0)),
+          endSeconds: roundToTenth(Number((a as any)?.endSeconds || 0)),
+          sourceStartSeconds: roundToTenth(Number((a as any)?.sourceStartSeconds || 0)),
+        })
+      }
+
+      const presetById = new Map<number, VisualizerPresetItem>()
+      for (const p of Array.isArray(presets) ? presets : []) {
+        const id = Number((p as any)?.id)
+        if (Number.isFinite(id) && id > 0) presetById.set(id, normalizeVisualizerPresetSnapshot(p as any))
+      }
+
+      const pickCandidate = (rangeStart: number, rangeEnd: number, list: BoundSegment[]) => {
+        const within = list.filter((s) => rangeStart + 1e-6 >= s.startSeconds && rangeStart <= s.endSeconds - 1e-6)
+        if (within.length === 1) return { candidate: within[0], ambiguous: false }
+        if (within.length > 1) return { candidate: null as BoundSegment | null, ambiguous: true }
+        const overlap = list.filter((s) => s.startSeconds < rangeEnd - 1e-6 && s.endSeconds > rangeStart + 1e-6)
+        if (overlap.length === 1) return { candidate: overlap[0], ambiguous: false }
+        if (overlap.length > 1) return { candidate: null as BoundSegment | null, ambiguous: true }
+        if (list.length === 1) return { candidate: list[0], ambiguous: false }
+        return { candidate: null as BoundSegment | null, ambiguous: list.length > 1 }
+      }
+
+      let changed = false
+      let refreshed = 0
+      let rebound = 0
+      let needsBinding = 0
+      const nextVs = prevVs.map((v: any) => {
+        if (!v || typeof v !== 'object') return v
+        let nextV = v as any
+
+        const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
+        const kind: VisualizerAudioSourceKind =
+          kindRaw === 'video_overlay' ? 'video_overlay' : kindRaw === 'video' ? 'video' : kindRaw === 'music' ? 'music' : 'narration'
+        if (String((v as any).audioSourceKind || '') !== kind) {
+          nextV = { ...nextV, audioSourceKind: kind }
+          changed = true
+        }
+
+        const presetId = Number((v as any).presetId)
+        const latestPreset = presetById.get(presetId)
+        if (latestPreset) {
+          const currentSnapshot = normalizeVisualizerPresetSnapshot((v as any).presetSnapshot)
+          if (!visualizerPresetSnapshotsEqual(currentSnapshot, latestPreset)) {
+            nextV = { ...nextV, presetSnapshot: latestPreset }
+            changed = true
+            refreshed += 1
+          }
+        }
+
+        const list = byKind[kind]
+        const segId = String((v as any).audioSourceSegmentId || '').trim()
+        const bound = segId ? list.find((s) => s.id === segId) || null : null
+        if (bound) {
+          const existingSourceStart = Number((v as any).audioSourceStartSeconds)
+          if (!Number.isFinite(existingSourceStart) || Math.abs(existingSourceStart - bound.sourceStartSeconds) > 1e-6) {
+            nextV = { ...nextV, audioSourceStartSeconds: bound.sourceStartSeconds }
+            changed = true
+          }
+          return nextV
+        }
+
+        const rangeStart = roundToTenth(Number((v as any).startSeconds || 0))
+        const rangeEnd = roundToTenth(Number((v as any).endSeconds || rangeStart))
+        const picked = pickCandidate(rangeStart, Math.max(rangeStart + 0.1, rangeEnd), list)
+        if (picked.candidate) {
+          nextV = {
+            ...nextV,
+            audioSourceSegmentId: picked.candidate.id,
+            audioSourceStartSeconds: picked.candidate.sourceStartSeconds,
+          }
+          changed = true
+          rebound += 1
+        } else if (picked.ambiguous) {
+          needsBinding += 1
+        }
+        return nextV
+      })
+
+      if (!changed) return { timeline: tl, changed: false, refreshed, rebound, needsBinding }
+      return { timeline: { ...(tl as any), visualizers: nextVs } as Timeline, changed: true, refreshed, rebound, needsBinding }
+    },
+    [clipDurationSeconds]
+  )
 
   const stills = useMemo(() => (Array.isArray((timeline as any).stills) ? ((timeline as any).stills as Still[]) : []), [timeline])
   const selectedStill = useMemo(() => {
@@ -9159,6 +9337,46 @@ export default function CreateVideo() {
     if (visualizerPresetsLoaded) return
     void ensureVisualizerPresets()
   }, [ensureVisualizerPresets, visualizerPresetsLoaded, visualizers.length])
+
+  // On project open, refresh visualizer preset snapshots and auto-rebind invalid/unambiguous sources.
+  useEffect(() => {
+    const projectId = Number(project?.id || 0)
+    if (!Number.isFinite(projectId) || projectId <= 0) return
+    if (loading) return
+    if (visualizerOpenSyncProjectIdRef.current === projectId) return
+    if (!Array.isArray((latestTimelineRef.current as any).visualizers) || !(latestTimelineRef.current as any).visualizers.length) {
+      visualizerOpenSyncProjectIdRef.current = projectId
+      return
+    }
+
+    let cancelled = false
+    ;(async () => {
+      const presets = await ensureVisualizerPresets()
+      if (cancelled) return
+      const currentTimeline = latestTimelineRef.current
+      const result = syncVisualizersOnOpen(currentTimeline, presets)
+      visualizerOpenSyncProjectIdRef.current = projectId
+      if (cancelled) return
+      if (result.changed) {
+        setTimeline(result.timeline)
+      }
+      const notes: string[] = []
+      if (result.refreshed > 0) notes.push(`refreshed ${result.refreshed} preset${result.refreshed > 1 ? 's' : ''}`)
+      if (result.rebound > 0) notes.push(`auto-rebound ${result.rebound} source${result.rebound > 1 ? 's' : ''}`)
+      if (result.needsBinding > 0) {
+        notes.push(
+          `${result.needsBinding} visualizer${result.needsBinding > 1 ? 's need' : ' needs'} source selection`
+        )
+      }
+      if (notes.length) {
+        setTimelineMessage(`Visualizers synced: ${notes.join(', ')}.`)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [ensureVisualizerPresets, loading, project?.id, syncVisualizersOnOpen])
 
   useEffect(() => {
     if (!screenTitles.length) return
