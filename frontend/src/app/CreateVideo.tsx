@@ -663,9 +663,9 @@ export default function CreateVideo() {
   const narrationVizCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const narrationVizRafRef = useRef<number | null>(null)
   const narrationVizAudioCtxRef = useRef<AudioContext | null>(null)
+  const narrationVizSourceByElRef = useRef<WeakMap<HTMLMediaElement, MediaElementAudioSourceNode> | null>(null)
+  const narrationVizAnalyserByElRef = useRef<WeakMap<HTMLMediaElement, AnalyserNode> | null>(null)
   const narrationVizAnalyserRef = useRef<AnalyserNode | null>(null)
-  const narrationVizSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
-  const narrationVizLastElRef = useRef<HTMLAudioElement | null>(null)
   const narrationVizTimeRef = useRef<Uint8Array | null>(null)
   const narrationVizFreqRef = useRef<Uint8Array | null>(null)
   const iconScratchRef = useRef<HTMLCanvasElement | null>(null)
@@ -4559,15 +4559,9 @@ export default function CreateVideo() {
   const setupVisualizerPreviewAnalyser = useCallback((mediaEl?: HTMLMediaElement | null) => {
     const audioEl = mediaEl || narrationPreviewRef.current
     if (!audioEl) return null
-    if (narrationVizLastElRef.current && narrationVizLastElRef.current !== audioEl) {
-      try { narrationVizSourceRef.current?.disconnect?.() } catch {}
-      narrationVizSourceRef.current = null
-      narrationVizAnalyserRef.current = null
-    }
     try {
       if (!audioEl.crossOrigin) audioEl.crossOrigin = 'anonymous'
     } catch {}
-    narrationVizLastElRef.current = audioEl
     let ctx = narrationVizAudioCtxRef.current
     if (!ctx) {
       const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
@@ -4582,22 +4576,27 @@ export default function CreateVideo() {
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => {})
     }
-    let analyser = narrationVizAnalyserRef.current
+    if (!narrationVizSourceByElRef.current) narrationVizSourceByElRef.current = new WeakMap()
+    if (!narrationVizAnalyserByElRef.current) narrationVizAnalyserByElRef.current = new WeakMap()
+
+    const sourceByEl = narrationVizSourceByElRef.current
+    const analyserByEl = narrationVizAnalyserByElRef.current
+    let analyser = analyserByEl.get(audioEl) || null
     if (!analyser) {
-      analyser = ctx.createAnalyser()
-      analyser.fftSize = 2048
-      analyser.smoothingTimeConstant = 0.75
-      narrationVizAnalyserRef.current = analyser
-    }
-    if (!narrationVizSourceRef.current) {
       try {
-        narrationVizSourceRef.current = ctx.createMediaElementSource(audioEl)
-        narrationVizSourceRef.current.connect(analyser)
+        const source = ctx.createMediaElementSource(audioEl)
+        analyser = ctx.createAnalyser()
+        analyser.fftSize = 2048
+        analyser.smoothingTimeConstant = 0.75
+        source.connect(analyser)
         analyser.connect(ctx.destination)
+        sourceByEl.set(audioEl, source)
+        analyserByEl.set(audioEl, analyser)
       } catch {
-        // ignore
+        return null
       }
     }
+    narrationVizAnalyserRef.current = analyser
     return analyser
   }, [])
 
@@ -4873,11 +4872,10 @@ export default function CreateVideo() {
       return
     }
 
-    const envelopePreferred =
-      Boolean(activeVisualizerPreview) &&
-      (String((activeVisualizerPreview?.source as any)?.kind || '') === 'video' ||
-        String((activeVisualizerPreview?.source as any)?.kind || '') === 'video_overlay')
+    const sourceKind = String((activeVisualizerPreview?.source as any)?.kind || '')
+    const envelopePreferred = sourceKind === 'video' || sourceKind === 'video_overlay'
     const analyser = setupVisualizerPreviewAnalyser(visualizerPreviewMedia)
+    // For video sources, fall back to precomputed envelopes only if analyser attach is unavailable.
     const useEnvelope = envelopePreferred && !analyser
     if (!useEnvelope && !analyser) {
       const ctx = narrationVizCanvasRef.current?.getContext('2d')
@@ -4922,10 +4920,15 @@ export default function CreateVideo() {
       ctx.clearRect(0, 0, w, h)
 
       const viz = visualizerPreviewConfig || DEFAULT_VISUALIZER_PRESET_SNAPSHOT
-      const envTime =
+      let envTime =
         activeVisualizerPreview && Number.isFinite(Number((activeVisualizerPreview as any).audioTime))
           ? Number((activeVisualizerPreview as any).audioTime)
           : performance.now() / 1000
+      // For envelope-driven visualizers (video/overlay), use media currentTime for smooth real-time motion.
+      if (useEnvelope) {
+        const mediaTime = Number((visualizerPreviewMedia as any)?.currentTime)
+        if (Number.isFinite(mediaTime) && mediaTime >= 0) envTime = mediaTime
+      }
       const placement = (() => {
         const v = activeVisualizerPreview?.visualizer as any
         const sizePctWidthRaw = v && Number.isFinite(Number(v.sizePctWidth)) ? Number(v.sizePctWidth) : 100
@@ -11235,12 +11238,20 @@ export default function CreateVideo() {
 
   const deleteSelected = useCallback(() => {
     if (selectedAudioId) {
+      let removedViz = 0
       snapshotUndo()
       setTimeline((prev) => {
         const prevSegs: any[] = Array.isArray((prev as any).audioSegments) ? (prev as any).audioSegments : []
         const nextSegs = prevSegs.filter((s: any) => String(s?.id) !== String(selectedAudioId))
-        return { ...(prev as any), audioSegments: nextSegs, audioTrack: null } as any
+        const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+        const nextVs = prevVs.filter(
+          (v: any) =>
+            !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'music' && String((v as any).audioSourceSegmentId || '') === String(selectedAudioId))
+        )
+        removedViz = Math.max(0, prevVs.length - nextVs.length)
+        return { ...(prev as any), audioSegments: nextSegs, audioTrack: null, visualizers: nextVs } as any
       })
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted audio.`)
       setSelectedAudioId(null)
       return
     }
@@ -11325,12 +11336,20 @@ export default function CreateVideo() {
     if (selectedVideoOverlayId) {
       const target = selectedVideoOverlay
       if (!target) return
+      let removedViz = 0
       snapshotUndo()
       setTimeline((prev) => {
         const prevOs: any[] = Array.isArray((prev as any).videoOverlays) ? (prev as any).videoOverlays : []
         const nextOs = prevOs.filter((o: any) => String(o.id) !== String((target as any).id))
-        return { ...(prev as any), videoOverlays: nextOs } as any
+        const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+        const nextVs = prevVs.filter(
+          (v: any) =>
+            !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'video_overlay' && String((v as any).audioSourceSegmentId || '') === String((target as any).id))
+        )
+        removedViz = Math.max(0, prevVs.length - nextVs.length)
+        return { ...(prev as any), videoOverlays: nextOs, visualizers: nextVs } as any
       })
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted video overlay.`)
       setSelectedVideoOverlayId(null)
       return
     }
@@ -11338,12 +11357,20 @@ export default function CreateVideo() {
     if (selectedNarrationId) {
       const target = selectedNarration
       if (!target) return
+      let removedViz = 0
       snapshotUndo()
       setTimeline((prev) => {
         const prevNs: any[] = Array.isArray((prev as any).narration) ? (prev as any).narration : []
         const nextNs = prevNs.filter((n: any) => String(n.id) !== String((target as any).id))
-        return { ...(prev as any), narration: nextNs } as any
+        const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+        const nextVs = prevVs.filter(
+          (v: any) =>
+            !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'narration' && String((v as any).audioSourceSegmentId || '') === String((target as any).id))
+        )
+        removedViz = Math.max(0, prevVs.length - nextVs.length)
+        return { ...(prev as any), narration: nextNs, visualizers: nextVs } as any
       })
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted narration.`)
       setSelectedNarrationId(null)
       return
     }
@@ -11353,16 +11380,24 @@ export default function CreateVideo() {
     const fallback = fallbackIdx >= 0 ? (timeline.clips[fallbackIdx] || null) : null
     const target = selectedClip || fallback
     if (!target) return
+    let removedViz = 0
     snapshotUndo()
     setTimeline((prev) => {
       const idx = prev.clips.findIndex((c) => c.id === target.id)
       if (idx < 0) return prev
       const next = prev.clips.filter((c) => c.id !== target.id)
-      const nextTimeline: any = { ...prev, clips: next }
+      const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+      const nextVs = prevVs.filter(
+        (v: any) =>
+          !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'video' && String((v as any).audioSourceSegmentId || '') === String((target as any).id))
+      )
+      removedViz = Math.max(0, prevVs.length - nextVs.length)
+      const nextTimeline: any = { ...prev, clips: next, visualizers: nextVs }
       const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
       const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
       return { ...nextTimeline, playheadSeconds: nextPlayhead }
     })
+    if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted video.`)
     // If we deleted the currently-loaded upload, force re-seek when a new clip is added/selected.
     setActiveUploadId((prev) => (prev === Number(target.uploadId) ? null : prev))
     setSelectedGraphicId(null)
@@ -11411,15 +11446,26 @@ export default function CreateVideo() {
       snapshotUndo()
       setTimeline((prev) => {
         const next = prev.clips.filter((c) => String(c.id) !== targetId)
-        const nextTimeline: any = { ...prev, clips: next }
+        const prevVs: any[] = Array.isArray((prev as any).visualizers) ? (prev as any).visualizers : []
+        const nextVs = prevVs.filter(
+          (v: any) =>
+            !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'video' && String((v as any).audioSourceSegmentId || '') === targetId)
+        )
+        const nextTimeline: any = { ...prev, clips: next, visualizers: nextVs }
         const nextTotal = computeTotalSecondsForTimeline(nextTimeline)
         const nextPlayhead = clamp(prev.playheadSeconds || 0, 0, Math.max(0, nextTotal))
         return { ...nextTimeline, playheadSeconds: nextPlayhead }
       })
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const removedViz = prevVs.filter(
+        (v: any) =>
+          String((v as any).audioSourceKind || '').trim().toLowerCase() === 'video' && String((v as any).audioSourceSegmentId || '') === targetId
+      ).length
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted video.`)
       setActiveUploadId((prev) => (prev === Number((target as any).uploadId) ? null : prev))
       if (selectedClipId === targetId) setSelectedClipId(null)
     },
-    [computeTotalSecondsForTimeline, selectedClipId, snapshotUndo, timeline.clips]
+    [computeTotalSecondsForTimeline, selectedClipId, snapshotUndo, timeline]
   )
 
   const duplicateClipById = useCallback(
@@ -11533,9 +11579,16 @@ export default function CreateVideo() {
       if (!prevOs.some((o: any) => String(o?.id) === targetId)) return
       snapshotUndo()
       const nextOs = prevOs.filter((o: any) => String(o?.id) !== targetId)
-      const nextTimeline: any = { ...(timeline as any), videoOverlays: nextOs }
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const nextVs = prevVs.filter(
+        (v: any) =>
+          !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'video_overlay' && String((v as any).audioSourceSegmentId || '') === targetId)
+      )
+      const removedViz = Math.max(0, prevVs.length - nextVs.length)
+      const nextTimeline: any = { ...(timeline as any), videoOverlays: nextOs, visualizers: nextVs }
       setTimeline(nextTimeline)
       void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted video overlay.`)
       if (String(selectedVideoOverlayId || '') === targetId) setSelectedVideoOverlayId(null)
     },
     [playhead, saveTimelineNow, selectedVideoOverlayId, snapshotUndo, timeline]
@@ -11643,9 +11696,16 @@ export default function CreateVideo() {
       if (!prevSegs.some((s: any) => String(s?.id) === targetId)) return
       snapshotUndo()
       const nextSegs = prevSegs.filter((s: any) => String(s?.id) !== targetId)
-      const nextTimeline: any = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null }
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const nextVs = prevVs.filter(
+        (v: any) =>
+          !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'music' && String((v as any).audioSourceSegmentId || '') === targetId)
+      )
+      const removedViz = Math.max(0, prevVs.length - nextVs.length)
+      const nextTimeline: any = { ...(timeline as any), audioSegments: nextSegs, audioTrack: null, visualizers: nextVs }
       setTimeline(nextTimeline)
       void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted audio.`)
       if (String(selectedAudioId || '') === targetId) setSelectedAudioId(null)
     },
     [playhead, saveTimelineNow, selectedAudioId, snapshotUndo, timeline]
@@ -11757,9 +11817,16 @@ export default function CreateVideo() {
       if (!prevNs.some((n: any) => String(n?.id) === targetId)) return
       snapshotUndo()
       const nextNs = prevNs.filter((n: any) => String(n?.id) !== targetId)
-      const nextTimeline: any = { ...(timeline as any), narration: nextNs }
+      const prevVs: any[] = Array.isArray((timeline as any).visualizers) ? ((timeline as any).visualizers as any[]) : []
+      const nextVs = prevVs.filter(
+        (v: any) =>
+          !(String((v as any).audioSourceKind || '').trim().toLowerCase() === 'narration' && String((v as any).audioSourceSegmentId || '') === targetId)
+      )
+      const removedViz = Math.max(0, prevVs.length - nextVs.length)
+      const nextTimeline: any = { ...(timeline as any), narration: nextNs, visualizers: nextVs }
       setTimeline(nextTimeline)
       void saveTimelineNow({ ...(nextTimeline as any), playheadSeconds: playhead } as any)
+      if (removedViz > 0) setTimelineMessage(`Removed ${removedViz} visualizer${removedViz > 1 ? 's' : ''} bound to deleted narration.`)
       if (selectedNarrationId === targetId) setSelectedNarrationId(null)
     },
     [playhead, saveTimelineNow, selectedNarrationId, snapshotUndo, timeline]
