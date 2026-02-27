@@ -7194,34 +7194,10 @@ export default function CreateVideo() {
 		                  const presetId = Number.isFinite(presetIdRaw) && presetIdRaw > 0 ? presetIdRaw : 0
 		                  const snapRaw = (v as any).presetSnapshot
 		                  const snapBase: any = snapRaw && typeof snapRaw === 'object' ? snapRaw : {}
-		                  const snapshot: VisualizerPresetSnapshot = {
-		                    ...DEFAULT_VISUALIZER_PRESET_SNAPSHOT,
-		                    id: Number(snapBase.id ?? presetId ?? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id,
-		                    name: String(snapBase.name || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.name),
-		                    description:
-		                      snapBase.description == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.description : String(snapBase.description),
-		                    style:
-		                      (String(snapBase.style || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.style,
-		                    fgColor: String(snapBase.fgColor || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.fgColor),
-		                    bgColor: (snapBase.bgColor == null ? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.bgColor : snapBase.bgColor) as any,
-		                    opacity: Number.isFinite(Number(snapBase.opacity)) ? Number(snapBase.opacity) : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.opacity,
-		                    scale:
-		                      (String(snapBase.scale || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.scale,
-		                    gradientEnabled: snapBase.gradientEnabled === true,
-		                    gradientStart: String(snapBase.gradientStart || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientStart),
-		                    gradientEnd: String(snapBase.gradientEnd || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientEnd),
-		                    gradientMode:
-		                      (String(snapBase.gradientMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode) as any) ||
-		                      DEFAULT_VISUALIZER_PRESET_SNAPSHOT.gradientMode,
-		                    clipMode:
-		                      (String(snapBase.clipMode || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode) as any) || DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipMode,
-		                    clipInsetPct: Number.isFinite(Number(snapBase.clipInsetPct))
-		                      ? Number(snapBase.clipInsetPct)
-		                      : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipInsetPct,
-		                    clipHeightPct: Number.isFinite(Number(snapBase.clipHeightPct))
-		                      ? Number(snapBase.clipHeightPct)
-		                      : DEFAULT_VISUALIZER_PRESET_SNAPSHOT.clipHeightPct,
-		                  }
+                  const snapshot: VisualizerPresetSnapshot = normalizeVisualizerPresetSnapshot({
+                    ...(snapBase as any),
+                    id: snapBase.id ?? presetId ?? DEFAULT_VISUALIZER_PRESET_SNAPSHOT.id,
+                  })
 		                  const kindRaw = String((v as any).audioSourceKind || '').trim().toLowerCase()
 		                  const audioSourceKind =
 		                    kindRaw === 'video_overlay'
@@ -11953,7 +11929,7 @@ export default function CreateVideo() {
       const newId = `viz_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
       const placed: any = { ...v0, id: newId, startSeconds: start, endSeconds: end }
       const nextVs = [...prevVs, placed].sort(
-        (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((a as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
+        (a: any, b: any) => Number((a as any).startSeconds || 0) - Number((b as any).startSeconds || 0) || String(a.id).localeCompare(String(b.id))
       )
       snapshotUndo()
       const nextTimeline: any = { ...(timeline as any), visualizers: nextVs }
